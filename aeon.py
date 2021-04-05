@@ -38,7 +38,7 @@ def timebin_glob(pathname, timefilter=None):
     :param str pathname: The pathname pattern used to search for matching filenames.
     :param iterable or callable, optional timefilter:
     A list of time bins or a predicate used to test each file time.
-    :return: An iterable object specifying the matching filenames.
+    :return: A list of all matching filenames.
     '''
     files = glob.glob(pathname)
     files.sort()
@@ -52,6 +52,7 @@ def timebin_glob(pathname, timefilter=None):
         if not callable(timefilter):
             raise TypeError("timefilter must be iterable or callable")
 
+    matches = []
     for file in files:
         filename = os.path.split(file)[-1]
         filename = os.path.splitext(filename)[0]
@@ -60,7 +61,8 @@ def timebin_glob(pathname, timefilter=None):
         timebin = datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":"))
         if not timefilter(timebin):
             continue
-        yield file
+        matches.append(file)
+    return matches
 
 def csvdata(path, prefix=None, names=None, timefilter=None):
     '''
