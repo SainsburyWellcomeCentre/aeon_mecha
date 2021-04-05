@@ -64,7 +64,7 @@ def timebin_glob(pathname, timefilter=None):
         matches.append(file)
     return matches
 
-def csvdata(path, prefix=None, names=None, timefilter=None):
+def csvdata(path, prefix=None, names=None, start=None, end=None):
     '''
     Extracts data from matching text files in the specified root path, sorted
     chronologically, containing device and/or session metadata for the Experiment 0
@@ -73,43 +73,59 @@ def csvdata(path, prefix=None, names=None, timefilter=None):
     :param str path: The root path where all the session data is stored.
     :param str prefix: The optional prefix used to search for session data files.
     :param array-like names: The list of column names to use for loading session data.
+    :param datetime, optional start: The left bound of the time range to extract.
+    :param datetime, optional end: The right bound of the time range to extract.
     :return: A pandas data frame containing session event metadata, sorted by time.
     '''
+    if start is not None or end is not None:
+        timefilter = timebin_range(start, end)
+    else:
+        timefilter = None
+
     files = timebin_glob(path + "/**/" + prefix + "*.csv", timefilter)
     data = pd.concat(
         [pd.read_csv(file, header=None, names=names)
          for file in files])
     data['time'] = data['time'].apply(aeon)
     data.set_index('time', inplace=True)
+
+    if timefilter is not None:
+        return data.loc[start:end]
     return data
 
-def sessiondata(path, timefilter=None):
+def sessiondata(path, start=None, end=None):
     '''
     Extracts all session metadata from the specified root path, sorted chronologically,
     indicating start and end times of manual sessions in the Experiment 0 arena.
 
     :param str path: The root path where all the session data is stored.
+    :param datetime, optional start: The left bound of the time range to extract.
+    :param datetime, optional end: The right bound of the time range to extract.
     :return: A pandas data frame containing session event metadata, sorted by time.
     '''
     return csvdata(
         path,
         prefix='SessionData',
         names=['time','id','weight','event'],
-        timefilter=timefilter)
+        start=start,
+        end=end)
 
-def videodata(path, prefix=None, timefilter=None):
+def videodata(path, prefix=None, start=None, end=None):
     '''
     Extracts all video metadata from the specified root path, sorted chronologically,
     indicating synchronized trigger frame times for cameras in the Experiment 0 arena.
 
     :param str path: The root path where all the video data is stored.
+    :param datetime, optional start: The left bound of the time range to extract.
+    :param datetime, optional end: The right bound of the time range to extract.
     :return: A pandas data frame containing frame event metadata, sorted by time.
     '''
     return csvdata(
         path,
         prefix=prefix,
         names=['time','frame','timestamp'],
-        timefilter=timefilter)
+        start=start,
+        end=end)
 
 def sessionduration(data):
     '''
