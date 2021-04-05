@@ -22,3 +22,21 @@ def sessiondata(path):
     data['time'] = data['time'].apply(aeon)
     data.set_index('time', inplace=True)
     return data
+
+def sessionduration(data):
+    '''
+    Computes duration and summary metadata for each session, by subtracting the
+    start and end times. Assumes no missing data, i.e. the same number of start
+    and end times.
+
+    :param DataFrame data: A pandas data frame containing session event metadata.
+    :return: A pandas data frame containing duration and metadata for each session.
+    '''
+    start = data[data.event == 'Start']
+    end = data[data.event == 'End']
+    duration = end.index - start.index
+    data = start.drop(['weight','event'], axis=1)
+    data['duration'] = duration
+    data['start_weight'] = start.weight
+    data['end_weight'] = end.weight.values
+    return data
