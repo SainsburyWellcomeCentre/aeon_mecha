@@ -155,8 +155,14 @@ payloadtypes = {
     68 : np.dtype(np.float32)
 }
 
-def harpreader(file):
-    """Reads Harp data from the specified file."""
+def harpreader(file, names=None):
+    '''
+    Reads Harp data from the specified file.
+    
+    :param str file: The path to a Harp binary file.
+    :param str or array-like names: The optional column labels to use for the data.
+    :return: A pandas data frame containing harp event data, sorted by time.
+    '''
     data = np.fromfile(file, dtype=np.uint8)
     stride = data[1] + 2
     length = len(data) // stride
@@ -174,9 +180,9 @@ def harpreader(file):
         strides=(stride, elementsize))
     time = aeon(seconds)
     time.name = 'time'
-    return pd.DataFrame(payload, index=time)
+    return pd.DataFrame(payload, index=time, columns=names)
 
-def harpdata(path, device, register, start=None, end=None):
+def harpdata(path, device, register, names=None, start=None, end=None):
     '''
     Extracts all harp data from the specified root path, sorted chronologically,
     for an individual register acquired from a device in the Experiment 0 arena.
@@ -184,13 +190,14 @@ def harpdata(path, device, register, start=None, end=None):
     :param str path: The root path where all the data is stored.
     :param str device: The device name used to search for data files.
     :param int register: The register number to extract data for.
+    :param str or array-like names: The optional column labels to use for the data.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
     :return: A pandas data frame containing harp event data, sorted by time.
     '''
     return load(
         path,
-        harpreader,
+        lambda file: harpreader(file, names),
         prefix="{0}_{1}*".format(device, register),
         extension="*.bin",
         start=start,
