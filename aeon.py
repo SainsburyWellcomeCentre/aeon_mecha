@@ -5,7 +5,7 @@ import pandas as pd
 
 def aeon(seconds):
     """Converts a Harp timestamp, in seconds, to a datetime object."""
-    return datetime.datetime(1904, 1, 1) + datetime.timedelta(seconds=seconds)
+    return datetime.datetime(1904, 1, 1) + pd.to_timedelta(seconds, 's')
 
 def timebin(time, binsize=3):
     '''
@@ -84,7 +84,7 @@ def load(path, reader, prefix=None, start=None, end=None):
 
     files = timebin_glob(path + "/**/" + prefix + "*.csv", timefilter)
     data = pd.concat([reader(file) for file in files])
-    data['time'] = data['time'].apply(aeon)
+    data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
 
     if timefilter is not None:
