@@ -64,15 +64,15 @@ def timebin_glob(pathname, timefilter=None):
         matches.append(file)
     return matches
 
-def csvdata(path, prefix=None, names=None, start=None, end=None):
+def load(path, reader, prefix=None, start=None, end=None):
     '''
-    Extracts data from matching text files in the specified root path, sorted
-    chronologically, containing device and/or session metadata for the Experiment 0
-    arena. If no prefix is specified, the metadata for all manual sessions is extracted.
+    Extracts data from matching files in the specified root path, sorted chronologically,
+    containing device and/or session metadata for the Experiment 0 arena. If no prefix is
+    specified, metadata for all sessions is extracted.
 
     :param str path: The root path where all the session data is stored.
-    :param str prefix: The optional prefix used to search for session data files.
-    :param array-like names: The list of column names to use for loading session data.
+    :param callable reader: A callable object used to load session metadata from a file.
+    :param str, optional prefix: The optional prefix used to search for session data files.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
     :return: A pandas data frame containing session event metadata, sorted by time.
@@ -83,15 +83,17 @@ def csvdata(path, prefix=None, names=None, start=None, end=None):
         timefilter = None
 
     files = timebin_glob(path + "/**/" + prefix + "*.csv", timefilter)
-    data = pd.concat(
-        [pd.read_csv(file, header=None, names=names)
-         for file in files])
+    data = pd.concat([reader(file) for file in files])
     data['time'] = data['time'].apply(aeon)
     data.set_index('time', inplace=True)
 
     if timefilter is not None:
         return data.loc[start:end]
     return data
+
+def sessionreader(file):
+    """Reads session metadata from the specified file."""
+    return pd.read_csv(file, header=None, names=['time','id','weight','event'])
 
 def sessiondata(path, start=None, end=None):
     '''
@@ -103,12 +105,18 @@ def sessiondata(path, start=None, end=None):
     :param datetime, optional end: The right bound of the time range to extract.
     :return: A pandas data frame containing session event metadata, sorted by time.
     '''
-    return csvdata(
+    return load(
         path,
+        sessionreader,
         prefix='SessionData',
-        names=['time','id','weight','event'],
         start=start,
         end=end)
+
+def videoreader(file):
+    """Reads video metadata from the specified file."""
+    data = pd.read_csv(file, header=None, names=['time','hw_counter','hw_timestamp'])
+    data.insert(loc=1, column='frame', value=data.index)
+    return data
 
 def videodata(path, prefix=None, start=None, end=None):
     '''
@@ -116,14 +124,15 @@ def videodata(path, prefix=None, start=None, end=None):
     indicating synchronized trigger frame times for cameras in the Experiment 0 arena.
 
     :param str path: The root path where all the video data is stored.
+    :param str, optional prefix: The optional prefix used to search for video files.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
     :return: A pandas data frame containing frame event metadata, sorted by time.
     '''
-    return csvdata(
+    return load(
         path,
+        videoreader,
         prefix=prefix,
-        names=['time','frame','timestamp'],
         start=start,
         end=end)
 
