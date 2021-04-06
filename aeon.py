@@ -88,16 +88,15 @@ def load(path, reader, prefix=None, extension="*.csv", start=None, end=None):
 
     files = timebin_glob(path + "/**/" + prefix + extension, timefilter)
     data = pd.concat([reader(file) for file in files])
-    data['time'] = aeon(data['time'])
-    data.set_index('time', inplace=True)
-
     if timefilter is not None:
         return data.loc[start:end]
     return data
 
 def sessionreader(file):
     """Reads session metadata from the specified file."""
-    return pd.read_csv(file, header=None, names=['time','id','weight','event'])
+    data = pd.read_csv(file, header=None, names=['time','id','weight','event'])
+    data['time'] = aeon(data['time'])
+    data.set_index('time', inplace=True)
 
 def sessiondata(path, start=None, end=None):
     '''
@@ -121,6 +120,8 @@ def videoreader(file):
     """Reads video metadata from the specified file."""
     data = pd.read_csv(file, header=None, names=['time','hw_counter','hw_timestamp'])
     data.insert(loc=1, column='frame', value=data.index)
+    data['time'] = aeon(data['time'])
+    data.set_index('time', inplace=True)
     return data
 
 def videodata(path, prefix=None, start=None, end=None):
