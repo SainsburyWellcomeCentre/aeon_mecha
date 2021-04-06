@@ -205,6 +205,23 @@ def harpdata(path, device, register, names=None, start=None, end=None):
         start=start,
         end=end)
 
+def encoderdata(path, device='PatchEvents', start=None, end=None):
+    '''
+    Extracts all encoder data from the specified root path, sorted chronologically,
+    from the specified patch controller in the Experiment 0 arena.
+
+    :param str path: The root path where all the data is stored.
+    :param str device: The device name used to search for data files.
+    :param datetime, optional start: The left bound of the time range to extract.
+    :param datetime, optional end: The right bound of the time range to extract.
+    :return: A pandas data frame containing encoder data, sorted by time.
+    '''
+    return harpdata(
+        path,
+        device, register=90,
+        names=['angle', 'intensity'],
+        start=start, end=end)
+
 def distancetravelled(angle, radius=4.0):
     '''
     Calculates the total distance travelled on the wheel, by taking into account
