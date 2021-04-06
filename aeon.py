@@ -97,6 +97,7 @@ def sessionreader(file):
     data = pd.read_csv(file, header=None, names=['time','id','weight','event'])
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
+    return data
 
 def sessiondata(path, start=None, end=None):
     '''
