@@ -2,6 +2,7 @@ import os
 import glob
 import datetime
 import pandas as pd
+import numpy as np
 
 def aeon(seconds):
     """Converts a Harp timestamp, in seconds, to a datetime object."""
@@ -34,6 +35,8 @@ def timebin_range(start, end, binsize=3):
 def timebin_glob(pathname, timefilter=None):
     '''
     Returns a list of paths matching a filename pattern, with an optional time filter.
+    To use the time filter, files must conform to a naming convention where the timestamp
+    of each timebin is appended to the end of each file name.
 
     :param str pathname: The pathname pattern used to search for matching filenames.
     :param iterable or callable, optional timefilter:
@@ -64,7 +67,7 @@ def timebin_glob(pathname, timefilter=None):
         matches.append(file)
     return matches
 
-def load(path, reader, prefix=None, start=None, end=None):
+def load(path, reader, prefix=None, extension="*.csv", start=None, end=None):
     '''
     Extracts data from matching files in the specified root path, sorted chronologically,
     containing device and/or session metadata for the Experiment 0 arena. If no prefix is
@@ -72,7 +75,8 @@ def load(path, reader, prefix=None, start=None, end=None):
 
     :param str path: The root path where all the session data is stored.
     :param callable reader: A callable object used to load session metadata from a file.
-    :param str, optional prefix: The optional prefix used to search for session data files.
+    :param str, optional prefix: The optional pathname pattern used to search for data files.
+    :param str, optional extension: The optional extension pattern used to search for data files.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
     :return: A pandas data frame containing session event metadata, sorted by time.
@@ -82,7 +86,7 @@ def load(path, reader, prefix=None, start=None, end=None):
     else:
         timefilter = None
 
-    files = timebin_glob(path + "/**/" + prefix + "*.csv", timefilter)
+    files = timebin_glob(path + "/**/" + prefix + extension, timefilter)
     data = pd.concat([reader(file) for file in files])
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
@@ -109,6 +113,7 @@ def sessiondata(path, start=None, end=None):
         path,
         sessionreader,
         prefix='SessionData',
+        extension="*.csv",
         start=start,
         end=end)
 
@@ -133,6 +138,61 @@ def videodata(path, prefix=None, start=None, end=None):
         path,
         videoreader,
         prefix=prefix,
+        extension="*.csv",
+        start=start,
+        end=end)
+
+"""Maps Harp payload types to numpy data type objects."""
+payloadtypes = {
+    1 : np.dtype(np.uint8),
+    2 : np.dtype(np.uint16),
+    4 : np.dtype(np.uint32),
+    8 : np.dtype(np.uint64),
+    129 : np.dtype(np.int8),
+    130 : np.dtype(np.int16),
+    132 : np.dtype(np.int32),
+    136 : np.dtype(np.int64),
+    68 : np.dtype(np.float32)
+}
+
+def harpreader(file):
+    """Reads Harp data from the specified file."""
+    data = np.fromfile(file, dtype=np.uint8)
+    stride = data[1] + 2
+    length = len(data) // stride
+    payloadsize = stride - 12
+    payloadtype = payloadtypes[data[4] & ~0x10]
+    elementsize = payloadtype.itemsize
+    payloadshape = (length, payloadsize // elementsize)
+    seconds = np.ndarray(length, dtype=np.uint32, buffer=data, offset=5, strides=stride)
+    micros = np.ndarray(length, dtype=np.uint16, buffer=data, offset=9, strides=stride)
+    seconds = micros * 32e-6 + seconds
+    payload = np.ndarray(
+        payloadshape,
+        dtype=payloadtype,
+        buffer=data, offset=11,
+        strides=(stride, elementsize))
+    time = aeon(seconds)
+    time.name = 'time'
+    return pd.DataFrame(payload, index=time)
+
+def harpdata(path, device, register, start=None, end=None):
+    '''
+    Extracts all harp data from the specified root path, sorted chronologically,
+    for an individual register acquired from a device in the Experiment 0 arena.
+
+    :param str path: The root path where all the data is stored.
+    :param str device: The device name used to search for data files.
+    :param int register: The register number to extract data for.
+    :param datetime, optional start: The left bound of the time range to extract.
+    :param datetime, optional end: The right bound of the time range to extract.
+    :return: A pandas data frame containing harp event data, sorted by time.
+    '''
+    return load(
+        path,
+        harpreader,
+        prefix="{0}_{1}*".format(device, register),
+        extension="*.bin",
         start=start,
         end=end)
 
