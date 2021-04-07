@@ -27,5 +27,7 @@ for session in data.itertuples():                                 # for all sess
     fig = plt.figure()                                            # create figure
     ax = fig.add_subplot(1,1,1)                                   # with subplot
     distance.plot(ax=ax)                                          # plot distance travelled
+    ax.set_ylim(-1, 12000)                                        # set fixed scale range
+    ax.set_ylabel('distance (cm)')                                # set axis label
     fig.savefig('{0}_{1}.png'.format(session.id,start.date()))    # save figure tagged with id and date
     plt.close(fig)                                                # close figure
