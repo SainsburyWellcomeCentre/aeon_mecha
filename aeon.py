@@ -230,6 +230,27 @@ def encoderdata(path, device='PatchEvents', start=None, end=None):
         names=['angle', 'intensity'],
         start=start, end=end)
 
+def pelletdata(path, device='PatchEvents', start=None, end=None):
+    '''
+    Extracts all pellet event data from the specified root path, sorted chronologically,
+    indicating when delivery of a pellet was triggered and when pellets were detected
+    by the feeder beam break.
+
+    :param str path: The root path where all the session data is stored.
+    :param str device: The device name used to search for data files.
+    :param datetime, optional start: The left bound of the time range to extract.
+    :param datetime, optional end: The right bound of the time range to extract.
+    :return: A pandas data frame containing pellet event data, sorted by time.
+    '''
+    command = harpdata(path, device, register=35, names=['bitmask'], start=start, end=end)
+    beambreak = harpdata(path, device, register=32, names=['bitmask'], start=start, end=end)
+    command = command[command.bitmask == 0x80]
+    beambreak = beambreak[beambreak.bitmask == 0x20]
+    command['event'] = 'TriggerPellet'
+    beambreak['event'] = 'PelletDetected'
+    events = pd.concat([command.event, beambreak.event]).sort_index()
+    return pd.DataFrame(events)
+
 def patchreader(file):
     """Reads patch state metadata from the specified file."""
     data = pd.read_csv(file, header=None, names=['time','threshold'])
