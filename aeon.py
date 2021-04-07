@@ -157,6 +157,14 @@ payloadtypes = {
     68 : np.dtype(np.float32)
 }
 
+"""Map of Harp device registers used in the Experiment 0 arena."""
+harpregisters = {
+    { 'PatchEvents', 90 } : ['angle, intensity'], # wheel encoder
+    { 'PatchEvents', 35 } : ['bitmask'],          # trigger pellet delivery
+    { 'PatchEvents', 32 } : ['bitmask'],          # pellet detected by beam break
+    { 'VideoEvents', 68 } : ['pwm_mask'],         # camera trigger times (top and side)
+}
+
 def harpreader(file, names=None):
     '''
     Reads Harp data from the specified file.
