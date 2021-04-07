@@ -16,8 +16,6 @@ data = data[data.id.str.startswith('BAA')]                        # take only pr
 data = aeon.sessionduration(data)                                 # compute session duration
 print(data.groupby('id').apply(lambda g:g[:].drop('id', axis=1))) # print session summary grouped by id
 
-start_times = data.index                                          # get session start times
-end_times = start_times + data.duration.values                    # get session end times
 for session in data.itertuples():                                 # for all sessions
     print('{0} on {1}...'.format(session.id, session.Index))      # print progress report
     start = session.Index                                         # session start time is session index
