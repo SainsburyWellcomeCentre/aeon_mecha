@@ -222,6 +222,31 @@ def encoderdata(path, device='PatchEvents', start=None, end=None):
         names=['angle', 'intensity'],
         start=start, end=end)
 
+def patchreader(file):
+    """Reads patch state metadata from the specified file."""
+    data = pd.read_csv(file, header=None, names=['time','threshold'])
+    data['time'] = aeon(data['time'])
+    data.set_index('time', inplace=True)
+    return data
+
+def patchdata(path, start=None, end=None):
+    '''
+    Extracts all patch metadata from the specified root path, sorted chronologically,
+    indicating wheel threshold state changes in the Experiment 0 arena.
+
+    :param str path: The root path where all the session data is stored.
+    :param datetime, optional start: The left bound of the time range to extract.
+    :param datetime, optional end: The right bound of the time range to extract.
+    :return: A pandas data frame containing patch state metadata, sorted by time.
+    '''
+    return load(
+        path,
+        patchreader,
+        prefix='WheelThreshold',
+        extension="*.csv",
+        start=start,
+        end=end)
+
 def distancetravelled(angle, radius=4.0):
     '''
     Calculates the total distance travelled on the wheel, by taking into account
