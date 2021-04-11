@@ -14,7 +14,7 @@ def timebin(time, binsize=3):
     
     :param datetime or Series time: An object or series specifiying the measurement timestamps.
     :param int, optional binsize: The size of each time bin, in whole hours.
-    :return: A datetime object specifying the time bin for the measurement timestamp.
+    :return: A datetime object or series specifying the time bin for the measurement timestamp.
     '''
     if isinstance(time, pd.Series):
         hour = binsize * (time.dt.hour // binsize)
