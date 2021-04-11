@@ -159,10 +159,10 @@ payloadtypes = {
 
 """Map of Harp device registers used in the Experiment 0 arena."""
 harpregisters = {
-    { 'PatchEvents', 90 } : ['angle, intensity'], # wheel encoder
-    { 'PatchEvents', 35 } : ['bitmask'],          # trigger pellet delivery
-    { 'PatchEvents', 32 } : ['bitmask'],          # pellet detected by beam break
-    { 'VideoEvents', 68 } : ['pwm_mask'],         # camera trigger times (top and side)
+    ('PatchEvents', 90) : ['angle, intensity'], # wheel encoder
+    ('PatchEvents', 35) : ['bitmask'],          # trigger pellet delivery
+    ('PatchEvents', 32) : ['bitmask'],          # pellet detected by beam break
+    ('VideoEvents', 68) : ['pwm_mask'],         # camera trigger times (top and side)
 }
 
 def harpreader(file, names=None):
