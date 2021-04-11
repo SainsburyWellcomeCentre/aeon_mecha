@@ -12,12 +12,16 @@ def timebin(time, binsize=3):
     '''
     Returns the whole hour time bin for a measurement timestamp.
     
-    :param datetime time: A datetime object specifying a measurement timestamp.
+    :param datetime or Series time: An object or series specifiying the measurement timestamps.
     :param int, optional binsize: The size of each time bin, in whole hours.
     :return: A datetime object specifying the time bin for the measurement timestamp.
     '''
-    hour = binsize * (time.hour // binsize)
-    return datetime.datetime.combine(time.date(), datetime.time(hour=hour))
+    if isinstance(time, pd.Series):
+        hour = binsize * (time.dt.hour // binsize)
+        return pd.to_datetime(time.dt.date) + pd.to_timedelta(hour, 'h')
+    else:
+        hour = binsize * (time.hour // binsize)
+        return datetime.datetime.combine(time.date(), datetime.time(hour=hour))
 
 def timebin_range(start, end, binsize=3):
     '''
