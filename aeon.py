@@ -148,6 +148,31 @@ def videodata(path, prefix=None, start=None, end=None):
         start=start,
         end=end)
 
+def videoclip(path, prefix=None, start=None, end=None):
+    '''
+    Extracts information about a continuous segment of video, possibly stored across
+    multiple video files. For each video file covering the segment, a row is returned
+    containing the path, start frame, and duration of the segment stored in that file.
+
+    :param str path: The root path where all the video data is stored.
+    :param str, optional prefix: The optional prefix used to search for video files.
+    :param datetime, optional start: The left bound of the time range to extract.
+    :param datetime, optional end: The right bound of the time range to extract.
+    :return: A pandas data frame containing video clip storage information.
+    '''
+    framedata = load(
+        path,
+        lambda file: videoreader(file).assign(path=os.path.splitext(file)[0] + '.avi'),
+        prefix=prefix,
+        extension="*.csv",
+        start=start,
+        end=end)
+    videoclips = framedata.groupby('path')
+    startframe = videoclips.frame.min().rename('start')
+    duration = (videoclips.frame.max() - startframe).rename('duration')
+    return pd.concat([startframe, duration], axis=1)
+    
+
 """Maps Harp payload types to numpy data type objects."""
 payloadtypes = {
     1 : np.dtype(np.uint8),
@@ -316,16 +341,3 @@ def sessionduration(data):
     data['start_weight'] = start.weight
     data['end_weight'] = end.weight.values
     return data
-
-def videochunks(data):
-    '''
-    Computes start frame and duration for each timebin in the video data.
-
-    :param DataFrame data: A pandas data frame containing frame event metadata.
-    :return: A data frame containing start frame and duration of each timebin.
-    '''
-    timebins = timebin(data.index.to_series())
-    framebins = data.groupby(timebins)
-    startframe = framebins.frame.min().rename('start')
-    duration = (framebins.frame.max() - startframe).rename('duration')
-    return pd.concat([startframe, duration], axis=1)
