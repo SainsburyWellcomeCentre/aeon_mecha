@@ -316,3 +316,16 @@ def sessionduration(data):
     data['start_weight'] = start.weight
     data['end_weight'] = end.weight.values
     return data
+
+def videochunks(data):
+    '''
+    Computes start frame and duration for each timebin in the video data.
+
+    :param DataFrame data: A pandas data frame containing frame event metadata.
+    :return: A data frame containing start frame and duration of each timebin.
+    '''
+    timebins = timebin(data.index.to_series())
+    framebins = data.groupby(timebins)
+    startframe = framebins.frame.min().rename('start')
+    duration = (framebins.frame.max() - startframe).rename('duration')
+    return pd.concat([startframe, duration], axis=1)
