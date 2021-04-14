@@ -1,0 +1,19 @@
+# Users
+python>=3.9.4
+graphviz
+jupyter
+jupyterlab
+matplotlib
+numpy
+opencv-python
+pandas
+scikit-learn
+scipy
+seaborn
+
+# Developers (can be separated out in a `dev_req.txt` file in future)
+bandit
+black
+flake8
+pytest
+tox
