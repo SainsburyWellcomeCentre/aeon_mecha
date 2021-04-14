@@ -93,8 +93,11 @@ done
 
 # <s Create files.
 
+# Delete dir if exists and `no-clobber` is set to 0.
+[[ -d "${parent_dir}/${name}" ]] && [[ ! no_clobber_flag ]] \
+	&& rm -r "${parent_dir}/${name}"
 # Make and cd into project dir.
-mkdir "${parent_dir}/${name}"
+mkdir -p "${parent_dir}/${name}"
 cd "${parent_dir}/${name}"
 
 # Set default file list (regardless of programming language).
@@ -141,7 +144,7 @@ done
 file_list=($(printf "%s\n" "${file_list[@]}" | sort -u | tr '\n' ' '))
 # Create the files.
 for f in "${file_list[@]}"; do
-	cp null ${f}
+	[[ ! -f ${f} ]] && cp null ${f}
 	# Write a comment in each new file to ensure it's not empty.
 	printf "%s" "${comment_symbol}" >> ${f}
 done
