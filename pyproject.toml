@@ -1,5 +1,5 @@
 [project]
-name = "infer_pyproject"
+name = "data-management"
 version = "0.0.0"
 description = "Code for managing acquired data. Includes preprocessing, querying, and analysis modules."
 authors = ["Jai Bhagat jkbhagatio@gmail.com", "Goncalo Lopes <goncaloclopes@gmail.com>"]
