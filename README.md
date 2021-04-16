@@ -67,7 +67,6 @@ For more information on Pyenv and Poetry, see [this blog post](https://blog.jayw
 ### Set-up with Pip (python package manager) and Venv (python environment manager)
 
 It is assumed that you already have Python3.8.0 and Pip installed on your computer.
-
 	- On Windows:
 	1) Install virtualenv:
 	`python -m pip install virtualenv`
@@ -79,7 +78,6 @@ It is assumed that you already have Python3.8.0 and Pip installed on your comput
 	4) Using the virtual environment:
 	`.\aeon\Scripts\activate` activates the virtual environment.
 	`deactivate` deactivates the virtual environment.
-
 	- On MacOS and GNU/Linux:
 	1) Install virtualenv:
 	`python3 -m pip install virtualenv`
