@@ -68,29 +68,29 @@ For more information on Pyenv and Poetry, see [this blog post](https://blog.jayw
 
 It is assumed that you already have Python3.8.0 and Pip installed on your computer.
 
-- On Windows:
-	1) Install virtualenv:
-	`python -m pip install virtualenv`
-	2) Create virtual environment:
-	`python -m venv aeon`
-	3) Activate the virtual environment and install the code dependencies:
-	`.\aeon\Scripts\activate`
-	`python -m pip install -r requirements.txt`
-	4) Using the virtual environment:
-	`.\aeon\Scripts\activate` activates the virtual environment.
-	`deactivate` deactivates the virtual environment.
+On Windows:
+1) Install virtualenv:
+`python -m pip install virtualenv`
+2) Create virtual environment:
+`python -m venv aeon`
+3) Activate the virtual environment and install the code dependencies:
+`.\aeon\Scripts\activate`
+`python -m pip install -r requirements.txt`
+4) Using the virtual environment:
+`.\aeon\Scripts\activate` activates the virtual environment.
+`deactivate` deactivates the virtual environment.
 
-- On MacOS and GNU/Linux:
-	1) Install virtualenv:
-	`python3 -m pip install virtualenv`
-	2) Create virtual environment:
-	`python3 -m venv aeon`
-	3) Activate the virtual environment and install the code dependencies:
-	`source aeon/bin/activate`
-	`python3 -m pip install -r requirements.txt`
-	4) Using the virtual environment:
-	`source aeon/bin/activate` activates the virtual environment.
-	`deactivate` deactivates the virtual environment.
+On MacOS and GNU/Linux:
+1) Install virtualenv:
+`python3 -m pip install virtualenv`
+2) Create virtual environment:
+`python3 -m venv aeon`
+3) Activate the virtual environment and install the code dependencies:
+`source aeon/bin/activate`
+`python3 -m pip install -r requirements.txt`
+4) Using the virtual environment:
+`source aeon/bin/activate` activates the virtual environment.
+`deactivate` deactivates the virtual environment.
 
 ### General usage notes
 
