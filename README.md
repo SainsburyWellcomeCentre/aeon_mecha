@@ -9,6 +9,7 @@ For using this code on your local computer, we recommend following one of the th
 ## Prereqs
 
 - Install [git](https://git-scm.com/downloads)
+	- If you are not familiar with git, just confirm the default settings during installation.
 
 ## Set-up
 
@@ -17,25 +18,33 @@ For using this code on your local computer, we recommend following one of the th
 ```
 mkdir ~/ProjectAeon
 cd ~/ProjectAeon
-git clone https://github.com/ProjectAeon/data-management
+git clone https://github.com/ProjectAeon/aeon
 ```
 
-Make sure you stay in this directory regardless of which set-up instructions you follow below.
+**Ensure you stay in the parent `~/ProjectAeon` directory for the rest of the set-up instructions, regardless of which set-up procedure you follow below.**
 
 ### Set-up with Anaconda (all-in-one python distribution, version manager, environment manager, package manager, and package dependency manager)
 
 1) Install [Anaconda](https://www.anaconda.com/products/individual)
+	- If promped with an "Install for", select "Just Me" (instead of "All Users")
+	- Ensure installation is in your home directory:
+		- On Windows: `C:\Users\<your_username>\anaconda3`
+		- On GNU/Linux: `/home/anaconda3`
+		- On MacOS: `/Users/<your_name>/anaconda3`
+	- Ensure you add anaconda3 as a path environment variable (even if it says this option is not recommended)
+	- Ensure you do *not* register anaconda3 as the default version of Python.
+	- _Note_: These installation settings can always be changed posthoc.
 
 2) Create conda environment and install the code dependencies from the `env.yml` file:
-`conda create --file env.yml`
+`conda env create --file env.yml`
 
 3) Using the virtual environment:
 	- On Windows:
-	`conda activate aeon`: activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
-	`conda deactivate aeon`: deactivates the virtual environment.
+		- `conda activate aeon`: activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
+		- `conda deactivate aeon`: deactivates the virtual environment.
 	- On MacOS and GNU/Linux:
-	`conda source activate aeon`
-	`conda source deactivate aeon`
+		- `conda source activate aeon`
+		- `conda source deactivate aeon`
 
 ### Set-up with Pyenv (python version manager) and Poetry (python environment manager, package manager, and package dependency manager)
 
@@ -43,10 +52,11 @@ Make sure you stay in this directory regardless of which set-up instructions you
 	- For MacOS and GNU/Linux: `curl https://pyenv.run | bash`
 	- For Windows: Follow the installation instructions in the ['pyenv-win' github repo](https://github.com/pyenv-win/pyenv-win#installation), including the "Finish the installation" section.
 
-2) Install python3.8.0 with pyenv and set it as the default python version for this directory:
+2) Install python3.9.4 with pyenv, set it as the default python version for this directory, and rehash to ensure the shim for python3.9.4 has been properly set:
 ```
-pyenv install 3.8.0
-pyenv local 3.8.0
+pyenv install 3.9.4
+pyenv local 3.9.4
+pyenv rehash
 ```
 
 3) Install poetry:
@@ -54,7 +64,7 @@ pyenv local 3.8.0
 
 4) Call poetry to create a new virtual environment and install the code dependencies from the `pyproject.toml` and `poetry.lock` files: 
 ```
-poetry env use python3.8.0  # creates env
+poetry env use python3.9.4  # creates env
 poetry install              # installs deps into env
 ```
 
@@ -66,7 +76,7 @@ For more information on Pyenv and Poetry, see [this blog post](https://blog.jayw
 
 ### Set-up with Pip (python package manager) and Venv (python environment manager)
 
-It is assumed that you already have Python3.8.0 and Pip installed on your computer.
+It is assumed that you already have Python3.9.4 and Pip installed on your computer.
 
 On Windows:
 1) Install virtualenv:
@@ -96,11 +106,15 @@ On MacOS and GNU/Linux:
 
 - If using an IDE (e.g. Pycharm, VSCode, etc.), you will have to look up how to integrate the virtual environment (with whichever set-up option you followed) with the IDE. Usually this process is straightforward; information can be found with a web search and/or in the docs for the IDE.
 
+### Finalize set-up
+
+After you've finished creating your virtual environment with one of the three above set-up procedures, finalize your set-up by activating the environment and pip installing this repository as an editable package in the environment:
+
+`pip install --editable ./aeon`
+
 ## Repository Contents
 
 ## Todos
 
-- switch to python 3.9 when stable release is available via pyenv-win
-- specify settings for Anaconda on install
-- instructions for using on HPC
 - add to 'repository contents' section
+- instructions for using on HPC
