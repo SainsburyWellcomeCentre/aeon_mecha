@@ -102,15 +102,15 @@ On MacOS and GNU/Linux:
 `source aeon/bin/activate` activates the virtual environment.
 `deactivate` deactivates the virtual environment.
 
-### General usage notes
-
-- If using an IDE (e.g. Pycharm, VSCode, etc.), you will have to look up how to integrate the virtual environment (with whichever set-up option you followed) with the IDE. Usually this process is straightforward; information can be found with a web search and/or in the docs for the IDE.
-
 ### Finalize set-up
 
 After you've finished creating your virtual environment with one of the three above set-up procedures, finalize your set-up by activating the environment and pip installing this repository as an editable package in the environment:
 
 `pip install --editable ./aeon`
+
+### General usage notes
+
+- If using an IDE (e.g. Pycharm, VSCode, etc.), you will have to look up how to integrate the virtual environment (with whichever set-up option you followed) with the IDE. Usually this process is straightforward; information can be found with a web search and/or in the docs for the IDE.
 
 ## Repository Contents
 
