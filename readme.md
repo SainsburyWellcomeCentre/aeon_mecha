@@ -2,14 +2,14 @@
 
 Code for managing acquired data. Includes preprocessing, querying, and analysis modules.
 
+## Prereqs
+
+- Install [git.](https://git-scm.com/downloads)
+	- If you are not familiar with git, just confirm the default settings during installation.
+
 If using this code on SWC's HPC, ...
 
 For using this code on your local computer, we recommend following one of the three below procedures for setting up a virtual environment. All commands below should be run in a bash terminal (Windows users can use the 'mingw64' terminal that comes installed with git). The set-up tools mentioned below do some combination of python version, environment, package, and package dependency management. For basic information on the differences between these tools, see this [blog post](https://dev.to/bowmanjd/python-tools-for-managing-virtual-environments-3bko#hatch).
-
-## Prereqs
-
-- Install [git](https://git-scm.com/downloads)
-	- If you are not familiar with git, just confirm the default settings during installation.
 
 ## Set-up
 
@@ -25,14 +25,14 @@ git clone https://github.com/ProjectAeon/aeon
 
 ### Set-up with Anaconda (all-in-one python distribution, version manager, environment manager, package manager, and package dependency manager)
 
-1) Install [Anaconda](https://www.anaconda.com/products/individual)
-	- If promped with an "Install for", select "Just Me" (instead of "All Users")
+1) Install [Anaconda.](https://www.anaconda.com/products/individual)
+	- If prompted with an "Install for" screen, select "Just Me" (instead of "All Users").
 	- Ensure installation is in your home directory:
 		- On Windows: `C:\Users\<your_username>\anaconda3`
 		- On GNU/Linux: `/home/anaconda3`
-		- On MacOS: `/Users/<your_name>/anaconda3`
-	- Ensure you add anaconda3 as a path environment variable (even if it says this option is not recommended)
-	- Ensure you do *not* register anaconda3 as the default version of Python.
+		- On MacOS: `/Users/<your_username>/anaconda3`
+	- Ensure you add anaconda3 as a path environment variable (even if it says this option is not recommended).
+	- Ensure you do **not** register anaconda3 as the default version of Python.
 	- _Note_: These installation settings can always be changed posthoc.
 
 2) Create conda environment and install the code dependencies from the `env.yml` file:
