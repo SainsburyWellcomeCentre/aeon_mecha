@@ -5,18 +5,27 @@ Project Aeon's main repository for manipulating acquired data. Includes preproce
 ## Set-up on SWC's HPC
 
 0) ssh into the HPC GW1 node:
-`ssh <your_SWC_username>@ssh.swc.ucl.ac.uk`
-`ssh hpc-gw1`
+
+```
+ssh <your_SWC_username>@ssh.swc.ucl.ac.uk
+ssh hpc-gw1
+```
 
 1) Navigate to the `aeon` repository on the `/ceph` partition:
+
 `cd /ceph/aeon/aeon/code/ProjectAeon/aeon`
 
 2) Add miniconda to your system path and create the `aeon` python env from the `env.yml` file:
-`module load miniconda`
-`conda env create -f env.yml`
+
+```
+module load miniconda
+conda env create -f env.yml
+```
 
 3) Using the virtual environment:
+
 `conda activate aeon_env`: activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
+
 `conda deactivate aeon_env`: deactivates the virtual environment.
 
 ### Developing while on the HPC
@@ -58,12 +67,16 @@ git clone https://github.com/ProjectAeon/aeon
 	- _Note_: These installation settings can always be changed posthoc.
 
 2) Create conda environment and install the code dependencies from the `env.yml` file:
-`conda update conda`
-`conda init`
-`conda env create --file env.yml`
+```
+conda update conda
+conda init
+conda env create --file env.yml
+```
 
 3) Using the virtual environment:
+
 `conda activate aeon_env`: activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
+
 `conda deactivate aeon_env`: deactivates the virtual environment.
 
 ### Set-up with Pyenv (python version manager) and Poetry (python environment manager, package manager, and package dependency manager)
@@ -89,7 +102,9 @@ poetry install              # installs deps into env
 ```
 
 5) Using the virtual environment: 
+
 `poetry shell`: creates a new terminal in which the virtual environment is activated: any commands in this terminal will take place within the virtual environment.
+
 `exit`: deactivates the virtual environment and closes the poetry shell.
 
 For more information on Pyenv and Poetry, see [this blog post](https://blog.jayway.com/2019/12/28/pyenv-poetry-saviours-in-the-python-chaos/) and the more detailed [pyenv docs](https://github.com/pyenv/pyenv) and [poetry docs](https://python-poetry.org/docs/).
@@ -99,25 +114,33 @@ For more information on Pyenv and Poetry, see [this blog post](https://blog.jayw
 It is assumed that you already have Python3.9.4 and Pip installed on your computer.
 
 On Windows:
+
 1) Install virtualenv:
 `python -m pip install virtualenv`
+
 2) Create virtual environment:
 `python -m venv aeon`
+
 3) Activate the virtual environment and install the code dependencies:
 `.\aeon\Scripts\activate`
 `python -m pip install -r requirements.txt`
+
 4) Using the virtual environment:
 `.\aeon\Scripts\activate` activates the virtual environment.
 `deactivate` deactivates the virtual environment.
 
 On MacOS and GNU/Linux:
+
 1) Install virtualenv:
 `python3 -m pip install virtualenv`
+
 2) Create virtual environment:
 `python3 -m venv aeon`
+
 3) Activate the virtual environment and install the code dependencies:
 `source aeon/bin/activate`
 `python3 -m pip install -r requirements.txt`
+
 4) Using the virtual environment:
 `source aeon/bin/activate` activates the virtual environment.
 `deactivate` deactivates the virtual environment.
