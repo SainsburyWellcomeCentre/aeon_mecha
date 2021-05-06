@@ -30,6 +30,12 @@ conda env create -f env.yml
 
 ### Developing while on the HPC
 
+After you've finished creating the virtual environment, finalize the set-up by activating the environment and pip installing this repository as an editable package in the environment:
+```
+conda activate aeon_env
+pip install --editable .
+```
+
 1) Using PyCharm
 
 2) Using Jupyter
@@ -116,41 +122,55 @@ It is assumed that you already have Python3.9.4 and Pip installed on your comput
 On Windows:
 
 1) Install virtualenv:
+
 `python -m pip install virtualenv`
 
 2) Create virtual environment:
+
 `python -m venv aeon`
 
 3) Activate the virtual environment and install the code dependencies:
-`.\aeon\Scripts\activate`
-`python -m pip install -r requirements.txt`
+
+```
+.\aeon\Scripts\activate
+python -m pip install -r requirements.txt
+```
 
 4) Using the virtual environment:
+
 `.\aeon\Scripts\activate` activates the virtual environment.
+
 `deactivate` deactivates the virtual environment.
 
 On MacOS and GNU/Linux:
 
 1) Install virtualenv:
+
 `python3 -m pip install virtualenv`
 
 2) Create virtual environment:
+
 `python3 -m venv aeon`
 
 3) Activate the virtual environment and install the code dependencies:
+
 `source aeon/bin/activate`
+
 `python3 -m pip install -r requirements.txt`
 
 4) Using the virtual environment:
+
 `source aeon/bin/activate` activates the virtual environment.
+
 `deactivate` deactivates the virtual environment.
 
 ### Developing locally
 
 - After you've finished creating your virtual environment with one of the three above set-up procedures, finalize your set-up by activating the environment and pip installing this repository as an editable package in the environment:
-`conda activate aeon_env`
-`pip install --editable ./aeon`
-
+```
+conda activate aeon_env
+pip install --editable ./aeon
+```
 - If using an IDE (e.g. Pycharm, VSCode, etc.), you will have to look up how to integrate the virtual environment (with whichever set-up option you followed) with the IDE. Usually this process is straightforward; information can be found from a web search and/or in the docs for the IDE.
 
 ## Repository Contents
