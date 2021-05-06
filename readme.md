@@ -47,28 +47,6 @@ git clone https://github.com/ProjectAeon/aeon
 
 ### Set-up with Anaconda (all-in-one python distribution, version manager, environment manager, package manager, and package dependency manager)
 
-<<<<<<< HEAD
-1) Install [Anaconda.](https://www.anaconda.com/products/individual)
-	- If prompted with an "Install for" screen, select "Just Me" (instead of "All Users").
-	- Ensure installation is in your home directory:
-		- On Windows: `C:\Users\<your_username>\anaconda3`
-		- On GNU/Linux: `/home/anaconda3`
-		- On MacOS: `/Users/<your_username>/anaconda3`
-	- Ensure you add anaconda3 as a path environment variable (even if it says this option is not recommended).
-	- Ensure you do **not** register anaconda3 as the default version of Python.
-	- _Note_: These installation settings can always be changed posthoc.
-
-2) Create conda environment and install the code dependencies from the `env.yml` file:
-`conda env create --file env.yml`
-
-3) Using the virtual environment:
-	- On Windows:
-		- `conda activate aeon`: activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
-		- `conda deactivate aeon`: deactivates the virtual environment.
-	- On MacOS and GNU/Linux:
-		- `conda source activate aeon`
-		- `conda source deactivate aeon`
-=======
 1) Install [Anaconda](https://www.anaconda.com/products/individual)
 	- If prompted with an "Install for", select "Just Me" (instead of "All Users")
 	- Ensure installation is in your home directory:
@@ -87,7 +65,6 @@ git clone https://github.com/ProjectAeon/aeon
 3) Using the virtual environment:
 `conda activate aeon_env`: activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
 `conda deactivate aeon_env`: deactivates the virtual environment.
->>>>>>> doc
 
 ### Set-up with Pyenv (python version manager) and Poetry (python environment manager, package manager, and package dependency manager)
 
@@ -145,17 +122,6 @@ On MacOS and GNU/Linux:
 `source aeon/bin/activate` activates the virtual environment.
 `deactivate` deactivates the virtual environment.
 
-<<<<<<< HEAD
-### Finalize set-up
-
-After you've finished creating your virtual environment with one of the three above set-up procedures, finalize your set-up by activating the environment and pip installing this repository as an editable package in the environment:
-
-`pip install --editable ./aeon`
-
-### General usage notes
-
-- If using an IDE (e.g. Pycharm, VSCode, etc.), you will have to look up how to integrate the virtual environment (with whichever set-up option you followed) with the IDE. Usually this process is straightforward; information can be found with a web search and/or in the docs for the IDE.
-=======
 ### Developing locally
 
 - After you've finished creating your virtual environment with one of the three above set-up procedures, finalize your set-up by activating the environment and pip installing this repository as an editable package in the environment:
@@ -163,17 +129,10 @@ After you've finished creating your virtual environment with one of the three ab
 `pip install --editable ./aeon`
 
 - If using an IDE (e.g. Pycharm, VSCode, etc.), you will have to look up how to integrate the virtual environment (with whichever set-up option you followed) with the IDE. Usually this process is straightforward; information can be found from a web search and/or in the docs for the IDE.
->>>>>>> doc
 
 ## Repository Contents
 
 ## Todos
 
-<<<<<<< HEAD
-- add to 'repository contents' section
-- instructions for using on HPC
-=======
 - add to [repository contents](#repository-contents)
-
 - add to [developing while on the HPC](#developing-while-on-the-hpc)
->>>>>>> doc
