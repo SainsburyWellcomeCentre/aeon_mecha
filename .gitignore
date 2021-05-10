@@ -1,1 +1,8 @@
-#
+__pycache__/
+scratch/
+build/
+dist/
+*.egg-info/
+.idea/
+.vscode/
+*checkpoint.ipynb
