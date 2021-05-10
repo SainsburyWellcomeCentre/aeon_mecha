@@ -30,10 +30,10 @@ conda env create -f env.yml
 
 ### Developing while on the HPC
 
-After you've finished creating the virtual environment, finalize the set-up by activating the environment and pip installing this repository as an editable package in the environment:
+After you've finished creating the virtual environment, finalize the set-up by activating the environment and adding this repository to your python path within the environment:
 ```
 conda activate aeon_env
-pip install --editable .
+python setup.py develop
 ```
 
 1) Using PyCharm
@@ -50,15 +50,16 @@ pip install --editable .
 
 For using this code on your local computer, follow one of the three below procedures for setting up a virtual environment (we recommend the first option, using Anaconda and the conda package manager). All commands below should be run in a bash terminal (Windows users can use the 'mingw64' terminal that comes installed with git). The various set-up tools mentioned below do some combination of python version, environment, package, and package dependency management. For basic information on the differences between these tools, see this [blog post](https://dev.to/bowmanjd/python-tools-for-managing-virtual-environments-3bko#hatch).
 
-0) First create a 'ProjectAeon' directory in your home directory, and clone this repository there:
+0) First create a 'ProjectAeon' directory in your home directory, clone this repository there, and `cd` into the cloned directory:
 
 ```
 mkdir ~/ProjectAeon
 cd ~/ProjectAeon
 git clone https://github.com/ProjectAeon/aeon
+cd aeon
 ```
 
-**Ensure you stay in the parent `~/ProjectAeon` directory for the rest of the set-up instructions, regardless of which set-up procedure you follow below.**
+**Ensure you stay in the `~/ProjectAeon/aeon` directory for the rest of the set-up instructions, regardless of which set-up procedure you follow below.**
 
 ### Set-up with Anaconda (all-in-one python distribution, version manager, environment manager, package manager, and package dependency manager)
 
@@ -166,10 +167,10 @@ On MacOS and GNU/Linux:
 
 ### Developing locally
 
-- After you've finished creating your virtual environment with one of the three above set-up procedures, finalize your set-up by activating the environment and pip installing this repository as an editable package in the environment:
+- After you've finished creating your virtual environment with one of the three above set-up procedures, finalize your set-up by activating the environment and adding this repository to your python path within the environment:
 ```
 conda activate aeon_env
-pip install --editable ./aeon
+python setup.py develop
 ```
 - If using an IDE (e.g. Pycharm, VSCode, etc.), you will have to look up how to integrate the virtual environment (with whichever set-up option you followed) with the IDE. Usually this process is straightforward; information can be found from a web search and/or in the docs for the IDE.
 
