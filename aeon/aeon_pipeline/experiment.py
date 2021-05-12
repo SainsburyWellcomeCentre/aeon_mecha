@@ -15,7 +15,7 @@ class Experiment(dj.Manual):
     definition = """
     experiment_name: char(8)  # e.g exp0-a
     ---
-    experiment_start_time: datetime  # datetime of the start of this experiment
+    experiment_start_time: datetime(3)  # datetime of the start of this experiment
     experiment_description: varchar(1000)
     -> lab.Arena
     -> lab.Location  # lab/room where a particular experiment takes place
@@ -25,7 +25,7 @@ class Experiment(dj.Manual):
 @schema
 class Camera(dj.Manual):
     definition = """
-    -> experiment.Experiment
+    -> Experiment
     camera_name:            varchar(24)    # device type/function
     ---
     sampling_rate:          decimal(8, 4)  # sampling rate (Hz)
@@ -39,7 +39,7 @@ class Camera(dj.Manual):
 @schema
 class FoodPatch(dj.Manual):
     definition = """
-    -> experiment.Experiment
+    -> Experiment
     food_patch_name:            varchar(24)    # device type/function
     ---
     food_patch_position_x:      float          # (m) x-position, in the arena's coordinate frame
@@ -54,25 +54,53 @@ class FoodPatch(dj.Manual):
 @schema
 class DataCategory(dj.Lookup):
     definition = """
-    data_category: varchar(50)  
+    data_category: varchar(24)  
     ---
     category_description: varchar(500)  # Short description of dataset type
     """
     contents = [
         ['SessionMeta', 'Meta information of session'],
         ['VideoCamera', 'Data from camera'],
-        ['FoodPatch', 'Data from food patch']
+        ['VideoEvents', 'Events from video camera'],
+        ['PatchEvents', 'Events from food patch'],
+        ['Wheel', 'Events from wheel device'],
+        ['Audio', 'Audio data']
     ]
+
+    category_mapper = {'SessionData': 'SessionMeta',
+                       'PatchEvents': 'PatchEvents',
+                       'VideoEvents': 'VideoEvents',
+                       'FrameSide': 'VideoCamera',
+                       'FrameTop': 'VideoCamera',
+                       'WheelThreshold': 'Wheel',
+                       'AudioAmbient': 'Audio'}
+
+
+@schema
+class DataRepository(dj.Lookup):
+    definition = """
+    repository_name: varchar(16)
+    ---
+    repository_path: varchar(255)  # path to the data directory of this repository (posix path)
+    """
+
+    contents = [('ceph_aeon_test2', '/ceph/aeon/test2/data')]
 
 
 @schema
 class TimeBlock(dj.Manual):
     definition = """  # A recording period corresponds to an N-hour data acquisition
     -> Experiment
-    time_block_start: datetime  # datetime of the start of this recorded TimeBlock
+    time_block_start: datetime(3)  # datetime of the start of this recorded TimeBlock
     ---
-    time_block_end: datetime    # datetime of the end of this recorded TimeBlock
+    time_block_end: datetime(3)    # datetime of the end of this recorded TimeBlock
     """
+
+    class Subject(dj.Part):
+        definition = """  # the animal(s) present in the arena during this timeblock
+        -> master
+        -> subject.Subject
+        """
 
     class File(dj.Part):
         definition = """
@@ -81,7 +109,8 @@ class TimeBlock(dj.Manual):
         ---
         file_name: varchar(128)
         -> DataCategory
-        file_path: varchar(255)  # relative path of the file
+        -> DataRepository
+        file_path: varchar(255)  # path of the file, relative to the data repository
         """
 
 
@@ -108,9 +137,9 @@ class EventType(dj.Lookup):
     event_type: varchar(24)
     """
 
-    contents = zip([(0, 'food-drop'),
-                    (1, 'animal-enter'),
-                    (2, 'animal-exit')])
+    contents = [(0, 'food-drop'),
+                (1, 'animal-enter'),
+                (2, 'animal-exit')]
 
 
 @schema
@@ -124,7 +153,7 @@ class Event(dj.Imported):
     """
 
     class FoodPatch(dj.Part):
-        definition = """  # The food patch associated with a "food-drop" event 
+        definition = """  # The food patch associated with a food-drop event
         -> master
         ---
         -> FoodPatch

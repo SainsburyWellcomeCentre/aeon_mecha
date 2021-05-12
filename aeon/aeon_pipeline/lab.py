@@ -20,6 +20,9 @@ class Lab(dj.Lookup):
     time_zone       : varchar(64)
     """
 
+    contents = [('SWC', 'Sainsbury Wellcome Centre', 'University College London',
+                 '25 Howland Street London W1T 4JG', 'GMT+1')]
+
 
 @schema
 class Location(dj.Lookup):
@@ -30,6 +33,8 @@ class Location(dj.Lookup):
     ---
     location_description=''    : varchar(255)
     """
+
+    contents = [('SWC', 'room-0', 'room for experiment 0')]
 
 
 @schema
@@ -134,3 +139,6 @@ class Arena(dj.Lookup):
     arena_y_dim:    float # (m) y-dimension of the bounding box of this arena
     arena_z_dim=0:  float # (m) z-dimension of this arena (e.g. wall height)
     """
+
+    contents = [
+        ('circle-2m', 'circular arena with 2-meter diameter', 'circular', '2', '2', '0.2')]

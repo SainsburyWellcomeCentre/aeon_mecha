@@ -4,7 +4,7 @@ from . import experiment
 from . import get_schema_name
 
 
-schema = dj.schema(get_schema_name('experiment'))
+schema = dj.schema(get_schema_name('tracking'))
 
 
 @schema

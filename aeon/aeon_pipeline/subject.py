@@ -30,7 +30,7 @@ class Allele(dj.Lookup):
         definition = """
         -> master
         ---
-        -> Source
+        -> lab.Source
         source_identifier=''        : varchar(255)    # id inside the line provider
         source_url=''               : varchar(255)    # link to the line information
         expression_data_url=''      : varchar(255)    # link to the expression pattern from Allen institute brain atlas
