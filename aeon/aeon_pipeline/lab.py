@@ -141,4 +141,4 @@ class Arena(dj.Lookup):
     """
 
     contents = [
-        ('circle-2m', 'circular arena with 2-meter diameter', 'circular', '2', '2', '0.2')]
+        ('circle-2m', 'circular arena with 2-meter diameter', 'circular', 2, 2, 0.2)]

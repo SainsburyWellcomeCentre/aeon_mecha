@@ -1,4 +1,9 @@
 import datajoint as dj
+import datetime
+import pathlib
+import numpy as np
+
+from aeon.preprocess import exp0_api
 
 from . import lab, subject
 from . import get_schema_name
@@ -21,12 +26,18 @@ class Experiment(dj.Manual):
     -> lab.Location  # lab/room where a particular experiment takes place
     """
 
+    class Subject(dj.Part):
+        definition = """  # the subjects participating in this experiment
+        -> master
+        -> subject.Subject
+        """
+
 
 @schema
 class Camera(dj.Manual):
     definition = """
     -> Experiment
-    camera_name:            varchar(24)    # device type/function
+    camera:            varchar(24)    # device type/function
     ---
     sampling_rate:          decimal(8, 4)  # sampling rate (Hz)
     camera_position_x:      float          # (m) x-position, in the arena's coordinate frame
@@ -40,7 +51,7 @@ class Camera(dj.Manual):
 class FoodPatch(dj.Manual):
     definition = """
     -> Experiment
-    food_patch_name:            varchar(24)    # device type/function
+    food_patch:            varchar(24)    # device type/function
     ---
     food_patch_position_x:      float          # (m) x-position, in the arena's coordinate frame
     food_patch_position_y:      float          # (m) y-position, in the arena's coordinate frame
@@ -88,19 +99,13 @@ class DataRepository(dj.Lookup):
 
 
 @schema
-class TimeBlock(dj.Manual):
+class TimeBin(dj.Manual):
     definition = """  # A recording period corresponds to an N-hour data acquisition
     -> Experiment
-    time_block_start: datetime(3)  # datetime of the start of this recorded TimeBlock
+    time_bin_start: datetime(3)  # datetime of the start of this recorded TimeBin
     ---
-    time_block_end: datetime(3)    # datetime of the end of this recorded TimeBlock
+    time_bin_end: datetime(3)    # datetime of the end of this recorded TimeBin
     """
-
-    class Subject(dj.Part):
-        definition = """  # the animal(s) present in the arena during this timeblock
-        -> master
-        -> subject.Subject
-        """
 
     class File(dj.Part):
         definition = """
@@ -114,19 +119,107 @@ class TimeBlock(dj.Manual):
         """
 
 
+@schema
+class SubjectPassageEvent(dj.Imported):
+    definition = """
+    -> Experiment.Subject
+    passage_event: enum('enter', 'exit')
+    passage_time: datetime(3)  # datetime of subject entering/exiting the arena
+    ---
+    -> TimeBin  # the TimeBin where this entering/exiting event occur
+    """
+
+    _passage_event_mapper = {'Start': 'enter', 'End': 'exit'}
+
+    @property
+    def key_source(self):
+        return TimeBin - self
+
+    def make(self, key):
+        file_repo, file_path = (TimeBin.File * DataRepository
+                                & 'data_category = "SessionMeta"' & key).fetch1(
+            'repository_path', 'file_path')
+        sessiondata_file = pathlib.Path(file_repo) / file_path
+        sessiondata = exp0_api.sessionreader(sessiondata_file.as_posix())
+
+        self.insert({**key, 'subject': r.id,
+                     'passage_event': self._passage_event_mapper[r.event],
+                     'passage_time': r.name} for _, r in sessiondata.iterrows())
+
 # ------------------- SUBJECT PERIOD --------------------
 
 
 @schema
-class SubjectEpoch(dj.Manual):
+class SubjectEpoch(dj.Imported):
     definition = """
     # A short time-chunk (e.g. 30 seconds) of the recording of a given animal in the arena
-    -> subject.Subject
+    -> Experiment.Subject        # the subject in this Epoch
     epoch_start: datetime(3)  # datetime of the start of this Epoch
     ---
     epoch_end: datetime(3)    # datetime of the end of this Epoch
-    -> TimeBlock              # the TimeBlock containing this Epoch
+    -> TimeBin                # the TimeBin containing this Epoch
     """
+
+    _epoch_duration = datetime.timedelta(hours=0, minutes=30)
+
+    @property
+    def key_source(self):
+        """
+        A candidate TimeBin is to be processed only when
+          SubjectPassageEvent.populate() is completed
+          for all TimeBin occurred prior to this candidate TimeBin
+        """
+        prior_timebin = TimeBin.proj().aggr(
+            TimeBin.proj(tbin_start='time_bin_start'),
+            prior_timebin_count=('count(time_bin_start>tbin_start)'))
+        prior_passage_event = TimeBin.proj().aggr(
+            SubjectPassageEvent.proj(tbin_start='time_bin_start'),
+            prior_passage_event_count=('count(time_bin_start>tbin_start)'))
+        key_source = (Experiment.Subject
+                      * (TimeBin & (prior_timebin * prior_passage_event
+                                    & 'prior_passage_event_count >= prior_timebin_count')))
+
+        return key_source.proj() - self
+
+    def make(self, key):
+        file_repo, file_path = (TimeBin.File * DataRepository
+                                & 'data_category = "SessionMeta"' & key).fetch1(
+            'repository_path', 'file_path')
+        sessiondata_file = pathlib.Path(file_repo) / file_path
+        sessiondata = exp0_api.sessionreader(sessiondata_file.as_posix())
+        subject_sessiondata = sessiondata[sessiondata.id == key['subject']]
+
+        time_bin_start, time_bin_end = (TimeBin & key).fetch1(
+            'time_bin_start', 'time_bin_end')
+
+        # Loop through each epoch - insert the epoch if at least one condition is met:
+        # 1. if there's an entering or exiting event for the animal
+        # 2. if no event, insert if the most recent passage event before this epoch
+        #    (from SubjectPassageEvent) is `enter`
+
+        subject_epoch_list = []
+        epoch_start = time_bin_start
+        while epoch_start < time_bin_end:
+            epoch_end = epoch_start + self._epoch_duration
+
+            has_passage_event = np.any(
+                np.logical_and(subject_sessiondata.index >= epoch_start,
+                               subject_sessiondata.index < epoch_end))
+
+            if not has_passage_event:  # no entering/exiting event in this epoch
+                recent_event = (SubjectPassageEvent
+                                & {'subject': key['subject']}
+                                & f'passage_time < "{epoch_start}"').fetch(
+                    'passage_event', order_by='passage_time DESC', limit=1)
+                if not len(recent_event) or recent_event[0] != 'enter':  # most recent event is not "enter"
+                    epoch_start = epoch_end
+                    continue
+
+            subject_epoch_list.append({**key, 'epoch_start': epoch_start,
+                                       'epoch_end': epoch_end})
+            epoch_start = epoch_end
+
+        self.insert(subject_epoch_list)
 
 
 @schema
@@ -137,19 +230,17 @@ class EventType(dj.Lookup):
     event_type: varchar(24)
     """
 
-    contents = [(0, 'food-drop'),
-                (1, 'animal-enter'),
-                (2, 'animal-exit')]
+    contents = [(0, 'food-drop')]
 
 
 @schema
 class Event(dj.Imported):
-    definition = """  # events associated with a given animal in a given SubjectTimeBlock
+    definition = """  # events associated with a given animal in a given SubjectEpoch
     -> SubjectEpoch
     event_number: smallint
     ---
     -> EventType
-    event_time: decimal(8, 2)  # (s) event time w.r.t to the start of this TimeBlock
+    event_time: decimal(8, 2)  # (s) event time w.r.t to the start of this TimeBin
     """
 
     class FoodPatch(dj.Part):
