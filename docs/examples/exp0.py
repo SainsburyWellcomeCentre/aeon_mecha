@@ -1,9 +1,11 @@
-import aeon
 import datetime
+
 import matplotlib.pyplot as plt
 
+from aeon.query import exp0_api
+
 root = '/ceph/aeon/test2/data'
-data = aeon.sessiondata(root)
+data = exp0_api.sessiondata(root)
 
 # fill missing data (crash on the 3rd day due to storage overflow)
 oddsession = data[data.id == 'BAA-1099592'].iloc[4,:]             # take the start time of 3rd session
@@ -13,15 +15,15 @@ data.loc[oddsession.name] = oddsession                            # insert the n
 data.sort_index(inplace=True)                                     # sort chronologically
 
 data = data[data.id.str.startswith('BAA')]                        # take only proper sessions
-data = aeon.sessionduration(data)                                 # compute session duration
+data = exp0_api.sessionduration(data)                             # compute session duration
 print(data.groupby('id').apply(lambda g:g[:].drop('id', axis=1))) # print session summary grouped by id
 
 for session in data.itertuples():                                 # for all sessions
     print('{0} on {1}...'.format(session.id, session.Index))      # print progress report
     start = session.Index                                         # session start time is session index
     end = start + session.duration                                # end time = start time + duration
-    encoder = aeon.encoderdata(root, start=start, end=end)        # get encoder data between start and end
-    distance = aeon.distancetravelled(encoder.angle)              # compute total distance travelled
+    encoder = exp0_api.encoderdata(root, start=start, end=end)        # get encoder data between start and end
+    distance = exp0_api.distancetravelled(encoder.angle)              # compute total distance travelled
     fig = plt.figure()                                            # create figure
     ax = fig.add_subplot(1,1,1)                                   # with subplot
     distance.plot(ax=ax)                                          # plot distance travelled

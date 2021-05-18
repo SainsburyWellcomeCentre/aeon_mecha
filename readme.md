@@ -28,6 +28,10 @@ conda env create -f env.yml
 
 `conda deactivate aeon_env`: deactivates the virtual environment.
 
+4) (Optional) Add commands to `.profile` to add miniconda as an environment module and Bonsai and its dependencies to your system path on startup:
+
+Copy the `.profile` file in this repository to your home directory on the HPC.
+
 ### Developing while on the HPC
 
 After you've finished creating the virtual environment, finalize the set-up by activating the environment and adding this repository to your python path within the environment:
