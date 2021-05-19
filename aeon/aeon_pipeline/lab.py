@@ -131,7 +131,7 @@ class Arena(dj.Lookup):
     TODO: confirm/update this
     """
     definition = """
-    arena_name: varchar(64)  # unique name of the arena (e.g. circular_2m)
+    arena_name: varchar(32)  # unique name of the arena (e.g. circular_2m)
     ---
     arena_description='': varchar(1000)
     -> ArenaShape
@@ -142,3 +142,31 @@ class Arena(dj.Lookup):
 
     contents = [
         ('circle-2m', 'circular arena with 2-meter diameter', 'circular', 2, 2, 0.2)]
+
+
+# ------------------- EQUIPMENTS --------------------
+
+
+@schema
+class Camera(dj.Lookup):
+    definition = """  # Physical cameras, identified by unique serial number
+    camera_id: int
+    ---
+    camera_serial_number: varchar(36)
+    camera_description='': varchar(255)
+    """
+
+    contents = [(0, 'FrameTop', 'Overhead camera'),
+                (1, 'FrameSide', 'Side camera')]
+
+
+@schema
+class FoodPatch(dj.Lookup):
+    definition = """  # Physical food patch devices, identified by unique serial number
+    food_patch_id: int
+    ---
+    food_patch_serial_number: varchar(36)
+    food_patch_description: varchar(255)
+    """
+
+    contents = [(0, 'PatchEvents', '')]

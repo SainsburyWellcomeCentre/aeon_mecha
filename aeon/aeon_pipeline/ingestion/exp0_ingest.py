@@ -1,12 +1,4 @@
-import pathlib
-import datetime
-
-from aeon.aeon_pipeline import subject, experiment, paths
-
-# ---------------- Some constants -----------------
-
-root = pathlib.Path('/ceph/aeon/test2/data/2021-03-25T15-05-34')
-_bin_duration = datetime.timedelta(hours=3)
+from aeon.aeon_pipeline import subject, experiment
 
 
 # ---------------- Subject -----------------
@@ -30,63 +22,37 @@ experiment.Experiment.insert1({'experiment_name': 'exp0-r0',
 experiment.Experiment.Subject.insert([
     {'experiment_name': 'exp0-r0', 'subject': 'BAA-1099590'},
     {'experiment_name': 'exp0-r0', 'subject': 'BAA-1099591'},
-    {'experiment_name': 'exp0-r0', 'subject': 'BAA-1099592'}
-])
+    {'experiment_name': 'exp0-r0', 'subject': 'BAA-1099592'}])
+experiment.Experiment.Directory.insert1({'experiment_name': 'exp0-r0',
+                                         'repository_name': 'ceph_aeon_test2',
+                                         'directory_path': 'data/2021-03-25T15-05-34'})
+
+# ---------------- Equipment -----------------
+
+experiment.ExperimentCamera.insert([
+    {'experiment_name': 'exp0-r0', 'camera_id': 0,
+     'camera_installed_time': '2021-03-25 15-00-00', 'sampling_rate': 50},
+    {'experiment_name': 'exp0-r0', 'camera_id': 1,
+     'camera_installed_time': '2021-03-25 15-00-00', 'sampling_rate': 125}])
+
+experiment.ExperimentFoodPatch.insert([
+    {'experiment_name': 'exp0-r0', 'food_patch_id': 0,
+     'food_patch_installed_time': '2021-03-25 15-00-00'}])
+experiment.ExperimentFoodPatch.RemovalTime.insert([
+    {'experiment_name': 'exp0-r0', 'food_patch_id': 0,
+     'food_patch_installed_time': '2021-03-25 15-00-00',
+     'food_patch_removed_time': '2021-03-26 12:00:00'}])
+experiment.ExperimentFoodPatch.insert([
+    {'experiment_name': 'exp0-r0', 'food_patch_id': 0,
+     'food_patch_installed_time': '2021-03-26 12:00:00'}])
+
+# ---------------- Auto Ingestion -----------------
 
 
-# ---------------- TimeBin -----------------
-
-
-def generate_timebins(experiment_name, root_data_dir):
-    sessiondata_files = sorted(list(root.rglob('SessionData*.csv')))
-
-    time_bin_list, file_list = [], []
-    for sessiondata_file in sessiondata_files:
-        timebin_str = sessiondata_file.stem.split("_")[-1]
-        date_str, time_str = timebin_str.split("T")
-        time_bin_start = datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":"))
-        time_bin_end = time_bin_start + _bin_duration
-
-        # --- insert to TimeBin ---
-        time_bin_key = {'experiment_name': experiment_name,
-                        'time_bin_start': time_bin_start}
-
-        if time_bin_key in experiment.TimeBin.proj():
-            continue
-
-        time_bin_list.append({**time_bin_key,
-                              'time_bin_end': time_bin_end})
-
-        # -- files --
-        file_datetime_str = sessiondata_file.stem.replace('SessionData_', '')
-        files = list(pathlib.Path(sessiondata_file.parent).glob(f'*{file_datetime_str}*'))
-
-        repositories = {p: n for n, p in zip(*experiment.DataRepository.fetch(
-            'repository_name', 'repository_path'))}
-
-        data_root_dir = paths.find_root_directory(list(repositories.keys()), files[0])
-        repository_name = repositories[data_root_dir.as_posix()]
-        file_list.extend(
-            {**time_bin_key,
-             'file_number': f_idx,
-             'file_name': f.name,
-             'data_category': experiment.DataCategory.category_mapper[f.name.split('_')[0]],
-             'repository_name': repository_name,
-             'file_path': f.relative_to(data_root_dir).as_posix()}
-            for f_idx, f in enumerate(files))
-
-    # insert
-    print(f'Insert {len(time_bin_list)} new TimeBin')
-
-    with experiment.TimeBin.connection.transaction:
-        experiment.TimeBin.insert(time_bin_list)
-        experiment.TimeBin.File.insert(file_list)
-
-
-generate_timebins('exp0-r0', root)
-experiment.SubjectPassageEvent.populate()
+experiment.TimeBin.generate_timebins(experiment_name='exp0-r0')
+experiment.SubjectCrossingEvent.populate()
 experiment.SubjectEpoch.populate()
-
+experiment.FoodPatchEvent.populate()
 
 # ============ OLD =============
 
@@ -121,3 +87,23 @@ for session in data.itertuples():                                 # for all sess
     ax.set_ylabel('distance (cm)')                                # set axis label
     fig.savefig('{0}_{1}.png'.format(session.id,start.date()))    # save figure tagged with id and date
     plt.close(fig)                                                # close figure
+
+
+keys = (SubjectEpoch * TimeBin).fetch("KEY")
+key = keys[4]
+
+file_repo, file_path = (TimeBin.File * DataRepository
+                        & 'data_category = "SessionMeta"' & key).fetch1(
+    'repository_path', 'file_path')
+sessiondata_file = pathlib.Path(file_repo) / file_path
+
+root = sessiondata_file.parent
+
+start, end = (SubjectEpoch & key).fetch1('epoch_start', 'epoch_end')
+start = pd.Timestamp(start)
+end = pd.Timestamp(end)
+
+encoderdata = exp0_api.encoderdata(root.parent.as_posix(), start=start, end=end)
+pelletdata = exp0_api.pelletdata(root.parent.as_posix(), start=start, end=end)
+patchdata = exp0_api.patchdata(root.parent.as_posix(), start=start, end=end)
+videodata = exp0_api.videodata(root.parent.as_posix(), start=start, end=end, prefix='')
