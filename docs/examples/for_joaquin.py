@@ -11,8 +11,10 @@ files (they all contain 3 hours of video) in:
 '''
 
 import datetime
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
 from aeon.query import exp0_api
@@ -54,3 +56,15 @@ for i, session in enumerate(metadata.itertuples()):  # per session
     data[start]['pellet_delivered'] = \
         pellet_vals.query("event == 'PelletDetected'").index.to_numpy()
 
+# Sample position data (the associated videes file are the 'FrameTop.avi'
+# files in the same dirs).
+pos_data = \
+    pd.read_csv(Path('/ceph/aeon/aeon/preprocessing/experiment0/BAA'
+                     '-1099590/2021-03-25T15-16-18/FrameTop.csv'),
+                names=['X', 'Y', 'Orientation', 'MajorAxisLength',
+                       'MinoxAxisLength', 'Area'])
+pos_data2 = \
+    pd.read_csv(Path('/ceph/aeon/aeon/preprocessing/experiment0/BAA'
+                     '-1099590/2021-03-28T12-46-02/FrameTop.csv'),
+                names=['X', 'Y', 'Orientation', 'MajorAxisLength',
+                       'MinoxAxisLength', 'Area'])
