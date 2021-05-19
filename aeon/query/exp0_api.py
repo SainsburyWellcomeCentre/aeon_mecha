@@ -173,7 +173,10 @@ def videoclip(path, prefix=None, start=None, end=None):
     return pd.concat([startframe, duration], axis=1)
     
 
-"""Maps Harp payload types to numpy data type objects."""
+"""Maps Harp payload types to numpy data type objects. See:
+https://github.com/harp-tech/protocol/blob/master/Binary%20Protocol%201.0%201.1%
+2020180223.pdf
+"""
 payloadtypes = {
     1 : np.dtype(np.uint8),
     2 : np.dtype(np.uint16),

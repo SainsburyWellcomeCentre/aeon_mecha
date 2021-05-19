@@ -40,9 +40,11 @@ conda activate aeon_env
 python setup.py develop
 ```
 
-1) Using PyCharm
+1) Using Jupyter
 
-2) Using Jupyter
+2) Using PyCharm
+
+3) Using VSCode
 
 
 ## Set-up on a local computer
