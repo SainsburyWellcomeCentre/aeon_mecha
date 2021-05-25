@@ -18,11 +18,11 @@ class AnimalPosition(dj.Imported):
     definition = """
     -> experiment.SubjectEpoch
     ---
-    timestamps:        longblob  # (s) timestamps of the position data, w.r.t the start of the TimeBlock containing this Epoch
-    position_x:        longblob  # (m) animal's x-position, in the arena's coordinate frame
-    position_y:        longblob  # (m) animal's y-position, in the arena's coordinate frame
-    position_z=null:   longblob  # (m) animal's z-position, in the arena's coordinate frame
-    speed=null:        longblob  # (m/s) speed
+    timestamps:        longblob  # (datetime) timestamps of the position data
+    position_x:        longblob  # (mm) animal's x-position, in the arena's coordinate frame
+    position_y:        longblob  # (mm) animal's y-position, in the arena's coordinate frame
+    position_z=null:   longblob  # (mm) animal's z-position, in the arena's coordinate frame
+    speed=null:        longblob  # (mm/s) speed
     """
 
     def make(self, key):
@@ -84,20 +84,25 @@ class AnimalPosition(dj.Imported):
         self.insert1({**key,
                       'timestamps': timestamps,
                       'position_x': epoch_tracking.X.values,
-                      'position_y': epoch_tracking.Y.values})
+                      'position_y': epoch_tracking.Y.values,
+                      'position_z': np.full_like(epoch_tracking.X.values, 0.0)})
 
 
 @schema
 class EpochPosition(dj.Computed):
     definition = """  # All unique positions (x,y,z) of an animal in a given epoch
+    x: decimal(6, 2)
+    y: decimal(6, 2)
+    z: decimal(6, 2)
     -> AnimalPosition
-    x: decimal(5, 3)
-    y: decimal(5, 3)
-    z: decimal(5, 3)
     """
 
     def make(self, key):
-        unique_positions = set((AnimalPosition & key).fetch1(
-            'position_x', 'position_y', 'position_z'))
+        position_x, position_y, position_z = (AnimalPosition & key).fetch1(
+            'position_x', 'position_y', 'position_z')
+        unique_positions = set(list(zip(np.round(position_x, 2),
+                                        np.round(position_y, 2),
+                                        np.round(position_z, 2))))
         self.insert([{**key, 'x': x, 'y': y, 'z': z}
-                     for x, y, z in unique_positions])
+                     for x, y, z in unique_positions
+                     if not np.any(np.where(np.isnan([x, y, z])))])

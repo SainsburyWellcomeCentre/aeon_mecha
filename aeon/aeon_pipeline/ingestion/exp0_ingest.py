@@ -28,24 +28,35 @@ experiment.Experiment.Directory.insert1({'experiment_name': 'exp0-r0',
                                          'directory_path': 'data/2021-03-25T15-05-34'})
 
 # ---------------- Equipment -----------------
-
+# Two cameras: FrameTop and FrameSide
 experiment.ExperimentCamera.insert([
     {'experiment_name': 'exp0-r0', 'camera_id': 0,
      'camera_installed_time': '2021-03-25 15-00-00', 'sampling_rate': 50},
     {'experiment_name': 'exp0-r0', 'camera_id': 1,
      'camera_installed_time': '2021-03-25 15-00-00', 'sampling_rate': 125}])
 
+# Single foodpatch (id=0) removed and reinstalled
 experiment.ExperimentFoodPatch.insert([
     {'experiment_name': 'exp0-r0', 'food_patch_id': 0,
      'food_patch_installed_time': '2021-03-25 15-00-00'}])
+experiment.ExperimentFoodPatch.Position.insert([
+    {'experiment_name': 'exp0-r0', 'food_patch_id': 0,
+     'food_patch_installed_time': '2021-03-25 15-00-00',
+     'food_patch_position_x': 1,
+     'food_patch_position_y': 1}])
 experiment.ExperimentFoodPatch.RemovalTime.insert([
     {'experiment_name': 'exp0-r0', 'food_patch_id': 0,
      'food_patch_installed_time': '2021-03-25 15-00-00',
      'food_patch_removed_time': '2021-03-26 12:00:00'}])
+
 experiment.ExperimentFoodPatch.insert([
     {'experiment_name': 'exp0-r0', 'food_patch_id': 0,
      'food_patch_installed_time': '2021-03-26 12:00:00'}])
-
+experiment.ExperimentFoodPatch.Position.insert([
+    {'experiment_name': 'exp0-r0', 'food_patch_id': 0,
+     'food_patch_installed_time': '2021-03-26 12:00:00',
+     'food_patch_position_x': 1,
+     'food_patch_position_y': 1}])
 # ---------------- Auto Ingestion -----------------
 
 
@@ -54,3 +65,4 @@ experiment.SubjectCrossingEvent.populate()
 experiment.SubjectEpoch.populate()
 experiment.FoodPatchEvent.populate()
 tracking.AnimalPosition.populate()
+tracking.EpochPosition.populate()

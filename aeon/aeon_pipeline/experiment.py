@@ -93,6 +93,8 @@ class ExperimentCamera(dj.Manual):
 
     class Position(dj.Part):
         definition = """
+        -> master
+        ---
         camera_position_x: float    # (m) x-position, in the arena's coordinate frame
         camera_position_y: float    # (m) y-position, in the arena's coordinate frame
         camera_position_z=0: float  # (m) z-position, in the arena's coordinate frame
@@ -125,6 +127,8 @@ class ExperimentFoodPatch(dj.Manual):
 
     class Position(dj.Part):
         definition = """
+        -> master
+        ---
         food_patch_position_x: float    # (m) x-position, in the arena's coordinate frame
         food_patch_position_y: float    # (m) y-position, in the arena's coordinate frame
         food_patch_position_z=0: float  # (m) z-position, in the arena's coordinate frame
