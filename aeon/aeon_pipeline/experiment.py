@@ -218,8 +218,8 @@ class TimeBin(dj.Manual):
 class SubjectCrossingEvent(dj.Imported):
     definition = """  # Records of subjects entering/exiting the arena
     -> Experiment.Subject
-    passage_event: enum('enter', 'exit')
-    passage_time: datetime(3)  # datetime of subject entering/exiting the arena
+    crossing_event: enum('enter', 'exit')
+    crossing_time: datetime(3)  # datetime of subject entering/exiting the arena
     ---
     -> TimeBin  # the TimeBin where this entering/exiting event occur
     """
@@ -357,7 +357,7 @@ class FoodPatchEvent(dj.Imported):
         return removed_foodpatch.proj() + current_foodpatch.proj()
 
     def make(self, key):
-        start, end = (TimeBin & key).fetch1('time_bin_start', 'time_bin_end')
+        time_bin_start, time_bin_end = (TimeBin & key).fetch1('time_bin_start', 'time_bin_end')
         device_sn = (lab.FoodPatch * ExperimentFoodPatch & key).fetch1('food_patch_serial_number')
 
         file_repo, file_path = (TimeBin.File * DataRepository
@@ -368,7 +368,8 @@ class FoodPatchEvent(dj.Imported):
 
         pelletdata = exp0_api.pelletdata(data_dir.parent.as_posix(),
                                          device=device_sn,
-                                         start=pd.Timestamp(start), end=pd.Timestamp(end))
+                                         start=pd.Timestamp(time_bin_start),
+                                         end=pd.Timestamp(time_bin_end))
 
         event_code_mapper = {name: code for code, name
                              in zip(*EventType.fetch('event_code', 'event_type'))}
