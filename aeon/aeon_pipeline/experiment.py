@@ -106,6 +106,8 @@ class ExperimentCamera(dj.Manual):
     # class OpticalConfiguration(dj.Part):
     #     definition = """
     #     -> master
+    #     ---
+    #     calibration_factor: float  # px to mm
     #     """
 
     class RemovalTime(dj.Part):
