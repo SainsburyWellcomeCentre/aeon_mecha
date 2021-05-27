@@ -6,3 +6,5 @@ dist/
 .idea/
 .vscode/
 *checkpoint.ipynb
+*~
+*.swp
