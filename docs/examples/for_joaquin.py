@@ -10,7 +10,6 @@ files (they all contain 3 hours of video) in:
 /ceph/aeon/test2/data/2021-03-31T09-14-43/
 '''
 
-import datetime
 from pathlib import Path
 
 import numpy as np
