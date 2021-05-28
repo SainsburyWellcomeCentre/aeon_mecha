@@ -54,10 +54,10 @@ def main(argv):
     tf_absolute = session_start + datetime.timedelta(seconds=tf_relative)
     pellet_vals = exp0_api.pelletdata(root, start=t0_absolute, end=tf_absolute)
     pellets_times = pellet_vals.query("event == 'TriggerPellet'").index
-    pellets_seconds = (pellets_times-session_start).total_seconds()
+    pellets_seconds = (pellets_times-t0_absolute).total_seconds()
     time = np.arange(t0_relative, tf_relative, time_resolution)
     pellets_indices = (pellets_seconds/time_resolution).astype(int)
-    pellets_samples = np.zeros(time.shape, dtype=np.double)
+    pellets_samples = np.zeros(len(time), dtype=np.double)
     pellets_samples[pellets_indices] = 1.0
     win_length_samples = int(win_length_sec/time_resolution)
     reward_rate = aeon.signalProcessing.utils.moving_average(values=pellets_samples, N=win_length_samples)
