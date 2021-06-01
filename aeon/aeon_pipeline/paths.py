@@ -1,4 +1,21 @@
+import datajoint as dj
 import pathlib
+
+
+def get_repository_path(repository_name):
+    if 'repository_config' not in dj.config['custom']:
+        raise ValueError('Missing repository configuration ("repository_config") in "custom"')
+
+    repo_path = dj.config['custom']['repository_config'].get(repository_name)
+    if repo_path is None:
+        raise ValueError(f'Repository name not configured: {repository_name}')
+
+    repo_path = pathlib.Path(repo_path)
+
+    if not repo_path.exists():
+        raise FileNotFoundError(f'Repository path not found: {repo_path}')
+
+    return repo_path
 
 
 def find_root_directory(root_directories, full_path):
