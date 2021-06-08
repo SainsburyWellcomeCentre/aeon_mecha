@@ -7,5 +7,4 @@
 #SBATCH -o "slurm.%N.%j.out" # STDOUT
 #SBATCH -e slurm.%N.%j.err # STDERR
 
-cd ~/ProjectAeon/data-management
-python3 experiment0-videos.py
+python /ceph/aeon/aeon/code/ProjectAeon/aeon/aeon/preprocess/animal_position_tracking.py

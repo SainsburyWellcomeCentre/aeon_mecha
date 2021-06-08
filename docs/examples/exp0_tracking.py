@@ -1,10 +1,12 @@
 import os
-import aeon
+from pathlib import Path
 import datetime
 import subprocess
 
-rawdata = '/ceph/aeon/test2/data'
-preprocess = '/ceph/aeon/aeon/preprocess'
+from aeon.query import exp0_api
+
+exp0_raw_data = '/ceph/aeon/test2/data'
+preprocessing = '/ceph/aeon/aeon/preprocessing'
 output = os.path.expanduser('~/aeon/data/experiment0')
 bonsai = '/ceph/aeon/aeon/code/bonsai/Bonsai.Player/bin/Debug/net5.0/Bonsai.Player'
 tracking = 'tracking.bonsai'
