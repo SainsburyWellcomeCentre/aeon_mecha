@@ -11,7 +11,7 @@ def aeon(seconds):
 def timebin(time, binsize=3):
     '''
     Returns the whole hour time bin for a measurement timestamp.
-    
+
     :param datetime or Series time: An object or series specifiying the measurement timestamps.
     :param int, optional binsize: The size of each time bin, in whole hours.
     :return: A datetime object or series specifying the time bin for the measurement timestamp.
@@ -171,7 +171,7 @@ def videoclip(path, prefix=None, start=None, end=None):
     startframe = videoclips.frame.min().rename('start')
     duration = (videoclips.frame.max() - startframe).rename('duration')
     return pd.concat([startframe, duration], axis=1)
-    
+
 
 """Maps Harp payload types to numpy data type objects. See:
 https://github.com/harp-tech/protocol/blob/master/Binary%20Protocol%201.0%201.1%
@@ -200,7 +200,7 @@ harpregisters = {
 def harpreader(file, names=None):
     '''
     Reads Harp data from the specified file.
-    
+
     :param str file: The path to a Harp binary file.
     :param str or array-like names: The optional column labels to use for the data.
     :return: A pandas data frame containing harp event data, sorted by time.
@@ -344,3 +344,28 @@ def sessionduration(data):
     data['start_weight'] = start.weight
     data['end_weight'] = end.weight.values
     return data
+
+
+def bunch_data(exp=0, sessions='all',
+               data=['weight', 'position', 'wheel', 'food']):
+    '''
+    Converts all meaningful data into a nested dict whose top-level keys are
+    sessions.
+
+    Parameters
+    ----------
+    exp : float (optional)
+        The experiment number (`0` or `0.1`). (Default = 0)
+    sessions : string or list of strings (optional)
+        The sessions for the specified experiment (Default = all sessions).
+    data : list of strings (optional)
+        The data to return for the specified sessions. Each string element in
+        the list is one type of data. (Default = mouse weight, mouse position,
+        distance of wheel rotation, and food delivery data).
+
+    Returns
+    -------
+    data : dict
+        Contains all menaingful data from experiment sessions. Top-level keys
+        are sessions, nested keys are data names.
+    '''

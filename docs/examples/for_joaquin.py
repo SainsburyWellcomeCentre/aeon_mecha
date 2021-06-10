@@ -56,7 +56,7 @@ for i, session in enumerate(metadata.itertuples()):  # per session
     data[start]['pellet_delivered'] = \
         pellet_vals.query("event == 'PelletDetected'").index.to_numpy()
 
-# Sample position data (the associated videes file are the 'FrameTop.avi'
+# Sample position data (the associated video files are the 'FrameTop.avi'
 # files in the same dirs).
 pos_data = \
     pd.read_csv(Path('/ceph/aeon/aeon/preprocessing/experiment0/BAA'
