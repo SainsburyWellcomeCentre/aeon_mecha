@@ -4,7 +4,7 @@ import pathlib
 import numpy as np
 import pandas as pd
 
-from aeon.preprocess import exp0_api
+from aeon.preprocess import api as aeon_api
 
 from . import lab, subject
 from . import get_schema_name, paths
@@ -14,31 +14,6 @@ schema = dj.schema(get_schema_name('experiment'))
 
 
 # ------------------- DATASET ------------------------
-
-@schema
-class DataSource(dj.Lookup):
-    definition = """
-    data_source: varchar(24)  
-    ---
-    data_source_description: varchar(500)  # Short description of data source
-    """
-    contents = [
-        ['SessionMeta', 'Meta information of session'],
-        ['VideoCamera', 'Data from camera'],
-        ['VideoEvents', 'Events from video camera'],
-        ['PatchEvents', 'Events from food patch'],
-        ['Wheel', 'Events from wheel device'],
-        ['Audio', 'Audio data']
-    ]
-
-    source_mapper = {'SessionData': 'SessionMeta',
-                     'PatchEvents': 'PatchEvents',
-                     'VideoEvents': 'VideoEvents',
-                     'FrameSide': 'VideoCamera',
-                     'FrameTop': 'VideoCamera',
-                     'WheelThreshold': 'Wheel',
-                     'AudioAmbient': 'Audio'}
-
 
 @schema
 class PipelineRepository(dj.Lookup):
@@ -55,7 +30,7 @@ class PipelineRepository(dj.Lookup):
 @schema
 class Experiment(dj.Manual):
     definition = """
-    experiment_name: char(8)  # e.g exp0-a
+    experiment_name: char(12)  # e.g exp0-a
     ---
     experiment_start_time: datetime(3)  # datetime of the start of this experiment
     experiment_description: varchar(1000)
@@ -72,7 +47,7 @@ class Experiment(dj.Manual):
     class Directory(dj.Part):
         definition = """
         -> master
-        directory_type: enum('raw', 'preprocessing')
+        directory_type: enum('raw', 'preprocessing', 'analysis')
         ---
         -> PipelineRepository
         directory_path: varchar(255)
@@ -158,15 +133,12 @@ class TimeBin(dj.Manual):
     class File(dj.Part):
         definition = """
         -> master
-        file_number: tinyint
+        file_number: int
         ---
         file_name: varchar(128)
-        -> DataSource
         -> PipelineRepository
         file_path: varchar(255)  # path of the file, relative to the data repository
         """
-
-    _bin_duration = datetime.timedelta(hours=3)
 
     @classmethod
     def generate_timebins(cls, experiment_name):
@@ -176,34 +148,35 @@ class TimeBin(dj.Manual):
             'repository_name', 'directory_path')
         root = paths.get_repository_path(repo_name)
         raw_data_dir = root / path
-        sessiondata_files = sorted(list(raw_data_dir.rglob('SessionData*.csv')))
 
-        time_bin_list, file_list = [], []
-        for sessiondata_file in sessiondata_files:
+        time_bin_rep_file_str = 'FrameTop_'
+        time_bin_rep_files = sorted(list(raw_data_dir.rglob(f'{time_bin_rep_file_str}*.csv')))
+
+        time_bin_list, file_list, file_name_list = [], [], []
+        for time_bin_rep_file in time_bin_rep_files:
             time_bin_start = datetime.datetime.strptime(
-                sessiondata_file.stem.replace('SessionData_', ''), '%Y-%m-%dT%H-%M-%S')
-            time_bin_end = time_bin_start + cls._bin_duration
+                time_bin_rep_file.stem.replace(time_bin_rep_file_str, ''), '%Y-%m-%dT%H-%M-%S')
+            time_bin_end = time_bin_start + datetime.timedelta(hours=aeon_api.BIN_SIZE)
 
             # --- insert to TimeBin ---
             time_bin_key = {'experiment_name': experiment_name,
                             'time_bin_start': time_bin_start}
 
-            if time_bin_key in cls.proj():
+            if time_bin_key in cls.proj() or time_bin_rep_file.name in file_name_list:
                 continue
 
             time_bin_list.append({**time_bin_key,
                                   'time_bin_end': time_bin_end})
+            file_name_list.append(time_bin_rep_file.name)  # handle duplicated files in different folders - TODO: confirm why?
 
             # -- files --
-            file_datetime_str = sessiondata_file.stem.replace('SessionData_', '')
-            files = list(pathlib.Path(sessiondata_file.parent).glob(f'*{file_datetime_str}*'))
+            file_datetime_str = time_bin_rep_file.stem.replace(time_bin_rep_file_str, '')
+            files = list(pathlib.Path(raw_data_dir).rglob(f'*{file_datetime_str}*'))
 
             file_list.extend(
                 {**time_bin_key,
                  'file_number': f_idx,
                  'file_name': f.name,
-                 'data_source': DataSource.source_mapper[
-                     f.name.split('_')[0]],
                  'repository_name': repo_name,
                  'file_path': f.relative_to(root).as_posix()}
                 for f_idx, f in enumerate(files))
@@ -234,16 +207,61 @@ class SubjectEnterExit(dj.Imported):
         """
 
     def make(self, key):
-        repo_name, file_path = (TimeBin.File * PipelineRepository
-                                & 'data_source = "SessionMeta"' & key).fetch1(
-            'repository_name', 'file_path')
-        sessiondata_file = paths.get_repository_path(repo_name) / file_path
-        sessiondata = exp0_api.sessionreader(sessiondata_file.as_posix())
+        subject_list = (Experiment.Subject & key).fetch('subject')
+        time_bin_start, time_bin_end = (TimeBin & key).fetch1(
+            'time_bin_start', 'time_bin_end')
 
+        repo_name, path = (Experiment.Directory
+                           & 'directory_type = "raw"'
+                           & key).fetch1(
+            'repository_name', 'directory_path')
+        root = paths.get_repository_path(repo_name)
+        raw_data_dir = root / path
+        sessiondata = aeon_api.sessiondata(raw_data_dir.as_posix(),
+                                           start=pd.Timestamp(time_bin_start),
+                                           end=pd.Timestamp(time_bin_end))
         self.insert1(key)
         self.Time.insert({**key, 'subject': r.id,
                           'enter_exit_event': self._enter_exit_event_mapper[r.event],
-                          'enter_exit_time': r.name} for _, r in sessiondata.iterrows())
+                          'enter_exit_time': r.name} for _, r in sessiondata.iterrows()
+                         if r.id in subject_list)
+
+
+@schema
+class SubjectAnnotation(dj.Imported):
+    definition = """  # Experimenter's annotations 
+    -> TimeBin  
+    """
+
+    class Annotation(dj.Part):
+        definition = """
+        -> master
+        -> Experiment.Subject
+        annotation_time: datetime(3)  # datetime of the annotation
+        ---
+        annotation: varchar(1000)   
+        """
+
+    def make(self, key):
+        subject_list = (Experiment.Subject & key).fetch('subject')
+        time_bin_start, time_bin_end = (TimeBin & key).fetch1(
+            'time_bin_start', 'time_bin_end')
+
+        repo_name, path = (Experiment.Directory
+                           & 'directory_type = "raw"'
+                           & key).fetch1(
+            'repository_name', 'directory_path')
+        root = paths.get_repository_path(repo_name)
+        raw_data_dir = root / path
+        annotations = aeon_api.annotations(raw_data_dir.as_posix(),
+                                           start=pd.Timestamp(time_bin_start),
+                                           end=pd.Timestamp(time_bin_end))
+
+        self.insert1(key)
+        self.Time.insert({**key, 'subject': r.id,
+                          'annotation': r.annotation,
+                          'annotation_time': r.name} for _, r in annotations.iterrows()
+                         if r.id in subject_list)
 
 
 # ------------------- SUBJECT EPOCH --------------------
@@ -272,7 +290,7 @@ class Epoch(dj.Imported):
                                 & 'data_source = "SessionMeta"' & key).fetch1(
             'repository_name', 'file_path')
         sessiondata_file = paths.get_repository_path(repo_name) / file_path
-        sessiondata = exp0_api.sessionreader(sessiondata_file.as_posix())
+        sessiondata = aeon_api.sessionreader(sessiondata_file.as_posix())
         time_bin_start, time_bin_end = (TimeBin & key).fetch1(
             'time_bin_start', 'time_bin_end')
 
@@ -366,7 +384,7 @@ class FoodPatchEvent(dj.Imported):
                                 & key).fetch('repository_name', 'file_path', limit=1)
         data_dir = (paths.get_repository_path(repo_name[0]) / file_path[0]).parent
 
-        pelletdata = exp0_api.pelletdata(data_dir.parent.as_posix(),
+        pelletdata = aeon_api.pelletdata(data_dir.parent.as_posix(),
                                          device=device_sn,
                                          start=pd.Timestamp(time_bin_start),
                                          end=pd.Timestamp(time_bin_end))

@@ -4,7 +4,7 @@ import pandas as pd
 import datetime
 import numpy as np
 
-from aeon.preprocess import exp0_api
+from aeon.preprocess import api as aeon_api
 
 from . import experiment
 from . import get_schema_name, paths
@@ -22,6 +22,7 @@ class SubjectPosition(dj.Imported):
     position_x:        longblob  # (mm) animal's x-position, in the arena's coordinate frame
     position_y:        longblob  # (mm) animal's y-position, in the arena's coordinate frame
     position_z=null:   longblob  # (mm) animal's z-position, in the arena's coordinate frame
+    area=null:         longblob  # (mm^2) animal's size detected in the camera
     speed=null:        longblob  # (mm/s) speed
     """
 
@@ -44,7 +45,7 @@ class SubjectPosition(dj.Imported):
                                 & key).fetch('repository_name', 'file_path', limit=1)
         file_path = paths.get_repository_path(repo_name[0]) / file_path[0]
         # Retrieve FrameTop video timestamps for this TimeBin
-        video_timestamps = exp0_api.harpdata(file_path.parent.parent.as_posix(),
+        video_timestamps = aeon_api.harpdata(file_path.parent.parent.as_posix(),
                                              device='VideoEvents',
                                              register=68,
                                              start=pd.Timestamp(time_bin_start),
