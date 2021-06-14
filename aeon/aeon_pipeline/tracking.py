@@ -7,16 +7,16 @@ import numpy as np
 from aeon.preprocess import exp0_api
 
 from . import experiment
-from . import get_schema_name
+from . import get_schema_name, paths
 
 
 schema = dj.schema(get_schema_name('tracking'))
 
 
 @schema
-class AnimalPosition(dj.Imported):
+class SubjectPosition(dj.Imported):
     definition = """
-    -> experiment.SubjectEpoch
+    -> experiment.Epoch.Subject
     ---
     timestamps:        longblob  # (datetime) timestamps of the position data
     position_x:        longblob  # (mm) animal's x-position, in the arena's coordinate frame
@@ -26,17 +26,23 @@ class AnimalPosition(dj.Imported):
     """
 
     def make(self, key):
-        time_bin_start, time_bin_end = (experiment.TimeBin * experiment.SubjectEpoch
+        repo_name, preprocessing_path = (
+                experiment.Experiment.Directory
+                & key & 'directory_type = "preprocessing"').fetch1(
+            'repository_name', 'directory_path')
+        preprocess_dir = paths.get_repository_path(repo_name) / preprocessing_path
+
+        time_bin_start, time_bin_end = (experiment.TimeBin * experiment.Epoch.Subject
                                         & key).fetch1('time_bin_start', 'time_bin_end')
-        epoch_start, epoch_end = (experiment.SubjectEpoch & key).fetch1(
+        epoch_start, epoch_end = (experiment.Epoch.Subject & key).fetch1(
             'epoch_start', 'epoch_end')
 
-        file_repo, file_path = (experiment.TimeBin.File * experiment.DataRepository
-                                * experiment.SubjectEpoch
-                                & 'data_category = "VideoCamera"'
+        repo_name, file_path = (experiment.TimeBin.File * experiment.PipelineRepository
+                                * experiment.Epoch.Subject
+                                & 'data_source = "VideoCamera"'
                                 & 'file_name LIKE "FrameTop%.avi"'
-                                & key).fetch('repository_path', 'file_path', limit=1)
-        file_path = pathlib.Path(file_repo[0]) / file_path[0]
+                                & key).fetch('repository_name', 'file_path', limit=1)
+        file_path = paths.get_repository_path(repo_name[0]) / file_path[0]
         # Retrieve FrameTop video timestamps for this TimeBin
         video_timestamps = exp0_api.harpdata(file_path.parent.parent.as_posix(),
                                              device='VideoEvents',
@@ -45,9 +51,8 @@ class AnimalPosition(dj.Imported):
                                              end=pd.Timestamp(time_bin_end))
         video_timestamps = video_timestamps[video_timestamps[0] == 4]  # frametop timestamps
         # Read preprocessed position data for this TimeBin and animal
-        preprocess_dir = pathlib.Path('/ceph/aeon/aeon/preprocessing/experiment0') / key['subject']
         tracking_dfs = []
-        for frametop_csv in preprocess_dir.rglob('FrameTop.csv'):
+        for frametop_csv in (preprocess_dir / key['subject']).rglob('FrameTop.csv'):
             parent_timestamp = datetime.datetime.strptime(
                 frametop_csv.parent.name, '%Y-%m-%dT%H-%M-%S')
             if parent_timestamp < time_bin_start or parent_timestamp >= time_bin_end:
@@ -94,11 +99,11 @@ class EpochPosition(dj.Computed):
     x: decimal(6, 2)
     y: decimal(6, 2)
     z: decimal(6, 2)
-    -> AnimalPosition
+    -> SubjectPosition
     """
 
     def make(self, key):
-        position_x, position_y, position_z = (AnimalPosition & key).fetch1(
+        position_x, position_y, position_z = (SubjectPosition & key).fetch1(
             'position_x', 'position_y', 'position_z')
         unique_positions = set(list(zip(np.round(position_x, 2),
                                         np.round(position_y, 2),
