@@ -1,4 +1,5 @@
 from aeon.aeon_pipeline import subject, experiment, tracking
+from aeon.aeon_pipeline.ingestion import load_arena_setup
 
 
 # ============ Manuel and automatic steps to for experiment 0.1 ingestion ============
@@ -34,42 +35,16 @@ experiment.Experiment.Directory.insert1({'experiment_name': 'exp0.1-r0',
                                          'repository_name': 'ceph_aeon',
                                          'directory_path': 'test2/experiment0.1'})
 
-# ---------------- Equipment -----------------
-# Two cameras: FrameTop and FrameSide
-experiment.ExperimentCamera.insert([
-    {'experiment_name': 'exp0-r0', 'camera_id': 0,
-     'camera_install_time': '2021-03-25 15-00-00', 'sampling_rate': 50},
-    {'experiment_name': 'exp0-r0', 'camera_id': 1,
-     'camera_install_time': '2021-03-25 15-00-00', 'sampling_rate': 125}])
+# Arena Setup - Experiment Devices
+experiment_name = 'exp0.1-r0'
+yml_filepath = '/nfs/nhome/live/thinh/code/ProjectAeon/aeon/aeon/aeon_pipeline/ingestion/setup_yml/Experiment0.1.yml'
 
-# Single foodpatch (id=0) removed and reinstalled
-experiment.ExperimentFoodPatch.insert([
-    {'experiment_name': 'exp0-r0', 'food_patch_id': 0,
-     'food_patch_install_time': '2021-03-25 15-00-00'}])
-experiment.ExperimentFoodPatch.Position.insert([
-    {'experiment_name': 'exp0-r0', 'food_patch_id': 0,
-     'food_patch_install_time': '2021-03-25 15-00-00',
-     'food_patch_position_x': 1,
-     'food_patch_position_y': 1}])
-experiment.ExperimentFoodPatch.RemovalTime.insert([
-    {'experiment_name': 'exp0-r0', 'food_patch_id': 0,
-     'food_patch_install_time': '2021-03-25 15-00-00',
-     'food_patch_remove_time': '2021-03-26 12:00:00'}])
-
-experiment.ExperimentFoodPatch.insert([
-    {'experiment_name': 'exp0-r0', 'food_patch_id': 0,
-     'food_patch_install_time': '2021-03-26 12:00:00'}])
-experiment.ExperimentFoodPatch.Position.insert([
-    {'experiment_name': 'exp0-r0', 'food_patch_id': 0,
-     'food_patch_install_time': '2021-03-26 12:00:00',
-     'food_patch_position_x': 1,
-     'food_patch_position_y': 1}])
-
+load_arena_setup(yml_filepath, experiment_name)
 
 # ---------------- Auto Ingestion -----------------
 settings = {'suppress_errors': True}
 
-experiment.TimeBin.generate_timebins(experiment_name='exp0-r0')
+experiment.TimeBin.generate_timebins(experiment_name='exp0.1-r0')
 experiment.SubjectEnterExit.populate(**settings)
 experiment.SubjectAnnotation.populate(**settings)
 experiment.Epoch.populate(**settings)
