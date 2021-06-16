@@ -94,6 +94,9 @@ def load(path, reader, device, prefix=None, extension="*.csv", start=None, end=N
         prefix = ""
 
     files = timebin_glob(path + "/**/" + device + "/" + prefix + extension, timefilter)
+    if len(files) == 0:
+        return reader(None)
+
     data = pd.concat([reader(file) for file in files])
     if timefilter is not None:
         return data.loc[start:end]
@@ -101,7 +104,10 @@ def load(path, reader, device, prefix=None, extension="*.csv", start=None, end=N
 
 def sessionreader(file):
     """Reads session metadata from the specified file."""
-    data = pd.read_csv(file, header=None, skiprows=1, names=['time','id','weight','event'])
+    names = ['time','id','weight','event']
+    if file is None:
+        return pd.DataFrame(columns=names)
+    data = pd.read_csv(file, header=None, skiprows=1, names=names)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
     return data
@@ -127,12 +133,15 @@ def sessiondata(path, start=None, end=None):
 
 def annotationreader(file):
     """Reads session annotations from the specified file."""
+    names = ['time','id','annotation']
+    if file is None:
+        return pd.DataFrame(columns=names)
     data = pd.read_csv(
         file,
         header=None,
         skiprows=1,
         usecols=range(3),
-        names=['time','id','annotation'])
+        names=names)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
     return data
@@ -158,7 +167,10 @@ def annotations(path, start=None, end=None):
 
 def videoreader(file):
     """Reads video metadata from the specified file."""
-    data = pd.read_csv(file, header=0, skiprows=1, names=['time','hw_counter','hw_timestamp'])
+    names = ['time','hw_counter','hw_timestamp']
+    if file is None:
+        return pd.DataFrame(columns=names)
+    data = pd.read_csv(file, header=0, skiprows=1, names=names)
     data.insert(loc=1, column='frame', value=data.index)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
@@ -238,6 +250,8 @@ def harpreader(file, names=None):
     :param str or array-like names: The optional column labels to use for the data.
     :return: A pandas data frame containing harp event data, sorted by time.
     '''
+    if file is None:
+        return pd.DataFrame(columns=names)
     data = np.fromfile(file, dtype=np.uint8)
     stride = data[1] + 2
     length = len(data) // stride
@@ -319,7 +333,10 @@ def pelletdata(path, device, start=None, end=None):
 
 def patchreader(file):
     """Reads patch state metadata from the specified file."""
-    data = pd.read_csv(file, header=None, names=['time','threshold'])
+    names = ['time','threshold']
+    if file is None:
+        return pd.DataFrame(columns=names)
+    data = pd.read_csv(file, header=None, names=names)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
     return data
