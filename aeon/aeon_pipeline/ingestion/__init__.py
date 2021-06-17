@@ -27,11 +27,11 @@ def load_arena_setup(yml_filepath, experiment_name):
                     # If it is installed at the same time as that read from this yml file
                     # then it is the same ExperimentCamera instance, no need to do anything
                     continue
-                else:
-                    # ---- Remove old camera
-                    experiment.ExperimentCamera.RemovalTime.insert1({
-                        **current_camera_query.fetch1('KEY'),
-                        'camera_remove_time': arena_setup['start-time']})
+
+                # ---- Remove old camera
+                experiment.ExperimentCamera.RemovalTime.insert1({
+                    **current_camera_query.fetch1('KEY'),
+                    'camera_remove_time': arena_setup['start-time']})
 
             # ---- Install new camera
             experiment.ExperimentCamera.insert1(
@@ -48,9 +48,9 @@ def load_arena_setup(yml_filepath, experiment_name):
                  'camera_position_y': camera['position']['y'],
                  'camera_position_z': camera['position']['z']})
         # ---- Load food patches ----
-        for patch_idx, patch in enumerate(arena_setup['patches']):
+        for patch in arena_setup['patches']:
             # ---- Check if this is a new food patch, add to lab.FoodPatch if needed
-            patch_key = {'food_patch_serial_number': patch['serial-number'] or patch_idx}
+            patch_key = {'food_patch_serial_number': patch['serial-number'] or patch['port-name']}
             if patch_key not in lab.FoodPatch:
                 lab.FoodPatch.insert1(patch_key)
             # ---- Check if this food patch is currently installed - if so, remove it
@@ -63,11 +63,12 @@ def load_arena_setup(yml_filepath, experiment_name):
                     # If it is installed at the same time as that read from this yml file
                     # then it is the same ExperimentFoodPatch instance, no need to do anything
                     continue
-                else:
-                    # ---- Remove old food patch
-                    experiment.ExperimentFoodPatch.RemovalTime.insert1({
-                        **current_patch_query.fetch1('KEY'),
-                        'food_patch_remove_time': arena_setup['start-time']})
+
+                # ---- Remove old food patch
+                experiment.ExperimentFoodPatch.RemovalTime.insert1({
+                    **current_patch_query.fetch1('KEY'),
+                    'food_patch_remove_time': arena_setup['start-time']})
+
             # ---- Install new food patch
             experiment.ExperimentFoodPatch.insert1(
                 {**patch_key,

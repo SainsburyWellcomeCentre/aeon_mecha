@@ -415,11 +415,9 @@ class FoodPatchEvent(dj.Imported):
             else:
                 event_code_mapper = {name: code for code, name
                                      in zip(*EventType.fetch('event_code', 'event_type'))}
-                event_list = []
-                for r_idx, (r_time, r) in enumerate(pelletdata.iterrows()):
-                    event_list.append({**key, 'event_number': r_idx,
-                                       'event_time': r_time,
-                                       'event_code': event_code_mapper[r.event]})
+                event_list = [{**key, 'event_number': r_idx, 'event_time': r_time,
+                               'event_code': event_code_mapper[r.event]}
+                              for r_idx, (r_time, r) in enumerate(pelletdata.iterrows())]
 
         self.insert(event_list)
 

@@ -2,7 +2,7 @@ from aeon.aeon_pipeline import subject, experiment, tracking
 from aeon.aeon_pipeline.ingestion import load_arena_setup
 
 
-# ============ Manuel and automatic steps to for experiment 0.1 ingestion ============
+# ============ Manual and automatic steps to for experiment 0.1 ingestion ============
 
 
 # ---------------- Subject -----------------
