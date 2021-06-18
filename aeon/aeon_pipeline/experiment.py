@@ -228,12 +228,10 @@ class SubjectEnterExit(dj.Imported):
                                            end=pd.Timestamp(time_bin_end))
 
         self.insert1(key)
-
-        if len(sessiondata):
-            self.Time.insert({**key, 'subject': r.id,
-                              'enter_exit_event': self._enter_exit_event_mapper[r.event],
-                              'enter_exit_time': r.name} for _, r in sessiondata.iterrows()
-                             if r.id in subject_list)
+        self.Time.insert({**key, 'subject': r.id,
+                          'enter_exit_event': self._enter_exit_event_mapper[r.event],
+                          'enter_exit_time': r.name} for _, r in sessiondata.iterrows()
+                         if r.id in subject_list)
 
 
 @schema
@@ -268,12 +266,10 @@ class SubjectAnnotation(dj.Imported):
                                            end=pd.Timestamp(time_bin_end))
 
         self.insert1(key)
-
-        if len(annotations):
-            self.Annotation.insert({**key, 'subject': r.id,
-                                    'annotation': r.annotation,
-                                    'annotation_time': r.name} for _, r in annotations.iterrows()
-                                   if r.id in subject_list)
+        self.Annotation.insert({**key, 'subject': r.id,
+                                'annotation': r.annotation,
+                                'annotation_time': r.name} for _, r in annotations.iterrows()
+                               if r.id in subject_list)
 
 
 # ------------------- SUBJECT EPOCH --------------------
