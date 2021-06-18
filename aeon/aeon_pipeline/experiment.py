@@ -227,10 +227,9 @@ class SubjectEnterExit(dj.Imported):
                                            start=pd.Timestamp(time_bin_start),
                                            end=pd.Timestamp(time_bin_end))
 
-        if not len(sessiondata):
-            self.insert1(key)
-        else:
-            self.insert1(key)
+        self.insert1(key)
+
+        if len(sessiondata):
             self.Time.insert({**key, 'subject': r.id,
                               'enter_exit_event': self._enter_exit_event_mapper[r.event],
                               'enter_exit_time': r.name} for _, r in sessiondata.iterrows()
@@ -268,10 +267,9 @@ class SubjectAnnotation(dj.Imported):
                                            start=pd.Timestamp(time_bin_start),
                                            end=pd.Timestamp(time_bin_end))
 
-        if not len(annotations):
-            self.insert1(key)
-        else:
-            self.insert1(key)
+        self.insert1(key)
+
+        if len(annotations):
             self.Annotation.insert({**key, 'subject': r.id,
                                     'annotation': r.annotation,
                                     'annotation_time': r.name} for _, r in annotations.iterrows()
