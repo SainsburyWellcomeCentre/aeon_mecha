@@ -150,12 +150,12 @@ class Arena(dj.Lookup):
 @schema
 class Camera(dj.Lookup):
     definition = """  # Physical cameras, identified by unique serial number
-    camera_serial_number: int
+    camera_serial_number: varchar(12)
     """
 
 
 @schema
 class FoodPatch(dj.Lookup):
     definition = """  # Physical food patch devices, identified by unique serial number
-    food_patch_serial_number: int
+    food_patch_serial_number: varchar(12)
     """

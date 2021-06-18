@@ -222,18 +222,16 @@ class SubjectEnterExit(dj.Imported):
             'repository_name', 'directory_path')
         root = paths.get_repository_path(repo_name)
         raw_data_dir = root / path
-        try:
-            sessiondata = aeon_api.sessiondata(raw_data_dir.as_posix(),
-                                               start=pd.Timestamp(time_bin_start),
-                                               end=pd.Timestamp(time_bin_end))
-        except ValueError:
-            self.insert1(key)
-        else:
-            self.insert1(key)
-            self.Time.insert({**key, 'subject': r.id,
-                              'enter_exit_event': self._enter_exit_event_mapper[r.event],
-                              'enter_exit_time': r.name} for _, r in sessiondata.iterrows()
-                             if r.id in subject_list)
+
+        sessiondata = aeon_api.sessiondata(raw_data_dir.as_posix(),
+                                           start=pd.Timestamp(time_bin_start),
+                                           end=pd.Timestamp(time_bin_end))
+
+        self.insert1(key)
+        self.Time.insert({**key, 'subject': r.id,
+                          'enter_exit_event': self._enter_exit_event_mapper[r.event],
+                          'enter_exit_time': r.name} for _, r in sessiondata.iterrows()
+                         if r.id in subject_list)
 
 
 @schema
@@ -262,18 +260,16 @@ class SubjectAnnotation(dj.Imported):
             'repository_name', 'directory_path')
         root = paths.get_repository_path(repo_name)
         raw_data_dir = root / path
-        try:
-            annotations = aeon_api.annotations(raw_data_dir.as_posix(),
-                                               start=pd.Timestamp(time_bin_start),
-                                               end=pd.Timestamp(time_bin_end))
-        except ValueError:
-            self.insert1(key)
-        else:
-            self.insert1(key)
-            self.Annotation.insert({**key, 'subject': r.id,
-                                    'annotation': r.annotation,
-                                    'annotation_time': r.name} for _, r in annotations.iterrows()
-                                   if r.id in subject_list)
+
+        annotations = aeon_api.annotations(raw_data_dir.as_posix(),
+                                           start=pd.Timestamp(time_bin_start),
+                                           end=pd.Timestamp(time_bin_end))
+
+        self.insert1(key)
+        self.Annotation.insert({**key, 'subject': r.id,
+                                'annotation': r.annotation,
+                                'annotation_time': r.name} for _, r in annotations.iterrows()
+                               if r.id in subject_list)
 
 
 # ------------------- SUBJECT EPOCH --------------------
@@ -400,24 +396,20 @@ class FoodPatchEvent(dj.Imported):
         root = paths.get_repository_path(repo_name)
         raw_data_dir = root / path
 
-        try:
-            pelletdata = aeon_api.pelletdata(raw_data_dir.as_posix(),
-                                             device=food_patch_description,
-                                             start=pd.Timestamp(time_bin_start),
-                                             end=pd.Timestamp(time_bin_end))
-        except ValueError:
+        pelletdata = aeon_api.pelletdata(raw_data_dir.as_posix(),
+                                         device=food_patch_description,
+                                         start=pd.Timestamp(time_bin_start),
+                                         end=pd.Timestamp(time_bin_end))
+
+        if not len(pelletdata):
             event_list = [{**key, 'event_number': 0,
                            'event_time': time_bin_start, 'event_code': 1000}]
         else:
-            if not len(pelletdata):
-                event_list = [{**key, 'event_number': 0,
-                               'event_time': time_bin_start, 'event_code': 1000}]
-            else:
-                event_code_mapper = {name: code for code, name
-                                     in zip(*EventType.fetch('event_code', 'event_type'))}
-                event_list = [{**key, 'event_number': r_idx, 'event_time': r_time,
-                               'event_code': event_code_mapper[r.event]}
-                              for r_idx, (r_time, r) in enumerate(pelletdata.iterrows())]
+            event_code_mapper = {name: code for code, name
+                                 in zip(*EventType.fetch('event_code', 'event_type'))}
+            event_list = [{**key, 'event_number': r_idx, 'event_time': r_time,
+                           'event_code': event_code_mapper[r.event]}
+                          for r_idx, (r_time, r) in enumerate(pelletdata.iterrows())]
 
         self.insert(event_list)
 
