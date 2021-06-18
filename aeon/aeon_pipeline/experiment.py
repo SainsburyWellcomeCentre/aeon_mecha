@@ -4,7 +4,7 @@ import pathlib
 import numpy as np
 import pandas as pd
 
-from aeon.preprocess import exp0_api
+from aeon.preprocess import api as aeon_api
 
 from . import lab, subject
 from . import get_schema_name, paths
@@ -14,31 +14,6 @@ schema = dj.schema(get_schema_name('experiment'))
 
 
 # ------------------- DATASET ------------------------
-
-@schema
-class DataSource(dj.Lookup):
-    definition = """
-    data_source: varchar(24)  
-    ---
-    data_source_description: varchar(500)  # Short description of data source
-    """
-    contents = [
-        ['SessionMeta', 'Meta information of session'],
-        ['VideoCamera', 'Data from camera'],
-        ['VideoEvents', 'Events from video camera'],
-        ['PatchEvents', 'Events from food patch'],
-        ['Wheel', 'Events from wheel device'],
-        ['Audio', 'Audio data']
-    ]
-
-    source_mapper = {'SessionData': 'SessionMeta',
-                     'PatchEvents': 'PatchEvents',
-                     'VideoEvents': 'VideoEvents',
-                     'FrameSide': 'VideoCamera',
-                     'FrameTop': 'VideoCamera',
-                     'WheelThreshold': 'Wheel',
-                     'AudioAmbient': 'Audio'}
-
 
 @schema
 class PipelineRepository(dj.Lookup):
@@ -55,7 +30,7 @@ class PipelineRepository(dj.Lookup):
 @schema
 class Experiment(dj.Manual):
     definition = """
-    experiment_name: char(8)  # e.g exp0-a
+    experiment_name: char(12)  # e.g exp0-a
     ---
     experiment_start_time: datetime(3)  # datetime of the start of this experiment
     experiment_description: varchar(1000)
@@ -72,7 +47,7 @@ class Experiment(dj.Manual):
     class Directory(dj.Part):
         definition = """
         -> master
-        directory_type: enum('raw', 'preprocessing')
+        directory_type: enum('raw', 'preprocessing', 'analysis')
         ---
         -> PipelineRepository
         directory_path: varchar(255)
@@ -87,6 +62,7 @@ class ExperimentCamera(dj.Manual):
     -> lab.Camera
     camera_install_time: datetime(3)   # time of the camera placed and started operation at this position
     ---
+    camera_description: varchar(36)    
     sampling_rate: float  # (Hz) sampling rate
     """
 
@@ -97,9 +73,9 @@ class ExperimentCamera(dj.Manual):
         camera_position_x: float    # (m) x-position, in the arena's coordinate frame
         camera_position_y: float    # (m) y-position, in the arena's coordinate frame
         camera_position_z=0: float  # (m) z-position, in the arena's coordinate frame
-        camera_rotation_x: float    # 
-        camera_rotation_y: float    # 
-        camera_rotation_z: float    # 
+        camera_rotation_x=null: float    # 
+        camera_rotation_y=null: float    # 
+        camera_rotation_z=null: float    # 
         """
 
     # class OpticalConfiguration(dj.Part):
@@ -124,6 +100,8 @@ class ExperimentFoodPatch(dj.Manual):
     -> Experiment
     -> lab.FoodPatch
     food_patch_install_time: datetime(3)   # time of the food_patch placed and started operation at this position
+    ---
+    food_patch_description: varchar(36)
     """
 
     class Position(dj.Part):
@@ -158,52 +136,52 @@ class TimeBin(dj.Manual):
     class File(dj.Part):
         definition = """
         -> master
-        file_number: tinyint
+        file_number: int
         ---
         file_name: varchar(128)
-        -> DataSource
         -> PipelineRepository
         file_path: varchar(255)  # path of the file, relative to the data repository
         """
 
-    _bin_duration = datetime.timedelta(hours=3)
-
     @classmethod
     def generate_timebins(cls, experiment_name):
+        assert Experiment & {'experiment_name': experiment_name}, f'Experiment {experiment_name} does not exist!'
+
         repo_name, path = (Experiment.Directory
                            & {'experiment_name': experiment_name}
                            & 'directory_type = "raw"').fetch1(
             'repository_name', 'directory_path')
         root = paths.get_repository_path(repo_name)
         raw_data_dir = root / path
-        sessiondata_files = sorted(list(raw_data_dir.rglob('SessionData*.csv')))
 
-        time_bin_list, file_list = [], []
-        for sessiondata_file in sessiondata_files:
+        time_bin_rep_file_str = 'FrameTop_'
+        time_bin_rep_files = sorted(list(raw_data_dir.rglob(f'{time_bin_rep_file_str}*.csv')))
+
+        time_bin_list, file_list, file_name_list = [], [], []
+        for time_bin_rep_file in time_bin_rep_files:
             time_bin_start = datetime.datetime.strptime(
-                sessiondata_file.stem.replace('SessionData_', ''), '%Y-%m-%dT%H-%M-%S')
-            time_bin_end = time_bin_start + cls._bin_duration
+                time_bin_rep_file.stem.replace(time_bin_rep_file_str, ''), '%Y-%m-%dT%H-%M-%S')
+            time_bin_end = time_bin_start + datetime.timedelta(hours=aeon_api.BIN_SIZE)
 
             # --- insert to TimeBin ---
             time_bin_key = {'experiment_name': experiment_name,
                             'time_bin_start': time_bin_start}
 
-            if time_bin_key in cls.proj():
+            if time_bin_key in cls.proj() or time_bin_rep_file.name in file_name_list:
                 continue
 
             time_bin_list.append({**time_bin_key,
                                   'time_bin_end': time_bin_end})
+            file_name_list.append(time_bin_rep_file.name)  # handle duplicated files in different folders - TODO: confirm why?
 
             # -- files --
-            file_datetime_str = sessiondata_file.stem.replace('SessionData_', '')
-            files = list(pathlib.Path(sessiondata_file.parent).glob(f'*{file_datetime_str}*'))
+            file_datetime_str = time_bin_rep_file.stem.replace(time_bin_rep_file_str, '')
+            files = list(pathlib.Path(raw_data_dir).rglob(f'*{file_datetime_str}*'))
 
             file_list.extend(
                 {**time_bin_key,
                  'file_number': f_idx,
                  'file_name': f.name,
-                 'data_source': DataSource.source_mapper[
-                     f.name.split('_')[0]],
                  'repository_name': repo_name,
                  'file_path': f.relative_to(root).as_posix()}
                 for f_idx, f in enumerate(files))
@@ -234,16 +212,68 @@ class SubjectEnterExit(dj.Imported):
         """
 
     def make(self, key):
-        repo_name, file_path = (TimeBin.File * PipelineRepository
-                                & 'data_source = "SessionMeta"' & key).fetch1(
-            'repository_name', 'file_path')
-        sessiondata_file = paths.get_repository_path(repo_name) / file_path
-        sessiondata = exp0_api.sessionreader(sessiondata_file.as_posix())
+        subject_list = (Experiment.Subject & key).fetch('subject')
+        time_bin_start, time_bin_end = (TimeBin & key).fetch1(
+            'time_bin_start', 'time_bin_end')
 
-        self.insert1(key)
-        self.Time.insert({**key, 'subject': r.id,
-                          'enter_exit_event': self._enter_exit_event_mapper[r.event],
-                          'enter_exit_time': r.name} for _, r in sessiondata.iterrows())
+        repo_name, path = (Experiment.Directory
+                           & 'directory_type = "raw"'
+                           & key).fetch1(
+            'repository_name', 'directory_path')
+        root = paths.get_repository_path(repo_name)
+        raw_data_dir = root / path
+        try:
+            sessiondata = aeon_api.sessiondata(raw_data_dir.as_posix(),
+                                               start=pd.Timestamp(time_bin_start),
+                                               end=pd.Timestamp(time_bin_end))
+        except ValueError:
+            self.insert1(key)
+        else:
+            self.insert1(key)
+            self.Time.insert({**key, 'subject': r.id,
+                              'enter_exit_event': self._enter_exit_event_mapper[r.event],
+                              'enter_exit_time': r.name} for _, r in sessiondata.iterrows()
+                             if r.id in subject_list)
+
+
+@schema
+class SubjectAnnotation(dj.Imported):
+    definition = """  # Experimenter's annotations 
+    -> TimeBin  
+    """
+
+    class Annotation(dj.Part):
+        definition = """
+        -> master
+        -> Experiment.Subject
+        annotation_time: datetime(3)  # datetime of the annotation
+        ---
+        annotation: varchar(1000)   
+        """
+
+    def make(self, key):
+        subject_list = (Experiment.Subject & key).fetch('subject')
+        time_bin_start, time_bin_end = (TimeBin & key).fetch1(
+            'time_bin_start', 'time_bin_end')
+
+        repo_name, path = (Experiment.Directory
+                           & 'directory_type = "raw"'
+                           & key).fetch1(
+            'repository_name', 'directory_path')
+        root = paths.get_repository_path(repo_name)
+        raw_data_dir = root / path
+        try:
+            annotations = aeon_api.annotations(raw_data_dir.as_posix(),
+                                               start=pd.Timestamp(time_bin_start),
+                                               end=pd.Timestamp(time_bin_end))
+        except ValueError:
+            self.insert1(key)
+        else:
+            self.insert1(key)
+            self.Annotation.insert({**key, 'subject': r.id,
+                                    'annotation': r.annotation,
+                                    'annotation_time': r.name} for _, r in annotations.iterrows()
+                                   if r.id in subject_list)
 
 
 # ------------------- SUBJECT EPOCH --------------------
@@ -252,7 +282,7 @@ class SubjectEnterExit(dj.Imported):
 @schema
 class Epoch(dj.Imported):
     definition = """
-    -> TimeBin
+    -> SubjectEnterExit
     """
 
     class Subject(dj.Part):
@@ -268,19 +298,16 @@ class Epoch(dj.Imported):
     _epoch_duration = datetime.timedelta(hours=0, minutes=0, seconds=30)
 
     def make(self, key):
-        repo_name, file_path = (TimeBin.File * PipelineRepository
-                                & 'data_source = "SessionMeta"' & key).fetch1(
-            'repository_name', 'file_path')
-        sessiondata_file = paths.get_repository_path(repo_name) / file_path
-        sessiondata = exp0_api.sessionreader(sessiondata_file.as_posix())
         time_bin_start, time_bin_end = (TimeBin & key).fetch1(
             'time_bin_start', 'time_bin_end')
 
         subject_epoch_list = []
         for subject_key in (Experiment.Subject & key).fetch('KEY'):
-            subject_sessiondata = sessiondata[sessiondata.id == subject_key['subject']]
+            subject_enter_exit_events = (SubjectEnterExit.Time
+                                         & subject_key
+                                         & f'enter_exit_time BETWEEN "{time_bin_start}" and "{time_bin_end}"')
 
-            if not len(subject_sessiondata):
+            if not subject_enter_exit_events:
                 continue
 
             # Loop through each epoch - insert the epoch if at least one condition is met:
@@ -291,16 +318,21 @@ class Epoch(dj.Imported):
             while epoch_start < time_bin_end:
                 epoch_end = epoch_start + self._epoch_duration
 
-                has_passage_event = np.any(
-                    np.logical_and(subject_sessiondata.index >= epoch_start,
-                                   subject_sessiondata.index < epoch_end))
+                has_enter_exit_event = (SubjectEnterExit.Time
+                                        & subject_key
+                                        & f'enter_exit_time BETWEEN "{epoch_start}" and "{epoch_end}"')
 
-                if not has_passage_event:  # no entering/exiting event in this epoch
+                if not has_enter_exit_event:
+                    # If there is no entering/exiting event in this epoch
+                    # then if the most recent entering/exiting event is "enter",
+                    # this means the animal is still in the arena
                     recent_event = (SubjectEnterExit.Time
                                     & {'subject': subject_key['subject']}
                                     & f'enter_exit_time < "{epoch_start}"').fetch(
                         'enter_exit_event', order_by='enter_exit_time DESC', limit=1)
-                    if not len(recent_event) or recent_event[0] != 'enter':  # most recent event is not "enter"
+                    if not len(recent_event) or recent_event[0] != 'enter':
+                        # If most recent event is not "enter", the animal is not in the arena,
+                        # skip this epoch
                         epoch_start = epoch_end
                         continue
 
@@ -325,7 +357,8 @@ class EventType(dj.Lookup):
     """
 
     contents = [(35, 'TriggerPellet'),
-                (32, 'PelletDetected')]
+                (32, 'PelletDetected'),
+                (1000, 'No Events')]
 
 
 @schema
@@ -358,27 +391,33 @@ class FoodPatchEvent(dj.Imported):
 
     def make(self, key):
         time_bin_start, time_bin_end = (TimeBin & key).fetch1('time_bin_start', 'time_bin_end')
-        device_sn = (lab.FoodPatch * ExperimentFoodPatch & key).fetch1('food_patch_serial_number')
+        food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
 
-        repo_name, file_path = (TimeBin.File * PipelineRepository
-                                & 'data_source = "PatchEvents"'
-                                & f'file_name LIKE "%{device_sn}%"'
-                                & key).fetch('repository_name', 'file_path', limit=1)
-        data_dir = (paths.get_repository_path(repo_name[0]) / file_path[0]).parent
+        repo_name, path = (Experiment.Directory
+                           & 'directory_type = "raw"'
+                           & key).fetch1(
+            'repository_name', 'directory_path')
+        root = paths.get_repository_path(repo_name)
+        raw_data_dir = root / path
 
-        pelletdata = exp0_api.pelletdata(data_dir.parent.as_posix(),
-                                         device=device_sn,
-                                         start=pd.Timestamp(time_bin_start),
-                                         end=pd.Timestamp(time_bin_end))
-
-        event_code_mapper = {name: code for code, name
-                             in zip(*EventType.fetch('event_code', 'event_type'))}
-
-        event_list = []
-        for r_idx, (r_time, r) in enumerate(pelletdata.iterrows()):
-            event_list.append({**key, 'event_number': r_idx,
-                               'event_time': r_time,
-                               'event_code': event_code_mapper[r.event]})
+        try:
+            pelletdata = aeon_api.pelletdata(raw_data_dir.as_posix(),
+                                             device=food_patch_description,
+                                             start=pd.Timestamp(time_bin_start),
+                                             end=pd.Timestamp(time_bin_end))
+        except ValueError:
+            event_list = [{**key, 'event_number': 0,
+                           'event_time': time_bin_start, 'event_code': 1000}]
+        else:
+            if not len(pelletdata):
+                event_list = [{**key, 'event_number': 0,
+                               'event_time': time_bin_start, 'event_code': 1000}]
+            else:
+                event_code_mapper = {name: code for code, name
+                                     in zip(*EventType.fetch('event_code', 'event_type'))}
+                event_list = [{**key, 'event_number': r_idx, 'event_time': r_time,
+                               'event_code': event_code_mapper[r.event]}
+                              for r_idx, (r_time, r) in enumerate(pelletdata.iterrows())]
 
         self.insert(event_list)
 

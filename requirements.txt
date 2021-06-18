@@ -10,6 +10,8 @@ pandas
 scikit-learn
 scipy
 seaborn
+pyyaml
+datajoint
 
 # Developers (can be separated out in a `dev_req.txt` file in future)
 bandit

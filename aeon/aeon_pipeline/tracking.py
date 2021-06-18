@@ -4,7 +4,7 @@ import pandas as pd
 import datetime
 import numpy as np
 
-from aeon.preprocess import exp0_api
+from aeon.preprocess import api as aeon_api
 
 from . import experiment
 from . import get_schema_name, paths
@@ -22,75 +22,58 @@ class SubjectPosition(dj.Imported):
     position_x:        longblob  # (mm) animal's x-position, in the arena's coordinate frame
     position_y:        longblob  # (mm) animal's y-position, in the arena's coordinate frame
     position_z=null:   longblob  # (mm) animal's z-position, in the arena's coordinate frame
+    area=null:         longblob  # (mm^2) animal's size detected in the camera
     speed=null:        longblob  # (mm/s) speed
     """
 
     def make(self, key):
-        repo_name, preprocessing_path = (
-                experiment.Experiment.Directory
-                & key & 'directory_type = "preprocessing"').fetch1(
+        """
+        The ingestion logic here relies on the assumption that there is only one subject in the arena at a time
+        The positiondata is associated with that one subject currently in the arena at any timepoints
+        However, we need to take into account if the subject is entered or exited during this epoch
+        """
+        repo_name, path = (experiment.Experiment.Directory
+                           & 'directory_type = "raw"'
+                           & key).fetch1(
             'repository_name', 'directory_path')
-        preprocess_dir = paths.get_repository_path(repo_name) / preprocessing_path
+        root = paths.get_repository_path(repo_name)
+        raw_data_dir = root / path
 
-        time_bin_start, time_bin_end = (experiment.TimeBin * experiment.Epoch.Subject
-                                        & key).fetch1('time_bin_start', 'time_bin_end')
         epoch_start, epoch_end = (experiment.Epoch.Subject & key).fetch1(
             'epoch_start', 'epoch_end')
 
-        repo_name, file_path = (experiment.TimeBin.File * experiment.PipelineRepository
-                                * experiment.Epoch.Subject
-                                & 'data_source = "VideoCamera"'
-                                & 'file_name LIKE "FrameTop%.avi"'
-                                & key).fetch('repository_name', 'file_path', limit=1)
-        file_path = paths.get_repository_path(repo_name[0]) / file_path[0]
-        # Retrieve FrameTop video timestamps for this TimeBin
-        video_timestamps = exp0_api.harpdata(file_path.parent.parent.as_posix(),
-                                             device='VideoEvents',
-                                             register=68,
-                                             start=pd.Timestamp(time_bin_start),
-                                             end=pd.Timestamp(time_bin_end))
-        video_timestamps = video_timestamps[video_timestamps[0] == 4]  # frametop timestamps
-        # Read preprocessed position data for this TimeBin and animal
-        tracking_dfs = []
-        for frametop_csv in (preprocess_dir / key['subject']).rglob('FrameTop.csv'):
-            parent_timestamp = datetime.datetime.strptime(
-                frametop_csv.parent.name, '%Y-%m-%dT%H-%M-%S')
-            if parent_timestamp < time_bin_start or parent_timestamp >= time_bin_end:
-                continue
+        positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
+                                             start=pd.Timestamp(epoch_start),
+                                             end=pd.Timestamp(epoch_end))
 
-            clips_csv = frametop_csv.parent / 'FrameTop-Clips.csv'
-            clips = pd.read_csv(clips_csv)
-            frametop_df = pd.read_csv(frametop_csv,
-                                      names=['X', 'Y', 'Orientation', 'MajorAxisLength',
-                                             'MinoxAxisLength', 'Area'])
-
-            matched_clip_idx = clips[clips.path == file_path.as_posix()].index[0]
-            matched_clip = clips.iloc[matched_clip_idx]
-
-            harp_start_idx = matched_clip.start
-            harp_end_idx = harp_start_idx + matched_clip.duration
-
-            tracking_data_starting_idx = 0 if matched_clip_idx == 0 else clips.iloc[matched_clip_idx - 1].duration
-            tracking_data = frametop_df[tracking_data_starting_idx:tracking_data_starting_idx + matched_clip.duration].copy()
-            tracking_data['timestamps'] = video_timestamps[harp_start_idx:harp_end_idx].index
-            tracking_data.set_index('timestamps', inplace=True)
-            tracking_dfs.append(tracking_data)
-
-        if not tracking_dfs:
-            return
-
-        timebin_tracking = pd.concat(tracking_dfs, axis=1).sort_index()
-        epoch_tracking = timebin_tracking[np.logical_and(timebin_tracking.index >= epoch_start,
-                                                         timebin_tracking.index < epoch_end)]
-
-        timestamps = (epoch_tracking.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
+        timestamps = (positiondata.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
         timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
+
+        # account for the animal entering/exiting during this epoch
+        enter_exit_times = (experiment.SubjectEnterExit.Time & {'subject': key['subject']}
+                            & f'enter_exit_time BETWEEN "{epoch_start}" AND "{epoch_end}"')
+        if not enter_exit_times:
+            # no enter/exit event - i.e. subject in the arena for the whole epoch
+            is_in_arena = np.full(len(positiondata), True, dtype=bool)
+        else:
+            event_types, event_times = enter_exit_times.fetch(
+                'enter_exit_event', 'enter_exit_time', order_by='enter_exit_time')
+            current_status = event_types[0] == 'exit'
+            is_in_arena = np.full(len(positiondata), current_status, dtype=bool)
+            for event_type, event_time in zip(event_types, event_times):
+                current_status = not current_status
+                is_in_arena = np.where(positiondata.index >= event_time, current_status, is_in_arena)
+
+        x = np.where(is_in_arena, positiondata.x.values, np.nan)
+        y = np.where(is_in_arena, positiondata.y.values, np.nan)
+        area = np.where(is_in_arena, positiondata.area.values, np.nan)
 
         self.insert1({**key,
                       'timestamps': timestamps,
-                      'position_x': epoch_tracking.X.values,
-                      'position_y': epoch_tracking.Y.values,
-                      'position_z': np.full_like(epoch_tracking.X.values, 0.0)})
+                      'position_x': x,
+                      'position_y': y,
+                      'position_z': np.full_like(x, 0.0),
+                      'area': area})
 
 
 @schema
