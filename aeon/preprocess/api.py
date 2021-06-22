@@ -106,7 +106,7 @@ def sessionreader(file):
     """Reads session metadata from the specified file."""
     names = ['time','id','weight','event']
     if file is None:
-        return pd.DataFrame(columns=names)
+        return pd.DataFrame(columns=names[1:])
     data = pd.read_csv(file, header=None, skiprows=1, names=names)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
@@ -135,7 +135,7 @@ def annotationreader(file):
     """Reads session annotations from the specified file."""
     names = ['time','id','annotation']
     if file is None:
-        return pd.DataFrame(columns=names)
+        return pd.DataFrame(columns=names[1:])
     data = pd.read_csv(
         file,
         header=None,
@@ -169,7 +169,7 @@ def videoreader(file):
     """Reads video metadata from the specified file."""
     names = ['time','hw_counter','hw_timestamp']
     if file is None:
-        return pd.DataFrame(columns=names)
+        return pd.DataFrame(columns=['frame']+names[1:])
     data = pd.read_csv(file, header=0, skiprows=1, names=names)
     data.insert(loc=1, column='frame', value=data.index)
     data['time'] = aeon(data['time'])
@@ -209,11 +209,14 @@ def videoclip(path, device, start=None, end=None):
     '''
     framedata = load(
         path,
-        lambda file: videoreader(file).assign(path=os.path.splitext(file)[0] + '.avi'),
+        lambda file: pd.DataFrame() if file is None else
+                     videoreader(file).assign(path=os.path.splitext(file)[0] + '.avi'),
         device=device,
         extension="*.csv",
         start=start,
         end=end)
+    if len(framedata) == 0:
+        return pd.DataFrame(columns=['start','duration'])
     videoclips = framedata.groupby('path')
     startframe = videoclips.frame.min().rename('start')
     duration = (videoclips.frame.max() - startframe).rename('duration')
@@ -335,7 +338,7 @@ def patchreader(file):
     """Reads patch state metadata from the specified file."""
     names = ['time','threshold']
     if file is None:
-        return pd.DataFrame(columns=names)
+        return pd.DataFrame(columns=names[1:])
     data = pd.read_csv(file, header=None, names=names)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
