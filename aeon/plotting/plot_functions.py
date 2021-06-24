@@ -7,15 +7,17 @@ def get_trayectory_trace(x, y, time_stamps=None):
         trace = go.Scatter(x=x, y=y, mode="markers")
     else:
         trace = go.Scatter(x=x, y=y, mode="markers",
-                           marker={"color": time_stamps, 
-                           "colorscale": "Rainbow"},
+                           marker={"color": time_stamps,
+                                   "colorscale": "Rainbow",
+                                   "colorbar": {"title": "Time"},
+                                  },
                            customdata=time_stamps,
                            hovertemplate="<b>x:</b>%{x:.3f}<br><b>y</b>:%{y:.3f}<br><b>time</b>:%{customdata} sec",
                            showlegend=False,
                            )
     return trace
 
-def get_patches_traces(patches_coordinates, fill_color="gray", fill_opacity=0.3):
+def get_patches_traces(patches_coordinates, fill_color="gray", fill_opacity=0.5):
     patches_traces = []
     for i in range(patches_coordinates.shape[0]):
         patch_lower_x, patch_higher_x, patch_lower_y, patch_higher_y = \
@@ -31,11 +33,14 @@ def get_patches_traces(patches_coordinates, fill_color="gray", fill_opacity=0.3)
 
 def get_cumTimePerActivity_barplot_trace(positions_labels):
     counter = collections.Counter(positions_labels.tolist())
-    x = [*counter.keys()]
-    y = [value/len(positions_labels) for value in counter.values()]
+    x = list(counter.keys())
+    x.sort()
+    y = [counter[x[i]]/len(positions_labels) for i in range(len(x))]
     trace = go.Bar(x=x, y=y)
     return trace
 
-def get_travelling_distance_trace(travelled_seconds, travelled_distance):
-    trace = go.Scatter(x=travelled_seconds, y=travelled_distance)
+def get_travelling_distance_trace(travelled_seconds, travelled_distance,
+                                  color="blue", showlegend=False):
+    trace = go.Scatter(x=travelled_seconds, y=travelled_distance,
+                       line=dict(color=color), showlegend=showlegend)
     return trace
