@@ -8,6 +8,7 @@ import argparse
 import plotly.graph_objects as go
 import plotly.subplots
 
+import aeon.preprocess.utils
 from aeon.query import exp0_api
 import aeon.plotting.plot_functions as pf
 
@@ -24,8 +25,7 @@ def main(argv):
     parser.add_argument("--ylabel", help="ylabel", default="Travelled Distance (cm)")
     parser.add_argument("--pellet_line_color", help="pellet line color", default="red")
     parser.add_argument("--pellet_line_style", help="pellet line style", default="solid")
-    parser.add_argument("--title_pattern", help="title pattern",
-                        default="Start {:s}, from {:.02f} to {:0.2f} sec\n (min={:.02f}, max={:.02f})")
+    parser.add_argument("--title_pattern", help="title pattern", default="Start {:s}, from {:.02f} to {:0.2f} sec\n (min={:.02f}, max={:.02f})")
     parser.add_argument("--data_filename", help="data filename", default="/ceph/aeon/aeon/preprocessing/experiment0/BAA-1099590/2021-03-25T15-16-18/FrameTop.csv")
     parser.add_argument("--fig_filename_pattern", help="figure filename pattern", default="../../figures/travelled_distance_newAPI_session{:d}_start{:.02f}_duration{:.02f}.{:s}")
 
@@ -47,8 +47,7 @@ def main(argv):
 
     metadata = exp0_api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
-    if len(metadata) % 2 != 0:                                                # if number of sessions don't pair up
-        metadata = metadata.drop(metadata.index[-1])                                  # drop last session (might be ongoing)
+    metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
     metadata = exp0_api.sessionduration(metadata)
     session_start = metadata.index[session]
     t0_absolute = session_start + datetime.timedelta(seconds=t0_relative)
