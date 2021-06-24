@@ -9,11 +9,16 @@ import datetime
 import pathlib
 
 import plotly.graph_objects as go
+import plotly.subplots
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output, State, ALL, MATCH
+import dash.exceptions
 
+from aeon.query import exp0_api
+import aeon.preprocess.utils
+import aeon.preprocess.api as aeon_api
 from aeon.query import exp0_api
 import aeon.signalProcessing.utils
 import aeon.preprocess.utils
@@ -24,8 +29,10 @@ def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--local", help="run the flask server only locally", action="store_true")
     parser.add_argument("--debug", help="start GUI with debug functionality", action="store_true")
-    parser.add_argument("--root", help="Root path for data access", default="/ceph/aeon/test2/data")
-    parser.add_argument("--patches_coordinates", help="coordinates of patches", default="950,970,450,530")
+    parser.add_argument("--root", help="Root path for data access", default="/ceph/aeon/test2/experiment0.1")
+    parser.add_argument("--patches_coordinates", help="coordinates of patches", default="584,597,815,834;614,634,252,271")
+    parser.add_argument("--nest_coordinates", help="coordinates of nest", default="170,260,450,540")
+    parser.add_argument("--patchesToPlot", help="Names of patches to plot", default="Patch1,Patch2")
     parser.add_argument("--win_length_sec", help="Moving average window length (sec)", default=10.0, type=float)
     parser.add_argument("--time_resolution", help="Time resolution to compute the moving average (sec)", default=0.01, type=float)
     parser.add_argument("--video_frame_rate", help="Top camera frame rate (Hz)", default=50.0, type=float)
@@ -33,19 +40,21 @@ def main(argv):
     parser.add_argument("--xlabel_trajectory", help="xlabel for trajectory plot", default="x (pixels)")
     parser.add_argument("--ylabel_trajectory", help="ylabel for trajectory plot", default="y (pixels)")
     parser.add_argument("--ylabel_cumTimePerActivity", help="ylabel", default="Proportion of Time")
-    parser.add_argument("--xlabel_travelledTime", help="xlabel for travelledTime plot", default="Time (sec)")
-    parser.add_argument("--ylabel_travelledTime", help="ylabel for travelledTime plot", default="Travelled Distance (cm)")
+    parser.add_argument("--xlabel_travelledDistance", help="xlabel for travelledDistance plot", default="Time (sec)")
+    parser.add_argument("--ylabel_travelledDistance", help="ylabel for travelledDistance plot", default="Travelled Distance (cm)")
     parser.add_argument("--xlabel_rewardRate", help="xlabel for reward rate", default="Time (sec)")
     parser.add_argument("--ylabel_rewardRate", help="ylabe for reward ratel", default="Reward Rate")
+    parser.add_argument("--ylim_cumTimePerActivity", help="ylim cummulative time per activity plot", default="[0,1]")
     parser.add_argument("--pellet_line_color", help="pellet line color", default="red")
     parser.add_argument("--pellet_line_style", help="pellet line style", default="solid")
-    parser.add_argument("--data_filename", help="data filename", default="/ceph/aeon/aeon/preprocessing/experiment0/BAA-1099590/2021-03-25T15-16-18/FrameTop.csv")
 
     args = parser.parse_args()
 
     local = args.local
     root = args.root
     patches_coordinates_matrix = np.matrix(args.patches_coordinates)
+    nest_coordinates_matrix = np.matrix(args.nest_coordinates)
+    patches_to_plot = args.patchesToPlot.split(",")
     frame_rate = args.video_frame_rate
     win_length_sec = args.win_length_sec
     time_resolution = args.time_resolution
@@ -53,28 +62,22 @@ def main(argv):
     xlabel_trajectory = args.xlabel_trajectory
     ylabel_trajectory = args.ylabel_trajectory
     ylabel_cumTimePerActivity = args.ylabel_cumTimePerActivity
-    xlabel_travelledTime = args.xlabel_travelledTime
-    ylabel_travelledTime = args.ylabel_travelledTime
+    xlabel_travelledDistance = args.xlabel_travelledDistance
+    ylabel_travelledDistance = args.ylabel_travelledDistance
     xlabel_rewardRate = args.xlabel_rewardRate
     ylabel_rewardRate = args.ylabel_rewardRate
+    ylim_cumTimePerActivity = [float(str) for str in args.ylim_cumTimePerActivity[1:-1].split(",")]
     pellet_line_color = args.pellet_line_color
     pellet_line_style = args.pellet_line_style
-    data_filename = args.data_filename
 
-    # <s Get good sessions
-    # Get all session metadata from all `SessionData*` csv files (these are
-    # 'start' and 'end files) within exp0 root.
-    metadata = exp0_api.sessiondata(root)  # pandas df
-    # Filter to only animal sessions (the others were test sessions).
+    metadata = exp0_api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
-    # Drop bad sessions.
-    metadata = metadata.drop([metadata.index[16], metadata.index[17], metadata.index[18]])
-    # Match each 'start' with its 'end' to get more coherent sessions dataframe.
+    metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
     metadata = exp0_api.sessionduration(metadata)
-    # /s>
+
     mouse_names = metadata["id"].unique()
     options_mouse_names = [{"label": mouse_name, "value": mouse_name} for mouse_name in mouse_names]
-    sessions_start_times = metadata.index.unique()
+    sessions_start_times = metadata[metadata["id"]==mouse_names[0]].index
     options_sessions_start_times = [{"label": session_start_time, "value": session_start_time} for session_start_time in sessions_start_times]
     def serve_layout():
         aDiv = html.Div(children=[
@@ -86,14 +89,6 @@ def main(argv):
                 options=options_mouse_names,
                 value=mouse_names[0],
             ),
-            html.H4(children="Patch ID"),
-            dcc.Dropdown(
-                id="patchIDDropDown",
-                options=[
-                    {'label': "0", "value": 0},
-                ],
-                value=0
-            ),
             html.H4(children="Session Start Time"),
             dcc.Dropdown(
                 id="sessionStartTimeDropdown",
@@ -103,29 +98,28 @@ def main(argv):
             html.H4(children="Plotting Time (sec)"),
             dcc.RangeSlider(
                 id="plotTimeRangeSlider",
-                min=0,
-                max=7845,
-                step=60,
-                marks=dict(zip(range(0, 7845, 600), [str(aNum) for aNum in range(0, 7845, 600)])),
-                value=[600,1200]
             ),
             html.Button(children="Plot", id="plotButton", n_clicks=0),
-            html.H4(children="Trajectory"),
-            dcc.Graph(
-                id="trajectoryGraph",
-            ),
-            html.H4(children="Activities"),
-            dcc.Graph(
-                id="activitiesGraph",
-            ),
-            html.H4(children="Distance Travelled"),
-            dcc.Graph(
-                id="travelledDistanceGraph",
-            ),
-            html.H4(children="Reward Rate"),
-            dcc.Graph(
-                id="rewardRateGraph",
-            )
+            html.Div(
+                id="plotsContainer",
+                children=[
+                    html.H4(children="Trajectory"),
+                    dcc.Graph(
+                        id="trajectoryGraph",
+                    ),
+                    html.H4(children="Activities"),
+                    dcc.Graph(
+                        id="activitiesGraph",
+                    ),
+                    html.H4(children="Distance Travelled"),
+                    dcc.Graph(
+                        id="travelledDistanceGraph",
+                    ),
+                    html.H4(children="Reward Rate"),
+                    dcc.Graph(
+                        id="rewardRateGraph",
+                    )
+                ], hidden=True)
         ])
         return aDiv
 
@@ -133,39 +127,79 @@ def main(argv):
     app = dash.Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
     app.layout = serve_layout()
 
+    @app.callback([Output('sessionStartTimeDropdown', 'options'),
+                   Output('sessionStartTimeDropdown', 'value'),],
+                  Input('mouseNameDropDown', 'value'))
+    def get_sessions_start_times(mouseNameDropDown_value):
+        sessions_start_times = metadata[metadata["id"]==mouseNameDropDown_value].index
+        options_sessions_start_times = [{"label": session_start_time, "value": session_start_time} for session_start_time in sessions_start_times]
+        return options_sessions_start_times, sessions_start_times[0]
+
+    @app.callback([Output('plotTimeRangeSlider', 'min'),
+                   Output('plotTimeRangeSlider', 'max'),
+                   Output('plotTimeRangeSlider', 'marks'),
+                   Output('plotTimeRangeSlider', 'value'),
+                  ],
+                  Input('sessionStartTimeDropdown', 'value'))
+    def get_plotTimeRangeSlider_options(sessionStartTimeDropdown_value):
+        # print("get_plotTimeRangeSlider_options called")
+        # print("type(sessionStartTimeDropdown_value)")
+        # print(type(sessionStartTimeDropdown_value))
+        # print("sessionStartTimeDropdown_value")
+        # print(sessionStartTimeDropdown_value)
+        sessions_duration_sec = metadata[metadata.index==pd.to_datetime(sessionStartTimeDropdown_value)].duration.item().total_seconds()
+        # print("sessions_duration_sec")
+        # print(sessions_duration_sec)
+        # print("about to print 1")
+        slider_min = 0
+        # print("about to print 2")
+        slider_max = int(sessions_duration_sec)
+        # print("about to print 3")
+        slider_marks = dict(zip(range(0, slider_max, 600), [str(aNum) for aNum in range(0, slider_max, 600)]))
+        # print("about to print 4")
+        slider_value=[0,600]
+        # print("about to print 5")
+        # print("min={}, max={}, marks={}, value={}".format(slider_min, slider_max, slider_marks, slider_value))
+        return slider_min, slider_max, slider_marks, slider_value
+
     @app.callback([Output('trajectoryGraph', 'figure'),
                    Output('activitiesGraph', 'figure'),
                    Output('travelledDistanceGraph', 'figure'),
-                   Output('rewardRateGraph', 'figure')],
+                   Output('rewardRateGraph', 'figure'),
+                   Output('plotsContainer', 'hidden')],
                   [Input('plotButton', 'n_clicks')],
                   [State('mouseNameDropDown', 'value'),
-                   State('patchIDDropDown', 'value'),
                    State('sessionStartTimeDropdown', 'value'),
                    State('plotTimeRangeSlider', 'value'),
-                  ])
+                   State('plotsContainer', 'hidden')],
+                  )
     def update_plots(plotButton_nClicks,
                      mouseNameDropDown_value,
-                     patchIDDropDown_value,
                      sessionStartTimeDropdown_value,
-                     plotTimeRangeSlider_value):
+                     plotTimeRangeSlider_value,
+                     plotsContainer_hidden):
+        if plotButton_nClicks==0:
+            print("update prevented")
+            raise dash.exceptions.PreventUpdate
         print("update_plots called")
         patches_coordinates = pd.DataFrame(data=patches_coordinates_matrix,
                                            columns=["lower_x", "higher_x",
                                                     "lower_y", "higher_y"])
-        pos_data = pd.read_csv(pathlib.Path(data_filename),
-                               names=["X", "Y", "Orientation", "MajorAxisLength", "MinoxAxisLength", "Area"])
-        time = np.arange(pos_data.shape[0])/frame_rate
+        nest_coordinates = pd.DataFrame(data=nest_coordinates_matrix,
+                                        columns=["lower_x", "higher_x",
+                                                 "lower_y", "higher_y"])
 
-        t0 = plotTimeRangeSlider_value[0]
-        tf = plotTimeRangeSlider_value[1]
-        in_range_samples = np.where(np.logical_and(t0<=time, time<tf))[0]
-        time = time[in_range_samples]
-        t0 = time[0]
-        tf = time[-1]
-        pos_data = pos_data.iloc[in_range_samples]
-        x = pos_data["X"].to_numpy()
-        y = pos_data["Y"].to_numpy()
-        time_stamps = pos_data.index.to_numpy()/frame_rate
+        t0_relative = plotTimeRangeSlider_value[0]
+        tf_relative = plotTimeRangeSlider_value[1]
+
+        session_start = pd.Timestamp(sessionStartTimeDropdown_value)
+        t0_absolute = session_start + datetime.timedelta(seconds=t0_relative)
+        tf_absolute = session_start + datetime.timedelta(seconds=tf_relative)
+        position = aeon_api.positiondata(root, start=t0_absolute, end=tf_absolute)
+
+        x = position["x"].to_numpy()
+        y = position["y"].to_numpy()
+        time_stamps = (position.index-session_start).total_seconds().to_numpy()
 
         # trajectory figure
         fig_trajectory = go.Figure()
@@ -174,61 +208,94 @@ def main(argv):
         patches_traces = aeon.plotting.plot_functions.get_patches_traces(patches_coordinates=patches_coordinates)
         for patch_trace in patches_traces:
             fig_trajectory.add_trace(patch_trace)
-        fig_trajectory.update_layout(xaxis_title=xlabel_trajectory,
-                                     yaxis_title=ylabel_trajectory)
+        nest_trace = aeon.plotting.plot_functions.get_patches_traces(patches_coordinates=nest_coordinates)[0]
+        fig_trajectory.add_trace(nest_trace)
+        fig_trajectory.update_layout(xaxis_title=xlabel_trajectory, yaxis_title=ylabel_trajectory, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
 
         # activity figure
         positions_labels = aeon.preprocess.utils.get_positions_labels(
-            x=x, y=y, patches_coordinates=patches_coordinates)
+            x=x, y=y,
+            patches_coordinates=patches_coordinates,
+            nest_coordinates=nest_coordinates)
+
         fig_cumTimePerActivity = go.Figure()
         cumTimePerActivity_trace = aeon.plotting.plot_functions.get_cumTimePerActivity_barplot_trace(
             positions_labels=positions_labels,
         )
         fig_cumTimePerActivity.add_trace(cumTimePerActivity_trace)
         fig_cumTimePerActivity.update_layout(yaxis_title=ylabel_cumTimePerActivity)
+        fig_cumTimePerActivity.update_yaxes(range=ylim_cumTimePerActivity)
 
-        # distance travelled figure
-        session_start = pd.Timestamp(sessionStartTimeDropdown_value)
-        t0_absolute = session_start + datetime.timedelta(seconds=t0)
-        tf_absolute = session_start + datetime.timedelta(seconds=tf)
-        wheel_encoder_vals = exp0_api.encoderdata(root, start=t0_absolute, end=tf_absolute)
-        travelled_distance = exp0_api.distancetravelled(wheel_encoder_vals.angle)
-        travelled_seconds = (travelled_distance.index-session_start).total_seconds()
-        pellet_vals = exp0_api.pelletdata(root, start=t0_absolute, end=tf_absolute)
-        pellets_times = pellet_vals.query("event == '{:s}'".format(pellet_event_name)).index
-        pellets_absolute_seconds = (pellets_times-session_start).total_seconds()
+        # travelled distance figure
+        travelled_distance = {}
+        travelled_seconds = {}
+        pellets_seconds = {}
+        max_travelled_distance = -np.inf
+        for patch_to_plot in patches_to_plot:
+            wheel_encoder_vals = exp0_api.encoderdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
+            travelled_distance[patch_to_plot] = exp0_api.distancetravelled(wheel_encoder_vals.angle)
+            if travelled_distance[patch_to_plot][-1]>max_travelled_distance:
+                max_travelled_distance = travelled_distance[patch_to_plot][-1]
+            travelled_seconds[patch_to_plot] = (travelled_distance[patch_to_plot].index-session_start).total_seconds()
+            pellet_vals = exp0_api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
+            pellets_times = pellet_vals[pellet_vals.event == "{:s}".format(pellet_event_name)].index
+            pellets_seconds[patch_to_plot] = (pellets_times-session_start).total_seconds()
 
         fig_travelledDistance = go.Figure()
-        trace = aeon.plotting.plot_functions.get_travelling_distance_trace(travelled_seconds=travelled_seconds, travelled_distance=travelled_distance)
-        fig_travelledDistance.add_trace(trace)
-        for pellet_absolute_second in pellets_absolute_seconds:
-            fig_travelledDistance.add_vline(x=pellet_absolute_second,
-                                            line_color=pellet_line_color,
-                                            line_dash=pellet_line_style)
-        fig_travelledDistance.update_layout(xaxis_title=xlabel_travelledTime,
-                                            yaxis_title=ylabel_travelledTime)
+        fig_travelledDistance = plotly.subplots.make_subplots(rows=1, cols=len(patches_to_plot),
+                                            subplot_titles=(patches_to_plot))
+        for i, patch_to_plot in enumerate(patches_to_plot):
+            trace = aeon.plotting.plot_functions.get_travelling_distance_trace(travelled_seconds=travelled_seconds[patch_to_plot], travelled_distance=travelled_distance[patch_to_plot],
+                                                    showlegend=False)
+            fig_travelledDistance.add_trace(trace, row=1, col=i+1)
+            for pellet_second in pellets_seconds[patch_to_plot]:
+                fig_travelledDistance.add_vline(x=pellet_second, line_color=pellet_line_color,
+                            line_dash=pellet_line_style, row=1, col=i+1)
+            if i==0:
+                fig_travelledDistance.update_yaxes(title_text=ylabel_travelledDistance, range=(0, max_travelled_distance), row=1, col=i+1)
+            else:
+                fig_travelledDistance.update_yaxes(range=(0, max_travelled_distance), row=1, col=i+1)
+            fig_travelledDistance.update_xaxes(title_text=xlabel_travelledDistance, row=1, col=i+1)
 
         # reward rate figure
-        pellets_samples = np.zeros(len(time), dtype=np.double)
-        pellets_seconds = (pellets_times-t0_absolute).total_seconds()
-        pellets_indices = (pellets_seconds/time_resolution).astype(int)
-        reward_rate_time = np.arange(t0, tf, time_resolution)
-        pellets_samples = np.zeros(len(reward_rate_time), dtype=np.double)
-        pellets_samples[pellets_indices] = 1.0
-        win_length_samples = int(win_length_sec/time_resolution)
-        reward_rate = aeon.signalProcessing.utils.moving_average(values=pellets_samples, N=win_length_samples)
+        pellets_seconds = {}
+        reward_rate = {}
+        max_reward_rate = -np.inf
+        time = np.arange(t0_relative, tf_relative, time_resolution)
+        for patch_to_plot in patches_to_plot:
+            wheel_encoder_vals = exp0_api.encoderdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
+            pellet_vals = exp0_api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
+            pellets_times = pellet_vals[pellet_vals.event == "{:s}".format(pellet_event_name)].index
+            pellets_seconds[patch_to_plot] = (pellets_times-session_start).total_seconds()
+            pellets_indices = ((pellets_seconds[patch_to_plot]-t0_relative)/time_resolution).astype(int)
+            pellets_samples = np.zeros(len(time), dtype=np.double)
+            pellets_samples[pellets_indices] = 1.0
+            win_length_samples = int(win_length_sec/time_resolution)
+            reward_rate[patch_to_plot] = aeon.signalProcessing.utils.moving_average(values=pellets_samples, N=win_length_samples)
+            patch_max_reward_rate = max(reward_rate[patch_to_plot])
+            if patch_max_reward_rate>max_reward_rate:
+                max_reward_rate = patch_max_reward_rate
 
         fig_rewardRate = go.Figure()
-        trace = go.Scatter(x=reward_rate_time+win_length_sec/2.0, y=reward_rate)
-        fig_rewardRate.add_trace(trace)
-        for pellet_index in pellets_indices:
-            fig_rewardRate.add_vline(x=reward_rate_time[pellet_index],
-                                      line_color=pellet_line_color,
-                                      line_dash=pellet_line_style)
-        fig_rewardRate.update_layout(xaxis_title=xlabel_rewardRate,
-                                     yaxis_title=ylabel_rewardRate)
+        fig_rewardRate = plotly.subplots.make_subplots(rows=1, cols=len(patches_to_plot),
+                                                       subplot_titles=(patches_to_plot))
+        for i, patch_to_plot in enumerate(patches_to_plot):
+            trace = go.Scatter(x=time+win_length_sec/2.0,
+                            y=reward_rate[patch_to_plot],
+                            showlegend=False)
+            fig_rewardRate.add_trace(trace, row=1, col=i+1)
+            for pellet_second in pellets_seconds[patch_to_plot]:
+                fig_rewardRate.add_vline(x=pellet_second, line_color=pellet_line_color,
+                            line_dash=pellet_line_style, row=1, col=i+1)
+            if i==0:
+                fig_rewardRate.update_yaxes(title_text=ylabel_rewardRate, range=(0, max_reward_rate), row=1, col=i+1)
+            else:
+                fig_rewardRate.update_yaxes(range=(0, max_reward_rate), row=1, col=i+1)
+            fig_rewardRate.update_xaxes(title_text=xlabel_rewardRate, row=1, col=i+1)
 
-        return fig_trajectory, fig_cumTimePerActivity, fig_travelledDistance, fig_rewardRate
+        plotsContainer_hidden = False
+
+        return fig_trajectory, fig_cumTimePerActivity, fig_travelledDistance, fig_rewardRate, plotsContainer_hidden
 
     if(args.local):
         app.run_server(debug=args.debug)
