@@ -2,9 +2,11 @@ __pycache__/
 scratch/
 build/
 dist/
+figures/
 *.egg-info/
 .idea/
 .vscode/
 *checkpoint.ipynb
 *~
 *.swp
+.nfs*
