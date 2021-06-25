@@ -23,7 +23,7 @@ def timebin(time):
         return pd.to_datetime(time.dt.date) + pd.to_timedelta(hour, 'h')
     else:
         hour = BIN_SIZE * (time.hour // BIN_SIZE)
-        return datetime.datetime.combine(time.date(), datetime.time(hour=hour))
+        return pd.to_datetime(datetime.datetime.combine(time.date(), datetime.time(hour=hour)))
 
 def timebin_range(start, end):
     '''
