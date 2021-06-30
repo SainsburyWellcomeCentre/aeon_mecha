@@ -15,7 +15,7 @@ def load_arena_setup(yml_filepath, experiment_name):
         for camera in arena_setup['cameras']:
             # ---- Check if this is a new camera, add to lab.Camera if needed
             camera_key = {'camera_serial_number': camera['serial-number']}
-            if camera_key not in lab.Camera:
+            if camera_key not in lab.Camera():
                 lab.Camera.insert1(camera_key)
             # ---- Check if this camera is currently installed
             current_camera_query = (experiment.ExperimentCamera
@@ -51,7 +51,7 @@ def load_arena_setup(yml_filepath, experiment_name):
         for patch in arena_setup['patches']:
             # ---- Check if this is a new food patch, add to lab.FoodPatch if needed
             patch_key = {'food_patch_serial_number': patch['serial-number'] or patch['port-name']}
-            if patch_key not in lab.FoodPatch:
+            if patch_key not in lab.FoodPatch():
                 lab.FoodPatch.insert1(patch_key)
             # ---- Check if this food patch is currently installed - if so, remove it
             current_patch_query = (experiment.ExperimentFoodPatch

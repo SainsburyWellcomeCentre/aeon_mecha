@@ -26,6 +26,14 @@ class SubjectPosition(dj.Imported):
     speed=null:        longblob  # (mm/s) speed
     """
 
+    class UniquePosition(dj.Part):
+        definition = """  # All unique positions (x,y,z) of an animal in a given epoch
+        -> master
+        x: decimal(6, 2)
+        y: decimal(6, 2)
+        z: decimal(6, 2)
+        """
+
     def make(self, key):
         """
         The ingestion logic here relies on the assumption that there is only one subject in the arena at a time
@@ -66,31 +74,78 @@ class SubjectPosition(dj.Imported):
 
         x = np.where(is_in_arena, positiondata.x.values, np.nan)
         y = np.where(is_in_arena, positiondata.y.values, np.nan)
+        z = np.full_like(x, 0.0)
         area = np.where(is_in_arena, positiondata.area.values, np.nan)
 
+        # unique positions
+        unique_positions = set(list(zip(np.round(z, 2),
+                                        np.round(y, 2),
+                                        np.round(z, 2))))
         self.insert1({**key,
                       'timestamps': timestamps,
                       'position_x': x,
                       'position_y': y,
-                      'position_z': np.full_like(x, 0.0),
+                      'position_z': z,
                       'area': area})
+        self.UniquePosition.insert([{**key, 'x': x, 'y': y, 'z': z}
+                                    for x, y, z in unique_positions
+                                    if not np.any(np.where(np.isnan([x, y, z])))])
 
 
 @schema
-class EpochPosition(dj.Computed):
-    definition = """  # All unique positions (x,y,z) of an animal in a given epoch
-    x: decimal(6, 2)
-    y: decimal(6, 2)
-    z: decimal(6, 2)
+class SubjectDistance(dj.Computed):
+    definition = """
     -> SubjectPosition
     """
 
+    class FoodPatch(dj.Part):
+        definition = """  # distances of the animal away from the food patch, for each timestamp
+        -> master
+        -> experiment.ExperimentFoodPatch
+        ---
+        distance: longblob
+        """
+
+    class UniqueDistance(dj.Part):
+        definition = """ # unique distances of the animal away from the food patch for this epoch
+        -> master.FoodPatch
+        -> SubjectPosition.UniquePosition
+        ---
+        distance: decimal(6, 2)
+        """
+
     def make(self, key):
-        position_x, position_y, position_z = (SubjectPosition & key).fetch1(
-            'position_x', 'position_y', 'position_z')
-        unique_positions = set(list(zip(np.round(position_x, 2),
-                                        np.round(position_y, 2),
-                                        np.round(position_z, 2))))
-        self.insert([{**key, 'x': x, 'y': y, 'z': z}
-                     for x, y, z in unique_positions
-                     if not np.any(np.where(np.isnan([x, y, z])))])
+        food_patch_keys = (
+                experiment.Epoch.Subject
+                * experiment.ExperimentFoodPatch.join(experiment.ExperimentFoodPatch.RemovalTime, left=True)
+                & key
+                & 'epoch_start >= food_patch_install_time'
+                & 'epoch_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
+
+        food_patch_distance_list, unique_distance_list = [], []
+        for food_patch_key in food_patch_keys:
+            patch_position = (experiment.ExperimentFoodPatch.Position & food_patch_key).fetch1(
+                'food_patch_position_x', 'food_patch_position_y', 'food_patch_position_z')
+            subject_positions = (SubjectPosition & key).fetch1(
+                'position_x', 'position_y', 'position_z')
+            subject_positions = np.array([*zip(subject_positions)]).squeeze().T
+            distances = np.linalg.norm(
+                subject_positions
+                - np.tile(patch_position, (subject_positions.shape[0], 1)), axis=1)
+
+            unique_positions = (SubjectPosition.UniquePosition & key).fetch('x', 'y', 'z')
+            unique_positions = np.array([*zip(unique_positions)]).squeeze().T
+            unique_distances = np.linalg.norm(
+                unique_positions.astype(float)
+                - np.tile(patch_position, (unique_positions.shape[0], 1)), axis=1)
+
+            food_patch_distance_list.append({**food_patch_key, 'distance': distances})
+            unique_distance_list.extend([{**food_patch_key,
+                                          'x': x, 'y': y, 'z': z,
+                                          'distance': d}
+                                         for (x, y, z), d in zip(
+                    unique_positions, unique_distances)])
+
+        self.insert1(key)
+        self.FoodPatch.insert(food_patch_distance_list)
+        self.UniqueDistance.insert(unique_distance_list)

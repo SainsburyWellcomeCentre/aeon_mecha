@@ -42,12 +42,13 @@ yml_filepath = '/nfs/nhome/live/thinh/code/ProjectAeon/aeon/aeon/aeon_pipeline/i
 load_arena_setup(yml_filepath, experiment_name)
 
 # ---------------- Auto Ingestion -----------------
-settings = {'suppress_errors': True}
+settings = {'reserve_jobs': True, 'suppress_errors': True}
 
 experiment.TimeBin.generate_timebins(experiment_name='exp0.1-r0')
 experiment.SubjectEnterExit.populate(**settings)
 experiment.SubjectAnnotation.populate(**settings)
 experiment.Epoch.populate(**settings)
 experiment.FoodPatchEvent.populate(**settings)
+experiment.FoodPatchWheel.populate(**settings)
 tracking.SubjectPosition.populate(**settings)
-tracking.EpochPosition.populate(**settings)
+tracking.SubjectDistance.populate(**settings)

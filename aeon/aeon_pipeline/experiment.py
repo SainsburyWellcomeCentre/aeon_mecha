@@ -372,18 +372,13 @@ class FoodPatchEvent(dj.Imported):
     def key_source(self):
         """
         Only the combination of TimeBin and ExperimentFoodPatch with overlapping time
+        +  TimeBin(s) that started after FoodPatch install time and ended before FoodPatch remove time
+        +  TimeBin(s) that started after FoodPatch install time for FoodPatch that are not yet removed
         """
-        # TimeBin(s) that started after FoodPatch install time and ended before FoodPatch remove time
-        removed_foodpatch = (
-                TimeBin * ExperimentFoodPatch
-                * ExperimentFoodPatch.RemovalTime
+        return (TimeBin
+                * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
                 & 'time_bin_start >= food_patch_install_time'
-                & 'time_bin_start < food_patch_remove_time')
-        # TimeBin(s) that started after FoodPatch install time for FoodPatch that are not yet removed
-        current_foodpatch = (
-                TimeBin * (ExperimentFoodPatch - ExperimentFoodPatch.RemovalTime)
-                & 'time_bin_start >= food_patch_install_time')
-        return removed_foodpatch.proj() + current_foodpatch.proj()
+                & 'time_bin_start < IFNULL(food_patch_remove_time, "2200-01-01")')
 
     def make(self, key):
         time_bin_start, time_bin_end = (TimeBin & key).fetch1('time_bin_start', 'time_bin_end')
@@ -412,6 +407,53 @@ class FoodPatchEvent(dj.Imported):
                           for r_idx, (r_time, r) in enumerate(pelletdata.iterrows())]
 
         self.insert(event_list)
+
+
+@schema
+class FoodPatchWheel(dj.Imported):
+    definition = """  # events associated with a given animal in a given ExperimentFoodPatch
+    -> TimeBin
+    -> ExperimentFoodPatch
+    ---
+    timestamps:        longblob  # (datetime) timestamps of wheel encoder data
+    angle:             longblob   # measured angles of the wheel 
+    intensity:         longblob
+    """
+
+    @property
+    def key_source(self):
+        """
+        Only the combination of TimeBin and ExperimentFoodPatch with overlapping time
+        +  TimeBin(s) that started after FoodPatch install time and ended before FoodPatch remove time
+        +  TimeBin(s) that started after FoodPatch install time for FoodPatch that are not yet removed
+        """
+        return (TimeBin
+                * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
+                & 'time_bin_start >= food_patch_install_time'
+                & 'time_bin_start < IFNULL(food_patch_remove_time, "2200-01-01")')
+
+    def make(self, key):
+        time_bin_start, time_bin_end = (TimeBin & key).fetch1('time_bin_start', 'time_bin_end')
+        food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
+
+        repo_name, path = (Experiment.Directory
+                           & 'directory_type = "raw"'
+                           & key).fetch1(
+            'repository_name', 'directory_path')
+        root = paths.get_repository_path(repo_name)
+        raw_data_dir = root / path
+
+        encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
+                                           device=food_patch_description,
+                                           start=pd.Timestamp(time_bin_start),
+                                           end=pd.Timestamp(time_bin_end))
+
+        timestamps = (encoderdata.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
+        timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
+
+        self.insert1({**key, 'timestamps': timestamps,
+                      'angle': encoderdata.angle.values,
+                      'intensity': encoderdata.intensity.values})
 
 
 @schema
