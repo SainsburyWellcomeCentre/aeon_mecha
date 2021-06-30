@@ -359,7 +359,7 @@ class EventType(dj.Lookup):
 
 @schema
 class FoodPatchEvent(dj.Imported):
-    definition = """  # events associated with a given animal in a given ExperimentFoodPatch
+    definition = """  # events associated with a given ExperimentFoodPatch
     -> TimeBin
     -> ExperimentFoodPatch
     event_number: smallint
@@ -411,7 +411,7 @@ class FoodPatchEvent(dj.Imported):
 
 @schema
 class FoodPatchWheel(dj.Imported):
-    definition = """  # events associated with a given animal in a given ExperimentFoodPatch
+    definition = """  # wheel data associated with a given ExperimentFoodPatch
     -> TimeBin
     -> ExperimentFoodPatch
     ---
