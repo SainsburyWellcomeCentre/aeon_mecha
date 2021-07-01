@@ -448,7 +448,7 @@ def positiondata(path, device='FrameTop', start=None, end=None, time=None, toler
         time=time,
         tolerance=tolerance)
 
-def videoframe(data):
+def videoframes(data):
     '''
     Extracts the raw frames corresponding to the provided video metadata.
 
