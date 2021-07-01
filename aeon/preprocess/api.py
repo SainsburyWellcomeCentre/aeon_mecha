@@ -6,6 +6,7 @@ import numpy as np
 
 """The size of each time bin, in whole hours."""
 BIN_SIZE = 1
+_SECONDS_PER_TICK = 32e-6
 
 def aeon(seconds):
     """Converts a Harp timestamp, in seconds, to a datetime object."""
@@ -263,8 +264,8 @@ def harpreader(file, names=None):
     elementsize = payloadtype.itemsize
     payloadshape = (length, payloadsize // elementsize)
     seconds = np.ndarray(length, dtype=np.uint32, buffer=data, offset=5, strides=stride)
-    micros = np.ndarray(length, dtype=np.uint16, buffer=data, offset=9, strides=stride)
-    seconds = micros * 32e-6 + seconds
+    ticks = np.ndarray(length, dtype=np.uint16, buffer=data, offset=9, strides=stride)
+    seconds = ticks * _SECONDS_PER_TICK + seconds
     payload = np.ndarray(
         payloadshape,
         dtype=payloadtype,
