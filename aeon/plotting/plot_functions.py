@@ -39,7 +39,7 @@ def get_cumTimePerActivity_barplot_trace(positions_labels):
     trace = go.Bar(x=x, y=y)
     return trace
 
-def get_travelling_distance_trace(travelled_seconds, travelled_distance,
+def get_travelled_distance_trace(travelled_seconds, travelled_distance,
                                   color="blue", showlegend=False):
     trace = go.Scatter(x=travelled_seconds, y=travelled_distance,
                        line=dict(color=color), showlegend=showlegend)
