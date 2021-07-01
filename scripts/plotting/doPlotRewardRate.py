@@ -8,8 +8,8 @@ import argparse
 import plotly.graph_objects as go
 import plotly.subplots
 
+import aeon.preprocess.api as api
 import aeon.preprocess.utils
-from aeon.query import exp0_api
 import aeon.signalProcessing.utils
 
 def main(argv):
@@ -19,7 +19,7 @@ def main(argv):
     parser.add_argument("--start_time", help="Start time (sec)", default=0.0, type=float)
     parser.add_argument("--duration", help="Duration (sec)", default=600.0, type=float)
     parser.add_argument("--patchesToPlot", help="Names of patches to plot", default="Patch1,Patch2")
-    parser.add_argument("--pellet_event_name", help="Pallete event name to display", default="TriggerPellet")
+    parser.add_argument("--pellet_event_name", help="Pellet event name to display", default="TriggerPellet")
     parser.add_argument("--win_length_sec", help="Moving average window length (sec)", default=10.0, type=float)
     parser.add_argument("--time_resolution", help="Time resolution to compute the moving average (sec)", default=0.01, type=float)
     parser.add_argument("--xlabel", help="xlabel", default="Time (sec)")
@@ -46,10 +46,10 @@ def main(argv):
     title_pattern = args.title_pattern
     fig_filename_pattern = args.fig_filename_pattern
 
-    metadata = exp0_api.sessiondata(root)
+    metadata = api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
     metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
-    metadata = exp0_api.sessionduration(metadata)
+    metadata = api.sessionduration(metadata)
     session_start = metadata.index[session]
     t0_absolute = session_start + datetime.timedelta(seconds=t0_relative)
     tf_absolute = session_start + datetime.timedelta(seconds=tf_relative)
@@ -59,8 +59,8 @@ def main(argv):
     reward_rate = {}
     max_reward_rate = -np.inf
     for patch_to_plot in patches_to_plot:
-        wheel_encoder_vals = exp0_api.encoderdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
-        pellet_vals = exp0_api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
+        wheel_encoder_vals = api.encoderdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
+        pellet_vals = api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
         pellets_times = pellet_vals[pellet_vals.event == "{:s}".format(pellet_event_name)].index
         pellets_seconds[patch_to_plot] = (pellets_times-session_start).total_seconds()
         pellets_indices = ((pellets_seconds[patch_to_plot]-t0_relative)/time_resolution).astype(int)
