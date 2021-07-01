@@ -8,9 +8,8 @@ import pathlib
 import argparse
 import plotly.graph_objects as go
 
+import aeon.preprocess.api as api
 import aeon.preprocess.utils
-import aeon.preprocess.api as aeon_api
-from aeon.query import exp0_api
 import aeon.plotting.plot_functions
 
 def main(argv):
@@ -39,15 +38,15 @@ def main(argv):
     title_pattern = args.title_pattern
     fig_filename_pattern = args.fig_filename_pattern
 
-    metadata = exp0_api.sessiondata(root)
+    metadata = api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
     metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
-    metadata = exp0_api.sessionduration(metadata)
+    metadata = api.sessionduration(metadata)
     session_start = metadata.index[session]
     t0_absolute = session_start + datetime.timedelta(seconds=t0_relative)
     tf_absolute = session_start + datetime.timedelta(seconds=tf_relative)
 
-    position = aeon_api.positiondata(root, start=t0_absolute, end=tf_absolute)          # get position data between start and end
+    position = api.positiondata(root, start=t0_absolute, end=tf_absolute)          # get position data between start and end
     # position = position[position.area < 2000]                         # filter for objects of the correct size
 
     patches_coordinates = pd.DataFrame(data=patches_coordinates_matrix,
