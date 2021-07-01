@@ -8,8 +8,8 @@ import argparse
 import plotly.graph_objects as go
 import plotly.subplots
 
+import aeon.preprocess.api as api                                                                                                     
 import aeon.preprocess.utils
-from aeon.query import exp0_api
 import aeon.plotting.plot_functions as pf
 
 
@@ -20,13 +20,12 @@ def main(argv):
     parser.add_argument("--start_time", help="Start time (sec)", default=0.0, type=float)
     parser.add_argument("--duration", help="Duration (sec)", default=600.0, type=float)
     parser.add_argument("--patchesToPlot", help="Names of patches to plot", default="Patch1,Patch2")
-    parser.add_argument("--pellet_event_name", help="Pallete event name to display", default="TriggerPellet")
+    parser.add_argument("--pellet_event_name", help="Pellet event name to display", default="TriggerPellet")
     parser.add_argument("--xlabel", help="xlabel", default="Time (sec)")
     parser.add_argument("--ylabel", help="ylabel", default="Travelled Distance (cm)")
     parser.add_argument("--pellet_line_color", help="pellet line color", default="red")
     parser.add_argument("--pellet_line_style", help="pellet line style", default="solid")
     parser.add_argument("--title_pattern", help="title pattern", default="Start {:s}, from {:.02f} to {:0.2f} sec\n (min={:.02f}, max={:.02f})")
-    parser.add_argument("--data_filename", help="data filename", default="/ceph/aeon/aeon/preprocessing/experiment0/BAA-1099590/2021-03-25T15-16-18/FrameTop.csv")
     parser.add_argument("--fig_filename_pattern", help="figure filename pattern", default="../../figures/travelled_distance_newAPI_session{:d}_start{:.02f}_duration{:.02f}.{:s}")
 
     args = parser.parse_args()
@@ -42,13 +41,12 @@ def main(argv):
     pellet_line_color = args.pellet_line_color
     pellet_line_style = args.pellet_line_style
     title_pattern = args.title_pattern
-    data_filename = args.data_filename
     fig_filename_pattern = args.fig_filename_pattern
 
-    metadata = exp0_api.sessiondata(root)
+    metadata = api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
     metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
-    metadata = exp0_api.sessionduration(metadata)
+    metadata = api.sessionduration(metadata)
     session_start = metadata.index[session]
     t0_absolute = session_start + datetime.timedelta(seconds=t0_relative)
     tf_absolute = session_start + datetime.timedelta(seconds=tf_relative)
@@ -57,12 +55,12 @@ def main(argv):
     pellets_seconds = {}
     max_travelled_distance = -np.inf
     for patch_to_plot in patches_to_plot:
-        wheel_encoder_vals = exp0_api.encoderdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
-        travelled_distance[patch_to_plot] = exp0_api.distancetravelled(wheel_encoder_vals.angle)
+        wheel_encoder_vals = api.encoderdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
+        travelled_distance[patch_to_plot] = api.distancetravelled(wheel_encoder_vals.angle)
         if travelled_distance[patch_to_plot][-1]>max_travelled_distance:
             max_travelled_distance = travelled_distance[patch_to_plot][-1]
         travelled_seconds[patch_to_plot] = (travelled_distance[patch_to_plot].index-session_start).total_seconds()
-        pellet_vals = exp0_api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
+        pellet_vals = api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
         pellets_times = pellet_vals[pellet_vals.event == "{:s}".format(pellet_event_name)].index
         pellets_seconds[patch_to_plot] = (pellets_times-session_start).total_seconds()
 
