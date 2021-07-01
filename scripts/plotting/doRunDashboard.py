@@ -168,7 +168,9 @@ def main(argv):
                    Output('activitiesGraph', 'figure'),
                    Output('travelledDistanceGraph', 'figure'),
                    Output('rewardRateGraph', 'figure'),
-                   Output('plotsContainer', 'hidden')],
+                   Output('plotsContainer', 'hidden'),
+                   Output('plotButton', 'children'),
+                  ],
                   [Input('plotButton', 'n_clicks')],
                   [State('mouseNameDropDown', 'value'),
                    State('sessionStartTimeDropdown', 'value'),
@@ -205,13 +207,13 @@ def main(argv):
 
         # trajectory figure
         fig_trajectory = go.Figure()
-        trajectory_trace = aeon.plotting.plot_functions.get_trayectory_trace(x=x, y=y, time_stamps=time_stamps)
-        fig_trajectory.add_trace(trajectory_trace)
         patches_traces = aeon.plotting.plot_functions.get_patches_traces(patches_coordinates=patches_coordinates)
         for patch_trace in patches_traces:
             fig_trajectory.add_trace(patch_trace)
         nest_trace = aeon.plotting.plot_functions.get_patches_traces(patches_coordinates=nest_coordinates)[0]
         fig_trajectory.add_trace(nest_trace)
+        trajectory_trace = aeon.plotting.plot_functions.get_trayectory_trace(x=x, y=y, time_stamps=time_stamps)
+        fig_trajectory.add_trace(trajectory_trace)
         fig_trajectory.update_layout(xaxis_title=xlabel_trajectory, yaxis_title=ylabel_trajectory, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
 
         # activity figure
@@ -239,12 +241,8 @@ def main(argv):
             if travelled_distance[patch_to_plot][-1]>max_travelled_distance:
                 max_travelled_distance = travelled_distance[patch_to_plot][-1]
             travelled_seconds[patch_to_plot] = (travelled_distance[patch_to_plot].index-session_start).total_seconds()
-            print("t0_absolute==", t0_absolute)
-            print("tf_absolute==", tf_absolute)
             pellet_vals = aeon.preprocess.api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
             pellets_times = pellet_vals[pellet_vals.event == "{:s}".format(pellet_event_name)].index
-            print("type(pellets_times)==", type(pellets_times))
-            print("type(session_start)==", type(session_start))
             pellets_seconds[patch_to_plot] = (pellets_times-session_start).total_seconds()
 
         fig_travelledDistance = go.Figure()
@@ -300,8 +298,9 @@ def main(argv):
             fig_rewardRate.update_xaxes(title_text=xlabel_rewardRate, row=1, col=i+1)
 
         plotsContainer_hidden = False
+        plotButton_children = ["Update"]
 
-        return fig_trajectory, fig_cumTimePerActivity, fig_travelledDistance, fig_rewardRate, plotsContainer_hidden
+        return fig_trajectory, fig_cumTimePerActivity, fig_travelledDistance, fig_rewardRate, plotsContainer_hidden, plotButton_children
 
     if(args.local):
         app.run_server(debug=args.debug)
