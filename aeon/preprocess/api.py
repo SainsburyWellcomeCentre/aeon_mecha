@@ -16,7 +16,7 @@ def timebin(time):
     '''
     Returns the whole hour time bin for a measurement timestamp.
     
-    :param datetime or Series time: An object or series specifiying the measurement timestamps.
+    :param datetime or Series time: An object or series specifying the measurement timestamps.
     :return: A datetime object or series specifying the time bin for the measurement timestamp.
     '''
     if isinstance(time, pd.Series):
@@ -36,22 +36,25 @@ def timebin_range(start, end):
     '''
     return pd.date_range(timebin(start), timebin(end), freq=pd.DateOffset(hours=BIN_SIZE))
 
-def timebin_glob(pathname, timefilter=None):
-    '''
-    Returns a list of paths matching a filename pattern, with an optional time filter.
-    To use the time filter, files must conform to a naming convention where the timestamp
-    of each timebin is appended to the end of each file name.
+def timebin_key(file):
+    """Returns the time bin key for the specified file name."""
+    filename = os.path.split(file)[-1]
+    filename = os.path.splitext(filename)[0]
+    timebin_str = filename.split("_")[-1]
+    date_str, time_str = timebin_str.split("T")
+    return datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":"))
 
-    :param str pathname: The pathname pattern used to search for matching filenames.
-    :param iterable or callable, optional timefilter:
+def timebin_filter(files, timefilter):
+    '''
+    Filters a list of paths using the specified time filter. To use the time filter, files
+    must conform to a naming convention where the timestamp of each timebin is appended to
+    the end of each file path.
+
+    :param str files: The list of timebin files to filter.
+    :param iterable or callable timefilter:
     A list of time bins or a predicate used to test each file time.
     :return: A list of all matching filenames.
     '''
-    files = glob.glob(pathname)
-    files.sort()
-    if timefilter is None:
-        return files
-
     try:
         timebins = [timebin for timebin in iter(timefilter)]
         timefilter = lambda x:x in timebins
@@ -61,11 +64,7 @@ def timebin_glob(pathname, timefilter=None):
 
     matches = []
     for file in files:
-        filename = os.path.split(file)[-1]
-        filename = os.path.splitext(filename)[0]
-        timebin_str = filename.split("_")[-1]
-        date_str, time_str = timebin_str.split("T")
-        timebin = datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":"))
+        timebin = timebin_key(file)
         if not timefilter(timebin):
             continue
         matches.append(file)
@@ -86,15 +85,19 @@ def load(path, reader, device, prefix=None, extension="*.csv", start=None, end=N
     :param datetime, optional end: The right bound of the time range to extract.
     :return: A pandas data frame containing session event metadata, sorted by time.
     '''
-    if start is not None or end is not None:
-        timefilter = timebin_range(start, end)
-    else:
-        timefilter = None
-
     if prefix is None:
         prefix = ""
 
-    files = timebin_glob(path + "/**/" + device + "/" + prefix + extension, timefilter)
+    pathname = path + "/**/" + device + "/" + prefix + extension
+    files = glob.glob(pathname)
+    files.sort()
+
+    if start is not None or end is not None:
+        timefilter = timebin_range(start, end)
+        files = timebin_filter(files, timefilter)
+    else:
+        timefilter = None
+
     if len(files) == 0:
         return reader(None)
 
