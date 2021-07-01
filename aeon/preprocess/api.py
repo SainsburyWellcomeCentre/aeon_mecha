@@ -223,6 +223,7 @@ def videoreader(file):
     data = pd.read_csv(file, header=0, skiprows=1, names=names)
     data.insert(loc=1, column='frame', value=data.index)
     data['time'] = aeon(data['time'])
+    data['path'] = os.path.splitext(file)[0] + '.avi'
     data.set_index('time', inplace=True)
     return data
 
@@ -262,21 +263,13 @@ def videoclip(path, device, start=None, end=None):
     :param datetime, optional end: The right bound of the time range to extract.
     :return: A pandas data frame containing video clip storage information.
     '''
-    framedata = load(
-        path,
-        lambda file: pd.DataFrame() if file is None else
-                     videoreader(file).assign(path=os.path.splitext(file)[0] + '.avi'),
-        device=device,
-        extension="*.csv",
-        start=start,
-        end=end)
+    framedata = videodata(path, device, start=start, end=end)
     if len(framedata) == 0:
         return pd.DataFrame(columns=['start','duration'], index=pd.DatetimeIndex([]))
     videoclips = framedata.groupby('path')
     startframe = videoclips.frame.min().rename('start')
     duration = (videoclips.frame.max() - startframe).rename('duration')
     return pd.concat([startframe, duration], axis=1)
-    
 
 """Maps Harp payload types to numpy data type objects."""
 payloadtypes = {
@@ -454,6 +447,41 @@ def positiondata(path, device='FrameTop', start=None, end=None, time=None, toler
         end=end,
         time=time,
         tolerance=tolerance)
+
+def videoframe(data):
+    '''
+    Extracts the raw frames corresponding to the provided video metadata.
+
+    :param DataFrame data:
+    A pandas DataFrame where each row specifies video acquisition path and frame number.
+    :return:
+    An object to iterate over numpy arrays for each row in the DataFrame,
+    containing the raw video frame data.
+    '''
+    import cv2
+    capture = None
+    filename = None
+    index = 0
+    try:
+        for frameidx, path in zip(data.frame, data.path):
+            if filename != path:
+                if capture is not None:
+                    capture.release()
+                capture = cv2.VideoCapture(path)
+                filename = path
+                index = 0
+
+            if frameidx != index:
+                capture.set(cv2.cv2.CAP_PROP_POS_FRAMES, frameidx)
+                index = frameidx
+            success, frame = capture.read()
+            if not success:
+                raise ValueError('Unable to read frame {0} from video path "{1}".'.format(frameidx, path))
+            yield frame
+            index = index + 1
+    finally:
+        if capture is not None:
+            capture.release()
 
 def distancetravelled(angle, radius=4.0):
     '''
