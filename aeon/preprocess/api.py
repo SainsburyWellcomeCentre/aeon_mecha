@@ -1,5 +1,6 @@
 import os
 import glob
+import bisect
 import datetime
 import pandas as pd
 import numpy as np
@@ -70,7 +71,8 @@ def timebin_filter(files, timefilter):
         matches.append(file)
     return matches
 
-def load(path, reader, device, prefix=None, extension="*.csv", start=None, end=None):
+def load(path, reader, device, prefix=None, extension="*.csv",
+         start=None, end=None, time=None, tolerance=None):
     '''
     Extracts data from matching files in the specified root path, sorted chronologically,
     containing device and/or session metadata for the Experiment 0 arena. If no prefix is
@@ -83,6 +85,9 @@ def load(path, reader, device, prefix=None, extension="*.csv", start=None, end=N
     :param str, optional extension: The optional extension pattern used to search for data files.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
+    :param datetime, optional time: An object or series specifying the timestamps to extract.
+    :param datetime, optional tolerance:
+    The maximum distance between original and new timestamps for inexact matches.
     :return: A pandas data frame containing session event metadata, sorted by time.
     '''
     if prefix is None:
@@ -91,6 +96,37 @@ def load(path, reader, device, prefix=None, extension="*.csv", start=None, end=N
     pathname = path + "/**/" + device + "/" + prefix + extension
     files = glob.glob(pathname)
     files.sort()
+
+    if time is not None:
+        # ensure input is converted to timestamp series
+        if isinstance(time, pd.DataFrame):
+            time = time.index
+        if not isinstance(time, pd.Series):
+            time = pd.Series(time)
+            time.index = time
+
+        dataframes = []
+        filetimes = [timebin_key(file) for file in files]
+        for key,values in time.groupby(by=timebin):
+            i = bisect.bisect_left(filetimes, key)
+            if i < len(filetimes):
+                frame = reader(files[i])
+            else:
+                frame = reader(None)
+            data = frame.reset_index()
+            data.set_index('time', drop=False, inplace=True)
+            data = data.reindex(values, method='pad', tolerance=tolerance)
+            missing = len(data.time) - data.time.count()
+            if missing > 0 and i > 0:
+                # expand reindex to allow adjacent timebins
+                # to fill missing values
+                previous = reader(files[i-1])
+                data = pd.concat([previous, frame])
+                data = data.reindex(values, method='pad', tolerance=tolerance)
+            else:
+                data.drop(columns='time', inplace=True)
+            dataframes.append(data)
+        return pd.concat(dataframes)
 
     if start is not None or end is not None:
         timefilter = timebin_range(start, end)
@@ -116,7 +152,7 @@ def sessionreader(file):
     data.set_index('time', inplace=True)
     return data
 
-def sessiondata(path, start=None, end=None):
+def sessiondata(path, start=None, end=None, time=None, tolerance=None):
     '''
     Extracts all session metadata from the specified root path, sorted chronologically,
     indicating start and end times of manual sessions in the Experiment 0 arena.
@@ -124,6 +160,9 @@ def sessiondata(path, start=None, end=None):
     :param str path: The root path where all the session data is stored.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
+    :param datetime, optional time: An object or series specifying the timestamps to extract.
+    :param datetime, optional tolerance:
+    The maximum distance between original and new timestamps for inexact matches.
     :return: A pandas data frame containing session event metadata, sorted by time.
     '''
     return load(
@@ -133,7 +172,9 @@ def sessiondata(path, start=None, end=None):
         prefix='SessionData_2',
         extension="*.csv",
         start=start,
-        end=end)
+        end=end,
+        time=time,
+        tolerance=tolerance)
 
 def annotationreader(file):
     """Reads session annotations from the specified file."""
@@ -150,7 +191,7 @@ def annotationreader(file):
     data.set_index('time', inplace=True)
     return data
 
-def annotations(path, start=None, end=None):
+def annotations(path, start=None, end=None, time=None, tolerance=None):
     '''
     Extracts session metadata from the specified root path, sorted chronologically,
     indicating event times of manual annotations in the Experiment 0 arena.
@@ -158,6 +199,9 @@ def annotations(path, start=None, end=None):
     :param str path: The root path where all the session data is stored.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
+    :param datetime, optional time: An object or series specifying the timestamps to extract.
+    :param datetime, optional tolerance:
+    The maximum distance between original and new timestamps for inexact matches.
     :return: A pandas data frame containing annotation metadata, sorted by time.
     '''
     return load(
@@ -167,7 +211,9 @@ def annotations(path, start=None, end=None):
         prefix='SessionData_Annotations',
         extension="*.csv",
         start=start,
-        end=end)
+        end=end,
+        time=time,
+        tolerance=tolerance)
 
 def videoreader(file):
     """Reads video metadata from the specified file."""
@@ -180,7 +226,7 @@ def videoreader(file):
     data.set_index('time', inplace=True)
     return data
 
-def videodata(path, device, start=None, end=None):
+def videodata(path, device, start=None, end=None, time=None, tolerance=None):
     '''
     Extracts all video metadata from the specified root path, sorted chronologically,
     indicating synchronized trigger frame times for cameras in the Experiment 0 arena.
@@ -189,6 +235,9 @@ def videodata(path, device, start=None, end=None):
     :param str, device: The device prefix used to search for video files.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
+    :param datetime, optional time: An object or series specifying the timestamps to extract.
+    :param datetime, optional tolerance:
+    The maximum distance between original and new timestamps for inexact matches.
     :return: A pandas data frame containing frame event metadata, sorted by time.
     '''
     return load(
@@ -197,7 +246,9 @@ def videodata(path, device, start=None, end=None):
         device=device,
         extension="*.csv",
         start=start,
-        end=end)
+        end=end,
+        time=time,
+        tolerance=tolerance)
 
 def videoclip(path, device, start=None, end=None):
     '''
@@ -278,7 +329,7 @@ def harpreader(file, names=None):
     time.name = 'time'
     return pd.DataFrame(payload, index=time, columns=names)
 
-def harpdata(path, device, register, names=None, start=None, end=None):
+def harpdata(path, device, register, names=None, start=None, end=None, time=None, tolerance=None):
     '''
     Extracts all harp data from the specified root path, sorted chronologically,
     for an individual register acquired from a device in the Experiment 0 arena.
@@ -289,6 +340,9 @@ def harpdata(path, device, register, names=None, start=None, end=None):
     :param str or array-like names: The optional column labels to use for the data.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
+    :param datetime, optional time: An object or series specifying the timestamps to extract.
+    :param datetime, optional tolerance:
+    The maximum distance between original and new timestamps for inexact matches.
     :return: A pandas data frame containing harp event data, sorted by time.
     '''
     return load(
@@ -298,9 +352,11 @@ def harpdata(path, device, register, names=None, start=None, end=None):
         prefix="{0}_{1}".format(device, register),
         extension="*.bin",
         start=start,
-        end=end)
+        end=end,
+        time=time,
+        tolerance=tolerance)
 
-def encoderdata(path, device, start=None, end=None):
+def encoderdata(path, device, start=None, end=None, time=None, tolerance=None):
     '''
     Extracts all encoder data from the specified root path, sorted chronologically,
     from the specified patch controller in the Experiment 0 arena.
@@ -315,9 +371,10 @@ def encoderdata(path, device, start=None, end=None):
         path,
         device, register=90,
         names=['angle', 'intensity'],
-        start=start, end=end)
+        start=start, end=end,
+        time=time, tolerance=tolerance)
 
-def pelletdata(path, device, start=None, end=None):
+def pelletdata(path, device, start=None, end=None, time=None, tolerance=None):
     '''
     Extracts all pellet event data from the specified root path, sorted chronologically,
     indicating when delivery of a pellet was triggered and when pellets were detected
@@ -329,8 +386,10 @@ def pelletdata(path, device, start=None, end=None):
     :param datetime, optional end: The right bound of the time range to extract.
     :return: A pandas data frame containing pellet event data, sorted by time.
     '''
-    command = harpdata(path, device, register=35, names=['bitmask'], start=start, end=end)
-    beambreak = harpdata(path, device, register=32, names=['bitmask'], start=start, end=end)
+    command = harpdata(path, device, register=35, names=['bitmask'],
+                       start=start, end=end, time=time, tolerance=tolerance)
+    beambreak = harpdata(path, device, register=32, names=['bitmask'],
+                         start=start, end=end, time=time, tolerance=tolerance)
     command = command[command.bitmask == 0x80]
     beambreak = beambreak[beambreak.bitmask == 0x20]
     command['event'] = 'TriggerPellet'
@@ -348,7 +407,7 @@ def patchreader(file):
     data.set_index('time', inplace=True)
     return data
 
-def patchdata(path, patch, start=None, end=None):
+def patchdata(path, patch, start=None, end=None, time=None, tolerance=None):
     '''
     Extracts patch metadata from the specified root path, sorted chronologically,
     indicating wheel threshold state changes in the Experiment 0 arena.
@@ -357,6 +416,9 @@ def patchdata(path, patch, start=None, end=None):
     :param str patch: The patch name used to search for data files.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
+    :param datetime, optional time: An object or series specifying the timestamps to extract.
+    :param datetime, optional tolerance:
+    The maximum distance between original and new timestamps for inexact matches.
     :return: A pandas data frame containing patch state metadata, sorted by time.
     '''
     return load(
@@ -366,9 +428,11 @@ def patchdata(path, patch, start=None, end=None):
         prefix='{0}_State'.format(patch),
         extension="*.csv",
         start=start,
-        end=end)
+        end=end,
+        time=time,
+        tolerance=tolerance)
 
-def positiondata(path, device='FrameTop', start=None, end=None):
+def positiondata(path, device='FrameTop', start=None, end=None, time=None, tolerance=None):
     '''
     Extracts all position data from the specified root path, sorted chronologically,
     for the specified camera in the Experiment 0 arena.
@@ -377,6 +441,9 @@ def positiondata(path, device='FrameTop', start=None, end=None):
     :param str device: The device name used to search for data files.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
+    :param datetime, optional time: An object or series specifying the timestamps to extract.
+    :param datetime, optional tolerance:
+    The maximum distance between original and new timestamps for inexact matches.
     :return: A pandas data frame containing position data, sorted by time.
     '''
     return harpdata(
@@ -384,7 +451,9 @@ def positiondata(path, device='FrameTop', start=None, end=None):
         device, register=200,
         names=['x', 'y', 'angle', 'major', 'minor', 'area'],
         start=start,
-        end=end)
+        end=end,
+        time=time,
+        tolerance=tolerance)
 
 def distancetravelled(angle, radius=4.0):
     '''
