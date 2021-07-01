@@ -16,10 +16,8 @@ import dash_html_components as html
 from dash.dependencies import Input, Output, State, ALL, MATCH
 import dash.exceptions
 
-from aeon.query import exp0_api
+import aeon.preprocess.api
 import aeon.preprocess.utils
-import aeon.preprocess.api as aeon_api
-from aeon.query import exp0_api
 import aeon.signalProcessing.utils
 import aeon.preprocess.utils
 import aeon.plotting.plot_functions
@@ -36,7 +34,7 @@ def main(argv):
     parser.add_argument("--win_length_sec", help="Moving average window length (sec)", default=10.0, type=float)
     parser.add_argument("--time_resolution", help="Time resolution to compute the moving average (sec)", default=0.01, type=float)
     parser.add_argument("--video_frame_rate", help="Top camera frame rate (Hz)", default=50.0, type=float)
-    parser.add_argument("--pellet_event_name", help="Pallete event name to display", default="TriggerPellet")
+    parser.add_argument("--pellet_event_name", help="Pellet event name to display", default="TriggerPellet")
     parser.add_argument("--xlabel_trajectory", help="xlabel for trajectory plot", default="x (pixels)")
     parser.add_argument("--ylabel_trajectory", help="ylabel for trajectory plot", default="y (pixels)")
     parser.add_argument("--ylabel_cumTimePerActivity", help="ylabel", default="Proportion of Time")
@@ -45,6 +43,8 @@ def main(argv):
     parser.add_argument("--xlabel_rewardRate", help="xlabel for reward rate", default="Time (sec)")
     parser.add_argument("--ylabel_rewardRate", help="ylabe for reward ratel", default="Reward Rate")
     parser.add_argument("--ylim_cumTimePerActivity", help="ylim cummulative time per activity plot", default="[0,1]")
+    parser.add_argument("--travelled_distance_trace_color", help="travelled distance trace color", default="blue")
+    parser.add_argument("--reward_rate_trace_color", help="reward rate trace color", default="blue")
     parser.add_argument("--pellet_line_color", help="pellet line color", default="red")
     parser.add_argument("--pellet_line_style", help="pellet line style", default="solid")
 
@@ -67,13 +67,15 @@ def main(argv):
     xlabel_rewardRate = args.xlabel_rewardRate
     ylabel_rewardRate = args.ylabel_rewardRate
     ylim_cumTimePerActivity = [float(str) for str in args.ylim_cumTimePerActivity[1:-1].split(",")]
+    travelled_distance_trace_color = args.travelled_distance_trace_color
+    reward_rate_trace_color = args.reward_rate_trace_color
     pellet_line_color = args.pellet_line_color
     pellet_line_style = args.pellet_line_style
 
-    metadata = exp0_api.sessiondata(root)
+    metadata = aeon.preprocess.api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
     metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
-    metadata = exp0_api.sessionduration(metadata)
+    metadata = aeon.preprocess.api.sessionduration(metadata)
 
     mouse_names = metadata["id"].unique()
     options_mouse_names = [{"label": mouse_name, "value": mouse_name} for mouse_name in mouse_names]
@@ -195,7 +197,7 @@ def main(argv):
         session_start = pd.Timestamp(sessionStartTimeDropdown_value)
         t0_absolute = session_start + datetime.timedelta(seconds=t0_relative)
         tf_absolute = session_start + datetime.timedelta(seconds=tf_relative)
-        position = aeon_api.positiondata(root, start=t0_absolute, end=tf_absolute)
+        position = aeon.preprocess.api.positiondata(root, start=t0_absolute, end=tf_absolute)
 
         x = position["x"].to_numpy()
         y = position["y"].to_numpy()
@@ -232,21 +234,24 @@ def main(argv):
         pellets_seconds = {}
         max_travelled_distance = -np.inf
         for patch_to_plot in patches_to_plot:
-            wheel_encoder_vals = exp0_api.encoderdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
-            travelled_distance[patch_to_plot] = exp0_api.distancetravelled(wheel_encoder_vals.angle)
+            wheel_encoder_vals = aeon.preprocess.api.encoderdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
+            travelled_distance[patch_to_plot] = aeon.preprocess.api.distancetravelled(wheel_encoder_vals.angle)
             if travelled_distance[patch_to_plot][-1]>max_travelled_distance:
                 max_travelled_distance = travelled_distance[patch_to_plot][-1]
             travelled_seconds[patch_to_plot] = (travelled_distance[patch_to_plot].index-session_start).total_seconds()
-            pellet_vals = exp0_api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
+            print("t0_absolute==", t0_absolute)
+            print("tf_absolute==", tf_absolute)
+            pellet_vals = aeon.preprocess.api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
             pellets_times = pellet_vals[pellet_vals.event == "{:s}".format(pellet_event_name)].index
+            print("type(pellets_times)==", type(pellets_times))
+            print("type(session_start)==", type(session_start))
             pellets_seconds[patch_to_plot] = (pellets_times-session_start).total_seconds()
 
         fig_travelledDistance = go.Figure()
         fig_travelledDistance = plotly.subplots.make_subplots(rows=1, cols=len(patches_to_plot),
                                             subplot_titles=(patches_to_plot))
         for i, patch_to_plot in enumerate(patches_to_plot):
-            trace = aeon.plotting.plot_functions.get_travelling_distance_trace(travelled_seconds=travelled_seconds[patch_to_plot], travelled_distance=travelled_distance[patch_to_plot],
-                                                    showlegend=False)
+            trace = aeon.plotting.plot_functions.get_travelled_distance_trace(travelled_seconds=travelled_seconds[patch_to_plot], travelled_distance=travelled_distance[patch_to_plot], color=travelled_distance_trace_color, showlegend=False)
             fig_travelledDistance.add_trace(trace, row=1, col=i+1)
             for pellet_second in pellets_seconds[patch_to_plot]:
                 fig_travelledDistance.add_vline(x=pellet_second, line_color=pellet_line_color,
@@ -263,8 +268,8 @@ def main(argv):
         max_reward_rate = -np.inf
         time = np.arange(t0_relative, tf_relative, time_resolution)
         for patch_to_plot in patches_to_plot:
-            wheel_encoder_vals = exp0_api.encoderdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
-            pellet_vals = exp0_api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
+            wheel_encoder_vals = aeon.preprocess.api.encoderdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
+            pellet_vals = aeon.preprocess.api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
             pellets_times = pellet_vals[pellet_vals.event == "{:s}".format(pellet_event_name)].index
             pellets_seconds[patch_to_plot] = (pellets_times-session_start).total_seconds()
             pellets_indices = ((pellets_seconds[patch_to_plot]-t0_relative)/time_resolution).astype(int)
@@ -281,8 +286,9 @@ def main(argv):
                                                        subplot_titles=(patches_to_plot))
         for i, patch_to_plot in enumerate(patches_to_plot):
             trace = go.Scatter(x=time+win_length_sec/2.0,
-                            y=reward_rate[patch_to_plot],
-                            showlegend=False)
+                                y=reward_rate[patch_to_plot],
+                                line=dict(color=reward_rate_trace_color),
+                                showlegend=False)
             fig_rewardRate.add_trace(trace, row=1, col=i+1)
             for pellet_second in pellets_seconds[patch_to_plot]:
                 fig_rewardRate.add_vline(x=pellet_second, line_color=pellet_line_color,
