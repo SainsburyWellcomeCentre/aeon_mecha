@@ -1,4 +1,4 @@
-from aeon.aeon_pipeline import subject, experiment, tracking
+from aeon.aeon_pipeline import subject, experiment, tracking, session
 from aeon.aeon_pipeline.ingestion import load_arena_setup
 
 
@@ -52,3 +52,5 @@ experiment.FoodPatchEvent.populate(**settings)
 experiment.FoodPatchWheel.populate(**settings)
 tracking.SubjectPosition.populate(**settings)
 tracking.SubjectDistance.populate(**settings)
+session.Session.populate(**settings)
+session.SessionStatistics.populate(**settings)
