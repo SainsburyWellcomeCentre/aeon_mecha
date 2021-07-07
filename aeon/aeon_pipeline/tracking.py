@@ -1,5 +1,4 @@
 import datajoint as dj
-import pathlib
 import pandas as pd
 import datetime
 import numpy as np
@@ -40,16 +39,11 @@ class SubjectPosition(dj.Imported):
         The positiondata is associated with that one subject currently in the arena at any timepoints
         However, we need to take into account if the subject is entered or exited during this epoch
         """
-        repo_name, path = (experiment.Experiment.Directory
-                           & 'directory_type = "raw"'
-                           & key).fetch1(
-            'repository_name', 'directory_path')
-        root = paths.get_repository_path(repo_name)
-        raw_data_dir = root / path
 
         epoch_start, epoch_end = (experiment.Epoch.Subject & key).fetch1(
             'epoch_start', 'epoch_end')
 
+        raw_data_dir = experiment.Experiment.get_raw_data_directory(key)
         positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
                                              start=pd.Timestamp(epoch_start),
                                              end=pd.Timestamp(epoch_end))
@@ -77,6 +71,11 @@ class SubjectPosition(dj.Imported):
         z = np.full_like(x, 0.0)
         area = np.where(is_in_arena, positiondata.area.values, np.nan)
 
+        # speed - TODO: confirm with aeon team if this calculation is sufficient (any smoothing needed?)
+        position_diff = np.sqrt(np.square(np.diff(x)) + np.square(np.diff(y)) + np.square(np.diff(z)))
+        time_diff = [t.total_seconds() for t in np.diff(timestamps)]
+        speed = position_diff / time_diff
+
         # unique positions
         unique_positions = set(list(zip(np.round(z, 2),
                                         np.round(y, 2),
@@ -86,7 +85,8 @@ class SubjectPosition(dj.Imported):
                       'position_x': x,
                       'position_y': y,
                       'position_z': z,
-                      'area': area})
+                      'area': area,
+                      'speed': speed})
         self.UniquePosition.insert([{**key, 'x': x, 'y': y, 'z': z}
                                     for x, y, z in unique_positions
                                     if not np.any(np.where(np.isnan([x, y, z])))])
