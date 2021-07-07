@@ -53,6 +53,15 @@ class Experiment(dj.Manual):
         directory_path: varchar(255)
         """
 
+    @classmethod
+    def get_raw_data_directory(cls, experiment_key):
+        repo_name, path = (cls.Directory
+                           & experiment_key
+                           & 'directory_type = "raw"').fetch1(
+            'repository_name', 'directory_path')
+        root = paths.get_repository_path(repo_name)
+        return root / path
+
 
 @schema
 class ExperimentCamera(dj.Manual):
@@ -216,13 +225,7 @@ class SubjectEnterExit(dj.Imported):
         time_bin_start, time_bin_end = (TimeBin & key).fetch1(
             'time_bin_start', 'time_bin_end')
 
-        repo_name, path = (Experiment.Directory
-                           & 'directory_type = "raw"'
-                           & key).fetch1(
-            'repository_name', 'directory_path')
-        root = paths.get_repository_path(repo_name)
-        raw_data_dir = root / path
-
+        raw_data_dir = Experiment.get_raw_data_directory(key)
         sessiondata = aeon_api.sessiondata(raw_data_dir.as_posix(),
                                            start=pd.Timestamp(time_bin_start),
                                            end=pd.Timestamp(time_bin_end))
@@ -254,13 +257,7 @@ class SubjectAnnotation(dj.Imported):
         time_bin_start, time_bin_end = (TimeBin & key).fetch1(
             'time_bin_start', 'time_bin_end')
 
-        repo_name, path = (Experiment.Directory
-                           & 'directory_type = "raw"'
-                           & key).fetch1(
-            'repository_name', 'directory_path')
-        root = paths.get_repository_path(repo_name)
-        raw_data_dir = root / path
-
+        raw_data_dir = Experiment.get_raw_data_directory(key)
         annotations = aeon_api.annotations(raw_data_dir.as_posix(),
                                            start=pd.Timestamp(time_bin_start),
                                            end=pd.Timestamp(time_bin_end))
@@ -384,13 +381,7 @@ class FoodPatchEvent(dj.Imported):
         time_bin_start, time_bin_end = (TimeBin & key).fetch1('time_bin_start', 'time_bin_end')
         food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
 
-        repo_name, path = (Experiment.Directory
-                           & 'directory_type = "raw"'
-                           & key).fetch1(
-            'repository_name', 'directory_path')
-        root = paths.get_repository_path(repo_name)
-        raw_data_dir = root / path
-
+        raw_data_dir = Experiment.get_raw_data_directory(key)
         pelletdata = aeon_api.pelletdata(raw_data_dir.as_posix(),
                                          device=food_patch_description,
                                          start=pd.Timestamp(time_bin_start),
@@ -436,13 +427,7 @@ class FoodPatchWheel(dj.Imported):
         time_bin_start, time_bin_end = (TimeBin & key).fetch1('time_bin_start', 'time_bin_end')
         food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
 
-        repo_name, path = (Experiment.Directory
-                           & 'directory_type = "raw"'
-                           & key).fetch1(
-            'repository_name', 'directory_path')
-        root = paths.get_repository_path(repo_name)
-        raw_data_dir = root / path
-
+        raw_data_dir = Experiment.get_raw_data_directory(key)
         encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
                                            device=food_patch_description,
                                            start=pd.Timestamp(time_bin_start),
