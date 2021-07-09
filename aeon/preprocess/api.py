@@ -505,8 +505,8 @@ def distancetravelled(angle, radius=4.0):
 def sessionduration(data):
     '''
     Computes duration and summary metadata for each session, by subtracting the
-    start and end times. Assumes no missing data, i.e. the same number of start
-    and end times.
+    start and end times. Allows for missing data by trying to match session start times
+    with subsequent end times. If the match fails, end session metadata is filled with NaN.
 
     :param DataFrame data: A pandas data frame containing session event metadata.
     :return: A pandas data frame containing duration and metadata for each session.
