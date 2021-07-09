@@ -1,4 +1,4 @@
-from aeon.aeon_pipeline import subject, experiment, tracking, session
+from aeon.aeon_pipeline import lab, subject, experiment, tracking, session
 from aeon.aeon_pipeline.ingestion import load_arena_setup
 
 
@@ -40,6 +40,22 @@ experiment_name = 'exp0.1-r0'
 yml_filepath = '/nfs/nhome/live/thinh/code/ProjectAeon/aeon/aeon/aeon_pipeline/ingestion/setup_yml/Experiment0.1.yml'
 
 load_arena_setup(yml_filepath, experiment_name)
+
+# manually add coordinates of foodpatch and nest
+patch_coordinates = {'Patch1': [(584, 815), (597, 834), (584, 834), (584, 834)],
+                     'Patch2': [(614, 252), (634, 252), (614, 271), (634, 271)],
+                     'Nest': [(170, 450), (170, 540), (260, 450), (260, 540)]}
+
+for patch_key in experiment.ExperimentFoodPatch.fetch('KEY'):
+    patch = (experiment.ExperimentFoodPatch & patch_key).fetch1('food_patch_description')
+    experiment.ExperimentFoodPatch.TileVertex.insert(
+        ({**patch_key, 'vertex': v_id, 'vertex_x': x, 'vertex_y': y}
+         for v_id, (x, y) in enumerate(patch_coordinates[patch])))
+
+lab.ArenaNest.insert1({'arena_name': 'circle-2m'})
+lab.ArenaNest.Vertex.insert(
+    ({'arena_name': 'circle-2m', 'vertex': v_id, 'vertex_x': x, 'vertex_y': y}
+     for v_id, (x, y) in enumerate(patch_coordinates['Nest'])))
 
 # ---------------- Auto Ingestion -----------------
 settings = {'reserve_jobs': True, 'suppress_errors': True}

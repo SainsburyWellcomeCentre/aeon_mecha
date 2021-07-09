@@ -5,7 +5,7 @@ import numpy as np
 
 from aeon.preprocess import api as aeon_api
 
-from . import experiment, tracking
+from . import experiment, tracking, pipeline_api
 from . import get_schema_name, paths
 
 
@@ -21,6 +21,14 @@ class Session(dj.Computed):
     session_end: datetime(3)
     session_duration: float  # (hour)
     """
+
+    class Annotation(dj.Part):
+        definition = """
+        -> master
+        annotation_time: datetime(3)  # datetime of the annotation
+        ---
+        -> experiment.SubjectAnnotation.Annotation        
+        """
 
     @property
     def key_source(self):
@@ -43,11 +51,21 @@ class Session(dj.Computed):
         if subject_exit['enter_exit_event'] != 'exit':
             raise ValueError(f'Subject {key["subject"]} never exited after {session_start}')
 
-        duration = (subject_exit['enter_exit_time'] - session_start).total_seconds() / 3600
+        session_end = subject_exit['enter_exit_time']
 
+        duration = (session_end - session_start).total_seconds() / 3600
+
+        # annotations
+        annotations = (
+                experiment.SubjectAnnotation.Annotation
+                & f'annotation_time BETWEEN "{session_start}" AND "{session_end}"').proj(
+            session_start=f'"{session_start}"')
+
+        # insert
         self.insert1({**key,
-                      'session_end': subject_exit['enter_exit_time'],
+                      'session_end': session_end,
                       'session_duration': duration})
+        self.Annotation.insert(annotations)
 
 
 @schema
@@ -55,6 +73,7 @@ class SessionStatistics(dj.Computed):
     definition = """
     -> Session
     ---
+    time_fraction_in_nest: float  # fraction of time the animal spent in the nest in this session
     distance_travelled: float  # total distance the animal travelled during this session
     """
 
@@ -63,7 +82,7 @@ class SessionStatistics(dj.Computed):
         -> master
         -> experiment.ExperimentFoodPatch
         ---
-        time_spent_in_patch: float  # (hour) total time the animal spent on this patch
+        time_fraction_in_patch: float  # fraction of time the animal spent on this patch in this session
         wheel_distance_travelled: float  # total wheel travel distance during this session
         """
 
@@ -71,27 +90,32 @@ class SessionStatistics(dj.Computed):
     key_source = Session & (Session * experiment.Epoch.Subject
                             * tracking.SubjectPosition & 'epoch_end > session_end').proj()
 
-    # animal's distance from the food-patch position to be considered "time spent in the food patch"
-    distance_threshold = 150
-
     def make(self, key):
-        first_epoch = (Session * experiment.Epoch.Subject
-                       & key & 'session_start BETWEEN epoch_start AND epoch_end').fetch1("epoch_start")
-        last_epoch = (Session * experiment.Epoch.Subject
-                      & key & 'session_end BETWEEN epoch_start AND epoch_end').fetch1("epoch_end")
-        session_epochs = (Session * experiment.Epoch.Subject & key
-                          & f'epoch_start BETWEEN "{first_epoch}" AND "{last_epoch}"')
+        raw_data_dir = experiment.Experiment.get_raw_data_directory(key)
 
+        session_epochs = find_session_epochs(key)
         session_start, session_end = (Session & key).fetch1('session_start', 'session_end')
 
-        raw_data_dir = experiment.Experiment.get_raw_data_directory(key)
-        positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
-                                             start=pd.Timestamp(session_start),
-                                             end=pd.Timestamp(session_end))
+        # subject's position data in the epochs
+        timestamps, position_x, position_y, speed, area = (
+                    tracking.SubjectPosition & session_epochs).fetch(
+            'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='epoch_start')
 
-        position_diff = np.sqrt(np.square(np.diff(positiondata.x)) + np.square(np.diff(positiondata.y)))
+        # stack and structure in pandas DataFrame
+        position = pd.DataFrame(dict(x=np.hstack(position_x),
+                                     y=np.hstack(position_y),
+                                     speed=np.hstack(speed),
+                                     area=np.hstack(area)),
+                                index=np.hstack(timestamps))
+        position = position[session_start:session_end]
+
+        position_diff = np.sqrt(np.square(np.diff(position.x)) + np.square(np.diff(position.y)))
         distance_travelled = np.nancumsum(position_diff)[-1]
 
+        is_in_nest = pipeline_api.is_in_nest(key, position.x, position.y)
+        time_fraction_in_nest = sum(is_in_nest) / len(is_in_nest)
+
+        # food patch data
         food_patch_keys = (
                 Session
                 * experiment.ExperimentFoodPatch.join(experiment.ExperimentFoodPatch.RemovalTime, left=True)
@@ -101,19 +125,8 @@ class SessionStatistics(dj.Computed):
 
         food_patch_statistic = []
         for food_patch_key in food_patch_keys:
-            timestamps, distances = (tracking.SubjectPosition
-                                     * tracking.SubjectDistance.FoodPatch
-                                     & session_epochs & food_patch_key).fetch('timestamps', 'distance')
-            timestamps = np.hstack(timestamps)
-            distances = np.hstack(distances)
-
-            is_in_patch = np.logical_and(~np.isnan(distances),
-                                         distances <= self.distance_threshold)
-            if sum(is_in_patch):
-                time_spent_in_patch = np.diff(timestamps[is_in_patch])
-                time_spent_in_patch = time_spent_in_patch[time_spent_in_patch < datetime.timedelta(seconds=1)].sum().total_seconds()
-            else:
-                time_spent_in_patch = 0
+            is_in_patch = pipeline_api.is_in_patch(food_patch_key, position.x, position.y)
+            time_fraction_in_patch = sum(is_in_patch) / len(is_in_patch)
 
             # wheel data
             food_patch_description = (experiment.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
@@ -124,8 +137,36 @@ class SessionStatistics(dj.Computed):
             wheel_distance_travelled = aeon_api.distancetravelled(encoderdata.angle)[-1]
 
             food_patch_statistic.append({**key, **food_patch_key,
-                                         'time_spent_in_patch': time_spent_in_patch / 3600, # convert to hours
+                                         'time_fraction_in_patch': time_fraction_in_patch,
                                          'wheel_distance_travelled': wheel_distance_travelled})
 
-        self.insert1({**key, 'distance_travelled': distance_travelled})
+        self.insert1({**key,
+                      'time_fraction_in_nest': time_fraction_in_nest,
+                      'distance_travelled': distance_travelled})
         self.FoodPatchStatistics.insert(food_patch_statistic)
+
+
+# ---------- HELPER FUNCTIONS -----------
+
+def find_session_timebins(session_key):
+    """
+    Given a "session_key", return a query for all timebins belonging to this session
+    """
+    first_timebin = (Session * experiment.TimeBin
+                     & session_key & 'session_start BETWEEN time_bin_start AND time_bin_end').fetch1("time_bin_start")
+    last_timebin = (Session * experiment.TimeBin
+                    & session_key & 'session_end BETWEEN time_bin_start AND time_bin_end').fetch1("time_bin_end")
+    return (Session * experiment.TimeBin & session_key
+            & f'time_bin_start BETWEEN "{first_timebin}" AND "{last_timebin}"')
+
+
+def find_session_epochs(session_key):
+    """
+    Given a "session_key", return a query for all epochs belonging to this session
+    """
+    first_epoch = (Session * experiment.Epoch.Subject
+                   & session_key & 'session_start BETWEEN epoch_start AND epoch_end').fetch1("epoch_start")
+    last_epoch = (Session * experiment.Epoch.Subject
+                  & session_key & 'session_end BETWEEN epoch_start AND epoch_end').fetch1("epoch_end")
+    return (Session * experiment.Epoch.Subject & session_key
+            & f'epoch_start BETWEEN "{first_epoch}" AND "{last_epoch}"')

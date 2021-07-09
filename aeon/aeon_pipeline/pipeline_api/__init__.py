@@ -1,5 +1,6 @@
 import datajoint as dj
 import numpy as np
+from matplotlib import path
 import matplotlib.pyplot as plt
 
 from aeon.preprocess import api as aeon_api
@@ -38,48 +39,34 @@ def get_video_frames(experiment_name, device,
         return video_frames
 
 
-def plot_sessions_statistics(subject_key):
+def is_in_patch(food_patch_key, position_x, position_y):
     """
-    Plot statistics of all sessions from the specified subject
-        + Sessions' durations
-        + Distance travelled per session
-        + Time spent at each food patch per session
-        + Distance travelled by the wheel at each food patch per session
+    Given the food-patch key and the position data - arrays of x and y
+    return an array of boolean indicating whether or not a position is inside the food patch
+    If nest=True, check for position inside the "Nest" instead
     """
-    durations, distance_travelled = (session.Session * session.SessionStatistics
-                                     & subject_key).fetch(
-        'session_duration', 'distance_travelled', order_by='session_start')
-    session_ind = np.arange(len(durations))
 
-    food_patch_stats = {}
-    for food_patch in (lab.FoodPatch & (session.SessionStatistics.FoodPatchStatistics
-                                        & subject_key)).fetch('KEY'):
-        time_spent, wheel_distance = (session.SessionStatistics.join(
-            session.SessionStatistics.FoodPatchStatistics, left=True)
-                                      & subject_key & food_patch).fetch(
-            'time_spent_in_patch', 'wheel_distance_travelled', order_by='session_start')
+    assert len(position_x) == len(position_y), f'Mismatch length in x and y'
 
-        food_patch_stats[food_patch['food_patch_serial_number']] = {
-            'time_spent_in_patch': time_spent,
-            'wheel_distance_travelled': wheel_distance
-        }
+    patch_vertices = list(zip(*(experiment.ExperimentFoodPatch.TileVertex & food_patch_key).fetch(
+        'vertex_x', 'vertex_y')))
 
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(16, 16))
-    ax1.bar(session_ind, durations)
-    ax1.set_ylabel("Session duration (hour)")
-    ax1.set_title(subject_key['subject'])
+    mtl_path = path.Path(patch_vertices)
 
-    ax1b = ax1.twinx()
-    ax1b.plot(session_ind, distance_travelled, 'k')
-    ax1b.set_ylabel("Animal's distance travelled")
+    return mtl_path.contains_points(np.vstack([position_x, position_y]).T)
 
-    for foodpatch, stats in food_patch_stats.items():
-        ax2.bar(session_ind, stats['time_spent_in_patch'], label=foodpatch)
-        ax3.bar(session_ind, stats['wheel_distance_travelled'], label=foodpatch)
 
-    ax2.legend()
-    ax2.set_ylabel('Time spent in patch (hour)')
-    ax3.legend()
-    ax3.set_ylabel("Wheel's distance travelled")
+def is_in_nest(session_key, position_x, position_y):
+    """
+    Given the session key and the position data - arrays of x and y
+    return an array of boolean indicating whether or not a position is inside the nest
+    """
 
-    return fig
+    assert len(position_x) == len(position_y), f'Mismatch length in x and y'
+
+    nest_vertices = list(zip(*(lab.ArenaNest.Vertex & session_key).fetch(
+        'vertex_x', 'vertex_y')))
+
+    mtl_path = path.Path(nest_vertices)
+
+    return mtl_path.contains_points(np.vstack([position_x, position_y]).T)

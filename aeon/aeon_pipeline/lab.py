@@ -144,6 +144,45 @@ class Arena(dj.Lookup):
         ('circle-2m', 'circular arena with 2-meter diameter', 'circular', 2, 2, 0.2)]
 
 
+@schema
+class ArenaNest(dj.Manual):
+    definition = """
+    -> Arena
+    """
+
+    class Vertex(dj.Part):
+        definition = """
+        -> master
+        vertex: int
+        ---
+        vertex_x: float    # (m) x-coordinate of the vertex, in the arena's coordinate frame
+        vertex_y: float    # (m) y-coordinate of the vertex, in the arena's coordinate frame
+        vertex_z=0: float  # (m) z-coordinate of the vertex, in the arena's coordinate frame
+        """
+
+
+@schema
+class ArenaTile(dj.Manual):
+    definition = """
+    -> Arena
+    tile: int
+    ---
+    tile_center_x: float    # (m) x-coordinate of the tile's center, in the arena's coordinate frame
+    tile_center_y: float    # (m) y-coordinate of the tile's center, in the arena's coordinate frame
+    tile_center_z=0: float  # (m) z-coordinate of the tile's center, in the arena's coordinate frame
+    """
+
+    class Vertex(dj.Part):
+        definition = """
+        -> master
+        vertex: int
+        ---
+        vertex_x: float    # (m) x-coordinate of the vertex, in the arena's coordinate frame
+        vertex_y: float    # (m) y-coordinate of the vertex, in the arena's coordinate frame
+        vertex_z=0: float  # (m) z-coordinate of the vertex, in the arena's coordinate frame
+        """
+
+
 # ------------------- EQUIPMENTS --------------------
 
 

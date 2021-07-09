@@ -72,9 +72,13 @@ class SubjectPosition(dj.Imported):
         area = np.where(is_in_arena, positiondata.area.values, np.nan)
 
         # speed - TODO: confirm with aeon team if this calculation is sufficient (any smoothing needed?)
-        position_diff = np.sqrt(np.square(np.diff(x)) + np.square(np.diff(y)) + np.square(np.diff(z)))
-        time_diff = [t.total_seconds() for t in np.diff(timestamps)]
-        speed = position_diff / time_diff
+        if len(x):
+            position_diff = np.sqrt(np.square(np.diff(x)) + np.square(np.diff(y)) + np.square(np.diff(z)))
+            time_diff = [t.total_seconds() for t in np.diff(timestamps)]
+            speed = position_diff / time_diff
+            speed = np.hstack((speed[0], speed))
+        else:
+            speed = np.full_like(x, np.nan)
 
         # unique positions
         unique_positions = set(list(zip(np.round(z, 2),

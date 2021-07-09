@@ -113,6 +113,13 @@ class ExperimentFoodPatch(dj.Manual):
     food_patch_description: varchar(36)
     """
 
+    class RemovalTime(dj.Part):
+        definition = """
+        -> master
+        ---
+        food_patch_remove_time: datetime(3)  # time of the food_patch being removed from this position
+        """
+
     class Position(dj.Part):
         definition = """
         -> master
@@ -122,13 +129,15 @@ class ExperimentFoodPatch(dj.Manual):
         food_patch_position_z=0: float  # (m) z-position, in the arena's coordinate frame
         """
 
-    class RemovalTime(dj.Part):
+    class TileVertex(dj.Part):
         definition = """
         -> master
+        vertex: int
         ---
-        food_patch_remove_time: datetime(3)  # time of the food_patch being removed from this position
+        vertex_x: float    # (m) x-coordinate of the vertex, in the arena's coordinate frame
+        vertex_y: float    # (m) y-coordinate of the vertex, in the arena's coordinate frame
+        vertex_z=0: float  # (m) z-coordinate of the vertex, in the arena's coordinate frame
         """
-
 
 # ------------------- TIME BIN --------------------
 
@@ -439,21 +448,3 @@ class FoodPatchWheel(dj.Imported):
         self.insert1({**key, 'timestamps': timestamps,
                       'angle': encoderdata.angle.values,
                       'intensity': encoderdata.intensity.values})
-
-
-@schema
-class SubjectEvent(dj.Imported):
-    definition = """  # events associated with a given animal in a given SubjectEpoch
-    -> Epoch.Subject
-    event_number: smallint
-    ---
-    -> EventType
-    event_time: decimal(8, 2)  # (s) event time w.r.t to the start of this TimeBin
-    """
-
-    class FoodPatch(dj.Part):
-        definition = """  # The food patch associated with a food-drop event
-        -> master
-        ---
-        -> ExperimentFoodPatch
-        """
