@@ -5,7 +5,8 @@ import numpy as np
 
 from aeon.preprocess import api as aeon_api
 
-from . import experiment, tracking, pipeline_api
+from . import experiment, tracking
+from . import api as pipeline_api
 from . import get_schema_name, paths
 
 
@@ -82,13 +83,19 @@ class SessionStatistics(dj.Computed):
         -> master
         -> experiment.ExperimentFoodPatch
         ---
+        in_patch_timestamps: longblob  # timestamps of the time the animal spent on this patch
         time_fraction_in_patch: float  # fraction of time the animal spent on this patch in this session
-        wheel_distance_travelled: float  # total wheel travel distance during this session
+        total_wheel_distance_travelled: float  # total wheel travel distance during this session
         """
 
     # Work on Session with "tracking.SubjectPosition" fully populated only
     key_source = Session & (Session * experiment.Epoch.Subject
-                            * tracking.SubjectPosition & 'epoch_end > session_end').proj()
+                            * tracking.SubjectPosition
+                            & tracking.SubjectDistance
+                            & 'epoch_end > session_end').proj()
+
+    # animal's distance from the food-patch position to be considered "time spent in the food patch"
+    distance_threshold = 80
 
     def make(self, key):
         raw_data_dir = experiment.Experiment.get_raw_data_directory(key)
@@ -100,6 +107,12 @@ class SessionStatistics(dj.Computed):
         timestamps, position_x, position_y, speed, area = (
                     tracking.SubjectPosition & session_epochs).fetch(
             'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='epoch_start')
+
+        # timestamps of position data within this session
+        session_timestamps = np.hstack(timestamps)
+        session_timestamps = session_timestamps[np.logical_and(
+            session_timestamps >= session_start,
+            session_timestamps <= session_end)]
 
         # stack and structure in pandas DataFrame
         position = pd.DataFrame(dict(x=np.hstack(position_x),
@@ -123,10 +136,18 @@ class SessionStatistics(dj.Computed):
                 & 'session_start >= food_patch_install_time'
                 & 'session_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
 
-        food_patch_statistic = []
+        food_patch_statistics = []
         for food_patch_key in food_patch_keys:
-            is_in_patch = pipeline_api.is_in_patch(food_patch_key, position.x, position.y)
-            time_fraction_in_patch = sum(is_in_patch) / len(is_in_patch)
+            distance = (tracking.SubjectDistance.FoodPatch
+                        & session_epochs & food_patch_key).fetch('distance')
+            distance = pd.DataFrame(dict(distance=np.hstack(distance)),
+                                    index=np.hstack(timestamps))
+            distance = distance[session_start:session_end]
+
+            distance['is_in_patch'] = np.logical_and(~np.isnan(distance.distance),
+                                                     distance.distance <= self.distance_threshold)
+
+            time_fraction_in_patch = sum(distance.is_in_patch) / len(distance.is_in_patch)
 
             # wheel data
             food_patch_description = (experiment.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
@@ -134,16 +155,18 @@ class SessionStatistics(dj.Computed):
                                                device=food_patch_description,
                                                start=pd.Timestamp(session_start),
                                                end=pd.Timestamp(session_end))
-            wheel_distance_travelled = aeon_api.distancetravelled(encoderdata.angle)[-1]
+            wheel_distance_travelled = aeon_api.distancetravelled(encoderdata.angle).values
 
-            food_patch_statistic.append({**key, **food_patch_key,
-                                         'time_fraction_in_patch': time_fraction_in_patch,
-                                         'wheel_distance_travelled': wheel_distance_travelled})
+            food_patch_statistics.append({
+                **key, **food_patch_key,
+                'in_patch_timestamps': session_timestamps[distance.is_in_patch],
+                'time_fraction_in_patch': time_fraction_in_patch,
+                'total_wheel_distance_travelled': wheel_distance_travelled[-1]})
 
         self.insert1({**key,
                       'time_fraction_in_nest': time_fraction_in_nest,
                       'distance_travelled': distance_travelled})
-        self.FoodPatchStatistics.insert(food_patch_statistic)
+        self.FoodPatchStatistics.insert(food_patch_statistics)
 
 
 # ---------- HELPER FUNCTIONS -----------

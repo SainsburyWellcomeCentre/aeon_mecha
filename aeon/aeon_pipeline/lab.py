@@ -166,10 +166,6 @@ class ArenaTile(dj.Manual):
     definition = """
     -> Arena
     tile: int
-    ---
-    tile_center_x: float    # (m) x-coordinate of the tile's center, in the arena's coordinate frame
-    tile_center_y: float    # (m) y-coordinate of the tile's center, in the arena's coordinate frame
-    tile_center_z=0: float  # (m) z-coordinate of the tile's center, in the arena's coordinate frame
     """
 
     class Vertex(dj.Part):
