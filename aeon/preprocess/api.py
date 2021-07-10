@@ -505,17 +505,20 @@ def distancetravelled(angle, radius=4.0):
 def sessionduration(data):
     '''
     Computes duration and summary metadata for each session, by subtracting the
-    start and end times. Assumes no missing data, i.e. the same number of start
-    and end times.
+    start and end times. Allows for missing data by trying to match session start times
+    with subsequent end times. If the match fails, end session metadata is filled with NaN.
 
     :param DataFrame data: A pandas data frame containing session event metadata.
     :return: A pandas data frame containing duration and metadata for each session.
     '''
-    start = data[data.event == 'Start']
-    end = data[data.event == 'End']
-    duration = end.index - start.index
-    data = start.drop(['weight','event'], axis=1)
-    data['duration'] = duration
-    data['start_weight'] = start.weight
-    data['end_weight'] = end.weight.values
-    return data
+    start = data.event == 'Start'
+    end = data[start.shift(1, fill_value=False)].reset_index()
+    start = data[start].reset_index()
+    data = start.join(end, lsuffix='_start', rsuffix='_end')
+    valid_sessions = (data.id_start == data.id_end) & (data.event_end == 'End')
+    data.loc[~valid_sessions, 'time_end'] = pd.NaT
+    data.loc[~valid_sessions, 'weight_end'] = float('nan')
+    data['duration'] = data.time_end - data.time_start
+    data.rename({ 'time_start':'time', 'id_start':'id', 'time_end':'end'}, axis=1, inplace=True)
+    data.set_index('time', inplace=True)
+    return data[['id', 'weight_start', 'weight_end', 'end', 'duration']]
