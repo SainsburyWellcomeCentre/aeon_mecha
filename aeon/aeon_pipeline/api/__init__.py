@@ -4,7 +4,7 @@ from matplotlib import path
 import matplotlib.pyplot as plt
 
 from aeon.preprocess import api as aeon_api
-from aeon.aeon_pipeline import lab, subject, experiment, tracking, session, paths
+from aeon.aeon_pipeline import lab, subject, experiment, paths
 
 
 def get_video_frames(experiment_name, device,
@@ -37,23 +37,6 @@ def get_video_frames(experiment_name, device,
         return fig
     else:
         return video_frames
-
-
-def is_in_patch(food_patch_key, position_x, position_y):
-    """
-    Given the food-patch key and the position data - arrays of x and y
-    return an array of boolean indicating whether or not a position is inside the food patch
-    If nest=True, check for position inside the "Nest" instead
-    """
-
-    assert len(position_x) == len(position_y), f'Mismatch length in x and y'
-
-    patch_vertices = list(zip(*(experiment.ExperimentFoodPatch.TileVertex & food_patch_key).fetch(
-        'vertex_x', 'vertex_y')))
-
-    mtl_path = path.Path(patch_vertices)
-
-    return mtl_path.contains_points(np.vstack([position_x, position_y]).T)
 
 
 def is_in_nest(session_key, position_x, position_y):
