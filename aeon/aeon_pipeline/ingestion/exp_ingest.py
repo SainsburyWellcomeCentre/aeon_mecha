@@ -42,20 +42,23 @@ yml_filepath = '/nfs/nhome/live/thinh/code/ProjectAeon/aeon/aeon/aeon_pipeline/i
 load_arena_setup(yml_filepath, experiment_name)
 
 # manually add coordinates of foodpatch and nest
-patch_coordinates = {'Patch1': [(584, 815), (597, 834), (584, 834), (584, 834)],
-                     'Patch2': [(614, 252), (634, 252), (614, 271), (634, 271)],
-                     'Nest': [(170, 450), (170, 540), (260, 450), (260, 540)]}
+patch_coordinates = {'Patch1': (590, 820, 0),
+                     'Patch2': (620, 260, 0)}
 
 for patch_key in experiment.ExperimentFoodPatch.fetch('KEY'):
     patch = (experiment.ExperimentFoodPatch & patch_key).fetch1('food_patch_description')
-    experiment.ExperimentFoodPatch.TileVertex.insert(
-        ({**patch_key, 'vertex': v_id, 'vertex_x': x, 'vertex_y': y}
-         for v_id, (x, y) in enumerate(patch_coordinates[patch])))
+    x, y, z = patch_coordinates[patch]
+    experiment.ExperimentFoodPatch.Position.update1({
+        **patch_key,
+        'food_patch_position_x': x,
+        'food_patch_position_y': y,
+        'food_patch_position_z': z})
 
+nest_coordinates = [(170, 450), (170, 540), (260, 450), (260, 540)]
 lab.ArenaNest.insert1({'arena_name': 'circle-2m'})
 lab.ArenaNest.Vertex.insert(
     ({'arena_name': 'circle-2m', 'vertex': v_id, 'vertex_x': x, 'vertex_y': y}
-     for v_id, (x, y) in enumerate(patch_coordinates['Nest'])))
+     for v_id, (x, y) in enumerate(nest_coordinates)))
 
 # ---------------- Auto Ingestion -----------------
 settings = {'reserve_jobs': True, 'suppress_errors': True}
