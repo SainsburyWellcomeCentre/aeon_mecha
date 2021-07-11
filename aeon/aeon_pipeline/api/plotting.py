@@ -30,7 +30,7 @@ def plot_sessions_statistics(subject_key):
         # Get food patch name - TODO: handle cases where the foodpatch changes location over sessions
         food_patch_name = (experiment.ExperimentFoodPatch
                            & analysis.SessionStatistics.FoodPatchStatistics
-                           & food_patch_key).fetch('food_patch_description')[0]
+                           & food_patch_key).fetch('food_patch_description', limit=1)[0]
         time_spent, wheel_distance = ((analysis.SessionStatistics & subject_sessions).join(
             analysis.SessionStatistics.FoodPatchStatistics, left=True)
                                       & subject_key & food_patch_key).fetch(
@@ -176,14 +176,14 @@ def plot_session_patch_interaction(session_key):
     for i, (food_patch_name, food_patch_data) in enumerate(food_patches.items()):
         l, = ax2.plot(food_patch_data['wheeldata'].index,
                       food_patch_data['wheeldata'].wheel_distance_travelled,
-                      label=food_patch_name)
+                      linewidth=4, label=food_patch_name)
         ax2.plot(food_patch_data['pellet_times'],
                  np.full_like(food_patch_data['pellet_times'],
                               100 + food_patch_data['wheeldata'].wheel_distance_travelled[-1]),
-                 '.', color=l.get_color(), label=f'{food_patch_name} pellets')
+                 '.', color=l.get_color(), linewidth=4, label=f'{food_patch_name} pellets')
         ax2.plot(food_patch_data['in_patch_timestamps'],
                  np.full_like(food_patch_data['in_patch_timestamps'], -300 * (i + 2)),
-                 '|', color=l.get_color(), label=f'Times in {food_patch_name}')
+                 '|', color=l.get_color(), linewidth=4)
 
         ax1.plot(food_patch_data['distance'].index,
                  food_patch_data['distance'].distance,
@@ -192,8 +192,9 @@ def plot_session_patch_interaction(session_key):
                  np.full_like(food_patch_data['in_patch_timestamps'], -30 * (i + 2)),
                  '|', color=l.get_color(), label=f'Times in {food_patch_name}')
 
-    ax1.set_title('Distance from food-patch')
-    ax2.set_title('Cumulative wheel distance travelled')
+    ax1.set_ylabel('Distance from food-patch')
+    ax1.set_xticks([])
+    ax2.set_ylabel('Cumulative wheel distance travelled')
     ax1.legend()
     ax2.legend()
 

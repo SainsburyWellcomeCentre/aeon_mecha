@@ -114,6 +114,6 @@ def is_position_in_nest(experiment_key, position_x, position_y):
     nest_vertices = list(zip(*(lab.ArenaNest.Vertex & experiment_key).fetch(
         'vertex_x', 'vertex_y')))
 
-    mtl_path = path.Path(nest_vertices)
+    nest_path = path.Path(nest_vertices)
 
-    return mtl_path.contains_points(np.vstack([position_x, position_y]).T)
+    return nest_path.contains_points(np.vstack([position_x, position_y]).T)
