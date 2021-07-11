@@ -1,4 +1,4 @@
-from aeon.aeon_pipeline import lab, subject, experiment, tracking, session
+from aeon.aeon_pipeline import lab, subject, experiment, tracking, analysis
 from aeon.aeon_pipeline.ingestion import load_arena_setup
 
 
@@ -61,15 +61,19 @@ lab.ArenaNest.Vertex.insert(
      for v_id, (x, y) in enumerate(nest_coordinates)))
 
 # ---------------- Auto Ingestion -----------------
-settings = {'reserve_jobs': True, 'suppress_errors': True}
+settings = {'reserve_jobs': True, 'suppress_errors': True, 'display_progress': True}
 
 experiment.TimeBin.generate_timebins(experiment_name='exp0.1-r0')
 experiment.SubjectEnterExit.populate(**settings)
 experiment.SubjectAnnotation.populate(**settings)
-experiment.Epoch.populate(**settings)
 experiment.FoodPatchEvent.populate(**settings)
 experiment.FoodPatchWheel.populate(**settings)
+
+experiment.Session.populate(**settings)
+experiment.SessionEnd.populate(**settings)
+experiment.SessionEpoch.populate(**settings)
+
 tracking.SubjectPosition.populate(**settings)
 tracking.SubjectDistance.populate(**settings)
-session.Session.populate(**settings)
-session.SessionStatistics.populate(**settings)
+
+analysis.SessionStatistics.populate(**settings)

@@ -1,9 +1,8 @@
-import datajoint as dj
 import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from aeon.preprocess import api as aeon_api
-from aeon.aeon_pipeline import lab, experiment, tracking, session
+from aeon.aeon_pipeline import lab, experiment, tracking, analysis
 
 
 def plot_sessions_statistics(subject_key):
@@ -14,19 +13,20 @@ def plot_sessions_statistics(subject_key):
         + Time spent at each food patch per session
         + Distance travelled by the wheel at each food patch per session
     """
-    subject_sessions = session.Session & 'session_duration > 0.5' & subject_key
+    subject_sessions = (experiment.Session * experiment.SessionEnd
+                        & 'session_duration > 0.5' & subject_key)
 
     session_starts, durations, time_fraction_in_nest, distance_travelled = (
-            subject_sessions * session.SessionStatistics).fetch(
+            subject_sessions * analysis.SessionStatistics).fetch(
         'session_start', 'session_duration', 'time_fraction_in_nest', 'distance_travelled',
         order_by='session_start')
     session_ind = np.arange(len(session_starts))
 
     food_patch_stats = {}
-    for food_patch_key in (lab.FoodPatch & (session.SessionStatistics.FoodPatchStatistics
+    for food_patch_key in (lab.FoodPatch & (analysis.SessionStatistics.FoodPatchStatistics
                                             & subject_key)).fetch('KEY'):
-        time_spent, wheel_distance = ((session.SessionStatistics & subject_sessions).join(
-            session.SessionStatistics.FoodPatchStatistics, left=True)
+        time_spent, wheel_distance = ((analysis.SessionStatistics & subject_sessions).join(
+            analysis.SessionStatistics.FoodPatchStatistics, left=True)
                                       & subject_key & food_patch_key).fetch(
             'time_fraction_in_patch', 'total_wheel_distance_travelled', order_by='session_start')
 
@@ -73,13 +73,15 @@ def plot_session_trajectory(session_key):
     """
     Plot animal's trajectory in a session
     """
-    session_start, session_end = (session.Session & session_key).fetch1(
+    if session_key in experiment.NeverExitedSession:
+        raise ValueError('Bad session - subject never exited')
+
+    session_start, session_end = (experiment.Session * experiment.SessionEnd & session_key).fetch1(
         'session_start', 'session_end')
-    session_epochs = session.Session.Epoch & session_key
 
     # subject's position data in the epochs
     timestamps, position_x, position_y, speed, area = (
-            tracking.SubjectPosition & session_epochs).fetch(
+            tracking.SubjectPosition & session_key).fetch(
         'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='epoch_start')
 
     # stack and structure in pandas DataFrame
@@ -88,7 +90,6 @@ def plot_session_trajectory(session_key):
                                  speed=np.hstack(speed),
                                  area=np.hstack(area)),
                             index=np.hstack(timestamps))
-    position = position[session_start:session_end]
     position = position[position.area < 2000]  # remove position data where area >= 2000
 
     time_stamps = (position.index - session_start).total_seconds().to_numpy()
@@ -107,13 +108,17 @@ def plot_session_trajectory(session_key):
 
 
 def plot_session_patch_interaction(session_key):
+    if session_key in experiment.NeverExitedSession:
+        raise ValueError('Bad session - subject never exited')
+
     raw_data_dir = experiment.Experiment.get_raw_data_directory(session_key)
-    session_start, session_end = (session.Session & session_key).fetch1(
+    session_start, session_end = (experiment.Session & session_key).join(
+        experiment.SessionEnd, left=True).proj(
+        ..., session_end='IFNULL(session_end, NOW())').fetch1(
         'session_start', 'session_end')
-    session_epochs = session.Session.Epoch & session_key
 
     session_food_patches = (
-            session.Session
+            experiment.Session
             * experiment.ExperimentFoodPatch.join(experiment.ExperimentFoodPatch.RemovalTime, left=True)
             & session_key
             & 'session_start >= food_patch_install_time'
@@ -130,7 +135,7 @@ def plot_session_patch_interaction(session_key):
         wheeldata['wheel_distance_travelled'] = aeon_api.distancetravelled(wheeldata.angle).values
 
         # times in patch
-        in_patch_timestamps = (session.SessionStatistics.FoodPatchStatistics
+        in_patch_timestamps = (analysis.SessionStatistics.FoodPatchStatistics
                                & session_key & food_patch_key).fetch1('in_patch_timestamps')
 
         # pellet events
@@ -143,7 +148,7 @@ def plot_session_patch_interaction(session_key):
         # distance from patch
         timestamps, distance = (tracking.SubjectPosition
                                 * tracking.SubjectDistance.FoodPatch
-                                & session_epochs & food_patch_key).fetch(
+                                & session_key & food_patch_key).fetch(
             'timestamps', 'distance')
         distance = pd.DataFrame(dict(distance=np.hstack(distance)),
                                 index=np.hstack(timestamps))

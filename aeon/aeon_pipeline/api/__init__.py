@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from aeon.preprocess import api as aeon_api
 from aeon.aeon_pipeline import experiment, paths
 
-from aeon.aeon_pipeline.session import is_position_in_nest
+from aeon.aeon_pipeline.analysis import is_position_in_nest
 
 
 def get_video_frames(experiment_name, device,
