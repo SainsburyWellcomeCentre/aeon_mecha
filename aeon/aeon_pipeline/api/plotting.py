@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from aeon.preprocess import api as aeon_api
+from aeon.aeon_pipeline import lab, experiment, tracking, session
 
 
 def plot_sessions_statistics(subject_key):
@@ -13,8 +14,6 @@ def plot_sessions_statistics(subject_key):
         + Time spent at each food patch per session
         + Distance travelled by the wheel at each food patch per session
     """
-    from aeon.aeon_pipeline import lab, session
-
     subject_sessions = session.Session & 'session_duration > 0.5' & subject_key
 
     session_starts, durations, time_fraction_in_nest, distance_travelled = (
@@ -74,15 +73,13 @@ def plot_session_trajectory(session_key):
     """
     Plot animal's trajectory in a session
     """
-    from aeon.aeon_pipeline import tracking, session
-
     session_start, session_end = (session.Session & session_key).fetch1(
         'session_start', 'session_end')
-
-    session_epochs = session.find_session_epochs(session_key)
+    session_epochs = session.Session.Epoch & session_key
 
     # subject's position data in the epochs
-    timestamps, position_x, position_y, speed, area = (tracking.SubjectPosition & session_epochs).fetch(
+    timestamps, position_x, position_y, speed, area = (
+            tracking.SubjectPosition & session_epochs).fetch(
         'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='epoch_start')
 
     # stack and structure in pandas DataFrame
@@ -109,12 +106,11 @@ def plot_session_trajectory(session_key):
     return fig
 
 
-def plot_session_interactions(session_key):
-    from aeon.aeon_pipeline import lab, experiment, tracking, session
+def plot_session_patch_interaction(session_key):
     raw_data_dir = experiment.Experiment.get_raw_data_directory(session_key)
     session_start, session_end = (session.Session & session_key).fetch1(
         'session_start', 'session_end')
-    session_epochs = session.find_session_epochs(session_key)
+    session_epochs = session.Session.Epoch & session_key
 
     session_food_patches = (
             session.Session
@@ -184,3 +180,5 @@ def plot_session_interactions(session_key):
     ax2.set_title('Cumulative wheel distance travelled')
     ax1.legend()
     ax2.legend()
+
+    return fig

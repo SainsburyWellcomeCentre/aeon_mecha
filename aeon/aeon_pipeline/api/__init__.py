@@ -1,10 +1,10 @@
-import datajoint as dj
 import numpy as np
-from matplotlib import path
 import matplotlib.pyplot as plt
 
 from aeon.preprocess import api as aeon_api
-from aeon.aeon_pipeline import lab, subject, experiment, paths
+from aeon.aeon_pipeline import experiment, paths
+
+from aeon.aeon_pipeline.session import is_position_in_nest
 
 
 def get_video_frames(experiment_name, device,
@@ -37,19 +37,3 @@ def get_video_frames(experiment_name, device,
         return fig
     else:
         return video_frames
-
-
-def is_in_nest(session_key, position_x, position_y):
-    """
-    Given the session key and the position data - arrays of x and y
-    return an array of boolean indicating whether or not a position is inside the nest
-    """
-
-    assert len(position_x) == len(position_y), f'Mismatch length in x and y'
-
-    nest_vertices = list(zip(*(lab.ArenaNest.Vertex & session_key).fetch(
-        'vertex_x', 'vertex_y')))
-
-    mtl_path = path.Path(nest_vertices)
-
-    return mtl_path.contains_points(np.vstack([position_x, position_y]).T)

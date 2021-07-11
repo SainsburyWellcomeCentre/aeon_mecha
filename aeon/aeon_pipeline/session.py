@@ -2,11 +2,11 @@ import datajoint as dj
 import pandas as pd
 import datetime
 import numpy as np
+from matplotlib import path
 
 from aeon.preprocess import api as aeon_api
 
-from . import experiment, tracking
-from . import api as pipeline_api
+from . import lab, experiment, tracking
 from . import get_schema_name, paths
 
 
@@ -23,8 +23,14 @@ class Session(dj.Computed):
     session_duration: float  # (hour)
     """
 
+    class Epoch(dj.Part):
+        definition = """  # Epochs belonging to this session
+        -> master
+        -> experiment.Epoch.Subject  
+        """
+
     class Annotation(dj.Part):
-        definition = """
+        definition = """  # Annotation for this subject from this session
         -> master
         annotation_time: datetime(3)  # datetime of the annotation
         ---
@@ -56,6 +62,17 @@ class Session(dj.Computed):
 
         duration = (session_end - session_start).total_seconds() / 3600
 
+        # epochs
+        first_epoch = (experiment.Epoch.Subject & key
+                       & f'"{session_start}" BETWEEN epoch_start AND epoch_end').fetch1(
+            "epoch_start")
+        last_epoch = (experiment.Epoch.Subject & key
+                      & f'"{session_end}" BETWEEN epoch_start AND epoch_end').fetch1(
+            "epoch_end")
+        epochs = (experiment.Epoch.Subject & key
+                  & f'epoch_start BETWEEN "{first_epoch}" AND "{last_epoch}"').proj(
+            session_start=f'"{session_start}"')
+
         # annotations
         annotations = (
                 experiment.SubjectAnnotation.Annotation
@@ -67,6 +84,7 @@ class Session(dj.Computed):
                       'session_end': session_end,
                       'session_duration': duration})
         self.Annotation.insert(annotations)
+        self.Epoch.insert(epochs)
 
 
 @schema
@@ -100,7 +118,7 @@ class SessionStatistics(dj.Computed):
     def make(self, key):
         raw_data_dir = experiment.Experiment.get_raw_data_directory(key)
 
-        session_epochs = find_session_epochs(key)
+        session_epochs = Session.Epoch & key
         session_start, session_end = (Session & key).fetch1('session_start', 'session_end')
 
         # subject's position data in the epochs
@@ -125,7 +143,7 @@ class SessionStatistics(dj.Computed):
         position_diff = np.sqrt(np.square(np.diff(position.x)) + np.square(np.diff(position.y)))
         distance_travelled = np.nancumsum(position_diff)[-1]
 
-        is_in_nest = pipeline_api.is_in_nest(key, position.x, position.y)
+        is_in_nest = is_position_in_nest(key, position.x, position.y)
         time_fraction_in_nest = sum(is_in_nest) / len(is_in_nest)
 
         # food patch data
@@ -169,27 +187,17 @@ class SessionStatistics(dj.Computed):
         self.FoodPatchStatistics.insert(food_patch_statistics)
 
 
-# ---------- HELPER FUNCTIONS -----------
+def is_position_in_nest(experiment_key, position_x, position_y):
+    """
+    Given the session key and the position data - arrays of x and y
+    return an array of boolean indicating whether or not a position is inside the nest
+    """
 
-def find_session_timebins(session_key):
-    """
-    Given a "session_key", return a query for all timebins belonging to this session
-    """
-    first_timebin = (Session * experiment.TimeBin
-                     & session_key & 'session_start BETWEEN time_bin_start AND time_bin_end').fetch1("time_bin_start")
-    last_timebin = (Session * experiment.TimeBin
-                    & session_key & 'session_end BETWEEN time_bin_start AND time_bin_end').fetch1("time_bin_end")
-    return (Session * experiment.TimeBin & session_key
-            & f'time_bin_start BETWEEN "{first_timebin}" AND "{last_timebin}"')
+    assert len(position_x) == len(position_y), f'Mismatch length in x and y'
 
+    nest_vertices = list(zip(*(lab.ArenaNest.Vertex & experiment_key).fetch(
+        'vertex_x', 'vertex_y')))
 
-def find_session_epochs(session_key):
-    """
-    Given a "session_key", return a query for all epochs belonging to this session
-    """
-    first_epoch = (Session * experiment.Epoch.Subject
-                   & session_key & 'session_start BETWEEN epoch_start AND epoch_end').fetch1("epoch_start")
-    last_epoch = (Session * experiment.Epoch.Subject
-                  & session_key & 'session_end BETWEEN epoch_start AND epoch_end').fetch1("epoch_end")
-    return (Session * experiment.Epoch.Subject & session_key
-            & f'epoch_start BETWEEN "{first_epoch}" AND "{last_epoch}"')
+    mtl_path = path.Path(nest_vertices)
+
+    return mtl_path.contains_points(np.vstack([position_x, position_y]).T)
