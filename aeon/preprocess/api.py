@@ -139,7 +139,15 @@ def load(path, reader, device, prefix=None, extension="*.csv",
 
     data = pd.concat([reader(file) for file in files])
     if timefilter is not None:
-        return data.loc[start:end]
+        try:
+            return data.loc[start:end]
+        except KeyError:
+            if not data.index.has_duplicates:
+                raise
+            import warnings
+            warnings.warn('data index for {0} contains duplicate keys!'.format(device))
+            data = data[~data.index.duplicated(keep='first')]
+            return data.loc[start:end]
     return data
 
 def sessionreader(file):
