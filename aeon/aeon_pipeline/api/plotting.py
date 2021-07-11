@@ -4,6 +4,8 @@ import pandas as pd
 from aeon.preprocess import api as aeon_api
 from aeon.aeon_pipeline import lab, experiment, tracking, analysis
 
+plt.rcParams.update({'font.size': 14})
+
 
 def plot_sessions_statistics(subject_key):
     """
@@ -25,20 +27,25 @@ def plot_sessions_statistics(subject_key):
     food_patch_stats = {}
     for food_patch_key in (lab.FoodPatch & (analysis.SessionStatistics.FoodPatchStatistics
                                             & subject_key)).fetch('KEY'):
+        # Get food patch name - TODO: handle cases where the foodpatch changes location over sessions
+        food_patch_name = (experiment.ExperimentFoodPatch
+                           & analysis.SessionStatistics.FoodPatchStatistics
+                           & food_patch_key).fetch('food_patch_description')[0]
         time_spent, wheel_distance = ((analysis.SessionStatistics & subject_sessions).join(
             analysis.SessionStatistics.FoodPatchStatistics, left=True)
                                       & subject_key & food_patch_key).fetch(
             'time_fraction_in_patch', 'total_wheel_distance_travelled', order_by='session_start')
 
-        food_patch_stats[food_patch_key['food_patch_serial_number']] = {
+        food_patch_stats[food_patch_name] = {
             'time_fraction_in_patch': time_spent,
             'total_wheel_distance_travelled': wheel_distance
         }
 
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(16, 16))
+    fig.suptitle(subject_key['subject'], fontweight='bold')
+
     ax1.bar(session_ind, durations, label='Total duration')
     ax1.set_ylabel("Session duration (hour)")
-    ax1.set_title(subject_key['subject'])
     ax1.bar(session_ind, time_fraction_in_nest * durations, label='Time in nest', color='gray')
     ax1.legend()
 
@@ -95,11 +102,13 @@ def plot_session_trajectory(session_key):
     time_stamps = (position.index - session_start).total_seconds().to_numpy()
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+    fig.suptitle(f'{session_key["subject"]} | {session_key["session_start"]}', fontweight='bold')
+
     for ax, color_data, title in zip(axes, (time_stamps, position.speed),
                                      ('Time (s)', 'Speed (px/s)')):
         sc = ax.scatter(position.x, position.y, c=color_data, s=5,
                         alpha=0.7, cmap='rainbow')
-        clb = fig.colorbar(sc, ax=ax)
+        clb = fig.colorbar(sc, ax=ax, location='bottom')
         clb.ax.set_title(title)
         ax.set_aspect(1)
         ax.invert_yaxis()
@@ -114,8 +123,8 @@ def plot_session_patch_interaction(session_key):
     raw_data_dir = experiment.Experiment.get_raw_data_directory(session_key)
     session_start, session_end = (experiment.Session & session_key).join(
         experiment.SessionEnd, left=True).proj(
-        ..., session_end='IFNULL(session_end, NOW())').fetch1(
-        'session_start', 'session_end')
+        ..., sess_end='IFNULL(session_end, NOW())').fetch1(
+        'session_start', 'sess_end')
 
     session_food_patches = (
             experiment.Session
@@ -162,6 +171,8 @@ def plot_session_patch_interaction(session_key):
         }
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 8))
+    fig.suptitle(f'{session_key["subject"]} | {session_key["session_start"]}', fontweight='bold')
+
     for i, (food_patch_name, food_patch_data) in enumerate(food_patches.items()):
         l, = ax2.plot(food_patch_data['wheeldata'].index,
                       food_patch_data['wheeldata'].wheel_distance_travelled,
@@ -169,19 +180,19 @@ def plot_session_patch_interaction(session_key):
         ax2.plot(food_patch_data['pellet_times'],
                  np.full_like(food_patch_data['pellet_times'],
                               100 + food_patch_data['wheeldata'].wheel_distance_travelled[-1]),
-                 '.', color=l.get_color(), label=f'{food_patch_name}_pellets')
+                 '.', color=l.get_color(), label=f'{food_patch_name} pellets')
         ax2.plot(food_patch_data['in_patch_timestamps'],
-                 np.full_like(food_patch_data['in_patch_timestamps'], -200 * (i + 2)),
-                 '|', color=l.get_color(), label=f'times_in_{food_patch_name}')
+                 np.full_like(food_patch_data['in_patch_timestamps'], -300 * (i + 2)),
+                 '|', color=l.get_color(), label=f'Times in {food_patch_name}')
 
         ax1.plot(food_patch_data['distance'].index,
                  food_patch_data['distance'].distance,
                  color=l.get_color(), alpha=0.7, label=food_patch_name)
         ax1.plot(food_patch_data['in_patch_timestamps'],
-                 np.full_like(food_patch_data['in_patch_timestamps'], -20 * (i + 2)),
-                 '|', color=l.get_color(), label=f'times_in_{food_patch_name}')
+                 np.full_like(food_patch_data['in_patch_timestamps'], -30 * (i + 2)),
+                 '|', color=l.get_color(), label=f'Times in {food_patch_name}')
 
-    ax1.set_title('Distance away from food patch')
+    ax1.set_title('Distance from food-patch')
     ax2.set_title('Cumulative wheel distance travelled')
     ax1.legend()
     ax2.legend()
