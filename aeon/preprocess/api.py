@@ -519,6 +519,5 @@ def sessionduration(data):
     data.loc[~valid_sessions, 'time_end'] = pd.NaT
     data.loc[~valid_sessions, 'weight_end'] = float('nan')
     data['duration'] = data.time_end - data.time_start
-    data.rename({ 'time_start':'time', 'id_start':'id', 'time_end':'end'}, axis=1, inplace=True)
-    data.set_index('time', inplace=True)
-    return data[['id', 'weight_start', 'weight_end', 'end', 'duration']]
+    data.rename({ 'time_start':'start', 'id_start':'id', 'time_end':'end'}, axis=1, inplace=True)
+    return data[['id', 'weight_start', 'weight_end', 'start', 'end', 'duration']]
