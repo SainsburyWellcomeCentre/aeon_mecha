@@ -97,12 +97,6 @@ class SubjectDistance(dj.Computed):
                 subject_positions
                 - np.tile(patch_position, (subject_positions.shape[0], 1)), axis=1)
 
-            unique_positions = (SubjectPosition.UniquePosition & key).fetch('x', 'y', 'z')
-            unique_positions = np.array([*zip(unique_positions)]).squeeze(axis=1).T
-            unique_distances = np.linalg.norm(
-                unique_positions.astype(float)
-                - np.tile(patch_position, (unique_positions.shape[0], 1)), axis=1)
-
             food_patch_distance_list.append({**food_patch_key, 'distance': distances})
 
         self.insert1(key)
