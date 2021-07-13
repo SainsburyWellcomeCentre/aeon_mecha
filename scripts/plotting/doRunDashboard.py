@@ -1,12 +1,12 @@
 
-import pdb
 import sys
 
 import argparse
 import numpy as np
 import pandas as pd
 import datetime
-import pathlib
+
+import flask
 
 import plotly.graph_objects as go
 import plotly.subplots
@@ -15,6 +15,8 @@ import dash_core_components as dcc
 import dash_html_components as html
 from dash.dependencies import Input, Output, State, ALL, MATCH
 import dash.exceptions
+
+sys.path.append("../..")
 
 import aeon.preprocess.api
 import aeon.preprocess.utils
@@ -31,7 +33,7 @@ def main(argv):
     parser.add_argument("--patches_coordinates", help="coordinates of patches", default="584,597,815,834;614,634,252,271")
     parser.add_argument("--nest_coordinates", help="coordinates of nest", default="170,260,450,540")
     parser.add_argument("--patchesToPlot", help="Names of patches to plot", default="Patch1,Patch2")
-    parser.add_argument("--win_length_sec", help="Moving average window length (sec)", default=10.0, type=float)
+    parser.add_argument("--win_length_sec", help="Moving average window length (sec)", default=60.0, type=float)
     parser.add_argument("--time_resolution", help="Time resolution to compute the moving average (sec)", default=0.01, type=float)
     parser.add_argument("--video_frame_rate", help="Top camera frame rate (Hz)", default=50.0, type=float)
     parser.add_argument("--pellet_event_name", help="Pellet event name to display", default="TriggerPellet")
@@ -182,10 +184,10 @@ def main(argv):
                      sessionStartTimeDropdown_value,
                      plotTimeRangeSlider_value,
                      plotsContainer_hidden):
-        if plotButton_nClicks==0:
-            print("update prevented")
+        if plotButton_nClicks == 0:
+            print("update prevented ({:s})".format(flask.request.remote_addr))
             raise dash.exceptions.PreventUpdate
-        print("update_plots called")
+        print("update_plots called ({:s})".format(flask.request.remote_addr))
         patches_coordinates = pd.DataFrame(data=patches_coordinates_matrix,
                                            columns=["lower_x", "higher_x",
                                                     "lower_y", "higher_y"])
