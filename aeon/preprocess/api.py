@@ -564,3 +564,26 @@ def sessionduration(data):
     data['duration'] = data.time_end - data.time_start
     data.rename({ 'time_start':'start', 'id_start':'id', 'time_end':'end'}, axis=1, inplace=True)
     return data[['id', 'weight_start', 'weight_end', 'start', 'end', 'duration']]
+
+def exportvideo(frames, file, fps, fourcc=None):
+    '''
+    Exports the specified frame sequence to a new video file.
+
+    :param iterable frames: An object to iterate over the raw video frame data.
+    :param str file: The path to the exported video file.
+    :param fps: The frame rate of the exported video.
+    :param optional fourcc:
+    Specifies the four character code of the codec used to compress the frames.
+    '''
+    import cv2
+    writer = None
+    try:
+        for frame in frames:
+            if writer is None:
+                if fourcc is None:
+                    fourcc = cv2.VideoWriter_fourcc('M','P','4','V')
+                writer = cv2.VideoWriter(file, fourcc, fps, (frame.shape[1], frame.shape[0]))
+            writer.write(frame)
+    finally:
+        if writer is not None:
+            writer.release()
