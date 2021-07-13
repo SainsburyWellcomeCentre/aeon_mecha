@@ -150,6 +150,41 @@ def load(path, reader, device, prefix=None, extension="*.csv",
             return data.loc[start:end]
     return data
 
+def timebinreader(file):
+    """Reads timebin information for the specified file."""
+    names = ['time', 'path']
+    if file is None:
+        return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
+    timebin = timebin_key(file)
+    data = pd.DataFrame({ names[0]: [timebin], names[1]: [file] })
+    data.set_index('time', inplace=True)
+    return data
+
+def timebindata(path, device, extension='*.csv', start=None, end=None, time=None, tolerance=None):
+    '''
+    Extracts all timebin information from the specified root path, sorted chronologically,
+    indicating recorded timebins for the specified device in the arena.
+
+    :param str path: The root path where all the data is stored.
+    :param str, device: The device name prefix used to search for timebin files.
+    :param str, optional extension: The optional extension pattern used to search for timebin files.
+    :param datetime, optional start: The left bound of the time range to extract.
+    :param datetime, optional end: The right bound of the time range to extract.
+    :param datetime, optional time: An object or series specifying the timestamps to extract.
+    :param datetime, optional tolerance:
+    The maximum distance between original and new timestamps for inexact matches.
+    :return: A pandas data frame containing timebin information, sorted by time.
+    '''
+    return load(
+        path,
+        timebinreader,
+        device,
+        extension=extension,
+        start=start,
+        end=end,
+        time=time,
+        tolerance=tolerance)
+
 def sessionreader(file):
     """Reads session metadata from the specified file."""
     names = ['time','id','weight','event']
@@ -400,10 +435,10 @@ def pelletdata(path, device, start=None, end=None, time=None, tolerance=None):
 
 def patchreader(file):
     """Reads patch state metadata from the specified file."""
-    names = ['time','threshold']
+    names = ['time','threshold','d1','delta']
     if file is None:
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
-    data = pd.read_csv(file, header=None, names=names)
+    data = pd.read_csv(file, header=0, skiprows=1, names=names)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
     return data
@@ -411,7 +446,7 @@ def patchreader(file):
 def patchdata(path, patch, start=None, end=None, time=None, tolerance=None):
     '''
     Extracts patch metadata from the specified root path, sorted chronologically,
-    indicating wheel threshold state changes in the Experiment 0 arena.
+    indicating wheel threshold, d1 and delta state changes in the arena patch.
 
     :param str path: The root path where all the session data is stored.
     :param str patch: The patch name used to search for data files.
