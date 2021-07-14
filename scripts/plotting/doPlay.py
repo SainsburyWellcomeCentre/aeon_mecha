@@ -29,11 +29,8 @@ def main(argv):
     metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
     metadata = api.sessionduration(metadata)
     state = aeon.preprocess.api.patchdata(root, patchID, start=metadata.iloc[sessionIndex].start, end=metadata.iloc[sessionIndex].end)
-    thr_changes = state["threshold"].iloc[1:].to_numpy()-state["threshold"].iloc[:-1].to_numpy()
-    idx_changes = np.where(thr_changes>0)[0]
-    dates_changes = []
-    if len(idx_changes)>0:
-        dates_changes = state.index[idx_changes+1]
+    thr_changes = state["threshold"].diff()
+    dates_changes = state["threshold"].index[thr_changes > 0]
     print(state)
     if len(dates_changes)>0:
         print("Changes in thr in {:s} at dates".format(patchID))
