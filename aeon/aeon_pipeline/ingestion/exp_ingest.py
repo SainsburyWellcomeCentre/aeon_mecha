@@ -41,7 +41,7 @@ yml_filepath = '/nfs/nhome/live/thinh/code/ProjectAeon/aeon/aeon/aeon_pipeline/i
 
 load_arena_setup(yml_filepath, experiment_name)
 
-# manually add coordinates of foodpatch and nest
+# manually update coordinates of foodpatch and nest
 patch_coordinates = {'Patch1': (590, 820, 0),
                      'Patch2': (620, 260, 0)}
 

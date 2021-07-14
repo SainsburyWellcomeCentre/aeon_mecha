@@ -5,6 +5,7 @@ from aeon.preprocess import api as aeon_api
 from aeon.aeon_pipeline import lab, experiment, tracking, analysis
 
 plt.rcParams.update({'font.size': 14})
+pixel_to_meter = 1.95 * 1e-3  # 1.95mm per pixel
 
 
 def plot_sessions_statistics(subject_key):
