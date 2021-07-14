@@ -28,24 +28,11 @@ def rate(events, window, frequency, weight=1, start=None, end=None, smooth=None,
 def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", help="Root path for data access", default="/ceph/aeon/test2/experiment0.1")
-    parser.add_argument("--session", help="Session index", default=3, type=int)
-    parser.add_argument("--start_time", help="Start time (sec)", default=0.0, type=float)
-    parser.add_argument("--duration", help="Duration (sec)", default=600.0, type=float)
-    parser.add_argument("--patchesToPlot", help="Names of patches to plot", default="Patch1,Patch2")
-    parser.add_argument("--pellet_event_name", help="Pellet event name to display", default="TriggerPellet")
-    parser.add_argument("--win_length_sec", help="Moving average window length (sec)", default=10.0, type=float)
-    parser.add_argument("--time_resolution", help="Time resolution to compute the moving average (sec)", default=0.01, type=float)
-    parser.add_argument("--xlabel", help="xlabel", default="Time (sec)")
-    parser.add_argument("--ylabel", help="ylabel", default="Reward Rate")
-    parser.add_argument("--pellet_line_color", help="pellet line color", default="red")
-    parser.add_argument("--pellet_line_style", help="pellet line style", default="solid")
-    parser.add_argument("--title_pattern", help="title pattern", default="Start {:s}, from {:.02f} to {:0.2f} sec\n (min={:.02f}, max={:.02f})")
     parser.add_argument("--fig_filename_pattern", help="figure filename pattern", default="../../figures/reward_rate_diffsPatch1MinusPatch2_allSessions_allMice.{:s}")
 
     args = parser.parse_args()
 
     root = args.root
-    session = args.session
     fig_filename_pattern = args.fig_filename_pattern
 
     metadata = api.sessiondata(root)
@@ -72,7 +59,6 @@ def main(argv):
             pellets2 = aeon.preprocess.api.pelletdata(root, 'Patch2', start=start, end=end)
             rate2 = rate(events=pellets2, window='600s', frequency='5s', weight=0.1, start=start, end=end, smooth='120s')
             rateDiff = rate1-rate2
-            # import matplotlib.pyplot as plt; plt.plot(rateDiff); plt.show()
             len_rateDiff = len(rateDiff)
             if longest_rateDiff is None or len_rateDiff > longest_rateDiff:
                 longest_rateDiff = len_rateDiff
