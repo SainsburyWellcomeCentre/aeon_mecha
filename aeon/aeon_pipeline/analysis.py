@@ -13,12 +13,13 @@ schema = dj.schema(get_schema_name('analysis'))
 
 
 @schema
-class SessionStatistics(dj.Computed):
+class Ethogram(dj.Computed):
     definition = """
     -> experiment.Session
     ---
-    time_fraction_in_nest: float  # fraction of time the animal spent in the nest in this session
-    distance_travelled: float  # total distance the animal travelled during this session
+    in_nest_timestamps: longblob 
+    in_corridor_timestamps: longblob
+    in_arena_timestamps: longblob
     """
 
     class FoodPatchStatistics(dj.Part):
@@ -26,6 +27,28 @@ class SessionStatistics(dj.Computed):
         -> master
         -> experiment.ExperimentFoodPatch
         ---
+        in_patch_timestamps: longblob  # timestamps of the time the animal spent on this patch
+        """
+
+
+@schema
+class SessionStatistics(dj.Computed):
+    definition = """
+    -> experiment.Session
+    ---
+    time_fraction_in_nest: float  # fraction of time the animal spent in the nest in this session
+    total_distance_travelled: float  # (m) total distance the animal travelled during this session
+    total_pellet_delivered: int  # total pellet delivered for all patches
+    total_wheel_distance: float  # total wheel distance for all patches
+    change_in_weight: float  # weight change before/after the session
+    """
+
+    class FoodPatchStatistics(dj.Part):
+        definition = """
+        -> master
+        -> experiment.ExperimentFoodPatch
+        ---
+        pellet_delivered: int
         in_patch_timestamps: longblob  # timestamps of the time the animal spent on this patch
         time_fraction_in_patch: float  # fraction of time the animal spent on this patch in this session
         total_wheel_distance_travelled: float  # total wheel travel distance during this session
