@@ -1,21 +1,25 @@
 import os
 import glob
 import datetime
+
 import pandas as pd
 import numpy as np
 
+
 def aeon(seconds):
     """Converts a Harp timestamp, in seconds, to a datetime object."""
+
     return datetime.datetime(1904, 1, 1) + pd.to_timedelta(seconds, 's')
 
-def timebin(time, binsize=3):
-    '''
+
+def time_bin(time, bin_size=3):
+    """
     Returns the whole hour time bin for a measurement timestamp.
 
     :param datetime or Series time: An object or series specifiying the measurement timestamps.
     :param int, optional binsize: The size of each time bin, in whole hours.
     :return: A datetime object or series specifying the time bin for the measurement timestamp.
-    '''
+    """
     if isinstance(time, pd.Series):
         hour = binsize * (time.dt.hour // binsize)
         return pd.to_datetime(time.dt.date) + pd.to_timedelta(hour, 'h')

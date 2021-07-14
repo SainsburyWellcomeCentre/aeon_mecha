@@ -1,19 +1,19 @@
 # Users
-python=3.9.*
-bottleneck>=2.6.8
+python>=3.9.4, <4
+bottleneck>=2.6.8, <3
 graphviz
 jupyter
 jupyterlab
 matplotlib
-numba>=0.46.0
-numexpr>=1.2.1
+numba>=0.46.0, <1
+numexpr>=1.2.1, <2
 numpy
 opencv-python
 pandas
 scikit-learn
 scipy
 seaborn
-xarray>=0.12.3
+xarray>=0.12.3, <1
 
 # Developers (can be separated out in a `dev_req.txt` file in future)
 bandit

@@ -17,7 +17,6 @@ def exportvideo(bonsai, workflow, src, dst, **kwargs):
         workflow,
         f'-p:VideoFile={src}',
         f'-p:TrackingFile={dst}'
-    ]
     # Add any extra keyword arguments.
     for key, value in kwargs.items():
         args.append(f'-p:{key}={value}')
