@@ -53,6 +53,8 @@ def main(argv):
         elapsed = time.time()-start
         print("{:s} elapsed time: {:f}".format(session_start_time.strftime("%m_%d_%Y %H_%M_%S"), elapsed))
 
+        datetimes_thr_changes = aeon.query.utils.getDatetimesOfThrChanges(session_start_time=session_start_time, session_end_time=session_end_time, patchesIDs=patchesIDs)
+
         start_times_str = [dt.strftime("%H:%M:%S") for dt in mouse_travelled_distances.index]
         traces = []
         for i in range(mouse_travelled_distances.shape[1]):
