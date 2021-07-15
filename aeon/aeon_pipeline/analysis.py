@@ -19,9 +19,9 @@ class SessionTimeDistribution(dj.Computed):
     -> experiment.Session
     ---
     time_fraction_in_corridor: float  # fraction of time the animal spent in the corridor in this session
-    in_corridor_timestamps: longblob  # timestamps of the time the animal spent in the corridor
+    in_corridor: longblob             # array of boolean for if the animal is in the corridor (same length as position data)
     time_fraction_in_arena: float     # fraction of time the animal spent in the arena in this session
-    in_arena_timestamps: longblob     # timestamps of the time the animal spent the arena
+    in_arena: longblob                # array of boolean for if the animal is in the arena (same length as position data)
     """
 
     class Nest(dj.Part):
@@ -30,7 +30,7 @@ class SessionTimeDistribution(dj.Computed):
         -> lab.ArenaNest
         ---
         time_fraction_in_nest: float  # fraction of time the animal spent in this nest in this session
-        in_nest_timestamps: longblob  # timestamps of the time the animal spent in this nest
+        in_nest: longblob             # array of boolean for if the animal is in this nest (same length as position data)
         """
 
     class FoodPatch(dj.Part):
@@ -39,7 +39,7 @@ class SessionTimeDistribution(dj.Computed):
         -> experiment.ExperimentFoodPatch
         ---
         time_fraction_in_patch: float  # fraction of time the animal spent on this patch in this session
-        in_patch_timestamps: longblob  # timestamps of the time the animal spent on this patch
+        in_patch: longblob             # array of boolean for if the animal is in this patch (same length as position data)
         """
 
     # Work on finished Session with SubjectPosition fully populated only
@@ -63,15 +63,16 @@ class SessionTimeDistribution(dj.Computed):
                                         speed=np.hstack(speed),
                                         area=np.hstack(area)),
                                    index=np.hstack(timestamps))
-
-        valid_position = (position_df.area > 0) & (
-                    position_df.area < 1000)  # filter for objects of the correct size
-        position_df = position_df[valid_position]
         position_df.x = position_df.x * tracking.pixel_scale
         position_df.y = position_df.y * tracking.pixel_scale
+        position_df.speed = position_df.speed * tracking.pixel_scale
 
-        timestamps = (position_df.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
-        timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
+        # filter for objects of the correct size
+        valid_position = (position_df.area > 0) & (position_df.area < 1000)
+        position_df[~valid_position] = np.nan
+
+        # timestamps = (position_df.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
+        # timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
 
         # in corridor
         distance_from_center = tracking.compute_distance(
@@ -88,7 +89,7 @@ class SessionTimeDistribution(dj.Computed):
             in_nest_times.append(
                 {**key, **nest_key,
                  'time_fraction_in_nest': in_nest.mean(),
-                 'in_nest_timestamps': timestamps[in_nest]})
+                 'in_nest': in_nest})
             in_arena = in_arena & ~in_nest
 
         # in food patches - loop through all in-use patches during this session
@@ -118,15 +119,15 @@ class SessionTimeDistribution(dj.Computed):
             in_food_patch_times.append({
                 **key, **food_patch_key,
                 'time_fraction_in_patch': in_patch.mean(),
-                'in_patch_timestamps': timestamps[in_patch]})
+                'in_patch': in_patch.values})
 
             in_arena = in_arena & ~in_patch
 
         self.insert1({**key,
                       'time_fraction_in_corridor': in_corridor.mean(),
-                      'in_corridor_timestamps': timestamps[in_corridor],
+                      'in_corridor': in_corridor.values,
                       'time_fraction_in_arena': in_arena.mean(),
-                      'in_arena_timestamps': timestamps[in_arena]})
+                      'in_arena': in_arena.values})
         self.Nest.insert(in_nest_times)
         self.FoodPatch.insert(in_food_patch_times)
 
