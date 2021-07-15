@@ -126,7 +126,7 @@ class Arena(dj.Lookup):
     """
     Coordinate frame convention:
     + x-dimension: x=0 is the left most point of the bounding box of the arena
-    + y-dimension: y=0 is the bottom most point of the bounding box of the arena
+    + y-dimension: y=0 is the top most point of the bounding box of the arena
     + z-dimension: z=0 is the lowest point of the arena (e.g. the ground)
     TODO: confirm/update this
     """
@@ -148,6 +148,7 @@ class Arena(dj.Lookup):
 class ArenaNest(dj.Manual):
     definition = """
     -> Arena
+    nest: int  # nest number - e.g. 1, 2, ...
     """
 
     class Vertex(dj.Part):
