@@ -381,7 +381,43 @@ class FoodPatchWheel(dj.Imported):
     intensity:         longblob
     """
 
-    class WheelState(dj.Part):
+    @property
+    def key_source(self):
+        """
+        Only the combination of TimeBin and ExperimentFoodPatch with overlapping time
+        +  TimeBin(s) that started after FoodPatch install time and ended before FoodPatch remove time
+        +  TimeBin(s) that started after FoodPatch install time for FoodPatch that are not yet removed
+        """
+        return (TimeBin
+                * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
+                & 'time_bin_start >= food_patch_install_time'
+                & 'time_bin_start < IFNULL(food_patch_remove_time, "2200-01-01")')
+
+    def make(self, key):
+        time_bin_start, time_bin_end = (TimeBin & key).fetch1('time_bin_start', 'time_bin_end')
+        food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
+
+        raw_data_dir = Experiment.get_raw_data_directory(key)
+        encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
+                                           device=food_patch_description,
+                                           start=pd.Timestamp(time_bin_start),
+                                           end=pd.Timestamp(time_bin_end))
+        timestamps = (encoderdata.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
+        timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
+
+        self.insert1({**key, 'timestamps': timestamps,
+                      'angle': encoderdata.angle.values,
+                      'intensity': encoderdata.intensity.values})
+
+
+@schema
+class WheelState(dj.Imported):
+    definition = """  # wheel data associated with a given ExperimentFoodPatch
+    -> TimeBin
+    -> ExperimentFoodPatch
+    """
+
+    class Time(dj.Part):
         definition = """  # Threshold, d1, delta state of the wheel
         -> master
         state_timestamp: datetime(3)
@@ -406,28 +442,18 @@ class FoodPatchWheel(dj.Imported):
     def make(self, key):
         time_bin_start, time_bin_end = (TimeBin & key).fetch1('time_bin_start', 'time_bin_end')
         food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
-
         raw_data_dir = Experiment.get_raw_data_directory(key)
-        encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
-                                           device=food_patch_description,
-                                           start=pd.Timestamp(time_bin_start),
-                                           end=pd.Timestamp(time_bin_end))
         statedata = aeon_api.patchdata(raw_data_dir.as_posix(),
                                        patch=food_patch_description,
                                        start=pd.Timestamp(time_bin_start),
                                        end=pd.Timestamp(time_bin_end))
+        self.insert1(key)
+        self.Time.insert([{**key,
+                           'state_timestamp': r.name,
+                           'threshold': r.threshold,
+                           'd1': r.d1,
+                           'delta': r.delta} for _, r in statedata.iterrows()])
 
-        timestamps = (encoderdata.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
-        timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
-
-        self.insert1({**key, 'timestamps': timestamps,
-                      'angle': encoderdata.angle.values,
-                      'intensity': encoderdata.intensity.values})
-        self.WheelState.insert([{**key,
-                                 'state_timestamp': r.name,
-                                 'threshold': r.threshold,
-                                 'd1': r.d1,
-                                 'delta': r.delta} for _, r in statedata.iterrows()])
 
 
 # ------------------- SESSION --------------------

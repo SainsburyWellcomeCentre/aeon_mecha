@@ -12,8 +12,9 @@ subject.Subject.insert([
     {'subject': 'BAA-1099792', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
     {'subject': 'BAA-1099793', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
     {'subject': 'BAA-1099794', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
-    {'subject': 'BAA-1099795', 'sex': 'U', 'subject_birth_date': '2021-01-01'}
-])
+    {'subject': 'BAA-1099795', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
+    {'subject': 'BAA-1099796', 'sex': 'U', 'subject_birth_date': '2021-01-01'}
+], skip_duplicates=True)
 
 
 # ---------------- Experiment -----------------
@@ -70,6 +71,7 @@ experiment.SubjectWeight.populate(**settings)
 
 experiment.FoodPatchEvent.populate(**settings)
 experiment.FoodPatchWheel.populate(**settings)
+experiment.WheelState.populate(**settings)
 
 experiment.Session.populate(**settings)
 experiment.SessionEnd.populate(**settings)
