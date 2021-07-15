@@ -13,6 +13,7 @@ sys.path.append("../..")
 import aeon.preprocess.api as api
 import aeon.preprocess.utils
 import aeon.signalProcessing.utils
+import aeon.query.utils
 
 def rate(events, window, frequency, weight=1, start=None, end=None, smooth=None, center=False):
     counts = pd.Series(weight, events.index)
@@ -40,12 +41,13 @@ def main(argv):
     metadata = metadata[metadata.id.str.startswith('BAA')]
     # metadata = metadata[(metadata.duration > pd.Timedelta('1h')) | metadata.duration.isna()]
     metadata = metadata[(metadata.duration > pd.Timedelta('1h'))]
-    metadata = metadata[metadata.start >= pd.Timestamp('20210622')]
+    metadata = metadata[metadata.start >= pd.Timestamp('20210614')]
 
     nSessions = metadata.shape[0]
     longest_rateDiff = None
     nSessions_with_thrChange = 0
     mice_rateDiff_info = []
+    thr_change_elapsed_times_secs = []
     mouse_ids = metadata.id.unique()
     for mouse_id in mouse_ids:
         mouse_metadata = metadata[metadata.id == mouse_id]
@@ -71,16 +73,20 @@ def main(argv):
             if dates_changes1 is not None:
                 changed_patch = "Patch1"
                 not_changed_patch = "Patch2"
+                thr_change_elapsed_times_secs.append((dates_changes1-start).total_seconds().values[0])
             elif dates_changes2 is not None:
                 changed_patch = "Patch2"
                 not_changed_patch = "Patch1"
+                thr_change_elapsed_times_secs.append((dates_changes2-start).total_seconds().values[0])
             # end  check if the threshold changed for patch1 or patch2
             if changed_patch is not None:
                 nSessions_with_thrChange += 1
                 changed_patch_pellets = aeon.preprocess.api.pelletdata(root, changed_patch, start=start, end=end)
+                changed_patch_pellets = changed_patch_pellets[changed_patch_pellets.event == 'TriggerPellet']            # get timestamps of pellets delivered at patch1
                 not_changed_patch_pellets = aeon.preprocess.api.pelletdata(root, not_changed_patch, start=start, end=end)
-                changed_patch_rate = rate(events=changed_patch_pellets, window='600s', frequency='5s', weight=0.1, start=start, end=end, smooth='120s')
-                not_changed_patch_rate = rate(events=not_changed_patch_pellets, window='600s', frequency='5s', weight=0.1, start=start, end=end, smooth='120s')
+                not_changed_patch_pellets = not_changed_patch_pellets[not_changed_patch_pellets.event == 'TriggerPellet']            # get timestamps of pellets delivered at patch1
+                changed_patch_rate = aeon.query.utils.get_events_rates(events=changed_patch_pellets, window_len_sec=600, frequency='5s', start=start, end=end, smooth='120s')
+                not_changed_patch_rate = aeon.query.utils.get_events_rates(events=not_changed_patch_pellets, window_len_sec=600, frequency='5s', start=start, end=end, smooth='120s')
                 rateDiff = changed_patch_rate-not_changed_patch_rate
                 len_rateDiff = len(rateDiff)
                 if longest_rateDiff is None or len_rateDiff > longest_rateDiff:
@@ -92,19 +98,28 @@ def main(argv):
     rateDiffs_matrix = np.empty((nSessions_with_thrChange, longest_rateDiff))
     rateDiffs_matrix[:] = np.NaN
     y_labels = []
+    max_session_elapsed_times = None
     row_index = 0
     for mouse_rateDiff_info in mice_rateDiff_info:
         for rateDiff_info_index, rateDiff_item in enumerate(mouse_rateDiff_info["rateDiffs"]):
+            session_elapsed_times = rateDiff_item.index-rateDiff_item.index[0]
+            if max_session_elapsed_times is None or session_elapsed_times[-1]>max_session_elapsed_times[-1]:
+                max_session_elapsed_times = session_elapsed_times
             rateDiffs_matrix[row_index, :len(rateDiff_item)] = rateDiff_item.to_numpy()
             y_labels.append("{:s}_{:s}".format(mouse_rateDiff_info["mouse_id"], mouse_rateDiff_info["starts"][rateDiff_info_index].strftime("%m/%d/%Y")))
             row_index += 1
     print("rateDiffs_matrix.shape=", rateDiffs_matrix.shape)
-    print("rateDiffs_matrix.min()=", rateDiffs_matrix.min())
-    print("rateDiffs_matrix.max()=", rateDiffs_matrix.max())
-    fig = px.imshow(img=rateDiffs_matrix, y=y_labels, aspect="auto",
-                    labels=dict(color="Reward Rate<br>Changed-Not Changed<br>Patch"))
-    fig.update_xaxes(showticklabels=False)
+    print("rateDiffs_matrix.min()=", np.nanmin(rateDiffs_matrix))
+    print("rateDiffs_matrix.max()=", np.nanmax(rateDiffs_matrix))
+    absZmax = np.nanmax(np.absolute(rateDiffs_matrix))
+    thr_change_elapsed_times_secs = np.array(thr_change_elapsed_times_secs)
+    fig = go.Figure()
+    fig = px.imshow(img=rateDiffs_matrix, x=max_session_elapsed_times.total_seconds()/60, y=y_labels, zmin=-absZmax, zmax=absZmax, aspect="auto", color_continuous_scale='PIYG', labels=dict(color="Reward Rate<br>Changed-Not Changed<br>Patch"))
+    change_times_trace = go.Scatter(x=thr_change_elapsed_times_secs/60, y=y_labels,  marker_symbol="triangle-right", marker_size=10, mode="markers")
+    # change_times_trace = go.Scatter(x=thr_change_elapsed_times_secs/60, y=y_labels)
+    fig.add_trace(change_times_trace)
     fig.update_layout(
+        xaxis_title="Time (min)",
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)'
     )
