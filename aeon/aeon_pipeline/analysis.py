@@ -81,7 +81,7 @@ class SessionTimeDistribution(dj.Computed):
 
         in_arena = ~in_corridor
 
-        # in nests
+        # in nests - loop through all nests in this experiment
         in_nest_times = []
         for nest_key in (lab.ArenaNest & key).fetch('KEY'):
             in_nest = is_position_in_nest(position_df, nest_key)
@@ -91,7 +91,7 @@ class SessionTimeDistribution(dj.Computed):
                  'in_nest_timestamps': timestamps[in_nest]})
             in_arena = in_arena & ~in_nest
 
-        # in food patches
+        # in food patches - loop through all in-use patches during this session
         food_patch_keys = (
                 experiment.Session * experiment.SessionEnd
                 * experiment.ExperimentFoodPatch.join(experiment.ExperimentFoodPatch.RemovalTime, left=True)
@@ -137,7 +137,7 @@ class SessionSummary(dj.Computed):
     -> experiment.Session
     ---
     total_distance_travelled: float  # (m) total distance the animal travelled during this session
-    total_pellet_count: int  # total pellet delivered for all patches during this session
+    total_pellet_count: int  # total pellet delivered (triggered) for all patches during this session
     total_wheel_distance_travelled: float  # total wheel distance for all patches
     change_in_weight: float  # weight change before/after the session
     """
@@ -147,7 +147,7 @@ class SessionSummary(dj.Computed):
         -> master
         -> experiment.ExperimentFoodPatch
         ---
-        pellet_count: int  # number of pellets being delivered by this patch during this session
+        pellet_count: int  # number of pellets being delivered (triggered) by this patch during this session
         wheel_distance_travelled: float  # wheel travel distance during this session for this patch
         """
 
@@ -199,7 +199,7 @@ class SessionSummary(dj.Computed):
         for food_patch_key in food_patch_keys:
             pellet_count = len(experiment.FoodPatchEvent * experiment.EventType
                                & food_patch_key
-                               & 'event_type = "PelletDetected"'
+                               & 'event_type = "TriggerPellet"'
                                & f'event_time BETWEEN "{session_start}" AND "{session_end}"')
             # wheel data
             food_patch_description = (experiment.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
