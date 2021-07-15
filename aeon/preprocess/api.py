@@ -142,11 +142,13 @@ def load(path, reader, device, prefix=None, extension="*.csv",
         try:
             return data.loc[start:end]
         except KeyError:
-            if not data.index.has_duplicates:
-                raise
             import warnings
-            warnings.warn('data index for {0} contains duplicate keys!'.format(device))
-            data = data[~data.index.duplicated(keep='first')]
+            if not data.index.has_duplicates:
+                warnings.warn('data index for {0} contains out-of-order timestamps!'.format(device))
+                data = data.sort_index()
+            else:
+                warnings.warn('data index for {0} contains duplicate keys!'.format(device))
+                data = data[~data.index.duplicated(keep='first')]
             return data.loc[start:end]
     return data
 
