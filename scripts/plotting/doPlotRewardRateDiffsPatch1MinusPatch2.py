@@ -13,17 +13,7 @@ sys.path.append("../..")
 import aeon.preprocess.api as api
 import aeon.preprocess.utils
 import aeon.signalProcessing.utils
-
-def rate(events, window, frequency, weight=1, start=None, end=None, smooth=None, center=False):
-    counts = pd.Series(weight, events.index)
-    if start is not None and start < events.index[0]:
-        counts.loc[start] = 0
-    if end is not None and end > events.index[-1]:
-        counts.loc[end] = 0
-    counts.sort_index(inplace=True)
-    counts = counts.resample(frequency).sum()
-    rate = counts.rolling(window,center=center).sum()
-    return rate.rolling(window if smooth is None else smooth,center=center).mean()
+import aeon.query.utils
 
 def main(argv):
     parser = argparse.ArgumentParser()
@@ -40,7 +30,7 @@ def main(argv):
     metadata = metadata[metadata.id.str.startswith('BAA')]
     # metadata = metadata[(metadata.duration > pd.Timedelta('1h')) | metadata.duration.isna()]
     metadata = metadata[(metadata.duration > pd.Timedelta('1h'))]
-    metadata = metadata[metadata.start >= pd.Timestamp('20210622')]
+    metadata = metadata[metadata.start >= pd.Timestamp('20210614')]
 
     nSessions = metadata.shape[0]
     longest_rateDiff = None
@@ -55,10 +45,17 @@ def main(argv):
             end = mouse_metadata.iloc[i].end
             print("Prcessing {:s}, start time {}".format(mouse_id, start))
             pellets1 = aeon.preprocess.api.pelletdata(root, 'Patch1', start=start, end=end)
-            rate1 = rate(events=pellets1, window='600s', frequency='5s', weight=0.1, start=start, end=end, smooth='120s')
+            pellets1 = pellets1[pellets1.event == 'TriggerPellet']            # get timestamps of pellets delivered at patch1
+            rate1 = aeon.query.utils.get_events_rates(events=pellets1, window_len_sec=600, frequency='5s', start=start, end=end, smooth='120s', center=True)
             pellets2 = aeon.preprocess.api.pelletdata(root, 'Patch2', start=start, end=end)
-            rate2 = rate(events=pellets2, window='600s', frequency='5s', weight=0.1, start=start, end=end, smooth='120s')
-            rateDiff = rate1-rate2
+            pellets2 = pellets2[pellets2.event == 'TriggerPellet']            # get timestamps of pellets delivered at patch1
+            rate2 = aeon.query.utils.get_events_rates(events=pellets2,
+                                                      window_len_sec=600,
+                                                      frequency='5s',
+                                                      start=start, end=end,
+                                                      smooth='120s',
+                                                      center=True)
+            rateDiff = rate2-rate1
             len_rateDiff = len(rateDiff)
             if longest_rateDiff is None or len_rateDiff > longest_rateDiff:
                 longest_rateDiff = len_rateDiff
@@ -67,19 +64,24 @@ def main(argv):
         mice_rateDiff_info.append(dict(mouse_id=mouse_id, starts=mouse_starts, rateDiffs=mouse_rateDiffs))
     rateDiffs_matrix = np.empty((nSessions, longest_rateDiff))
     rateDiffs_matrix[:] = np.NaN
+    max_session_elapsed_times = None
     y_labels = []
     row_index = 0
     for mouse_rateDiff_info in mice_rateDiff_info:
         for rateDiff_info_index, rateDiff_item in enumerate(mouse_rateDiff_info["rateDiffs"]):
+            session_elapsed_times = rateDiff_item.index-rateDiff_item.index[0]
+            if max_session_elapsed_times is None or session_elapsed_times[-1]>max_session_elapsed_times[-1]:
+                max_session_elapsed_times = session_elapsed_times
             rateDiffs_matrix[row_index, :len(rateDiff_item)] = rateDiff_item.to_numpy()
             y_labels.append("{:s}_{:s}".format(mouse_rateDiff_info["mouse_id"], mouse_rateDiff_info["starts"][rateDiff_info_index].strftime("%m/%d/%Y")))
             row_index += 1
     print("rateDiffs_matrix.shape=", rateDiffs_matrix.shape)
-    print("rateDiffs_matrix.min()=", rateDiffs_matrix.min())
-    print("rateDiffs_matrix.max()=", rateDiffs_matrix.max())
-    fig = px.imshow(img=rateDiffs_matrix, y=y_labels, aspect="auto", labels=dict(color="Reward Rate<br>Patch1-Patch2"))
-    fig.update_xaxes(showticklabels=False)
+    print("rateDiffs_matrix.min()=", np.nanmin(rateDiffs_matrix))
+    print("rateDiffs_matrix.max()=", np.nanmax(rateDiffs_matrix))
+    absZmax = np.nanmax(np.absolute(rateDiffs_matrix))
+    fig = px.imshow(img=rateDiffs_matrix, x=max_session_elapsed_times.total_seconds()/60, y=y_labels, zmin=-absZmax, zmax=absZmax, aspect="auto", color_continuous_scale='RdBu_r', labels=dict(color="Reward Rate<br>Patch2-Patch1"))
     fig.update_layout(
+        xaxis_title="Time (min)",
         paper_bgcolor='rgba(0,0,0,0)',
         plot_bgcolor='rgba(0,0,0,0)'
     )
