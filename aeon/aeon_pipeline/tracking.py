@@ -11,6 +11,11 @@ from . import get_schema_name
 
 schema = dj.schema(get_schema_name('tracking'))
 
+pixel_scale = 0.00192  # 1 px = 1.92 mm
+arena_center_x, arena_center_y = 1.475, 1.075  # center
+arena_inner_radius = 0.93  # inner
+arena_outer_radius = 0.97  # outer
+
 
 @schema
 class SubjectPosition(dj.Imported):
@@ -101,3 +106,20 @@ class SubjectDistance(dj.Computed):
 
         self.insert1(key)
         self.FoodPatch.insert(food_patch_distance_list)
+
+
+# ---------- HELPER ------------------
+
+def compute_distance(position_df, target):
+    assert len(target) == 2
+    return np.sqrt(np.square(position_df[['x', 'y']] - target).sum(axis=1))
+
+
+def is_in_patch(position_df, patch_position, wheel_distance_travelled, patch_radius=0.2):
+    distance_from_patch = compute_distance(position_df, patch_position)
+    in_patch = distance_from_patch < patch_radius
+    exit_patch = in_patch.astype(np.int8).diff() < 0
+    in_wheel = (wheel_distance_travelled.diff().rolling('1s').sum() > 1).reindex(
+        position_df.index, method='pad')
+    epochs = exit_patch.cumsum()
+    return in_wheel.groupby(epochs).apply(lambda x:x.cumsum()) > 0
