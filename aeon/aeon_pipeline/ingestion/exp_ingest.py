@@ -42,8 +42,8 @@ yml_filepath = '/nfs/nhome/live/thinh/code/ProjectAeon/aeon/aeon/aeon_pipeline/i
 load_arena_setup(yml_filepath, experiment_name)
 
 # manually update coordinates of foodpatch and nest
-patch_coordinates = {'Patch1': (590, 820, 0),
-                     'Patch2': (620, 260, 0)}
+patch_coordinates = {'Patch1': (1.13, 1.59, 0),
+                     'Patch2': (1.19, 0.50, 0)}
 
 for patch_key in experiment.ExperimentFoodPatch.fetch('KEY'):
     patch = (experiment.ExperimentFoodPatch & patch_key).fetch1('food_patch_description')
@@ -54,10 +54,10 @@ for patch_key in experiment.ExperimentFoodPatch.fetch('KEY'):
         'food_patch_position_y': y,
         'food_patch_position_z': z})
 
-nest_coordinates = [(170, 450), (170, 540), (260, 450), (260, 540)]
-lab.ArenaNest.insert1({'arena_name': 'circle-2m'})
+nest_coordinates = [(0.3264, 0.864), (0.3264, 1.0368), (0.4992, 0.864), (0.4992, 1.0368)]
+lab.ArenaNest.insert1({'arena_name': 'circle-2m', 'nest': 1})
 lab.ArenaNest.Vertex.insert(
-    ({'arena_name': 'circle-2m', 'vertex': v_id, 'vertex_x': x, 'vertex_y': y}
+    ({'arena_name': 'circle-2m', 'nest': 1, 'vertex': v_id, 'vertex_x': x, 'vertex_y': y}
      for v_id, (x, y) in enumerate(nest_coordinates)))
 
 # ---------------- Auto Ingestion -----------------
@@ -66,6 +66,8 @@ settings = {'reserve_jobs': True, 'suppress_errors': True, 'display_progress': T
 experiment.TimeBin.generate_timebins(experiment_name='exp0.1-r0')
 experiment.SubjectEnterExit.populate(**settings)
 experiment.SubjectAnnotation.populate(**settings)
+experiment.SubjectWeight.populate(**settings)
+
 experiment.FoodPatchEvent.populate(**settings)
 experiment.FoodPatchWheel.populate(**settings)
 
@@ -76,4 +78,5 @@ experiment.SessionEpoch.populate(**settings)
 tracking.SubjectPosition.populate(**settings)
 tracking.SubjectDistance.populate(**settings)
 
-analysis.SessionStatistics.populate(**settings)
+analysis.SessionTimeDistribution.populate(**settings)
+analysis.SessionSummary.populate(**settings)
