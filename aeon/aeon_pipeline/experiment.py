@@ -455,7 +455,6 @@ class WheelState(dj.Imported):
                            'delta': r.delta} for _, r in statedata.iterrows()])
 
 
-
 # ------------------- SESSION --------------------
 
 

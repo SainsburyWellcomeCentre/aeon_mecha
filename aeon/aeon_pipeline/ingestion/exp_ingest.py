@@ -70,8 +70,8 @@ experiment.SubjectAnnotation.populate(**settings)
 experiment.SubjectWeight.populate(**settings)
 
 experiment.FoodPatchEvent.populate(**settings)
-experiment.FoodPatchWheel.populate(**settings)
 experiment.WheelState.populate(**settings)
+experiment.FoodPatchWheel.populate(**settings)
 
 experiment.Session.populate(**settings)
 experiment.SessionEnd.populate(**settings)
