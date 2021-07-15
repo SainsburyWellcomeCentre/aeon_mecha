@@ -247,6 +247,36 @@ class SubjectEnterExit(dj.Imported):
 
 
 @schema
+class SubjectWeight(dj.Imported):
+    definition = """  # Records of subjects entering/exiting the arena
+    -> TimeBin  
+    """
+
+    class WeightTime(dj.Part):
+        definition = """
+        -> master
+        -> Experiment.Subject
+        weight_time: datetime(3)  # datetime of subject weighting
+        ---
+        weight: float  # 
+        """
+
+    def make(self, key):
+        subject_list = (Experiment.Subject & key).fetch('subject')
+        time_bin_start, time_bin_end = (TimeBin & key).fetch1(
+            'time_bin_start', 'time_bin_end')
+        raw_data_dir = Experiment.get_raw_data_directory(key)
+        sessiondata = aeon_api.sessiondata(raw_data_dir.as_posix(),
+                                           start=pd.Timestamp(time_bin_start),
+                                           end=pd.Timestamp(time_bin_end))
+        self.insert1(key)
+        self.WeightTime.insert(({**key, 'subject': r.id,
+                                 'weight': r.weight,
+                                 'weight_time': r.name} for _, r in sessiondata.iterrows()
+                                if r.id in subject_list), skip_duplicates=True)
+
+
+@schema
 class SubjectAnnotation(dj.Imported):
     definition = """  # Experimenter's annotations 
     -> TimeBin  
@@ -346,10 +376,20 @@ class FoodPatchWheel(dj.Imported):
     -> TimeBin
     -> ExperimentFoodPatch
     ---
-    timestamps:        longblob  # (datetime) timestamps of wheel encoder data
+    timestamps:        longblob   # (datetime) timestamps of wheel encoder data
     angle:             longblob   # measured angles of the wheel 
     intensity:         longblob
     """
+
+    class WheelState(dj.Part):
+        definition = """  # Threshold, d1, delta state of the wheel
+        -> master
+        state_timestamp: datetime(3)
+        ---
+        threshold: float
+        d1: float
+        delta: float
+        """
 
     @property
     def key_source(self):
@@ -372,6 +412,10 @@ class FoodPatchWheel(dj.Imported):
                                            device=food_patch_description,
                                            start=pd.Timestamp(time_bin_start),
                                            end=pd.Timestamp(time_bin_end))
+        statedata = aeon_api.patchdata(raw_data_dir.as_posix(),
+                                       patch=food_patch_description,
+                                       start=pd.Timestamp(time_bin_start),
+                                       end=pd.Timestamp(time_bin_end))
 
         timestamps = (encoderdata.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
         timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
@@ -379,6 +423,11 @@ class FoodPatchWheel(dj.Imported):
         self.insert1({**key, 'timestamps': timestamps,
                       'angle': encoderdata.angle.values,
                       'intensity': encoderdata.intensity.values})
+        self.WheelState.insert([{**key,
+                                 'state_timestamp': r.name,
+                                 'threshold': r.threshold,
+                                 'd1': r.d1,
+                                 'delta': r.delta} for _, r in statedata.iterrows()])
 
 
 # ------------------- SESSION --------------------
