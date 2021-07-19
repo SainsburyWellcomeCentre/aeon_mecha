@@ -235,14 +235,14 @@ class SubjectEnterExit(dj.Imported):
             'time_bin_start', 'time_bin_end')
 
         raw_data_dir = Experiment.get_raw_data_directory(key)
-        sessiondata = aeon_api.sessiondata(raw_data_dir.as_posix(),
+        session_info = aeon_api.sessiondata(raw_data_dir.as_posix(),
                                            start=pd.Timestamp(time_bin_start),
                                            end=pd.Timestamp(time_bin_end))
 
         self.insert1(key)
         self.Time.insert(({**key, 'subject': r.id,
                            'enter_exit_event': self._enter_exit_event_mapper[r.event],
-                           'enter_exit_time': r.name} for _, r in sessiondata.iterrows()
+                           'enter_exit_time': r.name} for _, r in session_info.iterrows()
                          if r.id in subject_list), skip_duplicates=True)
 
 
@@ -266,13 +266,13 @@ class SubjectWeight(dj.Imported):
         time_bin_start, time_bin_end = (TimeBin & key).fetch1(
             'time_bin_start', 'time_bin_end')
         raw_data_dir = Experiment.get_raw_data_directory(key)
-        sessiondata = aeon_api.sessiondata(raw_data_dir.as_posix(),
+        session_info = aeon_api.sessiondata(raw_data_dir.as_posix(),
                                            start=pd.Timestamp(time_bin_start),
                                            end=pd.Timestamp(time_bin_end))
         self.insert1(key)
         self.WeightTime.insert(({**key, 'subject': r.id,
                                  'weight': r.weight,
-                                 'weight_time': r.name} for _, r in sessiondata.iterrows()
+                                 'weight_time': r.name} for _, r in session_info.iterrows()
                                 if r.id in subject_list), skip_duplicates=True)
 
 
@@ -352,12 +352,12 @@ class FoodPatchEvent(dj.Imported):
         food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
 
         raw_data_dir = Experiment.get_raw_data_directory(key)
-        pelletdata = aeon_api.pelletdata(raw_data_dir.as_posix(),
+        pellet_data = aeon_api.pelletdata(raw_data_dir.as_posix(),
                                          device=food_patch_description,
                                          start=pd.Timestamp(time_bin_start),
                                          end=pd.Timestamp(time_bin_end))
 
-        if not len(pelletdata):
+        if not len(pellet_data):
             event_list = [{**key, 'event_number': 0,
                            'event_time': time_bin_start, 'event_code': 1000}]
         else:
@@ -365,7 +365,7 @@ class FoodPatchEvent(dj.Imported):
                                  in zip(*EventType.fetch('event_code', 'event_type'))}
             event_list = [{**key, 'event_number': r_idx, 'event_time': r_time,
                            'event_code': event_code_mapper[r.event]}
-                          for r_idx, (r_time, r) in enumerate(pelletdata.iterrows())]
+                          for r_idx, (r_time, r) in enumerate(pellet_data.iterrows())]
 
         self.insert(event_list)
 
@@ -398,16 +398,16 @@ class FoodPatchWheel(dj.Imported):
         food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
 
         raw_data_dir = Experiment.get_raw_data_directory(key)
-        encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
-                                           device=food_patch_description,
-                                           start=pd.Timestamp(time_bin_start),
-                                           end=pd.Timestamp(time_bin_end))
-        timestamps = (encoderdata.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
+        wheel_data = aeon_api.encoderdata(raw_data_dir.as_posix(),
+                                          device=food_patch_description,
+                                          start=pd.Timestamp(time_bin_start),
+                                          end=pd.Timestamp(time_bin_end))
+        timestamps = (wheel_data.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
         timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
 
         self.insert1({**key, 'timestamps': timestamps,
-                      'angle': encoderdata.angle.values,
-                      'intensity': encoderdata.intensity.values})
+                      'angle': wheel_data.angle.values,
+                      'intensity': wheel_data.intensity.values})
 
 
 @schema
@@ -443,16 +443,16 @@ class WheelState(dj.Imported):
         time_bin_start, time_bin_end = (TimeBin & key).fetch1('time_bin_start', 'time_bin_end')
         food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
         raw_data_dir = Experiment.get_raw_data_directory(key)
-        statedata = aeon_api.patchdata(raw_data_dir.as_posix(),
-                                       patch=food_patch_description,
-                                       start=pd.Timestamp(time_bin_start),
-                                       end=pd.Timestamp(time_bin_end))
+        wheel_state = aeon_api.patchdata(raw_data_dir.as_posix(),
+                                         patch=food_patch_description,
+                                         start=pd.Timestamp(time_bin_start),
+                                         end=pd.Timestamp(time_bin_end))
         self.insert1(key)
         self.Time.insert([{**key,
                            'state_timestamp': r.name,
                            'threshold': r.threshold,
                            'd1': r.d1,
-                           'delta': r.delta} for _, r in statedata.iterrows()])
+                           'delta': r.delta} for _, r in wheel_state.iterrows()])
 
 
 # ------------------- SESSION --------------------

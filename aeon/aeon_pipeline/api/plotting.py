@@ -137,11 +137,11 @@ def plot_session_patch_interaction(session_key):
     food_patches = {}
     for food_patch_key in session_food_patches.fetch(as_dict=True):
         # wheel data
-        wheeldata = aeon_api.encoderdata(raw_data_dir.as_posix(),
+        wheel_data = aeon_api.encoderdata(raw_data_dir.as_posix(),
                                          device=food_patch_key['food_patch_description'],
                                          start=pd.Timestamp(session_start),
                                          end=pd.Timestamp(session_end))
-        wheeldata['wheel_distance_travelled'] = aeon_api.distancetravelled(wheeldata.angle).values
+        wheel_data['wheel_distance_travelled'] = aeon_api.distancetravelled(wheel_data.angle).values
 
         # times in patch
         in_patch_timestamps = (analysis.SessionStatistics.FoodPatchStatistics
@@ -164,7 +164,7 @@ def plot_session_patch_interaction(session_key):
         distance = distance[session_start:session_end]
 
         food_patches[food_patch_key['food_patch_description']] = {
-            'wheeldata': wheeldata,
+            'wheeldata': wheel_data,
             'pellet_times': pellet_times,
             'in_patch_timestamps': in_patch_timestamps,
             'distance': distance
