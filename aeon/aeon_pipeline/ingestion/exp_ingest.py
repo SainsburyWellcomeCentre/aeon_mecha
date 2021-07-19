@@ -64,6 +64,7 @@ lab.ArenaNest.Vertex.insert(
 # ---------------- Auto Ingestion -----------------
 settings = {'reserve_jobs': True, 'suppress_errors': True, 'display_progress': True}
 
+# priority-high
 experiment.TimeBin.generate_timebins(experiment_name='exp0.1-r0')
 experiment.SubjectEnterExit.populate(**settings)
 experiment.SubjectAnnotation.populate(**settings)
@@ -71,14 +72,18 @@ experiment.SubjectWeight.populate(**settings)
 
 experiment.FoodPatchEvent.populate(**settings)
 experiment.WheelState.populate(**settings)
-experiment.FoodPatchWheel.populate(**settings)
 
 experiment.Session.populate(**settings)
 experiment.SessionEnd.populate(**settings)
 experiment.SessionEpoch.populate(**settings)
 
+# priority-middle
 tracking.SubjectPosition.populate(**settings)
-tracking.SubjectDistance.populate(**settings)
 
 analysis.SessionTimeDistribution.populate(**settings)
 analysis.SessionSummary.populate(**settings)
+
+# priority-low
+experiment.FoodPatchWheel.populate(**settings)
+tracking.SubjectDistance.populate(**settings)
+

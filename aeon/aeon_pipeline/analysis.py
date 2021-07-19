@@ -42,10 +42,13 @@ class SessionTimeDistribution(dj.Computed):
         in_patch: longblob             # array of boolean for if the animal is in this patch (same length as position data)
         """
 
-    # Work on finished Session with SubjectPosition fully populated only
+    # Work on finished Session with SessionEpoch and SubjectPosition fully populated only
     key_source = (experiment.Session
                   & (experiment.Session * experiment.SessionEnd * experiment.SessionEpoch
-                     & tracking.SubjectPosition & 'epoch_end = session_end').proj())
+                     & 'epoch_end = session_end').proj()
+                  & (experiment.Session.aggr(experiment.SessionEpoch, epoch_count='count(epoch_start)')
+                     * experiment.Session.aggr(tracking.SubjectPosition, tracking_count='count(epoch_start)')
+                     & 'epoch_count = tracking_count'))
 
     def make(self, key):
         raw_data_dir = experiment.Experiment.get_raw_data_directory(key)
@@ -152,10 +155,13 @@ class SessionSummary(dj.Computed):
         wheel_distance_travelled: float  # wheel travel distance during this session for this patch
         """
 
-    # Work on finished Session with SubjectPosition fully populated only
+    # Work on finished Session with SessionEpoch and SubjectPosition fully populated only
     key_source = (experiment.Session
                   & (experiment.Session * experiment.SessionEnd * experiment.SessionEpoch
-                     & tracking.SubjectPosition & 'epoch_end = session_end').proj())
+                     & 'epoch_end = session_end').proj()
+                  & (experiment.Session.aggr(experiment.SessionEpoch, epoch_count='count(epoch_start)')
+                     * experiment.Session.aggr(tracking.SubjectPosition, tracking_count='count(epoch_start)')
+                     & 'epoch_count = tracking_count'))
 
     def make(self, key):
         raw_data_dir = experiment.Experiment.get_raw_data_directory(key)
