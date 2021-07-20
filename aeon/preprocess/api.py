@@ -348,7 +348,11 @@ def harpreader(file, names=None):
     '''
     if file is None:
         return pd.DataFrame(columns=names, index=pd.DatetimeIndex([]))
+
     data = np.fromfile(file, dtype=np.uint8)
+    if len(data) == 0:
+        return pd.DataFrame(columns=names, index=pd.DatetimeIndex([]))
+
     stride = data[1] + 2
     length = len(data) // stride
     payloadsize = stride - 12
