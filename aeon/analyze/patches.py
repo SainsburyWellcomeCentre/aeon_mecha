@@ -1,14 +1,14 @@
 import numpy as np
 import pandas as pd
 
-def rate(events, window, sample_interval, weight=1, start=None, end=None, smooth=None, center=False):
+def rate(events, window, frequency, weight=1, start=None, end=None, smooth=None, center=False):
     '''
     Computes the continuous event rate from a discrete event sequence, given the specified
-    window size and sampling period.
+    window size and sampling frequency.
 
     :param Series events: The discrete sequence of events.
     :param offset window: The time period of each window used to compute the rate.
-    :param DateOffset, Timedelta or str sample_interval: The sampling period for the continuous rate.
+    :param DateOffset, Timedelta or str frequency: The sampling frequency for the continuous rate.
     :param number, optional weight: A weight used to scale the continuous rate of each window.
     :param datetime, optional start: The left bound of the time range for the continuous rate.
     :param datetime, optional end: The right bound of the time range for the continuous rate.
@@ -24,7 +24,7 @@ def rate(events, window, sample_interval, weight=1, start=None, end=None, smooth
     if end is not None and end > events.index[-1]:
         counts.loc[end] = 0
     counts.sort_index(inplace=True)
-    counts = counts.resample(sample_interval).sum()
+    counts = counts.resample(pd.Timedelta(1 / frequency, 's')).sum()
     rate = counts.rolling(window,center=center).sum()
     return rate.rolling(window if smooth is None else smooth,center=center).mean()
 

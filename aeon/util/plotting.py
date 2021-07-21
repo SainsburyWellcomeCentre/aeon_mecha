@@ -43,14 +43,14 @@ def circle(x, y, radius, fmt=None, ax=None, **kwargs):
     points['y'] = radius * np.sin(points.angle) + y
     ax.plot(points.x, points.y, fmt, **kwargs)
 
-def rateplot(events, window, sample_interval, weight=1, start=None, end=None, smooth=None, center=True, ax=None, **kwargs):
+def rateplot(events, window, frequency, weight=1, start=None, end=None, smooth=None, center=True, ax=None, **kwargs):
     '''
     Plot the continuous event rate and raster of a discrete event sequence, given the specified
-    window size and sampling period.
+    window size and sampling frequency.
 
     :param Series events: The discrete sequence of events.
     :param offset window: The time period of each window used to compute the rate.
-    :param DateOffset, Timedelta or str sample_interval: The sampling period for the continuous rate.
+    :param DateOffset, Timedelta or str frequency: The sampling frequency for the continuous rate.
     :param number, optional weight: A weight used to scale the continuous rate of each window.
     :param datetime, optional start: The left bound of the time range for the continuous rate.
     :param datetime, optional end: The right bound of the time range for the continuous rate.
@@ -61,7 +61,7 @@ def rateplot(events, window, sample_interval, weight=1, start=None, end=None, sm
     :param Axes, optional ax: The Axes on which to draw the rate plot and raster.
     '''
     label = kwargs.pop('label', None)
-    eventrate = rate(events, window, sample_interval, weight, start, end, smooth=smooth, center=center)
+    eventrate = rate(events, window, frequency, weight, start, end, smooth=smooth, center=center)
     if ax is None:
         ax = plt.gca()
     ax.plot((eventrate.index-eventrate.index[0]).total_seconds() / 60, eventrate, label=label, **kwargs)
