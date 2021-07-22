@@ -32,7 +32,7 @@ class Experiment(dj.Manual):
     definition = """
     experiment_name: char(12)  # e.g exp0-a
     ---
-    experiment_start_time: datetime(4)  # datetime of the start of this experiment
+    experiment_start_time: datetime(6)  # datetime of the start of this experiment
     experiment_description: varchar(1000)
     -> lab.Arena
     -> lab.Location  # lab/room where a particular experiment takes place
@@ -69,7 +69,7 @@ class ExperimentCamera(dj.Manual):
     # Camera placement and operation for a particular time period, at a certain location, for a given experiment 
     -> Experiment
     -> lab.Camera
-    camera_install_time: datetime(4)   # time of the camera placed and started operation at this position
+    camera_install_time: datetime(6)   # time of the camera placed and started operation at this position
     ---
     camera_description: varchar(36)    
     camera_sampling_rate: float  # (Hz) camera frame rate
@@ -98,7 +98,7 @@ class ExperimentCamera(dj.Manual):
         definition = """
         -> master
         ---
-        camera_remove_time: datetime(4)  # time of the camera being removed from this position
+        camera_remove_time: datetime(6)  # time of the camera being removed from this position
         """
 
 
@@ -108,7 +108,7 @@ class ExperimentFoodPatch(dj.Manual):
     # Food patch placement and operation for a particular time period, at a certain location, for a given experiment 
     -> Experiment
     -> lab.FoodPatch
-    food_patch_install_time: datetime(4)   # time of the food_patch placed and started operation at this position
+    food_patch_install_time: datetime(6)   # time of the food_patch placed and started operation at this position
     ---
     food_patch_description: varchar(36)
     wheel_sampling_rate: float  # (Hz) wheel's sampling rate
@@ -118,7 +118,7 @@ class ExperimentFoodPatch(dj.Manual):
         definition = """
         -> master
         ---
-        food_patch_remove_time: datetime(4)  # time of the food_patch being removed from this position
+        food_patch_remove_time: datetime(6)  # time of the food_patch being removed from this position
         """
 
     class Position(dj.Part):
@@ -137,9 +137,9 @@ class ExperimentFoodPatch(dj.Manual):
 class TimeBin(dj.Manual):
     definition = """  # A recording period corresponds to an N-hour data acquisition
     -> Experiment
-    time_bin_start: datetime(4)  # datetime of the start of this recorded TimeBin
+    time_bin_start: datetime(6)  # datetime of the start of this recorded TimeBin
     ---
-    time_bin_end: datetime(4)    # datetime of the end of this recorded TimeBin
+    time_bin_end: datetime(6)    # datetime of the end of this recorded TimeBin
     """
 
     class File(dj.Part):
@@ -215,7 +215,7 @@ class SubjectEnterExit(dj.Imported):
         definition = """
         -> master
         -> Experiment.Subject
-        enter_exit_time: datetime(4)  # datetime of subject entering/exiting the arena
+        enter_exit_time: datetime(6)  # datetime of subject entering/exiting the arena
         ---
         enter_exit_event: enum('enter', 'exit')       
         """
@@ -247,7 +247,7 @@ class SubjectWeight(dj.Imported):
         definition = """
         -> master
         -> Experiment.Subject
-        weight_time: datetime(4)  # datetime of subject weighting
+        weight_time: datetime(6)  # datetime of subject weighting
         ---
         weight: float  # 
         """
@@ -277,7 +277,7 @@ class SubjectAnnotation(dj.Imported):
         definition = """
         -> master
         -> Experiment.Subject
-        annotation_time: datetime(4)  # datetime of the annotation
+        annotation_time: datetime(6)  # datetime of the annotation
         ---
         annotation: varchar(1000)   
         """
@@ -322,7 +322,7 @@ class FoodPatchEvent(dj.Imported):
     -> ExperimentFoodPatch
     event_number: smallint
     ---
-    event_time: datetime(4)  # event time
+    event_time: datetime(6)  # event time
     -> EventType
     """
 
@@ -411,7 +411,7 @@ class WheelState(dj.Imported):
     class Time(dj.Part):
         definition = """  # Threshold, d1, delta state of the wheel
         -> master
-        state_timestamp: datetime(4)
+        state_timestamp: datetime(6)
         ---
         threshold: float
         d1: float
@@ -453,7 +453,7 @@ class WheelState(dj.Imported):
 class Session(dj.Computed):
     definition = """
     -> Experiment.Subject   
-    session_start: datetime(4)
+    session_start: datetime(6)
     """
 
     @property
@@ -478,7 +478,7 @@ class SessionEnd(dj.Computed):
     definition = """ 
     -> Session
     ---
-    session_end: datetime(4)
+    session_end: datetime(6)
     session_duration: float  # (hour)
     """
 
@@ -514,9 +514,9 @@ class SessionEpoch(dj.Computed):
     # A short time-chunk (e.g. 30 seconds) of the recording of a given animal in the arena
     -> Session
     -> TimeBin
-    epoch_start: datetime(4)  # datetime of the start of this Epoch
+    epoch_start: datetime(6)  # datetime of the start of this Epoch
     ---
-    epoch_end: datetime(4)    # datetime of the end of this Epoch
+    epoch_end: datetime(6)    # datetime of the end of this Epoch
     """
 
     @property
