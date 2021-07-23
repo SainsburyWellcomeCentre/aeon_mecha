@@ -1,5 +1,4 @@
 import datajoint as dj
-import pathlib
 import pandas as pd
 import datetime
 import numpy as np
@@ -7,23 +6,28 @@ import numpy as np
 from aeon.preprocess import api as aeon_api
 
 from . import experiment
-from . import get_schema_name, paths
+from . import get_schema_name
 
 
 schema = dj.schema(get_schema_name('tracking'))
+
+pixel_scale = 0.00192  # 1 px = 1.92 mm
+arena_center_x, arena_center_y = 1.475, 1.075  # center
+arena_inner_radius = 0.93  # inner
+arena_outer_radius = 0.97  # outer
 
 
 @schema
 class SubjectPosition(dj.Imported):
     definition = """
-    -> experiment.Epoch.Subject
+    -> experiment.SessionEpoch
     ---
     timestamps:        longblob  # (datetime) timestamps of the position data
-    position_x:        longblob  # (mm) animal's x-position, in the arena's coordinate frame
-    position_y:        longblob  # (mm) animal's y-position, in the arena's coordinate frame
-    position_z=null:   longblob  # (mm) animal's z-position, in the arena's coordinate frame
-    area=null:         longblob  # (mm^2) animal's size detected in the camera
-    speed=null:        longblob  # (mm/s) speed
+    position_x:        longblob  # (px) animal's x-position, in the arena's coordinate frame
+    position_y:        longblob  # (px) animal's y-position, in the arena's coordinate frame
+    position_z=null:   longblob  # (px) animal's z-position, in the arena's coordinate frame
+    area=null:         longblob  # (px^2) animal's size detected in the camera
+    speed=null:        longblob  # (px/s) speed
     """
 
     def make(self, key):
@@ -32,65 +36,90 @@ class SubjectPosition(dj.Imported):
         The positiondata is associated with that one subject currently in the arena at any timepoints
         However, we need to take into account if the subject is entered or exited during this epoch
         """
-        repo_name, path = (experiment.Experiment.Directory
-                           & 'directory_type = "raw"'
-                           & key).fetch1(
-            'repository_name', 'directory_path')
-        root = paths.get_repository_path(repo_name)
-        raw_data_dir = root / path
+        epoch_start, epoch_end = (experiment.SessionEpoch & key).fetch1('epoch_start', 'epoch_end')
 
-        epoch_start, epoch_end = (experiment.Epoch.Subject & key).fetch1(
-            'epoch_start', 'epoch_end')
-
+        raw_data_dir = experiment.Experiment.get_raw_data_directory(key)
         positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
                                              start=pd.Timestamp(epoch_start),
                                              end=pd.Timestamp(epoch_end))
 
+        if not len(positiondata):
+            raise ValueError(f'No position data between {epoch_start} and {epoch_end}')
+
         timestamps = (positiondata.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
         timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
 
-        # account for the animal entering/exiting during this epoch
-        enter_exit_times = (experiment.SubjectEnterExit.Time & {'subject': key['subject']}
-                            & f'enter_exit_time BETWEEN "{epoch_start}" AND "{epoch_end}"')
-        if not enter_exit_times:
-            # no enter/exit event - i.e. subject in the arena for the whole epoch
-            is_in_arena = np.full(len(positiondata), True, dtype=bool)
-        else:
-            event_types, event_times = enter_exit_times.fetch(
-                'enter_exit_event', 'enter_exit_time', order_by='enter_exit_time')
-            current_status = event_types[0] == 'exit'
-            is_in_arena = np.full(len(positiondata), current_status, dtype=bool)
-            for event_type, event_time in zip(event_types, event_times):
-                current_status = not current_status
-                is_in_arena = np.where(positiondata.index >= event_time, current_status, is_in_arena)
+        x = positiondata.x.values
+        y = positiondata.y.values
+        z = np.full_like(x, 0.0)
+        area = positiondata.area.values
 
-        x = np.where(is_in_arena, positiondata.x.values, np.nan)
-        y = np.where(is_in_arena, positiondata.y.values, np.nan)
-        area = np.where(is_in_arena, positiondata.area.values, np.nan)
+        # speed - TODO: confirm with aeon team if this calculation is sufficient (any smoothing needed?)
+        position_diff = np.sqrt(np.square(np.diff(x)) + np.square(np.diff(y)) + np.square(np.diff(z)))
+        time_diff = [t.total_seconds() for t in np.diff(timestamps)]
+        speed = position_diff / time_diff
+        speed = np.hstack((speed[0], speed))
 
         self.insert1({**key,
                       'timestamps': timestamps,
                       'position_x': x,
                       'position_y': y,
-                      'position_z': np.full_like(x, 0.0),
-                      'area': area})
+                      'position_z': z,
+                      'area': area,
+                      'speed': speed})
 
 
 @schema
-class EpochPosition(dj.Computed):
-    definition = """  # All unique positions (x,y,z) of an animal in a given epoch
-    x: decimal(6, 2)
-    y: decimal(6, 2)
-    z: decimal(6, 2)
+class SubjectDistance(dj.Computed):
+    definition = """
     -> SubjectPosition
     """
 
+    class FoodPatch(dj.Part):
+        definition = """  # distances of the animal away from the food patch, for each timestamp
+        -> master
+        -> experiment.ExperimentFoodPatch
+        ---
+        distance: longblob
+        """
+
     def make(self, key):
-        position_x, position_y, position_z = (SubjectPosition & key).fetch1(
-            'position_x', 'position_y', 'position_z')
-        unique_positions = set(list(zip(np.round(position_x, 2),
-                                        np.round(position_y, 2),
-                                        np.round(position_z, 2))))
-        self.insert([{**key, 'x': x, 'y': y, 'z': z}
-                     for x, y, z in unique_positions
-                     if not np.any(np.where(np.isnan([x, y, z])))])
+        food_patch_keys = (
+                SubjectPosition * experiment.SessionEpoch
+                * experiment.ExperimentFoodPatch.join(experiment.ExperimentFoodPatch.RemovalTime, left=True)
+                & key
+                & 'epoch_start >= food_patch_install_time'
+                & 'epoch_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
+
+        food_patch_distance_list = []
+        for food_patch_key in food_patch_keys:
+            patch_position = (experiment.ExperimentFoodPatch.Position & food_patch_key).fetch1(
+                'food_patch_position_x', 'food_patch_position_y', 'food_patch_position_z')
+            subject_positions = (SubjectPosition & key).fetch1(
+                'position_x', 'position_y', 'position_z')
+            subject_positions = np.array([*zip(subject_positions)]).squeeze().T
+            distances = np.linalg.norm(
+                subject_positions
+                - np.tile(patch_position, (subject_positions.shape[0], 1)), axis=1)
+
+            food_patch_distance_list.append({**food_patch_key, 'distance': distances})
+
+        self.insert1(key)
+        self.FoodPatch.insert(food_patch_distance_list)
+
+
+# ---------- HELPER ------------------
+
+def compute_distance(position_df, target):
+    assert len(target) == 2
+    return np.sqrt(np.square(position_df[['x', 'y']] - target).sum(axis=1))
+
+
+def is_in_patch(position_df, patch_position, wheel_distance_travelled, patch_radius=0.2):
+    distance_from_patch = compute_distance(position_df, patch_position)
+    in_patch = distance_from_patch < patch_radius
+    exit_patch = in_patch.astype(np.int8).diff() < 0
+    in_wheel = (wheel_distance_travelled.diff().rolling('1s').sum() > 1).reindex(
+        position_df.index, method='pad')
+    epochs = exit_patch.cumsum()
+    return in_wheel.groupby(epochs).apply(lambda x:x.cumsum()) > 0

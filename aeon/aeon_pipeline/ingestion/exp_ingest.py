@@ -1,4 +1,4 @@
-from aeon.aeon_pipeline import subject, experiment, tracking
+from aeon.aeon_pipeline import lab, subject, experiment, tracking, analysis
 from aeon.aeon_pipeline.ingestion import load_arena_setup
 
 
@@ -12,8 +12,9 @@ subject.Subject.insert([
     {'subject': 'BAA-1099792', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
     {'subject': 'BAA-1099793', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
     {'subject': 'BAA-1099794', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
-    {'subject': 'BAA-1099795', 'sex': 'U', 'subject_birth_date': '2021-01-01'}
-])
+    {'subject': 'BAA-1099795', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
+    {'subject': 'BAA-1099796', 'sex': 'U', 'subject_birth_date': '2021-01-01'}
+], skip_duplicates=True)
 
 
 # ---------------- Experiment -----------------
@@ -41,13 +42,48 @@ yml_filepath = '/nfs/nhome/live/thinh/code/ProjectAeon/aeon/aeon/aeon_pipeline/i
 
 load_arena_setup(yml_filepath, experiment_name)
 
-# ---------------- Auto Ingestion -----------------
-settings = {'suppress_errors': True}
+# manually update coordinates of foodpatch and nest
+patch_coordinates = {'Patch1': (1.13, 1.59, 0),
+                     'Patch2': (1.19, 0.50, 0)}
 
+for patch_key in experiment.ExperimentFoodPatch.fetch('KEY'):
+    patch = (experiment.ExperimentFoodPatch & patch_key).fetch1('food_patch_description')
+    x, y, z = patch_coordinates[patch]
+    experiment.ExperimentFoodPatch.Position.update1({
+        **patch_key,
+        'food_patch_position_x': x,
+        'food_patch_position_y': y,
+        'food_patch_position_z': z})
+
+nest_coordinates = [(0.3264, 0.864), (0.3264, 1.0368), (0.4992, 0.864), (0.4992, 1.0368)]
+lab.ArenaNest.insert1({'arena_name': 'circle-2m', 'nest': 1})
+lab.ArenaNest.Vertex.insert(
+    ({'arena_name': 'circle-2m', 'nest': 1, 'vertex': v_id, 'vertex_x': x, 'vertex_y': y}
+     for v_id, (x, y) in enumerate(nest_coordinates)))
+
+# ---------------- Auto Ingestion -----------------
+settings = {'reserve_jobs': True, 'suppress_errors': True, 'display_progress': True}
+
+# priority-high
 experiment.TimeBin.generate_timebins(experiment_name='exp0.1-r0')
 experiment.SubjectEnterExit.populate(**settings)
 experiment.SubjectAnnotation.populate(**settings)
-experiment.Epoch.populate(**settings)
+experiment.SubjectWeight.populate(**settings)
+
 experiment.FoodPatchEvent.populate(**settings)
+experiment.WheelState.populate(**settings)
+
+experiment.Session.populate(**settings)
+experiment.SessionEnd.populate(**settings)
+experiment.SessionEpoch.populate(**settings)
+
+# priority-middle
 tracking.SubjectPosition.populate(**settings)
-tracking.EpochPosition.populate(**settings)
+
+analysis.SessionTimeDistribution.populate(**settings)
+analysis.SessionSummary.populate(**settings)
+
+# priority-low
+experiment.FoodPatchWheel.populate(**settings)
+tracking.SubjectDistance.populate(**settings)
+
