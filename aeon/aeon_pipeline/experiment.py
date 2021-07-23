@@ -304,7 +304,7 @@ class SubjectAnnotation(dj.Imported):
 
 @schema
 class EventType(dj.Lookup):  # TODO: do we really need "event_code"?
-    definition = """
+    definition = """  # Experimental event type 
     event_code: smallint   
     ---
     event_type: varchar(24)
@@ -344,9 +344,9 @@ class FoodPatchEvent(dj.Imported):
 
         raw_data_dir = Experiment.get_raw_data_directory(key)
         pellet_data = aeon_api.pelletdata(raw_data_dir.as_posix(),
-                                         device=food_patch_description,
-                                         start=pd.Timestamp(time_bin_start),
-                                         end=pd.Timestamp(time_bin_end))
+                                          device=food_patch_description,
+                                          start=pd.Timestamp(time_bin_start),
+                                          end=pd.Timestamp(time_bin_end))
 
         if not len(pellet_data):
             event_list = [{**key, 'event_number': 0,
@@ -363,7 +363,7 @@ class FoodPatchEvent(dj.Imported):
 
 @schema
 class FoodPatchWheel(dj.Imported):
-    definition = """  # wheel data associated with a given ExperimentFoodPatch
+    definition = """  # Wheel data associated with a given ExperimentFoodPatch
     -> TimeBin
     -> ExperimentFoodPatch
     ---
@@ -403,7 +403,7 @@ class FoodPatchWheel(dj.Imported):
 
 @schema
 class WheelState(dj.Imported):
-    definition = """  # wheel data associated with a given ExperimentFoodPatch
+    definition = """  # Wheel states associated with a given ExperimentFoodPatch
     -> TimeBin
     -> ExperimentFoodPatch
     """
@@ -451,7 +451,7 @@ class WheelState(dj.Imported):
 
 @schema
 class Session(dj.Computed):
-    definition = """
+    definition = """  # A session spans the time when the animal firsts enter the arena to when it exits the arena
     -> Experiment.Subject   
     session_start: datetime(6)
     """
