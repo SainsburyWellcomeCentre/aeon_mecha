@@ -49,6 +49,8 @@ def main(argv):
     parser.add_argument("--reward_rate_trace_color", help="reward rate trace color", default="blue")
     parser.add_argument("--pellet_line_color", help="pellet line color", default="red")
     parser.add_argument("--pellet_line_style", help="pellet line style", default="solid")
+    parser.add_argument("--trajectories_colorscale", help="colorscale for trajectories", default="Rainbow")
+    parser.add_argument("--trajectories_opacity", help="opacity for trajectories", default=0.3, type=float)
 
     args = parser.parse_args()
 
@@ -73,6 +75,8 @@ def main(argv):
     reward_rate_trace_color = args.reward_rate_trace_color
     pellet_line_color = args.pellet_line_color
     pellet_line_style = args.pellet_line_style
+    trajectories_colorscale = args.trajectories_colorscale
+    trajectories_opacity = args.trajectories_opacity
 
     metadata = aeon.preprocess.api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
@@ -214,7 +218,7 @@ def main(argv):
             fig_trajectory.add_trace(patch_trace)
         nest_trace = aeon.plotting.plot_functions.get_patches_traces(patches_coordinates=nest_coordinates)[0]
         fig_trajectory.add_trace(nest_trace)
-        trajectory_trace = aeon.plotting.plot_functions.get_trayectory_trace(x=x, y=y, time_stamps=time_stamps)
+        trajectory_trace = aeon.plotting.plot_functions.get_trayectory_trace(x=x, y=y, time_stamps=time_stamps, colorscale=trajectories_colorscale, opacity=trajectories_opacity)
         fig_trajectory.add_trace(trajectory_trace)
         fig_trajectory.update_layout(xaxis_title=xlabel_trajectory, yaxis_title=ylabel_trajectory, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
 
