@@ -2,13 +2,14 @@ import pdb
 import collections
 import plotly.graph_objects as go
 
-def get_trayectory_trace(x, y, time_stamps=None):
+def get_trayectory_trace(x, y, time_stamps=None, colorscale="Rainbow", opacity=0.3):
     if time_stamps is None:
         trace = go.Scatter(x=x, y=y, mode="markers")
     else:
         trace = go.Scatter(x=x, y=y, mode="markers",
                            marker={"color": time_stamps,
-                                   "colorscale": "Rainbow",
+                                   "opacity": opacity,
+                                   "colorscale": colorscale,
                                    "colorbar": {"title": "Time"},
                                   },
                            customdata=time_stamps,
