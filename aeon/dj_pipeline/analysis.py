@@ -70,9 +70,20 @@ class SessionQC(dj.Computed):
 
 
 @schema
+class BadSession(dj.Computed):
+    definition = """  # Session labelled as BadSession and excluded from further analysis
+    -> experiment.Session
+    ---
+    comment='': varchar(255)  # any comments for why this is a bad session - e.g. manually flagged
+    """
+
+
+@schema
 class GoodSession(dj.Computed):
     definition = """  # Quality controls performed on this session
     -> experiment.Session
+    ---
+    qc_routine_count: int  # how many QC routines used for this good/bad determination
     """
 
     class BadPeriod(dj.Part):
