@@ -36,6 +36,7 @@ class QCRoutine(dj.Lookup):
     definition = """
     qc_routine: varchar(24)  # name of this quality control evaluation - e.g. drop_frame
     ---
+    qc_routine_order: int    # the order in which this qc routine is executed
     qc_routine_description: varchar(255)  # description of this QC routine
     qc_module: varchar(64)     # the module where the qc_function can be imported from - e.g. aeon.analysis.quality_control
     qc_function: varchar(64)   # the function used to evaluate this QC - e.g. check_drop_frame
@@ -46,15 +47,20 @@ class QCRoutine(dj.Lookup):
 class SessionQC(dj.Computed):
     definition = """  # Quality controls performed on this session
     -> experiment.Session
-    -> QCRoutine
-    ---
-    -> QCCode
-    qc_comment: varchar(255)  
     """
+
+    class Routine(dj.Part):
+        definition = """  # Quality control routine performed on this session
+        -> master
+        -> QCRoutine
+        ---
+        -> QCCode
+        qc_comment: varchar(255)  
+        """
 
     class BadPeriod(dj.Part):
         definition = """
-        -> master
+        -> master.Routine
         bad_period_start: datetime(6)
         ---
         bad_period_end: datetime(6)
@@ -81,9 +87,9 @@ class BadSession(dj.Computed):
 @schema
 class GoodSession(dj.Computed):
     definition = """  # Quality controls performed on this session
-    -> experiment.Session
+    -> SessionQC
     ---
-    qc_routine_count: int  # how many QC routines used for this good/bad determination
+    qc_routines: varchar(255)  # concatenated list of all the QC routines used for this good/bad conclusion
     """
 
     class BadPeriod(dj.Part):
