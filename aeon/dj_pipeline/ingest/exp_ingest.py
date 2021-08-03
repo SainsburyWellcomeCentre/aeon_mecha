@@ -1,8 +1,8 @@
-from aeon.aeon_pipeline import lab, subject, experiment, tracking, analysis
-from aeon.aeon_pipeline.ingestion import load_arena_setup
+from aeon.dj_pipeline import lab, subject, experiment, tracking, analysis
+from aeon.dj_pipeline.ingestion import load_arena_setup
 
 
-# ============ Manual and automatic steps to for experiment 0.1 ingestion ============
+# ============ Manual and automatic steps to for experiment 0.1 ingest ============
 
 
 # ---------------- Subject -----------------
@@ -38,7 +38,7 @@ experiment.Experiment.Directory.insert1({'experiment_name': 'exp0.1-r0',
 
 # Arena Setup - Experiment Devices
 experiment_name = 'exp0.1-r0'
-yml_filepath = '/nfs/nhome/live/thinh/code/ProjectAeon/aeon/aeon/aeon_pipeline/ingestion/setup_yml/Experiment0.1.yml'
+yml_filepath = '/nfs/nhome/live/thinh/code/ProjectAeon/aeon/aeon/dj_pipeline/ingest/setup_yml/Experiment0.1.yml'
 
 load_arena_setup(yml_filepath, experiment_name)
 

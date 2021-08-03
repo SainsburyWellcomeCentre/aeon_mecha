@@ -1,5 +1,5 @@
 import yaml
-from aeon.aeon_pipeline import lab, experiment
+from aeon.dj_pipeline import lab, experiment
 
 
 _wheel_sampling_rate = 500
