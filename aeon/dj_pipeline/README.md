@@ -1,0 +1,86 @@
+# DataJoint Pipeline for Project Aeon
+
+This pipeline models the data organization and data flow for Project Aeon, 
+from [Bonsai](https://open-ephys.org/bonsai) 
+acquisition system to the schemas/tables in DataJoint.
+
+
+## Pipeline architecture
+
+Figure below presents an abbreviated view of the pipeline, showing the core tables
+and the overall dataflow
+
+![diagram](./docs/diagram.svg)
+
+Depicted from the diagram above, ones can see the pipeline is organized in layers of
+tables, generally going top down, from `lookup`-tier (in gray) and `manual`-tier (in green) tables 
+to `imported`-tier (in purple) and `computed`-tier (in red) tables.
+
+Such is also the way the data flows through the pipeline, by a combination of ingestion and 
+computation routines.
+
+## Core tables
+
+1. `Experiment` - the `experiment.Experiment` table stores meta information about the experiments
+done in Project Aeon, with secondary information such as the lab/room the experiment is carried out, 
+which animals participating, the directory storing the raw data, etc.
+
+2. `TimeBin` - the raw data are acquired by Bonsai and stored as 
+a collection of files every one hour - we call this one-hour a timebin. 
+The `experiment.TimeBin` table records all timebins and their associated raw data files for 
+any particular experiment (in the above `experiment.Experiment` table) 
+
+3. `ExperimentCamera` - the cameras and associated specifications used for this experiment - 
+e.g. camera serial number, frame rate, location, time of installation and removal, etc.
+
+4. `ExperimentFoodPatch` - the food-patches and associated specifications used for this experiment - 
+e.g. patch serial number, sampling rate of the wheel, location, time of installation and removal, etc.
+
+5. `FoodPatchEvent` - all events (e.g. pellet triggered, pellet delivered, etc.) 
+from a particular `ExperimentFoodPatch`
+
+6. `Session` - a session is defined, for a given animal, as the time period where 
+the animal enters the arena until it exits (typically 4 to 5 hours long)
+
+7. `SessionEpoch` - data for each session are stored in smaller time-chunck called epochs. 
+Currently, an epoch is defined to be 10-minute long. Storing data in smaller epochs allow for 
+more efficient searches, queries and fetches from the database.
+
+8. `SubjectPosition` - position data (x, y, speed, area) of the subject in the epochs for 
+any particular session.
+
+9. `SessionSummary` - a table for computation and storing some summary statistics on a 
+per-session level - i.e. total pellet delivered, total distance the animal travelled, total 
+distance the wheel travelled (or per food-patch), etc.
+
+10. `SessionTimeDistribution` - a table for computation and storing where the animal is at, 
+for each timepoint, e.g. in the nest, in corridor, in arena, in each of the food patches. 
+This can be used to produce the ethogram plot.
+
+
+![datajoint_pipeline](./docs/datajoint_pipeline.svg)
+
+
+## Operating the pipeline - how the auto ingestion/processing work?
+
+Some meta information about the experiment is entered - e.g. experiment name, participating 
+animals, cameras, food patches setup, etc.
+    - These information are either entered by hand, or parsed and inserted from configuration 
+    yaml files.
+    - For experiment 0.1 these info can be inserted with the [exp01_insert_meta script](./ingest/exp01_insert_meta.py)
+
+Tables in DataJoint are written with a `make()` function - 
+instruction to generate and insert new records to itself, based on data from upstream tables. 
+Triggering the auto ingestion and processing/computation routine is essentially 
+calling the `.populate()` method for all relevant tables.
+
+These routines are prepared in this [auto-processing script](./ingest/process.py). 
+Essentially, turning on the auto-processing routine amounts to running the 
+following 3 commands (in different processing threads)
+
+
+    python aeon/dj_pipeline/ingest/process.py high
+    
+    python aeon/dj_pipeline/ingest/process.py middle
+    
+    python aeon/dj_pipeline/ingest/process.py low
