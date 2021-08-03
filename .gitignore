@@ -119,3 +119,4 @@ docker-compose.y*ml
 # misc
 **/.DS_Store
 scratch.py
+bin/
