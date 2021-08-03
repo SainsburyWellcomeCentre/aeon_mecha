@@ -4,7 +4,7 @@ import time
 import logging
 
 from aeon.dj_pipeline import experiment, tracking, analysis
-
+from .monitor import log_process_job
 
 log = logging.getLogger(__name__)
 
@@ -43,42 +43,48 @@ settings = {'reserve_jobs': True,
 
 
 def process_high_priority(run_duration=default_run_duration, sleep_duration=600):
+    tables_to_process = (experiment.SubjectEnterExit,
+                         experiment.SubjectAnnotation,
+                         experiment.SubjectWeight,
+                         experiment.FoodPatchEvent,
+                         experiment.WheelState,
+                         experiment.Session,
+                         experiment.SessionEnd,
+                         experiment.SessionEpoch)
     start_time = time.time()
     while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
+
+        log_process_job(experiment.TimeBin)
         experiment.TimeBin.generate_timebins(experiment_name='exp0.1-r0')
-        experiment.SubjectEnterExit.populate(**settings)
-        experiment.SubjectAnnotation.populate(**settings)
-        experiment.SubjectWeight.populate(**settings)
 
-        experiment.FoodPatchEvent.populate(**settings)
-        experiment.WheelState.populate(**settings)
-
-        experiment.Session.populate(**settings)
-        experiment.SessionEnd.populate(**settings)
-        experiment.SessionEpoch.populate(**settings)
-
+        for table_to_process in tables_to_process:
+            log_process_job(table_to_process)
+            table_to_process.populate(**settings)
         time.sleep(sleep_duration)
 
 
 def process_middle_priority(run_duration=default_run_duration, sleep_duration=5):
-    start_time = time.time()
+    tables_to_process = (tracking.SubjectPosition,
+                         analysis.SessionTimeDistribution,
+                         analysis.SessionSummary)
     settings['max_calls'] = 20
+    start_time = time.time()
     while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
-        tracking.SubjectPosition.populate(**settings)
-
-        analysis.SessionTimeDistribution.populate(**settings)
-        analysis.SessionSummary.populate(**settings)
-
+        for table_to_process in tables_to_process:
+            log_process_job(table_to_process)
+            table_to_process.populate(**settings)
         time.sleep(sleep_duration)
 
 
 def process_low_priority(run_duration=default_run_duration, sleep_duration=5):
-    start_time = time.time()
+    tables_to_process = (experiment.FoodPatchWheel,
+                         tracking.SubjectDistance)
     settings['max_calls'] = 5
+    start_time = time.time()
     while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
-        experiment.FoodPatchWheel.populate(**settings)
-        tracking.SubjectDistance.populate(**settings)
-
+        for table_to_process in tables_to_process:
+            log_process_job(table_to_process)
+            table_to_process.populate(**settings)
         time.sleep(sleep_duration)
 
 
