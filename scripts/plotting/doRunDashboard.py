@@ -35,7 +35,6 @@ def main(argv):
     parser.add_argument("--patchesToPlot", help="Names of patches to plot", default="Patch1,Patch2")
     parser.add_argument("--win_length_sec", help="Moving average window length (sec)", default=60.0, type=float)
     parser.add_argument("--time_resolution", help="Time resolution to compute the moving average (sec)", default=0.01, type=float)
-    parser.add_argument("--video_frame_rate", help="Top camera frame rate (Hz)", default=50.0, type=float)
     parser.add_argument("--pellet_event_name", help="Pellet event name to display", default="TriggerPellet")
     parser.add_argument("--xlabel_trajectory", help="xlabel for trajectory plot", default="x (pixels)")
     parser.add_argument("--ylabel_trajectory", help="ylabel for trajectory plot", default="y (pixels)")
@@ -59,7 +58,6 @@ def main(argv):
     patches_coordinates_matrix = np.matrix(args.patches_coordinates)
     nest_coordinates_matrix = np.matrix(args.nest_coordinates)
     patches_to_plot = args.patchesToPlot.split(",")
-    frame_rate = args.video_frame_rate
     win_length_sec = args.win_length_sec
     time_resolution = args.time_resolution
     pellet_event_name = args.pellet_event_name
@@ -107,6 +105,14 @@ def main(argv):
             dcc.RangeSlider(
                 id="plotTimeRangeSlider",
             ),
+            html.H4(children="Sample Rate for Trajectory Plot"),
+            dcc.Input(
+                id="sRateForTrajectoryPlot",
+                type="number",
+                value=3.00,
+            ),
+            html.Label(id="nTrajectoryPointsToPlot"),
+            html.Hr(),
             html.Button(children="Plot", id="plotButton", n_clicks=0),
             html.Div(
                 id="plotsContainer",
@@ -143,6 +149,18 @@ def main(argv):
         options_sessions_start_times = [{"label": session_start_time, "value": session_start_time} for session_start_time in sessions_start_times]
         return options_sessions_start_times, sessions_start_times[0]
 
+    @app.callback([Output('nTrajectoryPointsToPlot', 'children'),],
+                  Input('sRateForTrajectoryPlot', 'value'),
+                  [State('plotTimeRangeSlider', 'value'),]
+                 )
+    def get_num_trajectory_points_to_plot_label(sRateForTrajectoryPlot_value,
+                                                plotTimeRangeSlider_value):
+        if sRateForTrajectoryPlot_value is None or plotTimeRangeSlider_value is None:
+            raise dash.exceptions.PreventUpdate
+        num_trajectory_points_to_plot = int((plotTimeRangeSlider_value[1]-plotTimeRangeSlider_value[0])*sRateForTrajectoryPlot_value)
+        answer = ["Number of trajectory points to plot: {:d}".format(num_trajectory_points_to_plot)]
+        return answer
+
     @app.callback([Output('plotTimeRangeSlider', 'min'),
                    Output('plotTimeRangeSlider', 'max'),
                    Output('plotTimeRangeSlider', 'marks'),
@@ -165,7 +183,7 @@ def main(argv):
         # print("about to print 3")
         slider_marks = dict(zip(range(0, slider_max, 600), [str(aNum) for aNum in range(0, slider_max, 600)]))
         # print("about to print 4")
-        slider_value=[0,600]
+        slider_value=[0,slider_max]
         # print("about to print 5")
         # print("min={}, max={}, marks={}, value={}".format(slider_min, slider_max, slider_marks, slider_value))
         return slider_min, slider_max, slider_marks, slider_value
@@ -181,12 +199,14 @@ def main(argv):
                   [State('mouseNameDropDown', 'value'),
                    State('sessionStartTimeDropdown', 'value'),
                    State('plotTimeRangeSlider', 'value'),
+                   State('sRateForTrajectoryPlot', 'value'),
                    State('plotsContainer', 'hidden')],
                   )
     def update_plots(plotButton_nClicks,
                      mouseNameDropDown_value,
                      sessionStartTimeDropdown_value,
                      plotTimeRangeSlider_value,
+                     sRateForTrajectoryPlot_value,
                      plotsContainer_hidden):
         if plotButton_nClicks == 0:
             print("update prevented ({:s})".format(flask.request.remote_addr))
@@ -218,9 +238,13 @@ def main(argv):
             fig_trajectory.add_trace(patch_trace)
         nest_trace = aeon.plotting.plot_functions.get_patches_traces(patches_coordinates=nest_coordinates)[0]
         fig_trajectory.add_trace(nest_trace)
-        trajectory_trace = aeon.plotting.plot_functions.get_trayectory_trace(x=x, y=y, time_stamps=time_stamps, colorscale=trajectories_colorscale, opacity=trajectories_opacity)
+        trajectory_trace = aeon.plotting.plot_functions.get_trayectory_trace(x=x, y=y, time_stamps=time_stamps, sample_rate=sRateForTrajectoryPlot_value, colorscale=trajectories_colorscale, opacity=trajectories_opacity)
         fig_trajectory.add_trace(trajectory_trace)
-        fig_trajectory.update_layout(xaxis_title=xlabel_trajectory, yaxis_title=ylabel_trajectory, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        fig_trajectory.update_layout(xaxis_title=xlabel_trajectory,
+                                     yaxis_title=ylabel_trajectory,
+                                     paper_bgcolor='rgba(0,0,0,0)',
+                                     plot_bgcolor='rgba(0,0,0,0)',
+                                     height=600, width=600)
 
         # activity figure
         positions_labels = aeon.preprocess.utils.get_positions_labels(
