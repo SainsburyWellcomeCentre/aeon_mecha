@@ -6,7 +6,7 @@ jupyterlab
 matplotlib
 numpy
 opencv-python
-pandas
+pandas>=1.3
 scikit-learn
 scipy
 seaborn

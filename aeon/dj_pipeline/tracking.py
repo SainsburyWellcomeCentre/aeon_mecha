@@ -32,7 +32,7 @@ class SubjectPosition(dj.Imported):
 
     def make(self, key):
         """
-        The ingestion logic here relies on the assumption that there is only one subject in the arena at a time
+        The ingest logic here relies on the assumption that there is only one subject in the arena at a time
         The positiondata is associated with that one subject currently in the arena at any timepoints
         However, we need to take into account if the subject is entered or exited during this epoch
         """
@@ -67,6 +67,29 @@ class SubjectPosition(dj.Imported):
                       'position_z': z,
                       'area': area,
                       'speed': speed})
+
+    @classmethod
+    def get_session_position(cls, session_key):
+        """
+        Given a key to a single session, return a Pandas DataFrame for the position data
+        of the subject for the specified session
+        """
+        assert len(experiment.Session & session_key) == 1
+        # subject's position data in the epochs
+        timestamps, position_x, position_y, speed, area = (cls & session_key).fetch(
+            'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='epoch_start')
+
+        # stack and structure in pandas DataFrame
+        position = pd.DataFrame(dict(x=np.hstack(position_x),
+                                     y=np.hstack(position_y),
+                                     speed=np.hstack(speed),
+                                     area=np.hstack(area)),
+                                index=np.hstack(timestamps))
+        position.x = position.x * pixel_scale
+        position.y = position.y * pixel_scale
+        position.speed = position.speed * pixel_scale
+
+        return position
 
 
 @schema
