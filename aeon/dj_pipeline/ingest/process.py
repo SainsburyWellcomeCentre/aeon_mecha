@@ -35,7 +35,7 @@ Usage as a script:
 
 
 # ---------------- Auto Ingestion -----------------
-default_run_duration = float(os.environ.get('POPULATE_DURATION'))
+default_run_duration = int(os.environ.get('POPULATE_DURATION', -1))
 
 settings = {'reserve_jobs': True,
             'suppress_errors': True,
@@ -62,7 +62,7 @@ def process_high_priority(run_duration=default_run_duration, sleep_duration=600)
 
 def process_middle_priority(run_duration=default_run_duration, sleep_duration=5):
     start_time = time.time()
-    settings['max_calls'] = 5
+    settings['max_calls'] = 20
     while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
         tracking.SubjectPosition.populate(**settings)
 
