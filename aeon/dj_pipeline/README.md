@@ -12,8 +12,8 @@ and the overall dataflow
 
 ![diagram](./docs/diagram.svg)
 
-Depicted from the diagram above, ones can see the pipeline is organized in layers of
-tables, generally going top down, from `lookup`-tier (in gray) and `manual`-tier (in green) tables 
+From the diagram above, we can see that the pipeline is organized in layers of
+tables, going top down, from `lookup`-tier (in gray) and `manual`-tier (in green) tables 
 to `imported`-tier (in purple) and `computed`-tier (in red) tables.
 
 Such is also the way the data flows through the pipeline, by a combination of ingestion and 
@@ -58,6 +58,9 @@ for each timepoint, e.g. in the nest, in corridor, in arena, in each of the food
 This can be used to produce the ethogram plot.
 
 
+The diagram below shows the same architecture, with some figures 
+to demonstrate which type of data is stored where.
+
 ![datajoint_pipeline](./docs/datajoint_pipeline.svg)
 
 
@@ -65,9 +68,10 @@ This can be used to produce the ethogram plot.
 
 Some meta information about the experiment is entered - e.g. experiment name, participating 
 animals, cameras, food patches setup, etc.
-    - These information are either entered by hand, or parsed and inserted from configuration 
++ These information are either entered by hand, or parsed and inserted from configuration 
     yaml files.
-    - For experiment 0.1 these info can be inserted with the [exp01_insert_meta script](./ingest/exp01_insert_meta.py)
++ For experiment 0.1 these info can be inserted by running 
+the [exp01_insert_meta script](./ingest/exp01_insert_meta.py) (just need to do this once)
 
 Tables in DataJoint are written with a `make()` function - 
 instruction to generate and insert new records to itself, based on data from upstream tables. 
