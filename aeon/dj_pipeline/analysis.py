@@ -20,6 +20,79 @@ schema = dj.schema(get_schema_name('analysis'))
 os.environ['DJ_SUPPORT_FILEPATH_MANAGEMENT'] = "TRUE"
 
 
+# -------------- Quality Control ---------------------
+
+@schema
+class QCCode(dj.Lookup):
+    definition = """
+    qc_code: int
+    ---
+    qc_code_description: varchar(255)
+    """
+
+
+@schema
+class QCRoutine(dj.Lookup):
+    definition = """
+    qc_routine: varchar(24)  # name of this quality control evaluation - e.g. drop_frame
+    ---
+    qc_routine_description: varchar(255)  # description of this QC routine
+    qc_module: varchar(64)     # the module where the qc_function can be imported from - e.g. aeon.analysis.quality_control
+    qc_function: varchar(64)   # the function used to evaluate this QC - e.g. check_drop_frame
+    """
+
+
+@schema
+class SessionQC(dj.Computed):
+    definition = """  # Quality controls performed on this session
+    -> experiment.Session
+    -> QCRoutine
+    ---
+    -> QCCode
+    qc_comment: varchar(255)  
+    """
+
+    class BadPeriod(dj.Part):
+        definition = """
+        -> master
+        bad_period_start: datetime(6)
+        ---
+        bad_period_end: datetime(6)
+        """
+
+    def make(self, key):
+        # depending on which qc_routine
+        # fetch relevant data from upstream
+        # import the qc_function from the qc_module
+        # call the qc_function - expecting a qc_code back, and a list of bad-periods
+        # store qc results
+        pass
+
+
+@schema
+class GoodSession(dj.Computed):
+    definition = """  # Quality controls performed on this session
+    -> experiment.Session
+    """
+
+    class BadPeriod(dj.Part):
+        definition = """
+        -> master
+        bad_period_start: datetime(6)
+        ---
+        bad_period_end: datetime(6)
+        """
+
+    def make(self, key):
+        # aggregate all SessionQC results for this session
+        # determine Good or Bad Session
+        # insert BadPeriod (if none inserted, no bad period)
+        pass
+
+
+# -------------- Session-level analysis ---------------------
+
+
 @schema
 class SessionTimeDistribution(dj.Computed):
     definition = """
