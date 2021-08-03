@@ -35,7 +35,7 @@ Usage as a script:
 
 
 # ---------------- Auto Ingestion -----------------
-default_run_duration = float(os.environ.get('POPULATE_DURATION'))
+default_run_duration = int(os.environ.get('POPULATE_DURATION', -1))
 
 settings = {'reserve_jobs': True,
             'suppress_errors': True,
