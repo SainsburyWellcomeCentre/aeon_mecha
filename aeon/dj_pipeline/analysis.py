@@ -63,30 +63,15 @@ class SessionTimeDistribution(dj.Computed):
             'session_start', 'session_end')
 
         # subject's position data in the epochs
-        timestamps, position_x, position_y, speed, area = (
-                tracking.SubjectPosition & key).fetch(
-            'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='epoch_start')
-
-        # stack and structure in pandas DataFrame
-        position_df = pd.DataFrame(dict(x=np.hstack(position_x),
-                                        y=np.hstack(position_y),
-                                        speed=np.hstack(speed),
-                                        area=np.hstack(area)),
-                                   index=np.hstack(timestamps))
-        position_df.x = position_df.x * tracking.pixel_scale
-        position_df.y = position_df.y * tracking.pixel_scale
-        position_df.speed = position_df.speed * tracking.pixel_scale
+        position = tracking.SubjectPosition.get_session_position(key)
 
         # filter for objects of the correct size
-        valid_position = (position_df.area > 0) & (position_df.area < 1000)
-        position_df[~valid_position] = np.nan
-
-        # timestamps = (position_df.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
-        # timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
+        valid_position = (position.area > 0) & (position.area < 1000)
+        position[~valid_position] = np.nan
 
         # in corridor
         distance_from_center = tracking.compute_distance(
-            position_df[['x', 'y']],
+            position[['x', 'y']],
             (tracking.arena_center_x, tracking.arena_center_y))
         in_corridor = (distance_from_center < tracking.arena_outer_radius) & (distance_from_center > tracking.arena_inner_radius)
 
@@ -95,7 +80,7 @@ class SessionTimeDistribution(dj.Computed):
         # in nests - loop through all nests in this experiment
         in_nest_times = []
         for nest_key in (lab.ArenaNest & key).fetch('KEY'):
-            in_nest = is_position_in_nest(position_df, nest_key)
+            in_nest = is_position_in_nest(position, nest_key)
             in_nest_times.append(
                 {**key, **nest_key,
                  'time_fraction_in_nest': in_nest.mean(),
@@ -123,7 +108,7 @@ class SessionTimeDistribution(dj.Computed):
             patch_position = (experiment.ExperimentFoodPatch.Position & food_patch_key).fetch1(
                 'food_patch_position_x', 'food_patch_position_y')
 
-            in_patch = tracking.is_in_patch(position_df, patch_position,
+            in_patch = tracking.is_in_patch(position, patch_position,
                                             wheel_distance_travelled, patch_radius=0.2)
 
             in_food_patch_times.append({
@@ -182,23 +167,12 @@ class SessionSummary(dj.Computed):
                       & f'weight_time = "{session_end}"').fetch1('weight')
 
         # subject's position data in this session
-        timestamps, position_x, position_y, speed, area = (
-                tracking.SubjectPosition & key).fetch(
-            'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='epoch_start')
+        position = tracking.SubjectPosition.get_session_position(key)
 
-        # stack and structure in pandas DataFrame
-        position_df = pd.DataFrame(dict(x=np.hstack(position_x),
-                                        y=np.hstack(position_y),
-                                        speed=np.hstack(speed),
-                                        area=np.hstack(area)),
-                                   index=np.hstack(timestamps))
-        valid_position = (position_df.area > 0) & (
-                    position_df.area < 1000)  # filter for objects of the correct size
-        position_df = position_df[valid_position]
-        position_df.x = position_df.x * tracking.pixel_scale
-        position_df.y = position_df.y * tracking.pixel_scale
+        valid_position = (position.area > 0) & (position.area < 1000)  # filter for objects of the correct size
+        position = position[valid_position]
 
-        position_diff = np.sqrt(np.square(np.diff(position_df.x)) + np.square(np.diff(position_df.y)))
+        position_diff = np.sqrt(np.square(np.diff(position.x)) + np.square(np.diff(position.y)))
         total_distance_travelled = np.nancumsum(position_diff)[-1]
 
         # food patch data
@@ -259,18 +233,8 @@ class SessionSummaryPlot(dj.Computed):
             'session_start', 'session_end')
 
         # subject's position data in the epochs
-        timestamps, position_x, position_y, speed, area = (
-                tracking.SubjectPosition & key).fetch(
-            'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='epoch_start')
+        position = tracking.SubjectPosition.get_session_position(key)
 
-        # stack and structure in pandas DataFrame
-        position = pd.DataFrame(dict(x=np.hstack(position_x),
-                                     y=np.hstack(position_y),
-                                     speed=np.hstack(speed),
-                                     area=np.hstack(area)),
-                                index=np.hstack(timestamps))
-        position.x = position.x * tracking.pixel_scale
-        position.y = position.y * tracking.pixel_scale
         position_minutes_elapsed = (position.index - session_start).total_seconds() / 60
 
         # figure
