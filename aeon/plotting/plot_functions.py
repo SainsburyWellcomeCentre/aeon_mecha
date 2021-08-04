@@ -63,8 +63,21 @@ def get_cumTimePerActivity_barplot_trace(positions_labels):
     return trace
 
 
+def get_pellets_trace(pellets_seconds, marker_color="red",
+                      marker_line_color="red",
+                      marker_symbol="line-ns",
+                      marker_line_width=1, marker_size=20):
+    trace = go.Scatter(x=pellets_seconds, y=np.zeros(len(pellets_seconds)), mode="markers", marker_color=marker_color, marker_line_color=marker_line_color, marker_symbol=marker_symbol, marker_line_width=marker_line_width, marker_size=marker_size, showlegend=False)
+    return trace
+
 def get_travelled_distance_trace(travelled_seconds, travelled_distance,
+                                 sample_rate,
                                  color="blue", showlegend=False):
-    trace = go.Scatter(x=travelled_seconds, y=travelled_distance,
+    original_sample_rate = 1.0/(travelled_seconds[1]-travelled_seconds[0])
+    step_size = original_sample_rate/sample_rate
+    ds_indices = np.arange(start=0, stop=len(travelled_seconds), step=step_size, dtype=np.integer)
+    ds_travelled_seconds = travelled_seconds[ds_indices]
+    ds_travelled_distance = travelled_distance[ds_indices]
+    trace = go.Scatter(x=ds_travelled_seconds, y=ds_travelled_distance,
                        line=dict(color=color), showlegend=showlegend)
     return trace
