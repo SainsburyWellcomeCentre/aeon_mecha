@@ -120,3 +120,4 @@ docker-compose.y*ml
 **/.DS_Store
 scratch*.py
 bin/
+log.txt
