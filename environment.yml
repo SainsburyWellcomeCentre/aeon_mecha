@@ -1,0 +1,29 @@
+# Creates a conda environment 'aeon_mecha' with the required packages
+# run: conda env create --file environment.yml
+name: aeon_mecha
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+- python > 3.9
+- black            # dev
+- flake8           # dev
+- graphviz
+- jupyter
+- jupyterlab
+- matplotlib
+- numpy
+- pandas
+- pip
+- plotly
+- pymysql
+- pytest           # dev
+- pyyaml
+- scikit-learn
+- scipy
+- seaborn
+- pip:
+  - bandit         # dev
+  - datajoint
+  - opencv-python
+  - tox            # dev
