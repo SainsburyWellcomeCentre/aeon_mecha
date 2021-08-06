@@ -192,7 +192,7 @@ def sessionreader(file):
     names = ['time','id','weight','event']
     if file is None:
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
-    data = pd.read_csv(file, header=None, skiprows=1, names=names)
+    data = pd.read_csv(file, header=0, names=names)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
     return data
@@ -228,8 +228,7 @@ def annotationreader(file):
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
     data = pd.read_csv(
         file,
-        header=None,
-        skiprows=1,
+        header=0,
         usecols=range(3),
         names=names)
     data['time'] = aeon(data['time'])
@@ -265,7 +264,7 @@ def videoreader(file):
     names = ['time','hw_counter','hw_timestamp']
     if file is None:
         return pd.DataFrame(columns=['frame']+names[1:], index=pd.DatetimeIndex([]))
-    data = pd.read_csv(file, header=0, skiprows=1, names=names)
+    data = pd.read_csv(file, header=0, names=names)
     data.insert(loc=1, column='frame', value=data.index)
     data['time'] = aeon(data['time'])
     data['path'] = os.path.splitext(file)[0] + '.avi'
@@ -444,7 +443,7 @@ def patchreader(file):
     names = ['time','threshold','d1','delta']
     if file is None:
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
-    data = pd.read_csv(file, header=0, skiprows=1, names=names)
+    data = pd.read_csv(file, header=0, names=names)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
     return data
