@@ -4,7 +4,7 @@ import time
 import logging
 
 from aeon.dj_pipeline import experiment, tracking, analysis
-from .monitor import log_process_job
+from .monitor import ProcessJob
 
 log = logging.getLogger(__name__)
 
@@ -54,11 +54,11 @@ def process_high_priority(run_duration=default_run_duration, sleep_duration=600)
     start_time = time.time()
     while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
 
-        log_process_job(experiment.TimeBin)
+        ProcessJob.log_process_job(experiment.TimeBin)
         experiment.TimeBin.generate_timebins(experiment_name='exp0.1-r0')
 
         for table_to_process in tables_to_process:
-            log_process_job(table_to_process)
+            ProcessJob.log_process_job(table_to_process)
             table_to_process.populate(**settings)
         time.sleep(sleep_duration)
 
@@ -71,7 +71,7 @@ def process_middle_priority(run_duration=default_run_duration, sleep_duration=5)
     start_time = time.time()
     while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
         for table_to_process in tables_to_process:
-            log_process_job(table_to_process)
+            ProcessJob.log_process_job(table_to_process)
             table_to_process.populate(**settings)
         time.sleep(sleep_duration)
 
@@ -83,7 +83,7 @@ def process_low_priority(run_duration=default_run_duration, sleep_duration=5):
     start_time = time.time()
     while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
         for table_to_process in tables_to_process:
-            log_process_job(table_to_process)
+            ProcessJob.log_process_job(table_to_process)
             table_to_process.populate(**settings)
         time.sleep(sleep_duration)
 

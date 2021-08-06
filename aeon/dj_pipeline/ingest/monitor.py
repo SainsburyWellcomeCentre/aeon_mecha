@@ -26,30 +26,30 @@ class ProcessJob(dj.Manual):
     pid=0             : int unsigned  # system process id  
     """
 
+    @classmethod
+    def log_process_job(cls, table):
+        schema_name, table_name = table.full_table_name.split('.')
+        schema_name = schema_name.strip('`').replace(db_prefix, '')
+        table_name = dj.utils.to_camel_case(table_name.strip('`'))
 
-def log_process_job(table):
-    schema_name, table_name = table.full_table_name.split('.')
-    schema_name = schema_name.strip('`').replace(db_prefix, '')
-    table_name = dj.utils.to_camel_case(table_name.strip('`'))
+        frame = inspect.currentframe()
+        function_name = frame.f_back.f_code.co_name
+        module_name = inspect.getmodule(frame.f_back).__name__
 
-    frame = inspect.currentframe()
-    function_name = frame.f_back.f_code.co_name
-    module_name = inspect.getmodule(frame.f_back).__name__
+        process = {
+            'table': f'{schema_name}.{table_name}',
+            'process_timestamp': datetime.utcnow(),
+            'module_name': module_name,
+            'function_name': function_name,
+            'host': platform.node(),
+            'user': table.connection.get_user(),
+            'pid': os.getpid()
+        }
 
-    process = {
-        'table': f'{schema_name}.{table_name}',
-        'process_timestamp': datetime.utcnow(),
-        'module_name': module_name,
-        'function_name': function_name,
-        'host': platform.node(),
-        'user': table.connection.get_user(),
-        'pid': os.getpid()
-    }
-
-    ProcessJob.insert1(process)
+        cls.insert1(process)
 
 
-def print_recent_jobs(backtrack_minutes=30):
+def print_recent_jobs(backtrack_minutes=60):
     recent = (ProcessJob.proj(
         minute_elapsed='TIMESTAMPDIFF(MINUTE, process_timestamp, UTC_TIMESTAMP())')
               & f'minute_elapsed < {backtrack_minutes}')
@@ -63,7 +63,7 @@ def print_recent_jobs(backtrack_minutes=30):
     return recent_jobs
 
 
-def print_jobs_summary():
+def print_current_jobs():
     """
     Return a pandas.DataFrame on the status of each table currently being processed
 
