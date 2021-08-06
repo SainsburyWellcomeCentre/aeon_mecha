@@ -63,11 +63,11 @@ def process_high_priority(run_duration=default_run_duration, sleep_duration=600)
         time.sleep(sleep_duration)
 
 
-def process_middle_priority(run_duration=default_run_duration, sleep_duration=5):
+def process_middle_priority(run_duration=default_run_duration, max_calls=20, sleep_duration=5):
     tables_to_process = (tracking.SubjectPosition,
                          analysis.SessionTimeDistribution,
                          analysis.SessionSummary)
-    settings['max_calls'] = 20
+    settings['max_calls'] = max_calls
     start_time = time.time()
     while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
         for table_to_process in tables_to_process:
@@ -76,10 +76,10 @@ def process_middle_priority(run_duration=default_run_duration, sleep_duration=5)
         time.sleep(sleep_duration)
 
 
-def process_low_priority(run_duration=default_run_duration, sleep_duration=5):
+def process_low_priority(run_duration=default_run_duration, max_calls=5, sleep_duration=5):
     tables_to_process = (experiment.FoodPatchWheel,
                          tracking.SubjectDistance)
-    settings['max_calls'] = 5
+    settings['max_calls'] = max_calls
     start_time = time.time()
     while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
         for table_to_process in tables_to_process:
