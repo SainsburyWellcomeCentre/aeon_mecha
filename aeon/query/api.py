@@ -142,11 +142,13 @@ def load(path, reader, device, prefix=None, extension="*.csv",
         try:
             return data.loc[start:end]
         except KeyError:
-            if not data.index.has_duplicates:
-                raise
             import warnings
-            warnings.warn('data index for {0} contains duplicate keys!'.format(device))
-            data = data[~data.index.duplicated(keep='first')]
+            if not data.index.has_duplicates:
+                warnings.warn('data index for {0} contains out-of-order timestamps!'.format(device))
+                data = data.sort_index()
+            else:
+                warnings.warn('data index for {0} contains duplicate keys!'.format(device))
+                data = data[~data.index.duplicated(keep='first')]
             return data.loc[start:end]
     return data
 
@@ -190,7 +192,7 @@ def sessionreader(file):
     names = ['time','id','weight','event']
     if file is None:
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
-    data = pd.read_csv(file, header=None, skiprows=1, names=names)
+    data = pd.read_csv(file, header=0, names=names)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
     return data
@@ -226,8 +228,7 @@ def annotationreader(file):
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
     data = pd.read_csv(
         file,
-        header=None,
-        skiprows=1,
+        header=0,
         usecols=range(3),
         names=names)
     data['time'] = aeon(data['time'])
@@ -263,7 +264,7 @@ def videoreader(file):
     names = ['time','hw_counter','hw_timestamp']
     if file is None:
         return pd.DataFrame(columns=['frame']+names[1:], index=pd.DatetimeIndex([]))
-    data = pd.read_csv(file, header=0, skiprows=1, names=names)
+    data = pd.read_csv(file, header=0, names=names)
     data.insert(loc=1, column='frame', value=data.index)
     data['time'] = aeon(data['time'])
     data['path'] = os.path.splitext(file)[0] + '.avi'
@@ -346,7 +347,11 @@ def harpreader(file, names=None):
     '''
     if file is None:
         return pd.DataFrame(columns=names, index=pd.DatetimeIndex([]))
+
     data = np.fromfile(file, dtype=np.uint8)
+    if len(data) == 0:
+        return pd.DataFrame(columns=names, index=pd.DatetimeIndex([]))
+
     stride = data[1] + 2
     length = len(data) // stride
     payloadsize = stride - 12
@@ -438,7 +443,7 @@ def patchreader(file):
     names = ['time','threshold','d1','delta']
     if file is None:
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
-    data = pd.read_csv(file, header=0, skiprows=1, names=names)
+    data = pd.read_csv(file, header=0, names=names)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
     return data
