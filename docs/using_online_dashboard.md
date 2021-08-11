@@ -1,3 +1,4 @@
+The examples below use the SWC HPC username `jbhagat`. When you run the commands, replace this username with your username.
 
 ## Connecting to the dashboard:
 
