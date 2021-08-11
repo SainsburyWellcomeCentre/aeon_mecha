@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+bin/
 
 # C extensions
 *.so
@@ -71,6 +72,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+*checkpoint.ipynb
 
 # pyenv
 .python-version
@@ -111,3 +113,13 @@ dj_local_conf.json
 **/.#*
 
 docker-compose.y*ml
+
+# vscode
+.vscode/*
+*.code-workspace
+
+# misc
+**/.DS_Store
+log*.txt
+scratch/
+scratch*.py
