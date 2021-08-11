@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+bin/
 
 # C extensions
 *.so
@@ -71,6 +72,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+*checkpoint.ipynb
 
 # pyenv
 .python-version
@@ -118,6 +120,6 @@ docker-compose.y*ml
 
 # misc
 **/.DS_Store
-scratch*.py
-bin/
 log*.txt
+scratch/
+scratch*.py
