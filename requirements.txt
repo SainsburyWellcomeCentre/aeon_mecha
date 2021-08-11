@@ -15,6 +15,8 @@ scikit-learn
 scipy
 seaborn
 xarray>=0.12.3, <1
+pyyaml
+datajoint
 
 # Developers (can be separated out in a `dev_req.txt` file in future)
 bandit
