@@ -40,7 +40,7 @@ if {'experiment_name': experiment_name} not in experiment.Experiment.proj():
                                              'directory_path': 'test2/experiment0.1'})
 
 # Arena Setup - Experiment Devices
-yml_filepath = '/nfs/nhome/live/thinh/code/ProjectAeon/aeon/aeon/dj_pipeline/ingest/setup_yml/Experiment0.1.yml'
+yml_filepath = 'aeon/dj_pipeline/ingest/setup_yml/Experiment0.1.yml'
 
 load_arena_setup(yml_filepath, experiment_name)
 
