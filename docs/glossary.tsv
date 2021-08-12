@@ -1,7 +1,0 @@
-Name	Definition
-Aeon	The source of all being (https://en.wikipedia.org/wiki/Aeon_(Gnosticism) 
-Session	For experiment 0.1, the time when an animal is placed in the nesting cage until the time the animal is removed from the nesting cage.
-Trial	For experiment 0,.1 the time when an animal starts moving the wheel on a patch until the time a pellet is delivered. Every experiment 0.1 session ends on incompleted trials.
-Chunk	The length of time in which datastream files are written out. For experiment 0.1, each datastreams were written out in files corresponding to 1 hour chunks.
-Timebin	
-Epoch	
