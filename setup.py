@@ -11,7 +11,8 @@ if __name__ == "__main__":
         print(
             "\n\nAn error occurred while building the project, "
             "please ensure you have the most updated version of setuptools, "
-            "setuptools_scm and wheel with:\n"
+            "setuptools_scm and wheel with either of the following:\n"
+            "   conda install setuptools setuptools_scm wheel\n"
             "   pip install -U setuptools setuptools_scm wheel\n\n"
         )
         raise
