@@ -112,8 +112,6 @@ dj_local_conf.json
 **/#*#
 **/.#*
 
-docker-compose.y*ml
-
 # vscode
 .vscode/*
 *.code-workspace
