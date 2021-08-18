@@ -573,3 +573,29 @@ class SessionEpoch(dj.Computed):
             epoch_start = epoch_end
 
         self.insert(timebin_epochs)
+
+
+# ---- Task Protocol categorization ----
+
+
+@schema
+class TaskProtocol(dj.Lookup):
+    definition = """
+    task_protocol: int
+    ---
+    protocol_params: longblob
+    protocol_description: varchar(255)
+    """
+
+
+@schema
+class EpochProtocol(dj.Computed):
+    definition = """
+    -> SessionEpoch
+    ---
+    -> TaskProtocol    
+    """
+
+    def make(self, key):
+        pass
+    
