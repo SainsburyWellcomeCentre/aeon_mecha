@@ -596,7 +596,7 @@ class TaskProtocol(dj.Lookup):
 
 
 @schema
-class EpochProtocol(dj.Computed):
+class TimeSliceProtocol(dj.Computed):
     definition = """
     -> TimeSlice
     ---
