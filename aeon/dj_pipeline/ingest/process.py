@@ -158,7 +158,7 @@ def process(priority, *, run_duration, sleep_duration, max_calls):
             acquisition.WheelState,
             acquisition.Session,
             acquisition.SessionEnd,
-            acquisition.SessionEpoch,
+            acquisition.TimeSlice,
         ),
         "mid": (
             tracking.SubjectPosition,
@@ -177,8 +177,8 @@ def process(priority, *, run_duration, sleep_duration, max_calls):
     ):
 
         if priority == "high":
-            ProcessJob.log_process_job(acquisition.TimeBin)
-            acquisition.TimeBin.generate_timebins(experiment_name=_current_experiment)
+            ProcessJob.log_process_job(acquisition.Chunk)
+            acquisition.Chunk.generate_chunks(experiment_name=_current_experiment)
 
         for table_to_process in _priority_tables[priority]:
             ProcessJob.log_process_job(table_to_process)

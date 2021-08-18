@@ -20,7 +20,7 @@ arena_outer_radius = 0.97  # outer
 @schema
 class SubjectPosition(dj.Imported):
     definition = """
-    -> experiment.SessionEpoch
+    -> acquisition.TimeSlice
     ---
     timestamps:        longblob  # (datetime) timestamps of the position data
     position_x:        longblob  # (px) animal's x-position, in the arena's coordinate frame
@@ -36,7 +36,7 @@ class SubjectPosition(dj.Imported):
         The positiondata is associated with that one subject currently in the arena at any timepoints
         However, we need to take into account if the subject is entered or exited during this epoch
         """
-        epoch_start, epoch_end = (acquisition.SessionEpoch & key).fetch1('epoch_start', 'epoch_end')
+        epoch_start, epoch_end = (acquisition.TimeSlice & key).fetch1('epoch_start', 'epoch_end')
 
         raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
         positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
@@ -101,14 +101,14 @@ class SubjectDistance(dj.Computed):
     class FoodPatch(dj.Part):
         definition = """  # distances of the animal away from the food patch, for each timestamp
         -> master
-        -> experiment.ExperimentFoodPatch
+        -> acquisition.ExperimentFoodPatch
         ---
         distance: longblob
         """
 
     def make(self, key):
         food_patch_keys = (
-                SubjectPosition * acquisition.SessionEpoch
+                SubjectPosition * acquisition.TimeSlice
                 * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
                 & key
                 & 'epoch_start >= food_patch_install_time'

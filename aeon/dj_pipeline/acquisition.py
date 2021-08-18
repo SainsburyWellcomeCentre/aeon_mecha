@@ -130,16 +130,17 @@ class ExperimentFoodPatch(dj.Manual):
         food_patch_position_z=0: float  # (m) z-position, in the arena's coordinate frame
         """
 
-# ------------------- TIME BIN --------------------
+
+# ------------------- ACQUISITION CHUNK --------------------
 
 
 @schema
-class TimeBin(dj.Manual):
-    definition = """  # A recording period corresponds to an N-hour data acquisition
+class Chunk(dj.Manual):
+    definition = """  # A recording period corresponds to a 1-hour data acquisition
     -> Experiment
-    time_bin_start: datetime(6)  # datetime of the start of this recorded TimeBin
+    chunk_start: datetime(6)  # datetime of the start of a given acquisition chunk
     ---
-    time_bin_end: datetime(6)    # datetime of the end of this recorded TimeBin
+    chunk_end: datetime(6)    # datetime of the end of a given acquisition chunk
     """
 
     class File(dj.Part):
@@ -153,7 +154,7 @@ class TimeBin(dj.Manual):
         """
 
     @classmethod
-    def generate_timebins(cls, experiment_name):
+    def generate_chunks(cls, experiment_name):
         assert Experiment & {'experiment_name': experiment_name}, f'Experiment {experiment_name} does not exist!'
 
         repo_name, path = (Experiment.Directory
@@ -163,32 +164,32 @@ class TimeBin(dj.Manual):
         root = paths.get_repository_path(repo_name)
         raw_data_dir = root / path
 
-        time_bin_rep_file_str = 'FrameTop_'
-        time_bin_rep_files = sorted(list(raw_data_dir.rglob(f'{time_bin_rep_file_str}*.csv')))
+        chunk_rep_file_str = 'FrameTop_'
+        chunk_rep_files = sorted(list(raw_data_dir.rglob(f'{chunk_rep_file_str}*.csv')))
 
-        time_bin_list, file_list, file_name_list = [], [], []
-        for time_bin_rep_file in time_bin_rep_files:
-            time_bin_start = datetime.datetime.strptime(
-                time_bin_rep_file.stem.replace(time_bin_rep_file_str, ''), '%Y-%m-%dT%H-%M-%S')
-            time_bin_end = time_bin_start + datetime.timedelta(hours=aeon_api.BIN_SIZE)
+        chunk_list, file_list, file_name_list = [], [], []
+        for chunk_rep_file in chunk_rep_files:
+            chunk_start = datetime.datetime.strptime(
+                chunk_rep_file.stem.replace(chunk_rep_file_str, ''), '%Y-%m-%dT%H-%M-%S')
+            chunk_end = chunk_start + datetime.timedelta(hours=aeon_api.BIN_SIZE)
 
-            # --- insert to TimeBin ---
-            time_bin_key = {'experiment_name': experiment_name,
-                            'time_bin_start': time_bin_start}
+            # --- insert to Chunk ---
+            chunk_key = {'experiment_name': experiment_name,
+                            'chunk_start': chunk_start}
 
-            if time_bin_key in cls.proj() or time_bin_rep_file.name in file_name_list:
+            if chunk_key in cls.proj() or chunk_rep_file.name in file_name_list:
                 continue
 
-            time_bin_list.append({**time_bin_key,
-                                  'time_bin_end': time_bin_end})
-            file_name_list.append(time_bin_rep_file.name)  # handle duplicated files in different folders
+            chunk_list.append({**chunk_key,
+                                  'chunk_end': chunk_end})
+            file_name_list.append(chunk_rep_file.name)  # handle duplicated files in different folders
 
             # -- files --
-            file_datetime_str = time_bin_rep_file.stem.replace(time_bin_rep_file_str, '')
+            file_datetime_str = chunk_rep_file.stem.replace(chunk_rep_file_str, '')
             files = list(pathlib.Path(raw_data_dir).rglob(f'*{file_datetime_str}*'))
 
             file_list.extend(
-                {**time_bin_key,
+                {**chunk_key,
                  'file_number': f_idx,
                  'file_name': f.name,
                  'repository_name': repo_name,
@@ -196,23 +197,23 @@ class TimeBin(dj.Manual):
                 for f_idx, f in enumerate(files))
 
         # insert
-        print(f'Insert {len(time_bin_list)} new TimeBin')
+        print(f'Insert {len(chunk_list)} new Chunk')
 
         with cls.connection.transaction:
-            cls.insert(time_bin_list)
+            cls.insert(chunk_list)
             cls.File.insert(file_list)
 
 
 @schema
 class SubjectEnterExit(dj.Imported):
     definition = """  # Records of subjects entering/exiting the arena
-    -> TimeBin  
+    -> Chunk  
     """
 
     _enter_exit_event_mapper = {'Start': 'enter', 'End': 'exit'}
 
     class Time(dj.Part):
-        definition = """
+        definition = """  # Timestamps of each entering/exiting events
         -> master
         -> Experiment.Subject
         enter_exit_time: datetime(6)  # datetime of subject entering/exiting the arena
@@ -222,13 +223,13 @@ class SubjectEnterExit(dj.Imported):
 
     def make(self, key):
         subject_list = (Experiment.Subject & key).fetch('subject')
-        time_bin_start, time_bin_end = (TimeBin & key).fetch1(
-            'time_bin_start', 'time_bin_end')
+        chunk_start, chunk_end = (Chunk & key).fetch1(
+            'chunk_start', 'chunk_end')
 
         raw_data_dir = Experiment.get_raw_data_directory(key)
         session_info = aeon_api.sessiondata(raw_data_dir.as_posix(),
-                                            start=pd.Timestamp(time_bin_start),
-                                            end=pd.Timestamp(time_bin_end))
+                                            start=pd.Timestamp(chunk_start),
+                                            end=pd.Timestamp(chunk_end))
 
         self.insert1(key)
         self.Time.insert(({**key, 'subject': r.id,
@@ -239,12 +240,12 @@ class SubjectEnterExit(dj.Imported):
 
 @schema
 class SubjectWeight(dj.Imported):
-    definition = """  # Records of subjects entering/exiting the arena
-    -> TimeBin  
+    definition = """  # Records of subjects weights
+    -> Chunk  
     """
 
     class WeightTime(dj.Part):
-        definition = """
+        definition = """  # # Timestamps of each subject weight measurements
         -> master
         -> Experiment.Subject
         weight_time: datetime(6)  # datetime of subject weighting
@@ -254,12 +255,12 @@ class SubjectWeight(dj.Imported):
 
     def make(self, key):
         subject_list = (Experiment.Subject & key).fetch('subject')
-        time_bin_start, time_bin_end = (TimeBin & key).fetch1(
-            'time_bin_start', 'time_bin_end')
+        chunk_start, chunk_end = (Chunk & key).fetch1(
+            'chunk_start', 'chunk_end')
         raw_data_dir = Experiment.get_raw_data_directory(key)
         session_info = aeon_api.sessiondata(raw_data_dir.as_posix(),
-                                            start=pd.Timestamp(time_bin_start),
-                                            end=pd.Timestamp(time_bin_end))
+                                            start=pd.Timestamp(chunk_start),
+                                            end=pd.Timestamp(chunk_end))
         self.insert1(key)
         self.WeightTime.insert(({**key, 'subject': r.id,
                                  'weight': r.weight,
@@ -270,7 +271,7 @@ class SubjectWeight(dj.Imported):
 @schema
 class SubjectAnnotation(dj.Imported):
     definition = """  # Experimenter's annotations 
-    -> TimeBin  
+    -> Chunk  
     """
 
     class Annotation(dj.Part):
@@ -284,13 +285,13 @@ class SubjectAnnotation(dj.Imported):
 
     def make(self, key):
         subject_list = (Experiment.Subject & key).fetch('subject')
-        time_bin_start, time_bin_end = (TimeBin & key).fetch1(
-            'time_bin_start', 'time_bin_end')
+        chunk_start, chunk_end = (Chunk & key).fetch1(
+            'chunk_start', 'chunk_end')
 
         raw_data_dir = Experiment.get_raw_data_directory(key)
         annotations = aeon_api.annotations(raw_data_dir.as_posix(),
-                                           start=pd.Timestamp(time_bin_start),
-                                           end=pd.Timestamp(time_bin_end))
+                                           start=pd.Timestamp(chunk_start),
+                                           end=pd.Timestamp(chunk_end))
 
         self.insert1(key)
         self.Annotation.insert({**key, 'subject': r.id,
@@ -303,7 +304,7 @@ class SubjectAnnotation(dj.Imported):
 
 
 @schema
-class EventType(dj.Lookup):  # TODO: do we really need "event_code"?
+class EventType(dj.Lookup):
     definition = """  # Experimental event type 
     event_code: smallint   
     ---
@@ -318,7 +319,7 @@ class EventType(dj.Lookup):  # TODO: do we really need "event_code"?
 @schema
 class FoodPatchEvent(dj.Imported):
     definition = """  # events associated with a given ExperimentFoodPatch
-    -> TimeBin
+    -> Chunk
     -> ExperimentFoodPatch
     event_number: smallint
     ---
@@ -329,28 +330,28 @@ class FoodPatchEvent(dj.Imported):
     @property
     def key_source(self):
         """
-        Only the combination of TimeBin and ExperimentFoodPatch with overlapping time
-        +  TimeBin(s) that started after FoodPatch install time and ended before FoodPatch remove time
-        +  TimeBin(s) that started after FoodPatch install time for FoodPatch that are not yet removed
+        Only the combination of Chunk and ExperimentFoodPatch with overlapping time
+        +  Chunk(s) that started after FoodPatch install time and ended before FoodPatch remove time
+        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed
         """
-        return (TimeBin
+        return (Chunk
                 * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
-                & 'time_bin_start >= food_patch_install_time'
-                & 'time_bin_start < IFNULL(food_patch_remove_time, "2200-01-01")')
+                & 'chunk_start >= food_patch_install_time'
+                & 'chunk_start < IFNULL(food_patch_remove_time, "2200-01-01")')
 
     def make(self, key):
-        time_bin_start, time_bin_end = (TimeBin & key).fetch1('time_bin_start', 'time_bin_end')
+        chunk_start, chunk_end = (Chunk & key).fetch1('chunk_start', 'chunk_end')
         food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
 
         raw_data_dir = Experiment.get_raw_data_directory(key)
         pellet_data = aeon_api.pelletdata(raw_data_dir.as_posix(),
                                           device=food_patch_description,
-                                          start=pd.Timestamp(time_bin_start),
-                                          end=pd.Timestamp(time_bin_end))
+                                          start=pd.Timestamp(chunk_start),
+                                          end=pd.Timestamp(chunk_end))
 
         if not len(pellet_data):
             event_list = [{**key, 'event_number': 0,
-                           'event_time': time_bin_start, 'event_code': 1000}]
+                           'event_time': chunk_start, 'event_code': 1000}]
         else:
             event_code_mapper = {name: code for code, name
                                  in zip(*EventType.fetch('event_code', 'event_type'))}
@@ -364,7 +365,7 @@ class FoodPatchEvent(dj.Imported):
 @schema
 class FoodPatchWheel(dj.Imported):
     definition = """  # Wheel data associated with a given ExperimentFoodPatch
-    -> TimeBin
+    -> Chunk
     -> ExperimentFoodPatch
     ---
     timestamps:        longblob   # (datetime) timestamps of wheel encoder data
@@ -375,24 +376,24 @@ class FoodPatchWheel(dj.Imported):
     @property
     def key_source(self):
         """
-        Only the combination of TimeBin and ExperimentFoodPatch with overlapping time
-        +  TimeBin(s) that started after FoodPatch install time and ended before FoodPatch remove time
-        +  TimeBin(s) that started after FoodPatch install time for FoodPatch that are not yet removed
+        Only the combination of Chunk and ExperimentFoodPatch with overlapping time
+        +  Chunk(s) that started after FoodPatch install time and ended before FoodPatch remove time
+        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed
         """
-        return (TimeBin
+        return (Chunk
                 * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
-                & 'time_bin_start >= food_patch_install_time'
-                & 'time_bin_start < IFNULL(food_patch_remove_time, "2200-01-01")')
+                & 'chunk_start >= food_patch_install_time'
+                & 'chunk_start < IFNULL(food_patch_remove_time, "2200-01-01")')
 
     def make(self, key):
-        time_bin_start, time_bin_end = (TimeBin & key).fetch1('time_bin_start', 'time_bin_end')
+        chunk_start, chunk_end = (Chunk & key).fetch1('chunk_start', 'chunk_end')
         food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
 
         raw_data_dir = Experiment.get_raw_data_directory(key)
         wheel_data = aeon_api.encoderdata(raw_data_dir.as_posix(),
                                           device=food_patch_description,
-                                          start=pd.Timestamp(time_bin_start),
-                                          end=pd.Timestamp(time_bin_end))
+                                          start=pd.Timestamp(chunk_start),
+                                          end=pd.Timestamp(chunk_end))
         timestamps = (wheel_data.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
         timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
 
@@ -404,7 +405,7 @@ class FoodPatchWheel(dj.Imported):
 @schema
 class WheelState(dj.Imported):
     definition = """  # Wheel states associated with a given ExperimentFoodPatch
-    -> TimeBin
+    -> Chunk
     -> ExperimentFoodPatch
     """
 
@@ -421,23 +422,23 @@ class WheelState(dj.Imported):
     @property
     def key_source(self):
         """
-        Only the combination of TimeBin and ExperimentFoodPatch with overlapping time
-        +  TimeBin(s) that started after FoodPatch install time and ended before FoodPatch remove time
-        +  TimeBin(s) that started after FoodPatch install time for FoodPatch that are not yet removed
+        Only the combination of Chunk and ExperimentFoodPatch with overlapping time
+        +  Chunk(s) that started after FoodPatch install time and ended before FoodPatch remove time
+        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed
         """
-        return (TimeBin
+        return (Chunk
                 * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
-                & 'time_bin_start >= food_patch_install_time'
-                & 'time_bin_start < IFNULL(food_patch_remove_time, "2200-01-01")')
+                & 'chunk_start >= food_patch_install_time'
+                & 'chunk_start < IFNULL(food_patch_remove_time, "2200-01-01")')
 
     def make(self, key):
-        time_bin_start, time_bin_end = (TimeBin & key).fetch1('time_bin_start', 'time_bin_end')
+        chunk_start, chunk_end = (Chunk & key).fetch1('chunk_start', 'chunk_end')
         food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
         raw_data_dir = Experiment.get_raw_data_directory(key)
         wheel_state = aeon_api.patchdata(raw_data_dir.as_posix(),
                                          patch=food_patch_description,
-                                         start=pd.Timestamp(time_bin_start),
-                                         end=pd.Timestamp(time_bin_end))
+                                         start=pd.Timestamp(chunk_start),
+                                         end=pd.Timestamp(chunk_end))
         self.insert1(key)
         self.Time.insert([{**key,
                            'state_timestamp': r.name,
@@ -508,55 +509,58 @@ class SessionEnd(dj.Computed):
                       'session_duration': duration})
 
 
+# ------------------- ACQUISITION TIMESLICE --------------------
+
+
 @schema
-class SessionEpoch(dj.Computed):
+class TimeSlice(dj.Computed):
     definition = """
-    # A short time-chunk (e.g. 30 seconds) of the recording of a given animal in the arena
+    # A short time-slice (e.g. 10 minutes) of the recording of a given animal in the arena
     -> Session
-    -> TimeBin
-    epoch_start: datetime(6)  # datetime of the start of this Epoch
+    -> Chunk
+    time_slice_start: datetime(6)  # datetime of the start of this Epoch
     ---
-    epoch_end: datetime(6)    # datetime of the end of this Epoch
+    time_slice_end: datetime(6)    # datetime of the end of this Epoch
     """
 
     @property
     def key_source(self):
         """
-        TimeBin for all sessions:
+        Chunk for all sessions:
         + are not "NeverExitedSession"
-        + session_start during this TimeBin - i.e. first timebin of the session
-        + session_end during this TimeBin - i.e. last timebin of the session
-        + time_bin starts after session_start and ends before session_end (or NOW() - i.e. session still on going)
+        + session_start during this Chunk - i.e. first chunk of the session
+        + session_end during this Chunk - i.e. last chunk of the session
+        + chunk starts after session_start and ends before session_end (or NOW() - i.e. session still on going)
         """
         return (Session.join(SessionEnd, left=True).proj(
-            session_end='IFNULL(session_end, NOW())') * TimeBin
+            session_end='IFNULL(session_end, NOW())') * Chunk
                 - NeverExitedSession
                 & SubjectEnterExit
-                & ['session_start BETWEEN time_bin_start AND time_bin_end',
-                   'session_end BETWEEN time_bin_start AND time_bin_end',
-                   'time_bin_start >= session_start AND time_bin_end <= session_end'])
+                & ['session_start BETWEEN chunk_start AND chunk_end',
+                   'session_end BETWEEN chunk_start AND chunk_end',
+                   'chunk_start >= session_start AND chunk_end <= session_end'])
 
-    _epoch_duration = datetime.timedelta(hours=0, minutes=10, seconds=0)
+    _time_slice_duration = datetime.timedelta(hours=0, minutes=10, seconds=0)
 
     def make(self, key):
-        time_bin_start, time_bin_end = (TimeBin & key).fetch1(
-            'time_bin_start', 'time_bin_end')
+        chunk_start, chunk_end = (Chunk & key).fetch1(
+            'chunk_start', 'chunk_end')
 
-        # -- Determine the time to start epoching in this timebin
-        if time_bin_start < key['session_start'] < time_bin_end:
-            # For timebin containing the session_start - i.e. first timebin of this session
+        # -- Determine the time to start time_slicing in this chunk
+        if chunk_start < key['session_start'] < chunk_end:
+            # For chunk containing the session_start - i.e. first chunk of this session
             start_time = key['session_start']
         else:
-            # For timebins after the first timebin of this session
-            start_time = time_bin_start
+            # For chunks after the first chunk of this session
+            start_time = chunk_start
 
-        # -- Determine the time to end epoching in this timebin
-        # get the enter/exit events in this timebin that are after the session_start
+        # -- Determine the time to end time_slicing in this chunk
+        # get the enter/exit events in this chunk that are after the session_start
         next_enter_exit_events = (SubjectEnterExit.Time
                                   & key & f'enter_exit_time > "{key["session_start"]}"')
         if not next_enter_exit_events:
-            # No enter/exit event: epochs from this whole timebin
-            end_time = time_bin_end
+            # No enter/exit event: time_slices from this whole chunk
+            end_time = chunk_end
         else:
             next_event = next_enter_exit_events.fetch(
                 as_dict=True, order_by='enter_exit_time DESC', limit=1)[0]
@@ -565,14 +569,17 @@ class SessionEpoch(dj.Computed):
                 return
             end_time = next_event['enter_exit_time']
 
-        timebin_epochs = []
-        epoch_start = start_time
-        while epoch_start < end_time:
-            epoch_end = epoch_start + min(self._epoch_duration, end_time - epoch_start)
-            timebin_epochs.append({**key, 'epoch_start': epoch_start, 'epoch_end': epoch_end})
-            epoch_start = epoch_end
+        chunk_time_slices = []
+        time_slice_start = start_time
+        while time_slice_start < end_time:
+            time_slice_end = time_slice_start + min(self._time_slice_duration,
+                                                    end_time - time_slice_start)
+            chunk_time_slices.append({**key,
+                                      'time_slice_start': time_slice_start,
+                                      'time_slice_end': time_slice_end})
+            time_slice_start = time_slice_end
 
-        self.insert(timebin_epochs)
+        self.insert(chunk_time_slices)
 
 
 # ---- Task Protocol categorization ----
@@ -591,7 +598,7 @@ class TaskProtocol(dj.Lookup):
 @schema
 class EpochProtocol(dj.Computed):
     definition = """
-    -> SessionEpoch
+    -> TimeSlice
     ---
     -> TaskProtocol    
     """

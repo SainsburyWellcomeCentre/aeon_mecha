@@ -24,7 +24,7 @@ os.environ['DJ_SUPPORT_FILEPATH_MANAGEMENT'] = "TRUE"
 @schema
 class SessionTimeDistribution(dj.Computed):
     definition = """
-    -> experiment.Session
+    -> acquisition.Session
     ---
     time_fraction_in_corridor: float  # fraction of time the animal spent in the corridor in this session
     in_corridor: longblob             # array of boolean for if the animal is in the corridor (same length as position data)
@@ -44,7 +44,7 @@ class SessionTimeDistribution(dj.Computed):
     class FoodPatch(dj.Part):
         definition = """ # Time spent in food patch
         -> master
-        -> experiment.ExperimentFoodPatch
+        -> acquisition.ExperimentFoodPatch
         ---
         time_fraction_in_patch: float  # fraction of time the animal spent on this patch in this session
         in_patch: longblob             # array of boolean for if the animal is in this patch (same length as position data)
@@ -52,18 +52,18 @@ class SessionTimeDistribution(dj.Computed):
 
     # Work on finished Session with SessionEpoch and SubjectPosition fully populated only
     key_source = (acquisition.Session
-                  & (acquisition.Session * acquisition.SessionEnd * acquisition.SessionEpoch
-                     & 'epoch_end = session_end').proj()
-                  & (acquisition.Session.aggr(acquisition.SessionEpoch, epoch_count='count(epoch_start)')
-                     * acquisition.Session.aggr(tracking.SubjectPosition, tracking_count='count(epoch_start)')
-                     & 'epoch_count = tracking_count'))
+                  & (acquisition.Session * acquisition.SessionEnd * acquisition.TimeSlice
+                     & 'time_slice_end = session_end').proj()
+                  & (acquisition.Session.aggr(acquisition.TimeSlice, time_slice_count='count(time_slice_start)')
+                     * acquisition.Session.aggr(tracking.SubjectPosition, tracking_count='count(time_slice_start)')
+                     & 'time_slice_count = tracking_count'))
 
     def make(self, key):
         raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
         session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
             'session_start', 'session_end')
 
-        # subject's position data in the epochs
+        # subject's position data in the time_slices
         position = tracking.SubjectPosition.get_session_position(key)
 
         # filter for objects of the correct size
@@ -131,7 +131,7 @@ class SessionTimeDistribution(dj.Computed):
 @schema
 class SessionSummary(dj.Computed):
     definition = """
-    -> experiment.Session
+    -> acquisition.Session
     ---
     total_distance_travelled: float  # (m) total distance the animal travelled during this session
     total_pellet_count: int  # total pellet delivered (triggered) for all patches during this session
@@ -142,7 +142,7 @@ class SessionSummary(dj.Computed):
     class FoodPatch(dj.Part):
         definition = """
         -> master
-        -> experiment.ExperimentFoodPatch
+        -> acquisition.ExperimentFoodPatch
         ---
         pellet_count: int  # number of pellets being delivered (triggered) by this patch during this session
         wheel_distance_travelled: float  # wheel travel distance during this session for this patch
@@ -150,11 +150,11 @@ class SessionSummary(dj.Computed):
 
     # Work on finished Session with SessionEpoch and SubjectPosition fully populated only
     key_source = (acquisition.Session
-                  & (acquisition.Session * acquisition.SessionEnd * acquisition.SessionEpoch
-                     & 'epoch_end = session_end').proj()
-                  & (acquisition.Session.aggr(acquisition.SessionEpoch, epoch_count='count(epoch_start)')
-                     * acquisition.Session.aggr(tracking.SubjectPosition, tracking_count='count(epoch_start)')
-                     & 'epoch_count = tracking_count'))
+                  & (acquisition.Session * acquisition.SessionEnd * acquisition.TimeSlice
+                     & 'time_slice_end = session_end').proj()
+                  & (acquisition.Session.aggr(acquisition.TimeSlice, time_slice_count='count(time_slice_start)')
+                     * acquisition.Session.aggr(tracking.SubjectPosition, tracking_count='count(time_slice_start)')
+                     & 'time_slice_count = tracking_count'))
 
     def make(self, key):
         raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
@@ -233,7 +233,7 @@ class SessionSummaryPlot(dj.Computed):
         session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
             'session_start', 'session_end')
 
-        # subject's position data in the epochs
+        # subject's position data in the time_slices
         position = tracking.SubjectPosition.get_session_position(key)
 
         position_minutes_elapsed = (position.index - session_start).total_seconds() / 60

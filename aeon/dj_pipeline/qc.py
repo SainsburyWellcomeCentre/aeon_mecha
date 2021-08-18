@@ -38,9 +38,9 @@ class QCRoutine(dj.Lookup):
 
 @schema
 class CameraQC(dj.Computed):
-    definition = """ # Quality controls performed on a particular camera for a particular timebin
-    -> experiment.TimeBin
-    -> experiment.ExperimentCamera
+    definition = """ # Quality controls performed on a particular camera for a particular acquisition chunk
+    -> acquisition.Chunk
+    -> acquisition.ExperimentCamera
     """
 
     class Routine(dj.Part):
@@ -63,9 +63,9 @@ class CameraQC(dj.Computed):
 
 @schema
 class FoodPatchQC(dj.Computed):
-    definition = """ # Quality controls performed on a particular camera for a particular timebin
-    -> experiment.TimeBin
-    -> experiment.ExperimentFoodPatch
+    definition = """ # Quality controls performed on a particular camera for a particular acquisition chunk
+    -> acquisition.Chunk
+    -> acquisition.ExperimentFoodPatch
     """
 
     class Routine(dj.Part):
@@ -92,7 +92,7 @@ class FoodPatchQC(dj.Computed):
 @schema
 class SessionQC(dj.Computed):
     definition = """  # Quality controls performed on this session
-    -> experiment.Session
+    -> acquisition.Session
     """
 
     class Routine(dj.Part):
@@ -124,7 +124,7 @@ class SessionQC(dj.Computed):
 @schema
 class BadSession(dj.Computed):
     definition = """  # Session labelled as BadSession and excluded from further analysis
-    -> experiment.Session
+    -> acquisition.Session
     ---
     comment='': varchar(255)  # any comments for why this is a bad session - e.g. manually flagged
     """
