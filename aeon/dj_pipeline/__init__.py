@@ -2,8 +2,6 @@ import datajoint as dj
 
 _default_database_prefix = 'aeon_'
 
-dj.config['display.width'] = 30
-
 # safe-guard in case `custom` is not provided
 if 'custom' not in dj.config:
     dj.config['custom'] = {}

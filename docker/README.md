@@ -1,20 +1,23 @@
 <!--
 # Random commands
 
-docker-compose build --build-arg SSH_KEY="$(cat ~/.ssh/github)" && docker-compose up -d
+docker-compose build --build-arg SSH_KEY="$(cat ~/.ssh/aeon_mecha)" && docker-compose up -d
 
 docker run --name test_run -it aeon_ingest
 
-docker build --target private_repo_clone -t test_repo --build-arg SSH_KEY="$(cat ~/.ssh/github)" .
+docker build --target private_repo_clone -t test_repo --build-arg SSH_KEY="$(cat ~/.ssh/aeon_mecha)" .
 -->
+
 
 TODO:
 
-- Set ENTRYPOINT to the ingestion routine script and CMD to script parameters.
+- Ask Alex to install docker on hpc-gw1
+- Set ENTRYPOINT to the ingestion routine script and CMD to script parameters
 - Update Vathes fork so as to allow aeon pkg install
 - Add deploy key to vathes fork
 - Add process.py as a package script
 - Edit allowable input args to process.py script
+- New script for multiple runs of container with different settings
 
 ## Build Docker image
 
@@ -38,16 +41,15 @@ To make `docker-compose` easier to use, you can use the shell script `compose.sh
 
 ```
 NOTE: Change to location of 'docker-compose.yml' before running
-
-usage: ./compose.sh "~/.ssh/my_deploy_key"
-  if ./compose.sh has no input argument, the ssh key is pulled from ~/.ssh/github
-  to docker-compose down: ./compose.sh -d
+Usage: ./compose.sh "~/.ssh/my_deploy_key"
+- If ./compose.sh has no input argument, the ssh key is pulled from /Users/<user>/.ssh/aeon_mecha
+- To docker-compose down: ./compose.sh -d
 ```
 
 Without `./compose.sh` you can do the following, changing `github` to whatever the name of the deploy key is.
 
 ```bash
-docker-compose build --build-arg SSH_KEY="$(cat ~/.ssh/github)" && docker-compose up -d
+docker-compose build --build-arg SSH_KEY="$(cat ~/.ssh/aeon_mecha)" && docker-compose up -d
 ```
 
 ## Test locally
@@ -111,3 +113,5 @@ sshfs "aeon-db:/ceph/aeon" "$HOME/SSHFS/aeon/ceph/aeon" -ovolname=aeon -o workar
 ```
 
 Make sure the local path set above matches the path used to map `/ceph/aeon` in the file `docker-compose.yml` > `volumes`.
+
+3. The path in the container `/home/$USER_NAME/aeon/mnt` set in `docker-compose.yml` > `volumes` should mount to somewhere on local drive to test out python scripts, etc.

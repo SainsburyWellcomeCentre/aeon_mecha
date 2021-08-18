@@ -5,13 +5,13 @@ services:
       context: ./
       dockerfile: Dockerfile
       args:
-        GITHUB_USER: iamamutt
+        GITHUB_USER: vathes
         GITHUB_REPO: aeon_mecha
         GITHUB_BRANCH: datajoint_pipeline
         USER_NAME: datajoint
         USER_GROUP: aeon
         PROJECT_NAME: aeon
-        RAW_DATA_PATH: "/ceph/aeon"
+        RAW_DATA_PATH: /ceph/aeon
     image: aeon_ingest:latest
     volumes:
       # map shared folder on local host machine to USER_DATA_DIR/mnt in container

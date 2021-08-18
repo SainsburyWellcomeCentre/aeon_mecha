@@ -148,6 +148,6 @@ RUN pip install -e ${GITHUB_REPO}
 RUN python -c "from aeon import dj_pipeline"
 
 # container executes cmd using conda environment
-# ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "aeon_env"]
+# ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "aeon_env", "python"]
 
 CMD ["tail", "-f", "/dev/null"]
