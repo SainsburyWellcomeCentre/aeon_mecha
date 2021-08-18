@@ -1,4 +1,4 @@
-from aeon.dj_pipeline import lab, subject, experiment, tracking, analysis
+from aeon.dj_pipeline import lab, subject, acquisition, tracking, analysis
 from aeon.dj_pipeline.ingest import load_arena_setup
 
 
@@ -20,21 +20,21 @@ subject.Subject.insert([
 # ---------------- Experiment -----------------
 experiment_name = 'exp0.1-r0'
 
-if {'experiment_name': experiment_name} not in experiment.Experiment.proj():
-    experiment.Experiment.insert1({'experiment_name': experiment_name,
+if {'experiment_name': experiment_name} not in acquisition.Experiment.proj():
+    acquisition.Experiment.insert1({'experiment_name': experiment_name,
                                    'experiment_start_time': '2021-06-03 07-00-00',
                                    'experiment_description': 'experiment 0.1',
                                    'arena_name': 'circle-2m',
                                    'lab': 'SWC',
                                    'location': 'room-0'})
-    experiment.Experiment.Subject.insert([
+    acquisition.Experiment.Subject.insert([
         {'experiment_name': experiment_name, 'subject': 'BAA-1099790'},
         {'experiment_name': experiment_name, 'subject': 'BAA-1099791'},
         {'experiment_name': experiment_name, 'subject': 'BAA-1099792'},
         {'experiment_name': experiment_name, 'subject': 'BAA-1099793'},
         {'experiment_name': experiment_name, 'subject': 'BAA-1099794'},
         {'experiment_name': experiment_name, 'subject': 'BAA-1099795'}])
-    experiment.Experiment.Directory.insert1({'experiment_name': experiment_name,
+    acquisition.Experiment.Directory.insert1({'experiment_name': experiment_name,
                                              'directory_type': 'raw',
                                              'repository_name': 'ceph_aeon',
                                              'directory_path': 'test2/experiment0.1'})
@@ -48,12 +48,12 @@ load_arena_setup(yml_filepath, experiment_name)
 patch_coordinates = {'Patch1': (1.13, 1.59, 0),
                      'Patch2': (1.19, 0.50, 0)}
 
-for patch_key in experiment.ExperimentFoodPatch.fetch('KEY'):
-    patch = (experiment.ExperimentFoodPatch
+for patch_key in acquisition.ExperimentFoodPatch.fetch('KEY'):
+    patch = (acquisition.ExperimentFoodPatch
              & {'experiment_name': experiment_name}
              & patch_key).fetch1('food_patch_description')
     x, y, z = patch_coordinates[patch]
-    experiment.ExperimentFoodPatch.Position.update1({
+    acquisition.ExperimentFoodPatch.Position.update1({
         **patch_key,
         'food_patch_position_x': x,
         'food_patch_position_y': y,

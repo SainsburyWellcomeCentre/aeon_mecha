@@ -146,26 +146,26 @@ def process(priority, *, run_duration, sleep_duration, max_calls):
     """
 
     # importing here to connect to db after args are parsed
-    from aeon.dj_pipeline import analysis, experiment, tracking
+    from aeon.dj_pipeline import analysis, acquisition, tracking
     from aeon.dj_pipeline.ingest.monitor import ProcessJob
 
     _priority_tables = {
         "high": (
-            experiment.SubjectEnterExit,
-            experiment.SubjectAnnotation,
-            experiment.SubjectWeight,
-            experiment.FoodPatchEvent,
-            experiment.WheelState,
-            experiment.Session,
-            experiment.SessionEnd,
-            experiment.SessionEpoch,
+            acquisition.SubjectEnterExit,
+            acquisition.SubjectAnnotation,
+            acquisition.SubjectWeight,
+            acquisition.FoodPatchEvent,
+            acquisition.WheelState,
+            acquisition.Session,
+            acquisition.SessionEnd,
+            acquisition.SessionEpoch,
         ),
         "mid": (
             tracking.SubjectPosition,
             analysis.SessionTimeDistribution,
             analysis.SessionSummary,
         ),
-        "low": (experiment.FoodPatchWheel, tracking.SubjectDistance),
+        "low": (acquisition.FoodPatchWheel, tracking.SubjectDistance),
     }
 
     start_time = time.time()
@@ -177,8 +177,8 @@ def process(priority, *, run_duration, sleep_duration, max_calls):
     ):
 
         if priority == "high":
-            ProcessJob.log_process_job(experiment.TimeBin)
-            experiment.TimeBin.generate_timebins(experiment_name=_current_experiment)
+            ProcessJob.log_process_job(acquisition.TimeBin)
+            acquisition.TimeBin.generate_timebins(experiment_name=_current_experiment)
 
         for table_to_process in _priority_tables[priority]:
             ProcessJob.log_process_job(table_to_process)

@@ -10,7 +10,7 @@ import re
 from aeon.preprocess import api as aeon_api
 from aeon.util import plotting as aeon_plotting
 
-from . import lab, experiment, tracking
+from . import lab, acquisition, tracking
 from . import get_schema_name
 
 
@@ -51,16 +51,16 @@ class SessionTimeDistribution(dj.Computed):
         """
 
     # Work on finished Session with SessionEpoch and SubjectPosition fully populated only
-    key_source = (experiment.Session
-                  & (experiment.Session * experiment.SessionEnd * experiment.SessionEpoch
+    key_source = (acquisition.Session
+                  & (acquisition.Session * acquisition.SessionEnd * acquisition.SessionEpoch
                      & 'epoch_end = session_end').proj()
-                  & (experiment.Session.aggr(experiment.SessionEpoch, epoch_count='count(epoch_start)')
-                     * experiment.Session.aggr(tracking.SubjectPosition, tracking_count='count(epoch_start)')
+                  & (acquisition.Session.aggr(acquisition.SessionEpoch, epoch_count='count(epoch_start)')
+                     * acquisition.Session.aggr(tracking.SubjectPosition, tracking_count='count(epoch_start)')
                      & 'epoch_count = tracking_count'))
 
     def make(self, key):
-        raw_data_dir = experiment.Experiment.get_raw_data_directory(key)
-        session_start, session_end = (experiment.Session * experiment.SessionEnd & key).fetch1(
+        raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
+        session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
             'session_start', 'session_end')
 
         # subject's position data in the epochs
@@ -90,8 +90,8 @@ class SessionTimeDistribution(dj.Computed):
 
         # in food patches - loop through all in-use patches during this session
         food_patch_keys = (
-                experiment.Session * experiment.SessionEnd
-                * experiment.ExperimentFoodPatch.join(experiment.ExperimentFoodPatch.RemovalTime, left=True)
+                acquisition.Session * acquisition.SessionEnd
+                * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
                 & key
                 & 'session_start >= food_patch_install_time'
                 & 'session_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
@@ -99,14 +99,14 @@ class SessionTimeDistribution(dj.Computed):
         in_food_patch_times = []
         for food_patch_key in food_patch_keys:
             # wheel data
-            food_patch_description = (experiment.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
+            food_patch_description = (acquisition.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
             encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
                                                device=food_patch_description,
                                                start=pd.Timestamp(session_start),
                                                end=pd.Timestamp(session_end))
             wheel_distance_travelled = aeon_api.distancetravelled(encoderdata.angle)
 
-            patch_position = (experiment.ExperimentFoodPatch.Position & food_patch_key).fetch1(
+            patch_position = (acquisition.ExperimentFoodPatch.Position & food_patch_key).fetch1(
                 'food_patch_position_x', 'food_patch_position_y')
 
             in_patch = tracking.is_in_patch(position, patch_position,
@@ -149,22 +149,22 @@ class SessionSummary(dj.Computed):
         """
 
     # Work on finished Session with SessionEpoch and SubjectPosition fully populated only
-    key_source = (experiment.Session
-                  & (experiment.Session * experiment.SessionEnd * experiment.SessionEpoch
+    key_source = (acquisition.Session
+                  & (acquisition.Session * acquisition.SessionEnd * acquisition.SessionEpoch
                      & 'epoch_end = session_end').proj()
-                  & (experiment.Session.aggr(experiment.SessionEpoch, epoch_count='count(epoch_start)')
-                     * experiment.Session.aggr(tracking.SubjectPosition, tracking_count='count(epoch_start)')
+                  & (acquisition.Session.aggr(acquisition.SessionEpoch, epoch_count='count(epoch_start)')
+                     * acquisition.Session.aggr(tracking.SubjectPosition, tracking_count='count(epoch_start)')
                      & 'epoch_count = tracking_count'))
 
     def make(self, key):
-        raw_data_dir = experiment.Experiment.get_raw_data_directory(key)
-        session_start, session_end = (experiment.Session * experiment.SessionEnd & key).fetch1(
+        raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
+        session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
             'session_start', 'session_end')
 
         # subject weights
-        weight_start = (experiment.SubjectWeight.WeightTime
+        weight_start = (acquisition.SubjectWeight.WeightTime
                         & f'weight_time = "{session_start}"').fetch1('weight')
-        weight_end = (experiment.SubjectWeight.WeightTime
+        weight_end = (acquisition.SubjectWeight.WeightTime
                       & f'weight_time = "{session_end}"').fetch1('weight')
 
         # subject's position data in this session
@@ -178,20 +178,20 @@ class SessionSummary(dj.Computed):
 
         # food patch data
         food_patch_keys = (
-                experiment.Session * experiment.SessionEnd
-                * experiment.ExperimentFoodPatch.join(experiment.ExperimentFoodPatch.RemovalTime, left=True)
+                acquisition.Session * acquisition.SessionEnd
+                * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
                 & key
                 & 'session_start >= food_patch_install_time'
                 & 'session_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
 
         food_patch_statistics = []
         for food_patch_key in food_patch_keys:
-            pellet_count = len(experiment.FoodPatchEvent * experiment.EventType
+            pellet_count = len(acquisition.FoodPatchEvent * acquisition.EventType
                                & food_patch_key
                                & 'event_type = "TriggerPellet"'
                                & f'event_time BETWEEN "{session_start}" AND "{session_end}"')
             # wheel data
-            food_patch_description = (experiment.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
+            food_patch_description = (acquisition.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
             encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
                                                device=food_patch_description,
                                                start=pd.Timestamp(session_start),
@@ -223,14 +223,14 @@ class SessionSummaryPlot(dj.Computed):
     summary_plot_png: filepath@djstore
     """
 
-    key_source = experiment.Session & SessionTimeDistribution & SessionSummary
+    key_source = acquisition.Session & SessionTimeDistribution & SessionSummary
 
     color_code = {'Patch1': 'b', 'Patch2': 'r', 'arena': 'g', 'corridor': 'gray', 'nest': 'k'}
 
     def make(self, key):
-        raw_data_dir = experiment.Experiment.get_raw_data_directory(key)
+        raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
 
-        session_start, session_end = (experiment.Session * experiment.SessionEnd & key).fetch1(
+        session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
             'session_start', 'session_end')
 
         # subject's position data in the epochs
@@ -254,16 +254,16 @@ class SessionSummaryPlot(dj.Computed):
 
         # event rate plots
         session_food_patches = (
-                experiment.Session
-                * experiment.ExperimentFoodPatch.join(
-            experiment.ExperimentFoodPatch.RemovalTime, left=True)
+                acquisition.Session
+                * acquisition.ExperimentFoodPatch.join(
+            acquisition.ExperimentFoodPatch.RemovalTime, left=True)
                 & key
                 & 'session_start >= food_patch_install_time'
                 & 'session_start < IFNULL(food_patch_remove_time, "2200-01-01")').proj(
             'food_patch_description')
 
         for food_patch_key in session_food_patches.fetch(as_dict=True):
-            pellet_times_df = (experiment.FoodPatchEvent * experiment.EventType
+            pellet_times_df = (acquisition.FoodPatchEvent * acquisition.EventType
                                & food_patch_key
                                & 'event_type = "TriggerPellet"'
                                & f'event_time BETWEEN "{session_start}" AND "{session_end}"').proj(
@@ -291,7 +291,7 @@ class SessionSummaryPlot(dj.Computed):
         nest_keys, in_nests, nests_times = (SessionTimeDistribution.Nest & key).fetch(
             'KEY', 'in_nest', 'time_fraction_in_nest')
         patch_names, in_patches, patches_times = (
-                SessionTimeDistribution.FoodPatch * experiment.ExperimentFoodPatch & key).fetch(
+                SessionTimeDistribution.FoodPatch * acquisition.ExperimentFoodPatch & key).fetch(
             'food_patch_description', 'in_patch', 'time_fraction_in_patch')
 
         ethogram_ax.plot(position_minutes_elapsed[in_arena],
@@ -315,7 +315,7 @@ class SessionSummaryPlot(dj.Computed):
 
         # pellet
         patch_names, patches_pellet = (
-                SessionSummary.FoodPatch * experiment.ExperimentFoodPatch & key).fetch(
+                SessionSummary.FoodPatch * acquisition.ExperimentFoodPatch & key).fetch(
             'food_patch_description', 'pellet_count')
         pellet_ax.bar(range(len(patches_pellet)), patches_pellet,
                       color=[self.color_code[n] for n in patch_names])

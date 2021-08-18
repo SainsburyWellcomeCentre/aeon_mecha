@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from aeon.preprocess import api as aeon_api
-from aeon.dj_pipeline import experiment, paths
+from aeon.dj_pipeline import acquisition, paths
 
 from aeon.dj_pipeline.analysis import is_position_in_nest
 
@@ -13,7 +13,7 @@ def get_video_frames(experiment_name, device,
     """
     Retrieve the video frames at the specified time points or time range, from the specified camera
     """
-    repo_name, path = (experiment.Experiment.Directory
+    repo_name, path = (acquisition.Experiment.Directory
                        & 'directory_type = "raw"'
                        & {'experiment_name': experiment_name}).fetch1(
         'repository_name', 'directory_path')

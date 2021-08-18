@@ -3,7 +3,7 @@ import datajoint as dj
 from aeon.preprocess import api as aeon_api
 from aeon.util import plotting as aeon_plotting
 
-from . import lab, experiment, tracking
+from . import lab, acquisition, tracking
 from . import get_schema_name
 
 

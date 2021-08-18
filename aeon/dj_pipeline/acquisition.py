@@ -10,7 +10,7 @@ from . import lab, subject
 from . import get_schema_name, paths
 
 
-schema = dj.schema(get_schema_name('experiment'))
+schema = dj.schema(get_schema_name('acquisition'))
 
 
 # ------------------- DATASET ------------------------

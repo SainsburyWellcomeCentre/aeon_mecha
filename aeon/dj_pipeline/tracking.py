@@ -5,7 +5,7 @@ import numpy as np
 
 from aeon.preprocess import api as aeon_api
 
-from . import experiment
+from . import acquisition
 from . import get_schema_name
 
 
@@ -36,9 +36,9 @@ class SubjectPosition(dj.Imported):
         The positiondata is associated with that one subject currently in the arena at any timepoints
         However, we need to take into account if the subject is entered or exited during this epoch
         """
-        epoch_start, epoch_end = (experiment.SessionEpoch & key).fetch1('epoch_start', 'epoch_end')
+        epoch_start, epoch_end = (acquisition.SessionEpoch & key).fetch1('epoch_start', 'epoch_end')
 
-        raw_data_dir = experiment.Experiment.get_raw_data_directory(key)
+        raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
         positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
                                              start=pd.Timestamp(epoch_start),
                                              end=pd.Timestamp(epoch_end))
@@ -74,7 +74,7 @@ class SubjectPosition(dj.Imported):
         Given a key to a single session, return a Pandas DataFrame for the position data
         of the subject for the specified session
         """
-        assert len(experiment.Session & session_key) == 1
+        assert len(acquisition.Session & session_key) == 1
         # subject's position data in the epochs
         timestamps, position_x, position_y, speed, area = (cls & session_key).fetch(
             'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='epoch_start')
@@ -108,15 +108,15 @@ class SubjectDistance(dj.Computed):
 
     def make(self, key):
         food_patch_keys = (
-                SubjectPosition * experiment.SessionEpoch
-                * experiment.ExperimentFoodPatch.join(experiment.ExperimentFoodPatch.RemovalTime, left=True)
+                SubjectPosition * acquisition.SessionEpoch
+                * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
                 & key
                 & 'epoch_start >= food_patch_install_time'
                 & 'epoch_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
 
         food_patch_distance_list = []
         for food_patch_key in food_patch_keys:
-            patch_position = (experiment.ExperimentFoodPatch.Position & food_patch_key).fetch1(
+            patch_position = (acquisition.ExperimentFoodPatch.Position & food_patch_key).fetch1(
                 'food_patch_position_x', 'food_patch_position_y', 'food_patch_position_z')
             subject_positions = (SubjectPosition & key).fetch1(
                 'position_x', 'position_y', 'position_z')
