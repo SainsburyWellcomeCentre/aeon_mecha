@@ -21,11 +21,13 @@ A deploy key is used and must be set up on github.com to clone the repo, if not 
 
 ### Editing `docker-compose.yml`
 
-1. In the sections `x-ceph-volume` and `x-djstore-volume`, change the paths specified in `source` to point to where container paths should be mounted on the host machine (also see "Mounting volume on remote server using SSHFS" below).
+1. In the sections `x-ceph-volume` and `x-djstore-volume`, change the paths specified in `source: ` to point to where container paths should be mounted on the host machine (also see "Mounting volume on remote server using SSHFS" below). The paths on your local machine must exist first.
 
-2. Edit the contents of the `.env` file so that DataJoint can connect to the database (also see section "Using DataJoint in the docker container to access the database" below).
-   
-3. (optional) To use your own fork of the repo, change `GITHUB_USER` to your username. Make sure Docker can access the repo by setting up the deploy key in the repo settings. 
+2. Edit the contents of `DJ_USER` and `DJ_PASS` in the section `environment:` so that DataJoint can connect to the `aeon-eb` database using your username and password (also see section "Using DataJoint in the docker container to access the database" below).
+
+3. Uncomment and edit the `command: ` fields for the services `aeon_high`, `aeon_mid`, and `aeon_low`. Change to the appropriate `sleep`, `duration`, and `max_calls` settings given the priority. The default command is to show the help documentation for the `aeon_ingest` script then exit. Change the command to `tail -f /dev/null` to have the container run continuously so that you can enter it.
+
+4. (optional) To use your own fork of the repo, change `GITHUB_USER` to your username. Make sure Docker can access the repo by setting up the deploy key in the repo settings. 
 
 
 ### Build the image and run the `aeon_ingest` python script in multiple containers
