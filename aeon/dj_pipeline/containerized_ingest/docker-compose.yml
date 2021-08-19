@@ -1,22 +1,22 @@
-version: "3.4"
+version: "2.4"
 
 # map raw data folder on local host machine to existing directory in container
 x-ceph-volume:
-  &ceph-volume
+  &default-ceph-vol
   type: bind
-  source: /Users/joseph/SSHFS/aeon/ceph/aeon
+  source: ~/SSHFS/aeon/ceph/aeon
   target: /ceph/aeon
 
 # map shared folder on local host machine to $HOME/djstore in container
 x-djstore-volume:
-  &djstore-volume
+  &default-djstore-vol
   type: bind
-  source: /Users/joseph/datajoint/projects/Aeon/mnt/djstore
+  source: ~/datajoint/projects/Aeon/mnt/djstore
   target: /home/anaconda/djstore
 
 # common options that are shared among different services
 x-aeon-ingest-common:
-  &aeon-ingest-common
+  &default-aeon-ingest
   platform: linux/amd64
   build:
     context: ./
@@ -25,23 +25,27 @@ x-aeon-ingest-common:
       - GITHUB_REPO=aeon_mecha
       - GITHUB_BRANCH=datajoint_pipeline
       - SSH_KEY
+  environment:
+    - DJ_USER=jburling
+    - DJ_PASS=******
+    - DJ_HOST=host.docker.internal
+  volumes:
+    - *default-djstore-vol
+    - *default-ceph-vol
   # user: 801150979:anaconda
   extra_hosts:
-    - "host.docker.internal:host-gateway" # 172.17.0.1
-  env_file: .env
-  volumes:
-    - *djstore-volume
-    - *ceph-volume
+    - host.docker.internal:host-gateway # 172.17.0.1
+  command: conda run -n aeon_env aeon_ingest --help
 
-# instead of printing the help doc multiple times change the command to something like:
-#  ["conda", "run", "-n", "aeon_env", "aeon_ingest", "high", "-d", "60", "-s", "1", "-m", "-1"]
 services:
   aeon_high:
-    *aeon-ingest-common
-    command: ["conda", "run", "-n", "aeon_env", "aeon_ingest", "--help"]
+    << : *default-aeon-ingest
+    # command: conda run -n aeon_env aeon_ingest high -d 20 -s 1 -m -1
+
   aeon_mid:
-    *aeon-ingest-common
-    command: ["conda", "run", "-n", "aeon_env", "aeon_ingest", "--help"]
+    << : *default-aeon-ingest
+    # command: conda run -n aeon_env aeon_ingest mid -d 20 -s 1 -m -1
+
   aeon_low:
-    *aeon-ingest-common
-    command: ["conda", "run", "-n", "aeon_env", "aeon_ingest", "--help"]
+    << : *default-aeon-ingest
+    # command: conda run -n aeon_env aeon_ingest low -d 20 -s 1 -m -1
