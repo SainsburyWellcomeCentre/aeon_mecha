@@ -61,6 +61,9 @@ COPY --chown=anaconda:anaconda --from=private_repo_clone \
     /tmp/${GITHUB_REPO} \
     ${GITHUB_REPO}
 
+# copy over global datajoint config file w/ hard-coded paths
+COPY --chown=anaconda:anaconda .datajoint_config.json .
+
 # create the conda environment `aeon_env` from yml file
 RUN conda env create --force --file ${GITHUB_REPO}/env.yml
 
