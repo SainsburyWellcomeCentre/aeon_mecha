@@ -20,6 +20,7 @@ Usage as a script:
 
     aeon_ingest high
     aeon_ingest --help
+    aeon_ingest low -d 30 -s 1 -m 5
 
 (or the `process` function can be used as a python module normally)
 """
@@ -39,7 +40,7 @@ _current_experiment = "exp0.1-r0"
 # TODO: other datajoint populate settings hera and in command line args
 _datajoint_settings = {"reserve_jobs": True, "suppress_errors": True, "display_progress": True}
 
-_ingestion_defaults = {"priority": "high", "duration": -1, "sleep": 5, "max_calls": 10}
+_ingestion_defaults = {"priority": "high", "duration": -1, "sleep": 5, "max_calls": -1}
 
 
 def parse_args(args):
@@ -179,6 +180,9 @@ def process(priority, *, run_duration=None, sleep_duration=None, max_calls=None)
 
     if max_calls is None:
         max_calls = _ingestion_defaults["max_calls"]
+
+    if max_calls < 0:
+        max_calls = None
 
     start_time = time.time()
 
