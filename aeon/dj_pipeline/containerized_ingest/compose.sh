@@ -1,11 +1,12 @@
 #!/bin/bash
+# Joseph Burling joseph@datajoint.com
 
 # get this script file (no symlinks)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 THIS_FILE=$(basename "$0")
 
 # defaults
-DEPLOY_KEY=~/.ssh/aeon_mecha
+DEPLOY_KEY="~/.ssh/aeon_mecha"
 N_WORKERS_L=0
 N_WORKERS_M=0
 N_WORKERS_H=0
@@ -88,6 +89,8 @@ while test $# -gt 0; do
         ;;
     esac
 done
+
+eval DEPLOY_KEY=$DEPLOY_KEY
 
 # check that target file exists
 if [[ ! -f $COMPOSE_FILE ]]; then
