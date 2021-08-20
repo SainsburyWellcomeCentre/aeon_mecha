@@ -66,12 +66,12 @@ class Experiment(dj.Manual):
 @schema
 class ExperimentCamera(dj.Manual):
     definition = """
-    # Camera placement and operation for a particular time period, at a certain location, for a given experiment 
+    # Camera placement and operation for a particular time period, at a certain location, for a given experiment
     -> Experiment
     -> lab.Camera
     camera_install_time: datetime(6)   # time of the camera placed and started operation at this position
     ---
-    camera_description: varchar(36)    
+    camera_description: varchar(36)
     camera_sampling_rate: float  # (Hz) camera frame rate
     """
 
@@ -82,9 +82,9 @@ class ExperimentCamera(dj.Manual):
         camera_position_x: float    # (m) x-position, in the arena's coordinate frame
         camera_position_y: float    # (m) y-position, in the arena's coordinate frame
         camera_position_z=0: float  # (m) z-position, in the arena's coordinate frame
-        camera_rotation_x=null: float    # 
-        camera_rotation_y=null: float    # 
-        camera_rotation_z=null: float    # 
+        camera_rotation_x=null: float    #
+        camera_rotation_y=null: float    #
+        camera_rotation_z=null: float    #
         """
 
     # class OpticalConfiguration(dj.Part):
@@ -104,8 +104,8 @@ class ExperimentCamera(dj.Manual):
 
 @schema
 class ExperimentFoodPatch(dj.Manual):
-    definition = """  
-    # Food patch placement and operation for a particular time period, at a certain location, for a given experiment 
+    definition = """
+    # Food patch placement and operation for a particular time period, at a certain location, for a given experiment
     -> Experiment
     -> lab.FoodPatch
     food_patch_install_time: datetime(6)   # time of the food_patch placed and started operation at this position
@@ -207,7 +207,7 @@ class Chunk(dj.Manual):
 @schema
 class SubjectEnterExit(dj.Imported):
     definition = """  # Records of subjects entering/exiting the arena
-    -> Chunk  
+    -> Chunk
     """
 
     _enter_exit_event_mapper = {'Start': 'enter', 'End': 'exit'}
@@ -218,7 +218,7 @@ class SubjectEnterExit(dj.Imported):
         -> Experiment.Subject
         enter_exit_time: datetime(6)  # datetime of subject entering/exiting the arena
         ---
-        enter_exit_event: enum('enter', 'exit')       
+        enter_exit_event: enum('enter', 'exit')
         """
 
     def make(self, key):
@@ -241,7 +241,7 @@ class SubjectEnterExit(dj.Imported):
 @schema
 class SubjectWeight(dj.Imported):
     definition = """  # Records of subjects weights
-    -> Chunk  
+    -> Chunk
     """
 
     class WeightTime(dj.Part):
@@ -250,7 +250,7 @@ class SubjectWeight(dj.Imported):
         -> Experiment.Subject
         weight_time: datetime(6)  # datetime of subject weighting
         ---
-        weight: float  # 
+        weight: float  #
         """
 
     def make(self, key):
@@ -270,8 +270,8 @@ class SubjectWeight(dj.Imported):
 
 @schema
 class SubjectAnnotation(dj.Imported):
-    definition = """  # Experimenter's annotations 
-    -> Chunk  
+    definition = """  # Experimenter's annotations
+    -> Chunk
     """
 
     class Annotation(dj.Part):
@@ -280,7 +280,7 @@ class SubjectAnnotation(dj.Imported):
         -> Experiment.Subject
         annotation_time: datetime(6)  # datetime of the annotation
         ---
-        annotation: varchar(1000)   
+        annotation: varchar(1000)
         """
 
     def make(self, key):
@@ -305,8 +305,8 @@ class SubjectAnnotation(dj.Imported):
 
 @schema
 class EventType(dj.Lookup):
-    definition = """  # Experimental event type 
-    event_code: smallint   
+    definition = """  # Experimental event type
+    event_code: smallint
     ---
     event_type: varchar(24)
     """
@@ -369,7 +369,7 @@ class FoodPatchWheel(dj.Imported):
     -> ExperimentFoodPatch
     ---
     timestamps:        longblob   # (datetime) timestamps of wheel encoder data
-    angle:             longblob   # measured angles of the wheel 
+    angle:             longblob   # measured angles of the wheel
     intensity:         longblob
     """
 
@@ -453,7 +453,7 @@ class WheelState(dj.Imported):
 @schema
 class Session(dj.Computed):
     definition = """  # A session spans the time when the animal firsts enter the arena to when it exits the arena
-    -> Experiment.Subject   
+    -> Experiment.Subject
     session_start: datetime(6)
     """
 
@@ -476,7 +476,7 @@ class NeverExitedSession(dj.Manual):
 
 @schema
 class SessionEnd(dj.Computed):
-    definition = """ 
+    definition = """
     -> Session
     ---
     session_end: datetime(6)
@@ -518,9 +518,9 @@ class TimeSlice(dj.Computed):
     # A short time-slice (e.g. 10 minutes) of the recording of a given animal in the arena
     -> Session
     -> Chunk
-    time_slice_start: datetime(6)  # datetime of the start of this Epoch
+    time_slice_start: datetime(6)  # datetime of the start of this time slice
     ---
-    time_slice_end: datetime(6)    # datetime of the end of this Epoch
+    time_slice_end: datetime(6)    # datetime of the end of this time slice
     """
 
     @property
@@ -600,9 +600,8 @@ class TimeSliceProtocol(dj.Computed):
     definition = """
     -> TimeSlice
     ---
-    -> TaskProtocol    
+    -> TaskProtocol
     """
 
     def make(self, key):
         pass
-    

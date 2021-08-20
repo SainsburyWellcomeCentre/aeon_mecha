@@ -21,14 +21,14 @@ computation routines.
 
 ## Core tables
 
-1. `Experiment` - the `experiment.Experiment` table stores meta information about the experiments
+1. `Experiment` - the `aquisition.Experiment` table stores meta information about the experiments
 done in Project Aeon, with secondary information such as the lab/room the experiment is carried out, 
 which animals participating, the directory storing the raw data, etc.
 
-2. `TimeBin` - the raw data are acquired by Bonsai and stored as 
-a collection of files every one hour - we call this one-hour a timebin. 
-The `experiment.TimeBin` table records all timebins and their associated raw data files for 
-any particular experiment (in the above `experiment.Experiment` table) 
+2. `Chunk` - the raw data are acquired by Bonsai and stored as 
+a collection of files every one hour - we call this one-hour a time chunk. 
+The `aquisition.Chunk` table records all time chunks and their associated raw data files for 
+any particular experiment (in the above `aquisition.Experiment` table) 
 
 3. `ExperimentCamera` - the cameras and associated specifications used for this experiment - 
 e.g. camera serial number, frame rate, location, time of installation and removal, etc.
@@ -42,11 +42,11 @@ from a particular `ExperimentFoodPatch`
 6. `Session` - a session is defined, for a given animal, as the time period where 
 the animal enters the arena until it exits (typically 4 to 5 hours long)
 
-7. `SessionEpoch` - data for each session are stored in smaller time-chunck called epochs. 
-Currently, an epoch is defined to be 10-minute long. Storing data in smaller epochs allow for 
+7. `TimeSlice` - data for each session are stored in smaller time bins called time slices. 
+Currently, a time slice is defined to be 10-minute long. Storing data in smaller time slices allows for 
 more efficient searches, queries and fetches from the database.
 
-8. `SubjectPosition` - position data (x, y, speed, area) of the subject in the epochs for 
+8. `SubjectPosition` - position data (x, y, speed, area) of the subject in the time slices for 
 any particular session.
 
 9. `SessionSummary` - a table for computation and storing some summary statistics on a 
@@ -83,8 +83,8 @@ Essentially, turning on the auto-processing routine amounts to running the
 following 3 commands (in different processing threads)
 
 
-    python aeon/dj_pipeline/ingest/process.py high
+    aeon_ingest high
     
-    python aeon/dj_pipeline/ingest/process.py middle
+    aeon_ingest mid
     
-    python aeon/dj_pipeline/ingest/process.py low
+    aeon_ingest low

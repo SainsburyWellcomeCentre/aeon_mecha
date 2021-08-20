@@ -50,7 +50,7 @@ class SessionTimeDistribution(dj.Computed):
         in_patch: longblob             # array of boolean for if the animal is in this patch (same length as position data)
         """
 
-    # Work on finished Session with SessionEpoch and SubjectPosition fully populated only
+    # Work on finished Session with TimeSlice and SubjectPosition fully populated only
     key_source = (acquisition.Session
                   & (acquisition.Session * acquisition.SessionEnd * acquisition.TimeSlice
                      & 'time_slice_end = session_end').proj()
@@ -148,7 +148,7 @@ class SessionSummary(dj.Computed):
         wheel_distance_travelled: float  # wheel travel distance during this session for this patch
         """
 
-    # Work on finished Session with SessionEpoch and SubjectPosition fully populated only
+    # Work on finished Session with TimeSlice and SubjectPosition fully populated only
     key_source = (acquisition.Session
                   & (acquisition.Session * acquisition.SessionEnd * acquisition.TimeSlice
                      & 'time_slice_end = session_end').proj()

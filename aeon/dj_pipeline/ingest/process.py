@@ -43,16 +43,23 @@ _logger = logging.getLogger(__name__)
 
 _current_experiment = "exp0.1-r0"
 
-_ingestion_settings = {"priority": "high", "duration": -1, "sleep": 5}
+_ingestion_settings = {"priority": "high", "duration": -1, "sleep": 15, "metadata": False}
 
 _autopopulate_settings = {
     "suppress_errors": True,
     "reserve_jobs": True,
     "order": "random",
     "limit": -1,
-    "max_calls": -1,
+    "max_calls": 10,
     "display_progress": True,
 }
+
+
+# combine different formatters
+class ArgumentDefaultsRawDescriptionHelpFormatter(
+    argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter
+):
+    pass
 
 
 def parse_args(args):
@@ -68,7 +75,7 @@ def parse_args(args):
     from aeon import __version__
 
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__, formatter_class=ArgumentDefaultsRawDescriptionHelpFormatter
     )
 
     parser.add_argument(
@@ -100,6 +107,13 @@ def parse_args(args):
     )
 
     parser.add_argument(
+        "--metadata",
+        dest="metadata",
+        help="Insert experiment metadata into manual tables before runs",
+        action="store_true",
+    )
+
+    parser.add_argument(
         "-l",
         "--limit",
         dest="limit",
@@ -113,7 +127,7 @@ def parse_args(args):
         "-m",
         "--maxcalls",
         dest="max_calls",
-        help="Max number of jobs to process within each loop iteration",
+        help="Max number of jobs to process within each loop iteration. Set to -1 to run all",
         type=int,
         metavar="INT",
         default=_autopopulate_settings["max_calls"],
@@ -187,10 +201,10 @@ def dj_config_override(args):
     :type args: obj
     """
 
-    if args.db_port is not None:
+    if "db_port" in args and args.db_port is not None:
         dj.config["database.port"] = args.db_port
 
-    if args.db_prefix is not None:
+    if "db_prefix" in args and args.db_prefix is not None:
         if "custom" not in dj.config:
             dj.config["custom"] = {}
         dj.config["custom"]["database.prefix"] = args.db_prefix
@@ -220,8 +234,14 @@ def process(priority, **kwargs):
     :type run_duration: int
     :param sleep_duration: Sleep time between subsequent runs
     :type sleep_duration: int
+    :param insert_meta: Insert metadata before runs
+    :type insert_meta: bool
     :param max_calls: Max number of jobs to process within each loop iteration
     :type max_calls: int
+    :param limit: If not None or -1, checks at most that many keys
+    :type limit: int
+    :param order: The order of execution
+    :type order: str
     """
 
     # importing here to connect to db after args are parsed
@@ -250,6 +270,7 @@ def process(priority, **kwargs):
     # processing arguments
     run_duration = kwargs.get("run_duration", _ingestion_settings["duration"])
     sleep_duration = kwargs.get("sleep_duration", _ingestion_settings["sleep"])
+    insert_meta = kwargs.get("insert_meta", _ingestion_settings["metadata"])
 
     # overwrite datajoint autopopulate defaults
     pop_args = {**_autopopulate_settings}
@@ -263,6 +284,9 @@ def process(priority, **kwargs):
     pop_args["limit"] = kwargs.get("limit", pop_args["limit"])
     if pop_args["limit"] is not None and pop_args["limit"] < 0:
         pop_args["limit"] = None
+
+    if insert_meta:
+        import aeon.dj_pipeline.ingest.exp01_insert_meta
 
     start_time = time.time()
 
@@ -302,6 +326,7 @@ def main(args):
             args.priority,
             run_duration=args.duration,
             sleep_duration=args.sleep,
+            insert_meta=args.metadata,
             max_calls=args.max_calls,
             order=args.order,
             limit=args.limit,
