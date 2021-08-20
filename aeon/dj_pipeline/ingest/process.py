@@ -21,6 +21,7 @@ Usage as a script:
     aeon_ingest high
     aeon_ingest --help
     aeon_ingest low -d 30 -s 1 -m 5
+    aeon_ingest djconfig --help
 
 (or the `process` function can be used as a python module normally)
 """
@@ -31,13 +32,14 @@ import logging
 import sys
 import time
 
+import datajoint as dj
 
 _logger = logging.getLogger(__name__)
 
 
 _current_experiment = "exp0.1-r0"
 
-# TODO: other datajoint populate settings hera and in command line args
+# TODO: other datajoint populate settings here and in command line args
 _datajoint_settings = {"reserve_jobs": True, "suppress_errors": True, "display_progress": True}
 
 _ingestion_defaults = {"priority": "high", "duration": -1, "sleep": 5, "max_calls": -1}
@@ -118,7 +120,38 @@ def parse_args(args):
         const=logging.DEBUG,
     )
 
+    subparsers = parser.add_subparsers()
+
+    parser_djconf = subparsers.add_parser("djconfig", description="DataJoint config options")
+
+    # TODO: Other possible dj config arguments to add here
+
+    parser_djconf.add_argument(
+        "-p", "--port", dest="port", type=int, help='entry for "database.port"'
+    )
+
+    parser_djconf.add_argument(
+        "--dbprefix", dest="db_prefix", type=str, help='entry for "database.prefix"'
+    )
+
     return parser.parse_args(args)
+
+
+def dj_config_override(args):
+    """
+    Overwrite any configuration options in `dj.config` with those set in `args`, if any.
+
+    :param args: `argparse.Namespace`: command line parameters namespace
+    :type args: obj
+    """
+
+    if args.port is not None:
+        dj.config["database.port"] = args.port
+
+    if args.db_prefix is not None:
+        if "custom" not in dj.config:
+            dj.config["custom"] = {}
+        dj.config["custom"]["database.prefix"] = args.db_prefix
 
 
 def setup_logging(loglevel):
@@ -135,7 +168,7 @@ def setup_logging(loglevel):
     )
 
 
-def process(priority, *, run_duration=None, sleep_duration=None, max_calls=None):
+def process(priority, **kwargs):
     """
     Run type of ingestion routine depending on priority value
 
@@ -172,16 +205,12 @@ def process(priority, *, run_duration=None, sleep_duration=None, max_calls=None)
         "low": (experiment.FoodPatchWheel, tracking.SubjectDistance),
     }
 
-    if run_duration is None:
-        run_duration = _ingestion_defaults["duration"]
+    run_duration = kwargs.get("run_duration", _ingestion_defaults["duration"])
 
-    if sleep_duration is None:
-        sleep_duration = _ingestion_defaults["sleep"]
+    sleep_duration = kwargs.get("sleep_duration", _ingestion_defaults["sleep"])
 
-    if max_calls is None:
-        max_calls = _ingestion_defaults["max_calls"]
-
-    if max_calls < 0:
+    max_calls = kwargs.get("max_calls", _ingestion_defaults["max_calls"])
+    if max_calls is not None and max_calls < 0:
         max_calls = None
 
     start_time = time.time()
@@ -212,6 +241,7 @@ def main(args):
     """
 
     args = parse_args(args)
+    dj_config_override(args)
     setup_logging(args.loglevel)
     _logger.debug("Starting ingestion process.")
     print(f"priority={args.priority}")

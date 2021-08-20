@@ -35,7 +35,8 @@ x-aeon-ingest-common:
   # user: 801150979:anaconda
   extra_hosts:
     - host.docker.internal:host-gateway # 172.17.0.1
-  command: conda run -n aeon_env aeon_ingest --help
+  scale: 1 # deprecated
+  command: tail -f /dev/null
 
 services:
   aeon_high:
