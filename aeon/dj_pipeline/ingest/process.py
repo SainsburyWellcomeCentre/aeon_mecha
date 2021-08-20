@@ -127,7 +127,7 @@ def parse_args(args):
         "-m",
         "--maxcalls",
         dest="max_calls",
-        help="Max number of jobs to process within each loop iteration",
+        help="Max number of jobs to process within each loop iteration. Set to -1 to run all",
         type=int,
         metavar="INT",
         default=_autopopulate_settings["max_calls"],
