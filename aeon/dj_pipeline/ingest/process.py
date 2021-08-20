@@ -19,11 +19,15 @@ propagate through the pipeline more horizontally
 Usage as a script:
 
     aeon_ingest high
-    aeon_ingest --help
     aeon_ingest low -d 30 -s 1 -m 5
-    aeon_ingest djconfig --help
+    aeon_ingest mid -d 600 djconfig --dbprefix aeon_test_
 
-(or the `process` function can be used as a python module normally)
+See script help messages:
+
+    aeon_ingest --help
+    aeon_ingest high djconfig --help
+
+(or the function `aeon.dj_pipeline.ingest.process:process` can be imported directly)
 """
 
 
@@ -34,15 +38,21 @@ import time
 
 import datajoint as dj
 
-_logger = logging.getLogger(__name__)
 
+_logger = logging.getLogger(__name__)
 
 _current_experiment = "exp0.1-r0"
 
-# TODO: other datajoint populate settings here and in command line args
-_datajoint_settings = {"reserve_jobs": True, "suppress_errors": True, "display_progress": True}
+_ingestion_settings = {"priority": "high", "duration": -1, "sleep": 5}
 
-_ingestion_defaults = {"priority": "high", "duration": -1, "sleep": 5, "max_calls": -1}
+_autopopulate_settings = {
+    "suppress_errors": True,
+    "reserve_jobs": True,
+    "order": "random",
+    "limit": -1,
+    "max_calls": -1,
+    "display_progress": True,
+}
 
 
 def parse_args(args):
@@ -65,8 +75,8 @@ def parse_args(args):
         "priority",
         help="Select the processing priority level",
         type=str,
-        default=_ingestion_defaults["priority"],
         choices=["high", "mid", "low"],
+        default=_ingestion_settings["priority"],
     )
 
     parser.add_argument(
@@ -75,7 +85,8 @@ def parse_args(args):
         dest="duration",
         help="Run duration of the entire process",
         type=int,
-        default=_ingestion_defaults["duration"],
+        metavar="INT",
+        default=_ingestion_settings["duration"],
     )
 
     parser.add_argument(
@@ -84,7 +95,18 @@ def parse_args(args):
         dest="sleep",
         help="Sleep time between subsequent runs",
         type=int,
-        default=_ingestion_defaults["sleep"],
+        metavar="INT",
+        default=_ingestion_settings["sleep"],
+    )
+
+    parser.add_argument(
+        "-l",
+        "--limit",
+        dest="limit",
+        help="If not None or -1, checks at most that many keys",
+        type=int,
+        metavar="INT",
+        default=_autopopulate_settings["limit"],
     )
 
     parser.add_argument(
@@ -93,7 +115,17 @@ def parse_args(args):
         dest="max_calls",
         help="Max number of jobs to process within each loop iteration",
         type=int,
-        default=_ingestion_defaults["max_calls"],
+        metavar="INT",
+        default=_autopopulate_settings["max_calls"],
+    )
+
+    parser.add_argument(
+        "-o",
+        "--order",
+        help="The order of execution",
+        type=str,
+        choices=["original", "reverse", "random"],
+        default=_autopopulate_settings["order"],
     )
 
     parser.add_argument(
@@ -120,18 +152,28 @@ def parse_args(args):
         const=logging.DEBUG,
     )
 
-    subparsers = parser.add_subparsers()
+    subparser_grp = parser.add_subparsers(help="Additional option sets")
 
-    parser_djconf = subparsers.add_parser("djconfig", description="DataJoint config options")
+    parser_djconf = subparser_grp.add_parser(
+        "djconfig", description="DataJoint config file options"
+    )
 
     # TODO: Other possible dj config arguments to add here
 
     parser_djconf.add_argument(
-        "-p", "--port", dest="port", type=int, help='entry for "database.port"'
+        "--port",
+        dest="db_port",
+        type=int,
+        metavar="INT",
+        help='overwrite entry for "database.port"',
     )
 
     parser_djconf.add_argument(
-        "--dbprefix", dest="db_prefix", type=str, help='entry for "database.prefix"'
+        "--prefix",
+        dest="db_prefix",
+        type=str,
+        metavar="STR",
+        help='overwrite entry for "database.prefix"',
     )
 
     return parser.parse_args(args)
@@ -139,14 +181,14 @@ def parse_args(args):
 
 def dj_config_override(args):
     """
-    Overwrite any configuration options in `dj.config` with those set in `args`, if any.
+    Overwrite configuration options in `dj.config` with those set in `args`, if any.
 
-    :param args: `argparse.Namespace`: command line parameters namespace
+    :param args: `argparse.Namespace`: parsed command line parameters namespace
     :type args: obj
     """
 
-    if args.port is not None:
-        dj.config["database.port"] = args.port
+    if args.db_port is not None:
+        dj.config["database.port"] = args.db_port
 
     if args.db_prefix is not None:
         if "custom" not in dj.config:
@@ -183,7 +225,7 @@ def process(priority, **kwargs):
     """
 
     # importing here to connect to db after args are parsed
-    from aeon.dj_pipeline import analysis, acquisition, tracking
+    from aeon.dj_pipeline import acquisition, analysis, tracking
     from aeon.dj_pipeline.ingest.monitor import ProcessJob
 
     _priority_tables = {
@@ -205,13 +247,22 @@ def process(priority, **kwargs):
         "low": (acquisition.FoodPatchWheel, tracking.SubjectDistance),
     }
 
-    run_duration = kwargs.get("run_duration", _ingestion_defaults["duration"])
+    # processing arguments
+    run_duration = kwargs.get("run_duration", _ingestion_settings["duration"])
+    sleep_duration = kwargs.get("sleep_duration", _ingestion_settings["sleep"])
 
-    sleep_duration = kwargs.get("sleep_duration", _ingestion_defaults["sleep"])
+    # overwrite datajoint autopopulate defaults
+    pop_args = {**_autopopulate_settings}
 
-    max_calls = kwargs.get("max_calls", _ingestion_defaults["max_calls"])
-    if max_calls is not None and max_calls < 0:
-        max_calls = None
+    pop_args["order"] = kwargs.get("order", pop_args["order"])
+
+    pop_args["max_calls"] = kwargs.get("max_calls", pop_args["max_calls"])
+    if pop_args["max_calls"] is not None and pop_args["max_calls"] < 0:
+        pop_args["max_calls"] = None
+
+    pop_args["limit"] = kwargs.get("limit", pop_args["limit"])
+    if pop_args["limit"] is not None and pop_args["limit"] < 0:
+        pop_args["limit"] = None
 
     start_time = time.time()
 
@@ -227,7 +278,7 @@ def process(priority, **kwargs):
 
         for table_to_process in _priority_tables[priority]:
             ProcessJob.log_process_job(table_to_process)
-            table_to_process.populate(**_datajoint_settings, max_calls=max_calls)
+            table_to_process.populate(**pop_args)
 
         time.sleep(sleep_duration)
 
@@ -252,6 +303,8 @@ def main(args):
             run_duration=args.duration,
             sleep_duration=args.sleep,
             max_calls=args.max_calls,
+            order=args.order,
+            limit=args.limit,
         )
     except Exception:
         _logger.exception("action '{}' encountered an exception:".format(args.priority))
