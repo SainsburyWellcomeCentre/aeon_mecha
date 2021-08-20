@@ -36,15 +36,15 @@ class SubjectPosition(dj.Imported):
         The positiondata is associated with that one subject currently in the arena at any timepoints
         However, we need to take into account if the subject is entered or exited during this time slice
         """
-        chunk_start, chunk_end = (acquisition.TimeSlice & key).fetch1('chunk_start', 'chunk_end')
+        time_slice_start, time_slice_end = (acquisition.TimeSlice & key).fetch1('time_slice_start', 'time_slice_end')
 
         raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
         positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
-                                             start=pd.Timestamp(chunk_start),
-                                             end=pd.Timestamp(chunk_end))
+                                             start=pd.Timestamp(time_slice_start),
+                                             end=pd.Timestamp(time_slice_end))
 
         if not len(positiondata):
-            raise ValueError(f'No position data between {chunk_start} and {chunk_end}')
+            raise ValueError(f'No position data between {time_slice_start} and {time_slice_end}')
 
         timestamps = (positiondata.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
         timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
@@ -77,7 +77,7 @@ class SubjectPosition(dj.Imported):
         assert len(acquisition.Session & session_key) == 1
         # subject's position data in the time slice
         timestamps, position_x, position_y, speed, area = (cls & session_key).fetch(
-            'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='chunk_start')
+            'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='time_slice_start')
 
         # stack and structure in pandas DataFrame
         position = pd.DataFrame(dict(x=np.hstack(position_x),
@@ -111,8 +111,8 @@ class SubjectDistance(dj.Computed):
                 SubjectPosition * acquisition.TimeSlice
                 * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
                 & key
-                & 'chunk_start >= food_patch_install_time'
-                & 'chunk_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
+                & 'time_slice_start >= food_patch_install_time'
+                & 'time_slice_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
 
         food_patch_distance_list = []
         for food_patch_key in food_patch_keys:
