@@ -1,8 +1,8 @@
-from aeon.dj_pipeline import lab, subject, acquisition, tracking, analysis
+import yaml
+from aeon.dj_pipeline import acquisition, analysis, lab, subject, tracking
 from aeon.dj_pipeline.ingest import load_arena_setup
 
 _wheel_sampling_rate = 500
-
 
 def load_arena_setup(yml_filepath, experiment_name):
     with open(yml_filepath, 'r') as f:
@@ -12,7 +12,7 @@ def load_arena_setup(yml_filepath, experiment_name):
                                for name, value in arena_setup['video-controller'].items()
                                if name.endswith('frequency')}
 
-    with experiment.Experiment.connection.transaction:
+    with acquisition.Experiment.connection.transaction:
         # ---- Load cameras ----
         for camera in arena_setup['cameras']:
             # ---- Check if this is a new camera, add to lab.Camera if needed
@@ -20,8 +20,8 @@ def load_arena_setup(yml_filepath, experiment_name):
             if camera_key not in lab.Camera():
                 lab.Camera.insert1(camera_key)
             # ---- Check if this camera is currently installed
-            current_camera_query = (experiment.ExperimentCamera
-                                    - experiment.ExperimentCamera.RemovalTime
+            current_camera_query = (acquisition.ExperimentCamera
+                                    - acquisition.ExperimentCamera.RemovalTime
                                     & {'experiment_name': experiment_name}
                                     & camera_key)
             if current_camera_query:  # If the same camera is currently installed
@@ -31,18 +31,18 @@ def load_arena_setup(yml_filepath, experiment_name):
                     continue
 
                 # ---- Remove old camera
-                experiment.ExperimentCamera.RemovalTime.insert1({
+                acquisition.ExperimentCamera.RemovalTime.insert1({
                     **current_camera_query.fetch1('KEY'),
                     'camera_remove_time': arena_setup['start-time']})
 
             # ---- Install new camera
-            experiment.ExperimentCamera.insert1(
+            acquisition.ExperimentCamera.insert1(
                 {**camera_key,
                  'experiment_name': experiment_name,
                  'camera_install_time': arena_setup['start-time'],
                  'camera_description': camera['description'],
                  'camera_sampling_rate': device_frequency_mapper[camera['trigger-source'].lower()]})
-            experiment.ExperimentCamera.Position.insert1(
+            acquisition.ExperimentCamera.Position.insert1(
                 {**camera_key,
                  'experiment_name': experiment_name,
                  'camera_install_time': arena_setup['start-time'],
@@ -56,8 +56,8 @@ def load_arena_setup(yml_filepath, experiment_name):
             if patch_key not in lab.FoodPatch():
                 lab.FoodPatch.insert1(patch_key)
             # ---- Check if this food patch is currently installed - if so, remove it
-            current_patch_query = (experiment.ExperimentFoodPatch
-                                   - experiment.ExperimentFoodPatch.RemovalTime
+            current_patch_query = (acquisition.ExperimentFoodPatch
+                                   - acquisition.ExperimentFoodPatch.RemovalTime
                                    & {'experiment_name': experiment_name}
                                    & patch_key)
             if current_patch_query:  # If the same food-patch is currently installed
@@ -67,24 +67,25 @@ def load_arena_setup(yml_filepath, experiment_name):
                     continue
 
                 # ---- Remove old food patch
-                experiment.ExperimentFoodPatch.RemovalTime.insert1({
+                acquisition.ExperimentFoodPatch.RemovalTime.insert1({
                     **current_patch_query.fetch1('KEY'),
                     'food_patch_remove_time': arena_setup['start-time']})
 
             # ---- Install new food patch
-            experiment.ExperimentFoodPatch.insert1(
+            acquisition.ExperimentFoodPatch.insert1(
                 {**patch_key,
                  'experiment_name': experiment_name,
                  'food_patch_install_time': arena_setup['start-time'],
                  'food_patch_description': patch['description'],
                  'wheel_sampling_rate': _wheel_sampling_rate})
-            experiment.ExperimentFoodPatch.Position.insert1(
+            acquisition.ExperimentFoodPatch.Position.insert1(
                 {**patch_key,
                  'experiment_name': experiment_name,
                  'food_patch_install_time': arena_setup['start-time'],
                  'food_patch_position_x': patch['position']['x'],
                  'food_patch_position_y': patch['position']['y'],
                  'food_patch_position_z': patch['position']['z']})
+
 
 # ============ Manual and automatic steps to for experiment 0.1 ingest ============
 
