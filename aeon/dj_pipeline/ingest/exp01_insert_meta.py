@@ -1,8 +1,8 @@
 import yaml
 from aeon.dj_pipeline import acquisition, analysis, lab, subject, tracking
-from aeon.dj_pipeline.ingest import load_arena_setup
 
 _wheel_sampling_rate = 500
+
 
 def load_arena_setup(yml_filepath, experiment_name):
     with open(yml_filepath, 'r') as f:
