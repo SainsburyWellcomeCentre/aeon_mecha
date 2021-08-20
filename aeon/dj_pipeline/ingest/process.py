@@ -1,44 +1,48 @@
-import argparse
-import logging
-import sys
-import time
+"""Start an Aeon ingestion process
 
+This script defines auto-processing routines to operate the DataJoint pipeline for the Aeon
+project. Three separate "process" functions are defined to call `populate()` for different
+groups of tables, depending on their priority in the ingestion routines (high, mid, low).
 
-_logger = logging.getLogger(__name__)
+Each process function is run in a while-loop with the total run-duration configurable via
+command line argument '--duration' (if not set, runs perpetually)
 
-
-"""
-Auto-processing routines defined to operate the DataJoint pipeline for the Aeon project
-Several "process" functions defined to call the `populate()` for different grouping of tables,
-depending on their priority in the ingestion routines.
-
-Each process function is ran in a while-loop with the total run-duration
-configurable via command line argument '--duration' (if not set, runs perpetually)
-    - the loop will not begin a new cycle after this period of time (in second)
+    - the loop will not begin a new cycle after this period of time (in seconds)
     - the loop will run perpetually if duration<0 or if duration==None
     - the script will not be killed _at_ this limit, it will keep executing,
-        and just stop repeating after the time limit is exceeded
+      and just stop repeating after the time limit is exceeded
 
-Some populate settings (e.g. 'limit', 'max_calls') can be set to process
-some number of jobs at a time for every iteration of the loop, instead of all jobs.
-This allows the processing to propagate through the pipeline more horizontally
-
-TODO: other datajoint populate settings in command line args
+Some populate settings (e.g. 'limit', 'max_calls') can be set to process some number of jobs at
+a time for every iteration of the loop, instead of all jobs. This allows the processing to
+propagate through the pipeline more horizontally
 
 Usage as a script:
 
     aeon_ingest high
     aeon_ingest --help
+    aeon_ingest low -d 30 -s 1 -m 5
+    aeon_ingest djconfig --help
 
-(or the `process` function can be used as python module normally)
+(or the `process` function can be used as a python module normally)
 """
+
+
+import argparse
+import logging
+import sys
+import time
+
+import datajoint as dj
+
+_logger = logging.getLogger(__name__)
 
 
 _current_experiment = "exp0.1-r0"
 
+# TODO: other datajoint populate settings here and in command line args
 _datajoint_settings = {"reserve_jobs": True, "suppress_errors": True, "display_progress": True}
 
-_ingestion_defaults = {"priority": "high", "duration": -1, "sleep": 5, "max_calls": None}
+_ingestion_defaults = {"priority": "high", "duration": -1, "sleep": 5, "max_calls": -1}
 
 
 def parse_args(args):
@@ -53,11 +57,13 @@ def parse_args(args):
 
     from aeon import __version__
 
-    parser = argparse.ArgumentParser(description="Settings for running the ingestion routine.")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
 
     parser.add_argument(
         "priority",
-        help="Select the processing level",
+        help="Select the processing priority level",
         type=str,
         default=_ingestion_defaults["priority"],
         choices=["high", "mid", "low"],
@@ -67,7 +73,7 @@ def parse_args(args):
         "-d",
         "--duration",
         dest="duration",
-        help="Run duration of the process",
+        help="Run duration of the entire process",
         type=int,
         default=_ingestion_defaults["duration"],
     )
@@ -114,7 +120,38 @@ def parse_args(args):
         const=logging.DEBUG,
     )
 
+    subparsers = parser.add_subparsers()
+
+    parser_djconf = subparsers.add_parser("djconfig", description="DataJoint config options")
+
+    # TODO: Other possible dj config arguments to add here
+
+    parser_djconf.add_argument(
+        "-p", "--port", dest="port", type=int, help='entry for "database.port"'
+    )
+
+    parser_djconf.add_argument(
+        "--dbprefix", dest="db_prefix", type=str, help='entry for "database.prefix"'
+    )
+
     return parser.parse_args(args)
+
+
+def dj_config_override(args):
+    """
+    Overwrite any configuration options in `dj.config` with those set in `args`, if any.
+
+    :param args: `argparse.Namespace`: command line parameters namespace
+    :type args: obj
+    """
+
+    if args.port is not None:
+        dj.config["database.port"] = args.port
+
+    if args.db_prefix is not None:
+        if "custom" not in dj.config:
+            dj.config["custom"] = {}
+        dj.config["custom"]["database.prefix"] = args.db_prefix
 
 
 def setup_logging(loglevel):
@@ -131,7 +168,7 @@ def setup_logging(loglevel):
     )
 
 
-def process(priority, *, run_duration, sleep_duration, max_calls):
+def process(priority, **kwargs):
     """
     Run type of ingestion routine depending on priority value
 
@@ -168,6 +205,14 @@ def process(priority, *, run_duration, sleep_duration, max_calls):
         "low": (acquisition.FoodPatchWheel, tracking.SubjectDistance),
     }
 
+    run_duration = kwargs.get("run_duration", _ingestion_defaults["duration"])
+
+    sleep_duration = kwargs.get("sleep_duration", _ingestion_defaults["sleep"])
+
+    max_calls = kwargs.get("max_calls", _ingestion_defaults["max_calls"])
+    if max_calls is not None and max_calls < 0:
+        max_calls = None
+
     start_time = time.time()
 
     while (
@@ -196,6 +241,7 @@ def main(args):
     """
 
     args = parse_args(args)
+    dj_config_override(args)
     setup_logging(args.loglevel)
     _logger.debug("Starting ingestion process.")
     print(f"priority={args.priority}")
