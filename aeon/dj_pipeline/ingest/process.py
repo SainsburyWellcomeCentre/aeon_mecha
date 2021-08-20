@@ -55,6 +55,13 @@ _autopopulate_settings = {
 }
 
 
+# combine different formatters
+class ArgumentDefaultsRawDescriptionHelpFormatter(
+    argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter
+):
+    pass
+
+
 def parse_args(args):
     """
     Parse command line parameters
@@ -68,7 +75,7 @@ def parse_args(args):
     from aeon import __version__
 
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=__doc__, formatter_class=ArgumentDefaultsRawDescriptionHelpFormatter
     )
 
     parser.add_argument(
