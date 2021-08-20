@@ -1,5 +1,6 @@
 import yaml
 from aeon.dj_pipeline import acquisition, analysis, lab, subject, tracking
+from pathlib import Path
 
 _wheel_sampling_rate = 500
 
@@ -125,7 +126,8 @@ if {'experiment_name': experiment_name} not in acquisition.Experiment.proj():
                                              'directory_path': 'test2/experiment0.1'})
 
 # Arena Setup - Experiment Devices
-yml_filepath = './setup_yml/Experiment0.1.yml'
+this_file = Path(__file__).expanduser().absolute().resolve()
+yml_filepath = this_file.parent / "setup_yml" / "Experiment0.1.yml"
 
 load_arena_setup(yml_filepath, experiment_name)
 
