@@ -43,14 +43,14 @@ _logger = logging.getLogger(__name__)
 
 _current_experiment = "exp0.1-r0"
 
-_ingestion_settings = {"priority": "high", "duration": -1, "sleep": 5, "metadata": False}
+_ingestion_settings = {"priority": "high", "duration": -1, "sleep": 15, "metadata": False}
 
 _autopopulate_settings = {
     "suppress_errors": True,
     "reserve_jobs": True,
     "order": "random",
     "limit": -1,
-    "max_calls": -1,
+    "max_calls": 10,
     "display_progress": True,
 }
 
