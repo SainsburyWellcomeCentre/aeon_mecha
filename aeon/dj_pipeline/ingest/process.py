@@ -85,6 +85,7 @@ def parse_args(args):
         dest="duration",
         help="Run duration of the entire process",
         type=int,
+        metavar="INT",
         default=_ingestion_settings["duration"],
     )
 
@@ -94,6 +95,7 @@ def parse_args(args):
         dest="sleep",
         help="Sleep time between subsequent runs",
         type=int,
+        metavar="INT",
         default=_ingestion_settings["sleep"],
     )
 
@@ -103,6 +105,7 @@ def parse_args(args):
         dest="limit",
         help="If not None or -1, checks at most that many keys",
         type=int,
+        metavar="INT",
         default=_autopopulate_settings["limit"],
     )
 
@@ -112,6 +115,7 @@ def parse_args(args):
         dest="max_calls",
         help="Max number of jobs to process within each loop iteration",
         type=int,
+        metavar="INT",
         default=_autopopulate_settings["max_calls"],
     )
 
@@ -157,11 +161,19 @@ def parse_args(args):
     # TODO: Other possible dj config arguments to add here
 
     parser_djconf.add_argument(
-        "--port", dest="db_port", type=int, help='overwrite entry for "database.port"'
+        "--port",
+        dest="db_port",
+        type=int,
+        metavar="INT",
+        help='overwrite entry for "database.port"',
     )
 
     parser_djconf.add_argument(
-        "--prefix", dest="db_prefix", type=str, help='overwrite entry for "database.prefix"'
+        "--prefix",
+        dest="db_prefix",
+        type=str,
+        metavar="STR",
+        help='overwrite entry for "database.prefix"',
     )
 
     return parser.parse_args(args)
