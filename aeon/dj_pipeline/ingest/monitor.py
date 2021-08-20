@@ -6,7 +6,7 @@ import inspect
 from datetime import datetime
 
 from aeon.dj_pipeline import get_schema_name, db_prefix
-from aeon.dj_pipeline import lab, subject, experiment, tracking, analysis
+from aeon.dj_pipeline import lab, subject, acquisition, tracking, analysis
 
 
 schema = dj.schema(get_schema_name('monitor'))
@@ -82,7 +82,7 @@ def print_current_jobs():
      particular tables
     """
     job_status = []
-    for pipeline_module in (lab, subject, experiment, tracking, analysis):
+    for pipeline_module in (lab, subject, acquisition, tracking, analysis):
         reserved = dj.U('table_name').aggr(pipeline_module.schema.jobs & 'status = "reserved"',
                                            reserve_count='count(table_name)',
                                            oldest_job='MIN(timestamp)',
