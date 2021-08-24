@@ -37,20 +37,20 @@ import sys
 import time
 
 import datajoint as dj
-
+from pythonjsonlogger import jsonlogger
 
 _logger = logging.getLogger(__name__)
 
 _current_experiment = "exp0.1-r0"
 
-_ingestion_settings = {"priority": "high", "duration": -1, "sleep": 15, "metadata": False}
+_ingestion_settings = {"priority": "high", "duration": -1, "sleep": 60, "metadata": False}
 
 _autopopulate_settings = {
     "suppress_errors": True,
     "reserve_jobs": True,
-    "order": "random",
+    "order": "original",
     "limit": -1,
-    "max_calls": 10,
+    "max_calls": -1,
     "display_progress": True,
 }
 
@@ -218,10 +218,21 @@ def setup_logging(loglevel):
     :type loglevel: int
     """
 
-    logformat = "[%(asctime)s] %(levelname)s:%(name)s:%(message)s"
-    logging.basicConfig(
-        level=loglevel, stream=sys.stdout, format=logformat, datefmt="%Y-%m-%d %H:%M:%S"
-    )
+    if loglevel is None:
+        loglevel = logging.INFO
+
+    logHandler = logging.StreamHandler()
+
+    logformat = "%(asctime)s %(process)d %(processName)s %(levelname)s %(name)s %(message)s"
+    formatter = jsonlogger.JsonFormatter(logformat)
+    logHandler.setFormatter(formatter)
+
+    _logger.addHandler(logHandler)
+    _logger.setLevel(loglevel)
+
+    # logging.basicConfig(
+    #     level=loglevel, stream=sys.stdout, format=logformat, datefmt="%Y-%m-%d %H:%M:%S"
+    # )
 
 
 def process(priority, **kwargs):
@@ -319,7 +330,7 @@ def main(args):
     dj_config_override(args)
     setup_logging(args.loglevel)
     _logger.debug("Starting ingestion process.")
-    print(f"priority={args.priority}")
+    _logger.info(f"priority={args.priority}")
 
     try:
         process(
