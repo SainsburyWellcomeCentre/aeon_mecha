@@ -1,0 +1,23 @@
+{
+    "database.port": 3306,
+    "database.reconnect": true,
+    "connection.init_function": null,
+    "connection.charset": "",
+    "loglevel": "INFO",
+    "safemode": true,
+    "fetch_format": "array",
+    "display.limit": 30,
+    "display.width": 40,
+    "display.show_tuple_count": true,
+    "database.use_tls": null,
+    "enable_python_native_blobs": true,
+    "stores": {
+      "djstore": {
+        "protocol": "file",
+        "location": "/home/anaconda/djstore",
+        "stage": "/home/anaconda/djstore"}
+    },
+    "custom": {
+        "repository_config": {"ceph_aeon": "/ceph/aeon"}
+      }
+}

@@ -5,7 +5,7 @@ import numpy as np
 
 from aeon.preprocess import api as aeon_api
 
-from . import experiment
+from . import acquisition
 from . import get_schema_name
 
 
@@ -20,7 +20,7 @@ arena_outer_radius = 0.97  # outer
 @schema
 class SubjectPosition(dj.Imported):
     definition = """
-    -> experiment.SessionEpoch
+    -> acquisition.TimeSlice
     ---
     timestamps:        longblob  # (datetime) timestamps of the position data
     position_x:        longblob  # (px) animal's x-position, in the arena's coordinate frame
@@ -34,17 +34,17 @@ class SubjectPosition(dj.Imported):
         """
         The ingest logic here relies on the assumption that there is only one subject in the arena at a time
         The positiondata is associated with that one subject currently in the arena at any timepoints
-        However, we need to take into account if the subject is entered or exited during this epoch
+        However, we need to take into account if the subject is entered or exited during this time slice
         """
-        epoch_start, epoch_end = (experiment.SessionEpoch & key).fetch1('epoch_start', 'epoch_end')
+        time_slice_start, time_slice_end = (acquisition.TimeSlice & key).fetch1('time_slice_start', 'time_slice_end')
 
-        raw_data_dir = experiment.Experiment.get_raw_data_directory(key)
+        raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
         positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
-                                             start=pd.Timestamp(epoch_start),
-                                             end=pd.Timestamp(epoch_end))
+                                             start=pd.Timestamp(time_slice_start),
+                                             end=pd.Timestamp(time_slice_end))
 
         if not len(positiondata):
-            raise ValueError(f'No position data between {epoch_start} and {epoch_end}')
+            raise ValueError(f'No position data between {time_slice_start} and {time_slice_end}')
 
         timestamps = (positiondata.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
         timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
@@ -74,10 +74,10 @@ class SubjectPosition(dj.Imported):
         Given a key to a single session, return a Pandas DataFrame for the position data
         of the subject for the specified session
         """
-        assert len(experiment.Session & session_key) == 1
-        # subject's position data in the epochs
+        assert len(acquisition.Session & session_key) == 1
+        # subject's position data in the time slice
         timestamps, position_x, position_y, speed, area = (cls & session_key).fetch(
-            'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='epoch_start')
+            'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='time_slice_start')
 
         # stack and structure in pandas DataFrame
         position = pd.DataFrame(dict(x=np.hstack(position_x),
@@ -101,22 +101,22 @@ class SubjectDistance(dj.Computed):
     class FoodPatch(dj.Part):
         definition = """  # distances of the animal away from the food patch, for each timestamp
         -> master
-        -> experiment.ExperimentFoodPatch
+        -> acquisition.ExperimentFoodPatch
         ---
         distance: longblob
         """
 
     def make(self, key):
         food_patch_keys = (
-                SubjectPosition * experiment.SessionEpoch
-                * experiment.ExperimentFoodPatch.join(experiment.ExperimentFoodPatch.RemovalTime, left=True)
+                SubjectPosition * acquisition.TimeSlice
+                * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
                 & key
-                & 'epoch_start >= food_patch_install_time'
-                & 'epoch_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
+                & 'time_slice_start >= food_patch_install_time'
+                & 'time_slice_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
 
         food_patch_distance_list = []
         for food_patch_key in food_patch_keys:
-            patch_position = (experiment.ExperimentFoodPatch.Position & food_patch_key).fetch1(
+            patch_position = (acquisition.ExperimentFoodPatch.Position & food_patch_key).fetch1(
                 'food_patch_position_x', 'food_patch_position_y', 'food_patch_position_z')
             subject_positions = (SubjectPosition & key).fetch1(
                 'position_x', 'position_y', 'position_z')
@@ -144,5 +144,5 @@ def is_in_patch(position_df, patch_position, wheel_distance_travelled, patch_rad
     exit_patch = in_patch.astype(np.int8).diff() < 0
     in_wheel = (wheel_distance_travelled.diff().rolling('1s').sum() > 1).reindex(
         position_df.index, method='pad')
-    epochs = exit_patch.cumsum()
-    return in_wheel.groupby(epochs).apply(lambda x:x.cumsum()) > 0
+    time_slice = exit_patch.cumsum()
+    return in_wheel.groupby(time_slice).apply(lambda x:x.cumsum()) > 0

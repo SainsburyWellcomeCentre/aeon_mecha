@@ -1,101 +1,362 @@
-import sys
-import os
-import time
-import logging
+"""Start an Aeon ingestion process
 
-from aeon.dj_pipeline import experiment, tracking, analysis
+This script defines auto-processing routines to operate the DataJoint pipeline for the Aeon
+project. Three separate "process" functions are defined to call `populate()` for different
+groups of tables, depending on their priority in the ingestion routines (high, mid, low).
 
+Each process function is run in a while-loop with the total run-duration configurable via
+command line argument '--duration' (if not set, runs perpetually)
 
-log = logging.getLogger(__name__)
+    - the loop will not begin a new cycle after this period of time (in seconds)
+    - the loop will run perpetually if duration<0 or if duration==None
+    - the script will not be killed _at_ this limit, it will keep executing,
+      and just stop repeating after the time limit is exceeded
 
-
-"""
-Auto-processing routines defined to operate the DataJoint pipeline for the Aeon project
-Several "process" functions defined to call the `populate()` for different grouping of tables,
-depending on their priority in the ingestion routines.
-
-Each process function is ran in a while-loop with the total run-duration 
-configurable via environment variable 'POPULATE_DURATION' (if not set, runs perpetually)
-    - the loop will not begin a new cycle after this period of time (in second)
-    - the loop will run perpetually if limit<0 or if limit==None
-    - the script will not be killed _at_ this limit, it will keep executing, 
-        and just stop repeating after the time limit is exceeded
-
-Some populate settings (e.g. 'limit', 'max_calls') can be set to process 
-some number of jobs at a time for every iteration of the loop, instead of all jobs.
-This allows the processing to propagate through the pipeline more horizontally
+Some populate settings (e.g. 'limit', 'max_calls') can be set to process some number of jobs at
+a time for every iteration of the loop, instead of all jobs. This allows the processing to
+propagate through the pipeline more horizontally
 
 Usage as a script:
-    
-    python aeon/dj_pipeline/ingest/process.py high
 
-(or this can be used as python module normally)
+    aeon_ingest high
+    aeon_ingest low -d 30 -s 1 -m 5
+    aeon_ingest mid -d 600 djconfig --dbprefix aeon_test_
 
+See script help messages:
+
+    aeon_ingest --help
+    aeon_ingest high djconfig --help
+
+(or the function `aeon.dj_pipeline.ingest.process:process` can be imported directly)
 """
 
 
-# ---------------- Auto Ingestion -----------------
-default_run_duration = int(os.environ.get('POPULATE_DURATION', -1))
+import argparse
+import logging
+import sys
+import time
 
-settings = {'reserve_jobs': True,
-            'suppress_errors': True,
-            'display_progress': True}
+import datajoint as dj
+from pythonjsonlogger import jsonlogger
+
+_logger = logging.getLogger(__name__)
+
+_current_experiment = "exp0.1-r0"
+
+_ingestion_settings = {"priority": "high", "duration": -1, "sleep": 60, "metadata": False}
+
+_autopopulate_settings = {
+    "suppress_errors": True,
+    "reserve_jobs": True,
+    "order": "original",
+    "limit": -1,
+    "max_calls": -1,
+    "display_progress": True,
+}
 
 
-def process_high_priority(run_duration=default_run_duration, sleep_duration=600):
+# combine different formatters
+class ArgumentDefaultsRawDescriptionHelpFormatter(
+    argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter
+):
+    pass
+
+
+def parse_args(args):
+    """
+    Parse command line parameters
+
+    :param args: command line parameters as list of strings (for example  ``["--help"]``)
+    :type args: List[str]
+    :return: `argparse.Namespace`: command line parameters namespace
+    :rtype: obj
+    """
+
+    from aeon import __version__
+
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=ArgumentDefaultsRawDescriptionHelpFormatter
+    )
+
+    parser.add_argument(
+        "priority",
+        help="Select the processing priority level",
+        type=str,
+        choices=["high", "mid", "low"],
+        default=_ingestion_settings["priority"],
+    )
+
+    parser.add_argument(
+        "-d",
+        "--duration",
+        dest="duration",
+        help="Run duration of the entire process",
+        type=int,
+        metavar="INT",
+        default=_ingestion_settings["duration"],
+    )
+
+    parser.add_argument(
+        "-s",
+        "--sleep",
+        dest="sleep",
+        help="Sleep time between subsequent runs",
+        type=int,
+        metavar="INT",
+        default=_ingestion_settings["sleep"],
+    )
+
+    parser.add_argument(
+        "--metadata",
+        dest="metadata",
+        help="Insert experiment metadata into manual tables before runs",
+        action="store_true",
+    )
+
+    parser.add_argument(
+        "-l",
+        "--limit",
+        dest="limit",
+        help="If not None or -1, checks at most that many keys",
+        type=int,
+        metavar="INT",
+        default=_autopopulate_settings["limit"],
+    )
+
+    parser.add_argument(
+        "-m",
+        "--maxcalls",
+        dest="max_calls",
+        help="Max number of jobs to process within each loop iteration. Set to -1 to run all",
+        type=int,
+        metavar="INT",
+        default=_autopopulate_settings["max_calls"],
+    )
+
+    parser.add_argument(
+        "-o",
+        "--order",
+        help="The order of execution",
+        type=str,
+        choices=["original", "reverse", "random"],
+        default=_autopopulate_settings["order"],
+    )
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"aeon {__version__}",
+    )
+
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        dest="loglevel",
+        help="set loglevel to INFO",
+        action="store_const",
+        const=logging.INFO,
+    )
+
+    parser.add_argument(
+        "-vv",
+        "--very-verbose",
+        dest="loglevel",
+        help="set loglevel to DEBUG",
+        action="store_const",
+        const=logging.DEBUG,
+    )
+
+    subparser_grp = parser.add_subparsers(help="Additional option sets")
+
+    parser_djconf = subparser_grp.add_parser(
+        "djconfig", description="DataJoint config file options"
+    )
+
+    # TODO: Other possible dj config arguments to add here
+
+    parser_djconf.add_argument(
+        "--port",
+        dest="db_port",
+        type=int,
+        metavar="INT",
+        help='overwrite entry for "database.port"',
+    )
+
+    parser_djconf.add_argument(
+        "--prefix",
+        dest="db_prefix",
+        type=str,
+        metavar="STR",
+        help='overwrite entry for "database.prefix"',
+    )
+
+    return parser.parse_args(args)
+
+
+def dj_config_override(args):
+    """
+    Overwrite configuration options in `dj.config` with those set in `args`, if any.
+
+    :param args: `argparse.Namespace`: parsed command line parameters namespace
+    :type args: obj
+    """
+
+    if "db_port" in args and args.db_port is not None:
+        dj.config["database.port"] = args.db_port
+
+    if "db_prefix" in args and args.db_prefix is not None:
+        if "custom" not in dj.config:
+            dj.config["custom"] = {}
+        dj.config["custom"]["database.prefix"] = args.db_prefix
+
+
+def setup_logging(loglevel):
+    """
+    Setup basic logging
+
+    :param loglevel: minimum loglevel for emitting messages
+    :type loglevel: int
+    """
+
+    if loglevel is None:
+        loglevel = logging.INFO
+
+    logHandler = logging.StreamHandler()
+
+    logformat = "%(asctime)s %(process)d %(processName)s %(levelname)s %(name)s %(message)s"
+    formatter = jsonlogger.JsonFormatter(logformat)
+    logHandler.setFormatter(formatter)
+
+    _logger.addHandler(logHandler)
+    _logger.setLevel(loglevel)
+
+    # logging.basicConfig(
+    #     level=loglevel, stream=sys.stdout, format=logformat, datefmt="%Y-%m-%d %H:%M:%S"
+    # )
+
+
+def process(priority, **kwargs):
+    """
+    Run type of ingestion routine depending on priority value
+
+    :param priority: Select the processing level
+    :type priority: str
+    :param run_duration: Run duration of the process
+    :type run_duration: int
+    :param sleep_duration: Sleep time between subsequent runs
+    :type sleep_duration: int
+    :param insert_meta: Insert metadata before runs
+    :type insert_meta: bool
+    :param max_calls: Max number of jobs to process within each loop iteration
+    :type max_calls: int
+    :param limit: If not None or -1, checks at most that many keys
+    :type limit: int
+    :param order: The order of execution
+    :type order: str
+    """
+
+    # importing here to connect to db after args are parsed
+    from aeon.dj_pipeline import acquisition, analysis, tracking
+    from aeon.dj_pipeline.ingest.monitor import ProcessJob
+
+    _priority_tables = {
+        "high": (
+            acquisition.SubjectEnterExit,
+            acquisition.SubjectAnnotation,
+            acquisition.SubjectWeight,
+            acquisition.FoodPatchEvent,
+            acquisition.WheelState,
+            acquisition.Session,
+            acquisition.SessionEnd,
+            acquisition.TimeSlice,
+        ),
+        "mid": (
+            tracking.SubjectPosition,
+            analysis.SessionTimeDistribution,
+            analysis.SessionSummary,
+        ),
+        "low": (acquisition.FoodPatchWheel, tracking.SubjectDistance),
+    }
+
+    # processing arguments
+    run_duration = kwargs.get("run_duration", _ingestion_settings["duration"])
+    sleep_duration = kwargs.get("sleep_duration", _ingestion_settings["sleep"])
+    insert_meta = kwargs.get("insert_meta", _ingestion_settings["metadata"])
+
+    # overwrite datajoint autopopulate defaults
+    pop_args = {**_autopopulate_settings}
+
+    pop_args["order"] = kwargs.get("order", pop_args["order"])
+
+    pop_args["max_calls"] = kwargs.get("max_calls", pop_args["max_calls"])
+    if pop_args["max_calls"] is not None and pop_args["max_calls"] < 0:
+        pop_args["max_calls"] = None
+
+    pop_args["limit"] = kwargs.get("limit", pop_args["limit"])
+    if pop_args["limit"] is not None and pop_args["limit"] < 0:
+        pop_args["limit"] = None
+
+    if insert_meta:
+        import aeon.dj_pipeline.ingest.exp01_insert_meta
+
     start_time = time.time()
-    while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
-        experiment.TimeBin.generate_timebins(experiment_name='exp0.1-r0')
-        experiment.SubjectEnterExit.populate(**settings)
-        experiment.SubjectAnnotation.populate(**settings)
-        experiment.SubjectWeight.populate(**settings)
 
-        experiment.FoodPatchEvent.populate(**settings)
-        experiment.WheelState.populate(**settings)
+    while (
+        (time.time() - start_time < run_duration)
+        or (run_duration is None)
+        or (run_duration < 0)
+    ):
 
-        experiment.Session.populate(**settings)
-        experiment.SessionEnd.populate(**settings)
-        experiment.SessionEpoch.populate(**settings)
+        if priority == "high":
+            ProcessJob.log_process_job(acquisition.Chunk)
+            acquisition.Chunk.generate_chunks(experiment_name=_current_experiment)
+
+        for table_to_process in _priority_tables[priority]:
+            ProcessJob.log_process_job(table_to_process)
+            table_to_process.populate(**pop_args)
 
         time.sleep(sleep_duration)
 
 
-def process_middle_priority(run_duration=default_run_duration, sleep_duration=5):
-    start_time = time.time()
-    settings['max_calls'] = 20
-    while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
-        tracking.SubjectPosition.populate(**settings)
+def main(args):
+    """
+    Wrapper allowing process functions to be called from CLI
 
-        analysis.SessionTimeDistribution.populate(**settings)
-        analysis.SessionSummary.populate(**settings)
+    :param args: command line parameters as list of strings (for example  ``["--help"]``)
+    :type args: List[str]
+    """
 
-        time.sleep(sleep_duration)
-
-
-def process_low_priority(run_duration=default_run_duration, sleep_duration=5):
-    start_time = time.time()
-    settings['max_calls'] = 5
-    while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
-        experiment.FoodPatchWheel.populate(**settings)
-        tracking.SubjectDistance.populate(**settings)
-
-        time.sleep(sleep_duration)
-
-
-actions = {'high': process_high_priority,
-           'middle': process_middle_priority,
-           'low': process_low_priority}
-
-
-if __name__ == '__main__':
-
-    if len(sys.argv) < 1 or sys.argv[1] not in ('high', 'middle', 'low'):
-        print(f'Usage error! Run ingestion with:\n\t"process.py <mode>"'
-              f'\n\t\t where mode is one of: "high", "middle", "low"')
-        sys.exit(0)
+    args = parse_args(args)
+    dj_config_override(args)
+    setup_logging(args.loglevel)
+    _logger.debug("Starting ingestion process.")
+    _logger.info(f"priority={args.priority}")
 
     try:
-        action = sys.argv[1]
-        actions[action]()
+        process(
+            args.priority,
+            run_duration=args.duration,
+            sleep_duration=args.sleep,
+            insert_meta=args.metadata,
+            max_calls=args.max_calls,
+            order=args.order,
+            limit=args.limit,
+        )
     except Exception:
-        log.exception("action '{}' encountered an exception:".format(action))
+        _logger.exception("action '{}' encountered an exception:".format(args.priority))
+
+    _logger.info("Ingestion process ended.")
+
+
+def run():
+    """
+    Calls :func:`main` passing the CLI arguments extracted from `sys.argv`
+
+    This function can be used as entry point to create console scripts with setuptools.
+    """
+
+    main(sys.argv[1:])
+
+
+if __name__ == "__main__":
+    run()
