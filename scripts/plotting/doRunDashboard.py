@@ -1,6 +1,6 @@
 
 import sys
-
+import math
 import argparse
 import numpy as np
 import pandas as pd
@@ -28,6 +28,7 @@ def main(argv):
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--local", help="run the flask server only locally", action="store_true")
+    parser.add_argument("--port", help="port on which to run the falsh app", default=8050, type=int)
     parser.add_argument("--debug", help="start GUI with debug functionality", action="store_true")
     parser.add_argument("--root", help="Root path for data access", default="/ceph/aeon/test2/experiment0.1")
     parser.add_argument("--patches_coordinates", help="coordinates of patches", default="584,597,815,834;614,634,252,271")
@@ -105,9 +106,23 @@ def main(argv):
             dcc.RangeSlider(
                 id="plotTimeRangeSlider",
             ),
+            html.Label(children="Start Time (sec)"),
+            dcc.Input(
+                id="startTimeInput",
+                type="number",
+                value=float('nan'),
+            ),
+            html.Label(id="auxStartTime", children="default start time"),
+            html.Label(children="End Time (sec)"),
+            dcc.Input(
+                id="endTimeInput",
+                type="number",
+                value=float('nan'),
+            ),
+            html.Label(id="auxEndTime", children="default end time"),
             html.H4(children="Sample Rate for Trajectory Plot"),
             dcc.Input(
-                id="sRateForTrajectoryPlot",
+                id="sRateInputForTrajectoryPlot",
                 type="number",
                 value=3.00,
             ),
@@ -142,7 +157,8 @@ def main(argv):
     app.layout = serve_layout()
 
     @app.callback([Output('sessionStartTimeDropdown', 'options'),
-                   Output('sessionStartTimeDropdown', 'value'),],
+                   Output('sessionStartTimeDropdown', 'value'),
+                  ],
                   Input('mouseNameDropDown', 'value'))
     def get_sessions_start_times(mouseNameDropDown_value):
         sessions_start_times = metadata[metadata["id"]==mouseNameDropDown_value].index
@@ -150,7 +166,7 @@ def main(argv):
         return options_sessions_start_times, sessions_start_times[0]
 
     @app.callback([Output('nTrajectoryPointsToPlot', 'children'),],
-                  Input('sRateForTrajectoryPlot', 'value'),
+                  Input('sRateInputForTrajectoryPlot', 'value'),
                   [State('plotTimeRangeSlider', 'value'),]
                  )
     def get_num_trajectory_points_to_plot_label(sRateForTrajectoryPlot_value,
@@ -166,27 +182,68 @@ def main(argv):
                    Output('plotTimeRangeSlider', 'marks'),
                    Output('plotTimeRangeSlider', 'value'),
                   ],
-                  Input('sessionStartTimeDropdown', 'value'))
-    def get_plotTimeRangeSlider_options(sessionStartTimeDropdown_value):
-        # print("get_plotTimeRangeSlider_options called")
-        # print("type(sessionStartTimeDropdown_value)")
-        # print(type(sessionStartTimeDropdown_value))
-        # print("sessionStartTimeDropdown_value")
-        # print(sessionStartTimeDropdown_value)
-        sessions_duration_sec = metadata[metadata.index==pd.to_datetime(sessionStartTimeDropdown_value)].duration.item().total_seconds()
-        # print("sessions_duration_sec")
-        # print(sessions_duration_sec)
-        # print("about to print 1")
-        slider_min = 0
-        # print("about to print 2")
-        slider_max = int(sessions_duration_sec)
-        # print("about to print 3")
+                  [Input('sessionStartTimeDropdown', 'value'),
+                   Input('startTimeInput', 'value'), 
+                   Input('endTimeInput', 'value')],
+                  [State('plotTimeRangeSlider', 'min'),
+                   State('plotTimeRangeSlider', 'max'),
+                   State('plotTimeRangeSlider', 'marks'),
+                   State('plotTimeRangeSlider', 'value')],
+                  )
+    def get_plotTimeRange_options(sessionStartTimeDropdown_value,
+                                  startTimeInput_value,
+                                  endTimeInput_value,
+                                  plotTimeRangeSlider_min,
+                                  plotTimeRangeSlider_max,
+                                  plotTimeRangeSlider_marks,
+                                  plotTimeRangeSlider_value):
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            print("not ctx.triggered")
+            raise dash.exceptions.PreventUpdate
+        print("ctx.triggered")
+        print(ctx.triggered[0])
+        component_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+        if component_id == "sessionStartTimeDropdown":
+            sessions_duration_sec = metadata[metadata.index == pd.to_datetime(sessionStartTimeDropdown_value)].duration.item().total_seconds()
+            slider_min = 0
+            slider_max = int(sessions_duration_sec)
+            slider_value = [0, slider_max]
+        elif component_id == "startTimeInput":
+            print("marks=", plotTimeRangeSlider_marks)
+            slider_min = plotTimeRangeSlider_min
+            slider_max = plotTimeRangeSlider_max
+            slider_value = [startTimeInput_value, plotTimeRangeSlider_value[1]]
+        elif component_id == "endTimeInput":
+            print("marks=", plotTimeRangeSlider_marks)
+            slider_min = plotTimeRangeSlider_min
+            slider_max = plotTimeRangeSlider_max
+            slider_value = [plotTimeRangeSlider_value[0], endTimeInput_value]
         slider_marks = dict(zip(range(0, slider_max, 600), [str(aNum) for aNum in range(0, slider_max, 600)]))
-        # print("about to print 4")
-        slider_value=[0,slider_max]
-        # print("about to print 5")
-        # print("min={}, max={}, marks={}, value={}".format(slider_min, slider_max, slider_marks, slider_value))
         return slider_min, slider_max, slider_marks, slider_value
+
+    @app.callback([Output('startTimeInput', 'value'),
+                   Output('endTimeInput', 'value')],
+                  [Input('plotTimeRangeSlider', 'value')])
+    def set_start_end_inputs_from_slider_value(plotTimeRangeSlider_value):
+        print("set_start_end_inputs_from_slider_value called")
+        if plotTimeRangeSlider_value is None:
+            raise dash.exceptions.PreventUpdate
+        return plotTimeRangeSlider_value
+
+#     @app.callback([Output('auxStartTime', 'children'),
+#                    Output('auxEndTime', 'children'),
+#                    Output('plotTimeRangeSlider', 'value'],
+#                   [Input('startTimeInput', 'value'),
+#                    Input('endTimeInput', 'value')],
+#                   )
+#     def set_slider_value_from_start_end_inputs(startTimeInput_children,
+#                                                endTimeInput_children):
+#         print("set_slider_value_from_start_end_inputs called")
+#         if math.isnan(startTimeInput_children) or math.isnan(endTimeInput_children):
+#             raise dash.exceptions.PreventUpdate
+#         return "{:d}".format(startTimeInput_children), "{:d}".format(endTimeInput_children)
 
     @app.callback([Output('trajectoryGraph', 'figure'),
                    Output('activitiesGraph', 'figure'),
@@ -199,7 +256,7 @@ def main(argv):
                   [State('mouseNameDropDown', 'value'),
                    State('sessionStartTimeDropdown', 'value'),
                    State('plotTimeRangeSlider', 'value'),
-                   State('sRateForTrajectoryPlot', 'value'),
+                   State('sRateInputForTrajectoryPlot', 'value'),
                    State('plotsContainer', 'hidden')],
                   )
     def update_plots(plotButton_nClicks,
@@ -279,7 +336,7 @@ def main(argv):
         fig_travelledDistance = plotly.subplots.make_subplots(rows=1, cols=len(patches_to_plot),
                                             subplot_titles=(patches_to_plot))
         for i, patch_to_plot in enumerate(patches_to_plot):
-            trace = aeon.plotting.plot_functions.get_travelled_distance_trace(travelled_seconds=travelled_seconds[patch_to_plot], travelled_distance=travelled_distance[patch_to_plot], color=travelled_distance_trace_color, showlegend=False)
+            trace = aeon.plotting.plot_functions.get_travelled_distance_trace(travelled_seconds=travelled_seconds[patch_to_plot], travelled_distance=travelled_distance[patch_to_plot], sample_rate=sRateForTrajectoryPlot_value, color=travelled_distance_trace_color, showlegend=False)
             fig_travelledDistance.add_trace(trace, row=1, col=i+1)
             for pellet_second in pellets_seconds[patch_to_plot]:
                 fig_travelledDistance.add_vline(x=pellet_second, line_color=pellet_line_color,
@@ -333,9 +390,9 @@ def main(argv):
         return fig_trajectory, fig_cumTimePerActivity, fig_travelledDistance, fig_rewardRate, plotsContainer_hidden, plotButton_children
 
     if(args.local):
-        app.run_server(debug=args.debug)
+        app.run_server(debug=args.debug, port=args.port)
     else:
-        app.run_server(debug=args.debug, host="0.0.0.0")
+        app.run_server(debug=args.debug, port=args.port, host="0.0.0.0")
 
 if __name__=="__main__":
     main(sys.argv)
