@@ -586,7 +586,7 @@ def exportvideo(frames, file, fps, fourcc=None):
         for frame in frames:
             if writer is None:
                 if fourcc is None:
-                    fourcc = cv2.VideoWriter_fourcc('M','P','4','V')
+                    fourcc = cv2.VideoWriter_fourcc('m','p','4','v')
                 writer = cv2.VideoWriter(file, fourcc, fps, (frame.shape[1], frame.shape[0]))
             writer.write(frame)
     finally:
