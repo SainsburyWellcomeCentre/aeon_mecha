@@ -1,2 +1,23 @@
-# python
-__pycache__
+# Byte-compiled / optimized / DLL files
+__pycache__/
+
+# Distribution / packaging
+*.egg-info/
+*.egg
+
+# dotenv
+.env
+
+# datajoint
+dj_local_conf.json
+
+# IDE
+.vscode/*
+*.code-workspace
+.idea/
+
+# misc
+**/.DS_Store
+log*.txt
+scratch/
+scratch*.py
