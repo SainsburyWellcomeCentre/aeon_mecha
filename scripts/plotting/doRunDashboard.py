@@ -174,8 +174,8 @@ def main(argv):
         return options_sessions_start_times, sessions_start_times[0]
 
     @app.callback([Output('nTrajectoryPointsToPlot', 'children'),],
-                  Input('sRateInputForTrajectoryPlot', 'value'),
-                  [State('plotTimeRangeSlider', 'value'),]
+                  [Input('sRateInputForTrajectoryPlot', 'value'),
+                   Input('plotTimeRangeSlider', 'value'),]
                  )
     def get_num_trajectory_points_to_plot_label(sRateForTrajectoryPlot_value,
                                                 plotTimeRangeSlider_value):
@@ -383,10 +383,9 @@ def main(argv):
                                 line=dict(color=reward_rate_trace_color),
                                 showlegend=False)
             fig_rewardRate.add_trace(trace, row=1, col=i+1)
-            for pellet_second in pellets_seconds[patch_to_plot]:
-                fig_rewardRate.add_vline(x=pellet_second, line_color=pellet_line_color,
-                            line_dash=pellet_line_style, row=1, col=i+1)
-            if i==0:
+            trace = aeon.plotting.plot_functions.get_pellets_trace(pellets_seconds=pellets_seconds[patch_to_plot], marker_color=pellet_line_color)
+            fig_rewardRate.add_trace(trace, row=1, col=i+1)
+            if i == 0:
                 fig_rewardRate.update_yaxes(title_text=ylabel_rewardRate, range=(0, max_reward_rate), row=1, col=i+1)
             else:
                 fig_rewardRate.update_yaxes(range=(0, max_reward_rate), row=1, col=i+1)
