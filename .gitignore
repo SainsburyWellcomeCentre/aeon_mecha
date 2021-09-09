@@ -3,6 +3,7 @@ scratch/
 build/
 dist/
 figures/
+videos/
 *.egg-info/
 .idea/
 .vscode/
