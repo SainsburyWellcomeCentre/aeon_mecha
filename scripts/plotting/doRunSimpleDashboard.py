@@ -5,7 +5,6 @@ import argparse
 import numpy as np
 import pandas as pd
 import datetime
-import time
 
 import flask
 
@@ -29,6 +28,7 @@ def main(argv):
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--local", help="run the flask server only locally", action="store_true")
+    parser.add_argument("--port", help="port on which to run the falsh app", default=8050, type=int)
     parser.add_argument("--debug", help="start GUI with debug functionality", action="store_true")
     parser.add_argument("--root", help="Root path for data access", default="/ceph/aeon/test2/experiment0.1")
     parser.add_argument("--patches_coordinates", help="coordinates of patches", default="585,605,814,834;608,628,250,270")
@@ -48,12 +48,13 @@ def main(argv):
     parser.add_argument("--ylim_cumTimePerActivity", help="ylim cummulative time per activity plot", default="[0,1]")
     parser.add_argument("--travelled_distance_trace_color", help="travelled distance trace color", default="blue")
     parser.add_argument("--reward_rate_trace_color", help="reward rate trace color", default="blue")
-    parser.add_argument("--pellet_color", help="pellet line color", default="red")
+    parser.add_argument("--pellet_line_color", help="pellet line color", default="red")
     parser.add_argument("--pellet_line_style", help="pellet line style", default="solid")
     parser.add_argument("--trajectories_width", help="width of the trajectories plot", type=int, default=1000)
     parser.add_argument("--trajectories_height", help="height of the trajectories plot", type=int, default=1000)
     parser.add_argument("--trajectories_colorscale", help="colorscale for trajectories", default="Rainbow")
     parser.add_argument("--trajectories_opacity", help="opacity for trajectories", default=0.3, type=float)
+    parser.add_argument("--travelled_distance_sample_rate", help="sampling rate for travelled distance plot", default=10.0, type=float)
 
     args = parser.parse_args()
 
@@ -76,12 +77,13 @@ def main(argv):
     ylim_cumTimePerActivity = [float(str) for str in args.ylim_cumTimePerActivity[1:-1].split(",")]
     travelled_distance_trace_color = args.travelled_distance_trace_color
     reward_rate_trace_color = args.reward_rate_trace_color
-    pellet_color = args.pellet_color
+    pellet_line_color = args.pellet_line_color
     pellet_line_style = args.pellet_line_style
     trajectories_height = args.trajectories_height
     trajectories_width = args.trajectories_width
     trajectories_colorscale = args.trajectories_colorscale
     trajectories_opacity = args.trajectories_opacity
+    travelled_distance_sample_rate  = args.travelled_distance_sample_rate
 
     metadata = aeon.preprocess.api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
@@ -276,20 +278,18 @@ def main(argv):
             pellets_times = pellet_vals[pellet_vals.event == "{:s}".format(pellet_event_name)].index
             pellets_seconds[patch_to_plot] = (pellets_times-session_start).total_seconds()
 
-        travelled_distance_sample_rate = 10.0
         fig_travelledDistance = go.Figure()
         fig_travelledDistance = plotly.subplots.make_subplots(rows=1, cols=len(patches_to_plot), subplot_titles=(patches_to_plot))
         for i, patch_to_plot in enumerate(patches_to_plot):
             trace = aeon.plotting.plot_functions.get_travelled_distance_trace(travelled_seconds=travelled_seconds[patch_to_plot], travelled_distance=travelled_distance[patch_to_plot], color=travelled_distance_trace_color, sample_rate=travelled_distance_sample_rate, showlegend=False)
             fig_travelledDistance.add_trace(trace, row=1, col=i+1)
-            trace = aeon.plotting.plot_functions.get_pellets_trace(pellets_seconds=pellets_seconds[patch_to_plot], marker_color=pellet_color)
+            trace = aeon.plotting.plot_functions.get_pellets_trace(pellets_seconds=pellets_seconds[patch_to_plot], marker_color=pellet_line_color)
             fig_travelledDistance.add_trace(trace, row=1, col=i+1)
             if i == 0:
                 fig_travelledDistance.update_yaxes(title_text=ylabel_travelledDistance, range=(0, max_travelled_distance), row=1, col=i+1)
             else:
                 fig_travelledDistance.update_yaxes(range=(-20, max_travelled_distance), row=1, col=i+1)
             fig_travelledDistance.update_xaxes(title_text=xlabel_travelledDistance, row=1, col=i+1)
-        print("Done with fig_travelledDistance")
 
         # reward rate figure
         pellets_seconds = {}
@@ -331,14 +331,12 @@ def main(argv):
         plotsContainer_hidden = False
         plotButton_children = ["Update"]
 
-        # return fig_trajectory, fig_cumTimePerActivity, fig_travelledDistance, fig_rewardRate, plotsContainer_hidden, plotButton_children
         return fig_trajectory, fig_cumTimePerActivity, fig_travelledDistance, plotsContainer_hidden, plotButton_children
-#         return fig_trajectory, fig_cumTimePerActivity, plotsContainer_hidden, plotButton_children
 
     if(args.local):
-        app.run_server(debug=args.debug)
+        app.run_server(debug=args.debug, port=args.port)
     else:
-        app.run_server(debug=args.debug, host="0.0.0.0")
+        app.run_server(debug=args.debug, port=args.port, host="0.0.0.0")
 
 if __name__=="__main__":
     main(sys.argv)

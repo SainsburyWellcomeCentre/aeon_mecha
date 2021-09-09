@@ -34,8 +34,9 @@ def main(argv):
     parser.add_argument("--patches_coordinates", help="coordinates of patches", default="584,597,815,834;614,634,252,271")
     parser.add_argument("--nest_coordinates", help="coordinates of nest", default="170,260,450,540")
     parser.add_argument("--patchesToPlot", help="Names of patches to plot", default="Patch1,Patch2")
+    parser.add_argument("--sample_rate_for_trajectory0", help="Initial value for the sample rate for the trajectory", default=0.5, type=float)
     parser.add_argument("--win_length_sec", help="Moving average window length (sec)", default=60.0, type=float)
-    parser.add_argument("--time_resolution", help="Time resolution to compute the moving average (sec)", default=0.01, type=float)
+    parser.add_argument("--reward_rate_time_resolution", help="Time resolution to compute the moving average (sec)", default=0.01, type=float)
     parser.add_argument("--pellet_event_name", help="Pellet event name to display", default="TriggerPellet")
     parser.add_argument("--xlabel_trajectory", help="xlabel for trajectory plot", default="x (pixels)")
     parser.add_argument("--ylabel_trajectory", help="ylabel for trajectory plot", default="y (pixels)")
@@ -49,8 +50,11 @@ def main(argv):
     parser.add_argument("--reward_rate_trace_color", help="reward rate trace color", default="blue")
     parser.add_argument("--pellet_line_color", help="pellet line color", default="red")
     parser.add_argument("--pellet_line_style", help="pellet line style", default="solid")
+    parser.add_argument("--trajectories_width", help="width of the trajectories plot", type=int, default=1000)
+    parser.add_argument("--trajectories_height", help="height of the trajectories plot", type=int, default=1000)
     parser.add_argument("--trajectories_colorscale", help="colorscale for trajectories", default="Rainbow")
     parser.add_argument("--trajectories_opacity", help="opacity for trajectories", default=0.3, type=float)
+    parser.add_argument("--travelled_distance_sample_rate", help="sampling rate for travelled distance plot", default=10.0, type=float)
 
     args = parser.parse_args()
 
@@ -59,8 +63,9 @@ def main(argv):
     patches_coordinates_matrix = np.matrix(args.patches_coordinates)
     nest_coordinates_matrix = np.matrix(args.nest_coordinates)
     patches_to_plot = args.patchesToPlot.split(",")
+    sample_rate_for_trajectory0 = args.sample_rate_for_trajectory0
     win_length_sec = args.win_length_sec
-    time_resolution = args.time_resolution
+    reward_rate_time_resolution = args.reward_rate_time_resolution
     pellet_event_name = args.pellet_event_name
     xlabel_trajectory = args.xlabel_trajectory
     ylabel_trajectory = args.ylabel_trajectory
@@ -74,8 +79,11 @@ def main(argv):
     reward_rate_trace_color = args.reward_rate_trace_color
     pellet_line_color = args.pellet_line_color
     pellet_line_style = args.pellet_line_style
+    trajectories_height = args.trajectories_height
+    trajectories_width = args.trajectories_width
     trajectories_colorscale = args.trajectories_colorscale
     trajectories_opacity = args.trajectories_opacity
+    travelled_distance_sample_rate  = args.travelled_distance_sample_rate
 
     metadata = aeon.preprocess.api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
@@ -124,7 +132,7 @@ def main(argv):
             dcc.Input(
                 id="sRateInputForTrajectoryPlot",
                 type="number",
-                value=3.00,
+                value=sample_rate_for_trajectory0,
             ),
             html.Label(id="nTrajectoryPointsToPlot"),
             html.Hr(),
@@ -301,7 +309,8 @@ def main(argv):
                                      yaxis_title=ylabel_trajectory,
                                      paper_bgcolor='rgba(0,0,0,0)',
                                      plot_bgcolor='rgba(0,0,0,0)',
-                                     height=600, width=600)
+                                     height=trajectories_height,
+                                     width=trajectories_width)
 
         # activity figure
         positions_labels = aeon.preprocess.utils.get_positions_labels(
@@ -336,31 +345,30 @@ def main(argv):
         fig_travelledDistance = plotly.subplots.make_subplots(rows=1, cols=len(patches_to_plot),
                                             subplot_titles=(patches_to_plot))
         for i, patch_to_plot in enumerate(patches_to_plot):
-            trace = aeon.plotting.plot_functions.get_travelled_distance_trace(travelled_seconds=travelled_seconds[patch_to_plot], travelled_distance=travelled_distance[patch_to_plot], sample_rate=sRateForTrajectoryPlot_value, color=travelled_distance_trace_color, showlegend=False)
+            trace = aeon.plotting.plot_functions.get_travelled_distance_trace(travelled_seconds=travelled_seconds[patch_to_plot], travelled_distance=travelled_distance[patch_to_plot], sample_rate=travelled_distance_sample_rate, color=travelled_distance_trace_color, showlegend=False)
             fig_travelledDistance.add_trace(trace, row=1, col=i+1)
-            for pellet_second in pellets_seconds[patch_to_plot]:
-                fig_travelledDistance.add_vline(x=pellet_second, line_color=pellet_line_color,
-                            line_dash=pellet_line_style, row=1, col=i+1)
+            trace = aeon.plotting.plot_functions.get_pellets_trace(pellets_seconds=pellets_seconds[patch_to_plot], marker_color=pellet_line_color)
+            fig_travelledDistance.add_trace(trace, row=1, col=i+1)
             if i==0:
                 fig_travelledDistance.update_yaxes(title_text=ylabel_travelledDistance, range=(0, max_travelled_distance), row=1, col=i+1)
             else:
-                fig_travelledDistance.update_yaxes(range=(0, max_travelled_distance), row=1, col=i+1)
+                fig_travelledDistance.update_yaxes(range=(-20, max_travelled_distance), row=1, col=i+1)
             fig_travelledDistance.update_xaxes(title_text=xlabel_travelledDistance, row=1, col=i+1)
 
         # reward rate figure
         pellets_seconds = {}
         reward_rate = {}
         max_reward_rate = -np.inf
-        time = np.arange(t0_relative, tf_relative, time_resolution)
+        time = np.arange(t0_relative, tf_relative, reward_rate_time_resolution)
         for patch_to_plot in patches_to_plot:
             wheel_encoder_vals = aeon.preprocess.api.encoderdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
             pellet_vals = aeon.preprocess.api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
             pellets_times = pellet_vals[pellet_vals.event == "{:s}".format(pellet_event_name)].index
             pellets_seconds[patch_to_plot] = (pellets_times-session_start).total_seconds()
-            pellets_indices = ((pellets_seconds[patch_to_plot]-t0_relative)/time_resolution).astype(int)
+            pellets_indices = ((pellets_seconds[patch_to_plot]-t0_relative)/reward_rate_time_resolution).astype(int)
             pellets_samples = np.zeros(len(time), dtype=np.double)
             pellets_samples[pellets_indices] = 1.0
-            win_length_samples = int(win_length_sec/time_resolution)
+            win_length_samples = int(win_length_sec/reward_rate_time_resolution)
             reward_rate[patch_to_plot] = aeon.signalProcessing.utils.moving_average(values=pellets_samples, N=win_length_samples)
             patch_max_reward_rate = max(reward_rate[patch_to_plot])
             if patch_max_reward_rate>max_reward_rate:
