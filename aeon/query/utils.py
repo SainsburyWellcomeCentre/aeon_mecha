@@ -1,6 +1,29 @@
+import pandas as pd
+
 import aeon.preprocess.api as api
 import aeon.preprocess.utils
 
+def get_moving_average(x, window_len_sec, frequency, unit_len_sec=60, start=None, end=None, smooth=None, center=False):
+    if start is not None and start < x.index[0]:
+        x[start] = 0
+    if end is not None and end > x.index[-1]:
+        x[end] = 0
+    x.sort_index(inplace=True)
+    x_resampled = x.resample(frequency).sum()
+    return x_resampled
+
+def get_events_rates(events, window_len_sec, frequency, unit_len_sec=60, start=None, end=None, smooth=None, center=False):
+    window_len_sec_str = "{:d}S".format(window_len_sec)
+    counts = pd.Series(1.0, events.index)
+    if start is not None and start < events.index[0]:
+        counts.loc[start] = 0
+    if end is not None and end > events.index[-1]:
+        counts.loc[end] = 0
+    counts.sort_index(inplace=True)
+    counts_resampled = counts.resample(frequency).sum()
+    counts_rolled = counts_resampled.rolling(window_len_sec_str,center=center).sum()*unit_len_sec/window_len_sec
+    counts_rolled_smoothed = counts_rolled.rolling(window_len_sec_str if smooth is None else smooth, center=center).mean()
+    return counts_rolled_smoothed
 
 def getMouseSessionsStartTimesAndDurations(mouse_id, root):
     metadata = api.sessiondata(root)
