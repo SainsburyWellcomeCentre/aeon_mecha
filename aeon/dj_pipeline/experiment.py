@@ -170,7 +170,7 @@ class TimeBin(dj.Manual):
         for time_bin_rep_file in time_bin_rep_files:
             time_bin_start = datetime.datetime.strptime(
                 time_bin_rep_file.stem.replace(time_bin_rep_file_str, ''), '%Y-%m-%dT%H-%M-%S')
-            time_bin_end = time_bin_start + datetime.timedelta(hours=aeon_api.BIN_SIZE)
+            time_bin_end = time_bin_start + datetime.timedelta(hours=aeon_api.CHUNK_SIZE)
 
             # --- insert to TimeBin ---
             time_bin_key = {'experiment_name': experiment_name,

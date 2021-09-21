@@ -5,68 +5,68 @@ import datetime
 import pandas as pd
 import numpy as np
 
-"""The size of each time bin, in whole hours."""
-BIN_SIZE = 1
+"""The size of each acquisition chunk, in whole hours."""
+CHUNK_SIZE = 1
 _SECONDS_PER_TICK = 32e-6
 
 def aeon(seconds):
     """Converts a Harp timestamp, in seconds, to a datetime object."""
     return datetime.datetime(1904, 1, 1) + pd.to_timedelta(seconds, 's')
 
-def timebin(time):
+def chunk(time):
     '''
-    Returns the whole hour time bin for a measurement timestamp.
+    Returns the whole hour acquisition chunk for a measurement timestamp.
     
     :param datetime or Series time: An object or series specifying the measurement timestamps.
-    :return: A datetime object or series specifying the time bin for the measurement timestamp.
+    :return: A datetime object or series specifying the acquisition chunk for the measurement timestamp.
     '''
     if isinstance(time, pd.Series):
-        hour = BIN_SIZE * (time.dt.hour // BIN_SIZE)
+        hour = CHUNK_SIZE * (time.dt.hour // CHUNK_SIZE)
         return pd.to_datetime(time.dt.date) + pd.to_timedelta(hour, 'h')
     else:
-        hour = BIN_SIZE * (time.hour // BIN_SIZE)
+        hour = CHUNK_SIZE * (time.hour // CHUNK_SIZE)
         return pd.to_datetime(datetime.datetime.combine(time.date(), datetime.time(hour=hour)))
 
-def timebin_range(start, end):
+def chunk_range(start, end):
     '''
-    Returns a range of whole hour time bins.
+    Returns a range of whole hour acquisition chunks.
 
     :param datetime start: The left bound of the time range.
     :param datetime end: The right bound of the time range.
-    :return: A DatetimeIndex representing the range of time bins.
+    :return: A DatetimeIndex representing the acquisition chunk range.
     '''
-    return pd.date_range(timebin(start), timebin(end), freq=pd.DateOffset(hours=BIN_SIZE))
+    return pd.date_range(chunk(start), chunk(end), freq=pd.DateOffset(hours=CHUNK_SIZE))
 
-def timebin_key(file):
-    """Returns the time bin key for the specified file name."""
+def chunk_key(file):
+    """Returns the acquisition chunk key for the specified file name."""
     filename = os.path.split(file)[-1]
     filename = os.path.splitext(filename)[0]
-    timebin_str = filename.split("_")[-1]
-    date_str, time_str = timebin_str.split("T")
+    chunk_str = filename.split("_")[-1]
+    date_str, time_str = chunk_str.split("T")
     return datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":"))
 
-def timebin_filter(files, timefilter):
+def chunk_filter(files, timefilter):
     '''
     Filters a list of paths using the specified time filter. To use the time filter, files
-    must conform to a naming convention where the timestamp of each timebin is appended to
-    the end of each file path.
+    must conform to a naming convention where the timestamp of each acquisition chunk is
+    appended to the end of each file path.
 
-    :param str files: The list of timebin files to filter.
+    :param str files: The list of acquisition chunk files to filter.
     :param iterable or callable timefilter:
-    A list of time bins or a predicate used to test each file time.
+    A list of acquisition chunks or a predicate used to test each file time.
     :return: A list of all matching filenames.
     '''
     try:
-        timebins = [timebin for timebin in iter(timefilter)]
-        timefilter = lambda x:x in timebins
+        chunks = [chunk for chunk in iter(timefilter)]
+        timefilter = lambda x:x in chunks
     except TypeError:
         if not callable(timefilter):
             raise TypeError("timefilter must be iterable or callable")
 
     matches = []
     for file in files:
-        timebin = timebin_key(file)
-        if not timefilter(timebin):
+        chunk = chunk_key(file)
+        if not timefilter(chunk):
             continue
         matches.append(file)
     return matches
@@ -106,8 +106,8 @@ def load(path, reader, device, prefix=None, extension="*.csv",
             time.index = time
 
         dataframes = []
-        filetimes = [timebin_key(file) for file in files]
-        for key,values in time.groupby(by=timebin):
+        filetimes = [chunk_key(file) for file in files]
+        for key,values in time.groupby(by=chunk):
             i = bisect.bisect_left(filetimes, key)
             if i < len(filetimes):
                 frame = reader(files[i])
@@ -118,7 +118,7 @@ def load(path, reader, device, prefix=None, extension="*.csv",
             data = data.reindex(values, method='pad', tolerance=tolerance)
             missing = len(data.time) - data.time.count()
             if missing > 0 and i > 0:
-                # expand reindex to allow adjacent timebins
+                # expand reindex to allow adjacent chunks
                 # to fill missing values
                 previous = reader(files[i-1])
                 data = pd.concat([previous, frame])
@@ -129,8 +129,8 @@ def load(path, reader, device, prefix=None, extension="*.csv",
         return pd.concat(dataframes)
 
     if start is not None or end is not None:
-        timefilter = timebin_range(start, end)
-        files = timebin_filter(files, timefilter)
+        timefilter = chunk_range(start, end)
+        files = chunk_filter(files, timefilter)
     else:
         timefilter = None
 
@@ -152,34 +152,34 @@ def load(path, reader, device, prefix=None, extension="*.csv",
             return data.loc[start:end]
     return data
 
-def timebinreader(file):
-    """Reads timebin information for the specified file."""
+def chunkreader(file):
+    """Reads acquisition chunk information for the specified file."""
     names = ['time', 'path']
     if file is None:
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
-    timebin = timebin_key(file)
-    data = pd.DataFrame({ names[0]: [timebin], names[1]: [file] })
+    chunk = chunk_key(file)
+    data = pd.DataFrame({ names[0]: [chunk], names[1]: [file] })
     data.set_index('time', inplace=True)
     return data
 
-def timebindata(path, device, extension='*.csv', start=None, end=None, time=None, tolerance=None):
+def chunkdata(path, device, extension='*.csv', start=None, end=None, time=None, tolerance=None):
     '''
-    Extracts all timebin information from the specified root path, sorted chronologically,
-    indicating recorded timebins for the specified device in the arena.
+    Extracts all acquisition chunk information from the specified root path, sorted chronologically,
+    indicating recorded acquisition chunks for the specified device in the arena.
 
     :param str path: The root path where all the data is stored.
-    :param str, device: The device name prefix used to search for timebin files.
-    :param str, optional extension: The optional extension pattern used to search for timebin files.
+    :param str, device: The device name prefix used to search for acquisition chunk files.
+    :param str, optional extension: The optional extension pattern used to search for chunk files.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
     :param datetime, optional time: An object or series specifying the timestamps to extract.
     :param datetime, optional tolerance:
     The maximum distance between original and new timestamps for inexact matches.
-    :return: A pandas data frame containing timebin information, sorted by time.
+    :return: A pandas data frame containing acquisition chunk information, sorted by time.
     '''
     return load(
         path,
-        timebinreader,
+        chunkreader,
         device,
         extension=extension,
         start=start,
