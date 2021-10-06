@@ -5,8 +5,8 @@ import datetime
 import pandas as pd
 import numpy as np
 
-"""The size of each acquisition chunk, in whole hours."""
-CHUNK_SIZE = 1
+"""The duration of each acquisition chunk, in whole hours."""
+CHUNK_DURATION = 1
 _SECONDS_PER_TICK = 32e-6
 
 def aeon(seconds):
@@ -21,10 +21,10 @@ def chunk(time):
     :return: A datetime object or series specifying the acquisition chunk for the measurement timestamp.
     '''
     if isinstance(time, pd.Series):
-        hour = CHUNK_SIZE * (time.dt.hour // CHUNK_SIZE)
+        hour = CHUNK_DURATION * (time.dt.hour // CHUNK_DURATION)
         return pd.to_datetime(time.dt.date) + pd.to_timedelta(hour, 'h')
     else:
-        hour = CHUNK_SIZE * (time.hour // CHUNK_SIZE)
+        hour = CHUNK_DURATION * (time.hour // CHUNK_DURATION)
         return pd.to_datetime(datetime.datetime.combine(time.date(), datetime.time(hour=hour)))
 
 def chunk_range(start, end):
@@ -35,7 +35,7 @@ def chunk_range(start, end):
     :param datetime end: The right bound of the time range.
     :return: A DatetimeIndex representing the acquisition chunk range.
     '''
-    return pd.date_range(chunk(start), chunk(end), freq=pd.DateOffset(hours=CHUNK_SIZE))
+    return pd.date_range(chunk(start), chunk(end), freq=pd.DateOffset(hours=CHUNK_DURATION))
 
 def chunk_key(file):
     """Returns the acquisition chunk key for the specified file name."""
