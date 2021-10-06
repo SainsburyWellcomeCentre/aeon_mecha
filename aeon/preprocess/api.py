@@ -268,6 +268,7 @@ def videoreader(file):
     data.insert(loc=1, column='frame', value=data.index)
     data['time'] = aeon(data['time'])
     data['path'] = os.path.splitext(file)[0] + '.avi'
+    data['epoch'] = file.rsplit('/', maxsplit=3)[1]
     data.set_index('time', inplace=True)
     return data
 
