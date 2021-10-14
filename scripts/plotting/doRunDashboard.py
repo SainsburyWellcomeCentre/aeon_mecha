@@ -120,14 +120,12 @@ def main(argv):
                 type="number",
                 value=float('nan'),
             ),
-            html.Label(id="auxStartTime", children="default start time"),
             html.Label(children="End Time (sec)"),
             dcc.Input(
                 id="endTimeInput",
                 type="number",
                 value=float('nan'),
             ),
-            html.Label(id="auxEndTime", children="default end time"),
             html.H4(children="Sample Rate for Trajectory Plot"),
             dcc.Input(
                 id="sRateInputForTrajectoryPlot",
@@ -169,9 +167,9 @@ def main(argv):
                   ],
                   Input('mouseNameDropDown', 'value'))
     def get_sessions_start_times(mouseNameDropDown_value):
-        sessions_start_times = metadata[metadata["id"]==mouseNameDropDown_value].index
+        sessions_start_times = metadata[metadata["id"]==mouseNameDropDown_value]["start"]
         options_sessions_start_times = [{"label": session_start_time, "value": session_start_time} for session_start_time in sessions_start_times]
-        return options_sessions_start_times, sessions_start_times[0]
+        return options_sessions_start_times, sessions_start_times.iloc[0]
 
     @app.callback([Output('nTrajectoryPointsToPlot', 'children'),],
                   [Input('sRateInputForTrajectoryPlot', 'value'),
@@ -214,7 +212,7 @@ def main(argv):
         component_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
         if component_id == "sessionStartTimeDropdown":
-            sessions_duration_sec = metadata[metadata.index == pd.to_datetime(sessionStartTimeDropdown_value)].duration.item().total_seconds()
+            sessions_duration_sec = metadata[metadata.start == pd.to_datetime(sessionStartTimeDropdown_value)].duration.item().total_seconds()
             slider_min = 0
             slider_max = int(sessions_duration_sec)
             slider_value = [0, slider_max]
