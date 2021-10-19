@@ -186,10 +186,13 @@ class SessionSummary(dj.Computed):
 
         food_patch_statistics = []
         for food_patch_key in food_patch_keys:
-            pellet_count = len(acquisition.FoodPatchEvent * acquisition.EventType
-                               & food_patch_key
-                               & 'event_type = "TriggerPellet"'
-                               & f'event_time BETWEEN "{session_start}" AND "{session_end}"')
+            pellet_events = (
+                    acquisition.FoodPatchEvent * acquisition.EventType
+                    & food_patch_key
+                    & 'event_type = "TriggerPellet"'
+                    & f'event_time BETWEEN "{session_start}" AND "{session_end}"').fetch(
+                'event_time')
+
             # wheel data
             food_patch_description = (acquisition.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
             encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
@@ -200,7 +203,7 @@ class SessionSummary(dj.Computed):
 
             food_patch_statistics.append({
                 **key, **food_patch_key,
-                'pellet_count': pellet_count,
+                'pellet_count': len(pellet_events),
                 'wheel_distance_travelled': wheel_distance_travelled[-1]})
 
         total_pellet_count = np.sum([p['pellet_count'] for p in food_patch_statistics])
