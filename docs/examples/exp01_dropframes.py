@@ -2,7 +2,7 @@ import pandas as pd
 import aeon.preprocess.api as aeon
 
 root = '/ceph/aeon/test2/experiment0.1'
-videobins = aeon.timebindata(root, 'FrameTop')
+videobins = aeon.chunkdata(root, 'FrameTop')
 
 stats = []
 for timebin in videobins.itertuples():

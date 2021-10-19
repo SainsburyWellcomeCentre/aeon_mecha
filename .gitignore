@@ -8,22 +8,7 @@ bin/
 *.so
 
 # Distribution / packaging
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
 .idea/
 
@@ -86,31 +71,13 @@ celerybeat-schedule
 # dotenv
 .env
 
-# virtualenv
-.venv
-venv/
-ENV/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-
 # datajoint
 dj_local_conf.json
 
-# emacs
-**/*~
-**/#*#
-**/.#*
+# IDE
+.vscode/*
+*.code-workspace
+.idea/
 
 # vscode
 .vscode/*
