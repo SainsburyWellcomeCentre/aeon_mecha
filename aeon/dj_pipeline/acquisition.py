@@ -451,10 +451,25 @@ class WheelState(dj.Imported):
 
 
 @schema
+class SessionType(dj.Lookup):
+    definition = """
+    session_type: varchar(32)
+    ---
+    type_description: varchar(1000)
+    """
+
+    contents = [('foraging', 'Freely behaving foraging session,'
+                             ' defined as the time period between the animal'
+                             ' entering and exiting the arena')]
+
+
+@schema
 class Session(dj.Computed):
     definition = """  # A session spans the time when the animal firsts enter the arena to when it exits the arena
     -> Experiment.Subject
     session_start: datetime(6)
+    ---
+    -> SessionType
     """
 
     @property
@@ -464,7 +479,7 @@ class Session(dj.Computed):
                     session_start='enter_exit_time'))
 
     def make(self, key):
-        self.insert1(key)
+        self.insert1({**key, 'session_type': 'foraging'})
 
 
 @schema
