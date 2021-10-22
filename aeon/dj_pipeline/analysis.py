@@ -374,6 +374,9 @@ class SessionSummaryPlot(dj.Computed):
 class SessionRewardRate(dj.Computed):
     definition = """
     -> acquisition.Session
+    ---
+    pellet_rate_timestamps: longblob  # timestamps of the pellet rate over time
+    patch2_patch1_rate_diff: longblob  # rate differences between Patch 2 and Patch 1
     """
 
     class FoodPatch(dj.Part):
@@ -382,7 +385,6 @@ class SessionRewardRate(dj.Computed):
         -> acquisition.ExperimentFoodPatch
         ---
         pellet_rate: longblob  # computed rate of pellet delivery over time
-        pellet_rate_timestamps: longblob  # timestamps of the pellet rate over time
         """
 
     # Work on finished Session with TimeSlice fully populated only
@@ -400,8 +402,11 @@ class SessionRewardRate(dj.Computed):
                 * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
                 & key
                 & 'session_start >= food_patch_install_time'
-                & 'session_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
+                & 'session_end < IFNULL(food_patch_remove_time, "2200-01-01")').proj(
+            'food_patch_description').fetch(as_dict=True)
 
+        pellet_rate_timestamps = None
+        rates = {}
         food_patch_reward_rates = []
         for food_patch_key in food_patch_keys:
             pellet_events = (
@@ -417,15 +422,20 @@ class SessionRewardRate(dj.Computed):
                                                       end=pd.Timestamp(session_end),
                                                       frequency='5s', smooth='120s', center=True)
 
-            timestamps = (pellet_rate.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
-            timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
+            if pellet_rate_timestamps is None:
+                pellet_rate_timestamps = (pellet_rate.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
+                pellet_rate_timestamps = np.array([datetime.datetime.utcfromtimestamp(t)
+                                                   for t in pellet_rate_timestamps])
+
+            rates[food_patch_key.pop('food_patch_description')] = pellet_rate.values
 
             food_patch_reward_rates.append({
                 **key, **food_patch_key,
-                'pellet_rate_timestamps': timestamps,
                 'pellet_rate': pellet_rate.values})
 
-        self.insert1(key)
+        self.insert1({**key,
+                      'pellet_rate_timestamps': pellet_rate_timestamps,
+                      'patch2_patch1_rate_diff': rates['Patch2'] - rates['Patch1']})
         self.FoodPatch.insert(food_patch_reward_rates)
 
 
