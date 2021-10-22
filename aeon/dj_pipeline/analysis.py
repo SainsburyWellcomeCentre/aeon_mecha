@@ -6,9 +6,11 @@ from matplotlib import path
 import pathlib
 import matplotlib.pyplot as plt
 import re
+import datetime
 
 from aeon.preprocess import api as aeon_api
 from aeon.util import plotting as aeon_plotting
+from aeon.util import utils as aeon_utils
 
 from . import lab, acquisition, tracking
 from . import get_schema_name
@@ -192,7 +194,6 @@ class SessionSummary(dj.Computed):
                     & 'event_type = "TriggerPellet"'
                     & f'event_time BETWEEN "{session_start}" AND "{session_end}"').fetch(
                 'event_time')
-
             # wheel data
             food_patch_description = (acquisition.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
             encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
@@ -367,6 +368,65 @@ class SessionSummaryPlot(dj.Computed):
         fig.savefig(summary_plot_filepath, dpi=300)
 
         self.insert1({**key, 'summary_plot_png': summary_plot_filepath})
+
+
+@schema
+class SessionRewardRate(dj.Computed):
+    definition = """
+    -> acquisition.Session
+    """
+
+    class FoodPatch(dj.Part):
+        definition = """
+        -> master
+        -> acquisition.ExperimentFoodPatch
+        ---
+        pellet_rate: longblob  # computed rate of pellet delivery over time
+        pellet_rate_timestamps: longblob  # timestamps of the pellet rate over time
+        """
+
+    # Work on finished Session with TimeSlice fully populated only
+    key_source = (acquisition.Session
+                  & (acquisition.Session * acquisition.SessionEnd * acquisition.TimeSlice
+                     & 'time_slice_end = session_end').proj())
+
+    def make(self, key):
+        session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
+            'session_start', 'session_end')
+
+        # food patch data
+        food_patch_keys = (
+                acquisition.Session * acquisition.SessionEnd
+                * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
+                & key
+                & 'session_start >= food_patch_install_time'
+                & 'session_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
+
+        food_patch_reward_rates = []
+        for food_patch_key in food_patch_keys:
+            pellet_events = (
+                    acquisition.FoodPatchEvent * acquisition.EventType
+                    & food_patch_key
+                    & 'event_type = "TriggerPellet"'
+                    & f'event_time BETWEEN "{session_start}" AND "{session_end}"').fetch(
+                'event_time')
+            # pellet event rate
+            pellet_events = pd.DataFrame({'event_time': pellet_events}).set_index('event_time')
+            pellet_rate = aeon_utils.get_events_rates(events=pellet_events, window_len_sec=600,
+                                                      start=pd.Timestamp(session_start),
+                                                      end=pd.Timestamp(session_end),
+                                                      frequency='5s', smooth='120s', center=True)
+
+            timestamps = (pellet_rate.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
+            timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
+
+            food_patch_reward_rates.append({
+                **key, **food_patch_key,
+                'pellet_rate_timestamps': timestamps,
+                'pellet_rate': pellet_rate.values})
+
+        self.insert1(key)
+        self.FoodPatch.insert(food_patch_reward_rates)
 
 
 # ---------- HELPER ------------------
