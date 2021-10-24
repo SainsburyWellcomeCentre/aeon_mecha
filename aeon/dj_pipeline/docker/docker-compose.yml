@@ -1,0 +1,52 @@
+version: "2.4"
+
+# map raw data folder on local host machine to existing directory in container
+x-ceph-volume:
+  &default-ceph-vol
+  type: bind
+  source: ~/SSHFS/aeon/ceph/aeon
+  target: /ceph/aeon
+
+# map shared folder on local host machine to $HOME/djstore in container
+x-djstore-volume:
+  &default-djstore-vol
+  type: bind
+  source: ~/datajoint/projects/Aeon/mnt/djstore
+  target: /home/anaconda/djstore
+
+# common options that are shared among different services
+x-aeon-ingest-common:
+  &default-aeon-ingest
+  platform: linux/amd64
+  build:
+    context: ./
+    args:
+      - GITHUB_USER=vathes
+      - GITHUB_REPO=aeon_mecha
+      - GITHUB_BRANCH=datajoint_pipeline
+      - SSH_KEY
+  environment:
+    - DJ_USER=jburling
+    - DJ_PASS=******
+    - DJ_HOST=host.docker.internal
+  volumes:
+    - *default-djstore-vol
+    - *default-ceph-vol
+  # user: 801150979:anaconda
+  extra_hosts:
+    - host.docker.internal:host-gateway # 172.17.0.1
+  scale: 1 # deprecated
+  command: tail -f /dev/null
+
+services:
+  aeon_high:
+    << : *default-aeon-ingest
+    # command: conda run -n aeon_env aeon_ingest high -d 20 -s 1 -m -1
+
+  aeon_mid:
+    << : *default-aeon-ingest
+    # command: conda run -n aeon_env aeon_ingest mid -d 20 -s 1 -m -1
+
+  aeon_low:
+    << : *default-aeon-ingest
+    # command: conda run -n aeon_env aeon_ingest low -d 20 -s 1 -m -1

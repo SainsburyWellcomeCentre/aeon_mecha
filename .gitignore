@@ -2,27 +2,13 @@
 __pycache__/
 *.py[cod]
 *$py.class
+bin/
 
 # C extensions
 *.so
 
 # Distribution / packaging
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
 *.egg
 .idea/
 
@@ -71,6 +57,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+*checkpoint.ipynb
 
 # pyenv
 .python-version
@@ -84,30 +71,20 @@ celerybeat-schedule
 # dotenv
 .env
 
-# virtualenv
-.venv
-venv/
-ENV/
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-
 # datajoint
 dj_local_conf.json
 
-# emacs
-**/*~
-**/#*#
-**/.#*
+# IDE
+.vscode/*
+*.code-workspace
+.idea/
 
-docker-compose.y*ml
+# vscode
+.vscode/*
+*.code-workspace
+
+# misc
+**/.DS_Store
+log*.txt
+scratch/
+scratch*.py
