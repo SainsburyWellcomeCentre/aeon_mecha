@@ -6,6 +6,7 @@ import argparse
 import plotly.graph_objects as go
 import plotly.subplots
 import plotly.express as px
+import matplotlib.pyplot as plt
 
 from aeon.dj_pipeline import acquisition, analysis
 
@@ -40,6 +41,7 @@ def plot_reward_rate_differences(subject_keys, save_figure=False):
         rateDiffs_matrix[row_index, :len(rate_diff)] = rate_diff
 
     absZmax = np.nanmax(np.absolute(rateDiffs_matrix))
+
     fig = px.imshow(img=rateDiffs_matrix, x=x_labels, y=y_labels,
                     zmin=-absZmax, zmax=absZmax, aspect="auto",
                     color_continuous_scale='RdBu_r',
@@ -55,4 +57,3 @@ def plot_reward_rate_differences(subject_keys, save_figure=False):
         fig.write_image(fig_filename_pattern.format("png"))
         fig.write_html(fig_filename_pattern.format("html"))
     fig.show()
-    
