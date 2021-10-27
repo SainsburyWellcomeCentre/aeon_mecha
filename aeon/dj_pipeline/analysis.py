@@ -61,7 +61,7 @@ class SessionTimeDistribution(dj.Computed):
                      & 'time_slice_count = tracking_count'))
 
     def make(self, key):
-        raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
+        raw_data_dir = acquisition.Experiment.get_data_directory(key)
         session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
             'session_start', 'session_end')
 
@@ -159,7 +159,7 @@ class SessionSummary(dj.Computed):
                      & 'time_slice_count = tracking_count'))
 
     def make(self, key):
-        raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
+        raw_data_dir = acquisition.Experiment.get_data_directory(key)
         session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
             'session_start', 'session_end')
 
@@ -232,7 +232,7 @@ class SessionSummaryPlot(dj.Computed):
     color_code = {'Patch1': 'b', 'Patch2': 'r', 'arena': 'g', 'corridor': 'gray', 'nest': 'k'}
 
     def make(self, key):
-        raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
+        raw_data_dir = acquisition.Experiment.get_data_directory(key)
 
         session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
             'session_start', 'session_end')

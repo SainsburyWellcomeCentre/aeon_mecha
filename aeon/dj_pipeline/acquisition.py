@@ -13,7 +13,7 @@ from . import get_schema_name, paths
 schema = dj.schema(get_schema_name('acquisition'))
 
 
-# ------------------- DATASET ------------------------
+# ------------------- Data repository/directory ------------------------
 
 @schema
 class PipelineRepository(dj.Lookup):
@@ -22,6 +22,15 @@ class PipelineRepository(dj.Lookup):
     """
 
     contents = zip(['ceph_aeon'])
+
+
+@schema
+class DirectoryType(dj.Lookup):
+    definition = """
+    directory_type: varchar(16)
+    """
+
+    contents = zip(['raw', 'preprocessing', 'analysis', 'quality-control'])
 
 
 # ------------------- GENERAL INFORMATION ABOUT AN EXPERIMENT --------------------
@@ -47,20 +56,28 @@ class Experiment(dj.Manual):
     class Directory(dj.Part):
         definition = """
         -> master
-        directory_type: enum('raw', 'preprocessing', 'analysis')
+        -> DirectoryType
         ---
         -> PipelineRepository
         directory_path: varchar(255)
         """
 
     @classmethod
-    def get_raw_data_directory(cls, experiment_key):
-        repo_name, path = (cls.Directory
-                           & experiment_key
-                           & 'directory_type = "raw"').fetch1(
+    def get_data_directory(cls, experiment_key, directory_type='raw', as_posix=False):
+        repo_name, dir_path = (cls.Directory
+                               & experiment_key
+                               & {'directory_type': directory_type}).fetch1(
             'repository_name', 'directory_path')
-        root = paths.get_repository_path(repo_name)
-        return root / path
+        data_directory = paths.get_repository_path(repo_name) / dir_path
+        if not data_directory.exists():
+            return None
+        return data_directory.as_posix() if as_posix else data_directory
+
+    @classmethod
+    def get_data_directories(cls, experiment_key, directory_types=['raw'], as_posix=False):
+        return [cls.get_data_directory(experiment_key,
+                                       dir_type, as_posix=as_posix)
+                for dir_type in directory_types]
 
 
 @schema
@@ -141,6 +158,7 @@ class Chunk(dj.Manual):
     chunk_start: datetime(6)  # datetime of the start of a given acquisition chunk
     ---
     chunk_end: datetime(6)    # datetime of the end of a given acquisition chunk
+    -> Experiment.Directory   # the data directory storing the acquired data for a given chunk
     """
 
     class File(dj.Part):
@@ -149,7 +167,7 @@ class Chunk(dj.Manual):
         file_number: int
         ---
         file_name: varchar(128)
-        -> PipelineRepository
+        -> Experiment.Directory
         file_path: varchar(255)  # path of the file, relative to the data repository
         """
 
@@ -157,47 +175,57 @@ class Chunk(dj.Manual):
     def generate_chunks(cls, experiment_name):
         assert Experiment & {'experiment_name': experiment_name}, f'Experiment {experiment_name} does not exist!'
 
-        repo_name, path = (Experiment.Directory
-                           & {'experiment_name': experiment_name}
-                           & 'directory_type = "raw"').fetch1(
-            'repository_name', 'directory_path')
-        root = paths.get_repository_path(repo_name)
-        raw_data_dir = root / path
+        raw_data_dirs = Experiment.get_data_directories(
+            {'experiment_name': experiment_name},
+            directory_types=['quality-control', 'raw'], as_posix=True)
+        raw_data_dirs = {dir_type: data_dir for dir_type, data_dir in zip(
+            ['quality-control', 'raw'], raw_data_dirs)}
 
-        chunk_rep_file_str = 'FrameTop_'
-        chunk_rep_files = sorted(list(raw_data_dir.rglob(f'{chunk_rep_file_str}*.csv')))
+        device_name = 'FrameTop'
+        all_chunks = aeon_api.chunkdata(raw_data_dirs.values(), device_name)
 
         chunk_list, file_list, file_name_list = [], [], []
-        for chunk_rep_file in chunk_rep_files:
-            chunk_start = datetime.datetime.strptime(
-                chunk_rep_file.stem.replace(chunk_rep_file_str, ''), '%Y-%m-%dT%H-%M-%S')
-            chunk_end = chunk_start + datetime.timedelta(hours=aeon_api.BIN_SIZE)
+        for _, chunk in all_chunks.iterrows():
+            chunk_rep_file = pathlib.Path(chunk.path)
+            chunk_start = chunk.name
+            chunk_end = chunk_start + datetime.timedelta(hours=aeon_api.CHUNK_DURATION)
 
             # --- insert to Chunk ---
-            chunk_key = {'experiment_name': experiment_name,
-                            'chunk_start': chunk_start}
+            chunk_key = {'experiment_name': experiment_name, 'chunk_start': chunk_start}
 
             if chunk_key in cls.proj() or chunk_rep_file.name in file_name_list:
                 continue
 
-            chunk_list.append({**chunk_key,
-                                  'chunk_end': chunk_end})
+            # chunk file and directory
+            for k, v in raw_data_dirs.items():
+                raw_data_dir = v
+                if pathlib.Path(raw_data_dir) in list(chunk_rep_file.parents):
+                    directory = (Experiment.Directory.proj('repository_name')
+                                 & {'experiment_name': experiment_name,
+                                    'directory_type': k}).fetch1()
+                    repo_path = paths.get_repository_path(directory.pop('repository_name'))
+                    break
+            else:
+                raise FileNotFoundError(f'Unable to identify the directory'
+                                        f' where this chunk is from: {chunk_rep_file}')
+
+            chunk_list.append({**chunk_key, **directory, 'chunk_end': chunk_end})
             file_name_list.append(chunk_rep_file.name)  # handle duplicated files in different folders
 
             # -- files --
-            file_datetime_str = chunk_rep_file.stem.replace(chunk_rep_file_str, '')
+            file_datetime_str = chunk_rep_file.stem.replace(f'{device_name}_', '')
             files = list(pathlib.Path(raw_data_dir).rglob(f'*{file_datetime_str}*'))
 
             file_list.extend(
                 {**chunk_key,
+                 **directory,
                  'file_number': f_idx,
                  'file_name': f.name,
-                 'repository_name': repo_name,
-                 'file_path': f.relative_to(root).as_posix()}
+                 'file_path': f.relative_to(repo_path).as_posix()}
                 for f_idx, f in enumerate(files))
 
         # insert
-        print(f'Insert {len(chunk_list)} new Chunk')
+        print(f'Insert {len(chunk_list)} new Chunks')
 
         with cls.connection.transaction:
             cls.insert(chunk_list)
@@ -226,7 +254,7 @@ class SubjectEnterExit(dj.Imported):
         chunk_start, chunk_end = (Chunk & key).fetch1(
             'chunk_start', 'chunk_end')
 
-        raw_data_dir = Experiment.get_raw_data_directory(key)
+        raw_data_dir = Experiment.get_data_directory(key)
         session_info = aeon_api.sessiondata(raw_data_dir.as_posix(),
                                             start=pd.Timestamp(chunk_start),
                                             end=pd.Timestamp(chunk_end))
@@ -257,7 +285,7 @@ class SubjectWeight(dj.Imported):
         subject_list = (Experiment.Subject & key).fetch('subject')
         chunk_start, chunk_end = (Chunk & key).fetch1(
             'chunk_start', 'chunk_end')
-        raw_data_dir = Experiment.get_raw_data_directory(key)
+        raw_data_dir = Experiment.get_data_directory(key)
         session_info = aeon_api.sessiondata(raw_data_dir.as_posix(),
                                             start=pd.Timestamp(chunk_start),
                                             end=pd.Timestamp(chunk_end))
@@ -288,7 +316,7 @@ class SubjectAnnotation(dj.Imported):
         chunk_start, chunk_end = (Chunk & key).fetch1(
             'chunk_start', 'chunk_end')
 
-        raw_data_dir = Experiment.get_raw_data_directory(key)
+        raw_data_dir = Experiment.get_data_directory(key)
         annotations = aeon_api.annotations(raw_data_dir.as_posix(),
                                            start=pd.Timestamp(chunk_start),
                                            end=pd.Timestamp(chunk_end))
@@ -343,7 +371,7 @@ class FoodPatchEvent(dj.Imported):
         chunk_start, chunk_end = (Chunk & key).fetch1('chunk_start', 'chunk_end')
         food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
 
-        raw_data_dir = Experiment.get_raw_data_directory(key)
+        raw_data_dir = Experiment.get_data_directory(key)
         pellet_data = aeon_api.pelletdata(raw_data_dir.as_posix(),
                                           device=food_patch_description,
                                           start=pd.Timestamp(chunk_start),
@@ -389,7 +417,7 @@ class FoodPatchWheel(dj.Imported):
         chunk_start, chunk_end = (Chunk & key).fetch1('chunk_start', 'chunk_end')
         food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
 
-        raw_data_dir = Experiment.get_raw_data_directory(key)
+        raw_data_dir = Experiment.get_data_directory(key)
         wheel_data = aeon_api.encoderdata(raw_data_dir.as_posix(),
                                           device=food_patch_description,
                                           start=pd.Timestamp(chunk_start),
@@ -434,7 +462,7 @@ class WheelState(dj.Imported):
     def make(self, key):
         chunk_start, chunk_end = (Chunk & key).fetch1('chunk_start', 'chunk_end')
         food_patch_description = (ExperimentFoodPatch & key).fetch1('food_patch_description')
-        raw_data_dir = Experiment.get_raw_data_directory(key)
+        raw_data_dir = Experiment.get_data_directory(key)
         wheel_state = aeon_api.patchdata(raw_data_dir.as_posix(),
                                          patch=food_patch_description,
                                          start=pd.Timestamp(chunk_start),
@@ -500,7 +528,7 @@ class SessionEnd(dj.Computed):
 
     key_source = (Session
                   - NeverExitedSession
-                  & (Session * SubjectEnterExit.Time
+                  & (Session.proj() * SubjectEnterExit.Time
                      & 'enter_exit_event = "exit"'
                      & 'enter_exit_time > session_start'))
 

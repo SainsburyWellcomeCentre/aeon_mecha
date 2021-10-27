@@ -38,7 +38,7 @@ class SubjectPosition(dj.Imported):
         """
         time_slice_start, time_slice_end = (acquisition.TimeSlice & key).fetch1('time_slice_start', 'time_slice_end')
 
-        raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
+        raw_data_dir = acquisition.Experiment.get_data_directory(key)
         positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
                                              start=pd.Timestamp(time_slice_start),
                                              end=pd.Timestamp(time_slice_end))
