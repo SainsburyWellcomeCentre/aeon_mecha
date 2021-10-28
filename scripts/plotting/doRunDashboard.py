@@ -9,6 +9,7 @@ import datetime
 import flask
 
 import plotly.graph_objects as go
+import plotly.express as px
 import plotly.subplots
 import dash
 import dash_core_components as dcc
@@ -54,6 +55,8 @@ def main(argv):
     parser.add_argument("--trajectories_height", help="height of the trajectories plot", type=int, default=1000)
     parser.add_argument("--trajectories_colorscale", help="colorscale for trajectories", default="Rainbow")
     parser.add_argument("--trajectories_opacity", help="opacity for trajectories", default=0.3, type=float)
+    parser.add_argument("--mouse_figure_width", help="width of the mouse_figure plot", type=int, default=1000)
+    parser.add_argument("--mouse_figure_height", help="height of the mouse_figure plot", type=int, default=1000)
     parser.add_argument("--travelled_distance_sample_rate", help="sampling rate for travelled distance plot", default=10.0, type=float)
 
     args = parser.parse_args()
@@ -83,6 +86,8 @@ def main(argv):
     trajectories_width = args.trajectories_width
     trajectories_colorscale = args.trajectories_colorscale
     trajectories_opacity = args.trajectories_opacity
+    mouse_figure_height = args.mouse_figure_height
+    mouse_figure_width = args.mouse_figure_width
     travelled_distance_sample_rate  = args.travelled_distance_sample_rate
 
     metadata = aeon.preprocess.api.sessiondata(root)
@@ -142,6 +147,9 @@ def main(argv):
                     dcc.Graph(
                         id="trajectoryGraph",
                     ),
+                    dcc.Graph(
+                        id="mouse_graph",
+                    ),
                     html.H4(children="Activities"),
                     dcc.Graph(
                         id="activitiesGraph",
@@ -161,6 +169,27 @@ def main(argv):
     external_stylesheets = ["https://codepen.io/chriddyp/pen/bWLwgP.css"]
     app = dash.Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
     app.layout = serve_layout()
+
+    @app.callback(
+        Output('mouse_graph', 'figure'),
+        Input('trajectoryGraph', 'clickData'),
+        State('sessionStartTimeDropdown', 'value'),
+    )
+    def display_mouse_figure(trajectory_graph_clickData,
+                             session_start_time_dropdown_value):
+        video_data_duration_sec = 0.1
+        frame_delay = trajectory_graph_clickData["points"][0]["customdata"]
+        session_start_time_dropdown_value = pd.to_datetime(session_start_time_dropdown_value)
+        frame_start_time = session_start_time_dropdown_value + datetime.timedelta(seconds=frame_delay)
+        video_data_end_time = session_start_time_dropdown_value + datetime.timedelta(seconds=frame_delay+video_data_duration_sec)
+        video_data = aeon.preprocess.api.videodata(root, 'FrameTop', start=frame_start_time, end=video_data_end_time)
+        first_two_video_data_rows = video_data.iloc[0:1]
+        frame = next(aeon.preprocess.api.videoframes(first_two_video_data_rows))
+        fig = px.imshow(frame, color_continuous_scale="gray")
+        fig.update_layout(height=mouse_figure_height, width=mouse_figure_width)
+        fig.update_xaxes(showticklabels=False)
+        fig.update_yaxes(showticklabels=False)
+        return fig
 
     @app.callback([Output('sessionStartTimeDropdown', 'options'),
                    Output('sessionStartTimeDropdown', 'value'),
@@ -309,6 +338,7 @@ def main(argv):
                                      plot_bgcolor='rgba(0,0,0,0)',
                                      height=trajectories_height,
                                      width=trajectories_width)
+        fig_trajectory.update_yaxes(autorange="reversed") 
 
         # activity figure
         positions_labels = aeon.preprocess.utils.get_positions_labels(
