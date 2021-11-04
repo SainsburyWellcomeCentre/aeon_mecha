@@ -126,6 +126,10 @@ def load(path, reader, device, prefix=None, extension="*.csv",
             else:
                 data.drop(columns='time', inplace=True)
             dataframes.append(data)
+
+        if len(dataframes) == 0:
+            return reader(None)
+            
         return pd.concat(dataframes)
 
     if start is not None or end is not None:
