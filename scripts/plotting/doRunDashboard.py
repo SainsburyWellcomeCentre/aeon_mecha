@@ -30,7 +30,8 @@ def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--local", help="run the flask server only locally", action="store_true")
     parser.add_argument("--port", help="port on which to run the falsh app", default=8050, type=int)
-    parser.add_argument("--debug", help="start GUI with debug functionality", action="store_true")
+    parser.add_argument("--debug", help="start GUI with debug functionality",
+                        action="store_true")
     parser.add_argument("--root", help="Root path for data access", default="/ceph/aeon/test2/experiment0.1")
     parser.add_argument("--patches_coordinates", help="coordinates of patches", default="584,597,815,834;614,634,252,271")
     parser.add_argument("--nest_coordinates", help="coordinates of nest", default="170,260,450,540")
@@ -97,6 +98,8 @@ def main(argv):
 
     mouse_names = metadata["id"].unique()
     options_mouse_names = [{"label": mouse_name, "value": mouse_name} for mouse_name in mouse_names]
+    cameras = ["FrameTop", "FramePatch1", "FramePatch2", "FrameNorth", "FrameSouth", "FrameEast", "FrameWest", "FrameGate"]
+    options_cameras = [{"label": camera, "value": camera} for camera in cameras]
     sessions_start_times = metadata[metadata["id"]==mouse_names[0]].index
     options_sessions_start_times = [{"label": session_start_time, "value": session_start_time} for session_start_time in sessions_start_times]
     def serve_layout():
@@ -108,12 +111,14 @@ def main(argv):
                 id="mouseNameDropDown",
                 options=options_mouse_names,
                 value=mouse_names[0],
+                style={'width': '50%'},
             ),
             html.H4(children="Session Start Time"),
             dcc.Dropdown(
                 id="sessionStartTimeDropdown",
                 options=options_sessions_start_times,
                 value=sessions_start_times[0],
+                style={'width': '50%'},
             ),
             html.H4(children="Plotting Time (sec)"),
             dcc.RangeSlider(
@@ -124,18 +129,20 @@ def main(argv):
                 id="startTimeInput",
                 type="number",
                 value=float('nan'),
+                style={'width': '10%'},
             ),
             html.Label(children="End Time (sec)"),
             dcc.Input(
                 id="endTimeInput",
                 type="number",
                 value=float('nan'),
+                style={'width': '10%'},
             ),
             html.H4(children="Sample Rate for Trajectory Plot"),
             dcc.Input(
                 id="sRateInputForTrajectoryPlot",
                 type="number",
-                value=sample_rate_for_trajectory0,
+                style={'width': '10%'},
             ),
             html.Label(id="nTrajectoryPointsToPlot"),
             html.Hr(),
@@ -143,12 +150,36 @@ def main(argv):
             html.Div(
                 id="plotsContainer",
                 children=[
-                    html.H4(children="Trajectory"),
-                    dcc.Graph(
-                        id="trajectoryGraph",
-                    ),
-                    dcc.Graph(
-                        id="mouse_graph",
+                    # html.H4(children="Trajectory"),
+                    html.Div(
+                        children=[
+                            html.Div(
+                                children=[
+                                    dcc.Graph(
+                                        id="trajectoryGraph",
+                                    ),
+                                ],
+                                style={'padding': 10, 'flex': 1}
+                            ),
+                            html.Div(
+                                id="mouse_graph_container",
+                                children=[
+                                    html.H4(children="Camera"),
+                                    dcc.Dropdown(
+                                        id="cameraDropDown",
+                                        options=options_cameras,
+                                        value=cameras[0],
+                                        style={'width': '40%'},
+                                    ),
+                                    dcc.Graph(
+                                        id="mouse_graph",
+                                    ),
+                                ],
+                                style={'padding': 10, 'flex': 1},
+                                hidden=True,
+                            )
+                        ], 
+                        style={'display': 'flex', 'flex-direction': 'row'}
                     ),
                     html.H4(children="Activities"),
                     dcc.Graph(
@@ -162,7 +193,8 @@ def main(argv):
                     dcc.Graph(
                         id="rewardRateGraph",
                     )
-                ], hidden=True)
+                ],
+                hidden=True)
         ])
         return aDiv
 
@@ -170,35 +202,15 @@ def main(argv):
     app = dash.Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
     app.layout = serve_layout()
 
-    @app.callback(
-        Output('mouse_graph', 'figure'),
-        Input('trajectoryGraph', 'clickData'),
-        State('sessionStartTimeDropdown', 'value'),
-    )
-    def display_mouse_figure(trajectory_graph_clickData,
-                             session_start_time_dropdown_value):
-        video_data_duration_sec = 0.1
-        frame_delay = trajectory_graph_clickData["points"][0]["customdata"]
-        session_start_time_dropdown_value = pd.to_datetime(session_start_time_dropdown_value)
-        frame_start_time = session_start_time_dropdown_value + datetime.timedelta(seconds=frame_delay)
-        video_data_end_time = session_start_time_dropdown_value + datetime.timedelta(seconds=frame_delay+video_data_duration_sec)
-        video_data = aeon.preprocess.api.videodata(root, 'FrameTop', start=frame_start_time, end=video_data_end_time)
-        first_two_video_data_rows = video_data.iloc[0:1]
-        frame = next(aeon.preprocess.api.videoframes(first_two_video_data_rows))
-        fig = px.imshow(frame, color_continuous_scale="gray")
-        fig.update_layout(height=mouse_figure_height, width=mouse_figure_width)
-        fig.update_xaxes(showticklabels=False)
-        fig.update_yaxes(showticklabels=False)
-        return fig
-
     @app.callback([Output('sessionStartTimeDropdown', 'options'),
                    Output('sessionStartTimeDropdown', 'value'),
+                   Output('sRateInputForTrajectoryPlot', 'value'),
                   ],
                   Input('mouseNameDropDown', 'value'))
     def get_sessions_start_times(mouseNameDropDown_value):
         sessions_start_times = metadata[metadata["id"]==mouseNameDropDown_value]["start"]
         options_sessions_start_times = [{"label": session_start_time, "value": session_start_time} for session_start_time in sessions_start_times]
-        return options_sessions_start_times, sessions_start_times.iloc[0]
+        return options_sessions_start_times, sessions_start_times.iloc[0], sample_rate_for_trajectory0
 
     @app.callback([Output('nTrajectoryPointsToPlot', 'children'),],
                   [Input('sRateInputForTrajectoryPlot', 'value'),
@@ -291,15 +303,13 @@ def main(argv):
                   [State('mouseNameDropDown', 'value'),
                    State('sessionStartTimeDropdown', 'value'),
                    State('plotTimeRangeSlider', 'value'),
-                   State('sRateInputForTrajectoryPlot', 'value'),
-                   State('plotsContainer', 'hidden')],
+                   State('sRateInputForTrajectoryPlot', 'value')],
                   )
     def update_plots(plotButton_nClicks,
                      mouseNameDropDown_value,
                      sessionStartTimeDropdown_value,
                      plotTimeRangeSlider_value,
-                     sRateForTrajectoryPlot_value,
-                     plotsContainer_hidden):
+                     sRateForTrajectoryPlot_value):
         if plotButton_nClicks == 0:
             print("update prevented ({:s})".format(flask.request.remote_addr))
             raise dash.exceptions.PreventUpdate
@@ -420,9 +430,41 @@ def main(argv):
             fig_rewardRate.update_xaxes(title_text=xlabel_rewardRate, row=1, col=i+1)
 
         plotsContainer_hidden = False
-        plotButton_children = ["Update"]
+        plotButton_children = "Update"
 
         return fig_trajectory, fig_cumTimePerActivity, fig_travelledDistance, fig_rewardRate, plotsContainer_hidden, plotButton_children
+
+    @app.callback(
+        [Output('mouse_graph', 'figure'),
+         Output('mouse_graph_container', 'hidden')],
+        [Input('trajectoryGraph', 'clickData'),
+         Input('cameraDropDown', 'value')],
+        [State('sessionStartTimeDropdown', 'value')]
+    )
+    def display_mouse_figure(trajectory_graph_clickData,
+                             camera_dropdown_value,
+                             session_start_time_dropdown_value):
+        if trajectory_graph_clickData is None:
+            raise dash.exceptions.PreventUpdate
+        video_data_duration_sec = 0.1
+        frame_delay = trajectory_graph_clickData["points"][0]["customdata"]
+        session_start_time_dropdown_value = pd.to_datetime(session_start_time_dropdown_value)
+        frame_start_time = session_start_time_dropdown_value + datetime.timedelta(seconds=frame_delay)
+        video_data_end_time = session_start_time_dropdown_value + datetime.timedelta(seconds=frame_delay+video_data_duration_sec)
+        video_data = aeon.preprocess.api.videodata(root, camera_dropdown_value, start=frame_start_time, end=video_data_end_time)
+        first_two_video_data_rows = video_data.iloc[0:1]
+        frame = next(aeon.preprocess.api.videoframes(first_two_video_data_rows))
+        # fig = px.imshow(frame, color_continuous_scale="gray")
+        layout = go.Layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)'
+        )
+        fig = go.Figure(data=go.Image(z=frame), layout=layout)
+        fig.update_layout(height=mouse_figure_height, width=mouse_figure_width)
+        fig.update_xaxes(showticklabels=False)
+        fig.update_yaxes(showticklabels=False)
+        mouse_graph_container_hidden = False
+        return fig, mouse_graph_container_hidden
 
     if(args.local):
         app.run_server(debug=args.debug, port=args.port)
