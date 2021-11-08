@@ -66,8 +66,10 @@ for session in data.itertuples():                                     # for all 
     distp2 = distance(position, (p2x, p2y))
     in_corridor = (dist0 < outer) & (dist0 > inner)
     in_nest = dist0 > outer
-    in_patch1 = activepatch(wheel1, distp1 < patchradius, position)
-    in_patch2 = activepatch(wheel2, distp2 < patchradius, position)
+    # in_patch1 = activepatch(wheel1, distp1 < patchradius, position)
+    in_patch1 = activepatch(wheel1, distp1 < patchradius)
+    # in_patch2 = activepatch(wheel2, distp2 < patchradius, position)
+    in_patch2 = activepatch(wheel2, distp2 < patchradius)
     in_arena = ~in_corridor & ~in_nest & ~in_patch1 & ~in_patch2
     ethogram = pd.Series('other', index=position.index)
     ethogram[in_corridor] = 'corridor'
@@ -84,6 +86,7 @@ for session in data.itertuples():                                     # for all 
 
     print("Exporting side video...")
     video = aeon.videodata(root, 'FramePatch1', start=start, end=end)
+    import pdb; pdb.set_trace()
     clips = triggerclip(video, events, before='5s', after='10s')
     clips = clips[clips.clip_sequence.isin(list(range(0,5)))]
     movie = collatemovie(clips, lambda f:gridframes(f, 640, 1800, (5, 1)))
@@ -129,6 +132,7 @@ for session in data.itertuples():                                     # for all 
     frame_ax = fig.add_subplot(gs[0:2,0])
     wheel_ax = fig.add_subplot(gs[2, 0])
     video = aeon.videodata(root, 'FramePatch1', start=start, end=end)
+    import pdb; pdb.set_trace()
     clips = triggerclip(video, events, before='6s', after='11s')
     clips = clips[clips.clip_sequence == 5]
     movie = aeon.videoframes(clips)
