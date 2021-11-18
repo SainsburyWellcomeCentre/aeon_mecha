@@ -86,7 +86,6 @@ for session in data.itertuples():                                     # for all 
 
     print("Exporting side video...")
     video = aeon.videodata(root, 'FramePatch1', start=start, end=end)
-    import pdb; pdb.set_trace()
     clips = triggerclip(video, events, before='5s', after='10s')
     clips = clips[clips.clip_sequence.isin(list(range(0,5)))]
     movie = collatemovie(clips, lambda f:gridframes(f, 640, 1800, (5, 1)))
@@ -132,7 +131,6 @@ for session in data.itertuples():                                     # for all 
     frame_ax = fig.add_subplot(gs[0:2,0])
     wheel_ax = fig.add_subplot(gs[2, 0])
     video = aeon.videodata(root, 'FramePatch1', start=start, end=end)
-    import pdb; pdb.set_trace()
     clips = triggerclip(video, events, before='6s', after='11s')
     clips = clips[clips.clip_sequence == 5]
     movie = aeon.videoframes(clips)
@@ -166,4 +164,3 @@ for session in data.itertuples():                                     # for all 
         writer.write(img)
     writer.release()
     plt.close(fig)
-    break
