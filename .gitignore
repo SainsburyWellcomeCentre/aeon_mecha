@@ -11,4 +11,5 @@ videos/
 *~
 *.swp
 .nfs*
+*.avi
 __pycache__
