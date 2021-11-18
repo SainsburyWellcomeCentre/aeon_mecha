@@ -48,7 +48,7 @@ def main(argv):
     metadata = metadata[metadata.id.str.startswith('BAA')]
     metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
     metadata = api.sessionduration(metadata)
-    session_start = metadata.index[session]
+    session_start = metadata.iloc[session].start
     duration_sec = metadata.iloc[session].duration.total_seconds()
     if tf_relative is None:
         tf_relative = args.start_time+duration_sec

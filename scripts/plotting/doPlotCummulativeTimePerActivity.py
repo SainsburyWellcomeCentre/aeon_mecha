@@ -8,6 +8,7 @@ import pathlib
 import argparse
 import plotly.graph_objects as go
 
+sys.path.append("../..")
 import aeon.preprocess.api as api
 import aeon.preprocess.utils
 import aeon.plotting.plot_functions
@@ -42,7 +43,7 @@ def main(argv):
     metadata = metadata[metadata.id.str.startswith('BAA')]
     metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
     metadata = api.sessionduration(metadata)
-    session_start = metadata.index[session]
+    session_start = metadata.iloc[session].start
     t0_absolute = session_start + datetime.timedelta(seconds=t0_relative)
     tf_absolute = session_start + datetime.timedelta(seconds=tf_relative)
 
