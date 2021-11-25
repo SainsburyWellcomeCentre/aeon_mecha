@@ -29,7 +29,7 @@ def main(argv):
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--local", help="run the flask server only locally", action="store_true")
-    parser.add_argument("--port", help="port on which to run the falsh app", default=8050, type=int)
+    parser.add_argument("--port", help="port on which to run the falsh app", default=8060, type=int)
     parser.add_argument("--debug", help="start GUI with debug functionality",
                         action="store_true")
     parser.add_argument("--root", help="Root path for data access", default="/ceph/aeon/test2/experiment0.1")
@@ -210,6 +210,8 @@ def main(argv):
     def get_sessions_start_times(mouseNameDropDown_value):
         sessions_start_times = metadata[metadata["id"]==mouseNameDropDown_value]["start"]
         options_sessions_start_times = [{"label": session_start_time, "value": session_start_time} for session_start_time in sessions_start_times]
+        # import pdb; pdb.set_trace()
+        print("*** mouseNameDropDown_value={:s} ***".format(mouseNameDropDown_value))
         return options_sessions_start_times, sessions_start_times.iloc[0], sample_rate_for_trajectory0
 
     @app.callback([Output('nTrajectoryPointsToPlot', 'children'),],
@@ -300,13 +302,11 @@ def main(argv):
                    Output('plotButton', 'children'),
                   ],
                   [Input('plotButton', 'n_clicks')],
-                  [State('mouseNameDropDown', 'value'),
-                   State('sessionStartTimeDropdown', 'value'),
+                  [State('sessionStartTimeDropdown', 'value'),
                    State('plotTimeRangeSlider', 'value'),
                    State('sRateInputForTrajectoryPlot', 'value')],
                   )
     def update_plots(plotButton_nClicks,
-                     mouseNameDropDown_value,
                      sessionStartTimeDropdown_value,
                      plotTimeRangeSlider_value,
                      sRateForTrajectoryPlot_value):
