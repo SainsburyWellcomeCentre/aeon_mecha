@@ -59,6 +59,7 @@ def main(argv):
     parser.add_argument("--mouse_figure_width", help="width of the mouse_figure plot", type=int, default=1000)
     parser.add_argument("--mouse_figure_height", help="height of the mouse_figure plot", type=int, default=1000)
     parser.add_argument("--travelled_distance_sample_rate", help="sampling rate for travelled distance plot", default=10.0, type=float)
+    parser.add_argument("--metadata_refresh_interval", help="metadata refresh interval (msec)", default=600*1000, type=int)
 
     args = parser.parse_args()
 
@@ -90,6 +91,7 @@ def main(argv):
     mouse_figure_height = args.mouse_figure_height
     mouse_figure_width = args.mouse_figure_width
     travelled_distance_sample_rate  = args.travelled_distance_sample_rate
+    metadata_refresh_interval  = args.metadata_refresh_interval
 
     metadata = aeon.preprocess.api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
@@ -194,13 +196,27 @@ def main(argv):
                         id="rewardRateGraph",
                     )
                 ],
-                hidden=True)
+                hidden=True),
+            dcc.Interval(
+                id='interval-component',
+                interval=metadata_refresh_interval,
+                n_intervals=0)
         ])
         return aDiv
 
     external_stylesheets = ["https://codepen.io/chriddyp/pen/bWLwgP.css"]
     app = dash.Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
     app.layout = serve_layout()
+
+    @app.callback(Output('interval-component', 'interval'),
+                  Input('interval-component', 'n_intervals'))
+    def update_metadata(n):
+        print("*** metadata updated {:d} ***".format(n))
+        metadata = aeon.preprocess.api.sessiondata(root)
+        metadata = metadata[metadata.id.str.startswith('BAA')]
+        metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
+        metadata = aeon.preprocess.api.sessionduration(metadata)
+        return metadata_refresh_interval
 
     @app.callback([Output('sessionStartTimeDropdown', 'options'),
                    Output('sessionStartTimeDropdown', 'value'),
@@ -210,8 +226,6 @@ def main(argv):
     def get_sessions_start_times(mouseNameDropDown_value):
         sessions_start_times = metadata[metadata["id"]==mouseNameDropDown_value]["start"]
         options_sessions_start_times = [{"label": session_start_time, "value": session_start_time} for session_start_time in sessions_start_times]
-        # import pdb; pdb.set_trace()
-        print("*** mouseNameDropDown_value={:s} ***".format(mouseNameDropDown_value))
         return options_sessions_start_times, sessions_start_times.iloc[0], sample_rate_for_trajectory0
 
     @app.callback([Output('nTrajectoryPointsToPlot', 'children'),],
@@ -466,7 +480,7 @@ def main(argv):
         mouse_graph_container_hidden = False
         return fig, mouse_graph_container_hidden
 
-    if(args.local):
+    if(local):
         app.run_server(debug=args.debug, port=args.port)
     else:
         app.run_server(debug=args.debug, port=args.port, host="0.0.0.0")
