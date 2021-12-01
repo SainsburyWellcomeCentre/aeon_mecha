@@ -3,7 +3,9 @@ import pandas as pd
 import aeon.preprocess.api as aeon
 import matplotlib.pyplot as plt
 
-root = '/ceph/aeon/test2/experiment0.1'
+# root = '/ceph/aeon/test2/experiment0.1'
+root = '/home/jerlich/mnt/delab/data/arena0.1/socialexperiment0'
+
 data = aeon.sessiondata(root)
 annotations = aeon.annotations(root)
 
@@ -14,10 +16,10 @@ data = aeon.sessionduration(data)                                     # compute 
 
 for session in data.itertuples():                                     # for all sessions
     print('{0} on {1}...'.format(session.id, session.Index))          # print progress report
-    start = session.Index                                             # session start time is session index
+    start = session.start                                             # session start time is session index
     end = start + session.duration                                    # end time = start time + duration
     position = aeon.positiondata(root, start=start, end=end)          # get position data between start and end
-    position = position[position.area < 2000]                         # filter for objects of the correct size
+    position = position[(position.area < 2000) & (position.area > 0) ]                         # filter for objects of the correct size
 
     encoder1 = aeon.encoderdata(root, 'Patch1', start=start, end=end) # get encoder data for patch1 between start and end
     encoder2 = aeon.encoderdata(root, 'Patch2', start=start, end=end) # get encoder data for patch2 between start and end
@@ -43,7 +45,7 @@ for session in data.itertuples():                                     # for all 
     ax2.hist(position.area, bins=100)                                 # plot histogram of tracked object size
     
     wheel1.plot(ax=ax3)                                               # plot distance travelled on patch1 wheel
-    wheel1.plot(ax=ax4)                                               # plot distance travelled on patch2 wheel
+    wheel2.plot(ax=ax4)                                               # plot distance travelled on patch2 wheel
     ax3.set_ylabel('distance (cm)')                                   # set axis label
     ax4.set_ylabel('distance (cm)')                                   # set axis label
 
