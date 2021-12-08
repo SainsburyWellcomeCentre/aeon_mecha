@@ -6,9 +6,11 @@ from matplotlib import path
 import pathlib
 import matplotlib.pyplot as plt
 import re
+import datetime
 
 from aeon.preprocess import api as aeon_api
 from aeon.util import plotting as aeon_plotting
+from aeon.util import utils as aeon_utils
 
 from . import lab, acquisition, tracking
 from . import get_schema_name
@@ -59,7 +61,7 @@ class SessionTimeDistribution(dj.Computed):
                      & 'time_slice_count = tracking_count'))
 
     def make(self, key):
-        raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
+        raw_data_dir = acquisition.Experiment.get_data_directory(key)
         session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
             'session_start', 'session_end')
 
@@ -157,7 +159,7 @@ class SessionSummary(dj.Computed):
                      & 'time_slice_count = tracking_count'))
 
     def make(self, key):
-        raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
+        raw_data_dir = acquisition.Experiment.get_data_directory(key)
         session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
             'session_start', 'session_end')
 
@@ -186,10 +188,12 @@ class SessionSummary(dj.Computed):
 
         food_patch_statistics = []
         for food_patch_key in food_patch_keys:
-            pellet_count = len(acquisition.FoodPatchEvent * acquisition.EventType
-                               & food_patch_key
-                               & 'event_type = "TriggerPellet"'
-                               & f'event_time BETWEEN "{session_start}" AND "{session_end}"')
+            pellet_events = (
+                    acquisition.FoodPatchEvent * acquisition.EventType
+                    & food_patch_key
+                    & 'event_type = "TriggerPellet"'
+                    & f'event_time BETWEEN "{session_start}" AND "{session_end}"').fetch(
+                'event_time')
             # wheel data
             food_patch_description = (acquisition.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
             encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
@@ -200,7 +204,7 @@ class SessionSummary(dj.Computed):
 
             food_patch_statistics.append({
                 **key, **food_patch_key,
-                'pellet_count': pellet_count,
+                'pellet_count': len(pellet_events),
                 'wheel_distance_travelled': wheel_distance_travelled[-1]})
 
         total_pellet_count = np.sum([p['pellet_count'] for p in food_patch_statistics])
@@ -228,7 +232,7 @@ class SessionSummaryPlot(dj.Computed):
     color_code = {'Patch1': 'b', 'Patch2': 'r', 'arena': 'g', 'corridor': 'gray', 'nest': 'k'}
 
     def make(self, key):
-        raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
+        raw_data_dir = acquisition.Experiment.get_data_directory(key)
 
         session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
             'session_start', 'session_end')
@@ -364,6 +368,73 @@ class SessionSummaryPlot(dj.Computed):
         fig.savefig(summary_plot_filepath, dpi=300)
 
         self.insert1({**key, 'summary_plot_png': summary_plot_filepath})
+
+
+@schema
+class SessionRewardRate(dj.Computed):
+    definition = """
+    -> acquisition.Session
+    ---
+    pellet_rate_timestamps: longblob  # timestamps of the pellet rate over time
+    patch2_patch1_rate_diff: longblob  # rate differences between Patch 2 and Patch 1
+    """
+
+    class FoodPatch(dj.Part):
+        definition = """
+        -> master
+        -> acquisition.ExperimentFoodPatch
+        ---
+        pellet_rate: longblob  # computed rate of pellet delivery over time
+        """
+
+    # Work on finished Session with TimeSlice fully populated only
+    key_source = (acquisition.Session
+                  & (acquisition.Session * acquisition.SessionEnd * acquisition.TimeSlice
+                     & 'time_slice_end = session_end').proj())
+
+    def make(self, key):
+        session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
+            'session_start', 'session_end')
+
+        # food patch data
+        food_patch_keys = (
+                acquisition.Session * acquisition.SessionEnd
+                * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
+                & key
+                & 'session_start >= food_patch_install_time'
+                & 'session_end < IFNULL(food_patch_remove_time, "2200-01-01")').proj(
+            'food_patch_description').fetch(as_dict=True)
+
+        pellet_rate_timestamps = None
+        rates = {}
+        food_patch_reward_rates = []
+        for food_patch_key in food_patch_keys:
+            pellet_events = (
+                    acquisition.FoodPatchEvent * acquisition.EventType
+                    & food_patch_key
+                    & 'event_type = "TriggerPellet"'
+                    & f'event_time BETWEEN "{session_start}" AND "{session_end}"').fetch(
+                'event_time')
+            # pellet event rate
+            pellet_events = pd.DataFrame({'event_time': pellet_events}).set_index('event_time')
+            pellet_rate = aeon_utils.get_events_rates(events=pellet_events, window_len_sec=600,
+                                                      start=pd.Timestamp(session_start),
+                                                      end=pd.Timestamp(session_end),
+                                                      frequency='5s', smooth='120s', center=True)
+
+            if pellet_rate_timestamps is None:
+                pellet_rate_timestamps = pellet_rate.index.to_pydatetime()
+
+            rates[food_patch_key.pop('food_patch_description')] = pellet_rate.values
+
+            food_patch_reward_rates.append({
+                **key, **food_patch_key,
+                'pellet_rate': pellet_rate.values})
+
+        self.insert1({**key,
+                      'pellet_rate_timestamps': pellet_rate_timestamps,
+                      'patch2_patch1_rate_diff': rates['Patch2'] - rates['Patch1']})
+        self.FoodPatch.insert(food_patch_reward_rates)
 
 
 # ---------- HELPER ------------------

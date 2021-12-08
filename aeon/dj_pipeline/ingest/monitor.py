@@ -45,8 +45,10 @@ class ProcessJob(dj.Manual):
             'user': table.connection.get_user(),
             'pid': os.getpid()
         }
-
-        cls.insert1(process)
+        try:
+            cls.insert1(process)
+        except dj.errors.DuplicateError:
+            pass
 
 
 def print_recent_jobs(backtrack_minutes=60):

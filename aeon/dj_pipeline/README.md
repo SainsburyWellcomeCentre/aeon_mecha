@@ -1,8 +1,6 @@
 # DataJoint Pipeline for Project Aeon
 
-This pipeline models the data organization and data flow for Project Aeon, 
-from [Bonsai](https://open-ephys.org/bonsai) 
-acquisition system to the schemas/tables in DataJoint.
+This pipeline models the data organization and data flow custom-built for Project Aeon. You can find Aeon acquisition system here: [aeon_aquisition](https://github.com/SainsburyWellcomeCentre/aeon_acquisition)
 
 
 ## Pipeline architecture

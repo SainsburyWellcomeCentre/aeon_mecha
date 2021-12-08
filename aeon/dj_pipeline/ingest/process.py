@@ -256,7 +256,7 @@ def process(priority, **kwargs):
     """
 
     # importing here to connect to db after args are parsed
-    from aeon.dj_pipeline import acquisition, analysis, tracking
+    from aeon.dj_pipeline import acquisition, analysis, tracking, qc
     from aeon.dj_pipeline.ingest.monitor import ProcessJob
 
     _priority_tables = {
@@ -271,6 +271,7 @@ def process(priority, **kwargs):
             acquisition.TimeSlice,
         ),
         "mid": (
+            qc.CameraQC,
             tracking.SubjectPosition,
             analysis.SessionTimeDistribution,
             analysis.SessionSummary,
