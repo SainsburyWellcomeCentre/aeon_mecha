@@ -1,0 +1,68 @@
+version: 'v0.0.0'
+LabBook: null
+SciViz:
+  auth:
+    mode: database
+  pages:
+    Animals:
+      route: /animals
+      grids:
+        grid2:
+          columns: 1
+          row_height: 700
+          components:
+            Animals:
+              route: /query1
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_acquisition):
+                    return aeon_acquisition.Experiment.Subject(), {}
+    Sessions:
+      route: /sessions
+      grids:
+        grid3:
+          columns: 1
+          row_height: 700
+          components:
+            Sessions:
+              route: /query2
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_acquisition):
+                    aeon_acquisition.Session * aeon_acquisition.SessionEnd, {}
+
+    SessionsSummary:
+      route: /sessions_summary
+      grids:
+        grid3:
+          columns: 1
+          row_height: 700
+          components:
+            Sessions Summary:
+              route: /query3
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_analysis):
+                    aeon_analysis.SessionSummary, {}
+
