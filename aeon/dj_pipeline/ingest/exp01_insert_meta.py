@@ -1,5 +1,5 @@
 import yaml
-from aeon.dj_pipeline import acquisition, analysis, lab, subject, tracking
+from aeon.dj_pipeline import acquisition, lab, subject
 from pathlib import Path
 
 _wheel_sampling_rate = 500

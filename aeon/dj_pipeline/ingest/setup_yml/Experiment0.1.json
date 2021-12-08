@@ -1,0 +1,111 @@
+{
+  "Workflow": "workflows\\Experiment0.1.bonsai",
+  "Revision": "30a948f37c6d5ee434fab05e7d38c197fa0d2c24",
+  "Devices": [
+    {
+      "PortName": "COM3",
+      "GlobalTriggerFrequency": "50",
+      "LocalTriggerFrequency": "125",
+      "Type": "VideoController",
+      "Name": "VideoController"
+    },
+    {
+      "SerialNumber": "21053810",
+      "Gain": "4",
+      "Binning": "1",
+      "TriggerSource": "GlobalTrigger",
+      "TriggerFrequency": "GlobalTriggerFrequency",
+      "Type": "VideoSource",
+      "Name": "FrameTop"
+    },
+    {
+      "SerialNumber": "21196927",
+      "Gain": "4",
+      "Binning": "1",
+      "TriggerSource": "GlobalTrigger",
+      "TriggerFrequency": "GlobalTriggerFrequency",
+      "Type": "VideoSource",
+      "Name": "FrameWest"
+    },
+    {
+      "SerialNumber": "21199215",
+      "Gain": "4",
+      "Binning": "1",
+      "TriggerSource": "GlobalTrigger",
+      "TriggerFrequency": "GlobalTriggerFrequency",
+      "Type": "VideoSource",
+      "Name": "FrameEast"
+    },
+    {
+      "SerialNumber": "21177888",
+      "Gain": "4",
+      "Binning": "1",
+      "TriggerSource": "GlobalTrigger",
+      "TriggerFrequency": "GlobalTriggerFrequency",
+      "Type": "VideoSource",
+      "Name": "FrameNorth"
+    },
+    {
+      "SerialNumber": "21199217",
+      "Gain": "4",
+      "Binning": "1",
+      "TriggerSource": "GlobalTrigger",
+      "TriggerFrequency": "GlobalTriggerFrequency",
+      "Type": "VideoSource",
+      "Name": "FrameSouth"
+    },
+    {
+      "SerialNumber": "21196933",
+      "Gain": "10",
+      "Binning": "2",
+      "TriggerSource": "LocalTrigger",
+      "TriggerFrequency": "LocalTriggerFrequency",
+      "Type": "VideoSource",
+      "Name": "FramePatch1"
+    },
+    {
+      "SerialNumber": "21053811",
+      "Gain": "10",
+      "Binning": "2",
+      "TriggerSource": "LocalTrigger",
+      "TriggerFrequency": "LocalTriggerFrequency",
+      "Type": "VideoSource",
+      "Name": "FramePatch2"
+    },
+    {
+      "SerialNumber": "21199221",
+      "Gain": "10",
+      "Binning": "2",
+      "TriggerSource": "LocalTrigger",
+      "TriggerFrequency": "LocalTriggerFrequency",
+      "Type": "VideoSource",
+      "Name": "FrameGate"
+    },
+    {
+      "DeviceName": null,
+      "SampleRate": "192000",
+      "Name": "AudioAmbient",
+      "Type": "AudioSource"
+    },
+    {
+      "PortName": "COM4",
+      "WheelPosition": "WheelPatch1",
+      "PelletDelivered": "PelletDeliveredPatch1",
+      "DeliverPellet": "DeliverPelletPatch1",
+      "Radius": "4",
+      "SampleRate": "SampleRate500Hz",
+      "Type": "Patch",
+      "Name": "Patch1"
+    },
+    {
+      "PortName": "COM7",
+      "WheelPosition": "WheelPatch2",
+      "PelletDelivered": "PelletDeliveredPatch2",
+      "DeliverPellet": "DeliverPelletPatch2",
+      "Radius": "4",
+      "SampleRate": "SampleRate500Hz",
+      "Type": "Patch",
+      "Name": "Patch2"
+    }
+  ]
+}
