@@ -90,6 +90,8 @@ class ExperimentCamera(dj.Manual):
     ---
     camera_description: varchar(36)
     camera_sampling_rate: float  # (Hz) camera frame rate
+    camera_gain=null: float      # gain value applied to the acquired video
+    camera_bin=null: int         # bin-size applied to the acquired video
     """
 
     class Position(dj.Part):
@@ -129,6 +131,7 @@ class ExperimentFoodPatch(dj.Manual):
     ---
     food_patch_description: varchar(36)
     wheel_sampling_rate: float  # (Hz) wheel's sampling rate
+    wheel_radius=null: float    # (cm) 
     """
 
     class RemovalTime(dj.Part):
@@ -147,6 +150,15 @@ class ExperimentFoodPatch(dj.Manual):
         food_patch_position_z=0: float  # (m) z-position, in the arena's coordinate frame
         """
 
+    class Vertex(dj.Part):
+        definition = """
+        -> master
+        vertex: int
+        ---
+        vertex_x: float    # (m) x-coordinate of the vertex, in the arena's coordinate frame
+        vertex_y: float    # (m) y-coordinate of the vertex, in the arena's coordinate frame
+        vertex_z=0: float  # (m) z-coordinate of the vertex, in the arena's coordinate frame
+        """
 
 # ------------------- ACQUISITION CHUNK --------------------
 

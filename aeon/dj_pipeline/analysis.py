@@ -423,9 +423,7 @@ class SessionRewardRate(dj.Computed):
                                                       frequency='5s', smooth='120s', center=True)
 
             if pellet_rate_timestamps is None:
-                pellet_rate_timestamps = (pellet_rate.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
-                pellet_rate_timestamps = np.array([datetime.datetime.utcfromtimestamp(t)
-                                                   for t in pellet_rate_timestamps])
+                pellet_rate_timestamps = pellet_rate.index.to_pydatetime()
 
             rates[food_patch_key.pop('food_patch_description')] = pellet_rate.values
 

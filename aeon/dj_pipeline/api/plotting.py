@@ -17,7 +17,7 @@ def plot_reward_rate_differences(subject_keys, save_figure=False):
     for all sessions from all subjects specified in "subject_keys"
     Example usage:
     ```
-    subject_keys = acquisition.Experiment.Subject.fetch('KEY')
+    subject_keys = (acquisition.Experiment.Subject & 'experiment_name = "exp0.1-r0"').fetch('KEY')
 
     fig = plot_reward_rate_differences(subject_keys)
     ```
