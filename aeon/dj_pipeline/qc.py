@@ -5,7 +5,7 @@ import numpy as np
 from aeon.preprocess import api as aeon_api
 from aeon.util import plotting as aeon_plotting
 
-from . import lab, acquisition, tracking
+from . import acquisition
 from . import get_schema_name
 
 

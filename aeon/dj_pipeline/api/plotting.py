@@ -23,7 +23,7 @@ def plot_reward_rate_differences(subject_keys, save_figure=False):
     ```
     """
     subj_names, sess_starts, rate_timestamps, rate_diffs = (analysis.SessionRewardRate
-                                                         & subject_keys).fetch(
+                                                            & subject_keys).fetch(
         'subject', 'session_start', 'pellet_rate_timestamps', 'patch2_patch1_rate_diff')
 
     nSessions = len(sess_starts)
