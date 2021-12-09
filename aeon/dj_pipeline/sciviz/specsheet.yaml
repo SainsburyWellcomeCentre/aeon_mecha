@@ -4,7 +4,7 @@ SciViz:
   auth:
     mode: database
   pages:
-    Animals:
+    Subjects:
       route: /animals
       grids:
         grid2:
@@ -24,8 +24,10 @@ SciViz:
                     return dict(**kwargs)
               dj_query: >
                 def dj_query(aeon_acquisition):
-                    query = aeon_acquisition.Experiment.Subject()
-                    return {'query': query, 'fetch_args': []}
+                    acquisition = aeon_acquisition
+                    subject_session_count = acquisition.Experiment.Subject.aggr(acquisition.SessionEnd.join(acquisition.Session, left=True), ..., session_count='count(session_start)')
+                    subject_latest_session = acquisition.Experiment.Subject.aggr(acquisition.Session, session_start='max(session_start)').join(acquisition.SessionEnd, left=True)
+                    return {'query': subject_session_count * subject_latest_session, 'fetch_args': []}
     Sessions:
       route: /sessions
       grids:
@@ -49,7 +51,7 @@ SciViz:
                     query = aeon_acquisition.Session.join(aeon_acquisition.SessionEnd, left=True).proj('session_end', session_duration='IFNULL(session_duration, -1)')
                     return {'query': query, 'fetch_args': []}
 
-    SessionsSummary:
+    SessionSummary:
       route: /sessions_summary
       grids:
         grid3:
@@ -72,3 +74,38 @@ SciViz:
                     query = aeon_analysis.SessionSummary
                     return {'query': query, 'fetch_args': []}
 
+    SubjectRewardRate:
+      route: /subject_reward_rate
+      grids:
+        reward_rate_difference:
+          route: /reward_rate_difference
+          type: dynamic
+          columns: 3
+          row_height: 600
+          restriction: >
+            def restriction(**kwargs):
+                return dict(**kwargs)
+          dj_query: >
+            def dj_query(u_thinh_analysis):
+                analysis = u_thinh_analysis
+                return {'query': analysis.SubjectRewardRateDifference.proj(), 'fetch_args': []}
+          component_templates:
+            comp1:
+              route: /myMeta
+              type: metadata
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_acquisition):
+                    return dict(query=aeon_acquisition.Experiment.Subject(), fetch_args=[])
+            comp2:
+              route: /reward_diff_plot
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(u_thinh_analysis):
+                    analysis = u_thinh_analysis
+                    return {'query': analysis.SubjectRewardRateDifference(), 'fetch_args': ['reward_rate_difference_plotly']}
