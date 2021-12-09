@@ -387,10 +387,7 @@ class SessionRewardRate(dj.Computed):
         pellet_rate: longblob  # computed rate of pellet delivery over time
         """
 
-    # Work on finished Session with TimeSlice fully populated only
-    key_source = (acquisition.Session
-                  & (acquisition.Session * acquisition.SessionEnd * acquisition.TimeSlice
-                     & 'time_slice_end = session_end').proj())
+    key_source = SessionSummary()
 
     def make(self, key):
         session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
@@ -409,18 +406,28 @@ class SessionRewardRate(dj.Computed):
         rates = {}
         food_patch_reward_rates = []
         for food_patch_key in food_patch_keys:
+            no_pellets = False
             pellet_events = (
                     acquisition.FoodPatchEvent * acquisition.EventType
                     & food_patch_key
                     & 'event_type = "TriggerPellet"'
                     & f'event_time BETWEEN "{session_start}" AND "{session_end}"').fetch(
                 'event_time')
-            # pellet event rate
-            pellet_events = pd.DataFrame({'event_time': pellet_events}).set_index('event_time')
-            pellet_rate = aeon_utils.get_events_rates(events=pellet_events, window_len_sec=600,
-                                                      start=pd.Timestamp(session_start),
-                                                      end=pd.Timestamp(session_end),
-                                                      frequency='5s', smooth='120s', center=True)
+
+            if not pellet_events.size:
+                pellet_events = np.array([session_start, session_end])
+                no_pellets = True
+
+            pellet_rate = aeon_utils.get_events_rates(
+                events=pd.DataFrame({'event_time': pellet_events}).set_index('event_time'),
+                window_len_sec=600,
+                start=pd.Timestamp(session_start),
+                end=pd.Timestamp(session_end),
+                frequency='5s', smooth='120s',
+                center=True)
+
+            if no_pellets:
+                pellet_rate = pd.Series(index=pellet_rate.index, data=np.full(len(pellet_rate), 0))
 
             if pellet_rate_timestamps is None:
                 pellet_rate_timestamps = pellet_rate.index.to_pydatetime()
