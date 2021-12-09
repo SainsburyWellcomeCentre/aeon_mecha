@@ -444,7 +444,34 @@ class SessionRewardRate(dj.Computed):
         self.FoodPatch.insert(food_patch_reward_rates)
 
 
+# ---- Dynamically updated tables for plots ----
+
+
+@schema
+class SubjectRewardRateDifference(dj.Computed):
+    definition = """
+    -> acquisition.Experiment.Subject
+    ---
+    session_count: int
+    reward_rate_difference_plotly: longblob  # dictionary storing the plotly object (from fig.to_plotly_json())
+    """
+
+    key_source = acquisition.Experiment.Subject & SessionRewardRate
+
+    def make(self, key):
+        import json
+        from aeon.dj_pipeline.api.plotting import plot_reward_rate_differences
+
+        fig = plot_reward_rate_differences(key)
+
+        fig_dict = json.loads(fig.to_json())
+
+        self.insert1({**key, 'session_count': len(SessionRewardRate & key),
+                      'reward_rate_difference_plotly': fig_dict})
+
+
 # ---------- HELPER ------------------
+
 
 def is_position_in_nest(position_df, nest_key):
     """
