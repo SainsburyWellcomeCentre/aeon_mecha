@@ -8,6 +8,7 @@ SciViz:
       route: /animals
       grids:
         grid2:
+          type: fixed
           columns: 1
           row_height: 700
           components:
@@ -23,11 +24,13 @@ SciViz:
                     return dict(**kwargs)
               dj_query: >
                 def dj_query(aeon_acquisition):
-                    return aeon_acquisition.Experiment.Subject(), {}
+                    query = aeon_acquisition.Experiment.Subject()
+                    return {'query': query, 'fetch_args': []}
     Sessions:
       route: /sessions
       grids:
         grid3:
+          type: fixed
           columns: 1
           row_height: 700
           components:
@@ -43,12 +46,14 @@ SciViz:
                     return dict(**kwargs)
               dj_query: >
                 def dj_query(aeon_acquisition):
-                    aeon_acquisition.Session * aeon_acquisition.SessionEnd, {}
+                    query = aeon_acquisition.Session.join(aeon_acquisition.SessionEnd, left=True).proj('session_end', session_duration='IFNULL(session_duration, -1)')
+                    return {'query': query, 'fetch_args': []}
 
     SessionsSummary:
       route: /sessions_summary
       grids:
         grid3:
+          type: fixed
           columns: 1
           row_height: 700
           components:
@@ -64,5 +69,6 @@ SciViz:
                     return dict(**kwargs)
               dj_query: >
                 def dj_query(aeon_analysis):
-                    aeon_analysis.SessionSummary, {}
+                    query = aeon_analysis.SessionSummary
+                    return {'query': query, 'fetch_args': []}
 
