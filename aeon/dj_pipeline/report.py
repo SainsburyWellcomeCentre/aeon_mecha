@@ -15,7 +15,7 @@ from . import lab, acquisition, tracking, analysis
 from . import get_schema_name
 
 
-schema = dj.schema(get_schema_name('analysis'))
+schema = dj.schema(get_schema_name('report'))
 os.environ['DJ_SUPPORT_FILEPATH_MANAGEMENT'] = "TRUE"
 
 
@@ -205,13 +205,50 @@ class SubjectRewardRateDifference(dj.Computed):
     def delete_outdated_entries(cls):
         """
         Each entry in this table correspond to one subject. However the plot is capturing
-            reward rate differences for all sessions.
+            data for all sessions.
         Hence a dynamic update routine is needed to recompute the plot as new sessions
             become available
         """
         outdated_entries = (cls * (acquisition.Experiment.Subject.aggr(
-            analysis.SessionRewardRate, session_reward_rate_count='count(session_start)'))
-                            & 'session_count != session_reward_rate_count')
+            analysis.SessionRewardRate, current_session_count='count(session_start)'))
+                            & 'session_count != current_session_count')
+        with dj.config(safemode=False):
+            (cls & outdated_entries.fetch('KEY')).delete()
+
+
+@schema
+class SubjectWheelTravelledDistance(dj.Computed):
+    definition = """
+    -> acquisition.Experiment.Subject
+    ---
+    session_count: int
+    wheel_travelled_distance_plotly: longblob  # dictionary storing the plotly object (from fig.to_plotly_json())
+    """
+
+    key_source = acquisition.Experiment.Subject & analysis.SessionSummary
+
+    def make(self, key):
+        from aeon.dj_pipeline.api.plotting import plot_wheel_travelled_distance
+        session_keys = (analysis.SessionSummary & key).fetch('KEY')
+
+        fig = plot_wheel_travelled_distance(session_keys)
+
+        fig_json = json.loads(fig.to_json())
+
+        self.insert1({**key, 'session_count': len(session_keys),
+                      'wheel_travelled_distance_plotly': fig_json})
+
+    @classmethod
+    def delete_outdated_entries(cls):
+        """
+        Each entry in this table correspond to one subject. However the plot is capturing
+            data for all sessions.
+        Hence a dynamic update routine is needed to recompute the plot as new sessions
+            become available
+        """
+        outdated_entries = (cls * (acquisition.Experiment.Subject.aggr(
+            analysis.SessionSummary, current_session_count='count(session_start)'))
+                            & 'session_count != current_session_count')
         with dj.config(safemode=False):
             (cls & outdated_entries.fetch('KEY')).delete()
 

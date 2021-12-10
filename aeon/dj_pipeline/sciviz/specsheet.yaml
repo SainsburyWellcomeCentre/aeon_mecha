@@ -5,7 +5,7 @@ SciViz:
     mode: database
   pages:
     Subjects:
-      route: /animals
+      route: /subjects
       grids:
         grid2:
           type: fixed
@@ -13,7 +13,7 @@ SciViz:
           row_height: 700
           components:
             Animals:
-              route: /query1
+              route: /allsubjects
               x: 0
               y: 0
               height: 1
@@ -74,24 +74,24 @@ SciViz:
                     query = aeon_analysis.SessionSummary
                     return {'query': query, 'fetch_args': []}
 
-    SubjectRewardRate:
-      route: /subject_reward_rate
+    SubjectReport:
+      route: /subject_report
       grids:
-        reward_rate_difference:
-          route: /reward_rate_difference
+        subject_report:
+          route: /subject_report
           type: dynamic
-          columns: 3
-          row_height: 600
+          columns: 2
+          row_height: 1000
           restriction: >
             def restriction(**kwargs):
                 return dict(**kwargs)
           dj_query: >
-            def dj_query(aeon_report):
-                report = aeon_report
-                return {'query': report.SubjectRewardRateDifference.proj(), 'fetch_args': []}
+            def dj_query(aeon_acquisition):
+                acquisition = aeon_acquisition
+                return {'query': aeon_acquisition.Experiment.Subject & {'experiment_name': 'exp0.1-r0'}, 'fetch_args': []}
           component_templates:
             comp1:
-              route: /myMeta
+              route: /subject_meta
               type: metadata
               restriction: >
                 def restriction(**kwargs):
@@ -109,3 +109,13 @@ SciViz:
                 def dj_query(aeon_report):
                     report = aeon_report
                     return {'query': report.SubjectRewardRateDifference(), 'fetch_args': ['reward_rate_difference_plotly']}
+            comp3:
+              route: /wheel_distance_travelled
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_report):
+                    report = aeon_report
+                    return {'query': report.SubjectWheelTravelledDistance(), 'fetch_args': ['wheel_travelled_distance_plotly']}
