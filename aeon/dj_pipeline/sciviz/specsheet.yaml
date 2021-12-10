@@ -86,9 +86,9 @@ SciViz:
             def restriction(**kwargs):
                 return dict(**kwargs)
           dj_query: >
-            def dj_query(u_thinh_analysis):
-                analysis = u_thinh_analysis
-                return {'query': analysis.SubjectRewardRateDifference.proj(), 'fetch_args': []}
+            def dj_query(aeon_report):
+                report = aeon_report
+                return {'query': report.SubjectRewardRateDifference.proj(), 'fetch_args': []}
           component_templates:
             comp1:
               route: /myMeta
@@ -106,6 +106,6 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(u_thinh_analysis):
-                    analysis = u_thinh_analysis
-                    return {'query': analysis.SubjectRewardRateDifference(), 'fetch_args': ['reward_rate_difference_plotly']}
+                def dj_query(aeon_report):
+                    report = aeon_report
+                    return {'query': report.SubjectRewardRateDifference(), 'fetch_args': ['reward_rate_difference_plotly']}
