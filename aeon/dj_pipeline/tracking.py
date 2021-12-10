@@ -110,12 +110,12 @@ class SubjectPosition(dj.Imported):
 
 @schema
 class SubjectDistance(dj.Computed):
-    definition = """
+    definition = """  # distances of the animal away from the food patches, for each timestamp
     -> SubjectPosition
     """
 
     class FoodPatch(dj.Part):
-        definition = """  # distances of the animal away from the food patch, for each timestamp
+        definition = """  # distances of the animal away from a particular food patch, for each timestamp
         -> master
         -> acquisition.ExperimentFoodPatch
         ---

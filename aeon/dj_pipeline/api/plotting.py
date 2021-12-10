@@ -6,12 +6,19 @@ import argparse
 import plotly.graph_objects as go
 import plotly.subplots
 import plotly.express as px
+import plotly.io as pio
 import matplotlib.pyplot as plt
 
 from aeon.dj_pipeline import acquisition, analysis
 
 
-def plot_reward_rate_differences(subject_keys, save_figure=False):
+# pio.renderers.default = 'png'
+# pio.orca.config.executable = '/nfs/nhome/live/thinh/.conda/envs/tn-aeon/bin/orca'
+# pio.orca.config.use_xvfb = True
+# pio.orca.config.save()
+
+
+def plot_reward_rate_differences(subject_keys):
     """
     Plotting the reward rate differences between food patches (Patch 2 - Patch 1)
     for all sessions from all subjects specified in "subject_keys"
@@ -52,8 +59,4 @@ def plot_reward_rate_differences(subject_keys, save_figure=False):
         plot_bgcolor='rgba(0,0,0,0)'
     )
 
-    if save_figure:
-        fig_filename_pattern = 'reward_rate_diffsPatch1MinusPatch2.{:s}'
-        fig.write_image(fig_filename_pattern.format("png"))
-        fig.write_html(fig_filename_pattern.format("html"))
-    fig.show()
+    return fig

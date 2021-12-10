@@ -4,7 +4,7 @@
 version: '2.4'
 services:
   pharus:
-    image: datajoint/pharus:0.2.2
+    image: jverswijver/pharus:0.2.3.beta.0
     environment:
       # - FLASK_ENV=development # enables logging to console from Flask
       - API_SPEC_PATH=/main/specs/specsheet.yaml # for dynamic api spec
@@ -43,7 +43,7 @@ services:
     networks:
       - main
   sci-viz:
-    image: datajoint/sciviz:0.1.0-beta.0
+    image: jverswijver/sciviz:0.1.2-beta.1
     environment:
       - CHOKIDAR_USEPOLLING=true
       - REACT_APP_DJLABBOOK_BACKEND_PREFIX=/api
@@ -60,7 +60,7 @@ services:
             [ -z "$$NGINX_PID" ] || kill $$NGINX_PID
             rm -R /usr/share/nginx/html
             python frontend_gen.py
-            npm run build
+            yarn build
             mv ./build /usr/share/nginx/html
             nginx -g "daemon off;" &
             NGINX_PID=$$!
