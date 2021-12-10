@@ -203,6 +203,12 @@ class SubjectRewardRateDifference(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
+        """
+        Each entry in this table correspond to one subject. However the plot is capturing
+            reward rate differences for all sessions.
+        Hence a dynamic update routine is needed to recompute the plot as new sessions
+            become available
+        """
         outdated_entries = (cls * (acquisition.Experiment.Subject.aggr(
             analysis.SessionRewardRate, session_reward_rate_count='count(session_start)'))
                             & 'session_count != session_reward_rate_count')
