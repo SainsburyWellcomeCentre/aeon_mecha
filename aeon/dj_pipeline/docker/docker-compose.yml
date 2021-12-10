@@ -41,12 +41,9 @@ x-aeon-ingest-common:
 services:
   aeon_high:
     << : *default-aeon-ingest
-    # command: conda run -n aeon_env aeon_ingest high -d 20 -s 1 -m -1
+    # command: conda run -n aeon_env aeon_ingest high -d 20 -s 1
 
   aeon_mid:
     << : *default-aeon-ingest
-    # command: conda run -n aeon_env aeon_ingest mid -d 20 -s 1 -m -1
+    # command: conda run -n aeon_env aeon_ingest mid -d 20 -s 1
 
-  aeon_low:
-    << : *default-aeon-ingest
-    # command: conda run -n aeon_env aeon_ingest low -d 20 -s 1 -m -1
