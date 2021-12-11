@@ -12,7 +12,7 @@ x-aeon-ingest-common: &aeon-ingest-common
       GITHUB_USER: vathes # iamamutt
       GITHUB_REPO: aeon_mecha
       GITHUB_BRANCH: datajoint_pipeline
-      SSH_KEY: ${SSH_KEY:?Need file to SSH key for private repo clone}
+      SSH_KEY: ${SSH_KEY:?Need SSH key for private repo clone}
   environment:
     DJ_USER: ${DJ_USER:-root}
     DJ_PASS: ${DJ_PASS:-simple}
@@ -21,7 +21,7 @@ x-aeon-ingest-common: &aeon-ingest-common
     # map raw data directory on host to $RAW_DATA_DIR in container
     - "${LOCAL_CEPH_ROOT:-/ceph/aeon}:/ceph/aeon"
     # map directory $DJ_EXTERNAL_STORE in container to volume on host
-    - djstore:/home/anaconda/djstore"
+    - djstore:/home/condauser/djstore
   extra_hosts:
     - host.docker.internal:host-gateway # 172.17.0.1
   scale: 1
