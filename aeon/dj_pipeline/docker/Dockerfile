@@ -1,10 +1,14 @@
-# start cloning repo using private key ---------------------------------------
-# - multi-stage build is used so as not to store private key in history when entered as a build arg
-# - this stage should be edited and merged with last stage when repo becomes public
+ARG GITHUB_REPO
+ARG IMAGE_CREATED=2021-11-11T11:11:11Z
 
-FROM debian:latest as private_repo_clone
+# start cloning repo using private key -------------------------------------------------
+# - multi-stage build is used to not store private key in history
+#   when entered as a build arg
+# - TODO this stage should be edited and merged with last stage when repo becomes public
+FROM debian:stable-slim as private_repo_clone
 
-LABEL maintainer="Joseph Burling"
+ARG IMAGE_CREATED
+LABEL org.opencontainers.image.created="$IMAGE_CREATED"
 
 ARG SSH_KEY
 
@@ -41,37 +45,45 @@ RUN mkdir /root/.ssh/ && \
 
 # start cloning private github repo for copying at later stage
 WORKDIR /tmp
-RUN git clone git@github.com:${GITHUB_USER}/${GITHUB_REPO}.git --branch ${GITHUB_BRANCH} --single-branch
+RUN git clone git@github.com:${GITHUB_USER}/${GITHUB_REPO}.git \
+    --branch ${GITHUB_BRANCH} --single-branch
 
-
-# start main conda build stage -----------------------------------------------
+# start main conda build stage ---------------------------------------------------------
 # - setup and use custom conda environment
+FROM iamamutt/conda_base:latest
 
-FROM datajoint/djbase:py3.9-debian
-
+ARG IMAGE_CREATED
+ARG IMAGE_VERSION=v0.0.0a
 ARG GITHUB_REPO
+ARG USER_NAME=condauser
+LABEL org.opencontainers.image.authors="DataJoint"
+LABEL org.opencontainers.image.title="aeon_mecha_datajoint_pipeline"
+LABEL org.opencontainers.image.description="Run aeon-db ingestion routines."
+LABEL org.opencontainers.image.version="$IMAGE_VERSION"
+LABEL org.opencontainers.image.created="$IMAGE_CREATED"
 
-ENV RAW_DATA_DIR=/ceph/aeon
+WORKDIR /home/${USER_NAME}
 
-# change to working folder in home directory for pip install
-WORKDIR /home/anaconda
-
-# chown git repo to user
-COPY --chown=anaconda:anaconda --from=private_repo_clone \
+# copy over git repo and chown to user
+COPY --chown=${USER_NAME} --from=private_repo_clone \
     /tmp/${GITHUB_REPO} \
     ${GITHUB_REPO}
 
 # copy over global datajoint config file w/ hard-coded paths
-COPY --chown=anaconda:anaconda .datajoint_config.json .
+COPY --chown=${USER_NAME} .datajoint_config.json .
 
-# create the conda environment `aeon_env` from yml file
-RUN conda env create --force --file ${GITHUB_REPO}/env.yml
+# create the mounted directories
+ENV RAW_DATA_DIR=/ceph/aeon DJ_EXTERNAL_STORE=/home/${USER_NAME}/djstore
+RUN mkdir -p ${RAW_DATA_DIR} ${DJ_EXTERNAL_STORE} && \
+    chown -R ${USER_NAME} ${RAW_DATA_DIR} ${DJ_EXTERNAL_STORE}
 
-# make following RUN commands use the `aeon_env` env:
-SHELL ["conda", "run", "-n", "aeon_env", "/bin/bash", "-c"]
+# directory where default apt_requirements.txt and environment.yml are located
+COPY ["nodeps.txt", "apt_requirements.txt*", "environment.yml*", "/srv/conda/"]
 
-# install python package as dev pkg
-RUN pip install ${GITHUB_REPO}/.
+# create the conda environment `aeon_env` from yml file and install aeon_mecha pkg
+RUN CONDA_ENV_FILE=${GITHUB_REPO}/env.yml init-env pip install ${GITHUB_REPO}/.
 
-# template command to change in docker-compose.yml
-CMD ["conda", "run", "-n", "aeon_env", "aeon_ingest", "--help"]
+USER ${USER_NAME}
+SHELL ["/bin/bash", "--login", "-c"]
+ENTRYPOINT ["conda-run"]
+CMD ["tail", "-f", "/dev/null"]

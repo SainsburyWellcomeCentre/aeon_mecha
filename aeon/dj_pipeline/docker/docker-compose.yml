@@ -1,49 +1,47 @@
+# IMAGE_CREATED=$(date -u +'%Y-%m-%dT%H:%M:%SZ') SSH_KEY=$(cat ~/.ssh/aeon_mecha) docker-compose up -d
+# SSH_KEY=0 docker-compose down
 version: "2.4"
 
-# map raw data folder on local host machine to existing directory in container
-x-ceph-volume:
-  &default-ceph-vol
-  type: bind
-  source: ~/SSHFS/aeon/ceph/aeon
-  target: /ceph/aeon
-
-# map shared folder on local host machine to $HOME/djstore in container
-x-djstore-volume:
-  &default-djstore-vol
-  type: bind
-  source: ~/datajoint/projects/Aeon/mnt/djstore
-  target: /home/anaconda/djstore
-
 # common options that are shared among different services
-x-aeon-ingest-common:
-  &default-aeon-ingest
-  platform: linux/amd64
+x-aeon-ingest-common: &aeon-ingest-common
   build:
     context: ./
     args:
-      - GITHUB_USER=vathes
-      - GITHUB_REPO=aeon_mecha
-      - GITHUB_BRANCH=datajoint_pipeline
-      - SSH_KEY
+      IMAGE_VERSION: v0.1.0
+      IMAGE_CREATED: ${IMAGE_CREATED:-2021-11-11T11:11:11Z}
+      GITHUB_USER: vathes # iamamutt
+      GITHUB_REPO: aeon_mecha
+      GITHUB_BRANCH: datajoint_pipeline
+      SSH_KEY: ${SSH_KEY:?Need file to SSH key for private repo clone}
   environment:
-    - DJ_USER=jburling
-    - DJ_PASS=******
-    - DJ_HOST=host.docker.internal
+    DJ_USER: ${DJ_USER:-root}
+    DJ_PASS: ${DJ_PASS:-simple}
+    DJ_HOST: ${DJ_HOST:-host.docker.internal}
   volumes:
-    - *default-djstore-vol
-    - *default-ceph-vol
-  # user: 801150979:anaconda
+    # map raw data directory on host to $RAW_DATA_DIR in container
+    - "${LOCAL_CEPH_ROOT:-/ceph/aeon}:/ceph/aeon"
+    # map directory $DJ_EXTERNAL_STORE in container to volume on host
+    - djstore:/home/anaconda/djstore"
   extra_hosts:
     - host.docker.internal:host-gateway # 172.17.0.1
-  scale: 1 # deprecated
-  command: tail -f /dev/null
+  scale: 1
+  command: ["tail", "-f", "/dev/null"]
 
 services:
   aeon_high:
-    << : *default-aeon-ingest
-    # command: conda run -n aeon_env aeon_ingest high -d 20 -s 1
+    <<: *aeon-ingest-common
+    scale: 1
+    # command: ["aeon_ingest", "high", "-d", "20", "-s", "1"]
 
   aeon_mid:
-    << : *default-aeon-ingest
-    # command: conda run -n aeon_env aeon_ingest mid -d 20 -s 1
+    <<: *aeon-ingest-common
+    depends_on:
+      aeon_high:
+        condition: service_started
+    scale: 2
+    # command: ["aeon_ingest", "mid", "-d", "20", "-s", "1"]
+    command: ["aeon_ingest", "--help"]
 
+volumes:
+  djstore:
+    name: aeon-external-store
