@@ -131,7 +131,7 @@ class SessionSummary(dj.Computed):
     ---
     total_distance_travelled: float  # (m) total distance the animal travelled during this session
     total_pellet_count: int  # total pellet delivered (triggered) for all patches during this session
-    total_wheel_distance_travelled: float  # total wheel distance for all patches
+    total_wheel_distance_travelled: float  # total wheel travelled distance for all patches
     change_in_weight: float  # weight change before/after the session
     """
 
@@ -141,7 +141,7 @@ class SessionSummary(dj.Computed):
         -> acquisition.ExperimentFoodPatch
         ---
         pellet_count: int  # number of pellets being delivered (triggered) by this patch during this session
-        wheel_distance_travelled: float  # wheel travel distance during this session for this patch
+        wheel_distance_travelled: float  # wheel travelled distance during this session for this patch
         """
 
     # Work on finished Session with TimeSlice and SubjectPosition fully populated only
