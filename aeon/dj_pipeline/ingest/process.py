@@ -77,10 +77,10 @@ mid_priority(tracking.SubjectPosition)
 mid_priority(analysis.SessionTimeDistribution)
 mid_priority(analysis.SessionSummary)
 mid_priority(analysis.SessionRewardRate)
-mid_priority(report.SubjectRewardRateDifference.delete_outdated_entries)
+mid_priority(report.delete_outdated_plot_entries)
 mid_priority(report.SubjectRewardRateDifference)
-mid_priority(report.SubjectWheelTravelledDistance.delete_outdated_entries)
 mid_priority(report.SubjectWheelTravelledDistance)
+mid_priority(report.ExperimentTimeDistribution)
 # mid_priority(report.SessionSummaryPlot)
 
 # ---- some wrappers to support execution as script or CLI

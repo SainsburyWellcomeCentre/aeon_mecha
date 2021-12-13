@@ -1,19 +1,15 @@
+import datajoint as dj
 import numpy as np
 import pandas as pd
-import datetime
-import pathlib
-import argparse
-import plotly.graph_objects as go
-import plotly.subplots
 import plotly.express as px
 import plotly.io as pio
 import matplotlib.pyplot as plt
 
-from aeon.dj_pipeline import acquisition, analysis
+from aeon.dj_pipeline import lab, acquisition, analysis
 
 
 # pio.renderers.default = 'png'
-# pio.orca.config.executable = '/nfs/nhome/live/thinh/.conda/envs/tn-aeon/bin/orca'
+# pio.orca.config.executable = '~/.conda/envs/tn-aeon/bin/orca'
 # pio.orca.config.use_xvfb = True
 # pio.orca.config.save()
 
@@ -80,21 +76,6 @@ def plot_wheel_travelled_distance(session_keys):
             * acquisition.ExperimentFoodPatch.proj('food_patch_description')
             & session_keys)
 
-    # subj_names, sess_starts, patch_names, wheel_travelled_distances = distance_travelled_query.fetch(
-    #     'subject', 'session_start', 'food_patch_description', 'wheel_distance_travelled')
-    #
-    # traces = []
-    # for subj_name, sess_start, patch, distance in zip(subj_names, sess_starts,
-    #                                                   patch_names, wheel_travelled_distances):
-    #     traces.append(go.Bar(name=patch,
-    #                          x=f'{subj_name}_{sess_start.strftime("%m/%d/%Y")}',
-    #                          y=distance))
-    #
-    # title = '|'.join((acquisition.Experiment.Subject & session_keys).fetch('subject'))
-    # fig = go.Figure(data=traces)
-    # fig.update_yaxes(title_text='Wheel Travelled Distance (m)')
-    # fig.update_layout(title=title, barmode='stack')
-
     distance_travelled_df = distance_travelled_query.proj(
         'food_patch_description', 'wheel_distance_travelled').fetch(format='frame').reset_index()
 
@@ -109,6 +90,56 @@ def plot_wheel_travelled_distance(session_keys):
     title = '|'.join((acquisition.Experiment.Subject & session_keys).fetch('subject'))
     fig = px.bar(distance_travelled_df, x="session", y="Travelled Distance (m)",
                  color="Patch", title=title)
+    fig.update_xaxes(tickangle=45)
+
+    return fig
+
+
+def plot_average_time_distribution(session_keys):
+    subject_list, arena_location_list, avg_time_spent_list = [], [], []
+
+    # Time spent in arena and corridor
+    subjects, avg_in_corridor, avg_in_arena = (acquisition.Experiment.Subject & session_keys).aggr(
+        analysis.SessionTimeDistribution,
+        avg_in_corridor='AVG(time_fraction_in_corridor)',
+        avg_in_arena='AVG(time_fraction_in_arena)').fetch(
+        'subject', 'avg_in_corridor', 'avg_in_arena')
+    subject_list.extend(subjects)
+    arena_location_list.extend(['corridor'] * len(avg_in_corridor))
+    avg_time_spent_list.extend(avg_in_corridor)
+    subject_list.extend(subjects)
+    arena_location_list.extend(['arena'] * len(avg_in_arena))
+    avg_time_spent_list.extend(avg_in_arena)
+
+    # Time spent in food-patch
+    subjects, patches, avg_in_patch = (
+            dj.U('experiment_name', 'subject', 'food_patch_description')
+            & acquisition.Experiment.Subject * acquisition.ExperimentFoodPatch & session_keys).aggr(
+        analysis.SessionTimeDistribution.FoodPatch * acquisition.ExperimentFoodPatch,
+        avg_in_patch='AVG(time_fraction_in_patch)').fetch(
+        'subject', 'food_patch_description', 'avg_in_patch')
+    subject_list.extend(subjects)
+    arena_location_list.extend(patches)
+    avg_time_spent_list.extend(avg_in_patch)
+
+    # Time spent in nest
+    subjects, nests, avg_in_nest = (
+            acquisition.Experiment.Subject * lab.ArenaNest & session_keys).aggr(
+        analysis.SessionTimeDistribution.Nest,
+        avg_in_nest='AVG(time_fraction_in_nest)').fetch(
+        'subject', 'nest', 'avg_in_nest')
+    subject_list.extend(subjects)
+    arena_location_list.extend([f'Nest{n}' for n in nests])
+    avg_time_spent_list.extend(avg_in_nest)
+
+    # Average time distribution
+    avg_time_df = pd.DataFrame({'Subject': subject_list,
+                                'Location': arena_location_list,
+                                'Time Fraction': avg_time_spent_list})
+
+    title = '|'.join((acquisition.Experiment & session_keys).fetch('experiment_name'))
+    fig = px.bar(avg_time_df, x="Subject", y="Time Fraction",
+                 color='Location', barmode='group', title=title)
     fig.update_xaxes(tickangle=45)
 
     return fig

@@ -74,6 +74,33 @@ SciViz:
                     query = aeon_analysis.SessionSummary
                     return {'query': query, 'fetch_args': []}
 
+    ExperimentReport:
+      route: /experiment_report
+      grids:
+        experiment_report:
+          route: /experiment_report
+          type: dynamic
+          columns: 1
+          row_height: 1000
+          restriction: >
+            def restriction(**kwargs):
+                return dict(**kwargs)
+          dj_query: >
+            def dj_query(aeon_acquisition):
+                acquisition = aeon_acquisition
+                return {'query': aeon_acquisition.Experiment(), 'fetch_args': []}
+          component_templates:
+            comp3:
+              route: /avg_time_distribution
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_report):
+                    report = aeon_report
+                    return {'query': report.ExperimentTimeDistribution(), 'fetch_args': ['time_distribution_plotly']}
+
     SubjectReport:
       route: /subject_report
       grids:
