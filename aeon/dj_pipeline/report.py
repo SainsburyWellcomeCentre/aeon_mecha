@@ -253,6 +253,48 @@ class SubjectWheelTravelledDistance(dj.Computed):
             (cls & outdated_entries.fetch('KEY')).delete()
 
 
+@schema
+class ExperimentTimeDistribution(dj.Computed):
+    definition = """
+    -> acquisition.Experiment
+    ---
+    session_count: int
+    time_distribution_plotly: longblob  # dictionary storing the plotly object (from fig.to_plotly_json())
+    """
+
+    def make(self, key):
+        from aeon.dj_pipeline.api.plotting import plot_average_time_distribution
+        session_keys = (analysis.SessionTimeDistribution & key).fetch('KEY')
+
+        fig = plot_average_time_distribution(session_keys)
+
+        fig_json = json.loads(fig.to_json())
+
+        self.insert1({**key, 'session_count': len(session_keys),
+                      'time_distribution_plotly': fig_json})
+
+    @classmethod
+    def delete_outdated_entries(cls):
+        """
+        Each entry in this table correspond to one subject. However the plot is capturing
+            data for all sessions.
+        Hence a dynamic update routine is needed to recompute the plot as new sessions
+            become available
+        """
+        outdated_entries = (cls * (acquisition.Experiment.aggr(
+            analysis.SessionTimeDistribution, current_session_count='count(session_start)'))
+                            & 'session_count != current_session_count')
+        with dj.config(safemode=False):
+            (cls & outdated_entries.fetch('KEY')).delete()
+
+
+def delete_outdated_plot_entries():
+    for tbl in (SubjectRewardRateDifference,
+                SubjectWheelTravelledDistance,
+                ExperimentTimeDistribution):
+        tbl.delete_outdated_entries()
+
+
 # ---------- HELPER FUNCTIONS --------------
 
 
