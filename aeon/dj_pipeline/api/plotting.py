@@ -60,3 +60,55 @@ def plot_reward_rate_differences(subject_keys):
     )
 
     return fig
+
+
+def plot_wheel_travelled_distance(session_keys):
+    """
+    Plotting the wheel travelled distance for different patches
+        for all sessions specified in "session_keys"
+    Example usage:
+    ```
+    session_keys = (acquisition.Session & acquisition.SessionEnd
+     & {'experiment_name': 'exp0.1-r0', 'subject': 'BAA-1099794'}).fetch('KEY')
+
+    fig = plot_wheel_travelled_distance(session_keys)
+    ```
+    """
+
+    distance_travelled_query = (
+            analysis.SessionSummary.FoodPatch
+            * acquisition.ExperimentFoodPatch.proj('food_patch_description')
+            & session_keys)
+
+    # subj_names, sess_starts, patch_names, wheel_travelled_distances = distance_travelled_query.fetch(
+    #     'subject', 'session_start', 'food_patch_description', 'wheel_distance_travelled')
+    #
+    # traces = []
+    # for subj_name, sess_start, patch, distance in zip(subj_names, sess_starts,
+    #                                                   patch_names, wheel_travelled_distances):
+    #     traces.append(go.Bar(name=patch,
+    #                          x=f'{subj_name}_{sess_start.strftime("%m/%d/%Y")}',
+    #                          y=distance))
+    #
+    # title = '|'.join((acquisition.Experiment.Subject & session_keys).fetch('subject'))
+    # fig = go.Figure(data=traces)
+    # fig.update_yaxes(title_text='Wheel Travelled Distance (m)')
+    # fig.update_layout(title=title, barmode='stack')
+
+    distance_travelled_df = distance_travelled_query.proj(
+        'food_patch_description', 'wheel_distance_travelled').fetch(format='frame').reset_index()
+
+    distance_travelled_df['session'] = [f'{subj_name}_{sess_start.strftime("%m/%d/%Y")}'
+                                        for subj_name, sess_start in zip(distance_travelled_df.subject,
+                                                                         distance_travelled_df.session_start)]
+
+    distance_travelled_df.rename(columns={'food_patch_description': 'Patch',
+                                          'wheel_distance_travelled': 'Travelled Distance (m)'},
+                                 inplace=True)
+
+    title = '|'.join((acquisition.Experiment.Subject & session_keys).fetch('subject'))
+    fig = px.bar(distance_travelled_df, x="session", y="Travelled Distance (m)",
+                 color="Patch", title=title)
+    fig.update_xaxes(tickangle=45)
+
+    return fig
