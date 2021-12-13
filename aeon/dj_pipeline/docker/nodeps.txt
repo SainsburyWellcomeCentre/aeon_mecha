@@ -1,0 +1,1 @@
+# This is a placeholder file that **must** exist in case the files "apt_requirements.txt" or "environment.yml" are missing from the build context directory.
