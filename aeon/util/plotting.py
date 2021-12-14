@@ -106,3 +106,65 @@ def colorline(x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(0.0,
     lines = LineCollection(segments, array=z, cmap=cmap, norm=norm, **kwargs)
     ax.add_collection(lines)
     return lines
+
+
+
+def plotWheelData():
+    pellets1, pellets2, state1, state2, wheel1, wheel2 = D
+    fig = plt.figure()
+    rate_ax = fig.add_subplot(211)
+    distance_ax = fig.add_subplot(212)
+    ethogram_ax = fig.add_subplot(20,1,20)
+    plorateplot(pellets1,'600s',frequency=500,weight=0.1,start=start,end=end,smooth='120s',color='b', label='Patch 1', ax=rate_ax)
+    rateplot(pellets2,'600s',frequency=500,weight=0.1,start=start,end=end,smooth='120s',color='r', label='Patch 2', ax=rate_ax)
+    distance_ax.plot(sessiontime(wheel1.index), wheel1 / 100, 'b')  # plot position data as a path trajectory
+    distance_ax.plot(sessiontime(wheel2.index), wheel2 / 100, 'r')  # plot position data as a path trajectory
+
+    # plot vertical line indicating change of patch state, e.g. threshold
+    change1 = state1[state1.threshold.diff().abs() > 0]
+    change2 = state2[state2.threshold.diff().abs() > 0]
+    change = pd.concat([change1, change2])
+    if len(change) > 0:
+        ymin, ymax = distance_ax.get_ylim()
+        distance_ax.vlines(sessiontime(change.index, start), ymin, ymax, linewidth=1, color='k')
+
+    # plot ethogram
+    consecutive = (ethogram != ethogram.shift()).cumsum()
+    ethogram_colors = {
+        'patch1' : 'blue',
+        'patch2' : 'red',
+        'arena': 'green',
+        'corridor' : 'black',
+        'nest' : 'black' }
+    ethogram_offsets = {
+        'patch1' : [0,0.2],
+        'patch2' : [0.2,0.2],
+        'arena': [0.4,0.2],
+        'corridor' : [0.6,0.2],
+        'nest' : [0.6,0.2] }
+    ethogram_ranges = ethogram.groupby(by=[ethogram, consecutive]).apply(lambda x:[
+        sessiontime(x.index[0],start),
+        sessiontime(x.index[-1],x.index[0])])
+    for key,ranges in ethogram_ranges.groupby(level=0):
+        color = ethogram_colors[key]
+        offsets = ethogram_offsets[key]
+        ethogram_ax.broken_barh(ranges,offsets,color=color)
+
+    rate_ax.legend()
+    rate_ax.sharex(distance_ax)
+    rate_ax.tick_params(bottom=False, labelbottom=False)
+    fig.subplots_adjust(hspace = 0.1)
+    rate_ax.set_ylabel('pellets / min')
+    rate_ax.set_title('foraging rate (bin size = 10 min)')
+    distance_ax.set_xlabel('time (min)')
+    distance_ax.set_ylabel('distance travelled (m)')
+    set_ymargin(distance_ax, 0.2, 0.1)
+    rate_ax.spines['top'].set_visible(False)
+    rate_ax.spines['right'].set_visible(False)
+    rate_ax.spines['bottom'].set_visible(False)
+    distance_ax.spines['top'].set_visible(False)
+    distance_ax.spines['right'].set_visible(False)
+    ethogram_ax.set_axis_off()
+    fig.savefig('{0}/ethogram/{1}-ethogram.png'.format(output, prefix), dpi=dpi)
+    fig.savefig('{0}/ethogram-svg/{1}-ethogram.svg'.format(output, prefix), dpi=dpi)
+    plt.close(fig)

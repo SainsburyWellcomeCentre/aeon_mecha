@@ -83,3 +83,5 @@ def ethogram(root, start, end):
     ethogram[in_patch1] = 'patch1'
     ethogram[in_patch2] = 'patch2'
     ethogram[in_arena] = 'arena'
+    return ethogram
+
