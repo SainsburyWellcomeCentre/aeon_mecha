@@ -2,7 +2,9 @@ import pandas as pd
 import aeon.analyze.patches as patches
 import aeon.preprocess.api as api
 import aeon.util.plotting as aplot
+from functools import cache
 
+@cache
 def getWheelData(root, start, end):
 
     encoder1 = api.encoderdata(root, 'Patch1', start=start, end=end) # get encoder data for patch1 between start and end
@@ -16,7 +18,28 @@ def getWheelData(root, start, end):
     wheel2 = api.distancetravelled(encoder2.angle)                   # compute total distance travelled on patch2 wheel
     pellets1 = pellets1[pellets1.event == 'TriggerPellet']            # get timestamps of pellets delivered at patch1
     pellets2 = pellets2[pellets2.event == 'TriggerPellet'] 
-    return (pellets1, pellets2, state1, state2, wheel1, wheel2)
+    return {"pellets1": pellets1,
+            "pellets2": pellets2,
+            "state1": state1,
+            "state2": state2,
+            "wheel1": wheel1,
+            "wheel2": wheel2}
+
+@cache
+def getPositionData(root, start, end):
+
+    frequency = 50                                                    # frame rate in Hz
+    pixelscale = 0.00192                                              # 1 px = 1.92 mm
+    positionrange = [[0,1440*pixelscale], [0,1080*pixelscale]]        # frame position range in metric units
+    position = api.positiondata(root, start=start, end=end)          # get position data between start and end
+    # if start > pd.Timestamp('20210621') and \
+    #    start < pd.Timestamp('20210701'):                              # time offset to account for abnormal drop event
+    #     position.index = position.index + pd.Timedelta('22.57966s')   # exact offset extracted from video timestamps
+    valid_position = (position.area > 0) & (position.area < 10000)     # filter for objects of the correct size
+    position = position[valid_position]                               # get only valid positions
+    position.x = position.x * pixelscale                              # scale position data to metric units
+    position.y = position.y * pixelscale
+    return {"position":position, "frequency":frequency, "positionrange":positionrange}
 
 def merge(df, first=[], merge_id=False):
     """
@@ -75,16 +98,13 @@ def ethogram(root, start, end):
     dist0 = patches.distance(position, (x0, y0))
     distp1 = patches.distance(position, (p1x, p1y))
     distp2 = patches.distance(position, (p2x, p2y))
-    in_corridor = (dist0 < outer) & (dist0 > inner)
-    in_nest = dist0 > outer
     in_patch1 = patches.activepatch(wheel1, distp1 < patchradius)
     in_patch2 = patches.activepatch(wheel2, distp2 < patchradius)
     in_arena = ~in_corridor & ~in_nest & ~in_patch1 & ~in_patch2
     ethogram = pd.Series('other', index=position.index)
-    ethogram[in_corridor] = 'corridor'
-    ethogram[in_nest] = 'nest'
     ethogram[in_patch1] = 'patch1'
     ethogram[in_patch2] = 'patch2'
     ethogram[in_arena] = 'arena'
     return ethogram
+
 
