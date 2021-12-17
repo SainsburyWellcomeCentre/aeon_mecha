@@ -18,7 +18,7 @@ def getWheelData(root, start, end):
     pellets2 = pellets2[pellets2.event == 'TriggerPellet'] 
     return (pellets1, pellets2, state1, state2, wheel1, wheel2)
 
-def merge(df, first=[]):
+def merge(df, first=[], merge_id=False):
     """
     merge(df, first=[]):
 
@@ -42,10 +42,13 @@ def merge(df, first=[]):
     for i in first:
         df.loc[i,'end'] = df.loc[i+1,'end']
         df.loc[i,'weight_end'] = df.loc[i+1,'weight_end']
+        if merge_id:
+            df.loc[i,'id'] = '{};{}'.format(df.loc[i,'id'],df.loc[i+1,'id'])
 
     second = [i+1 for i in first]
     df.drop(index=second, inplace=True)                
-    
+    df.reset_index(inplace=True, drop=True)
+
 def ethogram(root, start, end):
 
     frequency = 50                                                    # frame rate in Hz
