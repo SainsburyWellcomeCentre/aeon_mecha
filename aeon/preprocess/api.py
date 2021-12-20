@@ -1,5 +1,6 @@
 import os
 import glob
+import math
 import bisect
 import datetime
 import pandas as pd
@@ -373,7 +374,13 @@ def harpreader(file, names=None):
         strides=(stride, elementsize))
     time = aeon(seconds)
     time.name = 'time'
-    return pd.DataFrame(payload, index=time, columns=names)
+
+    if names is not None and payloadshape[1] < len(names):
+        data = pd.DataFrame(payload, index=time, columns=names[:payloadshape[1]])
+        data[names[payloadshape[1]:]] = math.nan
+        return data
+    else:
+        return pd.DataFrame(payload, index=time, columns=names)
 
 def harpdata(path, device, register, names=None, start=None, end=None, time=None, tolerance=None):
     '''
@@ -495,7 +502,7 @@ def positiondata(path, device='FrameTop', start=None, end=None, time=None, toler
     return harpdata(
         path,
         device, register=200,
-        names=['x', 'y', 'angle', 'major', 'minor', 'area'],
+        names=['x', 'y', 'angle', 'major', 'minor', 'area', 'id'],
         start=start,
         end=end,
         time=time,
