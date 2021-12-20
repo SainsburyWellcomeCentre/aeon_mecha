@@ -83,7 +83,8 @@ def getWheelData(root, start, end):
             "state1": state1,
             "state2": state2,
             "wheel1": wheel1,
-            "wheel2": wheel2}
+            "wheel2": wheel2,
+            }
 
 @cache
 def getPositionData(root, start, end):

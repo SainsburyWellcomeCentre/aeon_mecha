@@ -26,6 +26,28 @@ def heatmap(position, frequency, ax=None, **kwargs):
     cbar.set_label('time (s)')
     return mesh, cbar
 
+def positionTitle(session, start, end, t1, t2):
+    pass
+
+def positionmap(position, positionrange, frequency=50, bins=250, title_str="", fig=None, ax=None):
+    """
+    Input:
+    =====
+    position        a dataframe with x,y
+    positionrange   sets the x and y lim (i think)
+    frequency       [50Hz], the sampling rate of the position data
+    bins            [500], the spatial resolution 
+    """
+    if not ax:
+        fig, ax = plt.subplots(1, 1)
+    heatmap(position, frequency, bins=bins, range=positionrange, ax=ax)
+    ax.set_xlabel('x (m)')
+    ax.set_ylabel('y (m)')
+    ax.set_title(title_str)
+    ax.set_ylim([0.4, 1.8])
+    ax.set_aspect('equal')
+    return (fig, ax)
+
 def circle(x, y, radius, fmt=None, ax=None, **kwargs):
     '''
     Plot a circle centered at the given x, y position with the specified radius.
@@ -110,16 +132,6 @@ def colorline(x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(0.0,
 
 
 
-def positionmap(position, positionrange, frequency=50, bins=500, title_str="", fig=None, ax=None):
-    if not ax:
-        fig, ax = plt.subplots(1, 1)
-    heatmap(position, frequency, bins=500, range=positionrange, ax=ax)
-    ax.set_xlabel('x (m)')
-    ax.set_ylabel('y (m)')
-    ax.set_title(title_str)
-    ax.set_ylim([0.4, 1.8])
-    ax.set_aspect('equal')
-    return (fig, ax)
 
 def plotWheelData():
     pellets1, pellets2, state1, state2, wheel1, wheel2 = D
