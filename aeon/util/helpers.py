@@ -13,7 +13,35 @@ else:
     def eprint(*args):
         pass
 
- 
+
+def stateChangeRows(df, patchid=1):
+    """
+    Extract state change times from the patches.
+    I'm sure there is a more elegant way to do this.
+    """
+    switchind = np.diff(df.threshold).nonzero()[0]
+    
+    ## Old python way
+    # time = []
+    # before = []
+    # after = []
+    # patch = []
+
+    # for i in switchind:
+    #     time.append(pd.Timestamp(df.index[switchind + 1][0]))
+    #     before.append(df.threshold[switchind].values[0])
+    #     after.append(df.threshold[switchind].values[0])
+    #     patch.append(patchid)
+
+
+    return pd.DataFrame({
+        "time":[pd.Timestamp(x) for x in df.index[switchind + 1]],
+        "before":df.threshold[switchind].values,
+        "after":df.threshold[switchind+1].values,
+        "patch":df.threshold[switchind].values * 0 + patchid
+    })
+
+
 def splitOnStateChange(root, start, end):
     """
     startts, endts = splitOnStateChange(root, start, end)
@@ -23,19 +51,18 @@ def splitOnStateChange(root, start, end):
     If there is no switch return [start,],[end,] for consistency.
     """
     state1 = api.patchdata(root, 'Patch1', start=start, end=end)     # get patch state for patch1 between start and end
-    state2 = api.patchdata(root, 'Patch2', start=start, end=end)  
-    states = pd.concat([state1, state2]).sort_index()
-    # Combine the data from the two patches and resort by time. Note: when i tried to avoid copying, i got unexpected results :shrug:
-    eprint(state1.shape, state2.shape, states.shape)
+    state2 = api.patchdata(root, 'Patch2', start=start, end=end)
+    s1 = stateChangeRows(state1,1)
+    s2 = stateChangeRows(state2,2)  
+    sdf = pd.concat([s1, s2]).sort_index()
+    eprint(state1.shape, state2.shape, sdf.shape)
     
-    switchind = np.diff(states.threshold).nonzero()[0] + 1
-    #if not switchind:
-    #    return [start,],[end,]
-    
-    startts = [start,] + states.index[switchind]
-    endts = states.index[switchind] + [end,]
+    switchlist = [x for x in sdf.time]
+    startts = switchlist.copy()
+    startts.insert(0, start)
+    switchlist.append(end) # For some reason using np.append gives the wrong type
 
-    return startts,endts
+    return startts, switchlist, sdf
 
 @cache
 def getWheelData(root, start, end):

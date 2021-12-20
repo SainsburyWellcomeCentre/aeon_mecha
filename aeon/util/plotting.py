@@ -109,8 +109,10 @@ def colorline(x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(0.0,
 
 
 
-def positionmap(position, positionrange, frequency=50, bins=500, title_str=""):
-    fig, ax = plt.subplots(1, 1)
+
+def positionmap(position, positionrange, frequency=50, bins=500, title_str="", fig=None, ax=None):
+    if not ax:
+        fig, ax = plt.subplots(1, 1)
     heatmap(position, frequency, bins=500, range=positionrange, ax=ax)
     ax.set_xlabel('x (m)')
     ax.set_ylabel('y (m)')
