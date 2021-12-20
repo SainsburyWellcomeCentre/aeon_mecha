@@ -6,13 +6,19 @@ import matplotlib.pyplot as plt
 # root = '/ceph/aeon/test2/experiment0.1'
 root = '/home/jerlich/mnt/delab/data/arena0.1/socialexperiment0'
 
+dpi = 300
+output = 'figures'
+
 data = aeon.sessiondata(root)
-annotations = aeon.annotations(root)
+# annotations = aeon.annotations(root)
 
 data = data[data.id.str.startswith('BAA')]                            # take only proper sessions
-if len(data) % 2 != 0:                                                # if number of sessions don't pair up
-    data = data.drop(data.index[-1])                                  # drop last session (might be ongoing)
+# if len(data) % 2 != 0:                                                # if number of sessions don't pair up
+#     data = data.drop(data.index[-1])                                  # drop last session (might be ongoing)
 data = aeon.sessionduration(data)                                     # compute session duration
+data = data[data.id.str.startswith('BAA')]                     # take only mouse sessions
+data = data[data.start >= pd.Timestamp('20211206')]
+data = data[data.start <= pd.Timestamp('20211208')]
 
 for session in data.itertuples():                                     # for all sessions
     print('{0} on {1}...'.format(session.id, session.Index))          # print progress report
@@ -49,5 +55,6 @@ for session in data.itertuples():                                     # for all 
     ax3.set_ylabel('distance (cm)')                                   # set axis label
     ax4.set_ylabel('distance (cm)')                                   # set axis label
 
-    fig.savefig('{0}_{1}.png'.format(session.id,start.date()))        # save figure tagged with id and date
+    fig.savefig('{0}/{1}_{2}.png'.format(output, session.id,start.date()), dpi=dpi)
+
     plt.close(fig)                                                    # close figure
