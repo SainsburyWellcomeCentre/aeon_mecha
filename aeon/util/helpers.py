@@ -1,8 +1,41 @@
 import pandas as pd
+import numpy as np
 import aeon.analyze.patches as patches
 import aeon.preprocess.api as api
 import aeon.util.plotting as aplot
 from functools import cache
+
+DEBUG = True
+
+if DEBUG:
+    eprint = print
+else:
+    def eprint(*args):
+        pass
+
+ 
+def splitOnStateChange(root, start, end):
+    """
+    startts, endts = splitOnStateChange(root, start, end)
+
+    split up the session into sections that have the same state.
+    Output: lists startts, endts.
+    If there is no switch return [start,],[end,] for consistency.
+    """
+    state1 = api.patchdata(root, 'Patch1', start=start, end=end)     # get patch state for patch1 between start and end
+    state2 = api.patchdata(root, 'Patch2', start=start, end=end)  
+    states = pd.concat([state1, state2]).sort_index()
+    # Combine the data from the two patches and resort by time. Note: when i tried to avoid copying, i got unexpected results :shrug:
+    eprint(state1.shape, state2.shape, states.shape)
+    
+    switchind = np.diff(states.threshold).nonzero()[0] + 1
+    #if not switchind:
+    #    return [start,],[end,]
+    
+    startts = [start,] + states.index[switchind]
+    endts = states.index[switchind] + [end,]
+
+    return startts,endts
 
 @cache
 def getWheelData(root, start, end):
