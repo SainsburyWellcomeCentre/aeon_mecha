@@ -86,21 +86,29 @@ def getWheelData(root, start, end):
             "wheel2": wheel2,
             }
 
-@cache
-def getPositionData(root, start, end):
+def getPositionData(root, start, end, duration=None):
 
-    frequency = 50                                                    # frame rate in Hz
-    pixelscale = 0.00192                                              # 1 px = 1.92 mm
-    positionrange = [[0,1440*pixelscale], [0,1080*pixelscale]]        # frame position range in metric units
-    position = api.positiondata(root, start=start, end=end)          # get position data between start and end
-    # if start > pd.Timestamp('20210621') and \
-    #    start < pd.Timestamp('20210701'):                              # time offset to account for abnormal drop event
-    #     position.index = position.index + pd.Timedelta('22.57966s')   # exact offset extracted from video timestamps
-    valid_position = (position.area > 0) & (position.area < 10000)     # filter for objects of the correct size
-    position = position[valid_position]                               # get only valid positions
-    position.x = position.x * pixelscale                              # scale position data to metric units
-    position.y = position.y * pixelscale
-    return {"position":position, "frequency":frequency, "positionrange":positionrange}
+    try:
+        return list(map(lambda x,y: _getPositionData(root,x,y, duration=duration),start,end))
+    except TypeError:
+        _getPositionData(root, start, end, duration=None)
+
+@cache
+def _getPositionData(root, start, end, duration=None):
+        if duration:
+            end = start + duration
+        frequency = 50                                                    # frame rate in Hz
+        pixelscale = 0.00192                                              # 1 px = 1.92 mm
+        positionrange = [[0,1440*pixelscale], [0,1080*pixelscale]]        # frame position range in metric units
+        position = api.positiondata(root, start=start, end=end)          # get position data between start and end
+        # if start > pd.Timestamp('20210621') and \
+        #    start < pd.Timestamp('20210701'):                              # time offset to account for abnormal drop event
+        #     position.index = position.index + pd.Timedelta('22.57966s')   # exact offset extracted from video timestamps
+        valid_position = (position.area > 0) & (position.area < 10000)     # filter for objects of the correct size
+        position = position[valid_position]                               # get only valid positions
+        position.x = position.x * pixelscale                              # scale position data to metric units
+        position.y = position.y * pixelscale
+        return {"position":position, "frequency":frequency, "positionrange":positionrange}
 
 def merge(df, first=[], merge_id=False):
     """
@@ -117,7 +125,6 @@ def merge(df, first=[], merge_id=False):
     """
 
     id = df.id.values
-    dates = df.start.dt.date.values
     # You need the values, because you are otherwise still in a pandas type
     if not first:
         for i in range(0,len(id)-1):
