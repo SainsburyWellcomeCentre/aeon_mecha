@@ -109,6 +109,7 @@ def merge(df, first=[], merge_id=False):
     df: a dataframe that is the output of sessiondata 
     If `first` is empty, then merge tries match adjacent sessions by ID.
 
+    Also fixes missing end Time
     Modifies the input! if you want to save it make a copy first
 
     Note: if you have removed rows from your dataframe you are likely to get 
@@ -116,11 +117,12 @@ def merge(df, first=[], merge_id=False):
     """
 
     id = df.id.values
+    dates = df.start.dt.date.values
     # You need the values, because you are otherwise still in a pandas type
     if not first:
         for i in range(0,len(id)-1):
-            if (id[i] == id[i+1] and
-                df.start.dt.date[i] == df.start.dt.date[i+1]):
+            if ((df.loc[i,'id'] == df.loc[i+1,'id']) and
+                (df.loc[i,'start'].date() == df.loc[i+1,'start'].date())):
                 first.append(i)
 
     for i in first:
@@ -132,6 +134,11 @@ def merge(df, first=[], merge_id=False):
     second = [i+1 for i in first]
     df.drop(index=second, inplace=True)                
     df.reset_index(inplace=True, drop=True)
+
+def markSessionEnded(df,offset=pd.DateOffset(minutes=100)):
+    bad_end = df.end.isnull()  
+    df.loc[bad_end,"end"] = df.loc[bad_end,'start'] + offset
+    df.duration = df.end - df.start
 
 def ethogram(root, start, end):
 
