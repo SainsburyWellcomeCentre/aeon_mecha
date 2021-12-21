@@ -29,7 +29,7 @@ def heatmap(position, frequency, ax=None, **kwargs):
 def positionTitle(session, start, end, t1, t2):
     pass
 
-def positionmap(position, positionrange, frequency=50, bins=250, title_str="", fig=None, ax=None):
+def positionmap(position, positionrange, frequency=50, bins=250, title_str="", fig=None, ax=None,**kwargs):
     """
     Input:
     =====
@@ -40,7 +40,7 @@ def positionmap(position, positionrange, frequency=50, bins=250, title_str="", f
     """
     if not ax:
         fig, ax = plt.subplots(1, 1)
-    heatmap(position, frequency, bins=bins, range=positionrange, ax=ax)
+    heatmap(position, frequency, bins=bins, range=positionrange, ax=ax,**kwargs)
     ax.set_xlabel('x (m)')
     ax.set_ylabel('y (m)')
     ax.set_title(title_str)
