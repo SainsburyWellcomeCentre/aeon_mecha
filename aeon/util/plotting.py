@@ -154,24 +154,27 @@ def colorline(x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(0.0,
 
 
 
-def plotFileName(path, plottype, meta, type='png'):
+def plotFileName(fpath, plottype, meta, type='png'):
     sessid = meta['session'].id.split('/')[0].replace(';','.').replace(' ','')
     filename = f'{sessid}_{meta["session"].start:%m%d}_{plottype}.{type}'
-    return path.join(path, filename)
+    return path.join(fpath, filename)
 
 def wheelTitle(meta):
     s = meta['session']
     return f"{s.id.split('/')[0]} {s.start:%m/%d %H:%M}"
 
 def plotWheelData(*,
-                    pellets1, pellets2, state1, state2, wheel1, wheel2,
-                    savepath=None,
-                    meta=None,
-                    title_str=None,
-                    filename = None,
-                    force = False,
-                    ax = None,
-                    forceshow = None):
+        pellets1, pellets2, state1, state2, wheel1, wheel2,
+        savepath=None,
+        meta=None,
+        title_str=None,
+        filename = None,
+        force = False,
+        ax = None,
+        forceshow = None,
+        total_dur = None,
+        dpi=350,
+        type='png'):
     """
     e.g. 
     `plotWheelData(helpers.getWheelData(root, start, end))`
@@ -183,12 +186,13 @@ def plotWheelData(*,
     ```
     """
     if savepath and meta and not filename:
-        filename = plotFileName(savepath,'patch',meta)
+        filename = plotFileName(savepath,'patch',meta,type=type)
 
     if not(force) and filename and path.exists(filename):
         print(f'{filename} already exists. Set `force=True` to overwrite')
-        img = mpimg.imread(filename)
-        return plt.imshow(img)
+        if forceshow:
+            img = mpimg.imread(filename)
+            return plt.imshow(img)
 
     if not(forceshow) and filename:
         forceshow = False
@@ -198,22 +202,35 @@ def plotWheelData(*,
 
     start = meta['session'].start
     end = meta['session'].end
-    fig = plt.figure()
-    rate_ax = fig.add_subplot(211)
-    distance_ax = fig.add_subplot(212)
+    if not ax:
+        fig = plt.figure()
+        rate_ax = fig.add_subplot(211)
+        distance_ax = fig.add_subplot(212)
+    else:
+        rate_ax, distance_ax = ax
+
+
+    change1 = state1[state1.threshold.diff().abs() > 0]
+    change2 = state2[state2.threshold.diff().abs() > 0]
+    change = pd.concat([change1, change2])
+    
+    # if len(change) > 0 and total_dur:
+    #     start = change.index - pd.DateOffset(minutes=(total_dur/2))
+    #     end = change.index + pd.DateOffset(minutes=(total_dur/2))
+
+    if total_dur:
+        end = start + pd.DateOffset(minutes=total_dur)
+
+    for x in [wheel1, wheel2, pellets1, pellets2]:
+        x.drop(x.loc[x.index > end].index, inplace=True)
+
     rateplot(pellets1,'600s',frequency=500,weight=0.1,start=start,end=end,smooth='120s',color='b', label='Patch 1', ax=rate_ax)
     rateplot(pellets2,'600s',frequency=500,weight=0.1,start=start,end=end,smooth='120s',color='r', label='Patch 2', ax=rate_ax)
     distance_ax.plot(sessiontime(wheel1.index), wheel1 / 100, 'b')  # plot position data as a path trajectory
     distance_ax.plot(sessiontime(wheel2.index), wheel2 / 100, 'r')  # plot position data as a path trajectory
 
     # plot vertical line indicating change of patch state, e.g. threshold
-    change1 = state1[state1.threshold.diff().abs() > 0]
-    change2 = state2[state2.threshold.diff().abs() > 0]
-    change = pd.concat([change1, change2])
-    if len(change) > 0:
-        ymin, ymax = distance_ax.get_ylim()
-        distance_ax.vlines(sessiontime(change.index, start), ymin, ymax, linewidth=1, color='k')
-
+    
     rate_ax.legend()
     rate_ax.sharex(distance_ax)
     rate_ax.tick_params(bottom=False, labelbottom=False)
@@ -229,9 +246,16 @@ def plotWheelData(*,
     distance_ax.spines['top'].set_visible(False)
     distance_ax.spines['right'].set_visible(False)
     
+    if len(change) > 0:
+        ymin, ymax = distance_ax.get_ylim()
+        distance_ax.vlines(sessiontime(change.index, start), ymin, ymax, linewidth=1, color='k')
 
-    #fig.savefig('{0}/ethogram/{1}-ethogram.png'.format(output, prefix), dpi=dpi)
-    #fig.savefig('{0}/ethogram-svg/{1}-ethogram.svg'.format(output, prefix), dpi=dpi)
-    #plt.close(fig)
+
     fig.patch.set_facecolor('white')
-    return fig
+    if filename:
+        fig.savefig(filename, dpi=dpi)
+    if forceshow:
+        return fig
+    else:
+        plt.close(fig)
+        return None

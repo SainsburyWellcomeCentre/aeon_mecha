@@ -73,7 +73,7 @@ def splitOnStateChange(root, start, end):
 
     return startts, switchlist, sdf
 
-@cache
+#@cache
 def getWheelData(root, start, end):
 
     encoder1 = api.encoderdata(root, 'Patch1', start=start, end=end) # get encoder data for patch1 between start and end
@@ -107,7 +107,7 @@ def getPositionData(root, start, end, duration=None):
     except TypeError:
         return [_getPositionData(root, start, end, duration=None),]
 
-@cache
+#@cache
 def _getPositionData(root, start, end, duration=None):
         if duration:
             end = start + duration
