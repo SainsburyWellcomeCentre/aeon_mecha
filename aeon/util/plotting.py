@@ -8,6 +8,9 @@ from matplotlib.collections import LineCollection
 from aeon.analyze.patches import *
 from os import path
 
+PATCH1_COLOR = 'b'
+PATCH2_COLOR = 'r'
+
 def heatmap(position, frequency, ax=None, **kwargs):
     '''
     Draw a heatmap of time spent in each location from specified position data and sampling frequency.
@@ -163,6 +166,8 @@ def wheelTitle(meta):
     s = meta['session']
     return f"{s.id.split('/')[0]} {s.start:%m/%d %H:%M}"
 
+
+
 def plotWheelData(*,
         pellets1, pellets2, state1, state2, wheel1, wheel2,
         savepath=None,
@@ -171,6 +176,7 @@ def plotWheelData(*,
         filename = None,
         force = False,
         ax = None,
+        change_in_red = False,
         forceshow = None,
         total_dur = None,
         dpi=350,
@@ -218,16 +224,29 @@ def plotWheelData(*,
     #     start = change.index - pd.DateOffset(minutes=(total_dur/2))
     #     end = change.index + pd.DateOffset(minutes=(total_dur/2))
 
+    
+    patch1_clr = PATCH1_COLOR
+    patch2_clr = PATCH2_COLOR
+    if len(change) > 0:
+        if len(change1) > 0 and change_in_red:
+            patch1_clr, patch2_clr = patch2_clr, patch1_clr
+        else:
+            return
+    else:
+        return
+            
+            
+
     if total_dur:
         end = start + pd.DateOffset(minutes=total_dur)
 
     for x in [wheel1, wheel2, pellets1, pellets2]:
         x.drop(x.loc[x.index > end].index, inplace=True)
 
-    rateplot(pellets1,'600s',frequency=500,weight=0.1,start=start,end=end,smooth='120s',color='b', label='Patch 1', ax=rate_ax)
-    rateplot(pellets2,'600s',frequency=500,weight=0.1,start=start,end=end,smooth='120s',color='r', label='Patch 2', ax=rate_ax)
-    distance_ax.plot(sessiontime(wheel1.index), wheel1 / 100, 'b')  # plot position data as a path trajectory
-    distance_ax.plot(sessiontime(wheel2.index), wheel2 / 100, 'r')  # plot position data as a path trajectory
+    rateplot(pellets1,'600s',frequency=500,weight=0.1,start=start,end=end,smooth='120s',color=patch1_clr, label='Patch 1', ax=rate_ax)
+    rateplot(pellets2,'600s',frequency=500,weight=0.1,start=start,end=end,smooth='120s',color=patch2_clr, label='Patch 2', ax=rate_ax)
+    distance_ax.plot(sessiontime(wheel1.index), wheel1 / 100, patch1_clr)  # plot position data as a path trajectory
+    distance_ax.plot(sessiontime(wheel2.index), wheel2 / 100, patch2_clr)  # plot position data as a path trajectory
 
     # plot vertical line indicating change of patch state, e.g. threshold
     

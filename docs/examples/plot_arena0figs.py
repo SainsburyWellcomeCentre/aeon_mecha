@@ -46,13 +46,15 @@ print('Data loaded and merged.')
 for session in session_list:
     try:
         meta = {'session':session}
-        filename = plotting.plotFileName(os.path.join(figpath,'patch'), 'patch', meta)
+        filename = plotting.plotFileName(os.path.join(figpath,'patch_flip'), 'patch', meta, type='png')
         if not os.path.exists(filename):
             data = helpers.getWheelData(dataroot, session.start, session.end)
             data['meta'] = meta
             data['filename'] = filename
+            data['change_in_red'] = True
             data['total_dur'] = 60 # show 70 minutes around change.
-            fig = plotting.plotWheelData(**data)
+            plotting.plotWheelData(**data)
+
             print(f'{filename} saved.')
         else:
             print(f'{filename} exists. Skipping.')
