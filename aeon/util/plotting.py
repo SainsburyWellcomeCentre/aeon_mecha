@@ -230,13 +230,7 @@ def plotWheelData(*,
     if len(change) > 0:
         if len(change1) > 0 and change_in_red:
             patch1_clr, patch2_clr = patch2_clr, patch1_clr
-        else:
-            return
-    else:
-        return
-            
-            
-
+        
     if total_dur:
         end = start + pd.DateOffset(minutes=total_dur)
 

@@ -5,7 +5,6 @@ import sys
 from os.path import expanduser
 sys.path.append(expanduser('~/repos/aeon_mecha_de'))
 
-
 import numpy as np
 import pandas as pd
 import aeon.analyze.patches as patches
@@ -21,7 +20,12 @@ import aeon.util.plotting as plotting
 # This path is only true if you are on pop.erlichlab.org
 dataroot = '/var/www/html/delab/data/arena0.1/socialexperiment0/'
 figpath = '/var/www/html/delab/figures/'
+try:
+    fileformat = sys.argv[1]
+except IndexError:
+    fileformat = 'png'
 
+print(f'Saving files as {fileformat} in {figpath}')
 #%% Load session data.
 
 sessdf = api.sessiondata(dataroot)
@@ -37,8 +41,12 @@ sessdf.reset_index(inplace=True, drop=True)
 df = sessdf.copy()
 helpers.merge(df)
 helpers.merge(df,first=[15])
-helpers.merge(df,first=[32,35], merge_id=True)
+helpers.merge(df,first=[32,35, 44, 46, 49], merge_id=True)
+helpers.merge(df, first=[42,])
+#%%
 helpers.markSessionEnded(df)
+
+#%% 
 session_list = df.itertuples()
 print('Data loaded and merged.')
 #%% save all the patch figures.
@@ -46,13 +54,13 @@ print('Data loaded and merged.')
 for session in session_list:
     try:
         meta = {'session':session}
-        filename = plotting.plotFileName(os.path.join(figpath,'patch_flip'), 'patch', meta, type='png')
+        filename = plotting.plotFileName(os.path.join(figpath,'patch_flip_full',fileformat), 'patch', meta, type=fileformat)
         if not os.path.exists(filename):
             data = helpers.getWheelData(dataroot, session.start, session.end)
             data['meta'] = meta
             data['filename'] = filename
             data['change_in_red'] = True
-            data['total_dur'] = 60 # show 70 minutes around change.
+            # data['total_dur'] = 60 # show 70 minutes around change.
             plotting.plotWheelData(**data)
 
             print(f'{filename} saved.')
