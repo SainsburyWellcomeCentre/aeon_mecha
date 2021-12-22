@@ -55,7 +55,8 @@ def splitOnStateChange(root, start, end):
     startts, endts = splitOnStateChange(root, start, end)
 
     split up the session into sections that have the same state.
-    Output: lists startts, endts.
+    ## Output
+    list startts, endts, data.
     If there is no switch return [start,],[end,] for consistency.
     """
     state1 = api.patchdata(root, 'Patch1', start=start, end=end)     # get patch state for patch1 between start and end

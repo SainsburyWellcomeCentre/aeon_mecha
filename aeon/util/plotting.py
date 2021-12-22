@@ -2,9 +2,11 @@ import math
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 import matplotlib.colors as colors
 from matplotlib.collections import LineCollection
 from aeon.analyze.patches import *
+from os import path
 
 def heatmap(position, frequency, ax=None, **kwargs):
     '''
@@ -28,6 +30,27 @@ def heatmap(position, frequency, ax=None, **kwargs):
 
 def positionTitle(session, start, end, t1, t2):
     pass
+
+
+# def patchplot_v1(*
+#     patchdf, start, end,
+#      # The rest of the inputs need to be specified as keywords
+#     savepath = None
+#     ):
+#     if savepath:
+#         rate_ax = fig.add_subplot(211)
+#         distance_ax = fig.add_subplot(212)
+#         rateplot(pellets1,'600s',frequency=500,weight=0.1,start=start,end=end,smooth='120s',color='b', label='Patch 1', ax=rate_ax)
+#         rateplot(pellets2,'600s',frequency=500,weight=0.1,start=start,end=end,smooth='120s',color='r', label='Patch 2', ax=rate_ax)
+#         distance_ax.plot(sessiontime(wheel1.index), wheel1 / 100, 'b')  # plot position data as a path trajectory
+#         distance_ax.plot(sessiontime(wheel2.index), wheel2 / 100, 'r')  # plot position data as a path trajectory
+#         change1 = state1[state1.threshold.diff().abs() > 0]
+#         change2 = state2[state2.threshold.diff().abs() > 0]
+#         change = pd.concat([change1, change2])
+#         if len(change) > 0:
+#             ymin, ymax = distance_ax.get_ylim()
+#             distance_ax.vlines(sessiontime(change.index, start), ymin, ymax, linewidth=1, color='k')
+
 
 def positionmap(position, positionrange, frequency=50, bins=250, title_str="", fig=None, ax=None,**kwargs):
     """
@@ -131,15 +154,54 @@ def colorline(x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(0.0,
 
 
 
+def plotFileName(path, plottype, meta, type='png'):
+    sessid = meta['session'].id.split('/')[0].replace(';','.').replace(' ','')
+    filename = f'{sessid}_{meta["session"].start:%m%d}_{plottype}.{type}'
+    return path.join(path, filename)
 
+def wheelTitle(meta):
+    s = meta['session']
+    return f"{s.id.split('/')[0]} {s.start:%m/%d %H:%M}"
 
-def plotWheelData():
-    pellets1, pellets2, state1, state2, wheel1, wheel2 = D
+def plotWheelData(*,
+                    pellets1, pellets2, state1, state2, wheel1, wheel2,
+                    savepath=None,
+                    meta=None,
+                    title_str=None,
+                    filename = None,
+                    force = False,
+                    ax = None,
+                    forceshow = None):
+    """
+    e.g. 
+    `plotWheelData(helpers.getWheelData(root, start, end))`
+    or 
+    ```
+    data = helpers.getWheelData(root, start, end)
+    data['filename'] = 'path_to_figs/patch_2020.png'
+    plotWheelData(**data)
+    ```
+    """
+    if savepath and meta and not filename:
+        filename = plotFileName(savepath,'patch',meta)
+
+    if not(force) and filename and path.exists(filename):
+        print(f'{filename} already exists. Set `force=True` to overwrite')
+        img = mpimg.imread(filename)
+        return plt.imshow(img)
+
+    if not(forceshow) and filename:
+        forceshow = False
+
+    if not title_str:
+        title_str = wheelTitle(meta)
+
+    start = meta['session'].start
+    end = meta['session'].end
     fig = plt.figure()
     rate_ax = fig.add_subplot(211)
     distance_ax = fig.add_subplot(212)
-    ethogram_ax = fig.add_subplot(20,1,20)
-    plorateplot(pellets1,'600s',frequency=500,weight=0.1,start=start,end=end,smooth='120s',color='b', label='Patch 1', ax=rate_ax)
+    rateplot(pellets1,'600s',frequency=500,weight=0.1,start=start,end=end,smooth='120s',color='b', label='Patch 1', ax=rate_ax)
     rateplot(pellets2,'600s',frequency=500,weight=0.1,start=start,end=end,smooth='120s',color='r', label='Patch 2', ax=rate_ax)
     distance_ax.plot(sessiontime(wheel1.index), wheel1 / 100, 'b')  # plot position data as a path trajectory
     distance_ax.plot(sessiontime(wheel2.index), wheel2 / 100, 'r')  # plot position data as a path trajectory
@@ -152,34 +214,12 @@ def plotWheelData():
         ymin, ymax = distance_ax.get_ylim()
         distance_ax.vlines(sessiontime(change.index, start), ymin, ymax, linewidth=1, color='k')
 
-    # plot ethogram
-    consecutive = (ethogram != ethogram.shift()).cumsum()
-    ethogram_colors = {
-        'patch1' : 'blue',
-        'patch2' : 'red',
-        'arena': 'green',
-        'corridor' : 'black',
-        'nest' : 'black' }
-    ethogram_offsets = {
-        'patch1' : [0,0.2],
-        'patch2' : [0.2,0.2],
-        'arena': [0.4,0.2],
-        'corridor' : [0.6,0.2],
-        'nest' : [0.6,0.2] }
-    ethogram_ranges = ethogram.groupby(by=[ethogram, consecutive]).apply(lambda x:[
-        sessiontime(x.index[0],start),
-        sessiontime(x.index[-1],x.index[0])])
-    for key,ranges in ethogram_ranges.groupby(level=0):
-        color = ethogram_colors[key]
-        offsets = ethogram_offsets[key]
-        ethogram_ax.broken_barh(ranges,offsets,color=color)
-
     rate_ax.legend()
     rate_ax.sharex(distance_ax)
     rate_ax.tick_params(bottom=False, labelbottom=False)
     fig.subplots_adjust(hspace = 0.1)
     rate_ax.set_ylabel('pellets / min')
-    rate_ax.set_title('foraging rate (bin size = 10 min)')
+    rate_ax.set_title(title_str)
     distance_ax.set_xlabel('time (min)')
     distance_ax.set_ylabel('distance travelled (m)')
     set_ymargin(distance_ax, 0.2, 0.1)
@@ -188,7 +228,10 @@ def plotWheelData():
     rate_ax.spines['bottom'].set_visible(False)
     distance_ax.spines['top'].set_visible(False)
     distance_ax.spines['right'].set_visible(False)
-    ethogram_ax.set_axis_off()
-    fig.savefig('{0}/ethogram/{1}-ethogram.png'.format(output, prefix), dpi=dpi)
-    fig.savefig('{0}/ethogram-svg/{1}-ethogram.svg'.format(output, prefix), dpi=dpi)
-    plt.close(fig)
+    
+
+    #fig.savefig('{0}/ethogram/{1}-ethogram.png'.format(output, prefix), dpi=dpi)
+    #fig.savefig('{0}/ethogram-svg/{1}-ethogram.svg'.format(output, prefix), dpi=dpi)
+    #plt.close(fig)
+    fig.patch.set_facecolor('white')
+    return fig
