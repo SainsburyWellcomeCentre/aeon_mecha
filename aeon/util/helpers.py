@@ -19,8 +19,8 @@ def stateChangeRows(df, patchid=1):
     Extract state change times from the patches.
     I'm sure there is a more elegant way to do this.
     """
-    switchind = np.diff(df.threshold).nonzero()[0]
-    
+    switchind = np.diff(df.threshold).nonzero()[0] + 1
+    switchind = np.append(np.insert(switchind,0,0),len(df.threshold)-1)
     ## Old python way
     # time = []
     # before = []
@@ -35,12 +35,20 @@ def stateChangeRows(df, patchid=1):
 
 
     return pd.DataFrame({
-        "time":[pd.Timestamp(x) for x in df.index[switchind + 1]],
-        "before":df.threshold[switchind].values,
-        "after":df.threshold[switchind+1].values,
+        "time":[pd.Timestamp(x) for x in df.index[switchind]],
+        "threshold":df.threshold[switchind].values,
         "patch":df.threshold[switchind].values * 0 + patchid
     })
 
+def getSwitchTime(sdf):
+    patches = sdf.patch.unique()
+    stime = []
+    for p in patches:
+        tdf = sdf.loc[sdf.patch == p]
+        if tdf.shape[0] < 3:
+            sdf.drop(sdf.patch == p)
+        
+        sdf.time[1:-1]
 
 def splitOnStateChange(root, start, end):
     """
@@ -54,10 +62,10 @@ def splitOnStateChange(root, start, end):
     state2 = api.patchdata(root, 'Patch2', start=start, end=end)
     s1 = stateChangeRows(state1,1)
     s2 = stateChangeRows(state2,2)  
-    sdf = pd.concat([s1, s2]).sort_index()
+    sdf = pd.concat([s1, s2]).set_index('time').sort_index()
     eprint(state1.shape, state2.shape, sdf.shape)
     
-    switchlist = [x for x in sdf.time]
+    switchlist = [pd.Timestamp(x) for x in sdf.index[2:-2]]
     startts = switchlist.copy()
     startts.insert(0, start)
     switchlist.append(end) # For some reason using np.append gives the wrong type
@@ -87,18 +95,24 @@ def getWheelData(root, start, end):
             }
 
 def getPositionData(root, start, end, duration=None):
-
+    """
+    Returns a list of dictionaries with keys:
+    position       a dataframe with the data
+    frequency      Samples/sec (seems this could be computed from the data)
+    positionrange  the x/y lims of the data? for plotting?
+    """
     try:
         return list(map(lambda x,y: _getPositionData(root,x,y, duration=duration),start,end))
     except TypeError:
-        _getPositionData(root, start, end, duration=None)
+        return [_getPositionData(root, start, end, duration=None),]
 
 @cache
 def _getPositionData(root, start, end, duration=None):
         if duration:
             end = start + duration
         frequency = 50                                                    # frame rate in Hz
-        pixelscale = 0.00192                                              # 1 px = 1.92 mm
+        pixelscale = 0.00192 # JCE: This hasn't been calibrated for our arena.
+        # Shouldn't it go into metadata ??                                             # 1 px = 1.92 mm
         positionrange = [[0,1440*pixelscale], [0,1080*pixelscale]]        # frame position range in metric units
         position = api.positiondata(root, start=start, end=end)          # get position data between start and end
         # if start > pd.Timestamp('20210621') and \
