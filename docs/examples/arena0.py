@@ -22,44 +22,13 @@ import aeon.util.plotting as plotting
 env = os.environ
 dataroot = env.get('aeon_dataroot', '/var/www/html/delab/data/arena0.1/socialexperiment0/')
 figpath = env.get('aeon_figpath','/var/www/html/delab/figures/')
+exportpath = env.get('aeon_exportpath','/var/www/html/delab/data/arena0.1/exported/')
 export_format = env.get('aeon_dataformat','parquet')
 fig_format = env.get('aeon_figformat','png')
 
 
-#%% Load session data.
-def loadSessions():
-    sessdf = api.sessiondata(dataroot)
-    sessdf = api.sessionduration(sessdf)                                     # compute session duration
-    sessdf = sessdf[~sessdf.id.str.contains('test')]
-    sessdf = sessdf[~sessdf.id.str.contains('jeff')]
-    sessdf = sessdf[~sessdf.id.str.contains('OAA')]
-    sessdf = sessdf[~sessdf.id.str.contains('rew')]
-    sessdf = sessdf[~sessdf.id.str.contains('Animal')]
-
-    sessdf.reset_index(inplace=True, drop=True)
-
-    df = sessdf.copy()
-    helpers.merge(df)
-    helpers.merge(df,first=[15])
-    helpers.merge(df,first=[32,35, 44, 46, 49], merge_id=True)
-    helpers.merge(df, first=[42,])
-
-    #%% Fix bad ids.
-
-    df.loc[10,'id'] = 'BAA-1100705'
-    df.loc[19,'id'] = 'BAA-1100704;BAA-1100706'
-    df.loc[22,'id'] = 'BAA-1100705;BAA-1100706'
-    df.loc[25,'id'] = 'BAA-1100704;BAA-1100705'
-    df.loc[30,'id'] = 'BAA-1100704;BAA-1100705'
-
-
-
-    #%%
-    helpers.markSessionEnded(df)
-    return df
-
 #%% 
-def makeWheelPlots():
+def makeWheelPlots(df):
     try:
         fileformat = sys.argv[2]
     except IndexError:
@@ -89,21 +58,50 @@ def makeWheelPlots():
         except IndexError as e:
             print(f'Failed to save {filename}. {e}')
 
-def exportDataToParquet():
-    pass
+def exportDataToParquet(limit=1e6):
+    done = 0
+    for session in df.itertuples(): # This is easily parallelized :shrug:
+        print(f'Exporting {helpers.getSessionID(session)}')
+        helpers.exportWheelData(dataroot, session, 
+        datadir = exportpath, format = 'parquet', force=False)
+        if done >= limit:
+            return
+        else:
+            done += 1
+    
 # %%
+df = helpers.loadSessions(dataroot)
+exportDataToParquet(1)
 
 if __name__ == "__main__":
-    if len(sys.argv) == 0:
-        print("""
-        This function has become a 
+    funclist = ['makeWheelPlots', 'exportDataToParquet']
+    if len(sys.argv) == 1:
+        print(f"""
+        This function is a wrapper for some common arena0 activities.
+        
+        The way to call it is:
+
+        python arena0 func arg1 arg2
+
+        Available functions are:
+        {funclist}
+        
+        df, a dataframe of the sessions is availabe by default.
+
+        Some settings should be set using environment variables:
+        ```
         dataroot = env.get('aeon_dataroot', '/var/www/html/delab/data/arena0.1/socialexperiment0/')
         figpath = env.get('aeon_figpath','/var/www/html/delab/figures/')
+        exportpath = env.get('aeon_exportpath','/var/www/html/delab/data/arena0.1/exported/')
         export_format = env.get('aeon_dataformat','parquet')
         fig_format = env.get('aeon_figformat','png')
-
+        ```
         """)
-    func = sys.argv[0]
-    df = loadSession()
-    try:
-    eval(func)(*args)
+        sys.exit()
+        
+    func = sys.argv[1]
+    df = helpers.loadSessions(dataroot)
+    eval(func)(*sys.argv[2:])
+    
+
+#%%

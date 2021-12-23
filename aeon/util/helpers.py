@@ -1,5 +1,7 @@
+from os import path
 import pandas as pd
 import numpy as np
+from pandas.core.frame import DataFrame
 import aeon.analyze.patches as patches
 import aeon.preprocess.api as api
 import aeon.util.plotting as aplot
@@ -13,6 +15,38 @@ else:
     def eprint(*args):
         pass
 
+
+def loadSessions(dataroot):
+    sessdf = api.sessiondata(dataroot)
+    sessdf = api.sessionduration(sessdf)                                     # compute session duration
+    sessdf = sessdf[~sessdf.id.str.contains('test')]
+    sessdf = sessdf[~sessdf.id.str.contains('jeff')]
+    sessdf = sessdf[~sessdf.id.str.contains('OAA')]
+    sessdf = sessdf[~sessdf.id.str.contains('rew')]
+    sessdf = sessdf[~sessdf.id.str.contains('Animal')]
+
+    sessdf.reset_index(inplace=True, drop=True)
+
+    df = sessdf.copy()
+    merge(df)
+    merge(df,first=[15])
+    merge(df,first=[32,35, 44, 46, 49], merge_id=True)
+    merge(df, first=[42,])
+
+    #%% Fix bad ids.
+
+    df.loc[10,'id'] = 'BAA-1100705'
+    df.loc[19,'id'] = 'BAA-1100704;BAA-1100706'
+    df.loc[22,'id'] = 'BAA-1100705;BAA-1100706'
+    df.loc[25,'id'] = 'BAA-1100704;BAA-1100705'
+    df.loc[30,'id'] = 'BAA-1100704;BAA-1100705'
+
+    #%%
+    markSessionEnded(df)
+    return df
+
+def getSessionID(session):
+    return f"{session.id.split('/')[0].replace(';','.').replace(' ','')}_{session.start:%y%m%dT%H%M%S}"
 
 def stateChangeRows(df, patchid=1):
     """
@@ -94,6 +128,31 @@ def getWheelData(root, start, end):
             "wheel1": wheel1,
             "wheel2": wheel2,
             }
+
+
+
+def exportWheelData(root, session, *,
+    datadir,
+    format = 'parquet',
+    force = False
+    ):
+
+    data = getWheelData(root, session.start, session.end)
+    sessid = getSessionID(session)
+    for k,v in data.items():
+        fullfile = path.join(datadir, f"{k}_{sessid}.{format}")
+        if path.exists(fullfile) and not force:
+            print(f'{fullfile} exists. Skipping')
+        else:
+            if isinstance(v, pd.core.series.Series):
+                v = v.to_frame()
+            if format == 'parquet':
+                v.to_parquet(fullfile)
+            elif format == 'csv':
+                v.to_csv(fullfile)
+            print(f'Saved {fullfile}')
+
+
 
 def getPositionData(root, start, end, duration=None):
     """
