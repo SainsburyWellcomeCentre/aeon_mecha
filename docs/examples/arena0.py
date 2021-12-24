@@ -14,6 +14,7 @@ import aeon.preprocess.api as api
 import matplotlib.pyplot as plt
 import aeon.util.helpers as helpers
 import aeon.util.plotting as plotting
+#from multiprocessing import Pool
 
 # As long as you have cloned the aeon_mecha_de folder into 
 # repos in your home filter
@@ -60,6 +61,7 @@ def makeWheelPlots(df):
 
 def exportDataToParquet(limit=1e6):
     done = 0
+    
     for session in df.itertuples(): # This is easily parallelized :shrug:
         print(f'Exporting {helpers.getSessionID(session)}')
         helpers.exportWheelData(dataroot, session, 
@@ -68,12 +70,25 @@ def exportDataToParquet(limit=1e6):
             return
         else:
             done += 1
+
+
+def exportDataToCSV(limit=1e6):
+    done = 0
+    for session in df.itertuples(): # This is easily parallelized :shrug:
+        print(f'Exporting {helpers.getSessionID(session)}')
+        helpers.exportWheelData(dataroot, session, 
+        datadir = exportpath, format = 'csv', force=False)
+        if done >= limit:
+            return
+        else:
+            done += 1
     
 # %%
-df = helpers.loadSessions(dataroot)
-exportDataToParquet(1)
+#df = helpers.loadSessions(dataroot)
+#exportDataToParquet(1)
 
 if __name__ == "__main__":
+# if False:
     funclist = ['makeWheelPlots', 'exportDataToParquet']
     if len(sys.argv) == 1:
         print(f"""

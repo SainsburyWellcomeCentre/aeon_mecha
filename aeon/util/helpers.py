@@ -146,10 +146,13 @@ def exportWheelData(root, session, *,
         else:
             if isinstance(v, pd.core.series.Series):
                 v = v.to_frame()
+            v['time_in_session'] = (v.index - session.start).total_seconds().array
+
             if format == 'parquet':
                 v.to_parquet(fullfile)
             elif format == 'csv':
                 v.to_csv(fullfile)
+                
             print(f'Saved {fullfile}')
 
 
