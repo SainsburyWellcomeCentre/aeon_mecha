@@ -1,0 +1,29 @@
+aeon.analyze package
+====================
+
+Submodules
+----------
+
+aeon.analyze.movies module
+--------------------------
+
+.. automodule:: aeon.analyze.movies
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+aeon.analyze.patches module
+---------------------------
+
+.. automodule:: aeon.analyze.patches
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Module contents
+---------------
+
+.. automodule:: aeon.analyze
+   :members:
+   :undoc-members:
+   :show-inheritance:

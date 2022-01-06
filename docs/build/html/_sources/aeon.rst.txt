@@ -1,0 +1,21 @@
+aeon package
+============
+
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   aeon.analyze
+   aeon.preprocess
+   aeon.query
+   aeon.util
+
+Module contents
+---------------
+
+.. automodule:: aeon
+   :members:
+   :undoc-members:
+   :show-inheritance:

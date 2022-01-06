@@ -1,0 +1,21 @@
+aeon.preprocess package
+=======================
+
+Submodules
+----------
+
+aeon.preprocess.api module
+--------------------------
+
+.. automodule:: aeon.preprocess.api
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Module contents
+---------------
+
+.. automodule:: aeon.preprocess
+   :members:
+   :undoc-members:
+   :show-inheritance:

@@ -1,0 +1,21 @@
+aeon.util package
+=================
+
+Submodules
+----------
+
+aeon.util.plotting module
+-------------------------
+
+.. automodule:: aeon.util.plotting
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Module contents
+---------------
+
+.. automodule:: aeon.util
+   :members:
+   :undoc-members:
+   :show-inheritance:

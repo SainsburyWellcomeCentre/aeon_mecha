@@ -1,0 +1,10 @@
+aeon.query package
+==================
+
+Module contents
+---------------
+
+.. automodule:: aeon.query
+   :members:
+   :undoc-members:
+   :show-inheritance:

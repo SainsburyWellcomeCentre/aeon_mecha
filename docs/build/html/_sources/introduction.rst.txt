@@ -1,0 +1,6 @@
+
+Overview
+========
+
+This documentation describes the aeon project that is creating software and hardware infrastructure to acquire, store and visualize continuous (24/7) behavioral and electrophysiological measurements from foraging mice.
+
