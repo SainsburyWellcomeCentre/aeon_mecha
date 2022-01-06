@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>aeon.preprocess package &mdash; aeon  documentation</title>
+      <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/doctools.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="aeon.query package" href="aeon.query.html" />
+    <link rel="prev" title="aeon.analyze package" href="aeon.analyze.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="index.html" class="icon icon-home"> aeon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Introduction:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="introduction.html">Overview</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Code:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="reference internal" href="aeon.html">aeon package</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="aeon.html#subpackages">Subpackages</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="aeon.analyze.html">aeon.analyze package</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">aeon.preprocess package</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#submodules">Submodules</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#module-aeon.preprocess.api">aeon.preprocess.api module</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#module-aeon.preprocess">Module contents</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="aeon.query.html">aeon.query package</a></li>
+<li class="toctree-l3"><a class="reference internal" href="aeon.util.html">aeon.util package</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="aeon.html#module-aeon">Module contents</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">aeon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home"></a> &raquo;</li>
+          <li><a href="aeon.html">aeon package</a> &raquo;</li>
+      <li>aeon.preprocess package</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/aeon.preprocess.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="aeon-preprocess-package">
+<h1>aeon.preprocess package<a class="headerlink" href="#aeon-preprocess-package" title="Permalink to this headline"></a></h1>
+<section id="submodules">
+<h2>Submodules<a class="headerlink" href="#submodules" title="Permalink to this headline"></a></h2>
+</section>
+<section id="module-aeon.preprocess.api">
+<span id="aeon-preprocess-api-module"></span><h2>aeon.preprocess.api module<a class="headerlink" href="#module-aeon.preprocess.api" title="Permalink to this headline"></a></h2>
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.aeon">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">aeon</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">seconds</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.aeon" title="Permalink to this definition"></a></dt>
+<dd><p>Converts a Harp timestamp, in seconds, to a datetime object.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.annotationreader">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">annotationreader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.annotationreader" title="Permalink to this definition"></a></dt>
+<dd><p>Reads session annotations from the specified file.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.annotations">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">annotations</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.annotations" title="Permalink to this definition"></a></dt>
+<dd><p>Extracts session metadata from the specified root path, sorted chronologically,
+indicating event times of manual annotations in the Experiment 0 arena.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<em>str</em>) – The root path where all the session data is stored.</p></li>
+<li><p><strong>start</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The left bound of the time range to extract.</p></li>
+<li><p><strong>end</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The right bound of the time range to extract.</p></li>
+<li><p><strong>time</strong> (<em>datetime</em><em>, </em><em>optional</em>) – An object or series specifying the timestamps to extract.</p></li>
+<li><p><strong>tolerance</strong> (<em>datetime</em><em>, </em><em>optional</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>The maximum distance between original and new timestamps for inexact matches.
+:return: A pandas data frame containing annotation metadata, sorted by time.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.distancetravelled">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">distancetravelled</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">angle</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">radius</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">4.0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.distancetravelled" title="Permalink to this definition"></a></dt>
+<dd><p>Calculates the total distance travelled on the wheel, by taking into account
+its radius and the total number of turns in both directions across time.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>angle</strong> (<em>Series</em>) – A series of magnetic encoder measurements.</p></li>
+<li><p><strong>radius</strong> (<em>float</em>) – The radius of the wheel, in metric units.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The total distance travelled on the wheel, in metric units.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.encoderdata">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">encoderdata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.encoderdata" title="Permalink to this definition"></a></dt>
+<dd><p>Extracts all encoder data from the specified root path, sorted chronologically,
+from the specified patch controller in the Experiment 0 arena.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<em>str</em>) – The root path where all the data is stored.</p></li>
+<li><p><strong>device</strong> (<em>str</em>) – The device name used to search for data files.</p></li>
+<li><p><strong>start</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The left bound of the time range to extract.</p></li>
+<li><p><strong>end</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The right bound of the time range to extract.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A pandas data frame containing encoder data, sorted by time.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.exportvideo">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">exportvideo</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">frames</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">file</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fps</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fourcc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.exportvideo" title="Permalink to this definition"></a></dt>
+<dd><p>Exports the specified frame sequence to a new video file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>frames</strong> (<em>iterable</em>) – An object to iterate over the raw video frame data.</p></li>
+<li><p><strong>file</strong> (<em>str</em>) – The path to the exported video file.</p></li>
+<li><p><strong>fps</strong> – The frame rate of the exported video.</p></li>
+<li><p><strong>fourcc</strong> (<em>optional</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>Specifies the four character code of the codec used to compress the frames.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.harpdata">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">harpdata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">register</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.harpdata" title="Permalink to this definition"></a></dt>
+<dd><p>Extracts all harp data from the specified root path, sorted chronologically,
+for an individual register acquired from a device in the Experiment 0 arena.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<em>str</em>) – The root path where all the data is stored.</p></li>
+<li><p><strong>device</strong> (<em>str</em>) – The device name used to search for data files.</p></li>
+<li><p><strong>register</strong> (<em>int</em>) – The register number to extract data for.</p></li>
+<li><p><strong>names</strong> (<em>str</em><em> or </em><em>array-like</em>) – The optional column labels to use for the data.</p></li>
+<li><p><strong>start</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The left bound of the time range to extract.</p></li>
+<li><p><strong>end</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The right bound of the time range to extract.</p></li>
+<li><p><strong>time</strong> (<em>datetime</em><em>, </em><em>optional</em>) – An object or series specifying the timestamps to extract.</p></li>
+<li><p><strong>tolerance</strong> (<em>datetime</em><em>, </em><em>optional</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>The maximum distance between original and new timestamps for inexact matches.
+:return: A pandas data frame containing harp event data, sorted by time.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.harpreader">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">harpreader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">names</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.harpreader" title="Permalink to this definition"></a></dt>
+<dd><p>Reads Harp data from the specified file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>file</strong> (<em>str</em>) – The path to a Harp binary file.</p></li>
+<li><p><strong>names</strong> (<em>str</em><em> or </em><em>array-like</em>) – The optional column labels to use for the data.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A pandas data frame containing harp event data, sorted by time.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.load">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">reader</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">prefix</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">extension</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'*.csv'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.load" title="Permalink to this definition"></a></dt>
+<dd><p>Extracts data from matching files in the specified root path, sorted chronologically,
+containing device and/or session metadata for the Experiment 0 arena. If no prefix is
+specified, metadata for all sessions is extracted.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<em>str</em>) – The root path where all the session data is stored.</p></li>
+<li><p><strong>reader</strong> (<em>callable</em>) – A callable object used to load session metadata from a file.</p></li>
+<li><p><strong>device</strong> (<em>str</em><em>,</em>) – The device name prefix used to search for data files.</p></li>
+<li><p><strong>prefix</strong> (<em>str</em><em>, </em><em>optional</em>) – The pathname prefix used to search for data files.</p></li>
+<li><p><strong>extension</strong> (<em>str</em><em>, </em><em>optional</em>) – The optional extension pattern used to search for data files.</p></li>
+<li><p><strong>start</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The left bound of the time range to extract.</p></li>
+<li><p><strong>end</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The right bound of the time range to extract.</p></li>
+<li><p><strong>time</strong> (<em>datetime</em><em>, </em><em>optional</em>) – An object or series specifying the timestamps to extract.</p></li>
+<li><p><strong>tolerance</strong> (<em>datetime</em><em>, </em><em>optional</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>The maximum distance between original and new timestamps for inexact matches.
+:return: A pandas data frame containing session event metadata, sorted by time.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.patchdata">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">patchdata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">patch</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.patchdata" title="Permalink to this definition"></a></dt>
+<dd><p>Extracts patch metadata from the specified root path, sorted chronologically,
+indicating wheel threshold, d1 and delta state changes in the arena patch.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<em>str</em>) – The root path where all the session data is stored.</p></li>
+<li><p><strong>patch</strong> (<em>str</em>) – The patch name used to search for data files.</p></li>
+<li><p><strong>start</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The left bound of the time range to extract.</p></li>
+<li><p><strong>end</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The right bound of the time range to extract.</p></li>
+<li><p><strong>time</strong> (<em>datetime</em><em>, </em><em>optional</em>) – An object or series specifying the timestamps to extract.</p></li>
+<li><p><strong>tolerance</strong> (<em>datetime</em><em>, </em><em>optional</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>The maximum distance between original and new timestamps for inexact matches.
+:return: A pandas data frame containing patch state metadata, sorted by time.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.patchreader">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">patchreader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.patchreader" title="Permalink to this definition"></a></dt>
+<dd><p>Reads patch state metadata from the specified file.</p>
+</dd></dl>
+
+<dl class="py data">
+<dt class="sig sig-object py" id="aeon.preprocess.api.payloadtypes">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">payloadtypes</span></span><em class="property"><span class="w"> </span><span class="p"><span class="pre">=</span></span><span class="w"> </span><span class="pre">{1:</span> <span class="pre">dtype('uint8'),</span> <span class="pre">2:</span> <span class="pre">dtype('uint16'),</span> <span class="pre">4:</span> <span class="pre">dtype('uint32'),</span> <span class="pre">8:</span> <span class="pre">dtype('uint64'),</span> <span class="pre">68:</span> <span class="pre">dtype('float32'),</span> <span class="pre">129:</span> <span class="pre">dtype('int8'),</span> <span class="pre">130:</span> <span class="pre">dtype('int16'),</span> <span class="pre">132:</span> <span class="pre">dtype('int32'),</span> <span class="pre">136:</span> <span class="pre">dtype('int64')}</span></em><a class="headerlink" href="#aeon.preprocess.api.payloadtypes" title="Permalink to this definition"></a></dt>
+<dd><p>Map of Harp device registers used in the Experiment 1 arena.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.pelletdata">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">pelletdata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.pelletdata" title="Permalink to this definition"></a></dt>
+<dd><p>Extracts all pellet event data from the specified root path, sorted chronologically,
+indicating when delivery of a pellet was triggered and when pellets were detected
+by the feeder beam break.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<em>str</em>) – The root path where all the session data is stored.</p></li>
+<li><p><strong>device</strong> (<em>str</em>) – The device name used to search for data files.</p></li>
+<li><p><strong>start</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The left bound of the time range to extract.</p></li>
+<li><p><strong>end</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The right bound of the time range to extract.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A pandas data frame containing pellet event data, sorted by time.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.positiondata">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">positiondata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'FrameTop'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.positiondata" title="Permalink to this definition"></a></dt>
+<dd><p>Extracts all position data from the specified root path, sorted chronologically,
+for the specified camera in the Experiment 0 arena.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<em>str</em>) – The root path where all the data is stored.</p></li>
+<li><p><strong>device</strong> (<em>str</em>) – The device name used to search for data files.</p></li>
+<li><p><strong>start</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The left bound of the time range to extract.</p></li>
+<li><p><strong>end</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The right bound of the time range to extract.</p></li>
+<li><p><strong>time</strong> (<em>datetime</em><em>, </em><em>optional</em>) – An object or series specifying the timestamps to extract.</p></li>
+<li><p><strong>tolerance</strong> (<em>datetime</em><em>, </em><em>optional</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>The maximum distance between original and new timestamps for inexact matches.
+:return: A pandas data frame containing position data, sorted by time.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.sessiondata">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">sessiondata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.sessiondata" title="Permalink to this definition"></a></dt>
+<dd><p>Extracts all session metadata from the specified root path, sorted chronologically,
+indicating start and end times of manual sessions in the Experiment 0 arena.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<em>str</em>) – The root path where all the session data is stored.</p></li>
+<li><p><strong>start</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The left bound of the time range to extract.</p></li>
+<li><p><strong>end</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The right bound of the time range to extract.</p></li>
+<li><p><strong>time</strong> (<em>datetime</em><em>, </em><em>optional</em>) – An object or series specifying the timestamps to extract.</p></li>
+<li><p><strong>tolerance</strong> (<em>datetime</em><em>, </em><em>optional</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>The maximum distance between original and new timestamps for inexact matches.
+:return: A pandas data frame containing session event metadata, sorted by time.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.sessionduration">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">sessionduration</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.sessionduration" title="Permalink to this definition"></a></dt>
+<dd><p>Computes duration and summary metadata for each session, by subtracting the
+start and end times. Allows for missing data by trying to match session start times
+with subsequent end times. If the match fails, end session metadata is filled with NaN.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>data</strong> (<em>DataFrame</em>) – A pandas data frame containing session event metadata.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A pandas data frame containing duration and metadata for each session.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.sessionreader">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">sessionreader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.sessionreader" title="Permalink to this definition"></a></dt>
+<dd><p>Reads session metadata from the specified file.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.timebin">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">timebin</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">time</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.timebin" title="Permalink to this definition"></a></dt>
+<dd><p>Returns the whole hour time bin for a measurement timestamp.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>time</strong> (<em>datetime</em><em> or </em><em>Series</em>) – An object or series specifying the measurement timestamps.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A datetime object or series specifying the time bin for the measurement timestamp.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.timebin_filter">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">timebin_filter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">files</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timefilter</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.timebin_filter" title="Permalink to this definition"></a></dt>
+<dd><p>Filters a list of paths using the specified time filter. To use the time filter, files
+must conform to a naming convention where the timestamp of each timebin is appended to
+the end of each file path.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>files</strong> (<em>str</em>) – The list of timebin files to filter.</p></li>
+<li><p><strong>timefilter</strong> (<em>iterable</em><em> or </em><em>callable</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>A list of time bins or a predicate used to test each file time.
+:return: A list of all matching filenames.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.timebin_key">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">timebin_key</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.timebin_key" title="Permalink to this definition"></a></dt>
+<dd><p>Returns the time bin key for the specified file name.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.timebin_range">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">timebin_range</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">start</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.timebin_range" title="Permalink to this definition"></a></dt>
+<dd><p>Returns a range of whole hour time bins.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>start</strong> (<em>datetime</em>) – The left bound of the time range.</p></li>
+<li><p><strong>end</strong> (<em>datetime</em>) – The right bound of the time range.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A DatetimeIndex representing the range of time bins.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.timebindata">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">timebindata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">extension</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'*.csv'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.timebindata" title="Permalink to this definition"></a></dt>
+<dd><p>Extracts all timebin information from the specified root path, sorted chronologically,
+indicating recorded timebins for the specified device in the arena.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<em>str</em>) – The root path where all the data is stored.</p></li>
+<li><p><strong>device</strong> (<em>str</em><em>,</em>) – The device name prefix used to search for timebin files.</p></li>
+<li><p><strong>extension</strong> (<em>str</em><em>, </em><em>optional</em>) – The optional extension pattern used to search for timebin files.</p></li>
+<li><p><strong>start</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The left bound of the time range to extract.</p></li>
+<li><p><strong>end</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The right bound of the time range to extract.</p></li>
+<li><p><strong>time</strong> (<em>datetime</em><em>, </em><em>optional</em>) – An object or series specifying the timestamps to extract.</p></li>
+<li><p><strong>tolerance</strong> (<em>datetime</em><em>, </em><em>optional</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>The maximum distance between original and new timestamps for inexact matches.
+:return: A pandas data frame containing timebin information, sorted by time.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.timebinreader">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">timebinreader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.timebinreader" title="Permalink to this definition"></a></dt>
+<dd><p>Reads timebin information for the specified file.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.videoclip">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">videoclip</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.videoclip" title="Permalink to this definition"></a></dt>
+<dd><p>Extracts information about a continuous segment of video, possibly stored across
+multiple video files. For each video file covering the segment, a row is returned
+containing the path, start frame, and duration of the segment stored in that file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<em>str</em>) – The root path where all the video data is stored.</p></li>
+<li><p><strong>device</strong> (<em>str</em><em>,</em>) – The device prefix used to search for video files.</p></li>
+<li><p><strong>start</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The left bound of the time range to extract.</p></li>
+<li><p><strong>end</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The right bound of the time range to extract.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>A pandas data frame containing video clip storage information.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.videodata">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">videodata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">device</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">start</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">end</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">time</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">tolerance</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.videodata" title="Permalink to this definition"></a></dt>
+<dd><p>Extracts all video metadata from the specified root path, sorted chronologically,
+indicating synchronized trigger frame times for cameras in the Experiment 0 arena.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>path</strong> (<em>str</em>) – The root path where all the video data is stored.</p></li>
+<li><p><strong>device</strong> (<em>str</em><em>,</em>) – The device prefix used to search for video files.</p></li>
+<li><p><strong>start</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The left bound of the time range to extract.</p></li>
+<li><p><strong>end</strong> (<em>datetime</em><em>, </em><em>optional</em>) – The right bound of the time range to extract.</p></li>
+<li><p><strong>time</strong> (<em>datetime</em><em>, </em><em>optional</em>) – An object or series specifying the timestamps to extract.</p></li>
+<li><p><strong>tolerance</strong> (<em>datetime</em><em>, </em><em>optional</em>) – </p></li>
+</ul>
+</dd>
+</dl>
+<p>The maximum distance between original and new timestamps for inexact matches.
+:return: A pandas data frame containing frame event metadata, sorted by time.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.videoframes">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">videoframes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">data</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.videoframes" title="Permalink to this definition"></a></dt>
+<dd><p>Extracts the raw frames corresponding to the provided video metadata.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>data</strong> (<em>DataFrame</em>) – </p>
+</dd>
+</dl>
+<p>A pandas DataFrame where each row specifies video acquisition path and frame number.
+:return:
+An object to iterate over numpy arrays for each row in the DataFrame,
+containing the raw video frame data.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="aeon.preprocess.api.videoreader">
+<span class="sig-prename descclassname"><span class="pre">aeon.preprocess.api.</span></span><span class="sig-name descname"><span class="pre">videoreader</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#aeon.preprocess.api.videoreader" title="Permalink to this definition"></a></dt>
+<dd><p>Reads video metadata from the specified file.</p>
+</dd></dl>
+
+</section>
+<section id="module-aeon.preprocess">
+<span id="module-contents"></span><h2>Module contents<a class="headerlink" href="#module-aeon.preprocess" title="Permalink to this headline"></a></h2>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="aeon.analyze.html" class="btn btn-neutral float-left" title="aeon.analyze package" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="aeon.query.html" class="btn btn-neutral float-right" title="aeon.query package" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2022, Sainsbury Wellcome Centre.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
