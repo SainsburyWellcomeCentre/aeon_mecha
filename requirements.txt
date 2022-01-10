@@ -1,5 +1,10 @@
 # Users
-python>=3.9.4
+
+# begin modified by Joaquin 10 Jan 2022 to make ReadTheDocs work
+# python>=3.9.4
+python
+# end modified by Joaquin
+
 graphviz
 jupyter
 jupyterlab
