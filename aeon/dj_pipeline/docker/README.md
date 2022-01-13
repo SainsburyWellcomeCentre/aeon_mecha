@@ -1,23 +1,63 @@
-<!--
-# Random commands
-
-docker-compose build --build-arg SSH_KEY="$(cat ~/.ssh/aeon_mecha)" && docker-compose up -d
-
-docker run --name test_run -it aeon_ingest
-
-docker exec -it containerized_ingest_aeon_high_1 bash
-
-docker build --target private_repo_clone -t test_repo --build-arg SSH_KEY="$(cat ~/.ssh/aeon_mecha)" .
-
-docker builder prune --all -f
--->
-
-
-## Dockerfile
+# Dockerfile
 
 The file `Dockerfile` will create an image that clones a private repo in the first stage and sets up conda and necessary packages in the second stage as well as install the python package from the private repo `aeon_mecha`. 
 
 A deploy key is used and must be set up on github.com to clone the repo, if not done so already. The key contents are passed as a build argument to the first stage and not accessible from the target image. 
+
+## Setup
+
+1. SSH into the SWC server then again to the `aeon-db2` vm. For example, if your server credentials are stored at `~/.ssh/id` and if your username is `jburling` ...
+    - `ssh -i ~/.ssh/id jburling@aeon-db2 -J jburling@ssh.swc.ucl.ac.uk`
+
+2. Add the ssh deploy key to `~/.ssh/aeon_mecha` once connected to the server so that you can clone the private repo (see steps below).
+    - Copy private key from lastpass
+    - Set `export SSH_KEY=` in the terminal with your pasted key after `=`
+    - Run the command below to create all the necessary ssh files
+
+```bash
+mkdir ~/.ssh/ && \
+chmod 700 ~/.ssh && \
+touch ~/.ssh/config && \
+chmod 600 ~/.ssh/config && \
+touch ~/.ssh/known_hosts && \
+chmod 600 ~/.ssh/known_hosts && \
+echo "${SSH_KEY}" > ~/.ssh/aeon_mecha && \
+chmod 600 ~/.ssh/aeon_mecha && \
+echo "Host * \n  AddKeysToAgent yes\n  IdentityFile ~/.ssh/aeon_mecha\n" >> ~/.ssh/config && \
+ssh-keyscan github.com >> ~/.ssh/known_hosts
+```
+
+3. Clone the repo to some directory on the server. 
+    - `git clone git@github.com:vathes/aeon_mecha.git --branch datajoint_pipeline --single-branch`
+    - *Note*: If you use your own fork instead of the one above, just know that the container will be fixed to whatever is set in the `.env` file or `docker-compose.yml` file with the `GITHUB_USER` variable.
+
+4. Navigate to `aeon_mecha/aeon/dj_pipeline/docker` after cloning repo.
+
+5. Create a `.env` file to be used with `docker-compose.yml`.
+
+```bash
+touch .env
+cat template.env >> .env
+```
+
+6. Edit the `.env` environment variables
+
+```bash
+LOCAL_CEPH_ROOT=/ceph/aeon
+DJ_USER=jburling
+DJ_PASS=*******
+DJ_HOST=host.docker.internal
+```
+
+7. Append `SSH_KEY` to `env` file (because `sudo`).
+    - `echo "SSH_KEY=$(awk -v ORS='\\n' '1' ~/.ssh/aeon_mecha)" >> .env`
+  
+<!-- echo "IMAGE_CREATED=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> .env -->
+
+8. Run docker compose
+    - `sudo docker-compose up -d`
+
+<!-- 
 
 ### Editing `docker-compose.yml`
 
@@ -30,47 +70,6 @@ A deploy key is used and must be set up on github.com to clone the repo, if not 
 4. (optional) To use your own fork of the repo, change `GITHUB_USER` to your username. Make sure Docker can access the repo by setting up the deploy key in the repo settings. 
 
 
-### Build the image and run the `aeon_ingest` python script in multiple containers
-
-To make `docker-compose` easier to use, you can use the shell script `compose.sh` and pass it your deploy key to use when cloning the repo. The `compose.sh` script will use the commands specified in `docker-compose.yml` when running the python script `aeon_ingest`.
-
-Running `./compose.sh -h` will show the following:
-
-```
-compose.sh : start/stop containerized aeon ingestion routine
-
-Usage: compose.sh [options]
-
-options:
-    -h, --help              show usage help
-    -d, --down              docker compose down, removing orphans
-    -k, --key=DEPLOY_KEY    specify path to private deploy key (default=~/.ssh/aeon_mecha)
-        --low=N_WORKERS_L   number of workers for low priority tasks
-        --mid=N_WORKERS_M   number of workers for mid priority tasks
-        --high=N_WORKERS_H  number of workers for high priority tasks
-```
-
-**`compose.sh` usage examples**:
-
-```bash
-# build only, don't run
-./compose.sh --key=~/.ssh/aeon_mecha 
-
-# build and run two aeon_high services simultaneously 
-./compose.sh --key=~/.ssh/aeon_mecha --high=2
-
-# build and run two aeon_high services and one aeon_low service simultaneously 
-./compose.sh --key=~/.ssh/aeon_mecha --high=2 --low=1
-
-# take down all running services and remove container
-./compose.sh --down
-
-# take down and rebuild but don't run
-./compose.sh --down --key=~/.ssh/aeon_mecha 
-
-# take down, rebuild, and run workers
-./compose.sh --down --key=~/.ssh/aeon_mecha --high=2 ...
-```
 
 
 
@@ -137,3 +136,5 @@ sshfs "aeon-db:/ceph/aeon" "$HOME/SSHFS/aeon/ceph/aeon" -ovolname=aeon -o workar
 Make sure the local path set above matches the path used to map to `/ceph/aeon` in `docker-compose.yml`.
 
 3. The path in the container `/home/anaconda/djstore` set in `docker-compose.yml` should mount to somewhere on local drive to test saving external storage entries.
+
+-->

@@ -14,8 +14,8 @@
   "stores": {
     "djstore": {
       "protocol": "file",
-      "location": "/home/anaconda/djstore",
-      "stage": "/home/anaconda/djstore"
+      "location": "/home/condauser/djstore",
+      "stage": "/home/condauser/djstore"
     }
   },
   "custom": {
