@@ -6,7 +6,7 @@ import numpy as np
 from aeon.preprocess import api as aeon_api
 
 from . import acquisition, qc
-from . import get_schema_name
+from . import get_schema_name, dict_to_uuid
 
 
 schema = dj.schema(get_schema_name('tracking'))
@@ -16,6 +16,87 @@ arena_center_x, arena_center_y = 1.475, 1.075  # center
 arena_inner_radius = 0.93  # inner
 arena_outer_radius = 0.97  # outer
 
+
+# ---------- Tracking Method ------------------
+
+@schema
+class TrackingMethod(dj.Lookup):
+    definition = """
+    tracking_method: varchar(16)  
+    ---
+    tracking_method_description: varchar(256)
+    """
+
+    contents = [('DLC', 'Online DeepLabCut as part of Bonsai workflow')]
+
+
+@schema
+class TrackingParamSet(dj.Lookup):
+    definition = """  # Parameter set used in a particular TrackingMethod
+    tracking_paramset_idx:  smallint
+    ---
+    -> TrackingMethod    
+    paramset_description: varchar(128)
+    param_set_hash: uuid
+    unique index (param_set_hash)
+    params: longblob  # dictionary of all applicable parameters
+    """
+
+    @classmethod
+    def insert_new_params(cls, tracking_method: str, paramset_description: str,
+                          params: dict, tracking_paramset_idx: int = None):
+        if tracking_paramset_idx is None:
+            tracking_paramset_idx = (dj.U().aggr(cls, n='max(tracking_paramset_idx)').fetch1('n') or 0) + 1
+
+        param_dict = {'tracking_method': tracking_method,
+                      'tracking_paramset_idx': tracking_paramset_idx,
+                      'paramset_description': paramset_description,
+                      'params': params,
+                      'param_set_hash':  dict_to_uuid(
+                          {**params, 'tracking_method': tracking_method})
+                      }
+        param_query = cls & {'param_set_hash': param_dict['param_set_hash']}
+
+        if param_query:  # If the specified param-set already exists
+            existing_paramset_idx = param_query.fetch1('tracking_paramset_idx')
+            if existing_paramset_idx == tracking_paramset_idx:  # If the existing set has the same paramset_idx: job done
+                return
+            else:  # If not same name: human error, trying to add the same paramset with different name
+                raise dj.DataJointError(
+                    f'The specified param-set already exists'
+                    f' - with tracking_paramset_idx: {existing_paramset_idx}')
+        else:
+            if {'tracking_paramset_idx': tracking_paramset_idx} in cls.proj():
+                raise dj.DataJointError(
+                    f'The specified tracking_paramset_idx {tracking_paramset_idx} already exists,'
+                    f' please pick a different one.')
+            cls.insert1(param_dict)
+
+# ---------- Video Tracking ------------------
+
+
+@schema
+class CameraTracking(dj.Imported):
+    definition = """  # Tracked objects position data from a particular camera, using a particular tracking method, for a particular chunk
+    -> acquisition.Chunk
+    -> acquisition.ExperimentCamera
+    -> TrackingParamSet
+    """
+
+    class Object(dj.Part):
+        definition = """  # Position data of object tracked by a particular camera tracking
+        -> master
+        object_id: int
+        ---
+        timestamps:        longblob  # (datetime) timestamps of the position data
+        position_x:        longblob  # (px) object's x-position, in the arena's coordinate frame
+        position_y:        longblob  # (px) object's y-position, in the arena's coordinate frame
+        position_z=null:   longblob  # (px) object's z-position, in the arena's coordinate frame
+        area=null:         longblob  # (px^2) object's size detected in the camera
+        """
+
+
+# ---------- Subject Position ------------------
 
 @schema
 class SubjectPosition(dj.Imported):
