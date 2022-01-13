@@ -71,20 +71,6 @@ def chunk_filter(files, timefilter):
         matches.append(file)
     return matches
 
-def chunk_glob(path, device, prefix=None, extension='*.csv'):
-    '''
-    Finds matching files in the specified root path.
-
-    :param str path: The root path where all the session data is stored.
-    :param str, device: The device name prefix used to search for data files.
-    :param str, optional prefix: The pathname prefix used to search for data files.
-    :param str, optional extension: The optional extension pattern used to search for data files.
-    :return: A list of file names for chunks in the specified path.
-    '''
-    pathname = path + "/**/" + device + "/" + prefix + extension
-    files = glob.glob(pathname)
-    return files
-
 def load(path, reader, device, prefix=None, extension="*.csv",
          start=None, end=None, time=None, tolerance=None):
     '''
@@ -92,7 +78,7 @@ def load(path, reader, device, prefix=None, extension="*.csv",
     containing device and/or session metadata for the Experiment 0 arena. If no prefix is
     specified, metadata for all sessions is extracted.
 
-    :param str path: The root path, or prioritised sequence of paths, where session data is stored.
+    :param str path: The root path where all the session data is stored.
     :param callable reader: A callable object used to load session metadata from a file.
     :param str, device: The device name prefix used to search for data files.
     :param str, optional prefix: The pathname prefix used to search for data files.
@@ -102,22 +88,13 @@ def load(path, reader, device, prefix=None, extension="*.csv",
     :param datetime, optional time: An object or series specifying the timestamps to extract.
     :param datetime, optional tolerance:
     The maximum distance between original and new timestamps for inexact matches.
-    :return: A pandas data frame containing session event metadata, sorted by priority and time.
+    :return: A pandas data frame containing session event metadata, sorted by time.
     '''
     if prefix is None:
         prefix = ""
 
-    if isinstance(path, str):
-        files = chunk_glob(path, device, prefix, extension)
-    else:
-        files = []
-        fileset = set()
-        datasets = map(lambda dpath:chunk_glob(dpath, device, prefix, extension), path)
-        for dataset in datasets:
-            for fname in dataset:
-                fkey = os.path.split(fname)[1]
-                if not fkey in fileset:
-                    files.append(fname)
+    pathname = path + "/**/" + device + "/" + prefix + extension
+    files = glob.glob(pathname)
     files.sort()
 
     if time is not None:
@@ -149,6 +126,10 @@ def load(path, reader, device, prefix=None, extension="*.csv",
             else:
                 data.drop(columns='time', inplace=True)
             dataframes.append(data)
+
+        if len(dataframes) == 0:
+            return reader(None)
+            
         return pd.concat(dataframes)
 
     if start is not None or end is not None:
@@ -291,7 +272,7 @@ def videoreader(file):
     data.insert(loc=1, column='frame', value=data.index)
     data['time'] = aeon(data['time'])
     data['path'] = os.path.splitext(file)[0] + '.avi'
-    data['epoch'] = file.rsplit('/', maxsplit=3)[1]
+    data['epoch'] = file.rsplit(os.sep, maxsplit=3)[1]
     data.set_index('time', inplace=True)
     return data
 

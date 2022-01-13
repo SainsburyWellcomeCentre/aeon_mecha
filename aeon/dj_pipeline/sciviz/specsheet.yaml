@@ -7,13 +7,14 @@ SciViz:
     Subjects:
       route: /subjects
       grids:
-        grid2:
+        grid1:
           type: fixed
           columns: 1
           row_height: 700
           components:
             Animals:
               route: /allsubjects
+              link: /per_subject_report
               x: 0
               y: 0
               height: 1
@@ -31,13 +32,14 @@ SciViz:
     Sessions:
       route: /sessions
       grids:
-        grid3:
+        grid2:
           type: fixed
           columns: 1
           row_height: 700
           components:
             Sessions:
               route: /query2
+              link: /per_session_report
               x: 0
               y: 0
               height: 1
@@ -50,17 +52,17 @@ SciViz:
                 def dj_query(aeon_acquisition):
                     query = aeon_acquisition.Session.join(aeon_acquisition.SessionEnd, left=True).proj('session_end', session_duration='IFNULL(session_duration, -1)')
                     return {'query': query, 'fetch_args': []}
-
     SessionSummary:
-      route: /sessions_summary
+      route: /summary_sessions
       grids:
         grid3:
           type: fixed
           columns: 1
           row_height: 700
           components:
-            Sessions Summary:
-              route: /query3
+            SessionSummary:
+              route: /sessions_summary_grid3_1
+              link: /per_session_report
               x: 0
               y: 0
               height: 1
@@ -146,3 +148,93 @@ SciViz:
                 def dj_query(aeon_report):
                     report = aeon_report
                     return {'query': report.SubjectWheelTravelledDistance(), 'fetch_args': ['wheel_travelled_distance_plotly']}
+    PerSubjectReport:
+      hidden: true
+      route: /per_subject_report
+      grids:
+        per_subject_report:
+          type: fixed
+          route: /per_subject_report
+          columns: 1
+          row_height: 400
+          components:
+            comp1:
+              route: /per_subject_meta
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: metadata
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_acquisition):
+                    return dict(query=aeon_acquisition.Experiment.Subject(), fetch_args=[])
+            comp2:
+              route: /per_subject_reward_diff_plot
+              x: 0
+              y: 1
+              height: 1
+              width: 1
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_report):
+                    report = aeon_report
+                    return {'query': report.SubjectRewardRateDifference(), 'fetch_args': ['reward_rate_difference_plotly']}
+            comp3:
+              route: /per_subject_wheel_distance_travelled
+              x: 0
+              y: 2
+              height: 1
+              width: 1
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_report):
+                    report = aeon_report
+                    return {'query': report.SubjectWheelTravelledDistance(), 'fetch_args': ['wheel_travelled_distance_plotly']}
+
+    PerSessionReport:
+      hidden: true
+      route: /per_session_report
+      grids:
+        per_session_report:
+          type: fixed
+          route: /per_session_report
+          columns: 1
+          row_height: 400
+          components:
+            comp1:
+              route: /per_session_meta
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: metadata
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_analysis):
+                    query = aeon_analysis.SessionSummary()
+                    return {'query': query, 'fetch_args': []}
+            comp2:
+              route: /per_session_summary_plot
+              x: 0
+              y: 1
+              height: 1
+              width: 1
+              type: file:image:attach
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_report):
+                    report = aeon_report
+                    return {'query': report.SessionSummaryPlot(), 'fetch_args': ['summary_plot_png']}

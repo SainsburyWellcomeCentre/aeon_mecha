@@ -28,23 +28,11 @@ conda env create -f env.yml
 
 `conda deactivate aeon_env`: deactivates the virtual environment.
 
-4) (Optional) Add commands to `.profile` to add miniconda as an environment module and Bonsai and its dependencies to your system path on startup:
-
-Copy the `.profile` file in this repository to your home directory on the HPC.
-
 ### Developing while on the HPC
 
-After you've finished creating the virtual environment, finalize the set-up by activating the environment and adding this repository to your python path within the environment:
-```
-conda activate aeon_env
-python setup.py develop
-```
+1) Using PyCharm
 
-1) Using Jupyter
-
-2) Using PyCharm
-
-3) Using VSCode
+2) Using Jupyter
 
 
 ## Set-up on a local computer
@@ -56,16 +44,15 @@ python setup.py develop
 
 For using this code on your local computer, follow one of the three below procedures for setting up a virtual environment (we recommend the first option, using Anaconda and the conda package manager). All commands below should be run in a bash terminal (Windows users can use the 'mingw64' terminal that comes installed with git). The various set-up tools mentioned below do some combination of python version, environment, package, and package dependency management. For basic information on the differences between these tools, see this [blog post](https://dev.to/bowmanjd/python-tools-for-managing-virtual-environments-3bko#hatch).
 
-0) First create a 'ProjectAeon' directory in your home directory, clone this repository there, and `cd` into the cloned directory:
+0) First create a 'ProjectAeon' directory in your home directory, and clone this repository there:
 
 ```
 mkdir ~/ProjectAeon
 cd ~/ProjectAeon
 git clone https://github.com/ProjectAeon/aeon
-cd aeon
 ```
 
-**Ensure you stay in the `~/ProjectAeon/aeon` directory for the rest of the set-up instructions, regardless of which set-up procedure you follow below.**
+**Ensure you stay in the parent `~/ProjectAeon` directory for the rest of the set-up instructions, regardless of which set-up procedure you follow below.**
 
 ### Set-up with Anaconda (all-in-one python distribution, version manager, environment manager, package manager, and package dependency manager)
 
@@ -129,55 +116,41 @@ It is assumed that you already have Python3.9.4 and Pip installed on your comput
 On Windows:
 
 1) Install virtualenv:
-
 `python -m pip install virtualenv`
 
 2) Create virtual environment:
-
 `python -m venv aeon`
 
 3) Activate the virtual environment and install the code dependencies:
-
-```
-.\aeon\Scripts\activate
-python -m pip install -r requirements.txt
-```
+`.\aeon\Scripts\activate`
+`python -m pip install -r requirements.txt`
 
 4) Using the virtual environment:
-
 `.\aeon\Scripts\activate` activates the virtual environment.
-
 `deactivate` deactivates the virtual environment.
 
 On MacOS and GNU/Linux:
 
 1) Install virtualenv:
-
 `python3 -m pip install virtualenv`
 
 2) Create virtual environment:
-
 `python3 -m venv aeon`
 
 3) Activate the virtual environment and install the code dependencies:
-
 `source aeon/bin/activate`
-
 `python3 -m pip install -r requirements.txt`
 
 4) Using the virtual environment:
-
 `source aeon/bin/activate` activates the virtual environment.
-
 `deactivate` deactivates the virtual environment.
 
 ### Developing locally
 
-- After you've finished creating your virtual environment with one of the three above set-up procedures, finalize your set-up by activating the environment and adding this repository to your python path within the environment:
-```
-conda activate aeon_env
-python setup.py develop
-```
+- After you've finished creating your virtual environment with one of the three above set-up procedures, finalize your set-up by activating the environment and pip installing this repository as an editable package in the environment:
+`conda activate aeon_env`
+`pip install --editable ./aeon`
+
 - If using an IDE (e.g. Pycharm, VSCode, etc.), you will have to look up how to integrate the virtual environment (with whichever set-up option you followed) with the IDE. Usually this process is straightforward; information can be found from a web search and/or in the docs for the IDE.
 
 ## Repository Contents

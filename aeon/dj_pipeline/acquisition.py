@@ -160,6 +160,28 @@ class ExperimentFoodPatch(dj.Manual):
         vertex_z=0: float  # (m) z-coordinate of the vertex, in the arena's coordinate frame
         """
 
+
+# ------------------- ACQUISITION EPOCH --------------------
+
+@schema
+class Epoch(dj.Manual):
+    definition = """  # A recording period reflecting on/off of the hardware acquisition system 
+    -> Experiment
+    epoch_start: datetime(6)
+    ---
+    bonsai_workflow: varchar(36)
+    setup_json: longblob
+    -> Experiment.Directory
+    setup_file_path: varchar(255)  # path of the file, relative to the data repository
+    """
+
+    @classmethod
+    def generate_chunks(cls, experiment_name):
+        assert Experiment & {'experiment_name': experiment_name}, f'Experiment {experiment_name} does not exist!'
+        # search directory for epoch data folders
+        # load experiment_setup JSON file
+        # update experiment devices (ExperimentCamera, ExperimentFoodPatch)
+
 # ------------------- ACQUISITION CHUNK --------------------
 
 

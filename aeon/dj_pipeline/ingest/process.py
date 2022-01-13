@@ -27,7 +27,7 @@ Usage as a script:
 
 Usage from python:
 
-    `from aeon.dj_pipeline.ingest.process import run; run('high')`
+    `from aeon.dj_pipeline.ingest.process import run; run(priority='high')`
 
 """
 
@@ -77,11 +77,12 @@ mid_priority(tracking.SubjectPosition)
 mid_priority(analysis.SessionTimeDistribution)
 mid_priority(analysis.SessionSummary)
 mid_priority(analysis.SessionRewardRate)
+# report tables
 mid_priority(report.delete_outdated_plot_entries)
 mid_priority(report.SubjectRewardRateDifference)
 mid_priority(report.SubjectWheelTravelledDistance)
 mid_priority(report.ExperimentTimeDistribution)
-# mid_priority(report.SessionSummaryPlot)
+mid_priority(report.SessionSummaryPlot)
 
 # ---- some wrappers to support execution as script or CLI
 
