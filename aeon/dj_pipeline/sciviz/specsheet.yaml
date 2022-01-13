@@ -210,20 +210,20 @@ SciViz:
           columns: 1
           row_height: 400
           components:
-#            comp1:
-#              route: /per_session_meta
-#              x: 0
-#              y: 0
-#              height: 1
-#              width: 1
-#              type: metadata
-#              restriction: >
-#                def restriction(**kwargs):
-#                    return dict(**kwargs)
-#              dj_query: >
-#                def dj_query(aeon_analysis):
-#                    query = aeon_analysis.SessionSummary()
-#                    return {'query': query, 'fetch_args': []}
+            comp1:
+              route: /per_session_meta
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: metadata
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_analysis):
+                    query = aeon_analysis.SessionSummary()
+                    return {'query': query, 'fetch_args': []}
             comp2:
               route: /per_session_summary_plot
               x: 0
