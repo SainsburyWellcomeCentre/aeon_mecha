@@ -1,0 +1,102 @@
+# HOST_UID=$(id -u) docker-compose -f docker-compose-local.yaml up
+#
+# Access using fakeservices.datajoint.io
+version: '2.4'
+services:
+  pharus:
+    image: jverswijver/pharus:0.2.3.beta.10
+    environment:
+      # - FLASK_ENV=development # enables logging to console from Flask
+      - API_SPEC_PATH=/main/specs/specsheet.yaml # for dynamic api spec
+    user: ${HOST_UID}:anaconda
+    volumes:
+      - ./specsheet.yaml:/main/specs/specsheet.yaml #copy the spec over to /main/specs/YOUR_SPEC_NAME
+      - ./apk_requirements.txt:/tmp/apk_requirements.txt
+    command:
+      - sh
+      - -c
+      - |
+        pharus_update() {
+            [ -z "$$GUNICORN_PID" ] || kill $$GUNICORN_PID
+            gunicorn --bind 0.0.0.0:$${PHARUS_PORT} pharus.server:app &
+            GUNICORN_PID=$$!
+        }
+        ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -f -i /tmp/keys/buaws-chen.pem ec2-user@3.128.2.214 -L 3306:buaws-chen-cf-rds.c0pqrqs42ez1.us-east-2.rds.amazonaws.com:3306 -N
+        pharus_update
+        echo "[$$(date -u '+%Y-%m-%d %H:%M:%S')][DataJoint]: Monitoring Pharus updates..."
+        INIT_TIME=$$(date +%s)
+        LAST_MOD_TIME=$$(date -r $$API_SPEC_PATH +%s)
+        DELTA=$$(expr $$LAST_MOD_TIME - $$INIT_TIME)
+        while true; do
+           CURR_LAST_MOD_TIME=$$(date -r $$API_SPEC_PATH +%s)
+           CURR_DELTA=$$(expr $$CURR_LAST_MOD_TIME - $$INIT_TIME)
+           if [ "$$DELTA" -lt "$$CURR_DELTA" ]; then
+               echo "[$$(date -u '+%Y-%m-%d %H:%M:%S')][DataJoint]: Reloading Pharus since \`$$API_SPEC_PATH\` changed."
+               pharus_update
+               DELTA=$$CURR_DELTA
+           else
+               sleep 5
+           fi
+        done
+    # ports:
+    # - "5000:5000"
+    networks:
+      - main
+  sci-viz:
+    image: jverswijver/sciviz:0.1.2-beta.9
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+      - REACT_APP_DJLABBOOK_BACKEND_PREFIX=/api
+      - FRONTEND_SPEC_PATH=specsheet.yaml
+    volumes:
+      - ./specsheet.yaml:/main/specsheet.yaml
+    # ports:
+    #   - "3000:3000"
+    command:
+      - sh
+      - -c
+      - |
+        sciviz_update() {
+            [ -z "$$NGINX_PID" ] || kill $$NGINX_PID
+            rm -R /usr/share/nginx/html
+            python frontend_gen.py
+            yarn build
+            mv ./build /usr/share/nginx/html
+            nginx -g "daemon off;" &
+            NGINX_PID=$$!
+        }
+        sciviz_update
+        echo "[$$(date -u '+%Y-%m-%d %H:%M:%S')][DataJoint]: Monitoring SciViz updates..."
+        INIT_TIME=$$(date +%s)
+        LAST_MOD_TIME=$$(date -r $$FRONTEND_SPEC_PATH +%s)
+        DELTA=$$(expr $$LAST_MOD_TIME - $$INIT_TIME)
+        while true; do
+           CURR_LAST_MOD_TIME=$$(date -r $$FRONTEND_SPEC_PATH +%s)
+           CURR_DELTA=$$(expr $$CURR_LAST_MOD_TIME - $$INIT_TIME)
+           if [ "$$DELTA" -lt "$$CURR_DELTA" ]; then
+               echo "[$$(date -u '+%Y-%m-%d %H:%M:%S')][DataJoint]: Reloading SciViz since \`$$FRONTEND_SPEC_PATH\` changed."
+               sciviz_update
+               DELTA=$$CURR_DELTA
+           else
+               sleep 5
+           fi
+        done
+    networks:
+      - main
+  fakeservices.datajoint.io:
+    image: datajoint/nginx:v0.0.18
+    environment:
+      - ADD_pharus_TYPE=REST
+      - ADD_pharus_ENDPOINT=pharus:5000
+      - ADD_pharus_PREFIX=/api
+      - ADD_sciviz_TYPE=REST
+      - ADD_sciviz_ENDPOINT=sci-viz:3000
+      - ADD_sciviz_PREFIX=/
+      - HTTPS_PASSTHRU=TRUE
+    ports:
+      - "443:443"
+      - "80:80"
+    networks:
+      - main
+networks:
+  main:

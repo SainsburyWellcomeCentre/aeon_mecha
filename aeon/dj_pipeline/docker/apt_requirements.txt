@@ -1,0 +1,9 @@
+bzip2
+git
+gnupg2
+htop
+net-tools
+nvi
+openssh-client
+procps
+tmux

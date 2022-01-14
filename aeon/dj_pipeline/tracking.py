@@ -5,7 +5,7 @@ import numpy as np
 
 from aeon.preprocess import api as aeon_api
 
-from . import acquisition
+from . import acquisition, qc
 from . import get_schema_name
 
 
@@ -30,24 +30,40 @@ class SubjectPosition(dj.Imported):
     speed=null:        longblob  # (px/s) speed
     """
 
+    key_source = acquisition.TimeSlice & (qc.CameraQC * acquisition.ExperimentCamera
+                                          & 'camera_description = "FrameTop"')
+
     def make(self, key):
         """
         The ingest logic here relies on the assumption that there is only one subject in the arena at a time
         The positiondata is associated with that one subject currently in the arena at any timepoints
         However, we need to take into account if the subject is entered or exited during this time slice
         """
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1('chunk_start', 'chunk_end')
         time_slice_start, time_slice_end = (acquisition.TimeSlice & key).fetch1('time_slice_start', 'time_slice_end')
 
-        raw_data_dir = acquisition.Experiment.get_raw_data_directory(key)
+        raw_data_dir = acquisition.Experiment.get_data_directory(key)
         positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
-                                             start=pd.Timestamp(time_slice_start),
-                                             end=pd.Timestamp(time_slice_end))
+                                             start=pd.Timestamp(chunk_start),
+                                             end=pd.Timestamp(chunk_end))
+
+        # Correct for frame offsets from Camera QC
+        qc_timestamps, qc_frame_offsets, camera_fs = (
+                qc.CameraQC * acquisition.ExperimentCamera
+                & 'camera_description = "FrameTop"' & key).fetch1(
+            'timestamps', 'frame_offset', 'camera_sampling_rate')
+        qc_time_offsets = qc_frame_offsets / camera_fs
+        qc_time_offsets = np.where(np.isnan(qc_time_offsets), 0, qc_time_offsets)  # set NaNs to 0
+        positiondata.index += pd.to_timedelta(qc_time_offsets, 's')
+
+        # Get position data for this time-slice only
+        in_time_slice = np.logical_and(positiondata.index >= time_slice_start, positiondata.index <= time_slice_end)
+        positiondata = positiondata[in_time_slice]
 
         if not len(positiondata):
             raise ValueError(f'No position data between {time_slice_start} and {time_slice_end}')
 
-        timestamps = (positiondata.index.values - np.datetime64('1970-01-01T00:00:00')) / np.timedelta64(1, 's')
-        timestamps = np.array([datetime.datetime.utcfromtimestamp(t) for t in timestamps])
+        timestamps = positiondata.index.to_pydatetime()
 
         x = positiondata.x.values
         y = positiondata.y.values
@@ -94,12 +110,12 @@ class SubjectPosition(dj.Imported):
 
 @schema
 class SubjectDistance(dj.Computed):
-    definition = """
+    definition = """  # distances of the animal away from the food patches, for each timestamp
     -> SubjectPosition
     """
 
     class FoodPatch(dj.Part):
-        definition = """  # distances of the animal away from the food patch, for each timestamp
+        definition = """  # distances of the animal away from a particular food patch, for each timestamp
         -> master
         -> acquisition.ExperimentFoodPatch
         ---
