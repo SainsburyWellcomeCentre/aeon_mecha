@@ -36,6 +36,8 @@ Download an image with `aeon_mecha` installed and start the database operations 
 
 ### `docker/docker-compose.yml`
 
+Since the container is on a private repo, you'll need to be able to use the command `docker login` and to also create a personal access token to pull the image from `ghcr.io`, see here: [creating a PAT](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) and [working with the container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+
 Navigate to `aeon_mecha/aeon/dj_pipeline/docker` after cloning the repo contents.
 
 The file `docker-compose.yml` requires that you create a `.env` file to setup the data paths and parts of the DataJoint configuration.
@@ -58,7 +60,14 @@ DJ_PASS=*******
 
 3. Edit the `command: ...` fields for the services `aeon_high`, `aeon_mid` that run high and mid ingestion priorities. You may want to change the appropriate `sleep` and `duration` settings for each priority. Comment the `command: ` lines for each service if you want to run the container indefinitely and doing nothing, this will use the default command found in `x-aeon-ingest-common`.
 
-4. Run docker compose
+4. Log in to authenticate using your PAT. Export your token to the variable `CR_PAT`.
+
+```
+export CR_PAT=YOUR_TOKEN
+echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin
+```
+
+5. Run docker compose
    - `docker-compose up -d`
    - `sudo docker-compose up -d` if `su` privileges are required.
 

@@ -2,7 +2,10 @@
 # Joseph Burling <joseph@datajoint.com>
 # --------------------------------------------------------------------------------------
 # Basic usage:
+#   export CR_PAT=YOUR_TOKEN
+#   echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin
 #   docker-compose up --detach
+#
 #   docker-compose down
 #   docker-compose down --volumes
 #
