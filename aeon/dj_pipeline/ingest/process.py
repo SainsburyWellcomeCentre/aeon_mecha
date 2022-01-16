@@ -27,7 +27,7 @@ Usage as a script:
 
 Usage from python:
 
-    `from aeon.dj_pipeline.ingest.process import run; run('high')`
+    `from aeon.dj_pipeline.ingest.process import run; run(priority='high')`
 
 """
 
@@ -35,8 +35,9 @@ import argparse
 import logging
 import sys
 
+import datajoint as dj
 from aeon.dj_pipeline import acquisition, analysis, db_prefix, qc, report, tracking
-from aeon.dj_pipeline.ingest.dj_worker import DataJointWorker, WorkerLog
+from aeon.dj_pipeline.ingest.dj_worker import DataJointWorker, WorkerLog # noqa
 
 # ---- Some constants ----
 
@@ -77,11 +78,12 @@ mid_priority(tracking.SubjectPosition)
 mid_priority(analysis.SessionTimeDistribution)
 mid_priority(analysis.SessionSummary)
 mid_priority(analysis.SessionRewardRate)
+# report tables
 mid_priority(report.delete_outdated_plot_entries)
 mid_priority(report.SubjectRewardRateDifference)
 mid_priority(report.SubjectWheelTravelledDistance)
 mid_priority(report.ExperimentTimeDistribution)
-# mid_priority(report.SessionSummaryPlot)
+mid_priority(report.SessionSummaryPlot)
 
 # ---- some wrappers to support execution as script or CLI
 
@@ -174,7 +176,7 @@ def setup_logging(loglevel):
     """
 
     if loglevel is None:
-        loglevel = logging.INFO
+        loglevel = logging.getLevelName(dj.config.get("loglevel", "INFO"))
 
     logging.basicConfig(
         level=loglevel,

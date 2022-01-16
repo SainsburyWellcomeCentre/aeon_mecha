@@ -30,7 +30,7 @@ class SessionSummaryPlot(dj.Computed):
     -> analysis.SessionTimeDistribution
     -> analysis.SessionSummary
     ---
-    summary_plot_png: filepath@djstore
+    summary_plot_png: attach
     """
 
     key_source = acquisition.Session & analysis.SessionTimeDistribution & analysis.SessionSummary
@@ -310,7 +310,7 @@ def _make_session_path(session_key):
 def _save_figs(figs, fig_names, save_dir, prefix, extension='.png'):
     fig_dict = {}
     for fig, figname in zip(figs, fig_names):
-        fig_fp = save_dir / (prefix + figname + extension)
+        fig_fp = save_dir / (prefix + '_' + figname + extension)
         fig.tight_layout()
         fig.savefig(fig_fp, dpi=300)
         fig_dict[figname] = fig_fp.as_posix()
