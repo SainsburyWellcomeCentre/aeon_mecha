@@ -58,7 +58,7 @@ jobs:
             IMAGE_VERSION=${{ steps.previoustag.outputs.tag }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
-          context: ./docker/iblenv
+          context: ./
           file: ./docker/iblenv/Dockerfile
           platforms: linux/arm64,linux/amd64
           push: true
