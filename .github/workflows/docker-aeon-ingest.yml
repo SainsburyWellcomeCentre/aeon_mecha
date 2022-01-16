@@ -59,7 +59,7 @@ jobs:
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
           context: ./
-          file: ./docker/iblenv/Dockerfile
+          file: ./aeon/dj_pipeline/docker/image/Dockerfile
           platforms: linux/arm64,linux/amd64
           push: true
           tags: |
