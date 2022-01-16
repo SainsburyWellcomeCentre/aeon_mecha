@@ -1,18 +1,15 @@
-# Dockerfile
+# Aeon container environment
 
-The file `Dockerfile` will create an image that clones a private repo in the first stage and sets up conda and necessary packages in the second stage as well as install the python package from the private repo `aeon_mecha`. 
+## Server-side setup
 
-A deploy key is used and must be set up on github.com to clone the repo, if not done so already. The key contents are passed as a build argument to the first stage and not accessible from the target image. 
+1. SSH into the SWC server then SSH again to the `aeon-db2` vm. For example, if your server credentials are stored at `~/.ssh/id` and if your username is `jburling` ...
 
-## Setup
-
-1. SSH into the SWC server then again to the `aeon-db2` vm. For example, if your server credentials are stored at `~/.ssh/id` and if your username is `jburling` ...
-    - `ssh -i ~/.ssh/id jburling@aeon-db2 -J jburling@ssh.swc.ucl.ac.uk`
+`ssh -i ~/.ssh/id jburling@aeon-db2 -J jburling@ssh.swc.ucl.ac.uk`
 
 2. Add the ssh deploy key to `~/.ssh/aeon_mecha` once connected to the server so that you can clone the private repo (see steps below).
-    - Copy private key from lastpass
-    - Set `export SSH_KEY=` in the terminal with your pasted key after `=`
-    - Run the command below to create all the necessary ssh files
+   - Copy private deploy key from lastpass
+   - Set `export GITHUB_DEPLOY_KEY=` in the terminal (with your pasted key after `=`).
+   - Run the command below to create all the necessary ssh files
 
 ```bash
 mkdir ~/.ssh/ && \
@@ -21,56 +18,114 @@ touch ~/.ssh/config && \
 chmod 600 ~/.ssh/config && \
 touch ~/.ssh/known_hosts && \
 chmod 600 ~/.ssh/known_hosts && \
-echo "${SSH_KEY}" > ~/.ssh/aeon_mecha && \
+echo "${GITHUB_DEPLOY_KEY}" > ~/.ssh/aeon_mecha && \
 chmod 600 ~/.ssh/aeon_mecha && \
-echo "Host * \n  AddKeysToAgent yes\n  IdentityFile ~/.ssh/aeon_mecha\n" >> ~/.ssh/config && \
+echo "Host * \n  AddKeysToAgent yes\n  IdentityFile ~/.ssh/aeon_mecha\n" >> \
+  ~/.ssh/config && \
 ssh-keyscan github.com >> ~/.ssh/known_hosts
 ```
 
-3. Clone the repo to some directory on the server. 
-    - `git clone git@github.com:vathes/aeon_mecha.git --branch datajoint_pipeline --single-branch`
-    - *Note*: If you use your own fork instead of the one above, just know that the container will be fixed to whatever is set in the `.env` file or `docker-compose.yml` file with the `GITHUB_USER` variable.
+3. Clone the repo to some directory on the server (substitute `vathes` for whatever fork you're working with).
 
-4. Navigate to `aeon_mecha/aeon/dj_pipeline/docker` after cloning repo.
+   - `git clone git@github.com:vathes/aeon_mecha.git --branch datajoint_pipeline --single-branch`
+   - _Note_: If you use your own fork instead of the one above, just know that the container image will be fixed to whatever is built within the GitHub actions file `.github/workflows/docker-aeon-ingest.yml`.
 
-5. Create a `.env` file to be used with `docker-compose.yml`.
+## Docker usage
+
+Download an image with `aeon_mecha` installed and start the database operations by using the `high` and `mid` container services in the docker compose file.
+
+### `docker/docker-compose.yml`
+
+Navigate to `aeon_mecha/aeon/dj_pipeline/docker` after cloning the repo contents.
+
+The file `docker-compose.yml` requires that you create a `.env` file to setup the data paths and parts of the DataJoint configuration.
+
+1. Create the `.env` file that will be used with `docker-compose.yml`.
 
 ```bash
 touch .env
 cat template.env >> .env
 ```
 
-6. Edit the `.env` environment variables
+2. Edit the `.env` environment variables (see description section below for more info), for example:
 
 ```bash
 LOCAL_CEPH_ROOT=/ceph/aeon
+DJ_HOST=host.docker.internal
 DJ_USER=jburling
 DJ_PASS=*******
-DJ_HOST=host.docker.internal
 ```
 
-7. Append `SSH_KEY` to `env` file (because `sudo`).
-    - `echo "SSH_KEY=$(awk -v ORS='\\n' '1' ~/.ssh/aeon_mecha)" >> .env`
-  
-<!-- echo "IMAGE_CREATED=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> .env -->
+3. Edit the `command: ...` fields for the services `aeon_high`, `aeon_mid` that run high and mid ingestion priorities. You may want to change the appropriate `sleep` and `duration` settings for each priority. Comment the `command: ` lines for each service if you want to run the container indefinitely and doing nothing, this will use the default command found in `x-aeon-ingest-common`.
 
-8. Run docker compose
-    - `sudo docker-compose up -d`
+4. Run docker compose
+   - `docker-compose up -d`
+   - `sudo docker-compose up -d` if `su` privileges are required.
 
-<!-- 
+#### Description of `.env` variables
 
-### Editing `docker-compose.yml`
+`LOCAL_CEPH_ROOT`
 
-1. In the sections `x-ceph-volume` and `x-djstore-volume`, change the paths specified in `source: ` to point to where container paths should be mounted on the host machine (also see "Mounting volume on remote server using SSHFS" below). The paths on your local machine must exist first.
+- Path to the raw data directory on the host machine.
 
-2. Edit the contents of `DJ_USER` and `DJ_PASS` in the section `environment:` so that DataJoint can connect to the `aeon-eb` database using your username and password (also see section "Using DataJoint in the docker container to access the database" below).
+`DJ_USER`
 
-3. Uncomment and edit the `command: ` fields for the services `aeon_high`, `aeon_mid`, and `aeon_low`. Change to the appropriate `sleep`, `duration`, and `max_calls` settings given the priority. The default command is to show the help documentation for the `aeon_ingest` script then exit. Change the command to `tail -f /dev/null` to have the container run continuously so that you can enter it.
+- DataJoint username used to connect to the database.
 
-4. (optional) To use your own fork of the repo, change `GITHUB_USER` to your username. Make sure Docker can access the repo by setting up the deploy key in the repo settings. 
+`DJ_PASS`
 
+- DataJoint password used to connect to the database.
 
+`DJ_HOST`
 
+- Database hostname/url.
+
+`GITHUB_REPO_OWNER`
+
+- Github user that stores the docker image to pull.
+
+### `docker/image/`
+
+This section describes how to manually build the container image locally. The step isn't necessary because the `docker-compose.yml` file will pull the prebuilt image from GitHub.
+
+The file `Dockerfile` will create an image that copies the private repo content and sets up conda and necessary packages, as well as install the `aeon_mecha` python package.
+
+The Dockerfile makes use of `buildkit`. To push multiple architectures at a time, you need `buildx`. You may need to set this up before trying to build the image.
+
+```bash
+docker buildx install
+docker buildx create --platform linux/arm64,linux/amd64 --name=mrbuilder --use
+```
+
+```bash
+cd aeon_mecha
+VERSION=v0.1.0
+DATE_CREATED=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+PLATFORM=arm64
+docker buildx build \
+    --file=./aeon/dj_pipeline/docker/image/Dockerfile \
+    --output=type=docker \
+    --platform=linux/$PLATFORM \
+    --tag=aeon_mecha:$VERSION \
+    --tag=aeon_mecha:latest \
+    --build-arg IMAGE_CREATED=$DATE_CREATED \
+    --build-arg IMAGE_VERSION=$VERSION \
+    .
+```
+
+To remove the installed buildx builder
+
+```bash
+docker buildx rm mrbuilder
+docker buildx uninstall
+```
+
+<!--
+
+Append `GITHUB_DEPLOY_KEY` to `.env` file (because `sudo`).
+
+- `echo "GITHUB_DEPLOY_KEY=$(awk -v ORS='\\n' '1' ~/.ssh/aeon_mecha)" >> .env`
+- `echo "IMAGE_CREATED=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> .env`
 
 
 ## Test locally
@@ -106,7 +161,7 @@ Host swc
 
 1. In the file `.env` (same location as `docker-compose.yml`), change the environment variables `DJ_USER` and `DJ_PASS` to your _aeon-db_ username and password. The user name should be the same as your login name to _hpc-gw1_.
 
-2. Using the `aeon-db` hostname in your ssh config file, connect to the Aeon database (_aeon-db_) and forward port 3306 on _hpc-gw1_ to 3306 on your local machine. You will be asked to enter your password if keys are not found in `authorized_keys` on the remote server. 
+2. Using the `aeon-db` hostname in your ssh config file, connect to the Aeon database (_aeon-db_) and forward port 3306 on _hpc-gw1_ to 3306 on your local machine. You will be asked to enter your password if keys are not found in `authorized_keys` on the remote server.
 
 ```bash
 ssh -v -N -f aeon-db
