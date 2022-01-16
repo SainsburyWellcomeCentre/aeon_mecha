@@ -2,7 +2,7 @@ name: Aeon Container Environment
 
 on:
   push:
-    branches: [main]
+    branches: [datajoint_pipeline]
 
 jobs:
   build_and_push:
