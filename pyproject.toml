@@ -5,10 +5,10 @@ description = "Code for managing acquired data. Includes preprocessing, querying
 authors = ["Jai Bhagat jkbhagatio@gmail.com", "Goncalo Lopes <goncaloclopes@gmail.com>"]
 license = ""
 readme = "readme.md"
-python = "^3.9.4"
-homepage = "https://github.com/projectAeon/aeon"
-repository = "https://github.com/projectAeon/aeon"
-documentation = "https://github.com/projectAeon/aeon"
+python = "^3.10.0"
+homepage = "https://github.com/sainsburywellcomecentre/aeon_mecha"
+repository = "https://github.com/sainsburywellcomecentre/aeon_mecha"
+documentation = "https://github.com/sainsburywellcomecentre/aeon_mecha"
 
 [tool.poetry]
 name = "aeon"
