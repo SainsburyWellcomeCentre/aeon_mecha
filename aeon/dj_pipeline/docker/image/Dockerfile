@@ -1,4 +1,4 @@
-FROM iamamutt/conda_base:latest
+FROM ghcr.io/iamamutt/conda_base:latest
 
 ARG IMAGE_CREATED=2021-11-11T11:11:11Z
 ARG IMAGE_VERSION=v0.0.0a
