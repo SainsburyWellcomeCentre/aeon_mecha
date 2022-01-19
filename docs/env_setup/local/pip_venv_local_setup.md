@@ -1,4 +1,4 @@
-# Remote set-up using pip and venv
+# Local set-up using pip and venv
 
 1) Ensure that you have python 3.9 and pip installed on your computer:
 ```
@@ -21,5 +21,3 @@ python -m pip install -r requirements.txt
 `source aeon/bin/activate` activates the virtual environment.
 
 `deactivate` deactivates the virtual environment.
-
-6) For instructions on developing within the `aeon` environment, see [`developing_on_hpc.md`](./developing_on_hpc.md)

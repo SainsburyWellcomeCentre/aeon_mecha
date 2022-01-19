@@ -22,15 +22,13 @@ git clone https://github.com/SainsburyWellcomeCentre/aeon_mecha
 
 #### Set-up
 
-Ensure you stay in the `~/ProjectAeon/aeon_mecha` directory for the rest of the set-up instructions, regardless of which set-up procedure you follow below.cd
+Ensure you stay in the `~/ProjectAeon/aeon_mecha` directory for the rest of the set-up instructions, regardless of which set-up procedure you follow below.
 
-[Option 1](): miniconda (python distribution) and conda (python version manager, environment manager, package manager, and package dependency manager)
+[Option 1](./docs/env_setup/remote/miniconda_conda_remote_setup.md): miniconda (python distribution) and conda (python version manager, environment manager, package manager, and package dependency manager)
 
-[Option 2](): pyenv (python version manager) and poetry (python environment manager, package manager, and package dependency manager)
+[Option 2](./docs/env_setup/remote/pyenv_poetry_remote_setup.md): pyenv (python version manager) and poetry (python environment manager, package manager, and package dependency manager)
 
-[Option 3](): pip (python package manager) and venv (python environment manager)
-
-#### [On SWC's HPC](docs/env_setup/swc_hpc_setup.md)
+[Option 3](./docs/env_setup/remote/pip_venv_remote_setup.md): pip (python package manager) and venv (python environment manager)
 
 ### Local set-up
 
@@ -50,11 +48,11 @@ cd aeon_mecha
 
 Ensure you stay in the `~/ProjectAeon/aeon_mecha` directory for the rest of the set-up instructions, regardless of which set-up procedure you follow below. All commands below should be run in a bash terminal (Windows users can use the 'mingw64' terminal that comes installed with git).
 
-[Option 1](): miniconda (python distribution) and conda (python version manager, environment manager, package manager, and package dependency manager)
+[Option 1](./docs/env_setup/local/miniconda_conda_local_setup.md): miniconda (python distribution) and conda (python version manager, environment manager, package manager, and package dependency manager)
 
-[Option 2](): pyenv (python version manager) and poetry (python environment manager, package manager, and package dependency manager)
+[Option 2](./docs/env_setup/local/pyenv_poetry_local_setup.md): pyenv (python version manager) and poetry (python environment manager, package manager, and package dependency manager)
 
-[Option 3](): pip (python package manager) and venv (python environment manager)
+[Option 3](./docs/env_setup/local/pip_venv_local_setup.md): pip (python package manager) and venv (python environment manager)
 
 ## Repository Contents
 
