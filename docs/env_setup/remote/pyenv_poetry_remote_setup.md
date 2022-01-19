@@ -14,6 +14,7 @@ exec bash
 pyenv install 3.9.10
 pyenv local 3.9.10
 pyenv rehash
+python -V             # this should return 'Python 3.9.10'
 ```
 
 3) Install poetry and restart shell:
@@ -24,7 +25,7 @@ exec bash
 
 4) Call poetry to create a new virtual environment and install the code dependencies from the `pyproject.toml` and `poetry.lock` files: 
 ```
-poetry env use python3.9.10   # creates env
+poetry run python --versison  # creates env
 poetry install                # installs deps into env
 ```
 
@@ -35,3 +36,5 @@ poetry install                # installs deps into env
 `exit`: deactivates the virtual environment and closes the poetry shell.
 
 For more information on Pyenv and Poetry, see [this blog post](https://blog.jayway.com/2019/12/28/pyenv-poetry-saviours-in-the-python-chaos/) and the more detailed [pyenv docs](https://github.com/pyenv/pyenv) and [poetry docs](https://python-poetry.org/docs/).
+
+6) For instructions on developing within the `aeon` environment, see [`developing_on_hpc.md`](./developing_on_hpc.md)
