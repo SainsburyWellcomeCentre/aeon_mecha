@@ -1,75 +1,90 @@
 import os
 import glob
+import math
 import bisect
 import datetime
 import pandas as pd
 import numpy as np
 
-"""The size of each time bin, in whole hours."""
-BIN_SIZE = 1
+"""The duration of each acquisition chunk, in whole hours."""
+CHUNK_DURATION = 1
 _SECONDS_PER_TICK = 32e-6
 
 def aeon(seconds):
     """Converts a Harp timestamp, in seconds, to a datetime object."""
     return datetime.datetime(1904, 1, 1) + pd.to_timedelta(seconds, 's')
 
-def timebin(time):
+def chunk(time):
     '''
-    Returns the whole hour time bin for a measurement timestamp.
-
+    Returns the whole hour acquisition chunk for a measurement timestamp.
+    
     :param datetime or Series time: An object or series specifying the measurement timestamps.
-    :return: A datetime object or series specifying the time bin for the measurement timestamp.
+    :return: A datetime object or series specifying the acquisition chunk for the measurement timestamp.
     '''
     if isinstance(time, pd.Series):
-        hour = BIN_SIZE * (time.dt.hour // BIN_SIZE)
+        hour = CHUNK_DURATION * (time.dt.hour // CHUNK_DURATION)
         return pd.to_datetime(time.dt.date) + pd.to_timedelta(hour, 'h')
     else:
-        hour = BIN_SIZE * (time.hour // BIN_SIZE)
+        hour = CHUNK_DURATION * (time.hour // CHUNK_DURATION)
         return pd.to_datetime(datetime.datetime.combine(time.date(), datetime.time(hour=hour)))
 
-def timebin_range(start, end):
+def chunk_range(start, end):
     '''
-    Returns a range of whole hour time bins.
+    Returns a range of whole hour acquisition chunks.
 
     :param datetime start: The left bound of the time range.
     :param datetime end: The right bound of the time range.
-    :return: A DatetimeIndex representing the range of time bins.
+    :return: A DatetimeIndex representing the acquisition chunk range.
     '''
-    return pd.date_range(timebin(start), timebin(end), freq=pd.DateOffset(hours=BIN_SIZE))
+    return pd.date_range(chunk(start), chunk(end), freq=pd.DateOffset(hours=CHUNK_DURATION))
 
-def timebin_key(file):
-    """Returns the time bin key for the specified file name."""
+def chunk_key(file):
+    """Returns the acquisition chunk key for the specified file name."""
     filename = os.path.split(file)[-1]
     filename = os.path.splitext(filename)[0]
-    timebin_str = filename.split("_")[-1]
-    date_str, time_str = timebin_str.split("T")
+    chunk_str = filename.split("_")[-1]
+    date_str, time_str = chunk_str.split("T")
     return datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":"))
 
-def timebin_filter(files, timefilter):
+def chunk_filter(files, timefilter):
     '''
     Filters a list of paths using the specified time filter. To use the time filter, files
-    must conform to a naming convention where the timestamp of each timebin is appended to
-    the end of each file path.
+    must conform to a naming convention where the timestamp of each acquisition chunk is
+    appended to the end of each file path.
 
-    :param str files: The list of timebin files to filter.
+    :param str files: The list of acquisition chunk files to filter.
     :param iterable or callable timefilter:
-    A list of time bins or a predicate used to test each file time.
+    A list of acquisition chunks or a predicate used to test each file time.
     :return: A list of all matching filenames.
     '''
     try:
-        timebins = [timebin for timebin in iter(timefilter)]
-        timefilter = lambda x:x in timebins
+        chunks = [chunk for chunk in iter(timefilter)]
+        timefilter = lambda x:x in chunks
     except TypeError:
         if not callable(timefilter):
             raise TypeError("timefilter must be iterable or callable")
 
     matches = []
     for file in files:
-        timebin = timebin_key(file)
-        if not timefilter(timebin):
+        chunk = chunk_key(file)
+        if not timefilter(chunk):
             continue
         matches.append(file)
     return matches
+
+def chunk_glob(path, device, prefix=None, extension='*.csv'):
+    '''
+    Finds matching files in the specified root path.
+
+    :param str path: The root path where all the session data is stored.
+    :param str, device: The device name prefix used to search for data files.
+    :param str, optional prefix: The pathname prefix used to search for data files.
+    :param str, optional extension: The optional extension pattern used to search for data files.
+    :return: A list of file names for chunks in the specified path.
+    '''
+    pathname = path + "/**/" + device + "/" + prefix + extension
+    files = glob.glob(pathname)
+    return files
 
 def load(path, reader, device, prefix=None, extension="*.csv",
          start=None, end=None, time=None, tolerance=None):
@@ -78,7 +93,7 @@ def load(path, reader, device, prefix=None, extension="*.csv",
     containing device and/or session metadata for the Experiment 0 arena. If no prefix is
     specified, metadata for all sessions is extracted.
 
-    :param str path: The root path where all the session data is stored.
+    :param str path: The root path, or prioritised sequence of paths, where session data is stored.
     :param callable reader: A callable object used to load session metadata from a file.
     :param str, device: The device name prefix used to search for data files.
     :param str, optional prefix: The pathname prefix used to search for data files.
@@ -88,13 +103,22 @@ def load(path, reader, device, prefix=None, extension="*.csv",
     :param datetime, optional time: An object or series specifying the timestamps to extract.
     :param datetime, optional tolerance:
     The maximum distance between original and new timestamps for inexact matches.
-    :return: A pandas data frame containing session event metadata, sorted by time.
+    :return: A pandas data frame containing session event metadata, sorted by priority and time.
     '''
     if prefix is None:
         prefix = ""
 
-    pathname = path + "/**/" + device + "/" + prefix + extension
-    files = glob.glob(pathname)
+    if isinstance(path, str):
+        files = chunk_glob(path, device, prefix, extension)
+    else:
+        files = []
+        fileset = set()
+        datasets = map(lambda dpath:chunk_glob(dpath, device, prefix, extension), path)
+        for dataset in datasets:
+            for fname in dataset:
+                fkey = os.path.split(fname)[1]
+                if not fkey in fileset:
+                    files.append(fname)
     files.sort()
 
     if time is not None:
@@ -106,8 +130,8 @@ def load(path, reader, device, prefix=None, extension="*.csv",
             time.index = time
 
         dataframes = []
-        filetimes = [timebin_key(file) for file in files]
-        for key,values in time.groupby(by=timebin):
+        filetimes = [chunk_key(file) for file in files]
+        for key,values in time.groupby(by=chunk):
             i = bisect.bisect_left(filetimes, key)
             if i < len(filetimes):
                 frame = reader(files[i])
@@ -118,7 +142,7 @@ def load(path, reader, device, prefix=None, extension="*.csv",
             data = data.reindex(values, method='pad', tolerance=tolerance)
             missing = len(data.time) - data.time.count()
             if missing > 0 and i > 0:
-                # expand reindex to allow adjacent timebins
+                # expand reindex to allow adjacent chunks
                 # to fill missing values
                 previous = reader(files[i-1])
                 data = pd.concat([previous, frame])
@@ -126,11 +150,15 @@ def load(path, reader, device, prefix=None, extension="*.csv",
             else:
                 data.drop(columns='time', inplace=True)
             dataframes.append(data)
+
+        if len(dataframes) == 0:
+            return reader(None)
+            
         return pd.concat(dataframes)
 
     if start is not None or end is not None:
-        timefilter = timebin_range(start, end)
-        files = timebin_filter(files, timefilter)
+        timefilter = chunk_range(start, end)
+        files = chunk_filter(files, timefilter)
     else:
         timefilter = None
 
@@ -152,34 +180,34 @@ def load(path, reader, device, prefix=None, extension="*.csv",
             return data.loc[start:end]
     return data
 
-def timebinreader(file):
-    """Reads timebin information for the specified file."""
+def chunkreader(file):
+    """Reads acquisition chunk information for the specified file."""
     names = ['time', 'path']
     if file is None:
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
-    timebin = timebin_key(file)
-    data = pd.DataFrame({ names[0]: [timebin], names[1]: [file] })
+    chunk = chunk_key(file)
+    data = pd.DataFrame({ names[0]: [chunk], names[1]: [file] })
     data.set_index('time', inplace=True)
     return data
 
-def timebindata(path, device, extension='*.csv', start=None, end=None, time=None, tolerance=None):
+def chunkdata(path, device, extension='*.csv', start=None, end=None, time=None, tolerance=None):
     '''
-    Extracts all timebin information from the specified root path, sorted chronologically,
-    indicating recorded timebins for the specified device in the arena.
+    Extracts all acquisition chunk information from the specified root path, sorted chronologically,
+    indicating recorded acquisition chunks for the specified device in the arena.
 
     :param str path: The root path where all the data is stored.
-    :param str, device: The device name prefix used to search for timebin files.
-    :param str, optional extension: The optional extension pattern used to search for timebin files.
+    :param str, device: The device name prefix used to search for acquisition chunk files.
+    :param str, optional extension: The optional extension pattern used to search for chunk files.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
     :param datetime, optional time: An object or series specifying the timestamps to extract.
     :param datetime, optional tolerance:
     The maximum distance between original and new timestamps for inexact matches.
-    :return: A pandas data frame containing timebin information, sorted by time.
+    :return: A pandas data frame containing acquisition chunk information, sorted by time.
     '''
     return load(
         path,
-        timebinreader,
+        chunkreader,
         device,
         extension=extension,
         start=start,
@@ -268,6 +296,7 @@ def videoreader(file):
     data.insert(loc=1, column='frame', value=data.index)
     data['time'] = aeon(data['time'])
     data['path'] = os.path.splitext(file)[0] + '.avi'
+    data['epoch'] = file.rsplit(os.sep, maxsplit=3)[1]
     data.set_index('time', inplace=True)
     return data
 
@@ -340,7 +369,7 @@ harpregisters = {
 def harpreader(file, names=None):
     '''
     Reads Harp data from the specified file.
-
+    
     :param str file: The path to a Harp binary file.
     :param str or array-like names: The optional column labels to use for the data.
     :return: A pandas data frame containing harp event data, sorted by time.
@@ -368,7 +397,13 @@ def harpreader(file, names=None):
         strides=(stride, elementsize))
     time = aeon(seconds)
     time.name = 'time'
-    return pd.DataFrame(payload, index=time, columns=names)
+
+    if names is not None and payloadshape[1] < len(names):
+        data = pd.DataFrame(payload, index=time, columns=names[:payloadshape[1]])
+        data[names[payloadshape[1]:]] = math.nan
+        return data
+    else:
+        return pd.DataFrame(payload, index=time, columns=names)
 
 def harpdata(path, device, register, names=None, start=None, end=None, time=None, tolerance=None):
     '''
@@ -490,7 +525,7 @@ def positiondata(path, device='FrameTop', start=None, end=None, time=None, toler
     return harpdata(
         path,
         device, register=200,
-        names=['x', 'y', 'angle', 'major', 'minor', 'area'],
+        names=['x', 'y', 'angle', 'major', 'minor', 'area', 'id'],
         start=start,
         end=end,
         time=time,
@@ -586,7 +621,7 @@ def exportvideo(frames, file, fps, fourcc=None):
         for frame in frames:
             if writer is None:
                 if fourcc is None:
-                    fourcc = cv2.VideoWriter_fourcc('M','P','4','V')
+                    fourcc = cv2.VideoWriter_fourcc('m','p','4','v')
                 writer = cv2.VideoWriter(file, fourcc, fps, (frame.shape[1], frame.shape[0]))
             writer.write(frame)
     finally:
