@@ -1,9 +1,11 @@
 # Remote set-up using pyenv and poetry
 
-1) Install pyenv, add it to your path, and restart your shell: 
+1) Make sure minconda is not on path, install pyenv, add it to your path, and it's initialization commands to `~/.profile` and `~/.bashrc`, and restart your shell: 
 ```
+module unload miniconda
 curl https://pyenv.run | bash
-echo 'export PATH=$PATH:$HOME/.pyenv/bin' >> ~/.profile
+echo 'export PATH="$PATH:$HOME/.pyenv/bin"' >> ~/.profile
+echo 'eval "$(pyenv init -)"' >> ~/.bashrc
 exec bash
 ```
 
@@ -14,13 +16,16 @@ pyenv local 3.9.10
 pyenv rehash
 ```
 
-3) Install poetry:
-`curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -`
+3) Install poetry and restart shell:
+```
+curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python -
+exec bash
+```
 
 4) Call poetry to create a new virtual environment and install the code dependencies from the `pyproject.toml` and `poetry.lock` files: 
 ```
-poetry env use python3.10   # creates env
-poetry install              # installs deps into env
+poetry env use python3.9.10   # creates env
+poetry install                # installs deps into env
 ```
 
 5) Using the virtual environment: 
