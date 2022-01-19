@@ -5,7 +5,7 @@ description = "Code for managing acquired data. Includes preprocessing, querying
 authors = ["Jai Bhagat jkbhagatio@gmail.com", "Goncalo Lopes <goncaloclopes@gmail.com>"]
 license = ""
 readme = "readme.md"
-python = "^3.10.0"
+python = "^3.9.0"
 homepage = "https://github.com/sainsburywellcomecentre/aeon_mecha"
 repository = "https://github.com/sainsburywellcomecentre/aeon_mecha"
 documentation = "https://github.com/sainsburywellcomecentre/aeon_mecha"
@@ -17,7 +17,7 @@ description = "Code for managing acquired data. Includes preprocessing, querying
 authors = ["Jai Bhagat <jkbhagatio@gmail.com>", "Goncalo Lopes goncaloclopes@gmail.com>"]
 
 [tool.poetry.dependencies]
-python = "^3.10.0"
+python = "^3.9.0"
 bottleneck = "^1.2.1"
 datajoint = "*"
 graphviz = "*"

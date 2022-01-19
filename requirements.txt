@@ -1,5 +1,5 @@
 # Users
-python>=3.10, <3.11
+python>=3.9, <3.10
 bottleneck>=1.2.1, <2
 datajoint
 graphviz
