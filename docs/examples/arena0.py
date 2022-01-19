@@ -28,7 +28,7 @@ export_format = env.get('aeon_dataformat','parquet')
 fig_format = env.get('aeon_figformat','png')
 
 
-#%% 
+
 def makeWheelPlots(df):
     try:
         fileformat = sys.argv[2]
@@ -86,8 +86,12 @@ def exportDataToCSV(limit=1e6):
 # %%
 #df = helpers.loadSessions(dataroot)
 #exportDataToParquet(1)
+DEBUG = "PYDEVD_USE_FRAME_EVAL" in env.keys()
 
 if __name__ == "__main__":
+    if DEBUG:
+        df = helpers.loadSessions(dataroot)
+        exportDataToParquet(0)
 # if False:
     funclist = ['makeWheelPlots', 'exportDataToParquet']
     if len(sys.argv) == 1:
