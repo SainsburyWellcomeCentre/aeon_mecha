@@ -30,7 +30,7 @@ def loadSessions(dataroot):
     df = sessdf.copy()
     merge(df)
     merge(df,first=[15])
-    merge(df,first=[32,35, 44, 46, 49], merge_id=True)
+    merge(df,first=[32,35, 44, 46, 49, 52, 54], merge_id=True)
     merge(df, first=[42,])
 
     #%% Fix bad ids.
@@ -40,13 +40,15 @@ def loadSessions(dataroot):
     df.loc[22,'id'] = 'BAA-1100705;BAA-1100706'
     df.loc[25,'id'] = 'BAA-1100704;BAA-1100705'
     df.loc[30,'id'] = 'BAA-1100704;BAA-1100705'
+    df.loc[45,'id'] = 'BAA-1100704'
+
 
     #%%
     markSessionEnded(df)
     return df
 
 def getSessionID(session):
-    return f"{session.id.split('/')[0].replace(';','.').replace(' ','')}_{session.start:%y%m%dT%H%M%S}"
+    return f"{session.id.split('/')[0].replace(';',':').replace(' ','')}_{session.start:%Y-%m-%dT%H:%M:%S}"
 
 def stateChangeRows(df, patchid=1):
     """
@@ -149,9 +151,9 @@ def exportWheelData(root, session, *,
             v['time_in_session'] = (v.index - session.start).total_seconds().array
 
             if format == 'parquet':
-                v.to_parquet(fullfile)
+                v.to_parquet(fullfile, index=False)
             elif format == 'csv':
-                v.to_csv(fullfile)
+                v.to_csv(fullfile, index=False)
                 
             print(f'Saved {fullfile}')
 
