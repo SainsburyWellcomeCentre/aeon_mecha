@@ -1,4 +1,14 @@
-.git*
-.vscode/*
-*.DS_Store
+__pycache__/
 .env
+.git*
+.idea/
+.vscode/*
+*.code-workspace
+*.DS_Store
+*.egg
+*.egg-info/
+**/.DS_Store
+dj_local_conf.json
+log*.txt
+scratch*.py
+scratch/

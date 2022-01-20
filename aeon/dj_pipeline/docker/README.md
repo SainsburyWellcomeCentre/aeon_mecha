@@ -113,7 +113,7 @@ docker buildx create --platform linux/arm64,linux/amd64 --name=mrbuilder --use
 
 ```bash
 cd aeon_mecha
-VERSION=v0.1.0
+VERSION=v0.0.0a
 DATE_CREATED=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
 PLATFORM=arm64
 docker buildx build \

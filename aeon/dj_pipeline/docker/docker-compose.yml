@@ -3,12 +3,16 @@
 # --------------------------------------------------------------------------------------
 # Basic usage:
 #   export CR_PAT=YOUR_TOKEN
-#   echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin
-#   docker-compose up --detach
+#   echo $CR_PAT | sudo docker login ghcr.io -u USERNAME --password-stdin
+#   sudo docker-compose up --detach
+#   sudo docker-compose down
+#   sudo docker ps -la --no-trunc
 #
-#   docker-compose down
-#   docker-compose down --volumes
-#
+# Container debugging:
+#   export CID=$(sudo docker ps -aqf name=aeon_high)
+#   sudo docker exec -it $CID bash
+#   sudo docker exec -it $CID conda-run python
+
 # Shared properties across services ----------------------------------------------------
 
 version: "2.4"
@@ -25,8 +29,8 @@ x-aeon-ingest-common: &aeon-ingest-common
   volumes:
     # map raw data directory $LOCAL_CEPH_ROOT on host to $CEPH_ROOT in image
     - "${LOCAL_CEPH_ROOT:-/ceph/aeon}:/ceph/aeon"
-    # map image directory $CEPH_ROOT to a container volume
-    - djstore:/home/condauser/djstore
+    # map image directory $LOCAL_DJ_STORE on host to $DJ_EXTERNAL_STORE in image
+    - "${LOCAL_DJ_STORE:-~/djstore}:/home/djworker/djstore"
   extra_hosts:
     - host.docker.internal:host-gateway # 172.17.0.1
   scale: 1
@@ -45,7 +49,3 @@ services:
         condition: service_started
     scale: 2
     # command: ["aeon_ingest", "mid", "-d", "20", "-s", "1"]
-
-volumes:
-  djstore:
-    name: aeon-external-store

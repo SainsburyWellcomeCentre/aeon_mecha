@@ -27,7 +27,7 @@ Usage as a script:
 
 Usage from python:
 
-    `from aeon.dj_pipeline.ingest.process import run; run(priority='high')`
+    `from aeon.dj_pipeline.ingest.process import run; run(priority='high', duration=20, sleep=5)`
 
 """
 

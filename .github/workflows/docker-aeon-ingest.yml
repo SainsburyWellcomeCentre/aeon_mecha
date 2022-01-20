@@ -34,6 +34,14 @@ jobs:
           driver-opts: |
             image=moby/buildkit:buildx-stable-1
 
+      - name: Set docker image UID and GID defaults
+        id: usergroupid
+        run: |
+          DJ_WORKER_UID=${{ secrets.DJ_WORKER_UID }}
+          DJ_WORKER_GID=${{ secrets.DJ_WORKER_GID }}
+          echo "::set-output name=uid::${DJ_WORKER_UID:-1000}"
+          echo "::set-output name=gid::${DJ_WORKER_GID:-1000}"
+
       - name: Cache Docker layers
         uses: actions/cache@v2
         with:
@@ -56,6 +64,8 @@ jobs:
           build-args: |
             IMAGE_CREATED=${{ steps.timestamp.outputs.date }}
             IMAGE_VERSION=${{ steps.previoustag.outputs.tag }}
+            NEW_USER_UID=${{ steps.usergroupid.outputs.uid }}
+            NEW_USER_GID=${{ steps.usergroupid.outputs.gid }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
           context: ./
