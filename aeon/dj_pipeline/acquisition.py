@@ -175,8 +175,16 @@ class Epoch(dj.Manual):
     setup_file_path: varchar(255)  # path of the file, relative to the data repository
     """
 
+    class Version(dj.Part):
+        definition = """
+        -> master
+        source: varchar(16)  # e.g. aeon_experiment or aeon_acquisition (or others)
+        ---
+        version_hash: varchar(32)  # e.g. git hash of aeon_experiment used to generated this particular epoch
+        """
+
     @classmethod
-    def generate_chunks(cls, experiment_name):
+    def generate_epochs(cls, experiment_name):
         assert Experiment & {'experiment_name': experiment_name}, f'Experiment {experiment_name} does not exist!'
         # search directory for epoch data folders
         # load experiment_setup JSON file
