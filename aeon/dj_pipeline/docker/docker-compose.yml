@@ -29,7 +29,7 @@ x-aeon-ingest-common: &aeon-ingest-common
   volumes:
     # map raw data directory $LOCAL_CEPH_ROOT on host to $CEPH_ROOT in image
     - "${LOCAL_CEPH_ROOT:-/ceph/aeon}:/ceph/aeon"
-    # map image directory $LOCAL_DJ_STORE on host to $DJ_EXTERNAL_STORE in image
+    # map image directory $LOCAL_DJ_STORE on host to $DJ_EXT_STORE in image
     - "${LOCAL_DJ_STORE:-~/djstore}:/home/djworker/djstore"
   extra_hosts:
     - host.docker.internal:host-gateway # 172.17.0.1

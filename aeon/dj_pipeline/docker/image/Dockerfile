@@ -16,7 +16,7 @@ ARG NEW_USER_GID=1000
 ARG PKG_SUBDIR=aeon_mecha
 ARG CEPH_ROOT=/ceph/aeon
 ARG BUILDER_HOME=/home/${NEW_USER_NAME}
-ARG DJ_EXTERNAL_STORE=${BUILDER_HOME}/djstore
+ARG DJ_EXT_STORE=${BUILDER_HOME}/djstore
 ARG PKG_CONTENT_PATH=${BUILDER_HOME}/${PKG_SUBDIR}
 ARG DOCKER_IMAGE_PATH=${PKG_CONTENT_PATH}/aeon/dj_pipeline/docker/image
 
@@ -24,9 +24,9 @@ ARG DOCKER_IMAGE_PATH=${PKG_CONTENT_PATH}/aeon/dj_pipeline/docker/image
 RUN init-new-user
 
 # create the raw and storage data directories
-RUN mkdir -p ${CEPH_ROOT} ${DJ_EXTERNAL_STORE} ${PKG_CONTENT_PATH} && \
-    chown -R ${NEW_USER_NAME}:${NEW_USER_GROUP} \
-        ${CEPH_ROOT} ${DJ_EXTERNAL_STORE} ${PKG_CONTENT_PATH}
+RUN mkdir -p ${CEPH_ROOT} ${DJ_EXT_STORE} ${PKG_CONTENT_PATH} && \
+    chown -R :${NEW_USER_GROUP} ${CEPH_ROOT} ${DJ_EXT_STORE} ${PKG_CONTENT_PATH} && \
+    chmod -R 775 ${CEPH_ROOT} ${DJ_EXT_STORE} ${PKG_CONTENT_PATH}
 
 # copy over repo content and chown to user
 COPY --chown=${NEW_USER_NAME}:${NEW_USER_GROUP} ./ ${PKG_CONTENT_PATH}/
@@ -37,12 +37,12 @@ RUN APT_GET_DEPS=${DOCKER_IMAGE_PATH}/apt_requirements.txt \
     init-env pip install ${PKG_CONTENT_PATH}/.
 
 # switch to non-root user and it's home dir
-USER ${NEW_USER_NAME}
+USER ${NEW_USER_NAME}:${NEW_USER_GROUP}
 WORKDIR ${BUILDER_HOME}
 
 # copy over global user datajoint config file w/ hard-coded paths to data
-RUN awk -v DJSTORE="$DJ_EXTERNAL_STORE" -v CEPHROOT="$CEPH_ROOT" \
-    '{sub(/{{ DJ_EXTERNAL_STORE }}/,DJSTORE);sub(/{{ CEPH_ROOT }}/,CEPHROOT)} 1' \
+RUN awk -v DJSTORE="$DJ_EXT_STORE" -v CEPHROOT="$CEPH_ROOT" \
+    '{sub(/{{ DJ_EXT_STORE }}/,DJSTORE);sub(/{{ CEPH_ROOT }}/,CEPHROOT)} 1' \
     "${DOCKER_IMAGE_PATH}/.datajoint_config.json" > ${BUILDER_HOME}/.datajoint_config.json
 
 ENTRYPOINT ["conda-run"]

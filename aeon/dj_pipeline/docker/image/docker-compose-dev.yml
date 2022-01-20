@@ -15,6 +15,9 @@ services:
     build:
       context: ../../../../.
       dockerfile: ./aeon/dj_pipeline/docker/image/Dockerfile
+      args:
+        NEW_USER_UID: ${NEW_USER_UID:-1000}
+        NEW_USER_GID: ${NEW_USER_GID:-1000}
     volumes:
       - "${LOCAL_CEPH_ROOT:-/ceph/aeon}:/ceph/aeon"
       - "${LOCAL_DJ_STORE:-~/djstore}:/home/djworker/djstore"

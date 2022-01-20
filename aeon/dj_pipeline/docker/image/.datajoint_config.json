@@ -14,8 +14,8 @@
   "stores": {
     "djstore": {
       "protocol": "file",
-      "location": "{{ DJ_EXTERNAL_STORE }}",
-      "stage": "{{ DJ_EXTERNAL_STORE }}"
+      "location": "{{ DJ_EXT_STORE }}",
+      "stage": "{{ DJ_EXT_STORE }}"
     }
   },
   "custom": {
