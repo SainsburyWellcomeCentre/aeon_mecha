@@ -473,6 +473,41 @@ def pelletdata(path, device, start=None, end=None, time=None, tolerance=None):
     events = pd.concat([command.event, beambreak.event]).sort_index()
     return pd.DataFrame(events)
 
+def weightreader(file):
+    """Reads electronic scale data from the specified file."""
+    names = ['time','weight','stable']
+    if file is None:
+        return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
+    data = pd.read_csv(file, header=0, names=names)
+    data['time'] = aeon(data['time'])
+    data.set_index('time', inplace=True)
+    return data
+
+def weightdata(path, start=None, end=None, time=None, tolerance=None):
+    '''
+    Extracts patch metadata from the specified root path, sorted chronologically,
+    indicating wheel threshold, d1 and delta state changes in the arena patch.
+
+    :param str path: The root path where all the session data is stored.
+    :param str patch: The patch name used to search for data files.
+    :param datetime, optional start: The left bound of the time range to extract.
+    :param datetime, optional end: The right bound of the time range to extract.
+    :param datetime, optional time: An object or series specifying the timestamps to extract.
+    :param datetime, optional tolerance:
+    The maximum distance between original and new timestamps for inexact matches.
+    :return: A pandas data frame containing patch state metadata, sorted by time.
+    '''
+    return load(
+        path,
+        weightreader,
+        device='WeightData',
+        prefix='WeightData',
+        extension="*.csv",
+        start=start,
+        end=end,
+        time=time,
+        tolerance=tolerance)
+
 def patchreader(file):
     """Reads patch state metadata from the specified file."""
     names = ['time','threshold','d1','delta']
