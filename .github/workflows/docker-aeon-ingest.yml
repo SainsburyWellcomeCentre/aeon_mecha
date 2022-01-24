@@ -39,8 +39,8 @@ jobs:
         run: |
           DJ_WORKER_UID=${{ secrets.DJ_WORKER_UID }}
           DJ_WORKER_GID=${{ secrets.DJ_WORKER_GID }}
-          echo "::set-output name=uid::${DJ_WORKER_UID:-1000}"
-          echo "::set-output name=gid::${DJ_WORKER_GID:-1000}"
+          echo "::set-output name=uid::${DJ_WORKER_UID:-6001}"
+          echo "::set-output name=gid::${DJ_WORKER_GID:-6001}"
 
       - name: Cache Docker layers
         uses: actions/cache@v2
@@ -68,8 +68,8 @@ jobs:
             NEW_USER_GID=${{ steps.usergroupid.outputs.gid }}
           cache-from: type=local,src=/tmp/.buildx-cache
           cache-to: type=local,dest=/tmp/.buildx-cache
-          context: ./
-          file: ./aeon/dj_pipeline/docker/image/Dockerfile
+          context: .
+          file: docker/image/Dockerfile
           platforms: linux/arm64,linux/amd64
           push: true
           tags: |

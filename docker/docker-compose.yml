@@ -28,9 +28,9 @@ x-aeon-ingest-common: &aeon-ingest-common
     DJ_HOST: ${DJ_HOST:-host.docker.internal}
   volumes:
     # map raw data directory $LOCAL_CEPH_ROOT on host to $CEPH_ROOT in image
-    - "${LOCAL_CEPH_ROOT:-/ceph/aeon}:/ceph/aeon"
+    - "${LOCAL_CEPH_ROOT:-~/ceph/aeon}:/ceph/aeon"
     # map image directory $LOCAL_DJ_STORE on host to $DJ_EXT_STORE in image
-    - "${LOCAL_DJ_STORE:-~/djstore}:/home/djworker/djstore"
+    - "${LOCAL_DJ_STORE:-~/djstore}:/ceph/aeon/aeon/dj_store"
   extra_hosts:
     - host.docker.internal:host-gateway # 172.17.0.1
   scale: 1
@@ -40,7 +40,7 @@ services:
   aeon_high:
     <<: *aeon-ingest-common
     scale: 1
-    command: ["aeon_ingest", "high", "-d", "20", "-s", "1"]
+    # command: ["aeon_ingest", "high", "-d", "20", "-s", "1"]
 
   aeon_mid:
     <<: *aeon-ingest-common

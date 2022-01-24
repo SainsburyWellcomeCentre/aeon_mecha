@@ -38,7 +38,7 @@ Download an image with `aeon_mecha` installed and start the database operations 
 
 Since the container is on a private repo, you'll need to be able to use the command `docker login` and to also create a personal access token to pull the image from `ghcr.io`, see here: [creating a PAT](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) and [working with the container registry](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
 
-Navigate to `aeon_mecha/aeon/dj_pipeline/docker` after cloning the repo contents.
+Navigate to `aeon_mecha/docker` after cloning the repo contents.
 
 The file `docker-compose.yml` requires that you create a `.env` file to setup the data paths and parts of the DataJoint configuration.
 
@@ -53,6 +53,7 @@ cat template.env >> .env
 
 ```bash
 LOCAL_CEPH_ROOT=/ceph/aeon
+LOCAL_DJ_STORE=/ceph/aeon/djstore
 DJ_HOST=host.docker.internal
 DJ_USER=jburling
 DJ_PASS=*******
@@ -63,11 +64,6 @@ DJ_PASS=*******
 4. Log in to authenticate using your PAT. Export your token to the variable `CR_PAT`.
 
 ```bash
-LOCAL_CEPH_ROOT=/ceph/aeon
-DJ_USER=jburling
-DJ_PASS=*******
-DJ_HOST=host.docker.internal
-```
 export CR_PAT=YOUR_TOKEN
 echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin
 ```
@@ -81,6 +77,10 @@ echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin
 `LOCAL_CEPH_ROOT`
 
 - Path to the raw data directory on the host machine.
+
+`LOCAL_DJ_STORE`
+
+- Path to the exported data from DataJoint tables.
 
 `DJ_USER`
 
@@ -117,7 +117,7 @@ VERSION=v0.0.0a
 DATE_CREATED=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
 PLATFORM=arm64
 docker buildx build \
-    --file=./aeon/dj_pipeline/docker/image/Dockerfile \
+    --file=./docker/image/Dockerfile \
     --output=type=docker \
     --platform=linux/$PLATFORM \
     --tag=aeon_mecha:$VERSION \

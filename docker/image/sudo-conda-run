@@ -1,0 +1,15 @@
+#! /bin/bash
+
+_USER_NAME="${USER_NAME}"
+_USER_GROUP="${USER_GROUP}"
+
+if [[ -z "${_USER_NAME}" ]]; then
+	echo "# ~Warning: user $_USER_NAME not found!"
+	echo "running '$*' as current user: '$(id)'"
+	exec conda-run "$@"
+fi
+
+exec sudo --preserve-env --set-home --non-interactive -u $_USER_NAME -g $_USER_GROUP \
+	bash -s "$@" <<-'EOF'
+		conda-run "$@"
+	EOF
