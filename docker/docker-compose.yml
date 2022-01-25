@@ -9,7 +9,7 @@
 #   sudo docker ps -la --no-trunc
 #
 # Container debugging:
-#   export CID=$(sudo docker ps -aqf name=aeon_high)
+#   export CID=$(sudo docker ps -aqf name=ingest_high)
 #   sudo docker exec -it $CID bash
 #   sudo docker exec -it $CID conda-run python
 
@@ -30,22 +30,22 @@ x-aeon-ingest-common: &aeon-ingest-common
     # map raw data directory $LOCAL_CEPH_ROOT on host to $CEPH_ROOT in image
     - "${LOCAL_CEPH_ROOT:-~/ceph/aeon}:/ceph/aeon"
     # map image directory $LOCAL_DJ_STORE on host to $DJ_EXT_STORE in image
-    - "${LOCAL_DJ_STORE:-~/djstore}:/ceph/aeon/aeon/dj_store"
+    - "${LOCAL_DJ_STORE:-~/ceph/aeon/aeon/dj_store}:/ceph/aeon/aeon/dj_store"
   extra_hosts:
     - host.docker.internal:host-gateway # 172.17.0.1
   scale: 1
   command: ["tail", "-f", "/dev/null"]
 
 services:
-  aeon_high:
+  ingest_high:
     <<: *aeon-ingest-common
     scale: 1
     # command: ["aeon_ingest", "high", "-d", "20", "-s", "1"]
 
-  aeon_mid:
-    <<: *aeon-ingest-common
-    depends_on:
-      aeon_high:
-        condition: service_started
-    scale: 2
+  # ingest_mid:
+  #   <<: *aeon-ingest-common
+  #   depends_on:
+  #     ingest_high:
+  #       condition: service_started
+  #   scale: 2
     # command: ["aeon_ingest", "mid", "-d", "20", "-s", "1"]

@@ -20,11 +20,11 @@ services:
         NEW_USER_GID: ${NEW_USER_GID:-6001}
     volumes:
       - "${LOCAL_CEPH_ROOT:-~/ceph/aeon}:/ceph/aeon"
-      - "${LOCAL_DJ_STORE:-~/djstore}:/ceph/aeon/aeon/dj_store"
+      - "${LOCAL_DJ_STORE:-~/ceph/aeon/aeon/dj_store}:/ceph/aeon/aeon/dj_store"
     extra_hosts:
       - host.docker.internal:host-gateway
     init: true
+    user: aeon_db:condauser
     # entrypoint: ["/bin/bash", "-lc"]
     # command: "tail -f /dev/null"
     # tty: true
-    # user: aeon_db:aeon_db

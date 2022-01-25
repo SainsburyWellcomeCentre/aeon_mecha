@@ -59,7 +59,7 @@ DJ_USER=jburling
 DJ_PASS=*******
 ```
 
-3. Edit the `command: ...` fields for the services `aeon_high`, `aeon_mid` that run high and mid ingestion priorities. You may want to change the appropriate `sleep` and `duration` settings for each priority. Comment the `command: ` lines for each service if you want to run the container indefinitely and doing nothing, this will use the default command found in `x-aeon-ingest-common`.
+3. Edit the `command: ...` fields for the services `ingest_high`, `ingest_mid` that run high and mid ingestion priorities. You may want to change the appropriate `sleep` and `duration` settings for each priority. Comment the `command: ` lines for each service if you want to run the container indefinitely and doing nothing, this will use the default command found in `x-aeon-ingest-common`.
 
 4. Log in to authenticate using your PAT. Export your token to the variable `CR_PAT`.
 
