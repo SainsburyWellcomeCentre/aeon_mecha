@@ -22,3 +22,4 @@ black
 flake8
 pytest
 tox
+git+https://github.com/Technologicat/pyan.git # pyan3

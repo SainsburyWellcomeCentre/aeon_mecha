@@ -40,6 +40,7 @@ black = "*"
 flake8 = "*"
 pytest = "*"
 tox = "*"
+pyan3 = "*"
 
 [tool.black]
 line-length = 79
