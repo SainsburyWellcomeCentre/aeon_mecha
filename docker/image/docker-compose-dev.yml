@@ -1,5 +1,5 @@
-# sudo docker-compose -p aeon_dev -f ./docker/image/docker-compose-dev.yml up --build -d
-# sudo docker-compose -p aeon_dev -f ./docker/image/docker-compose-dev.yml down --volumes
+# sudo docker-compose -p aeon_dev --verbose -f docker/image/docker-compose-dev.yml up --build --force-recreate --remove-orphans -d
+# sudo docker-compose -p aeon_dev -f docker/image/docker-compose-dev.yml down --volumes
 # export CID=$(sudo docker ps -aqf name=aeon_dev)
 # sudo docker exec -it $CID bash
 # sudo docker exec -it $CID conda-run python
