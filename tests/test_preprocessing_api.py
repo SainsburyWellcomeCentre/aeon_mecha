@@ -27,10 +27,13 @@ test_datetime1 = datetime(2022, 1, 24, 9, 59, 59)
 exp1 = '2022-01-24 09:00:00'
 test_datetime2 = datetime(2022, 1, 24, 10, 0, 0)
 exp2 = '2022-01-24 10:00:00'
-# @todo: add test for pd.Series
+test_pd_datetime = \
+    pd.date_range("2022-01-26", periods=2, freq='h')[1]
+exp3 = '2022-01-26 01:00:00'
 test_data = [
     (test_datetime1, exp1),
-    (test_datetime2, exp2)
+    (test_datetime2, exp2),
+    (test_pd_datetime, exp3)
 ]
 @pytest.mark.parametrize("datetime, expected", test_data)
 def test_chunk(datetime, expected):
@@ -54,7 +57,9 @@ def test_chunk_key(file, expected):
     assert aeon_api.chunk_key(file) == expected
 # /s>
 
-# Test `chunk_range`
+# <s Test `chunk_range`
+
+# /s>
 
 # Test `chunk_filter`
 
