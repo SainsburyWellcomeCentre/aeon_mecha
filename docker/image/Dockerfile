@@ -68,7 +68,7 @@ RUN awk -v DJSTORE="$DJ_EXT_STORE" -v CEPHROOT="$CEPH_ROOT" \
     chown ${NEW_USER_NAME}:${NEW_USER_GROUP} /home/${NEW_USER_NAME}/.datajoint_config.json
 
 # create the conda environment `aeon_env` from yml file and install aeon_mecha pkg
-RUN init-env pip install ${AEON_PKG}/.
+RUN init-env pip install -e "${AEON_PKG}/."
 
 RUN rm /var/log/lastlog /var/log/faillog && \
     touch /var/log/lastlog && \
@@ -93,6 +93,8 @@ ENV LC_ALL=en_US.utf8
 ENV CONDA_ENV_USER=
 
 # for the sudoing to user and having all groups entrypoint
+ARG NEW_USER_NAME
+ARG NEW_USER_GROUP
 ENV USER_NAME=${NEW_USER_NAME}
 ENV USER_GROUP=${NEW_USER_GROUP}
 

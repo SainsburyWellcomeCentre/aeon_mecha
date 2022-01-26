@@ -1,11 +1,11 @@
 #! /bin/bash
 
 _USER_NAME="${USER_NAME}"
-_USER_GROUP="${USER_GROUP}"
+_USER_GROUP="${USER_GROUP:-$(id -gn)}"
 
 if [[ -z "${_USER_NAME}" ]]; then
-	echo "# ~Warning: user $_USER_NAME not found!"
-	echo "running '$*' as current user: '$(id)'"
+	echo "# ~Warning: user USER_NAME=$_USER_NAME not found!"
+	echo "running 'conda-run $*' as current user w/o sudo: '$(id)'"
 	exec conda-run "$@"
 fi
 

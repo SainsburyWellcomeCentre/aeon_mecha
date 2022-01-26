@@ -206,4 +206,17 @@ Make sure the local path set above matches the path used to map to `/ceph/aeon` 
 
 3. The path in the container `/home/anaconda/djstore` set in `docker-compose.yml` should mount to somewhere on local drive to test saving external storage entries.
 
+mkdir /home/aeon_db/.ssh/ && \
+chmod 700 /home/aeon_db/.ssh && \
+touch /home/aeon_db/.ssh/config && \
+chmod 600 /home/aeon_db/.ssh/config && \
+touch /home/aeon_db/.ssh/known_hosts && \
+chmod 600 /home/aeon_db/.ssh/known_hosts && \
+echo "${GITHUB_DEPLOY_KEY}" > /home/aeon_db/.ssh/aeon_mecha && \
+chmod 600 /home/aeon_db/.ssh/aeon_mecha && \
+echo "Host * \n  AddKeysToAgent yes\n  IdentityFile /home/aeon_db/.ssh/aeon_mecha\n" >> \
+  /home/aeon_db/.ssh/config && \
+ssh-keyscan github.com >> /home/aeon_db/.ssh/known_hosts
+
+GIT_SSH_COMMAND="ssh -F /home/aeon_db/.ssh/config" git clone https://github.com/vathes/aeon_mecha.git
 -->
