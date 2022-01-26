@@ -3,7 +3,7 @@
   "database.reconnect": true,
   "connection.init_function": null,
   "connection.charset": "",
-  "loglevel": "INFO",
+  "loglevel": "DEBUG",
   "safemode": true,
   "fetch_format": "array",
   "display.limit": 30,
@@ -14,13 +14,13 @@
   "stores": {
     "djstore": {
       "protocol": "file",
-      "location": "/home/anaconda/djstore",
-      "stage": "/home/anaconda/djstore"
+      "location": "{{ DJ_EXT_STORE }}",
+      "stage": "{{ DJ_EXT_STORE }}"
     }
   },
   "custom": {
     "repository_config": {
-      "ceph_aeon": "/ceph/aeon"
+      "ceph_aeon": "{{ CEPH_ROOT }}"
     }
   }
 }

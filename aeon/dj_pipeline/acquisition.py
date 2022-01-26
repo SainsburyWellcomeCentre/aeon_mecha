@@ -131,7 +131,7 @@ class ExperimentFoodPatch(dj.Manual):
     ---
     food_patch_description: varchar(36)
     wheel_sampling_rate: float  # (Hz) wheel's sampling rate
-    wheel_radius=null: float    # (cm) 
+    wheel_radius=null: float    # (cm)
     """
 
     class RemovalTime(dj.Part):
@@ -165,7 +165,7 @@ class ExperimentFoodPatch(dj.Manual):
 
 @schema
 class Epoch(dj.Manual):
-    definition = """  # A recording period reflecting on/off of the hardware acquisition system 
+    definition = """  # A recording period reflecting on/off of the hardware acquisition system
     -> Experiment
     epoch_start: datetime(6)
     ---
@@ -175,8 +175,16 @@ class Epoch(dj.Manual):
     setup_file_path: varchar(255)  # path of the file, relative to the data repository
     """
 
+    class Version(dj.Part):
+        definition = """
+        -> master
+        source: varchar(16)  # e.g. aeon_experiment or aeon_acquisition (or others)
+        ---
+        version_hash: varchar(32)  # e.g. git hash of aeon_experiment used to generated this particular epoch
+        """
+
     @classmethod
-    def generate_chunks(cls, experiment_name):
+    def generate_epochs(cls, experiment_name):
         assert Experiment & {'experiment_name': experiment_name}, f'Experiment {experiment_name} does not exist!'
         # search directory for epoch data folders
         # load experiment_setup JSON file
@@ -216,7 +224,8 @@ class Chunk(dj.Manual):
             ['quality-control', 'raw'], raw_data_dirs)}
 
         device_name = 'FrameTop'
-        all_chunks = aeon_api.chunkdata(raw_data_dirs.values(), device_name)
+        all_chunks = [aeon_api.chunkdata(rdd, device_name) for rdd in raw_data_dirs.values()]
+        all_chunks = pd.concat(all_chunks)
 
         chunk_list, file_list, file_name_list = [], [], []
         for _, chunk in all_chunks.iterrows():
