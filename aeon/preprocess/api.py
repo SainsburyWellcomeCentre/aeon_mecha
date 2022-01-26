@@ -483,24 +483,25 @@ def weightreader(file):
     data.set_index('time', inplace=True)
     return data
 
-def weightdata(path, start=None, end=None, time=None, tolerance=None):
+def weightdata(path, device='WeightData', start=None, end=None, time=None, tolerance=None):
     '''
-    Extracts patch metadata from the specified root path, sorted chronologically,
-    indicating wheel threshold, d1 and delta state changes in the arena patch.
+    Extracts weight data from the specified root path, sorted chronologically,
+    for the specified electronic weighing device in the Experiment arena.
 
     :param str path: The root path where all the session data is stored.
-    :param str patch: The patch name used to search for data files.
+    :param str patch: The device name used to search for data files.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
     :param datetime, optional time: An object or series specifying the timestamps to extract.
     :param datetime, optional tolerance:
     The maximum distance between original and new timestamps for inexact matches.
-    :return: A pandas data frame containing patch state metadata, sorted by time.
+    :return: A pandas data frame, sorted by time, containing absolute weight in grams,
+    and a value indicating whether the reading is stable.
     '''
     return load(
         path,
         weightreader,
-        device='WeightData',
+        device,
         prefix='WeightData',
         extension="*.csv",
         start=start,
