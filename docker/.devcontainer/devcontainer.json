@@ -7,13 +7,12 @@
 		"ms-python.python",
 		"ms-python.vscode-pylance",
 		"ms-toolsai.jupyter",
-		"ms-toolsai.jupyter-renderers",
-		"visualstudioexptteam.vscodeintellicode",
-		"cweijan.vscode-mysql-client2"
+		"ms-toolsai.jupyter-renderers"
 	],
 	"features": {
 		"github": "latest"
 	},
+	"remoteUser": "aeon_db",
 	"service": "aeon_dev",
 	// Set *default* container specific settings.json values on container create.
 	"settings": {
@@ -44,5 +43,5 @@
 	},
 	"shutdownAction": "stopCompose",
 	"userEnvProbe": "loginInteractiveShell",
-	"workspaceFolder": "/home/aeon_db/aeon_mecha_dev"
+	"workspaceFolder": "/home/aeon_db/aeon_mecha"
 }

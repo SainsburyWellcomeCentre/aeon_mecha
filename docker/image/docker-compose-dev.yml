@@ -22,6 +22,7 @@ services:
       - "${LOCAL_CEPH_ROOT:-~/ceph/aeon}:/ceph/aeon"
       - "${LOCAL_DJ_STORE:-~/ceph/aeon/aeon/dj_store}:/ceph/aeon/aeon/dj_store"
       - "../../.:/home/aeon_db/aeon_mecha"
+      - "vscode-server-dir:/home/aeon_db/.vscode-server/extensions"
     extra_hosts:
       - host.docker.internal:host-gateway
     init: true
@@ -29,3 +30,6 @@ services:
     user: aeon_db:condauser
     entrypoint: ["/bin/bash", "-lc"]
     command: "tail -f /dev/null"
+
+volumes:
+  vscode-server-dir:

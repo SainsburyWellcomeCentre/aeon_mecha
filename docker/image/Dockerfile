@@ -67,12 +67,24 @@ RUN awk -v DJSTORE="$DJ_EXT_STORE" -v CEPHROOT="$CEPH_ROOT" \
     /tmp/.datajoint_config.json > /home/${NEW_USER_NAME}/.datajoint_config.json && \
     chown ${NEW_USER_NAME}:${NEW_USER_GROUP} /home/${NEW_USER_NAME}/.datajoint_config.json
 
+# install package dependencies from apt_requirements.txt
+RUN init-apt-deps
+
 # create the conda environment `aeon_env` from yml file and install aeon_mecha pkg
-RUN init-env pip install -e "${AEON_PKG}/."
+ENV USER_NAME=${NEW_USER_NAME}
+ENV USER_GROUP=${NEW_USER_GROUP}
+RUN sudo-conda-run init-conda-env
+RUN sudo-conda-run pip install -e "${AEON_PKG}/."
 
 RUN rm /var/log/lastlog /var/log/faillog && \
     touch /var/log/lastlog && \
     touch /var/log/faillog
+
+RUN mkdir -p /home/${USER_NAME}/.vscode-server/extensions \
+    /home/${USER_NAME}/.vscode-server-insiders/extensions \
+    && chown -R ${USER_NAME} \
+    /home/${USER_NAME}/.vscode-server \
+    /home/${USER_NAME}/.vscode-server-insiders
 
 # target build stage, squash previous layers ===========================================
 FROM scratch as aeon_mecha_docker
