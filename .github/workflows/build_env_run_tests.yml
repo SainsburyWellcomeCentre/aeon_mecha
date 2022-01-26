@@ -1,0 +1,36 @@
+# Builds the aeon environment, runs black, flake8, pytest.
+
+name: build_env_run_tests
+on:
+  push:
+    branches: [ main, reorg, jai_dev ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Allows running manually from Github's 'Actions' tab
+jobs:
+  build_env_run_tests:
+    name: Build env and run tests on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: ["windows-latest", "ubuntu-latest", "macos-latest"]
+      fail-fast: false
+    defaults:
+      run:
+        shell: bash -l {0} # reset shell for each step
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v2
+      - name: set up conda env
+        uses: conda-incubator/setup-miniconda@v2  # from github marketplace
+        with:
+          activate-environment: aeon
+          environment-file: env.yml
+      - name: black
+        run: python -m black
+      - name: flake
+        run: python -m flake8 .
+      - name: pytest
+        run: python -m pytest tests/
+      #- name: tox
+        #run : python -m tox
