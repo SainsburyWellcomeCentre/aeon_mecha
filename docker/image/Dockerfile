@@ -1,0 +1,102 @@
+# user specified build arguments
+ARG NEW_USER_NAME=aeon_db
+ARG NEW_USER_GROUP=aeon_db
+ARG NEW_USER_UID=6001
+ARG NEW_USER_GID=6001
+ARG NEW_USER_SUDO=true
+ARG AEON_GROUP_NAME=aeon
+ARG AEON_GROUP_GID=801100510
+
+# main build stage =====================================================================
+FROM ghcr.io/iamamutt/conda_base:latest as aeon_mecha_docker_pre
+
+# inherit global args
+ARG NEW_USER_NAME
+ARG NEW_USER_GROUP
+ARG NEW_USER_UID
+ARG NEW_USER_GID
+ARG NEW_USER_SUDO
+ARG AEON_GROUP_NAME
+ARG AEON_GROUP_GID
+
+# default paths
+ARG CEPH_ROOT=/ceph/aeon
+ARG DJ_EXT_STORE=/ceph/aeon/aeon/dj_store
+ARG AEON_PKG=/home/${NEW_USER_NAME}/aeon_mecha
+
+# bash as default shell
+SHELL ["/bin/bash", "-c"]
+
+# create new user from NEW_USER_* variables
+RUN init-new-user
+
+# hack for 32-bit id's
+RUN rm /var/log/lastlog /var/log/faillog && \
+    ln -s /dev/null /var/log/lastlog && \
+    ln -s /dev/null /var/log/faillog
+
+# add aeon group, append group to new user
+RUN groupadd --gid ${AEON_GROUP_GID} --force ${AEON_GROUP_NAME} && \
+    usermod -a -G ${AEON_GROUP_NAME} ${NEW_USER_NAME}
+
+# copy over repo content and chown to new user
+COPY --chown=${NEW_USER_NAME}:${NEW_USER_GROUP} ./ ${AEON_PKG}/
+USER root:${AEON_GROUP_NAME}
+WORKDIR /home/${NEW_USER_NAME}
+
+# create the aeon and dj_store data directories
+RUN mkdir -p ${CEPH_ROOT} ${DJ_EXT_STORE} && \
+    chown -R :${AEON_GROUP_NAME} ${CEPH_ROOT} ${DJ_EXT_STORE} && \
+    chmod -R 6774 ${CEPH_ROOT} ${DJ_EXT_STORE} ${AEON_PKG}
+
+# copy over entrypoint script
+RUN cp -f "${AEON_PKG}/docker/image/sudo-conda-run" /usr/local/bin/sudo-conda-run && \
+    chmod 755 /usr/local/bin/sudo-conda-run
+
+# copy apt-get dependencies, conda environment yml, datajoint config template
+RUN cp -f "${AEON_PKG}/docker/image/apt_requirements.txt" /srv/conda/apt_requirements.txt && \
+    cp -f "${AEON_PKG}/env.yml" /srv/conda/environment.yml && \
+    cp -f "${AEON_PKG}/docker/image/.datajoint_config.json" /tmp/.datajoint_config.json
+
+# delete unnecessary files copied over from this repo
+RUN rm -rf "${AEON_PKG}/docker"
+
+# create the global datajoint config file, hard-coding the data paths
+RUN awk -v DJSTORE="$DJ_EXT_STORE" -v CEPHROOT="$CEPH_ROOT" \
+    '{sub(/{{ DJ_EXT_STORE }}/,DJSTORE);sub(/{{ CEPH_ROOT }}/,CEPHROOT)} 1' \
+    /tmp/.datajoint_config.json > /home/${NEW_USER_NAME}/.datajoint_config.json && \
+    chown ${NEW_USER_NAME}:${NEW_USER_GROUP} /home/${NEW_USER_NAME}/.datajoint_config.json
+
+# create the conda environment `aeon_env` from yml file and install aeon_mecha pkg
+RUN init-env pip install -e "${AEON_PKG}/."
+
+RUN rm /var/log/lastlog /var/log/faillog && \
+    touch /var/log/lastlog && \
+    touch /var/log/faillog
+
+# target build stage, squash previous layers ===========================================
+FROM scratch as aeon_mecha_docker
+COPY --from=aeon_mecha_docker_pre / /
+
+ARG IMAGE_CREATED=2021-11-11T11:11:11Z
+ARG IMAGE_VERSION=v0.0.0a
+
+LABEL org.opencontainers.image.authors="DataJoint"
+LABEL org.opencontainers.image.title="aeon_mecha_docker"
+LABEL org.opencontainers.image.description="aeon_mecha pkg with conda environment aeon_env"
+LABEL org.opencontainers.image.version="$IMAGE_VERSION"
+LABEL org.opencontainers.image.created="$IMAGE_CREATED"
+
+ENV TZ="America/Chicago"
+ENV LANG=en_US.utf8
+ENV LC_ALL=en_US.utf8
+ENV CONDA_ENV_USER=
+
+# for the sudoing to user and having all groups entrypoint
+ARG NEW_USER_NAME
+ARG NEW_USER_GROUP
+ENV USER_NAME=${NEW_USER_NAME}
+ENV USER_GROUP=${NEW_USER_GROUP}
+
+ENTRYPOINT ["sudo-conda-run"]
+CMD ["tail", "-f", "/dev/null"]

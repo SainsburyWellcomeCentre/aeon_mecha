@@ -131,7 +131,7 @@ class ExperimentFoodPatch(dj.Manual):
     ---
     food_patch_description: varchar(36)
     wheel_sampling_rate: float  # (Hz) wheel's sampling rate
-    wheel_radius=null: float    # (cm) 
+    wheel_radius=null: float    # (cm)
     """
 
     class RemovalTime(dj.Part):
@@ -165,7 +165,7 @@ class ExperimentFoodPatch(dj.Manual):
 
 @schema
 class Epoch(dj.Manual):
-    definition = """  # A recording period reflecting on/off of the hardware acquisition system 
+    definition = """  # A recording period reflecting on/off of the hardware acquisition system
     -> Experiment
     epoch_start: datetime(6)
     ---
@@ -224,7 +224,8 @@ class Chunk(dj.Manual):
             ['quality-control', 'raw'], raw_data_dirs)}
 
         device_name = 'FrameTop'
-        all_chunks = aeon_api.chunkdata(raw_data_dirs.values(), device_name)
+        all_chunks = [aeon_api.chunkdata(rdd, device_name) for rdd in raw_data_dirs.values()]
+        all_chunks = pd.concat(all_chunks)
 
         chunk_list, file_list, file_name_list = [], [], []
         for _, chunk in all_chunks.iterrows():
