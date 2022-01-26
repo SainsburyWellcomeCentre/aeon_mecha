@@ -26,6 +26,13 @@ jobs:
         with:
           activate-environment: aeon
           environment-file: env.yml
+          use-mamba: true
+          mamba-version: "*"
+          miniforge-variant: Mambaforge
+          miniforge-version: "*"
+
+
+
       #- name: flake
         #run: python -m flake8 .
       - name: pytest
