@@ -54,7 +54,7 @@ jobs:
         uses: docker/login-action@v1
         with:
           registry: ghcr.io
-          username: ${{ github.repository_owner }}
+          username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
@@ -73,8 +73,8 @@ jobs:
           platforms: linux/arm64,linux/amd64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/aeon_mecha:latest
-            ghcr.io/${{ github.repository_owner }}/aeon_mecha:${{ steps.previoustag.outputs.tag }}
+            ghcr.io/${{ github.actor }}/aeon_mecha:latest
+            ghcr.io/${{ github.actor }}/aeon_mecha:${{ steps.previoustag.outputs.tag }}
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
