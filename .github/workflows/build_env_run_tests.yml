@@ -1,4 +1,4 @@
-# Builds the aeon environment, runs black, flake8, pytest.
+# Builds the aeon environment, flakes and tests via flake8 and pytest.
 
 name: build_env_run_tests
 on:
@@ -26,10 +26,8 @@ jobs:
         with:
           activate-environment: aeon
           environment-file: env.yml
-      - name: black
-        run: python -m black
-      - name: flake
-        run: python -m flake8 .
+      #- name: flake
+        #run: python -m flake8 .
       - name: pytest
         run: python -m pytest tests/
       #- name: tox
