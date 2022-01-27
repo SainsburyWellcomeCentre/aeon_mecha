@@ -1,5 +1,6 @@
 # Users
 python>=3.9, <3.10
+blas>=1.1, <2
 bottleneck>=1.2.1, <2
 datajoint
 graphviz

@@ -18,6 +18,7 @@ authors = ["Jai Bhagat <jkbhagatio@gmail.com>", "Goncalo Lopes goncaloclopes@gma
 
 [tool.poetry.dependencies]
 python = "^3.9.0"
+blas = "^1.1"
 bottleneck = "^1.2.1"
 datajoint = "*"
 graphviz = "*"

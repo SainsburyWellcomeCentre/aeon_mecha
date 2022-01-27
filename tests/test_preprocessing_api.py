@@ -51,10 +51,10 @@ test_data = [
     (test_file1, exp1),
     (test_file2, exp2)
 ]
-@pytest.mark.parametrize("file, expected", test_data)
-def test_chunk_key(file, expected):
-    assert Path.is_file(file)
-    assert aeon_api.chunk_key(file) == expected
+#@pytest.mark.parametrize("file, expected", test_data)
+#def test_chunk_key(file, expected):
+#    assert Path.is_file(file)
+#    assert aeon_api.chunk_key(file) == expected
 # /s>
 
 # <s Test `chunk_range`
