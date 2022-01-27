@@ -64,7 +64,7 @@ RUN awk -v DJSTORE="$DJ_EXT_STORE" -v CEPHROOT="$CEPH_ROOT" \
     /tmp/.datajoint_config.json | tee \
     ${AEON_PKG}/dj_local_config.json \
     ${NEW_USER_HOME}/.datajoint_config.json && \
-    chown ${NEW_USER_NAME}:${NEW_USER_GROUP} ${NEW_USER_HOME}/.datajoint_config.json
+    chown ${NEW_USER_UID}:${NEW_USER_GID} ${NEW_USER_HOME}/.datajoint_config.json
 
 # install package dependencies from apt_requirements.txt
 RUN init-apt-deps

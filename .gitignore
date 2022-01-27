@@ -15,7 +15,7 @@ dj_local_conf.json
 .vscode/*
 *.code-workspace
 .idea/
-*.ipynb_checkpoints
+**/*.ipynb_checkpoints
 
 # misc
 **/.DS_Store

@@ -1,4 +1,4 @@
-# sudo docker-compose -p aeon_dev --verbose -f docker-compose-dev.yml up --build --force-recreate --remove-orphans -d
+# sudo docker-compose -p aeon_dev --verbose -f docker-compose-dev.yml up -d --force-recreate --build --remove-orphans
 # sudo docker-compose -p aeon_dev -f docker-compose-dev.yml down --volumes
 # export CID=$(sudo docker ps -aqf name=aeon_dev)
 # sudo docker exec -it $CID bash
@@ -29,7 +29,7 @@ services:
       - host.docker.internal:host-gateway
     init: true
     tty: true
-    entrypoint: ["/bin/bash", "-lc"]
+    entrypoint: ["/bin/sh", "-c"]
     command: "tail -f /dev/null"
 
 volumes:
