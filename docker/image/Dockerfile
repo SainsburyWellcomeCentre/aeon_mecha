@@ -41,13 +41,13 @@ RUN groupadd --gid ${AEON_GROUP_GID} --force ${AEON_GROUP_NAME} && \
     usermod -a -G ${AEON_GROUP_NAME} ${NEW_USER_NAME}
 
 # copy over repo content and chown to new user
-COPY --chown=root:${AEON_GROUP_NAME} ./ ${AEON_PKG}/
+COPY --chown=${NEW_USER_NAME}:${AEON_GROUP_NAME} ./ ${AEON_PKG}/
 USER root:${AEON_GROUP_NAME}
 
 # create the aeon and dj_store data directories
 RUN mkdir -p ${CEPH_ROOT} ${DJ_EXT_STORE} && \
-    chown -R root:${AEON_GROUP_NAME} ${CEPH_ROOT} ${DJ_EXT_STORE} && \
-    chmod -R 6774 ${CEPH_ROOT} ${DJ_EXT_STORE} ${AEON_PKG}
+    chown -R ${NEW_USER_NAME}:${AEON_GROUP_NAME} ${CEPH_ROOT} ${DJ_EXT_STORE} && \
+    chmod -R 6775 ${CEPH_ROOT} ${DJ_EXT_STORE} ${AEON_PKG}
 
 # copy over entrypoint script
 RUN cp -f ${AEON_PKG}/docker/image/sudo-conda-run /usr/local/bin/sudo-conda-run && \
@@ -63,7 +63,7 @@ RUN awk -v DJSTORE="$DJ_EXT_STORE" -v CEPHROOT="$CEPH_ROOT" \
     '{sub(/{{ DJ_EXT_STORE }}/,DJSTORE);sub(/{{ CEPH_ROOT }}/,CEPHROOT)} 1' \
     /tmp/.datajoint_config.json | tee \
     ${AEON_PKG}/dj_local_config.json \
-    ${NEW_USER_HOME}/.datajoint_config.json && \
+    ${NEW_USER_HOME}/.datajoint_config.json > /dev/null && \
     chown ${NEW_USER_UID}:${NEW_USER_GID} ${NEW_USER_HOME}/.datajoint_config.json
 
 # install package dependencies from apt_requirements.txt

@@ -29,7 +29,7 @@ services:
       - host.docker.internal:host-gateway
     init: true
     tty: true
-    entrypoint: ["/bin/sh", "-c"]
+    entrypoint: ["/bin/bash", "-c"]
     command: "tail -f /dev/null"
 
 volumes:
