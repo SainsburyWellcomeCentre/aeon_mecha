@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 # Path to exp 0.1 data
-#exp01_data_root = Path('/ceph/aeon/test2/experiment0.1/')
+exp01_data_root = Path('/ceph/aeon/test2/experiment0.1/')
 #def test_data_root():
 #    assert Path.is_dir(exp01_data_root)
 
