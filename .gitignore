@@ -6,7 +6,7 @@ __pycache__/
 *.egg
 
 # dotenv
-.env
+**/.env
 
 # datajoint
 dj_local_conf.json

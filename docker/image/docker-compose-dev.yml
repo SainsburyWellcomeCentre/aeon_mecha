@@ -1,5 +1,5 @@
-# sudo docker-compose -p aeon_dev --verbose -f docker/image/docker-compose-dev.yml up --build --force-recreate --remove-orphans -d
-# sudo docker-compose -p aeon_dev -f docker/image/docker-compose-dev.yml down --volumes
+# sudo docker-compose -p aeon_dev --verbose -f docker-compose-dev.yml up --build --force-recreate --remove-orphans -d
+# sudo docker-compose -p aeon_dev -f docker-compose-dev.yml down --volumes
 # export CID=$(sudo docker ps -aqf name=aeon_dev)
 # sudo docker exec -it $CID bash
 # sudo docker exec -it $CID conda-run python
@@ -7,6 +7,8 @@ version: "2.4"
 
 services:
   aeon_dev:
+    # env_file:
+    # - .env # place .env file in the same directory as this file or set here
     environment:
       DJ_USER: ${DJ_USER:-root}
       DJ_PASS: ${DJ_PASS:-simple}
@@ -19,15 +21,14 @@ services:
         NEW_USER_UID: ${NEW_USER_UID:-6001}
         NEW_USER_GID: ${NEW_USER_GID:-6001}
     volumes:
-      - "${LOCAL_CEPH_ROOT:-~/ceph/aeon}:/ceph/aeon"
-      - "${LOCAL_DJ_STORE:-~/ceph/aeon/aeon/dj_store}:/ceph/aeon/aeon/dj_store"
-      - "../../.:/home/aeon_db/aeon_mecha"
-      - "vscode-server-dir:/home/aeon_db/.vscode-server/extensions"
+      - ${LOCAL_CEPH_ROOT:-~/ceph/aeon}:/ceph/aeon
+      - ${LOCAL_DJ_STORE:-~/ceph/aeon/aeon/dj_store}:/ceph/aeon/aeon/dj_store
+      - ../../.:/aeon_mecha
+      - vscode-server-dir:/home/aeon_db/.vscode-server/extensions
     extra_hosts:
       - host.docker.internal:host-gateway
     init: true
     tty: true
-    user: aeon_db:condauser
     entrypoint: ["/bin/bash", "-lc"]
     command: "tail -f /dev/null"
 

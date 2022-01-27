@@ -1,7 +1,9 @@
 __pycache__/
-.env
+./makefile
 .git*
 .idea/
+.profile
+.travis.y*ml
 .vscode/*
 *.code-workspace
 *.DS_Store
@@ -11,5 +13,4 @@ __pycache__/
 **/.DS_Store
 dj_local_conf.json
 log*.txt
-scratch*.py
-scratch/
+tox.ini

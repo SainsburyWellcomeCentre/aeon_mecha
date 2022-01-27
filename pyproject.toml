@@ -52,12 +52,12 @@ aeon_ingest = "aeon.dj_pipeline.ingest.process:cli"
 [tool.black]
 line-length = 88
 target-version = ["py39"]
-color = true
+color = false
 
 [tool.isort]
 # make it compatible with black
 profile = "black"
-color_output = true
+color_output = false
 
 keywords = []
 
