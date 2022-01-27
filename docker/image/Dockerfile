@@ -22,7 +22,8 @@ ARG AEON_GROUP_GID
 # default paths
 ARG CEPH_ROOT=/ceph/aeon
 ARG DJ_EXT_STORE=/ceph/aeon/aeon/dj_store
-ARG AEON_PKG=/home/${NEW_USER_NAME}/aeon_mecha
+ARG AEON_PKG=/aeon_mecha
+ARG NEW_USER_HOME=/home/${NEW_USER_NAME}
 
 # bash as default shell
 SHELL ["/bin/bash", "-c"]
@@ -40,39 +41,51 @@ RUN groupadd --gid ${AEON_GROUP_GID} --force ${AEON_GROUP_NAME} && \
     usermod -a -G ${AEON_GROUP_NAME} ${NEW_USER_NAME}
 
 # copy over repo content and chown to new user
-COPY --chown=${NEW_USER_NAME}:${NEW_USER_GROUP} ./ ${AEON_PKG}/
+COPY --chown=${NEW_USER_NAME}:${AEON_GROUP_NAME} ./ ${AEON_PKG}/
 USER root:${AEON_GROUP_NAME}
-WORKDIR /home/${NEW_USER_NAME}
 
 # create the aeon and dj_store data directories
 RUN mkdir -p ${CEPH_ROOT} ${DJ_EXT_STORE} && \
-    chown -R :${AEON_GROUP_NAME} ${CEPH_ROOT} ${DJ_EXT_STORE} && \
-    chmod -R 6774 ${CEPH_ROOT} ${DJ_EXT_STORE} ${AEON_PKG}
+    chown -R ${NEW_USER_NAME}:${AEON_GROUP_NAME} ${CEPH_ROOT} ${DJ_EXT_STORE} && \
+    chmod -R 6775 ${CEPH_ROOT} ${DJ_EXT_STORE} ${AEON_PKG}
 
 # copy over entrypoint script
-RUN cp -f "${AEON_PKG}/docker/image/sudo-conda-run" /usr/local/bin/sudo-conda-run && \
+RUN cp -f ${AEON_PKG}/docker/image/sudo-conda-run /usr/local/bin/sudo-conda-run && \
     chmod 755 /usr/local/bin/sudo-conda-run
 
 # copy apt-get dependencies, conda environment yml, datajoint config template
-RUN cp -f "${AEON_PKG}/docker/image/apt_requirements.txt" /srv/conda/apt_requirements.txt && \
-    cp -f "${AEON_PKG}/env.yml" /srv/conda/environment.yml && \
-    cp -f "${AEON_PKG}/docker/image/.datajoint_config.json" /tmp/.datajoint_config.json
+RUN cp -f ${AEON_PKG}/docker/image/apt_requirements.txt /srv/conda/apt_requirements.txt && \
+    cp -f ${AEON_PKG}/env.yml /srv/conda/environment.yml && \
+    cp -f ${AEON_PKG}/docker/image/.datajoint_config.json /tmp/.datajoint_config.json
 
-# delete unnecessary files copied over from this repo
-RUN rm -rf "${AEON_PKG}/docker"
-
-# create the global datajoint config file, hard-coding the data paths
+# create the local and global datajoint config files, hard-coding the data paths
 RUN awk -v DJSTORE="$DJ_EXT_STORE" -v CEPHROOT="$CEPH_ROOT" \
     '{sub(/{{ DJ_EXT_STORE }}/,DJSTORE);sub(/{{ CEPH_ROOT }}/,CEPHROOT)} 1' \
-    /tmp/.datajoint_config.json > /home/${NEW_USER_NAME}/.datajoint_config.json && \
-    chown ${NEW_USER_NAME}:${NEW_USER_GROUP} /home/${NEW_USER_NAME}/.datajoint_config.json
+    /tmp/.datajoint_config.json | tee \
+    ${AEON_PKG}/dj_local_config.json \
+    ${NEW_USER_HOME}/.datajoint_config.json > /dev/null && \
+    chown ${NEW_USER_UID}:${NEW_USER_GID} ${NEW_USER_HOME}/.datajoint_config.json
+
+# install package dependencies from apt_requirements.txt
+RUN init-apt-deps
 
 # create the conda environment `aeon_env` from yml file and install aeon_mecha pkg
-RUN init-env pip install -e "${AEON_PKG}/."
+ENV USER_NAME=${NEW_USER_NAME}
+ENV USER_GROUP=${NEW_USER_GROUP}
+RUN sudo-conda-run init-conda-env
+RUN sudo-conda-run pip install -e ${AEON_PKG}/.
 
-RUN rm /var/log/lastlog /var/log/faillog && \
+# delete logs and unnecessary files copied over from this repo
+RUN rm -rf /var/log/lastlog /var/log/faillog ${AEON_PKG}/docker && \
     touch /var/log/lastlog && \
     touch /var/log/faillog
+
+RUN mkdir -p \
+    ${NEW_USER_HOME}/.vscode-server/extensions \
+    ${NEW_USER_HOME}/.vscode-server-insiders/extensions \
+    && chown -R ${NEW_USER_NAME} \
+    ${NEW_USER_HOME}/.vscode-server \
+    ${NEW_USER_HOME}/.vscode-server-insiders
 
 # target build stage, squash previous layers ===========================================
 FROM scratch as aeon_mecha_docker
@@ -98,5 +111,6 @@ ARG NEW_USER_GROUP
 ENV USER_NAME=${NEW_USER_NAME}
 ENV USER_GROUP=${NEW_USER_GROUP}
 
+WORKDIR /home/${NEW_USER_NAME}
 ENTRYPOINT ["sudo-conda-run"]
 CMD ["tail", "-f", "/dev/null"]
