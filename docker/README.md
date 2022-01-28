@@ -25,6 +25,14 @@ echo -e "Host * \n  AddKeysToAgent yes\n  IdentityFile ~/.ssh/aeon_mecha\n" >> \
 ssh-keyscan github.com >> ~/.ssh/known_hosts
 ```
 
+Optional 
+
+```bash
+touch ~/.ssh/id.pub
+chmod 644 ~/.ssh/id.pub
+echo "my-key-string" >> ~/.ssh/id.pub
+```
+
 3. Clone the repo to some directory on the server (substitute `vathes` for whatever fork you're working with).
 
    - `git clone git@github.com:vathes/aeon_mecha.git --branch datajoint_pipeline`

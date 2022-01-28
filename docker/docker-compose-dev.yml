@@ -1,0 +1,31 @@
+# docker-compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml up -d
+# docker-compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml down --volumes
+# docker compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml config
+
+services:
+  ingest_high:
+    env_file:
+      - dev.env
+    image: aeon_mecha:v0.0.0dev
+    build:
+      context: ../.
+      dockerfile: docker/image/Dockerfile
+      args:
+        NEW_USER_NAME: ${NEW_USER_NAME:-aeon}
+        NEW_USER_GROUP: ${NEW_USER_GROUP:-aeon}
+        NEW_USER_UID: ${NEW_USER_UID:-6001}
+        NEW_USER_GID: ${NEW_USER_GID:-6001}
+    volumes:
+      - ../.:/aeon_mecha
+      - vscode-server:/home/aeon_db/.vscode-server/extensions
+    tty: true
+    entrypoint: ["/bin/bash", "-c"]
+    command: "tail -f /dev/null"
+
+  ingest_mid:
+    scale: 1
+    command: ["conda", "info", "-a"]
+
+volumes:
+  vscode-server:
+    name: aeon-dev-vscode-server
