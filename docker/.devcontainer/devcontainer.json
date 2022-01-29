@@ -1,7 +1,10 @@
 // For format details, see https://aka.ms/devcontainer.json
 {
 	"name": "Aeon Mecha (dev-container)",
-	"dockerComposeFile": "../image/docker-compose-dev.yml",
+	"dockerComposeFile": [
+		"../docker-compose.yml",
+		"../docker-compose-dev.yml"
+	],
 	// Add the IDs of extensions you want installed when the container is created.
 	"extensions": [
 		"ms-python.python",
@@ -12,8 +15,9 @@
 	"features": {
 		"github": "latest"
 	},
-	"remoteUser": "aeon_db:aeon",
-	"service": "aeon_dev",
+	"initializeCommand": "touch ${localWorkspaceFolder}/dev.env && touch ${localWorkspaceFolder}/test.env",
+	"remoteUser": "aeon_db:aeon_db",
+	"service": "dev",
 	// Set *default* container specific settings.json values on container create.
 	"settings": {
 		"[python]": {
