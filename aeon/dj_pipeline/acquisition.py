@@ -238,7 +238,9 @@ class Chunk(dj.Manual):
 
         device_name = "FrameTop"
         all_chunks = [
-            aeon_api.chunkdata(rdd, device_name) for rdd in raw_data_dirs.values()
+            aeon_api.chunkdata(rdd, device_name)
+            for rdd in raw_data_dirs.values()
+            if rdd
         ]
         all_chunks = pd.concat(all_chunks)
 
