@@ -1,7 +1,6 @@
 # docker-compose -f docker/docker-compose-build-local.yml up -d --build --force-recreate
 # docker-compose -f docker/docker-compose-build-local.yml down
-# docker ps -ls --no-trunc
-# docker top aeon_mecha_image_build_1 auxf
+
 services:
   image_build:
     image: ${DEV_CONTAINER_IMAGE:-aeon_mecha:v0.0.0dev}

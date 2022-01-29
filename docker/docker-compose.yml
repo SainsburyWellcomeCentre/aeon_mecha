@@ -11,7 +11,7 @@
 # Container debugging:
 #   export CID=$(sudo docker ps -aqf name=ingest_high)
 #   sudo docker exec -it $CID bash
-#   sudo docker exec -it $CID conda-run python
+#   sudo docker exec -it $CID sudo-run python
 
 # Shared properties across services ----------------------------------------------------
 

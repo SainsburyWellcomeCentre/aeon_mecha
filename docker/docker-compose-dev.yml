@@ -1,5 +1,5 @@
 # docker-compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml up -d
-# docker-compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml down --volumes
+# docker-compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml down
 # docker compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml config
 
 x-aeon-docker-dev-image: &aeon-docker-dev-image

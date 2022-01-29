@@ -1,6 +1,9 @@
 # docker-compose -f docker/docker-compose.yml -f docker/docker-compose-test.yml up -d
-# docker-compose -f docker/docker-compose.yml -f docker/docker-compose-test.yml down
+# docker-compose -f docker/docker-compose.yml -f docker/docker-compose-test.yml down --volumes
 # docker compose -f docker/docker-compose.yml -f docker/docker-compose-test.yml config
+#
+# docker ps -ls --no-trunc
+# docker top aeon_mecha_ingest_high_1 auxf
 #
 # ssh -fN -M -S ~/.ssh/controlmasters/aeon-db2 jburling@hpc-gw1 -J jburling@ssh.swc.ucl.ac.uk -L 127.0.0.1:3306:aeon-db:3306
 # ssh -o ControlPath=~/.ssh/controlmasters/aeon-db2 -O check 1
@@ -18,13 +21,13 @@ x-aeon-docker-test-image: &aeon-docker-test-image
 services:
   ingest_high:
     <<: *aeon-docker-test-image
-    command: ["aeon_ingest", "high", "-d", "1", "-s", "1"]
+    command: ["aeon_ingest", "high", "-d", "60", "-s", "1"]
 
   ingest_mid:
     <<: *aeon-docker-test-image
     deploy:
       replicas: 1
-    command: ["aeon_ingest", "mid", "-d", "1", "-s", "1"]
+    command: ["aeon_ingest", "mid", "-d", "60", "-s", "1"]
 
   dev:
     <<: *aeon-docker-test-image

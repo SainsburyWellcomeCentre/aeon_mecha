@@ -9,8 +9,10 @@ __pycache__/
 *.DS_Store
 *.egg
 *.egg-info/
-**/*.ipynb_checkpoints
 **/.DS_Store
+**/*.ipynb_checkpoints
 dj_local_conf.json
 log*.txt
+scratch*.py
+scratch/
 tox.ini

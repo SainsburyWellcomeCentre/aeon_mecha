@@ -15,9 +15,7 @@
 	"features": {
 		"github": "latest"
 	},
-	"initializeCommand": [
-		"touch ${localWorkspaceFolder}/dev.env && touch ${localWorkspaceFolder}/dev.env"
-	],
+	"initializeCommand": "touch ${localWorkspaceFolder}/dev.env && touch ${localWorkspaceFolder}/test.env",
 	"remoteUser": "aeon_db:aeon_db",
 	"service": "dev",
 	// Set *default* container specific settings.json values on container create.
