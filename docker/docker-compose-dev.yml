@@ -2,29 +2,32 @@
 # docker-compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml down --volumes
 # docker compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml config
 
+x-aeon-docker-dev-image: &aeon-docker-dev-image
+  image: ${DEV_CONTAINER_IMAGE:-ghcr.io/vathes/aeon_mecha:latest}
+
 services:
-  ingest_high:
+  dev:
+    <<: *aeon-docker-dev-image
+    deploy:
+      mode: replicated
+      replicas: 1
     env_file:
       - dev.env
-    image: aeon_mecha:v0.0.0dev
-    build:
-      context: ../.
-      dockerfile: docker/image/Dockerfile
-      args:
-        NEW_USER_NAME: ${NEW_USER_NAME:-aeon}
-        NEW_USER_GROUP: ${NEW_USER_GROUP:-aeon}
-        NEW_USER_UID: ${NEW_USER_UID:-6001}
-        NEW_USER_GID: ${NEW_USER_GID:-6001}
     volumes:
       - ../.:/aeon_mecha
       - vscode-server:/home/aeon_db/.vscode-server/extensions
-    tty: true
-    entrypoint: ["/bin/bash", "-c"]
-    command: "tail -f /dev/null"
+
+  ingest_high:
+    <<: *aeon-docker-dev-image
+    deploy:
+      mode: replicated
+      replicas: 0
 
   ingest_mid:
-    scale: 1
-    command: ["conda", "info", "-a"]
+    <<: *aeon-docker-dev-image
+    deploy:
+      mode: replicated
+      replicas: 0
 
 volumes:
   vscode-server:

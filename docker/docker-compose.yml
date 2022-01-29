@@ -6,7 +6,7 @@
 #   echo $CR_PAT | sudo docker login ghcr.io -u USERNAME --password-stdin
 #   sudo docker-compose up --detach
 #   sudo docker-compose down
-#   sudo docker ps -la --no-trunc
+#   sudo docker ps -a --no-trunc
 #
 # Container debugging:
 #   export CID=$(sudo docker ps -aqf name=ingest_high)
@@ -15,7 +15,7 @@
 
 # Shared properties across services ----------------------------------------------------
 
-version: "2.4"
+version: "3.9"
 
 x-aeon-docker-image: &aeon-docker-image
   image: ghcr.io/${GITHUB_REPO_OWNER:-vathes}/aeon_mecha:latest
@@ -34,6 +34,9 @@ x-aeon-ingest-common: &aeon-ingest-common
   extra_hosts:
     - host.docker.internal:host-gateway # 172.17.0.1
   init: true
+  deploy:
+    mode: global
+    replicas: 1
 
 services:
   ingest_high:
@@ -45,5 +48,13 @@ services:
     depends_on:
       ingest_high:
         condition: service_started
-    scale: 3
+    deploy:
+      mode: replicated
+      replicas: 3
     command: ["aeon_ingest", "mid", "--duration=-1", "--sleep=30"]
+
+  dev:
+    <<: *aeon-ingest-common
+    deploy:
+      mode: replicated
+      replicas: 0
