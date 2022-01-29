@@ -69,15 +69,17 @@ RUN awk -v DJSTORE="$DJ_EXT_STORE" -v CEPHROOT="$CEPH_ROOT" \
 # install package dependencies from apt_requirements.txt
 RUN init-apt-deps
 
-# create the conda environment `aeon_env` from yml file and install aeon_mecha pkg
+# create the conda environment `aeon_env` from yml file
 RUN sudo-run \
-        --switch-user=${NEW_USER_NAME} \
-        --switch-group=condauser \
-        --sudo-command=init-conda-env && \
-    sudo-run \
-        --switch-user=${NEW_USER_NAME} \
-        --switch-group=condauser \
-        pip install -e ${AEON_PKG}/.
+    --switch-user=${NEW_USER_NAME} \
+    --switch-group=condauser \
+    --sudo-command=init-conda-env
+
+# install aeon_mecha pkg in dev mode
+RUN sudo-run \
+    --switch-user=${NEW_USER_NAME} \
+    --switch-group=condauser \
+    pip install -e ${AEON_PKG}/.
 
 RUN mkdir -p -m 6775 \
         ${NEW_USER_HOME}/.vscode-server/extensions \
