@@ -58,8 +58,6 @@ jobs:
             IMAGE_VERSION=${{ steps.previoustag.outputs.tag }}
             NEW_USER_UID=${{ steps.usergroupid.outputs.uid }}
             NEW_USER_GID=${{ steps.usergroupid.outputs.gid }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           context: .
           file: docker/image/Dockerfile
           platforms: linux/arm64,linux/amd64
