@@ -1,8 +1,11 @@
-# Users
 python>=3.9, <3.10
+bandit                                            # (dev)
+black                                             # (dev)
 blas>=1.1, <2
 bottleneck>=1.2.1, <2
 datajoint
+fastparquet
+flake8                                            # (dev)
 graphviz
 jupyter
 jupyterlab
@@ -12,15 +15,17 @@ numexpr>=2.6.8, <3
 numpy>=1.21.0, <2
 opencv-python
 pandas>=1.3, <2
+pip
+plotly
+git+https://github.com/Technologicat/pyan.git     # pyan3 (dev)
+pyarrow
+pydotplus
+pymysql
+pytest                                            # (dev)
 scikit-learn
 scipy
 seaborn
+tox                                               # (dev)
 xarray>=0.12.3, <1
-
-# Developers (can be separated out in a `dev_req.txt` file in future)
-bandit
-black
-flake8
-pytest
-tox
-git+https://github.com/Technologicat/pyan.git # pyan3
+  
+# note: dev packages can be separated out in a `env_devs.yml` file in future
