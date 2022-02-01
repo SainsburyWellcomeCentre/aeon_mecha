@@ -1,4 +1,5 @@
 # aeon_mecha
+![aeon_mecha_env_build_and_tests](https://github.com/SainsburyWellcomeCentre/aeon_mecha/actions/workflows/build_env_run_tests.yml/badge.svg?branch=reorg)
 
 Project Aeon's main repository for manipulating acquired data. Includes preprocessing, querying, plotting, and analysis modules.
 
