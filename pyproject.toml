@@ -47,6 +47,7 @@ flake8 = "*"
 pyan3 = "*"
 pytest = "*"
 tox = "*"
+pytest-cov = "*"
 
 [tool.black]
 line-length = 79

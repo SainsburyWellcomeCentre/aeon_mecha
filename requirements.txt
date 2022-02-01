@@ -22,6 +22,7 @@ pyarrow
 pydotplus
 pymysql
 pytest                                            # (dev)
+pytest-cov                                        # (dev)
 scikit-learn
 scipy
 seaborn
