@@ -1,4 +1,5 @@
-# Builds the aeon environment, flakes and tests via flake8 and pytest.
+# Builds the aeon environment, flakes via flake8, tests via pytest, and
+# test coverage report via pytest-cov and codecov.
 
 name: build_env_run_tests
 on:
@@ -13,7 +14,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: ["windows-latest", "ubuntu-latest", "macos-latest"]
+        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
       fail-fast: false
     defaults:
       run:
@@ -32,5 +33,16 @@ jobs:
         #run: python -m flake8 .
       - name: pytest
         run: python -m pytest tests/
-      #- name: tox
-        #run : python -m tox
+      - name: generate test coverage report
+        run: |
+          python -m pytest --cov=aeon ./tests/ --cov-report=xml:./tests/cov_report.xml
+          python -m pytest --cov=aeon ./tests/ --cov-report=html:./tests/cov_report_html/
+      - name: upload test coverage report to codecov
+        uses: codecov/codecov-action@v2
+        with:
+          token: ab5c4418-b0c1-4c7e-9472-c484a8ed6906
+          directory: ./tests/
+          files: cov_report.xml
+          fail_ci_if_error: true
+          path_to_write_report: ./tests/test_coverage/codecov_report.txt
+          verbose: true
