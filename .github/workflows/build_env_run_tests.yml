@@ -46,7 +46,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v2
         with:
-          token: ab5c4418-b0c1-4c7e-9472-c484a8ed6906
+          token: ${{ secrets.CODECOV_TOKEN }}
           directory: ./tests/test_coverage/
           files: test_coverage_report.xml
           fail_ci_if_error: true
