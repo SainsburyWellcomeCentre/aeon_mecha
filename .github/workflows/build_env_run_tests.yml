@@ -33,7 +33,7 @@ jobs:
       #- name: flake
         #run: python -m flake8 .
       - name: bandit
-        run: python -m bandit .r -ll
+        run: python -m bandit . -r -ll
       - name: pytest
         run: python -m pytest tests/
       # Only run coverage report job and upload for ubuntu.
