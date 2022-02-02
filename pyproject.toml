@@ -1,5 +1,13 @@
+# after Poetry implements PEP 660 then uncomment and remove setuptools:
+# [build-system]
+# requires = ["poetry-core > 1.0.7"]
+# build-backend = "poetry.core.masonry.api"
+[build-system]
+requires = ["setuptools", "poetry-core>=1.0.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "data-management"
+name = "aeon_mecha"
 version = "0.0.0"
 description = "Code for managing acquired data. Includes preprocessing, querying, and analysis modules."
 authors = ["Jai Bhagat jkbhagatio@gmail.com", "Goncalo Lopes <goncaloclopes@gmail.com>"]
@@ -11,7 +19,7 @@ repository = "https://github.com/projectAeon/data-management"
 documentation = "https://github.com/projectAeon/data-management"
 
 [tool.poetry]
-name = "data-management"
+name = "aeon_mecha"
 version = "0.0.0"
 description = "Code for managing acquired data. Includes preprocessing, querying, and analysis modules."
 authors = ["Jai Bhagat <jkbhagatio@gmail.com>", "Goncalo Lopes goncaloclopes@gmail.com>"]
@@ -25,6 +33,7 @@ matplotlib = "*"
 numpy = "*"
 opencv-python = "*"
 pandas = "*"
+plotly = "*"
 scikit-learn = "*"
 scipy = "*"
 seaborn = "*"
@@ -34,8 +43,30 @@ bandit = "*"
 black = "*"
 flake8 = "*"
 pytest = "*"
+setuptools = "*"
 tox = "*"
 
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.poetry.scripts]
+aeon_ingest = "aeon.dj_pipeline.ingest.process:cli"
+
+[tool.black]
+line-length = 88
+target-version = ["py39"]
+color = false
+
+[tool.isort]
+# make it compatible with black
+profile = "black"
+color_output = false
+
+keywords = []
+
+classifiers = [  #! Update me
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+]
