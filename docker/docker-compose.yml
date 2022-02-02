@@ -3,22 +3,22 @@
 # --------------------------------------------------------------------------------------
 # Basic usage:
 #   export CR_PAT=YOUR_TOKEN
-#   echo $CR_PAT | sudo docker login ghcr.io -u USERNAME --password-stdin
-#   sudo docker-compose up --detach
-#   sudo docker-compose down
-#   sudo docker ps -a --no-trunc
+#   echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin
+#   docker-compose up --detach
+#   docker-compose down
+#   docker ps -a --no-trunc
 #
 # Container debugging:
-#   export CID=$(sudo docker ps -aqf name=ingest_high)
-#   sudo docker exec -it $CID bash
-#   sudo docker exec -it $CID sudo-run python
+#   export CID=$(docker ps -aqf name=ingest_high)
+#   docker exec -it $CID bash
+#   docker exec -it $CID sudo-run python
 
 # Shared properties across services ----------------------------------------------------
 
 version: "3.9"
 
 x-aeon-docker-image: &aeon-docker-image
-  image: ghcr.io/${GITHUB_REPO_OWNER:-vathes}/aeon_mecha:latest
+  image: ghcr.io/${GITHUB_REPO_OWNER:-SainsburyWellcomeCentre}/aeon_mecha:latest
 
 x-aeon-ingest-common: &aeon-ingest-common
   <<: *aeon-docker-image
@@ -37,6 +37,11 @@ x-aeon-ingest-common: &aeon-ingest-common
   deploy:
     mode: global
     replicas: 1
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "50m"
+      max-file: "5"
 
 services:
   ingest_high:

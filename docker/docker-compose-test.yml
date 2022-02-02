@@ -10,7 +10,7 @@
 # ssh -o ControlPath=~/.ssh/controlmasters/aeon-db2 -O stop 1
 
 x-aeon-docker-test-image: &aeon-docker-test-image
-  image: ${DEV_CONTAINER_IMAGE:-ghcr.io/vathes/aeon_mecha:latest}
+  image: ${DEV_CONTAINER_IMAGE:-ghcr.io/SainsburyWellcomeCentre/aeon_mecha:latest}
   env_file:
     - test.env
   environment:
