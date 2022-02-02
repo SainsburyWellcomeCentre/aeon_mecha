@@ -19,17 +19,10 @@ jobs:
         with:
           fallback: v0.0.0a
 
-      - name: Get current date
-        id: timestamp
-        run: echo "::set-output name=date::$(date -d @${{ steps.previoustag.outputs.timestamp }} +'%Y-%m-%dT%H:%M:%SZ')"
-
-      - name: Set docker image UID and GID defaults
-        id: usergroupid
+      - name: Assign environment variables
         run: |
-          DJ_WORKER_UID=${{ secrets.DJ_WORKER_UID }}
-          DJ_WORKER_GID=${{ secrets.DJ_WORKER_GID }}
-          echo "::set-output name=uid::${DJ_WORKER_UID:-6001}"
-          echo "::set-output name=gid::${DJ_WORKER_GID:-6001}"
+          echo "repository_lower=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "image_build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v1
@@ -44,14 +37,6 @@ jobs:
             image=moby/buildkit:master
           buildkitd-flags: --debug
 
-      - name: Inspect builder
-        run: |
-          echo "Name:      ${{ steps.buildx.outputs.name }}"
-          echo "Endpoint:  ${{ steps.buildx.outputs.endpoint }}"
-          echo "Status:    ${{ steps.buildx.outputs.status }}"
-          echo "Flags:     ${{ steps.buildx.outputs.flags }}"
-          echo "Platforms: ${{ steps.buildx.outputs.platforms }}"
-
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v1
         with:
@@ -65,7 +50,7 @@ jobs:
         with:
           no-cache: true
           build-args: |
-            IMAGE_CREATED=${{ steps.timestamp.outputs.date }}
+            IMAGE_CREATED=${{ env.image_build_date }}
             IMAGE_VERSION=${{ steps.previoustag.outputs.tag }}
             NEW_USER_UID=${{ steps.usergroupid.outputs.uid }}
             NEW_USER_GID=${{ steps.usergroupid.outputs.gid }}
@@ -74,8 +59,8 @@ jobs:
           platforms: linux/arm64,linux/amd64
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ steps.previoustag.outputs.tag }}
+            ghcr.io/${{ env.repository_lower }}:latest
+            ghcr.io/${{ env.repository_lower }}:${{ steps.previoustag.outputs.tag }}
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
