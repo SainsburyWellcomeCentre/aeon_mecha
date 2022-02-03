@@ -15,13 +15,13 @@ propagate through the pipeline more horizontally or vertically.
 """
 
 
-import datajoint as dj
 import inspect
-import time
 import os
 import platform
+import time
 from datetime import datetime
 
+import datajoint as dj
 
 _populate_settings = {
     "display_progress": True,

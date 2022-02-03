@@ -2,8 +2,12 @@ default_language_version:
   python: python3.9
 
 default_stages: [commit, push]
-files: ^aeon\/dj_pipeline
+files: "^(docker|aeon\/dj_pipeline)\/.*$"
 repos:
+  - repo: meta
+    hooks:
+      - id: identity
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.1.0
     hooks:
