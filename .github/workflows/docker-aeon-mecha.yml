@@ -52,8 +52,6 @@ jobs:
           build-args: |
             IMAGE_CREATED=${{ env.image_build_date }}
             IMAGE_VERSION=${{ steps.previoustag.outputs.tag }}
-            NEW_USER_UID=${{ steps.usergroupid.outputs.uid }}
-            NEW_USER_GID=${{ steps.usergroupid.outputs.gid }}
           context: .
           file: docker/image/Dockerfile
           platforms: linux/arm64,linux/amd64
