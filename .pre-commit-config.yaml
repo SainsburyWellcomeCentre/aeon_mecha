@@ -2,7 +2,7 @@ default_language_version:
   python: python3.9
 
 default_stages: [commit, push]
-files: ^aeon/dj_pipeline
+files: ^aeon\/dj_pipeline
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.1.0
