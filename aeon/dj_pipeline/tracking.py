@@ -95,8 +95,47 @@ class CameraTracking(dj.Imported):
         area=null:         longblob  # (px^2) object's size detected in the camera
         """
 
+    @property
+    def key_source(self):
+        return super().key_source & (qc.CameraQC * acquisition.ExperimentCamera
+                                     & 'camera_description = "FrameTop"') & 'tracking_paramset_idx = 0'
+
+    def make(self, key):
+        chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
+
+        raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+        positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
+                                             start=pd.Timestamp(chunk_start),
+                                             end=pd.Timestamp(chunk_end))
+        # Correct for frame offsets from Camera QC
+        qc_timestamps, qc_frame_offsets, camera_fs = (
+                qc.CameraQC * acquisition.ExperimentCamera
+                & 'camera_description = "FrameTop"' & key).fetch1(
+            'timestamps', 'frame_offset', 'camera_sampling_rate')
+        qc_time_offsets = qc_frame_offsets / camera_fs
+        qc_time_offsets = np.where(np.isnan(qc_time_offsets), 0, qc_time_offsets)  # set NaNs to 0
+        positiondata.index += pd.to_timedelta(qc_time_offsets, 's')
+
+        object_positions = []
+        for obj_id in set(positiondata.id.values):
+            obj_position = positiondata[positiondata.id == obj_id]
+
+            object_positions.append({
+                **key,
+                'object_id': obj_id,
+                'timestamps': obj_position.index.to_pydatetime(),
+                'position_x': obj_position.x.values,
+                'position_y': obj_position.y.values,
+                'position_z': (obj_position.z.values if 'z' in obj_position.columns
+                               else np.full_like(obj_position.x.values, 0.0)),
+                'area': obj_position.area.values})
+
+        self.insert1(key)
+        self.Object.insert(object_positions)
+
 
 # ---------- Subject Position ------------------
+
 
 @schema
 class SubjectPosition(dj.Imported):
