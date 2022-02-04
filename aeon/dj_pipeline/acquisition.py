@@ -318,7 +318,7 @@ class SubjectEnterExit(dj.Imported):
         self.Time.insert(({**key, 'subject': r.id,
                            'enter_exit_event': self._enter_exit_event_mapper[r.event],
                            'enter_exit_time': r.name} for _, r in session_info.iterrows()
-                         if r.id in subject_list), skip_duplicates=True)
+                          if r.id in subject_list), skip_duplicates=True)
 
 
 @schema
@@ -545,16 +545,16 @@ class ScaleMeasurement(dj.Imported):
         scale_description = (ExperimentScale & key).fetch1('scale_description')
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-        scale_data = aeon_api.encoderdata(raw_data_dir.as_posix(),
-                                          device=scale_description,
-                                          start=pd.Timestamp(chunk_start),
-                                          end=pd.Timestamp(chunk_end))
+        scale_data = aeon_api.weightdata(raw_data_dir.as_posix(),
+                                         device=scale_description,
+                                         start=pd.Timestamp(chunk_start),
+                                         end=pd.Timestamp(chunk_end))
 
         timestamps = scale_data.index.to_pydatetime()
 
         self.insert1({**key, 'timestamps': timestamps,
                       'weight': scale_data.weight.values,
-                      'confidence': scale_data.confidence.values})
+                      'confidence': scale_data.stable.values.astype(float)})
 
 
 # ------------------- SESSION --------------------
