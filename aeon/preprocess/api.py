@@ -1,5 +1,6 @@
 import os
 import glob
+import math
 import bisect
 import datetime
 import pandas as pd
@@ -71,6 +72,20 @@ def chunk_filter(files, timefilter):
         matches.append(file)
     return matches
 
+def chunk_glob(path, device, prefix=None, extension='*.csv'):
+    '''
+    Finds matching files in the specified root path.
+
+    :param str path: The root path where all the session data is stored.
+    :param str, device: The device name prefix used to search for data files.
+    :param str, optional prefix: The pathname prefix used to search for data files.
+    :param str, optional extension: The optional extension pattern used to search for data files.
+    :return: A list of file names for chunks in the specified path.
+    '''
+    pathname = path + "/**/" + device + "/" + prefix + extension
+    files = glob.glob(pathname)
+    return files
+
 def load(path, reader, device, prefix=None, extension="*.csv",
          start=None, end=None, time=None, tolerance=None):
     '''
@@ -78,7 +93,7 @@ def load(path, reader, device, prefix=None, extension="*.csv",
     containing device and/or session metadata for the Experiment 0 arena. If no prefix is
     specified, metadata for all sessions is extracted.
 
-    :param str path: The root path where all the session data is stored.
+    :param str path: The root path, or prioritised sequence of paths, where session data is stored.
     :param callable reader: A callable object used to load session metadata from a file.
     :param str, device: The device name prefix used to search for data files.
     :param str, optional prefix: The pathname prefix used to search for data files.
@@ -88,13 +103,22 @@ def load(path, reader, device, prefix=None, extension="*.csv",
     :param datetime, optional time: An object or series specifying the timestamps to extract.
     :param datetime, optional tolerance:
     The maximum distance between original and new timestamps for inexact matches.
-    :return: A pandas data frame containing session event metadata, sorted by time.
+    :return: A pandas data frame containing session event metadata, sorted by priority and time.
     '''
     if prefix is None:
         prefix = ""
 
-    pathname = path + "/**/" + device + "/" + prefix + extension
-    files = glob.glob(pathname)
+    if isinstance(path, str):
+        files = chunk_glob(path, device, prefix, extension)
+    else:
+        files = []
+        fileset = set()
+        datasets = map(lambda dpath:chunk_glob(dpath, device, prefix, extension), path)
+        for dataset in datasets:
+            for fname in dataset:
+                fkey = os.path.split(fname)[1]
+                if not fkey in fileset:
+                    files.append(fname)
     files.sort()
 
     if time is not None:
@@ -373,7 +397,13 @@ def harpreader(file, names=None):
         strides=(stride, elementsize))
     time = aeon(seconds)
     time.name = 'time'
-    return pd.DataFrame(payload, index=time, columns=names)
+
+    if names is not None and payloadshape[1] < len(names):
+        data = pd.DataFrame(payload, index=time, columns=names[:payloadshape[1]])
+        data[names[payloadshape[1]:]] = math.nan
+        return data
+    else:
+        return pd.DataFrame(payload, index=time, columns=names)
 
 def harpdata(path, device, register, names=None, start=None, end=None, time=None, tolerance=None):
     '''
@@ -443,6 +473,42 @@ def pelletdata(path, device, start=None, end=None, time=None, tolerance=None):
     events = pd.concat([command.event, beambreak.event]).sort_index()
     return pd.DataFrame(events)
 
+def weightreader(file):
+    """Reads electronic scale data from the specified file."""
+    names = ['time','weight','stable']
+    if file is None:
+        return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
+    data = pd.read_csv(file, header=0, names=names)
+    data['time'] = aeon(data['time'])
+    data.set_index('time', inplace=True)
+    return data
+
+def weightdata(path, device='WeightData', start=None, end=None, time=None, tolerance=None):
+    '''
+    Extracts weight data from the specified root path, sorted chronologically,
+    for the specified electronic weighing device in the Experiment arena.
+
+    :param str path: The root path where all the session data is stored.
+    :param str patch: The device name used to search for data files.
+    :param datetime, optional start: The left bound of the time range to extract.
+    :param datetime, optional end: The right bound of the time range to extract.
+    :param datetime, optional time: An object or series specifying the timestamps to extract.
+    :param datetime, optional tolerance:
+    The maximum distance between original and new timestamps for inexact matches.
+    :return: A pandas data frame, sorted by time, containing absolute weight in grams,
+    and a value indicating whether the reading is stable.
+    '''
+    return load(
+        path,
+        weightreader,
+        device,
+        prefix='WeightData',
+        extension="*.csv",
+        start=start,
+        end=end,
+        time=time,
+        tolerance=tolerance)
+
 def patchreader(file):
     """Reads patch state metadata from the specified file."""
     names = ['time','threshold','d1','delta']
@@ -495,7 +561,7 @@ def positiondata(path, device='FrameTop', start=None, end=None, time=None, toler
     return harpdata(
         path,
         device, register=200,
-        names=['x', 'y', 'angle', 'major', 'minor', 'area'],
+        names=['x', 'y', 'angle', 'major', 'minor', 'area', 'id'],
         start=start,
         end=end,
         time=time,

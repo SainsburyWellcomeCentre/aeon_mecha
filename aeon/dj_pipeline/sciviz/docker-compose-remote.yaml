@@ -4,14 +4,13 @@
 version: '2.4'
 services:
   pharus:
-    image: datajoint/pharus:0.2.2
+    image: jverswijver/pharus:0.2.3.beta.10
     environment:
       # - FLASK_ENV=development # enables logging to console from Flask
       - API_SPEC_PATH=/main/specs/specsheet.yaml # for dynamic api spec
     user: ${HOST_UID}:anaconda
     volumes:
       - ./specsheet.yaml:/main/specs/specsheet.yaml #copy the spec over to /main/specs/YOUR_SPEC_NAME
-      - ./buaws-chen.pem:/tmp/keys/buaws-chen.pem
       - ./apk_requirements.txt:/tmp/apk_requirements.txt
     command:
       - sh
@@ -23,7 +22,7 @@ services:
     networks:
       - main
   sci-viz:
-    image: datajoint/sciviz:0.1.0-beta.0
+    image: jverswijver/sciviz:0.1.2-beta.9
     environment:
       - CHOKIDAR_USEPOLLING=true
       - REACT_APP_DJLABBOOK_BACKEND_PREFIX=/api
@@ -42,35 +41,8 @@ services:
         nginx -g "daemon off;"
     networks:
       - main
-  letsencrypt:
-    image: certbot/certbot:latest
-    environment:
-      - SUBDOMAINS
-      - URL
-      - STAGE_CERT
-      - EMAIL
-    volumes:
-      - ./letsencrypt-keys:/etc/letsencrypt
-      - ./letsencrypt/run_certbot.sh:/etc/periodic/monthly/run_certbot.sh
-      - ./letsencrypt/healthcheck.sh:/healthcheck.sh
-    # ports:
-    #   - "80:80"
-    entrypoint: sh
-    command:
-      - -c
-      - |
-        healthcheck.sh || /etc/periodic/monthly/run_certbot.sh
-        date
-        tail -f /dev/null
-    healthcheck:
-      test: /healthcheck.sh
-      timeout: 60s
-      retries: 5
-      interval: 30s
-    networks:
-      - main
   ${SUBDOMAINS}.${URL}:
-    image: datajoint/nginx:v0.0.18
+    image: datajoint/nginx:v0.0.19
     environment:
       - ADD_pharus_TYPE=REST
       - ADD_pharus_ENDPOINT=pharus:5000
@@ -78,14 +50,14 @@ services:
       - ADD_sciviz_TYPE=REST
       - ADD_sciviz_ENDPOINT=sci-viz:3000
       - ADD_sciviz_PREFIX=/
-      - HTTPS_PASSTHRU=TRUE
+#      - HTTPS_PASSTHRU=TRUE
       - CERTBOT_HOST=letsencrypt:80
       - SUBDOMAINS
       - URL
     volumes:
       - ./letsencrypt-keys:/etc/letsencrypt:ro
     ports:
-      - "443:443"
+#      - "443:443"
       - "80:80"
     networks:
       - main

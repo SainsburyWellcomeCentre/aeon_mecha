@@ -1,0 +1,52 @@
+# Setup containers for Aeon DataJoint pipeline ingestion routines
+# Joseph Burling <joseph@datajoint.com>
+# --------------------------------------------------------------------------------------
+# Basic usage:
+#   export CR_PAT=YOUR_TOKEN
+#   echo $CR_PAT | sudo docker login ghcr.io -u USERNAME --password-stdin
+#   sudo docker-compose up --detach
+#   sudo docker-compose down
+#   sudo docker ps -la --no-trunc
+#
+# Container debugging:
+#   export CID=$(sudo docker ps -aqf name=ingest_high)
+#   sudo docker exec -it $CID bash
+#   sudo docker exec -it $CID conda-run python
+
+# Shared properties across services ----------------------------------------------------
+
+version: "2.4"
+
+x-aeon-docker-image: &aeon-docker-image
+  image: ghcr.io/${GITHUB_REPO_OWNER:-vathes}/aeon_mecha:latest
+
+x-aeon-ingest-common: &aeon-ingest-common
+  <<: *aeon-docker-image
+  environment:
+    DJ_USER: ${DJ_USER:-root}
+    DJ_PASS: ${DJ_PASS:-simple}
+    DJ_HOST: ${DJ_HOST:-host.docker.internal}
+  volumes:
+    # map raw data directory $LOCAL_CEPH_ROOT on host to $CEPH_ROOT in image
+    - "${LOCAL_CEPH_ROOT:-~/ceph/aeon}:/ceph/aeon"
+    # map image directory $LOCAL_DJ_STORE on host to $DJ_EXT_STORE in image
+    - "${LOCAL_DJ_STORE:-~/ceph/aeon/aeon/dj_store}:/ceph/aeon/aeon/dj_store"
+
+  extra_hosts:
+    - host.docker.internal:host-gateway # 172.17.0.1
+  scale: 1
+  command: ["tail", "-f", "/dev/null"]
+
+services:
+  ingest_high:
+    <<: *aeon-ingest-common
+    scale: 1
+    # command: ["aeon_ingest", "high", "-d", "20", "-s", "1"]
+
+  ingest_mid:
+    <<: *aeon-ingest-common
+    depends_on:
+      ingest_high:
+        condition: service_started
+    scale: 1
+    # command: ["aeon_ingest", "mid", "-d", "20", "-s", "1"]

@@ -32,7 +32,7 @@ _populate_settings = {
 class WorkerLog(dj.Manual):
     definition = """
     # Registration of processing jobs running .populate() jobs or custom function
-    process_timestamp : datetime      # timestamp of the processing job
+    process_timestamp : datetime(6)      # timestamp of the processing job
     process           : varchar(64)
     ---
     worker_name=''    : varchar(255)  # name of the worker
