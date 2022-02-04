@@ -64,12 +64,13 @@ def load_experiment_setup(setup_json_filepath, experiment_name):
                         continue
 
                     # ---- Remove old camera
-                    acquisition.ExperimentCamera.RemovalTime.insert1(
-                        {
-                            **current_camera_query.fetch1("KEY"),
-                            "camera_remove_time": experiment_setup["start-time"],
-                        }
-                    )
+                    # TODO: KeyError: 'start-time'
+                    # acquisition.ExperimentCamera.RemovalTime.insert1(
+                    #     {
+                    #         **current_camera_query.fetch1("KEY"),
+                    #         "camera_remove_time": experiment_setup["start-time"],
+                    #     }
+                    # )
 
                 # ---- Install new camera
                 acquisition.ExperimentCamera.insert1(
