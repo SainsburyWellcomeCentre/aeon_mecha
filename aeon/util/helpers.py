@@ -29,6 +29,8 @@ def loadSessions(dataroot):
 
     df = sessdf.copy()
     merge(df)
+    mergeSocial(df)
+    merge(df)
     merge(df,first=[15])
     merge(df,first=[32,35, 44, 46, 49, 52, 54], merge_id=True)
     merge(df, first=[42,])
@@ -46,6 +48,56 @@ def loadSessions(dataroot):
     #%%
     markSessionEnded(df)
     return df
+
+def merge(df, first=[], merge_id=False):
+    """
+    merge(df, first=[]):
+
+    df: a dataframe that is the output of sessiondata 
+    If `first` is empty, then merge tries match adjacent sessions by ID.
+
+    Also fixes missing end Time
+    Modifies the input! if you want to save it make a copy first
+
+    Note: if you have removed rows from your dataframe you are likely to get 
+        keyerrors. To avoid this reset_index.
+    """
+
+    id = df.id.values
+    # You need the values, because you are otherwise still in a pandas type
+    if not first:
+        for i in range(0,len(id)-1):
+            if ((df.loc[i,'id'] == df.loc[i+1,'id']) and
+                (df.loc[i,'start'].date() == df.loc[i+1,'start'].date())):
+                first.append(i)
+
+    for i in first:
+        df.loc[i,'end'] = df.loc[i+1,'end']
+        df.loc[i,'weight_end'] = df.loc[i+1,'weight_end']
+        if merge_id:
+            df.loc[i,'id'] = '{};{}'.format(df.loc[i,'id'],df.loc[i+1,'id'])
+
+    second = [i+1 for i in first]
+    df.drop(index=second, inplace=True)                
+    df.reset_index(inplace=True, drop=True)
+
+
+def mergeSocial(df):
+    first = _findSocial(df)
+    merge(df, first=first)
+
+def _findSocial(df, threshold_in_minutes=15):
+    started_close = [df.start[x] - df.start[x-1] < pd.Timedelta(threshold_in_minutes,"m") for x in range(1,len(df.start))] #< pd.Timedelta(10, "min")
+    # not_ended = np.where(pd.isnull(df.end))[0]
+    same_id = [df.id[x] - df.id[x-1] for x in range(1,len(df.start))]
+    return np.setdiff1d(np.where(started_close * (1-same_id)
+
+
+def markSessionEnded(df,offset=pd.DateOffset(minutes=100)):
+    bad_end = df.end.isnull()  
+    df.loc[bad_end,"end"] = df.loc[bad_end,'start'] + offset
+    df.duration = df.end - df.start
+
 
 def getSessionID(session):
     return f"{session.id.split('/')[0].replace(';',':').replace(' ','')}_{session.start:%Y-%m-%dT%H:%M:%S}"
@@ -189,42 +241,6 @@ def _getPositionData(root, start, end, duration=None):
         position.y = position.y * pixelscale
         return {"position":position, "frequency":frequency, "positionrange":positionrange}
 
-def merge(df, first=[], merge_id=False):
-    """
-    merge(df, first=[]):
-
-    df: a dataframe that is the output of sessiondata 
-    If `first` is empty, then merge tries match adjacent sessions by ID.
-
-    Also fixes missing end Time
-    Modifies the input! if you want to save it make a copy first
-
-    Note: if you have removed rows from your dataframe you are likely to get 
-        keyerrors. To avoid this reset_index.
-    """
-
-    id = df.id.values
-    # You need the values, because you are otherwise still in a pandas type
-    if not first:
-        for i in range(0,len(id)-1):
-            if ((df.loc[i,'id'] == df.loc[i+1,'id']) and
-                (df.loc[i,'start'].date() == df.loc[i+1,'start'].date())):
-                first.append(i)
-
-    for i in first:
-        df.loc[i,'end'] = df.loc[i+1,'end']
-        df.loc[i,'weight_end'] = df.loc[i+1,'weight_end']
-        if merge_id:
-            df.loc[i,'id'] = '{};{}'.format(df.loc[i,'id'],df.loc[i+1,'id'])
-
-    second = [i+1 for i in first]
-    df.drop(index=second, inplace=True)                
-    df.reset_index(inplace=True, drop=True)
-
-def markSessionEnded(df,offset=pd.DateOffset(minutes=100)):
-    bad_end = df.end.isnull()  
-    df.loc[bad_end,"end"] = df.loc[bad_end,'start'] + offset
-    df.duration = df.end - df.start
 
 def ethogram(root, start, end):
 
