@@ -164,6 +164,19 @@ class ExperimentFoodPatch(dj.Manual):
         """
 
 
+@schema
+class ExperimentScale(dj.Manual):
+    definition = """
+    # Scale for measuring animal weights
+    -> Experiment
+    -> lab.Scale
+    ---
+    -> lab.ArenaNest
+    scale_description: varchar(36)
+    scale_sampling_rate: float  # (Hz) scale sampling rate
+    """
+
+
 # ------------------- ACQUISITION EPOCH --------------------
 
 
@@ -459,12 +472,12 @@ class FoodPatchEvent(dj.Imported):
         )
 
     def make(self, key):
-        chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
         food_patch_description = (ExperimentFoodPatch & key).fetch1(
             "food_patch_description"
         )
 
-        raw_data_dir = Experiment.get_data_directory(key)
+        raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
         pellet_data = aeon_api.pelletdata(
             raw_data_dir.as_posix(),
             device=food_patch_description,
@@ -524,24 +537,19 @@ class FoodPatchWheel(dj.Imported):
         )
 
     def make(self, key):
-        chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
         food_patch_description = (ExperimentFoodPatch & key).fetch1(
             "food_patch_description"
         )
 
-        raw_data_dir = Experiment.get_data_directory(key)
+        raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
         wheel_data = aeon_api.encoderdata(
             raw_data_dir.as_posix(),
             device=food_patch_description,
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),
         )
-        timestamps = (
-            wheel_data.index.values - np.datetime64("1970-01-01T00:00:00")
-        ) / np.timedelta64(1, "s")
-        timestamps = np.array(
-            [datetime.datetime.utcfromtimestamp(t) for t in timestamps]
-        )
+        timestamps = wheel_data.index.to_pydatetime()
 
         self.insert1(
             {
@@ -584,11 +592,11 @@ class WheelState(dj.Imported):
         )
 
     def make(self, key):
-        chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
         food_patch_description = (ExperimentFoodPatch & key).fetch1(
             "food_patch_description"
         )
-        raw_data_dir = Experiment.get_data_directory(key)
+        raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
         wheel_state = aeon_api.patchdata(
             raw_data_dir.as_posix(),
             patch=food_patch_description,
@@ -608,6 +616,34 @@ class WheelState(dj.Imported):
                 for _, r in wheel_state.iterrows()
             ]
         )
+
+
+@schema
+class ScaleMeasurement(dj.Imported):
+    definition = """  # Raw scale measurement associated with a given ExperimentScale
+    -> Chunk
+    -> ExperimentScale
+    ---
+    timestamps:        longblob   # (datetime) timestamps of scale data
+    weight:            longblob   # measured weights
+    confidence:        longblob   # confidence level of the measured weights [0-1]
+    """
+
+    def make(self, key):
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
+        scale_description = (ExperimentScale & key).fetch1('scale_description')
+
+        raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
+        scale_data = aeon_api.weightdata(raw_data_dir.as_posix(),
+                                         device=scale_description,
+                                         start=pd.Timestamp(chunk_start),
+                                         end=pd.Timestamp(chunk_end))
+
+        timestamps = scale_data.index.to_pydatetime()
+
+        self.insert1({**key, 'timestamps': timestamps,
+                      'weight': scale_data.weight.values,
+                      'confidence': scale_data.stable.values.astype(float)})
 
 
 # ------------------- SESSION --------------------
@@ -633,7 +669,7 @@ class SessionType(dj.Lookup):
 
 @schema
 class Session(dj.Computed):
-    definition = """  # A session spans the time when the animal firsts enter the arena to when it exits the arena
+    definition = """  # A session spans the time when the animal first enters the arena to when it exits the arena
     -> Experiment.Subject
     session_start: datetime(6)
     ---
@@ -689,6 +725,24 @@ class SessionEnd(dj.Computed):
 
         # insert
         self.insert1({**key, "session_end": session_end, "session_duration": duration})
+
+
+# @schema
+# class MultiAnimalSession(dj.Computed):
+#     definition = """
+#     -> Experiment
+#     session_start: datetime(6)
+#     ---
+#     -> SessionType
+#     session_end: datetime(6)
+#     session_duration: float  # (hour)
+#     """
+#
+#     class Session(dj.Part):
+#         definition = """
+#         -> master
+#         -> Session
+#         """
 
 
 # ------------------- ACQUISITION TIMESLICE --------------------
