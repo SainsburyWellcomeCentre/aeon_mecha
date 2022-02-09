@@ -3,6 +3,7 @@ bandit                                            # (dev)
 black                                             # (dev)
 blas>=1.1, <2
 bottleneck>=1.2.1, <2
+dotmap
 datajoint
 fastparquet
 flake8                                            # (dev)
