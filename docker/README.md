@@ -20,19 +20,27 @@ touch ~/.ssh/known_hosts && \
 chmod 600 ~/.ssh/known_hosts && \
 echo "${GITHUB_DEPLOY_KEY}" > ~/.ssh/aeon_mecha && \
 chmod 600 ~/.ssh/aeon_mecha && \
-echo "Host * \n  AddKeysToAgent yes\n  IdentityFile ~/.ssh/aeon_mecha\n" >> \
+echo -e "Host * \n  AddKeysToAgent yes\n  IdentityFile ~/.ssh/aeon_mecha\n" >> \
   ~/.ssh/config && \
 ssh-keyscan github.com >> ~/.ssh/known_hosts
 ```
 
+Optional 
+
+```bash
+touch ~/.ssh/id.pub
+chmod 644 ~/.ssh/id.pub
+echo "my-key-string" >> ~/.ssh/id.pub
+```
+
 3. Clone the repo to some directory on the server (substitute `vathes` for whatever fork you're working with).
 
-   - `git clone git@github.com:vathes/aeon_mecha.git --branch datajoint_pipeline --single-branch`
+   - `git clone git@github.com:vathes/aeon_mecha.git --branch datajoint_pipeline`
    - _Note_: If you use your own fork instead of the one above, just know that the container image will be fixed to whatever is built within the GitHub actions file `.github/workflows/docker-aeon-ingest.yml`.
 
 ## Docker usage
 
-Download an image with `aeon_mecha` installed and start the database operations by using the `high` and `mid` container services in the docker compose file.
+Download an image with `aeon_mecha` installed and start the database operations by using the `ingest_high` and `ingest_mid` container services in the docker compose file.
 
 ### `docker/docker-compose.yml`
 
@@ -53,7 +61,7 @@ cat template.env >> .env
 
 ```bash
 LOCAL_CEPH_ROOT=/ceph/aeon
-LOCAL_DJ_STORE=/ceph/aeon/djstore
+LOCAL_DJ_STORE=/ceph/aeon/aeon/dj_store
 DJ_HOST=host.docker.internal
 DJ_USER=jburling
 DJ_PASS=*******
@@ -61,7 +69,7 @@ DJ_PASS=*******
 
 3. Edit the `command: ...` fields for the services `ingest_high`, `ingest_mid` that run high and mid ingestion priorities. You may want to change the appropriate `sleep` and `duration` settings for each priority. Comment the `command: ` lines for each service if you want to run the container indefinitely and doing nothing, this will use the default command found in `x-aeon-ingest-common`.
 
-4. Log in to authenticate using your PAT. Export your token to the variable `CR_PAT`.
+4. Log in to authenticate using your PAT (personal access token). Export your token to the variable `CR_PAT`.
 
 ```bash
 export CR_PAT=YOUR_TOKEN
@@ -70,7 +78,7 @@ echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin
 
 5. Run docker compose
    - `docker-compose up -d`
-   - `sudo docker-compose up -d` if `su` privileges are required.
+   - `sudo docker-compose up -d` if `sudo` privileges are required.
 
 #### Description of `.env` variables
 
@@ -133,90 +141,3 @@ To remove the installed buildx builder
 docker buildx rm mrbuilder
 docker buildx uninstall
 ```
-
-<!--
-
-Append `GITHUB_DEPLOY_KEY` to `.env` file (because `sudo`).
-
-- `echo "GITHUB_DEPLOY_KEY=$(awk -v ORS='\\n' '1' ~/.ssh/aeon_mecha)" >> .env`
-- `echo "IMAGE_CREATED=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> .env`
-
-
-## Test locally
-
-### Setup SSH config
-
-In your ssh config file at `~/.ssh/config`, setup access to _hpc-gw1_ (via jump) and _aeon-db_ database. This assumes the keys `local_key` and `swc_key` have already been added using `ssh-keygen` and copied over using `ssh-copy-id`. Add the lines below (replace `<user>` with your username):
-
-```bash
-# > ssh -i ~/.ssh/swc_key <user>@hpc-gw1.hpc.swc.ucl.ac.uk
-Host aeon
-  HostName hpc-gw1.hpc.swc.ucl.ac.uk
-  User <user>
-  ProxyCommand ssh -q -W %h:%p swc
-
-# > ssh -v -N -f -M -S ~/.ssh/controlmasters/%r@%h:%p <user>@hpc-gw1.hpc.swc.ucl.ac.uk -J <user>@ssh.swc.ucl.ac.uk -L 127.0.0.1:3306:aeon-db:3306
-Host aeon-db
-  HostName hpc-gw1.hpc.swc.ucl.ac.uk
-  User <user>
-  LocalForward 127.0.0.1:3306 aeon-db:3306
-  ProxyJump swc
-  ControlMaster auto
-  ControlPath ~/.ssh/controlmasters/%r@%h:%p
-
-# > ssh -i ~/.ssh/local_key <user>@ssh.swc.ucl.ac.uk
-Host swc
-  HostName ssh.swc.ucl.ac.uk
-  User <user>
-  IdentityFile ~/.ssh/local_key
-```
-
-### Using DataJoint in the docker container to access the database
-
-1. In the file `.env` (same location as `docker-compose.yml`), change the environment variables `DJ_USER` and `DJ_PASS` to your _aeon-db_ username and password. The user name should be the same as your login name to _hpc-gw1_.
-
-2. Using the `aeon-db` hostname in your ssh config file, connect to the Aeon database (_aeon-db_) and forward port 3306 on _hpc-gw1_ to 3306 on your local machine. You will be asked to enter your password if keys are not found in `authorized_keys` on the remote server.
-
-```bash
-ssh -v -N -f aeon-db
-```
-
-To stop or check on the connection:
-
-```bash
-ssh -O check aeon-db
-ssh -O stop aeon-db
-```
-
-### Mounting volume on remote server using SSHFS
-
-1. Install SSHFS (see [here](https://code.visualstudio.com/docs/remote/troubleshooting#_using-sshfs-to-access-files-on-your-remote-host) for one example).
-
-2. Allow `/ceph/aeon` on the remote server to be accessed on local machine using `sshfs`.
-
-```bash
-# Make the local directory where the remote filesystem will be mounted
-mkdir -p "$HOME/SSHFS/aeon/ceph/aeon"
-
-# Mount the remote filesystem
-sshfs "aeon-db:/ceph/aeon" "$HOME/SSHFS/aeon/ceph/aeon" -ovolname=aeon -o workaround=nonodelay -o transform_symlinks -o idmap=user -C
-```
-
-Make sure the local path set above matches the path used to map to `/ceph/aeon` in `docker-compose.yml`.
-
-3. The path in the container `/home/anaconda/djstore` set in `docker-compose.yml` should mount to somewhere on local drive to test saving external storage entries.
-
-mkdir /home/aeon_db/.ssh/ && \
-chmod 700 /home/aeon_db/.ssh && \
-touch /home/aeon_db/.ssh/config && \
-chmod 600 /home/aeon_db/.ssh/config && \
-touch /home/aeon_db/.ssh/known_hosts && \
-chmod 600 /home/aeon_db/.ssh/known_hosts && \
-echo "${GITHUB_DEPLOY_KEY}" > /home/aeon_db/.ssh/aeon_mecha && \
-chmod 600 /home/aeon_db/.ssh/aeon_mecha && \
-echo "Host * \n  AddKeysToAgent yes\n  IdentityFile /home/aeon_db/.ssh/aeon_mecha\n" >> \
-  /home/aeon_db/.ssh/config && \
-ssh-keyscan github.com >> /home/aeon_db/.ssh/known_hosts
-
-GIT_SSH_COMMAND="ssh -F /home/aeon_db/.ssh/config" git clone https://github.com/vathes/aeon_mecha.git
--->

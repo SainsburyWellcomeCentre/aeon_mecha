@@ -1,13 +1,15 @@
+#! /bin/bash
 
 #> cd docker/.devcontainer
 #> chmod +x vscode-open-dev-container
 #> ./vsc*
 
-ws_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." &>/dev/null && pwd)"
+relative_ws="../.."
+ws_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/${relative_ws}" &>/dev/null && pwd)"
 
 if ! command -v devcontainer &>/dev/null; then
-    echo "#! Error: 'devcontainer' CLI not found. https://code.visualstudio.com/docs/remote/devcontainer-cli"
-    exit 1
+	echo "#! Error: 'devcontainer' CLI not found. https://code.visualstudio.com/docs/remote/devcontainer-cli"
+	exit 1
 fi
 
 devcontainer open "${ws_root}/docker"
