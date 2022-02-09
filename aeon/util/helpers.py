@@ -84,13 +84,13 @@ def merge(df, first=[], merge_id=False):
 
 def mergeSocial(df):
     first = _findSocial(df)
-    merge(df, first=first)
+    merge(df, first=first, merge_id=True)
 
 def _findSocial(df, threshold_in_minutes=15):
-    started_close = [df.start[x] - df.start[x-1] < pd.Timedelta(threshold_in_minutes,"m") for x in range(1,len(df.start))] #< pd.Timedelta(10, "min")
+    started_close = [df.start[x] - df.start[x-1] < pd.Timedelta(threshold_in_minutes,"min") for x in range(1,len(df.start))] #< pd.Timedelta(10, "min")
     # not_ended = np.where(pd.isnull(df.end))[0]
-    same_id = [df.id[x] - df.id[x-1] for x in range(1,len(df.start))]
-    return np.setdiff1d(np.where(started_close * (1-same_id)
+    not_same_id = [df.id[x] != df.id[x-1] for x in range(1,len(df.start))]
+    return list(np.where(np.bitwise_and(started_close, not_same_id))[0])
 
 
 def markSessionEnded(df,offset=pd.DateOffset(minutes=100)):
