@@ -8,21 +8,25 @@ CIDS=()
 CIDS+=($(docker ps --no-trunc -aqf name=${SEARCH_CONTAINERS}))
 
 mkdir -p "${ROOT_LOG_DIR}"
-find "${ROOT_LOG_DIR}"/docker_*.log -type f -mtime +6 -delete 2>/dev/null
+find "${ROOT_LOG_DIR}" -maxdepth 2 -name docker_*.log -type f -mtime +10 -delete 2>/dev/null
 
 write_container_logs() {
 	local cid
 	local cname
 	local outfile
+	local date_dir=$(date +'%Y%m%d')
+	mkdir -p "${ROOT_LOG_DIR}/${date_dir}"
 	if [[ $# -gt 0 ]]; then
 		for cid in "$@"; do
 			cname=$(docker ps --no-trunc -af id=$cid --format "{{.Names}}")
-			outfile="${ROOT_LOG_DIR}/docker_${cname}.log"
+			outfile="${ROOT_LOG_DIR}/${date_dir}/docker_${cname}.log"
 			echo "Writing log: '$outfile'"
 			docker logs --since $GET_LOGS_SINCE --timestamps $cid \
 				2>&1 | tee "$outfile" >/dev/null
 		done
 	else
+		echo "$(date)"
+		echo "$(id)"
 		echo "No container id's found using search: '${SEARCH_CONTAINERS}'"
 	fi
 }

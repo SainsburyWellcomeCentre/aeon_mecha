@@ -20,10 +20,10 @@ touch ~/.ssh/config
 chmod 600 ~/.ssh/config
 touch ~/.ssh/known_hosts
 chmod 600 ~/.ssh/known_hosts
-chmod 600 ~/.ssh/aeon_mecha
 echo -e "Host * \n  AddKeysToAgent yes\n  IdentityFile ~/.ssh/aeon_mecha\n" >> ~/.ssh/config
 ssh-keyscan github.com >> ~/.ssh/known_hosts
 echo "${GITHUB_DEPLOY_KEY}" > ~/.ssh/aeon_mecha
+chmod 600 ~/.ssh/aeon_mecha
 ```
 
 Optional, store personal public key.
