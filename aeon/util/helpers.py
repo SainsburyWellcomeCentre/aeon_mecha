@@ -6,6 +6,7 @@ import aeon.analyze.patches as patches
 import aeon.preprocess.api as api
 import aeon.util.plotting as aplot
 from functools import cache
+import jellyfish as jl
 
 DEBUG = True
 
@@ -14,6 +15,54 @@ if DEBUG:
 else:
     def eprint(*args):
         pass
+
+def fixID(subjid, valid_ids=None,valid_id_file=None):
+    """
+    Attempt to correct the id entered by the technician
+    Attempt to correct the subjid entered by the technician
+    Input: 
+    id              The id to fix
+    id              The id to fix
+    subjid              The subjid to fix
+    valid_id_file   A fully qualified filename of a csv file with `id`, and `roomid` columns. 
+    """
+
+    if not valid_ids:
+        if not valid_id_file:
+            valid_id_file = path.expanduser('~/mnt/delab/conf/valid_ids.csv')
+            
+        df = pd.read_csv(valid_id_file)
+        valid_ids = df.id.values
+
+    # The id is good
+    # The subjid is good
+    if subjid in valid_ids:
+        return subjid
+
+    # The id has a comment
+    # The subjid has a comment
+    if '/' in subjid:
+        return fixID(subjid.split('/')[0], valid_ids=valid_ids)
+ 
+    # The id is a combo id.
+    # The id is a combo id.
+    # The subjid is a combo subjid.
+    if ';' in subjid:
+        subjidA, subjidB = subjid.split(';')
+        return f"{fixID(subjidA.strip(), valid_ids=valid_ids)};{fixID(subjidB.strip(), valid_ids=valid_ids)}"
+    
+    if 'vs' in subjid: 
+        subjidA, tmp ,subjidB = subjid.split(' ')[1:]
+        return f"{fixID(subjidA.strip(), valid_ids=valid_ids)};{fixID(subjidB.strip(), valid_ids=valid_ids)}"
+
+    try:
+        ld = [jl.levenshtein_distance(subjid,x[-len(subjid):]) for x in valid_ids]
+        return valid_ids[np.argmin(ld)]
+    except:
+        return subjid
+
+
+    
 
 
 def loadSessions(dataroot):
@@ -28,7 +77,6 @@ def loadSessions(dataroot):
     sessdf.reset_index(inplace=True, drop=True)
 
     df = sessdf.copy()
-    merge(df)
     mergeSocial(df)
     merge(df)
     merge(df,first=[15])
@@ -36,6 +84,7 @@ def loadSessions(dataroot):
     merge(df, first=[42,])
 
     #%% Fix bad ids.
+    #%% Fix bad subjids.
 
     df.loc[10,'id'] = 'BAA-1100705'
     df.loc[19,'id'] = 'BAA-1100704;BAA-1100706'
