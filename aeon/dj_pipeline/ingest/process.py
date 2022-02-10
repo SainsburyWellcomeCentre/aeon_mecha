@@ -35,11 +35,9 @@ import logging
 import sys
 
 import datajoint as dj
-from datajoint_utilities.dj_worker import WorkerLog, DataJointWorker, parse_args
-
+from datajoint_utilities.dj_worker import DataJointWorker, WorkerLog, parse_args  # noqa
 
 from aeon.dj_pipeline import acquisition, analysis, db_prefix, qc, report, tracking
-
 
 # ---- Some constants ----
 
@@ -90,10 +88,7 @@ mid_priority(report.SessionSummaryPlot)
 
 # ---- some wrappers to support execution as script or CLI
 
-configured_workers = {
-    'high_priority': high_priority,
-    'mid_priority': mid_priority
-}
+configured_workers = {"high_priority": high_priority, "mid_priority": mid_priority}
 
 
 def setup_logging(loglevel):
