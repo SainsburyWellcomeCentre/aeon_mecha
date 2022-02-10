@@ -21,13 +21,13 @@ x-aeon-docker-test-image: &aeon-docker-test-image
 services:
   ingest_high:
     <<: *aeon-docker-test-image
-    command: ["aeon_ingest", "high", "-d", "60", "-s", "1"]
+    command: ["aeon_ingest", "high_priority", "-d", "60", "-s", "1"]
 
   ingest_mid:
     <<: *aeon-docker-test-image
     deploy:
       replicas: 1
-    command: ["aeon_ingest", "mid", "-d", "60", "-s", "1"]
+    command: ["aeon_ingest", "mid_priority", "-d", "60", "-s", "1"]
 
   dev:
     <<: *aeon-docker-test-image
