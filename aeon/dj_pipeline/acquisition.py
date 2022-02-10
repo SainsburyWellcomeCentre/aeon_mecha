@@ -13,6 +13,30 @@ from . import get_schema_name, paths
 schema = dj.schema(get_schema_name("acquisition"))
 
 
+# ------------------- Type Lookup ------------------------
+
+
+@schema
+class ExperimentType(dj.Lookup):
+    definition = """
+    experiment_type: varchar(32)
+    """
+
+    contents = zip(['foraging', 'social'])
+
+
+@schema
+class EventType(dj.Lookup):
+    definition = """  # Experimental event type
+    event_code: smallint
+    ---
+    event_type: varchar(36)
+    """
+
+    contents = [(220, 'SubjectEnteredArena'), (221, 'SubjectExitedArena'), (222, 'SubjectRemovedFromArena'),
+                (35, "TriggerPellet"), (32, "PelletDetected"), (1000, "No Events")]
+
+
 # ------------------- Data repository/directory ------------------------
 
 
@@ -40,12 +64,13 @@ class DirectoryType(dj.Lookup):
 @schema
 class Experiment(dj.Manual):
     definition = """
-    experiment_name: char(12)  # e.g exp0-a
+    experiment_name: varchar(32)  # e.g exp0-r0
     ---
     experiment_start_time: datetime(6)  # datetime of the start of this experiment
     experiment_description: varchar(1000)
     -> lab.Arena
     -> lab.Location  # lab/room where a particular experiment takes place
+    -> ExperimentType
     """
 
     class Subject(dj.Part):
@@ -165,16 +190,24 @@ class ExperimentFoodPatch(dj.Manual):
 
 
 @schema
-class ExperimentScale(dj.Manual):
+class ExperimentWeightScale(dj.Manual):
     definition = """
     # Scale for measuring animal weights
     -> Experiment
-    -> lab.Scale
+    -> lab.WeightScale
+    weight_scale_install_time: datetime(6)   # time of the weight_scale placed and started operation at this position
     ---
     -> lab.ArenaNest
-    scale_description: varchar(36)
-    scale_sampling_rate: float  # (Hz) scale sampling rate
+    weight_scale_description: varchar(36)
+    weight_scale_sampling_rate: float  # (Hz) scale sampling rate
     """
+
+    class RemovalTime(dj.Part):
+        definition = """
+        -> master
+        ---
+        weight_scale_remove_time: datetime(6)  # time of the weight_scale being removed from this position
+        """
 
 
 # ------------------- ACQUISITION EPOCH --------------------
@@ -321,7 +354,7 @@ class SubjectEnterExit(dj.Imported):
     -> Chunk
     """
 
-    _enter_exit_event_mapper = {"Start": "enter", "End": "exit"}
+    _enter_exit_event_mapper = {"Start": 220, "End": 221}
 
     class Time(dj.Part):
         definition = """  # Timestamps of each entering/exiting events
@@ -329,7 +362,7 @@ class SubjectEnterExit(dj.Imported):
         -> Experiment.Subject
         enter_exit_time: datetime(6)  # datetime of subject entering/exiting the arena
         ---
-        enter_exit_event: enum('enter', 'exit')
+        -> EvenType.proj(enter_exit_event='event_type')
         """
 
     def make(self, key):
@@ -434,17 +467,6 @@ class SubjectAnnotation(dj.Imported):
 
 
 # ------------------- EVENTS --------------------
-
-
-@schema
-class EventType(dj.Lookup):
-    definition = """  # Experimental event type
-    event_code: smallint
-    ---
-    event_type: varchar(24)
-    """
-
-    contents = [(35, "TriggerPellet"), (32, "PelletDetected"), (1000, "No Events")]
 
 
 @schema
@@ -619,19 +641,32 @@ class WheelState(dj.Imported):
 
 
 @schema
-class ScaleMeasurement(dj.Imported):
+class WeightMeasurement(dj.Imported):
     definition = """  # Raw scale measurement associated with a given ExperimentScale
     -> Chunk
-    -> ExperimentScale
+    -> ExperimentWeightScale
     ---
     timestamps:        longblob   # (datetime) timestamps of scale data
     weight:            longblob   # measured weights
     confidence:        longblob   # confidence level of the measured weights [0-1]
     """
 
+    @property
+    def key_source(self):
+        """
+        Only the combination of Chunk and ExperimentWeightScale with overlapping time
+        +  Chunk(s) that started after WeightScale install time and ended before WeightScale remove time
+        +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed
+        """
+        return (
+            Chunk * ExperimentWeightScale.join(ExperimentWeightScale.RemovalTime, left=True)
+            & "chunk_start >= weight_scale_install_time"
+            & 'chunk_start < IFNULL(weight_scale_remove_time, "2200-01-01")'
+        )
+
     def make(self, key):
         chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
-        scale_description = (ExperimentScale & key).fetch1('scale_description')
+        scale_description = (ExperimentWeightScale & key).fetch1('scale_description')
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
         scale_data = aeon_api.weightdata(raw_data_dir.as_posix(),
