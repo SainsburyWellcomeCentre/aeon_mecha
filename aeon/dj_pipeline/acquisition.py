@@ -666,11 +666,11 @@ class WeightMeasurement(dj.Imported):
 
     def make(self, key):
         chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
-        scale_description = (ExperimentWeightScale & key).fetch1('scale_description')
+        weight_scale_description = (ExperimentWeightScale & key).fetch1('weight_scale_description')
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
         scale_data = aeon_api.weightdata(raw_data_dir.as_posix(),
-                                         device=scale_description,
+                                         device=weight_scale_description,
                                          start=pd.Timestamp(chunk_start),
                                          end=pd.Timestamp(chunk_end))
 
