@@ -21,15 +21,16 @@ import aeon.util.plotting as plotting
 
 # This path is only true if you are on pop.erlichlab.org
 env = os.environ
-dataroot = env.get('aeon_dataroot', '/var/www/html/delab/data/arena0.1/socialexperiment0/')
-figpath = env.get('aeon_figpath','/var/www/html/delab/figures/')
-exportpath = env.get('aeon_exportpath','/var/www/html/delab/data/arena0.1/exported/')
+rootdir = expanduser('~/mnt/delab')
+dataroot = env.get('aeon_dataroot', rootdir+'/data/arena0.1/socialexperiment0/')
+figpath = env.get('aeon_figpath',rootdir+'/figures/')
+exportpath = env.get('aeon_exportpath',rootdir+'/data/arena0.1/exported/')
 export_format = env.get('aeon_dataformat','parquet')
 fig_format = env.get('aeon_figformat','png')
 
 
 
-def makeWheelPlots(df):
+def makeWheelPlots():
     try:
         fileformat = sys.argv[2]
     except IndexError:
@@ -91,9 +92,9 @@ DEBUG = "PYDEVD_USE_FRAME_EVAL" in env.keys()
 if __name__ == "__main__":
     if DEBUG:
         df = helpers.loadSessions(dataroot)
-        exportDataToParquet(0)
+        makeWheelPlots(df)
 # if False:
-    funclist = ['makeWheelPlots', 'exportDataToParquet']
+    funclist = ['makeWheelPlots', 'exportDataToParquet', 'exportDataToCSV']
     if len(sys.argv) == 1:
         print(f"""
         This function is a wrapper for some common arena0 activities.
@@ -109,9 +110,9 @@ if __name__ == "__main__":
 
         Some settings should be set using environment variables:
         ```
-        dataroot = env.get('aeon_dataroot', '/var/www/html/delab/data/arena0.1/socialexperiment0/')
-        figpath = env.get('aeon_figpath','/var/www/html/delab/figures/')
-        exportpath = env.get('aeon_exportpath','/var/www/html/delab/data/arena0.1/exported/')
+        dataroot = env.get('aeon_dataroot', '~/mnt/delab/data/arena0.1/socialexperiment0/')
+        figpath = env.get('aeon_figpath','~/mnt/delab/figures/')
+        exportpath = env.get('aeon_exportpath','~/mnt/delab/data/arena0.1/exported/')
         export_format = env.get('aeon_dataformat','parquet')
         fig_format = env.get('aeon_figformat','png')
         ```

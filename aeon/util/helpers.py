@@ -21,10 +21,12 @@ def fixID(subjid, valid_ids=None,valid_id_file=None):
     Attempt to correct the id entered by the technician
     Attempt to correct the subjid entered by the technician
     Input: 
-    id              The id to fix
-    id              The id to fix
     subjid              The subjid to fix
-    valid_id_file   A fully qualified filename of a csv file with `id`, and `roomid` columns. 
+    (
+    valid_ids           A list of valid_ids
+    OR
+    valid_id_file       A fully qualified filename of a csv file with `id`, and `roomid` columns. 
+    )
     """
 
     if not valid_ids:
@@ -62,10 +64,13 @@ def fixID(subjid, valid_ids=None,valid_id_file=None):
         return subjid
 
 
-    
-
-
 def loadSessions(dataroot):
+    """
+    loadSessions is a helper function to analyse data from arena0.
+
+    It removes some test sessions, fixes the subject ids and
+    merges interrupted and social sessions.
+    """
     sessdf = api.sessiondata(dataroot)
     sessdf = api.sessionduration(sessdf)                                     # compute session duration
     sessdf = sessdf[~sessdf.id.str.contains('test')]
@@ -73,27 +78,18 @@ def loadSessions(dataroot):
     sessdf = sessdf[~sessdf.id.str.contains('OAA')]
     sessdf = sessdf[~sessdf.id.str.contains('rew')]
     sessdf = sessdf[~sessdf.id.str.contains('Animal')]
+    sessdf = sessdf[~sessdf.id.str.contains('white')]
 
     sessdf.reset_index(inplace=True, drop=True)
 
     df = sessdf.copy()
+    valid_id_file = path.expanduser('~/mnt/delab/conf/valid_ids.csv')
+    vdf = pd.read_csv(valid_id_file)
+    valid_ids = list(vdf.id.values[vdf.real.values==1])
+    fix = lambda x: fixID(x, valid_ids=valid_ids)
+    df.id = df.id.apply(fix)
     mergeSocial(df)
     merge(df)
-    merge(df,first=[15])
-    merge(df,first=[32,35, 44, 46, 49, 52, 54], merge_id=True)
-    merge(df, first=[42,])
-
-    #%% Fix bad ids.
-    #%% Fix bad subjids.
-
-    df.loc[10,'id'] = 'BAA-1100705'
-    df.loc[19,'id'] = 'BAA-1100704;BAA-1100706'
-    df.loc[22,'id'] = 'BAA-1100705;BAA-1100706'
-    df.loc[25,'id'] = 'BAA-1100704;BAA-1100705'
-    df.loc[30,'id'] = 'BAA-1100704;BAA-1100705'
-    df.loc[45,'id'] = 'BAA-1100704'
-
-
     #%%
     markSessionEnded(df)
     return df
@@ -101,13 +97,17 @@ def loadSessions(dataroot):
 def merge(df, first=[], merge_id=False):
     """
     merge(df, first=[]):
+    
+    Modifies the input! if you want to save it make a copy first
 
     df: a dataframe that is the output of sessiondata 
     If `first` is empty, then merge tries match adjacent sessions by ID.
+    It's called `first` because it is the index of the first of two sessions to merge.
+    
+    Note: if a session was interrupted twice, then it will not handle it properly.
 
     Also fixes missing end Time
-    Modifies the input! if you want to save it make a copy first
-
+    
     Note: if you have removed rows from your dataframe you are likely to get 
         keyerrors. To avoid this reset_index.
     """
@@ -132,6 +132,14 @@ def merge(df, first=[], merge_id=False):
 
 
 def mergeSocial(df):
+    """
+    mergeSocial
+
+    modifies input!!!
+
+    finds sessions that started close together and had different IDs.
+    Assumes they are a social session.
+    """
     first = _findSocial(df)
     merge(df, first=first, merge_id=True)
 
@@ -158,19 +166,7 @@ def stateChangeRows(df, patchid=1):
     """
     switchind = np.diff(df.threshold).nonzero()[0] + 1
     switchind = np.append(np.insert(switchind,0,0),len(df.threshold)-1)
-    ## Old python way
-    # time = []
-    # before = []
-    # after = []
-    # patch = []
-
-    # for i in switchind:
-    #     time.append(pd.Timestamp(df.index[switchind + 1][0]))
-    #     before.append(df.threshold[switchind].values[0])
-    #     after.append(df.threshold[switchind].values[0])
-    #     patch.append(patchid)
-
-
+    
     return pd.DataFrame({
         "time":[pd.Timestamp(x) for x in df.index[switchind]],
         "threshold":df.threshold[switchind].values,
@@ -212,7 +208,10 @@ def splitOnStateChange(root, start, end):
 
 #@cache
 def getWheelData(root, start, end):
-
+    """
+    Helper function that gets the wheel data from both patches in arena0
+    and returns the data in a dictionary of dataframes.
+    """
     encoder1 = api.encoderdata(root, 'Patch1', start=start, end=end) # get encoder data for patch1 between start and end
     encoder2 = api.encoderdata(root, 'Patch2', start=start, end=end) # get encoder data for patch2 between start and end
     pellets1 = api.pelletdata(root, 'Patch1', start=start, end=end)  # get pellet events for patch1 between start and end
