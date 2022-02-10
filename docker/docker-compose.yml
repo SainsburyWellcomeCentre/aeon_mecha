@@ -26,6 +26,7 @@ x-aeon-ingest-common: &aeon-ingest-common
     DJ_USER: ${DJ_USER:-root}
     DJ_PASS: ${DJ_PASS:-simple}
     DJ_HOST: ${DJ_HOST:-host.docker.internal}
+    DJ_DB_PREFIX: ${DJ_DB_PREFIX}
   volumes:
     # map raw data directory $LOCAL_CEPH_ROOT on host to $CEPH_ROOT in image
     - "${LOCAL_CEPH_ROOT:-~/ceph/aeon}:/ceph/aeon"
