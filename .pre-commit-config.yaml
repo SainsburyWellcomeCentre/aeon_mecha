@@ -1,0 +1,35 @@
+default_language_version:
+  python: python3.9
+
+default_stages: [commit, push]
+files: "^(docker|aeon\/dj_pipeline)\/.*$"
+repos:
+  - repo: meta
+    hooks:
+      - id: identity
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.1.0
+    hooks:
+      - id: check-yaml
+      - id: detect-private-key
+      - id: end-of-file-fixer
+        exclude: LICENSE
+      - id: no-commit-to-branch
+
+  - repo: https://github.com/psf/black
+    rev: 22.1.0
+    hooks:
+      - id: black
+        args:
+          - "--config"
+          - "./pyproject.toml"
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.10.1
+    hooks:
+      - id: isort
+        name: isort (python)
+        args:
+          - "--settings-file"
+          - "./pyproject.toml"

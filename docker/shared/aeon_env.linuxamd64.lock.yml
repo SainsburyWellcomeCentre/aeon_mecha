@@ -311,4 +311,3 @@ dependencies:
     - virtualenv==20.13.0
     - watchdog==2.1.6
     - werkzeug==2.0.2
-prefix: /opt/local/conda/envs/aeon_env

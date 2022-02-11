@@ -1,14 +1,16 @@
+import os
+
 import datajoint as dj
 import hashlib
 import uuid
 
-_default_database_prefix = 'aeon_'
+_default_database_prefix = os.getenv("DJ_DB_PREFIX") or "aeon_"
 
 # safe-guard in case `custom` is not provided
-if 'custom' not in dj.config:
-    dj.config['custom'] = {}
+if "custom" not in dj.config:
+    dj.config["custom"] = {}
 
-db_prefix = dj.config['custom'].get('database.prefix', _default_database_prefix)
+db_prefix = dj.config["custom"].get("database.prefix", _default_database_prefix)
 
 
 def get_schema_name(name):
