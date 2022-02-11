@@ -86,7 +86,7 @@ class CameraTracking(dj.Imported):
     class Object(dj.Part):
         definition = """  # Position data of object tracked by a particular camera tracking
         -> master
-        object_id: int
+        object_id: int    # object with id = -1 means "unknown/not sure", could potentially be the same object as those with other id value
         ---
         timestamps:        longblob  # (datetime) timestamps of the position data
         position_x:        longblob  # (px) object's x-position, in the arena's coordinate frame
@@ -97,7 +97,7 @@ class CameraTracking(dj.Imported):
 
     @property
     def key_source(self):
-        return super().key_source & (qc.CameraQC * acquisition.ExperimentCamera
+        return super().key_source & (qc.CameraQC * acquisition.ExperimentCamera.proj('camera_description')
                                      & 'camera_description = "FrameTop"') & 'tracking_paramset_idx = 0'
 
     def make(self, key):
@@ -107,6 +107,9 @@ class CameraTracking(dj.Imported):
         positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
                                              start=pd.Timestamp(chunk_start),
                                              end=pd.Timestamp(chunk_end))
+        # replace id=NaN with -1
+        positiondata.fillna({'id': -1}, inplace=True)
+
         # Correct for frame offsets from Camera QC
         qc_timestamps, qc_frame_offsets, camera_fs = (
                 qc.CameraQC * acquisition.ExperimentCamera
