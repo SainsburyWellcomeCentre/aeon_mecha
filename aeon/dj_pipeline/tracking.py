@@ -33,7 +33,7 @@ class TrackingMethod(dj.Lookup):
 @schema
 class TrackingParamSet(dj.Lookup):
     definition = """  # Parameter set used in a particular TrackingMethod
-    tracking_paramset_idx:  smallint
+    tracking_paramset_id:  smallint
     ---
     -> TrackingMethod    
     paramset_description: varchar(128)
@@ -44,12 +44,12 @@ class TrackingParamSet(dj.Lookup):
 
     @classmethod
     def insert_new_params(cls, tracking_method: str, paramset_description: str,
-                          params: dict, tracking_paramset_idx: int = None):
-        if tracking_paramset_idx is None:
-            tracking_paramset_idx = (dj.U().aggr(cls, n='max(tracking_paramset_idx)').fetch1('n') or 0) + 1
+                          params: dict, tracking_paramset_id: int = None):
+        if tracking_paramset_id is None:
+            tracking_paramset_id = (dj.U().aggr(cls, n='max(tracking_paramset_id)').fetch1('n') or 0) + 1
 
         param_dict = {'tracking_method': tracking_method,
-                      'tracking_paramset_idx': tracking_paramset_idx,
+                      'tracking_paramset_id': tracking_paramset_id,
                       'paramset_description': paramset_description,
                       'params': params,
                       'param_set_hash':  dict_to_uuid(
@@ -58,17 +58,17 @@ class TrackingParamSet(dj.Lookup):
         param_query = cls & {'param_set_hash': param_dict['param_set_hash']}
 
         if param_query:  # If the specified param-set already exists
-            existing_paramset_idx = param_query.fetch1('tracking_paramset_idx')
-            if existing_paramset_idx == tracking_paramset_idx:  # If the existing set has the same paramset_idx: job done
+            existing_paramset_idx = param_query.fetch1('tracking_paramset_id')
+            if existing_paramset_idx == tracking_paramset_id:  # If the existing set has the same paramset_idx: job done
                 return
             else:  # If not same name: human error, trying to add the same paramset with different name
                 raise dj.DataJointError(
                     f'The specified param-set already exists'
-                    f' - with tracking_paramset_idx: {existing_paramset_idx}')
+                    f' - with tracking_paramset_id: {existing_paramset_idx}')
         else:
-            if {'tracking_paramset_idx': tracking_paramset_idx} in cls.proj():
+            if {'tracking_paramset_id': tracking_paramset_id} in cls.proj():
                 raise dj.DataJointError(
-                    f'The specified tracking_paramset_idx {tracking_paramset_idx} already exists,'
+                    f'The specified tracking_paramset_id {tracking_paramset_id} already exists,'
                     f' please pick a different one.')
             cls.insert1(param_dict)
 
@@ -97,8 +97,11 @@ class CameraTracking(dj.Imported):
 
     @property
     def key_source(self):
-        return super().key_source & (qc.CameraQC * acquisition.ExperimentCamera.proj('camera_description')
-                                     & 'camera_description = "FrameTop"') & 'tracking_paramset_idx = 0'
+        ks = acquisition.Chunk * acquisition.ExperimentCamera * TrackingParamSet
+        return (ks
+                & 'tracking_paramset_id = 0'
+                ^ (qc.CameraQC * acquisition.ExperimentCamera & 'camera_description = "FrameTop"')
+                )
 
     def make(self, key):
         chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
