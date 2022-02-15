@@ -53,8 +53,8 @@ services:
 #      - HTTPS_PASSTHRU=TRUE
 #      - CERTBOT_HOST=letsencrypt:80
       - DEPLOYMENT_PORT
-      - SUBDOMAINS
-      - URL
+#      - SUBDOMAINS
+#      - URL
 #    volumes:
 #      - ./letsencrypt-keys:/etc/letsencrypt:ro
     ports:
