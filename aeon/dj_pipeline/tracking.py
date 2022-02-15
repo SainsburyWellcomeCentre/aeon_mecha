@@ -139,6 +139,13 @@ class CameraTracking(dj.Imported):
         self.insert1(key)
         self.Object.insert(object_positions)
 
+    @classmethod
+    def get_object_position(cls, object_id, start, end):
+        return _get_position(cls, object_attr='object_id', object_name=object_id,
+                             start_attr='chunk_start', start=start, end=end,
+                             fetch_attrs=['timestamps', 'position_x', 'position_y', 'area'],
+                             attrs_to_scale=['position_x', 'position_y'],
+                             scale_factor=pixel_scale)
 
 # ---------- Subject Position ------------------
 
@@ -217,21 +224,15 @@ class SubjectPosition(dj.Imported):
         of the subject for the specified session
         """
         assert len(acquisition.Session & session_key) == 1
-        # subject's position data in the time slice
-        timestamps, position_x, position_y, speed, area = (cls & session_key).fetch(
-            'timestamps', 'position_x', 'position_y', 'speed', 'area', order_by='time_slice_start')
 
-        # stack and structure in pandas DataFrame
-        position = pd.DataFrame(dict(x=np.hstack(position_x),
-                                     y=np.hstack(position_y),
-                                     speed=np.hstack(speed),
-                                     area=np.hstack(area)),
-                                index=np.hstack(timestamps))
-        position.x = position.x * pixel_scale
-        position.y = position.y * pixel_scale
-        position.speed = position.speed * pixel_scale
+        start, end = (acquisition.Session * acquisition.SessionEnd & session_key).fetch1(
+            'session_start', 'session_end')
 
-        return position
+        return _get_position(cls, object_attr='subject', object_name=session_key['subject'],
+                             start_attr='time_slice_start', start=start, end=end,
+                             fetch_attrs=['timestamps', 'position_x', 'position_y', 'speed', 'area'],
+                             attrs_to_scale=['position_x', 'position_y', 'speed'],
+                             scale_factor=pixel_scale)
 
 
 @schema
@@ -288,3 +289,25 @@ def is_in_patch(position_df, patch_position, wheel_distance_travelled, patch_rad
         position_df.index, method='pad')
     time_slice = exit_patch.cumsum()
     return in_wheel.groupby(time_slice).apply(lambda x:x.cumsum()) > 0
+
+
+def _get_position(table, object_attr: str, start_attr: str, object_name: str,
+                  start: str, end: str, fetch_attrs: list,
+                  attrs_to_scale: list, scale_factor=1.0):
+    obj_restriction = {object_attr: object_name}
+    time_restriction = f'{start_attr} BETWEEN "{start}" AND "{end}"'
+
+    # subject's position data in the time slice
+    fetched_data = (table & obj_restriction & time_restriction).fetch(
+        *fetch_attrs, order_by=start_attr)
+
+    timestamp_attr = next(attr for attr in fetch_attrs if 'timestamps' in attr)
+
+    # stack and structure in pandas DataFrame
+    position = pd.DataFrame({k: np.hstack(v) * scale_factor if k in attrs_to_scale else np.hstack(v)
+                             for k, v in zip(fetch_attrs, fetched_data)})
+    position.set_index(timestamp_attr, inplace=True)
+
+    time_mask = np.logical_and(position.index >= start, position.index < end)
+
+    return position[time_mask]
