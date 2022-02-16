@@ -61,9 +61,9 @@ high_priority(acquisition.SubjectAnnotation)
 high_priority(acquisition.SubjectWeight)
 high_priority(acquisition.WheelState)
 high_priority(acquisition.WeightMeasurement)
-high_priority(acquisition.Session)
-high_priority(acquisition.SessionEnd)
-high_priority(acquisition.TimeSlice)
+high_priority(analysis.Session)
+high_priority(analysis.SessionEnd)
+high_priority(analysis.TimeSlice)
 
 # configure a worker to process mid-priority tasks
 mid_priority = DataJointWorker(
@@ -76,7 +76,7 @@ mid_priority = DataJointWorker(
 
 mid_priority(qc.CameraQC)
 mid_priority(tracking.CameraTracking)
-mid_priority(tracking.SubjectPosition)
+mid_priority(analysis.SubjectPosition)
 mid_priority(analysis.SessionTimeDistribution)
 mid_priority(analysis.SessionSummary)
 mid_priority(analysis.SessionRewardRate)

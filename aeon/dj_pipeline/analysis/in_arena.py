@@ -1,17 +1,266 @@
 import datajoint as dj
 import pandas as pd
 import numpy as np
-from matplotlib import path
-
+from datetime import datetime
 
 from aeon.preprocess import api as aeon_api
 from aeon.util import utils as aeon_utils
 
-from . import lab, acquisition, tracking
-from . import get_schema_name
-
+from .. import lab, acquisition, tracking, qc
+from .. import get_schema_name
 
 schema = dj.schema(get_schema_name('analysis'))
+
+__all__ = ['schema', 'SessionType', 'Session', 'NeverExitedSession',
+           'SessionEnd', 'TimeSlice', 'SubjectPosition',
+           'SessionTimeDistribution', 'SessionSummary', 'SessionRewardRate']
+
+# ------------------- SESSION --------------------
+
+
+@schema
+class SessionType(dj.Lookup):
+    definition = """
+    session_type: varchar(32)
+    ---
+    type_description: varchar(1000)
+    """
+
+    contents = [
+        (
+            "foraging",
+            "Freely behaving foraging session,"
+            " defined as the time period between the animal"
+            " entering and exiting the arena",
+        )
+    ]
+
+
+@schema
+class Session(dj.Computed):
+    definition = """  # A session spans the time when the animal first enters the arena to when it exits the arena
+    -> acquisition.Experiment.Subject
+    session_start: datetime(6)
+    ---
+    -> SessionType
+    """
+
+    @property
+    def key_source(self):
+        return dj.U("experiment_name", "subject", "session_start") & (
+            acquisition.SubjectEnterExit.Time * acquisition.EventType
+            & 'event_type = "SubjectEnteredArena"'
+        ).proj(session_start="enter_exit_time")
+
+    def make(self, key):
+        self.insert1({**key, "session_type": "foraging"})
+
+
+@schema
+class NeverExitedSession(dj.Manual):
+    definition = """  # Bad session where the animal seemed to have never exited
+    -> Session
+    """
+
+
+@schema
+class SessionEnd(dj.Computed):
+    definition = """
+    -> Session
+    ---
+    session_end: datetime(6)
+    session_duration: float  # (hour)
+    """
+
+    key_source = Session - NeverExitedSession & (
+        Session.proj() * acquisition.SubjectEnterExit.Time * acquisition.EventType
+        & 'event_type = "SubjectExitedArena"'
+        & "enter_exit_time > session_start"
+    )
+
+    def make(self, key):
+        session_start = key["session_start"]
+        subject_exit = (
+            acquisition.SubjectEnterExit.Time
+            & {"subject": key["subject"]}
+            & f'enter_exit_time > "{session_start}"'
+        ).fetch(as_dict=True, limit=1, order_by="enter_exit_time ASC")[0]
+
+        if subject_exit["event_type"] != "SubjectExitedArena":
+            NeverExitedSession.insert1(key, skip_duplicates=True)
+            return
+
+        session_end = subject_exit["enter_exit_time"]
+        duration = (session_end - session_start).total_seconds() / 3600
+
+        # insert
+        self.insert1({**key, "session_end": session_end, "session_duration": duration})
+
+
+# ------------------- TIMESLICE --------------------
+
+
+@schema
+class TimeSlice(dj.Computed):
+    definition = """
+    # A short time-slice (e.g. 10 minutes) of the recording of a given animal in the arena
+    -> Session
+    -> Chunk
+    time_slice_start: datetime(6)  # datetime of the start of this time slice
+    ---
+    time_slice_end: datetime(6)    # datetime of the end of this time slice
+    """
+
+    @property
+    def key_source(self):
+        """
+        Chunk for all sessions:
+        + are not "NeverExitedSession"
+        + session_start during this Chunk - i.e. first chunk of the session
+        + session_end during this Chunk - i.e. last chunk of the session
+        + chunk starts after session_start and ends before session_end (or NOW() - i.e. session still on going)
+        """
+        return (
+            Session.join(SessionEnd, left=True).proj(
+                session_end="IFNULL(session_end, NOW())"
+            )
+            * acquisition.Chunk
+            - NeverExitedSession
+            & acquisition.SubjectEnterExit
+            & [
+                "session_start BETWEEN chunk_start AND chunk_end",
+                "session_end BETWEEN chunk_start AND chunk_end",
+                "chunk_start >= session_start AND chunk_end <= session_end",
+            ]
+        )
+
+    _time_slice_duration = datetime.timedelta(hours=0, minutes=10, seconds=0)
+
+    def make(self, key):
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+        # -- Determine the time to start time_slicing in this chunk
+        if chunk_start < key["session_start"] < chunk_end:
+            # For chunk containing the session_start - i.e. first chunk of this session
+            start_time = key["session_start"]
+        else:
+            # For chunks after the first chunk of this session
+            start_time = chunk_start
+
+        # -- Determine the time to end time_slicing in this chunk
+        # get the enter/exit events in this chunk that are after the session_start
+        next_enter_exit_events = (
+            acquisition.SubjectEnterExit.Time * acquisition.EventType
+            & key & f'enter_exit_time > "{key["session_start"]}"'
+        )
+        if not next_enter_exit_events:
+            # No enter/exit event: time_slices from this whole chunk
+            end_time = chunk_end
+        else:
+            next_event = next_enter_exit_events.fetch(
+                as_dict=True, order_by="enter_exit_time DESC", limit=1
+            )[0]
+            if next_event["event_type"] == "SubjectEnteredArena":
+                NeverExitedSession.insert1(
+                    key, ignore_extra_fields=True, skip_duplicates=True
+                )
+                return
+            end_time = next_event["enter_exit_time"]
+
+        chunk_time_slices = []
+        time_slice_start = start_time
+        while time_slice_start < end_time:
+            time_slice_end = time_slice_start + min(
+                self._time_slice_duration, end_time - time_slice_start
+            )
+            chunk_time_slices.append(
+                {
+                    **key,
+                    "time_slice_start": time_slice_start,
+                    "time_slice_end": time_slice_end,
+                }
+            )
+            time_slice_start = time_slice_end
+
+        self.insert(chunk_time_slices)
+
+
+# ---------- Subject Position ------------------
+
+
+@schema
+class SubjectPosition(dj.Imported):
+    definition = """
+    -> acquisition.TimeSlice
+    ---
+    timestamps:        longblob  # (datetime) timestamps of the position data
+    position_x:        longblob  # (px) animal's x-position, in the arena's coordinate frame
+    position_y:        longblob  # (px) animal's y-position, in the arena's coordinate frame
+    position_z=null:   longblob  # (px) animal's z-position, in the arena's coordinate frame
+    area=null:         longblob  # (px^2) animal's size detected in the camera
+    speed=null:        longblob  # (px/s) speed
+    """
+
+    key_source = TimeSlice & (qc.CameraQC * acquisition.ExperimentCamera
+                              & 'camera_description = "FrameTop"')
+
+    def make(self, key):
+        """
+        The ingest logic here relies on the assumption that there is only one subject in the arena at a time
+        The positiondata is associated with that one subject currently in the arena at any timepoints
+        However, we need to take into account if the subject is entered or exited during this time slice
+        """
+        time_slice_start, time_slice_end = (TimeSlice & key).fetch1('time_slice_start', 'time_slice_end')
+
+        positiondata = tracking.CameraTracking.get_object_position(
+            experiment_name=key['experiment_name'],
+            object_id=-1,
+            start=time_slice_start,
+            end=time_slice_end
+        )
+
+        if not len(positiondata):
+            raise ValueError(f'No position data between {time_slice_start} and {time_slice_end}')
+
+        timestamps = positiondata.index.to_pydatetime()
+        x = positiondata.position_x.values
+        y = positiondata.position_y.values
+        z = positiondata.position_z.values
+        area = positiondata.area.values
+
+        # speed - TODO: confirm with aeon team if this calculation is sufficient (any smoothing needed?)
+        position_diff = np.sqrt(np.square(np.diff(x)) + np.square(np.diff(y)) + np.square(np.diff(z)))
+        time_diff = [t.total_seconds() for t in np.diff(timestamps)]
+        speed = position_diff / time_diff
+        speed = np.hstack((speed[0], speed))
+
+        self.insert1({**key,
+                      'timestamps': timestamps,
+                      'position_x': x,
+                      'position_y': y,
+                      'position_z': z,
+                      'area': area,
+                      'speed': speed})
+
+    @classmethod
+    def get_session_position(cls, session_key):
+        """
+        Given a key to a single session, return a Pandas DataFrame for the position data
+        of the subject for the specified session
+        """
+        assert len(acquisition.Session & session_key) == 1
+
+        start, end = (acquisition.Session * acquisition.SessionEnd & session_key).fetch1(
+            'session_start', 'session_end')
+
+        return tracking._get_position(
+            cls * acquisition.TimeSlice.proj('time_slice_end'),
+            object_attr='subject', object_name=session_key['subject'],
+            start_attr='time_slice_start', end_attr='time_slice_end',
+            start=start, end=end,
+            fetch_attrs=['timestamps', 'position_x', 'position_y', 'speed', 'area'],
+            attrs_to_scale=['position_x', 'position_y', 'speed'],
+            scale_factor=tracking.pixel_scale)
 
 
 # -------------- Session-level analysis ---------------------
@@ -77,7 +326,7 @@ class SessionTimeDistribution(dj.Computed):
         # in nests - loop through all nests in this experiment
         in_nest_times = []
         for nest_key in (lab.ArenaNest & key).fetch('KEY'):
-            in_nest = is_position_in_nest(position, nest_key)
+            in_nest = tracking.is_position_in_nest(position, nest_key)
             in_nest_times.append(
                 {**key, **nest_key,
                  'time_fraction_in_nest': in_nest.mean(),
@@ -284,18 +533,3 @@ class SessionRewardRate(dj.Computed):
                       'pellet_rate_timestamps': pellet_rate_timestamps,
                       'patch2_patch1_rate_diff': rates['Patch2'] - rates['Patch1']})
         self.FoodPatch.insert(food_patch_reward_rates)
-
-
-# ---------- HELPER ------------------
-
-
-def is_position_in_nest(position_df, nest_key):
-    """
-    Given the session key and the position data - arrays of x and y
-    return an array of boolean indicating whether or not a position is inside the nest
-    """
-    nest_vertices = list(zip(*(lab.ArenaNest.Vertex & nest_key).fetch(
-        'vertex_x', 'vertex_y')))
-    nest_path = path.Path(nest_vertices)
-
-    return nest_path.contains_points(position_df[['x', 'y']])

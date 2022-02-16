@@ -11,7 +11,7 @@ import json
 from aeon.preprocess import api as aeon_api
 from aeon.util import plotting as aeon_plotting
 
-from . import lab, acquisition, tracking, analysis
+from . import acquisition, analysis
 from . import get_schema_name
 
 
@@ -33,18 +33,18 @@ class SessionSummaryPlot(dj.Computed):
     summary_plot_png: attach
     """
 
-    key_source = acquisition.Session & analysis.SessionTimeDistribution & analysis.SessionSummary
+    key_source = analysis.Session & analysis.SessionTimeDistribution & analysis.SessionSummary
 
     color_code = {'Patch1': 'b', 'Patch2': 'r', 'arena': 'g', 'corridor': 'gray', 'nest': 'k'}
 
     def make(self, key):
         raw_data_dir = acquisition.Experiment.get_data_directory(key)
 
-        session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
+        session_start, session_end = (analysis.Session * analysis.SessionEnd & key).fetch1(
             'session_start', 'session_end')
 
         # subject's position data in the time_slices
-        position = tracking.SubjectPosition.get_session_position(key)
+        position = analysis.SubjectPosition.get_session_position(key)
 
         position_minutes_elapsed = (position.index - session_start).total_seconds() / 60
 
@@ -64,7 +64,7 @@ class SessionSummaryPlot(dj.Computed):
 
         # event rate plots
         session_food_patches = (
-                acquisition.Session
+                analysis.Session
                 * acquisition.ExperimentFoodPatch.join(
             acquisition.ExperimentFoodPatch.RemovalTime, left=True)
                 & key
@@ -204,7 +204,7 @@ class SubjectRewardRateDifference(dj.Computed):
     @classmethod
     def delete_outdated_entries(cls):
         """
-        Each entry in this table correspond to one subject. However the plot is capturing
+        Each entry in this table correspond to one subject. However, the plot is capturing
             data for all sessions.
         Hence a dynamic update routine is needed to recompute the plot as new sessions
             become available
@@ -300,7 +300,7 @@ def delete_outdated_plot_entries():
 
 def _make_session_path(session_key):
     store_stage = pathlib.Path(dj.config['stores']['djstore']['stage'])
-    experiment_name, subject, session_start = (acquisition.Session & session_key).fetch1(
+    experiment_name, subject, session_start = (analysis.Session & session_key).fetch1(
         'experiment_name', 'subject', 'session_start')
     session_dir = store_stage / experiment_name / subject / session_start.strftime('%y%m%d_%H%M%S_%f')
     session_dir.mkdir(parents=True, exist_ok=True)
