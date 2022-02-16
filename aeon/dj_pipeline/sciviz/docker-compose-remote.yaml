@@ -1,6 +1,6 @@
-# SUBDOMAINS=testdev URL=datajoint.io HOST_UID=$(id -u) docker-compose -f docker-compose-remote.yaml up -d
+# HOST_UID=$(id -u) docker-compose -f docker-compose-remote.yaml up -d
 #
-# Access using ${SUBDOMAINS}.${URL}
+
 version: '2.4'
 services:
   pharus:
