@@ -140,12 +140,19 @@ class CameraTracking(dj.Imported):
         self.Object.insert(object_positions)
 
     @classmethod
-    def get_object_position(cls, object_id, start, end):
-        return _get_position(cls, object_attr='object_id', object_name=object_id,
-                             start_attr='chunk_start', start=start, end=end,
+    def get_object_position(cls, experiment_name, object_id, start, end,
+                            camera_name='FrameTop', tracking_paramset_id=0, in_meter=False):
+        table = (cls.Object * acquisition.Chunk.proj('chunk_end')
+                 & {'experiment_name': experiment_name}
+                 & {'tracking_paramset_id': tracking_paramset_id}
+                 & (acquisition.ExperimentCamera & {'camera_description': camera_name}))
+
+        return _get_position(table, object_attr='object_id', object_name=object_id,
+                             start_attr='chunk_start', end_attr='chunk_end',
+                             start=start, end=end,
                              fetch_attrs=['timestamps', 'position_x', 'position_y', 'position_z', 'area'],
                              attrs_to_scale=['position_x', 'position_y', 'position_z'],
-                             scale_factor=pixel_scale)
+                             scale_factor=pixel_scale if in_meter else 1)
 
 # ---------- Subject Position ------------------
 
@@ -172,40 +179,27 @@ class SubjectPosition(dj.Imported):
         The positiondata is associated with that one subject currently in the arena at any timepoints
         However, we need to take into account if the subject is entered or exited during this time slice
         """
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1('chunk_start', 'chunk_end')
         time_slice_start, time_slice_end = (acquisition.TimeSlice & key).fetch1('time_slice_start', 'time_slice_end')
 
-        raw_data_dir = acquisition.Experiment.get_data_directory(key)
-        positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
-                                             start=pd.Timestamp(chunk_start),
-                                             end=pd.Timestamp(chunk_end))
-
-        # Correct for frame offsets from Camera QC
-        qc_timestamps, qc_frame_offsets, camera_fs = (
-                qc.CameraQC * acquisition.ExperimentCamera
-                & 'camera_description = "FrameTop"' & key).fetch1(
-            'timestamps', 'frame_offset', 'camera_sampling_rate')
-        qc_time_offsets = qc_frame_offsets / camera_fs
-        qc_time_offsets = np.where(np.isnan(qc_time_offsets), 0, qc_time_offsets)  # set NaNs to 0
-        positiondata.index += pd.to_timedelta(qc_time_offsets, 's')
-
-        # Get position data for this time-slice only
-        in_time_slice = np.logical_and(positiondata.index >= time_slice_start, positiondata.index <= time_slice_end)
-        positiondata = positiondata[in_time_slice]
+        positiondata = CameraTracking.get_object_position(
+            experiment_name=key['experiment_name'],
+            object_id=-1,
+            start=time_slice_start,
+            end=time_slice_end
+        )
 
         if not len(positiondata):
             raise ValueError(f'No position data between {time_slice_start} and {time_slice_end}')
 
-        timestamps = positiondata.index.to_pydatetime()
-
-        x = positiondata.x.values
-        y = positiondata.y.values
-        z = np.full_like(x, 0.0)
+        timestamps = positiondata.index.values
+        x = positiondata.position_x.values
+        y = positiondata.position_y.values
+        z = positiondata.position_z.values
         area = positiondata.area.values
 
         # speed - TODO: confirm with aeon team if this calculation is sufficient (any smoothing needed?)
         position_diff = np.sqrt(np.square(np.diff(x)) + np.square(np.diff(y)) + np.square(np.diff(z)))
-        time_diff = [t.total_seconds() for t in np.diff(timestamps)]
+        time_diff = np.diff(timestamps) / np.timedelta64(1, 's')
         speed = position_diff / time_diff
         speed = np.hstack((speed[0], speed))
 
@@ -228,8 +222,10 @@ class SubjectPosition(dj.Imported):
         start, end = (acquisition.Session * acquisition.SessionEnd & session_key).fetch1(
             'session_start', 'session_end')
 
-        return _get_position(cls, object_attr='subject', object_name=session_key['subject'],
-                             start_attr='time_slice_start', start=start, end=end,
+        return _get_position(cls * acquisition.TimeSlice.proj('time_slice_end'),
+                             object_attr='subject', object_name=session_key['subject'],
+                             start_attr='time_slice_start', end_attr='time_slice_end',
+                             start=start, end=end,
                              fetch_attrs=['timestamps', 'position_x', 'position_y', 'speed', 'area'],
                              attrs_to_scale=['position_x', 'position_y', 'speed'],
                              scale_factor=pixel_scale)
@@ -291,15 +287,29 @@ def is_in_patch(position_df, patch_position, wheel_distance_travelled, patch_rad
     return in_wheel.groupby(time_slice).apply(lambda x:x.cumsum()) > 0
 
 
-def _get_position(table, object_attr: str, start_attr: str, object_name: str,
+def _get_position(table, object_attr: str, object_name: str,
+                  start_attr: str, end_attr: str,
                   start: str, end: str, fetch_attrs: list,
                   attrs_to_scale: list, scale_factor=1.0):
     obj_restriction = {object_attr: object_name}
-    time_restriction = f'{start_attr} BETWEEN "{start}" AND "{end}"'
+
+    start_restriction = f'"{start}" BETWEEN {start_attr} AND {end_attr}'
+    end_restriction = f'"{end}" BETWEEN {start_attr} AND {end_attr}'
+
+    start_query = table & obj_restriction & start_restriction
+    end_query = table & obj_restriction & end_restriction
+    if not (start_query and end_query):
+        raise ValueError(f'No position data found for {object_name} between {start} and {end}')
+
+    time_restriction = f'{start_attr} >= "{start_query.fetch1(start_attr)}"' \
+                       f' AND {start_attr} < "{end_query.fetch1(end_attr)}"'
 
     # subject's position data in the time slice
     fetched_data = (table & obj_restriction & time_restriction).fetch(
         *fetch_attrs, order_by=start_attr)
+
+    if not len(fetched_data[0]):
+        raise ValueError(f'No position data found for {object_name} between {start} and {end}')
 
     timestamp_attr = next(attr for attr in fetch_attrs if 'timestamps' in attr)
 
