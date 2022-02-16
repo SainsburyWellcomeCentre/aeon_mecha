@@ -114,9 +114,7 @@ class CameraTracking(dj.Imported):
         positiondata.fillna({'id': -1}, inplace=True)
 
         # Correct for frame offsets from Camera QC
-        qc_timestamps, qc_frame_offsets, camera_fs = (
-                qc.CameraQC * acquisition.ExperimentCamera
-                & 'camera_description = "FrameTop"' & key).fetch1(
+        qc_timestamps, qc_frame_offsets, camera_fs = (qc.CameraQC & key).fetch1(
             'timestamps', 'frame_offset', 'camera_sampling_rate')
         qc_time_offsets = qc_frame_offsets / camera_fs
         qc_time_offsets = np.where(np.isnan(qc_time_offsets), 0, qc_time_offsets)  # set NaNs to 0
@@ -191,7 +189,7 @@ class SubjectPosition(dj.Imported):
         if not len(positiondata):
             raise ValueError(f'No position data between {time_slice_start} and {time_slice_end}')
 
-        timestamps = positiondata.index.values
+        timestamps = positiondata.index.to_pydatetime()
         x = positiondata.position_x.values
         y = positiondata.position_y.values
         z = positiondata.position_z.values
@@ -199,7 +197,7 @@ class SubjectPosition(dj.Imported):
 
         # speed - TODO: confirm with aeon team if this calculation is sufficient (any smoothing needed?)
         position_diff = np.sqrt(np.square(np.diff(x)) + np.square(np.diff(y)) + np.square(np.diff(z)))
-        time_diff = np.diff(timestamps) / np.timedelta64(1, 's')
+        time_diff = [t.total_seconds() for t in np.diff(timestamps)]
         speed = position_diff / time_diff
         speed = np.hstack((speed[0], speed))
 
