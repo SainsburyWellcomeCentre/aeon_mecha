@@ -143,8 +143,8 @@ class CameraTracking(dj.Imported):
     def get_object_position(cls, object_id, start, end):
         return _get_position(cls, object_attr='object_id', object_name=object_id,
                              start_attr='chunk_start', start=start, end=end,
-                             fetch_attrs=['timestamps', 'position_x', 'position_y', 'area'],
-                             attrs_to_scale=['position_x', 'position_y'],
+                             fetch_attrs=['timestamps', 'position_x', 'position_y', 'position_z', 'area'],
+                             attrs_to_scale=['position_x', 'position_y', 'position_z'],
                              scale_factor=pixel_scale)
 
 # ---------- Subject Position ------------------
