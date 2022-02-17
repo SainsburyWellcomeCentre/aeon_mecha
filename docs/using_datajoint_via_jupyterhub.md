@@ -20,7 +20,6 @@ The examples below use the SWC HPC username `jbhagat`. When you run the commands
     ssh -Y jbhagat@localhost -p 9998 -L localhost:2222:192.168.234.1:2222
     ```
 
-4) In the browser, open up the jupyter hub server via the localhost address:
-    `localhost:2222`
+4) In a web browser, enter `localhost:2222` to open up the jupyter hub server via the localhost address.
 
 See `docs/examples/dj_example_notebook.ipynb` for an example notebook that you can play with in the jupyterhub session.
