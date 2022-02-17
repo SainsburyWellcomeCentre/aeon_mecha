@@ -26,6 +26,8 @@ jobs:
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v1
+        with:
+          platforms: linux/amd64,linux/arm64
 
       - name: Setup Docker buildx
         id: buildx
@@ -34,7 +36,7 @@ jobs:
           install: true
           driver: docker-container
           driver-opts: |
-            image=moby/buildkit:master
+            image=moby/buildkit:buildx-stable-1
           buildkitd-flags: --debug
 
       - name: Login to GitHub Container Registry
