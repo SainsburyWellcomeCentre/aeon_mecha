@@ -39,6 +39,58 @@ echo "my-key-string" >> ~/.ssh/id.pub
    - `git clone https://github.com/SainsburyWellcomeCentre/aeon_mecha.git --branch datajoint_pipeline`
    - _Note_: If you use your own fork instead of the one above, just know that the container image will be a snapshot of whatever is defined within the GitHub actions file [`.github/workflows/docker-aeon-mecha.yml`](../.github/workflows/docker-aeon-mecha.yml).
 
+## Local SSH setup
+
+### SSH into `aeon_db` dj worker
+
+To SSH directly as the `aeon_db` user on the `aeon-db2` vm, setup your `~/.ssh/config` on your local machine, adding the following lines (this only works if your user has sudo privileges to switch to `aeon_db`):
+
+```bash
+Host swc
+  HostName ssh.swc.ucl.ac.uk
+  User myusername
+  IdentityFile ~/.ssh/id
+
+Host aeon_djworker
+  HostName aeon-db2
+  User myusername
+  ProxyCommand ssh -q -W %h:%p swc
+  RemoteCommand sudo -Sv < pwd.txt; sudo -iu aeon_db
+  RequestTTY yes
+```
+
+The file `~/.ssh/id` is your key to connect to the server. The file `pwd.txt` is a file with your user password, placed in your user's home directory on `aeon-db2`, e.g., `myusername@aeon-db2`. You can do `chmod 400 ~/pwd.txt` after it is saved to the file. Alternatively, you can substitute the `RemoteCommand` line to include your password (less safe) instead of using a file, like so: `sudo -Sv <<< "mypassword"; sudo -iu aeon_db`.
+
+Connect by running `ssh aeon_djworker` in a terminal.
+
+To run a remote `vscode` session using the [`Remote Development`](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.vscode-remote-extensionpack) extension, run the following line:
+
+```bash
+code --folder-uri vscode-remote://ssh-remote+aeon_djworker/nfs/nhome/live/aeon_db
+```
+
+You can also save that as an alias or a shell script.
+
+### Forwarding the database port to your local machine
+
+Add the following lines to your ssh config file (which also has the `Host swc` section from above).
+
+```bash
+Host aeon-database
+  HostName hpc-gw1
+  User myusername
+  LocalForward 127.0.0.1:3307 aeon-db2:3306
+  ProxyJump swc
+  ControlMaster auto
+  ControlPath ~/.ssh/controlmasters/%r@%h:%p
+```
+
+Connect by running `ssh aeon-database` in a terminal.
+
+Check and stop the connection by running `ssh -O check aeon-database` and `ssh -O stop aeon-database` in a terminal, respectively.
+
+The database will be accessible at `localhost:3307` or `127.0.0.1:3307` (change 3307 in the config to use a different port).
+
 ## Docker usage
 
 ### `docker/docker-compose.yml`

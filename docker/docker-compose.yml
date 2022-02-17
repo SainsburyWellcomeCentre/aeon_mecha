@@ -4,6 +4,7 @@
 # Basic usage:
 #   export CR_PAT=YOUR_TOKEN
 #   echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin
+#   docker image rm ghcr.io/sainsburywellcomecentre/aeon_mecha
 #   docker-compose up --detach
 #   docker-compose down
 #   docker ps -a --no-trunc
@@ -19,6 +20,7 @@ version: "3.9"
 
 x-aeon-docker-image: &aeon-docker-image
   image: ghcr.io/sainsburywellcomecentre/aeon_mecha:latest
+  pull_policy: always
 
 x-aeon-ingest-common: &aeon-ingest-common
   <<: *aeon-docker-image
@@ -47,7 +49,7 @@ x-aeon-ingest-common: &aeon-ingest-common
 services:
   ingest_high:
     <<: *aeon-ingest-common
-    command: ["aeon_ingest", "high", "--duration=-1", "--sleep=30"]
+    command: ["aeon_ingest", "high_priority", "--duration=-1", "--sleep=30"]
 
   ingest_mid:
     <<: *aeon-ingest-common
@@ -57,7 +59,7 @@ services:
     deploy:
       mode: replicated
       replicas: 3
-    command: ["aeon_ingest", "mid", "--duration=-1", "--sleep=30"]
+    command: ["aeon_ingest", "mid_priority", "--duration=-1", "--sleep=30"]
 
   dev:
     <<: *aeon-ingest-common
