@@ -97,13 +97,13 @@ def load_arena_setup(yml_filepath, experiment_name):
                                           - acquisition.ExperimentWeightScale.RemovalTime
                                           & {'experiment_name': experiment_name}
                                           & weight_scale_key)
-            if current_weight_scale_query:  # If the same food-patch is currently installed
+            if current_weight_scale_query:  # If the same weight scale is currently installed
                 if current_weight_scale_query.fetch1('weight_scale_install_time') == arena_setup['start-time']:
                     # If it is installed at the same time as that read from this yml file
-                    # then it is the same ExperimentFoodPatch instance, no need to do anything
+                    # then it is the same ExperimentWeightScale instance, no need to do anything
                     continue
 
-                # ---- Remove old food patch
+                # ---- Remove old weight scale
                 acquisition.ExperimentWeightScale.RemovalTime.insert1({
                     **current_weight_scale_query.fetch1('KEY'),
                     'weight_scale_remove_time': arena_setup['start-time']})
