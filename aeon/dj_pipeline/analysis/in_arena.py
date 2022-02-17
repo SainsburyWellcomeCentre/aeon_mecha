@@ -1,7 +1,7 @@
 import datajoint as dj
 import pandas as pd
 import numpy as np
-from datetime import datetime
+import datetime
 
 from aeon.preprocess import api as aeon_api
 from aeon.util import utils as aeon_utils
@@ -11,101 +11,83 @@ from .. import get_schema_name
 
 schema = dj.schema(get_schema_name('analysis'))
 
-__all__ = ['schema', 'SessionType', 'Session', 'NeverExitedSession',
-           'SessionEnd', 'TimeSlice', 'SubjectPosition',
-           'SessionTimeDistribution', 'SessionSummary', 'SessionRewardRate']
+__all__ = ['schema', 'InArena', 'NeverExitedArena',
+           'InArenaEnd', 'InArenaTimeSlice', 'InArenaSubjectPosition',
+           'InArenaTimeDistribution', 'InArenaSummary', 'InArenaRewardRate']
 
 # ------------------- SESSION --------------------
 
 
 @schema
-class SessionType(dj.Lookup):
-    definition = """
-    session_type: varchar(32)
-    ---
-    type_description: varchar(1000)
-    """
-
-    contents = [
-        (
-            "foraging",
-            "Freely behaving foraging session,"
-            " defined as the time period between the animal"
-            " entering and exiting the arena",
-        )
-    ]
-
-
-@schema
-class Session(dj.Computed):
-    definition = """  # A session spans the time when the animal first enters the arena to when it exits the arena
+class InArena(dj.Computed):
+    definition = """  # A time period spanning the time when the animal first enters the arena to when it exits the arena
     -> acquisition.Experiment.Subject
-    session_start: datetime(6)
+    in_arena_start: datetime(6)
     ---
-    -> SessionType
+    -> [nullable] acquisition.TaskProtocol
     """
 
     @property
     def key_source(self):
-        return dj.U("experiment_name", "subject", "session_start") & (
+        return dj.U("experiment_name", "subject", "in_arena_start") & (
             acquisition.SubjectEnterExit.Time * acquisition.EventType
             & 'event_type = "SubjectEnteredArena"'
-        ).proj(session_start="enter_exit_time")
+        ).proj(in_arena_start="enter_exit_time") & {'experiment_name': 'exp0.1-r0'}
 
     def make(self, key):
-        self.insert1({**key, "session_type": "foraging"})
+        self.insert1(key)
 
 
 @schema
-class NeverExitedSession(dj.Manual):
-    definition = """  # Bad session where the animal seemed to have never exited
-    -> Session
+class NeverExitedArena(dj.Manual):
+    definition = """  # Bad InArena where the animal seemed to have never exited
+    -> InArena
     """
 
 
 @schema
-class SessionEnd(dj.Computed):
+class InArenaEnd(dj.Computed):
     definition = """
-    -> Session
+    -> InArena
     ---
-    session_end: datetime(6)
-    session_duration: float  # (hour)
+    in_arena_end: datetime(6)
+    in_arena_duration: float  # (hour)
     """
 
-    key_source = Session - NeverExitedSession & (
-        Session.proj() * acquisition.SubjectEnterExit.Time * acquisition.EventType
-        & 'event_type = "SubjectExitedArena"'
-        & "enter_exit_time > session_start"
+    key_source = InArena - NeverExitedArena & (
+            InArena.proj() * acquisition.SubjectEnterExit.Time * acquisition.EventType
+            & 'event_type = "SubjectExitedArena"'
+            & "enter_exit_time > in_arena_start"
     )
 
     def make(self, key):
-        session_start = key["session_start"]
+        in_arena_start = key["in_arena_start"]
         subject_exit = (
             acquisition.SubjectEnterExit.Time
             & {"subject": key["subject"]}
-            & f'enter_exit_time > "{session_start}"'
+            & f'enter_exit_time > "{in_arena_start}"'
         ).fetch(as_dict=True, limit=1, order_by="enter_exit_time ASC")[0]
 
         if subject_exit["event_type"] != "SubjectExitedArena":
-            NeverExitedSession.insert1(key, skip_duplicates=True)
+            NeverExitedArena.insert1(key, skip_duplicates=True)
             return
 
-        session_end = subject_exit["enter_exit_time"]
-        duration = (session_end - session_start).total_seconds() / 3600
+        in_arena_end = subject_exit["enter_exit_time"]
+        duration = (in_arena_end - in_arena_start).total_seconds() / 3600
 
         # insert
-        self.insert1({**key, "session_end": session_end, "session_duration": duration})
+        self.insert1({**key, "in_arena_end": in_arena_end, "in_arena_duration": duration})
 
 
 # ------------------- TIMESLICE --------------------
 
 
 @schema
-class TimeSlice(dj.Computed):
+class InArenaTimeSlice(dj.Computed):
     definition = """
     # A short time-slice (e.g. 10 minutes) of the recording of a given animal in the arena
-    -> Session
-    -> Chunk
+    -> InArena
+    -> acquisition.Chunk
     time_slice_start: datetime(6)  # datetime of the start of this time slice
     ---
     time_slice_end: datetime(6)    # datetime of the end of this time slice
@@ -116,22 +98,22 @@ class TimeSlice(dj.Computed):
         """
         Chunk for all sessions:
         + are not "NeverExitedSession"
-        + session_start during this Chunk - i.e. first chunk of the session
-        + session_end during this Chunk - i.e. last chunk of the session
-        + chunk starts after session_start and ends before session_end (or NOW() - i.e. session still on going)
+        + in_arena_start during this Chunk - i.e. first chunk of the session
+        + in_arena_end during this Chunk - i.e. last chunk of the session
+        + chunk starts after in_arena_start and ends before in_arena_end (or NOW() - i.e. session still on going)
         """
         return (
-            Session.join(SessionEnd, left=True).proj(
-                session_end="IFNULL(session_end, NOW())"
-            )
-            * acquisition.Chunk
-            - NeverExitedSession
-            & acquisition.SubjectEnterExit
-            & [
-                "session_start BETWEEN chunk_start AND chunk_end",
-                "session_end BETWEEN chunk_start AND chunk_end",
-                "chunk_start >= session_start AND chunk_end <= session_end",
-            ]
+                InArena.join(InArenaEnd, left=True).proj(
+                    in_arena_end="IFNULL(in_arena_end, NOW())"
+                )
+                * acquisition.Chunk
+                - NeverExitedArena
+                & acquisition.SubjectEnterExit
+                & [
+                    "in_arena_start BETWEEN chunk_start AND chunk_end",
+                    "in_arena_end BETWEEN chunk_start AND chunk_end",
+                    "chunk_start >= in_arena_start AND chunk_end <= in_arena_end",
+                ]
         )
 
     _time_slice_duration = datetime.timedelta(hours=0, minutes=10, seconds=0)
@@ -140,18 +122,18 @@ class TimeSlice(dj.Computed):
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
 
         # -- Determine the time to start time_slicing in this chunk
-        if chunk_start < key["session_start"] < chunk_end:
-            # For chunk containing the session_start - i.e. first chunk of this session
-            start_time = key["session_start"]
+        if chunk_start < key["in_arena_start"] < chunk_end:
+            # For chunk containing the in_arena_start - i.e. first chunk of this session
+            start_time = key["in_arena_start"]
         else:
             # For chunks after the first chunk of this session
             start_time = chunk_start
 
         # -- Determine the time to end time_slicing in this chunk
-        # get the enter/exit events in this chunk that are after the session_start
+        # get the enter/exit events in this chunk that are after the in_arena_start
         next_enter_exit_events = (
             acquisition.SubjectEnterExit.Time * acquisition.EventType
-            & key & f'enter_exit_time > "{key["session_start"]}"'
+            & key & f'enter_exit_time > "{key["in_arena_start"]}"'
         )
         if not next_enter_exit_events:
             # No enter/exit event: time_slices from this whole chunk
@@ -161,7 +143,7 @@ class TimeSlice(dj.Computed):
                 as_dict=True, order_by="enter_exit_time DESC", limit=1
             )[0]
             if next_event["event_type"] == "SubjectEnteredArena":
-                NeverExitedSession.insert1(
+                NeverExitedArena.insert1(
                     key, ignore_extra_fields=True, skip_duplicates=True
                 )
                 return
@@ -189,9 +171,9 @@ class TimeSlice(dj.Computed):
 
 
 @schema
-class SubjectPosition(dj.Imported):
+class InArenaSubjectPosition(dj.Imported):
     definition = """
-    -> acquisition.TimeSlice
+    -> InArenaTimeSlice
     ---
     timestamps:        longblob  # (datetime) timestamps of the position data
     position_x:        longblob  # (px) animal's x-position, in the arena's coordinate frame
@@ -201,16 +183,17 @@ class SubjectPosition(dj.Imported):
     speed=null:        longblob  # (px/s) speed
     """
 
-    key_source = TimeSlice & (qc.CameraQC * acquisition.ExperimentCamera
-                              & 'camera_description = "FrameTop"')
+    key_source = InArenaTimeSlice & (qc.CameraQC * acquisition.ExperimentCamera
+                                     & 'camera_description = "FrameTop"')
 
     def make(self, key):
         """
         The ingest logic here relies on the assumption that there is only one subject in the arena at a time
         The positiondata is associated with that one subject currently in the arena at any timepoints
-        However, we need to take into account if the subject is entered or exited during this time slice
+        For multi-animal experiments, a mapping of object_id-to-subject is needed to ingest the right position data
+        associated with a particular animal
         """
-        time_slice_start, time_slice_end = (TimeSlice & key).fetch1('time_slice_start', 'time_slice_end')
+        time_slice_start, time_slice_end = (InArenaTimeSlice & key).fetch1('time_slice_start', 'time_slice_end')
 
         positiondata = tracking.CameraTracking.get_object_position(
             experiment_name=key['experiment_name'],
@@ -243,19 +226,19 @@ class SubjectPosition(dj.Imported):
                       'speed': speed})
 
     @classmethod
-    def get_session_position(cls, session_key):
+    def get_position(cls, in_arena_key):
         """
-        Given a key to a single session, return a Pandas DataFrame for the position data
-        of the subject for the specified session
+        Given a key to a single InArena, return a Pandas DataFrame for the position data
+        of the subject for the specified InArena time period
         """
-        assert len(acquisition.Session & session_key) == 1
+        assert len(InArena & in_arena_key) == 1
 
-        start, end = (acquisition.Session * acquisition.SessionEnd & session_key).fetch1(
-            'session_start', 'session_end')
+        start, end = (InArena * InArenaEnd & in_arena_key).fetch1(
+            'in_arena_start', 'in_arena_end')
 
         return tracking._get_position(
-            cls * acquisition.TimeSlice.proj('time_slice_end'),
-            object_attr='subject', object_name=session_key['subject'],
+            cls * InArenaTimeSlice.proj('time_slice_end'),
+            object_attr='subject', object_name=in_arena_key['subject'],
             start_attr='time_slice_start', end_attr='time_slice_end',
             start=start, end=end,
             fetch_attrs=['timestamps', 'position_x', 'position_y', 'speed', 'area'],
@@ -263,13 +246,80 @@ class SubjectPosition(dj.Imported):
             scale_factor=tracking.pixel_scale)
 
 
-# -------------- Session-level analysis ---------------------
+# -------------- InArena-level Quality Control ---------------------
 
 
 @schema
-class SessionTimeDistribution(dj.Computed):
+class InArenaQC(dj.Computed):
+    definition = """  # Quality control performed on each InArena period
+    -> InArena
+    """
+
+    class Routine(dj.Part):
+        definition = """  # Quality control routine performed on each InArena period
+        -> master
+        -> qc.QCRoutine
+        ---
+        -> qc.QCCode
+        qc_comment: varchar(255)  
+        """
+
+    class BadPeriod(dj.Part):
+        definition = """
+        -> master.Routine
+        bad_period_start: datetime(6)
+        ---
+        bad_period_end: datetime(6)
+        """
+
+    def make(self, key):
+        # depending on which qc_routine
+        # fetch relevant data from upstream
+        # import the qc_function from the qc_module
+        # call the qc_function - expecting a qc_code back, and a list of bad-periods
+        # store qc results
+        pass
+
+
+@schema
+class BadInArena(dj.Computed):
+    definition = """  # InArena period labelled as BadInArena and excluded from further analysis
+    -> InArena
+    ---
+    comment='': varchar(255)  # any comments for why this is a bad InArena time period - e.g. manually flagged
+    """
+
+
+@schema
+class GoodInArena(dj.Computed):
+    definition = """  #  InArena determined to be good from quality control assessment
+    -> InArenaQC
+    ---
+    qc_routines: varchar(255)  # concatenated list of all the QC routines used for this good/bad conclusion
+    """
+
+    class BadPeriod(dj.Part):
+        definition = """
+        -> master
+        bad_period_start: datetime(6)
+        ---
+        bad_period_end: datetime(6)
+        """
+
+    def make(self, key):
+        # aggregate all SessionQC results for this session
+        # determine Good or Bad Session
+        # insert BadPeriod (if none inserted, no bad period)
+        pass
+
+
+# -------------- InArena-level analysis ---------------------
+
+
+@schema
+class InArenaTimeDistribution(dj.Computed):
     definition = """
-    -> acquisition.Session
+    -> InArena
     ---
     time_fraction_in_corridor: float  # fraction of time the animal spent in the corridor in this session
     in_corridor: longblob             # array of boolean for if the animal is in the corridor (same length as position data)
@@ -296,20 +346,20 @@ class SessionTimeDistribution(dj.Computed):
         """
 
     # Work on finished Session with TimeSlice and SubjectPosition fully populated only
-    key_source = (acquisition.Session
-                  & (acquisition.Session * acquisition.SessionEnd * acquisition.TimeSlice
-                     & 'time_slice_end = session_end').proj()
-                  & (acquisition.Session.aggr(acquisition.TimeSlice, time_slice_count='count(time_slice_start)')
-                     * acquisition.Session.aggr(tracking.SubjectPosition, tracking_count='count(time_slice_start)')
+    key_source = (InArena
+                  & (InArena * InArenaEnd * InArenaTimeSlice
+                     & 'time_slice_end = in_arena_end').proj()
+                  & (InArena.aggr(InArenaTimeSlice, time_slice_count='count(time_slice_start)')
+                     * InArena.aggr(InArenaSubjectPosition, tracking_count='count(time_slice_start)')
                      & 'time_slice_count = tracking_count'))
 
     def make(self, key):
         raw_data_dir = acquisition.Experiment.get_data_directory(key)
-        session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
-            'session_start', 'session_end')
+        in_arena_start, in_arena_end = (InArena * InArenaEnd & key).fetch1(
+            'in_arena_start', 'in_arena_end')
 
         # subject's position data in the time_slices
-        position = tracking.SubjectPosition.get_session_position(key)
+        position = InArenaSubjectPosition.get_position(key)
 
         # filter for objects of the correct size
         valid_position = (position.area > 0) & (position.area < 1000)
@@ -335,11 +385,11 @@ class SessionTimeDistribution(dj.Computed):
 
         # in food patches - loop through all in-use patches during this session
         food_patch_keys = (
-                acquisition.Session * acquisition.SessionEnd
+                InArena * InArenaEnd
                 * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
                 & key
-                & 'session_start >= food_patch_install_time'
-                & 'session_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
+                & 'in_arena_start >= food_patch_install_time'
+                & 'in_arena_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
 
         in_food_patch_times = []
         for food_patch_key in food_patch_keys:
@@ -347,8 +397,8 @@ class SessionTimeDistribution(dj.Computed):
             food_patch_description = (acquisition.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
             encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
                                                device=food_patch_description,
-                                               start=pd.Timestamp(session_start),
-                                               end=pd.Timestamp(session_end))
+                                               start=pd.Timestamp(in_arena_start),
+                                               end=pd.Timestamp(in_arena_end))
             wheel_distance_travelled = aeon_api.distancetravelled(encoderdata.angle)
 
             patch_position = (acquisition.ExperimentFoodPatch.Position & food_patch_key).fetch1(
@@ -374,9 +424,9 @@ class SessionTimeDistribution(dj.Computed):
 
 
 @schema
-class SessionSummary(dj.Computed):
+class InArenaSummary(dj.Computed):
     definition = """
-    -> acquisition.Session
+    -> InArena
     ---
     total_distance_travelled: float  # (m) total distance the animal travelled during this session
     total_pellet_count: int  # total pellet delivered (triggered) for all patches during this session
@@ -394,26 +444,26 @@ class SessionSummary(dj.Computed):
         """
 
     # Work on finished Session with TimeSlice and SubjectPosition fully populated only
-    key_source = (acquisition.Session
-                  & (acquisition.Session * acquisition.SessionEnd * acquisition.TimeSlice
-                     & 'time_slice_end = session_end').proj()
-                  & (acquisition.Session.aggr(acquisition.TimeSlice, time_slice_count='count(time_slice_start)')
-                     * acquisition.Session.aggr(tracking.SubjectPosition, tracking_count='count(time_slice_start)')
+    key_source = (InArena
+                  & (InArena * InArenaEnd * InArenaTimeSlice
+                     & 'time_slice_end = in_arena_end').proj()
+                  & (InArena.aggr(InArenaTimeSlice, time_slice_count='count(time_slice_start)')
+                     * InArena.aggr(InArenaSubjectPosition, tracking_count='count(time_slice_start)')
                      & 'time_slice_count = tracking_count'))
 
     def make(self, key):
         raw_data_dir = acquisition.Experiment.get_data_directory(key)
-        session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
-            'session_start', 'session_end')
+        in_arena_start, in_arena_end = (InArena * InArenaEnd & key).fetch1(
+            'in_arena_start', 'in_arena_end')
 
         # subject weights
         weight_start = (acquisition.SubjectWeight.WeightTime
-                        & f'weight_time = "{session_start}"').fetch1('weight')
+                        & f'weight_time = "{in_arena_start}"').fetch1('weight')
         weight_end = (acquisition.SubjectWeight.WeightTime
-                      & f'weight_time = "{session_end}"').fetch1('weight')
+                      & f'weight_time = "{in_arena_end}"').fetch1('weight')
 
         # subject's position data in this session
-        position = tracking.SubjectPosition.get_session_position(key)
+        position = InArenaSubjectPosition.get_position(key)
 
         valid_position = (position.area > 0) & (position.area < 1000)  # filter for objects of the correct size
         position = position[valid_position]
@@ -423,11 +473,11 @@ class SessionSummary(dj.Computed):
 
         # food patch data
         food_patch_keys = (
-                acquisition.Session * acquisition.SessionEnd
+                InArena * InArenaEnd
                 * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
                 & key
-                & 'session_start >= food_patch_install_time'
-                & 'session_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
+                & 'in_arena_start >= food_patch_install_time'
+                & 'in_arena_end < IFNULL(food_patch_remove_time, "2200-01-01")').fetch('KEY')
 
         food_patch_statistics = []
         for food_patch_key in food_patch_keys:
@@ -435,14 +485,14 @@ class SessionSummary(dj.Computed):
                     acquisition.FoodPatchEvent * acquisition.EventType
                     & food_patch_key
                     & 'event_type = "TriggerPellet"'
-                    & f'event_time BETWEEN "{session_start}" AND "{session_end}"').fetch(
+                    & f'event_time BETWEEN "{in_arena_start}" AND "{in_arena_end}"').fetch(
                 'event_time')
             # wheel data
             food_patch_description = (acquisition.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
             encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
                                                device=food_patch_description,
-                                               start=pd.Timestamp(session_start),
-                                               end=pd.Timestamp(session_end))
+                                               start=pd.Timestamp(in_arena_start),
+                                               end=pd.Timestamp(in_arena_end))
             wheel_distance_travelled = aeon_api.distancetravelled(encoderdata.angle).values
 
             food_patch_statistics.append({
@@ -462,9 +512,9 @@ class SessionSummary(dj.Computed):
 
 
 @schema
-class SessionRewardRate(dj.Computed):
+class InArenaRewardRate(dj.Computed):
     definition = """
-    -> acquisition.Session
+    -> InArena
     ---
     pellet_rate_timestamps: longblob  # timestamps of the pellet rate over time
     patch2_patch1_rate_diff: longblob  # rate differences between Patch 2 and Patch 1
@@ -478,19 +528,19 @@ class SessionRewardRate(dj.Computed):
         pellet_rate: longblob  # computed rate of pellet delivery over time
         """
 
-    key_source = SessionSummary()
+    key_source = InArenaSummary()
 
     def make(self, key):
-        session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
-            'session_start', 'session_end')
+        in_arena_start, in_arena_end = (InArena * InArenaEnd & key).fetch1(
+            'in_arena_start', 'in_arena_end')
 
         # food patch data
         food_patch_keys = (
-                acquisition.Session * acquisition.SessionEnd
+                InArena * InArenaEnd
                 * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
                 & key
-                & 'session_start >= food_patch_install_time'
-                & 'session_end < IFNULL(food_patch_remove_time, "2200-01-01")').proj(
+                & 'in_arena_start >= food_patch_install_time'
+                & 'in_arena_end < IFNULL(food_patch_remove_time, "2200-01-01")').proj(
             'food_patch_description').fetch(as_dict=True)
 
         pellet_rate_timestamps = None
@@ -502,18 +552,18 @@ class SessionRewardRate(dj.Computed):
                     acquisition.FoodPatchEvent * acquisition.EventType
                     & food_patch_key
                     & 'event_type = "TriggerPellet"'
-                    & f'event_time BETWEEN "{session_start}" AND "{session_end}"').fetch(
+                    & f'event_time BETWEEN "{in_arena_start}" AND "{in_arena_end}"').fetch(
                 'event_time')
 
             if not pellet_events.size:
-                pellet_events = np.array([session_start, session_end])
+                pellet_events = np.array([in_arena_start, in_arena_end])
                 no_pellets = True
 
             pellet_rate = aeon_utils.get_events_rates(
                 events=pd.DataFrame({'event_time': pellet_events}).set_index('event_time'),
                 window_len_sec=600,
-                start=pd.Timestamp(session_start),
-                end=pd.Timestamp(session_end),
+                start=pd.Timestamp(in_arena_start),
+                end=pd.Timestamp(in_arena_end),
                 frequency='5s', smooth='120s',
                 center=True)
 

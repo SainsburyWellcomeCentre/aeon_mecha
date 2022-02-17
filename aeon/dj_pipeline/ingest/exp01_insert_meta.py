@@ -144,7 +144,8 @@ if {'experiment_name': experiment_name} not in acquisition.Experiment.proj():
                                     'experiment_description': 'experiment 0.1',
                                     'arena_name': 'circle-2m',
                                     'lab': 'SWC',
-                                    'location': 'room-0'})
+                                    'location': 'room-0',
+                                    'experiment_type': 'foraging'})
     acquisition.Experiment.Subject.insert([
         {'experiment_name': experiment_name, 'subject': 'BAA-1099790'},
         {'experiment_name': experiment_name, 'subject': 'BAA-1099791'},
@@ -160,6 +161,13 @@ if {'experiment_name': experiment_name} not in acquisition.Experiment.proj():
           'repository_name': 'ceph_aeon', 'directory_type': 'quality-control',
           'directory_path': 'aeon/qc/experiment0.1'}
          ])
+
+if {'arena_name': 'circle-2m', 'nest': 1} not in lab.ArenaNest.proj():
+    nest_coordinates = [(0.3264, 0.864), (0.3264, 1.0368), (0.4992, 0.864), (0.4992, 1.0368)]
+    lab.ArenaNest.insert1({'arena_name': 'circle-2m', 'nest': 1})
+    lab.ArenaNest.Vertex.insert(
+        ({'arena_name': 'circle-2m', 'nest': 1, 'vertex': v_id, 'vertex_x': x, 'vertex_y': y}
+         for v_id, (x, y) in enumerate(nest_coordinates)), skip_duplicates=True)
 
 # Arena Setup - Experiment Devices
 this_file = Path(__file__).expanduser().absolute().resolve()
@@ -181,10 +189,3 @@ for patch_key in acquisition.ExperimentFoodPatch.fetch('KEY'):
         'food_patch_position_x': x,
         'food_patch_position_y': y,
         'food_patch_position_z': z})
-
-if {'arena_name': 'circle-2m', 'nest': 1} not in lab.ArenaNest.proj():
-    nest_coordinates = [(0.3264, 0.864), (0.3264, 1.0368), (0.4992, 0.864), (0.4992, 1.0368)]
-    lab.ArenaNest.insert1({'arena_name': 'circle-2m', 'nest': 1})
-    lab.ArenaNest.Vertex.insert(
-        ({'arena_name': 'circle-2m', 'nest': 1, 'vertex': v_id, 'vertex_x': x, 'vertex_y': y}
-         for v_id, (x, y) in enumerate(nest_coordinates)), skip_duplicates=True)

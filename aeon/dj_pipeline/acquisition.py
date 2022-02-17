@@ -710,15 +710,3 @@ class TaskProtocol(dj.Lookup):
     protocol_params: longblob
     protocol_description: varchar(255)
     """
-
-
-@schema
-class TimeSliceProtocol(dj.Computed):
-    definition = """
-    -> TimeSlice
-    ---
-    -> TaskProtocol
-    """
-
-    def make(self, key):
-        pass
