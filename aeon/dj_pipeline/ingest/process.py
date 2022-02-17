@@ -75,6 +75,7 @@ mid_priority = DataJointWorker(
 )
 
 mid_priority(qc.CameraQC)
+mid_priority(tracking.CameraTracking)
 mid_priority(tracking.SubjectPosition)
 mid_priority(analysis.SessionTimeDistribution)
 mid_priority(analysis.SessionSummary)

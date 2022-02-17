@@ -3,6 +3,7 @@ from aeon.dj_pipeline import acquisition, lab, subject
 from pathlib import Path
 
 _wheel_sampling_rate = 500
+_weight_scale_rate = 100
 
 
 def load_arena_setup(yml_filepath, experiment_name):
@@ -86,7 +87,38 @@ def load_arena_setup(yml_filepath, experiment_name):
                  'food_patch_position_x': patch['position']['x'],
                  'food_patch_position_y': patch['position']['y'],
                  'food_patch_position_z': patch['position']['z']})
+        # ---- Load weight scales ----
+        for weight_scale in arena_setup['weight-scales']:
+            weight_scale_key = {'weight_scale_serial_number': weight_scale['serial-number']}
+            if weight_scale_key not in lab.WeightScale():
+                lab.WeightScale.insert1(weight_scale_key)
+            # ---- Check if this weight scale is currently installed - if so, remove it
+            current_weight_scale_query = (acquisition.ExperimentWeightScale
+                                          - acquisition.ExperimentWeightScale.RemovalTime
+                                          & {'experiment_name': experiment_name}
+                                          & weight_scale_key)
+            if current_weight_scale_query:  # If the same weight scale is currently installed
+                if current_weight_scale_query.fetch1('weight_scale_install_time') == arena_setup['start-time']:
+                    # If it is installed at the same time as that read from this yml file
+                    # then it is the same ExperimentWeightScale instance, no need to do anything
+                    continue
 
+                # ---- Remove old weight scale
+                acquisition.ExperimentWeightScale.RemovalTime.insert1({
+                    **current_weight_scale_query.fetch1('KEY'),
+                    'weight_scale_remove_time': arena_setup['start-time']})
+
+            nest_key = (lab.ArenaNest
+                        & (acquisition.Experiment & {'experiment_name': experiment_name})
+                        & {'nest': weight_scale['nest']}).fetch1('KEY')
+
+            acquisition.ExperimentWeightScale.insert1(
+                {**weight_scale_key,
+                 'experiment_name': experiment_name,
+                 'weight_scale_install_time': arena_setup['start-time'],
+                 'weight_scale_description': weight_scale['description'],
+                 'weight_scale_sampling_rate': _weight_scale_rate,
+                 **nest_key})
 
 # ============ Manual and automatic steps to for experiment 0.1 ingest ============
 

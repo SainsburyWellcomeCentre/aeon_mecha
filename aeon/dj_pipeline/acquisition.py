@@ -362,7 +362,7 @@ class SubjectEnterExit(dj.Imported):
         -> Experiment.Subject
         enter_exit_time: datetime(6)  # datetime of subject entering/exiting the arena
         ---
-        -> EvenType.proj(enter_exit_event='event_type')
+        -> EventType
         """
 
     def make(self, key):
@@ -382,7 +382,7 @@ class SubjectEnterExit(dj.Imported):
                 {
                     **key,
                     "subject": r.id,
-                    "enter_exit_event": self._enter_exit_event_mapper[r.event],
+                    "event_code": self._enter_exit_event_mapper[r.event],
                     "enter_exit_time": r.name,
                 }
                 for _, r in session_info.iterrows()
@@ -714,7 +714,7 @@ class Session(dj.Computed):
     @property
     def key_source(self):
         return dj.U("experiment_name", "subject", "session_start") & (
-            SubjectEnterExit.Time & 'enter_exit_event = "enter"'
+            SubjectEnterExit.Time * EventType & 'event_type = "SubjectEnteredArena"'
         ).proj(session_start="enter_exit_time")
 
     def make(self, key):
@@ -738,8 +738,8 @@ class SessionEnd(dj.Computed):
     """
 
     key_source = Session - NeverExitedSession & (
-        Session.proj() * SubjectEnterExit.Time
-        & 'enter_exit_event = "exit"'
+        Session.proj() * SubjectEnterExit.Time * EventType
+        & 'event_type = "SubjectExitedArena"'
         & "enter_exit_time > session_start"
     )
 
@@ -751,7 +751,7 @@ class SessionEnd(dj.Computed):
             & f'enter_exit_time > "{session_start}"'
         ).fetch(as_dict=True, limit=1, order_by="enter_exit_time ASC")[0]
 
-        if subject_exit["enter_exit_event"] != "exit":
+        if subject_exit["event_type"] != "SubjectExitedArena":
             NeverExitedSession.insert1(key, skip_duplicates=True)
             return
 
@@ -833,7 +833,7 @@ class TimeSlice(dj.Computed):
         # -- Determine the time to end time_slicing in this chunk
         # get the enter/exit events in this chunk that are after the session_start
         next_enter_exit_events = (
-            SubjectEnterExit.Time & key & f'enter_exit_time > "{key["session_start"]}"'
+            SubjectEnterExit.Time * EventType & key & f'enter_exit_time > "{key["session_start"]}"'
         )
         if not next_enter_exit_events:
             # No enter/exit event: time_slices from this whole chunk
@@ -842,7 +842,7 @@ class TimeSlice(dj.Computed):
             next_event = next_enter_exit_events.fetch(
                 as_dict=True, order_by="enter_exit_time DESC", limit=1
             )[0]
-            if next_event["enter_exit_event"] == "enter":
+            if next_event["event_type"] == "SubjectEnteredArena":
                 NeverExitedSession.insert1(
                     key, ignore_extra_fields=True, skip_duplicates=True
                 )

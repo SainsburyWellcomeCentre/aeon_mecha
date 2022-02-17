@@ -1,6 +1,6 @@
-# SUBDOMAINS=testdev URL=datajoint.io HOST_UID=$(id -u) docker-compose -f docker-compose-remote.yaml up -d
+# HOST_UID=$(id -u) docker-compose -f docker-compose-remote.yaml up -d
 #
-# Access using ${SUBDOMAINS}.${URL}
+
 version: '2.4'
 services:
   pharus:
@@ -42,7 +42,7 @@ services:
     networks:
       - main
   reverse-proxy:
-    image: datajoint/nginx:v0.0.19
+    image: datajoint/nginx:v0.1.0
     environment:
       - ADD_pharus_TYPE=REST
       - ADD_pharus_ENDPOINT=pharus:5000
