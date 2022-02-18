@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from aeon.preprocess import api as aeon_api
 from aeon.dj_pipeline import acquisition, paths
 
-from aeon.dj_pipeline.analysis import is_position_in_nest
+from aeon.dj_pipeline.tracking import is_position_in_nest
 
 
 def get_video_frames(experiment_name, device,

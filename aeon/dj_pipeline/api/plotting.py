@@ -9,7 +9,7 @@ from aeon.dj_pipeline import lab, acquisition, analysis
 
 
 # pio.renderers.default = 'png'
-# pio.orca.config.executable = '~/.conda/envs/tn-aeon/bin/orca'
+# pio.orca.config.executable = '~/.conda/envs/aeon_env/bin/orca'
 # pio.orca.config.use_xvfb = True
 # pio.orca.config.save()
 
