@@ -283,12 +283,7 @@ class Chunk(dj.Manual):
         }
 
         device_name = "FrameTop"
-        all_chunks = [
-            aeon_api.chunkdata(rdd, device_name)
-            for rdd in raw_data_dirs.values()
-            if rdd
-        ]
-        all_chunks = pd.concat(all_chunks)
+        all_chunks = aeon_api.chunkdata(raw_data_dirs.values(), device_name)
 
         chunk_list, file_list, file_name_list = [], [], []
         for _, chunk in all_chunks.iterrows():

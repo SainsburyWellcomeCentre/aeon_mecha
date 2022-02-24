@@ -91,7 +91,6 @@ class CameraTracking(dj.Imported):
         timestamps:        longblob  # (datetime) timestamps of the position data
         position_x:        longblob  # (px) object's x-position, in the arena's coordinate frame
         position_y:        longblob  # (px) object's y-position, in the arena's coordinate frame
-        position_z=null:   longblob  # (px) object's z-position, in the arena's coordinate frame
         area=null:         longblob  # (px^2) object's size detected in the camera
         """
 
@@ -130,8 +129,6 @@ class CameraTracking(dj.Imported):
                 'timestamps': obj_position.index.to_pydatetime(),
                 'position_x': obj_position.x.values,
                 'position_y': obj_position.y.values,
-                'position_z': (obj_position.z.values if 'z' in obj_position.columns
-                               else np.full_like(obj_position.x.values, 0.0)),
                 'area': obj_position.area.values})
 
         self.insert1(key)
@@ -148,8 +145,8 @@ class CameraTracking(dj.Imported):
         return _get_position(table, object_attr='object_id', object_name=object_id,
                              start_attr='chunk_start', end_attr='chunk_end',
                              start=start, end=end,
-                             fetch_attrs=['timestamps', 'position_x', 'position_y', 'position_z', 'area'],
-                             attrs_to_scale=['position_x', 'position_y', 'position_z'],
+                             fetch_attrs=['timestamps', 'position_x', 'position_y', 'area'],
+                             attrs_to_scale=['position_x', 'position_y'],
                              scale_factor=pixel_scale if in_meter else 1)
 
 

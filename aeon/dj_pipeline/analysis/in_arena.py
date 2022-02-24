@@ -208,7 +208,7 @@ class InArenaSubjectPosition(dj.Imported):
         timestamps = positiondata.index.to_pydatetime()
         x = positiondata.position_x.values
         y = positiondata.position_y.values
-        z = positiondata.position_z.values
+        z = np.full_like(x, 0.0)
         area = positiondata.area.values
 
         # speed - TODO: confirm with aeon team if this calculation is sufficient (any smoothing needed?)
