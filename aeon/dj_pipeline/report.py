@@ -11,7 +11,7 @@ import json
 from aeon.preprocess import api as aeon_api
 from aeon.util import plotting as aeon_plotting
 
-from . import lab, acquisition, tracking, analysis
+from . import acquisition, analysis
 from . import get_schema_name
 
 
@@ -25,28 +25,28 @@ os.environ['DJ_SUPPORT_FILEPATH_MANAGEMENT'] = "TRUE"
 
 
 @schema
-class SessionSummaryPlot(dj.Computed):
+class InArenaSummaryPlot(dj.Computed):
     definition = """
-    -> analysis.SessionTimeDistribution
-    -> analysis.SessionSummary
+    -> analysis.InArenaTimeDistribution
+    -> analysis.InArenaSummary
     ---
     summary_plot_png: attach
     """
 
-    key_source = acquisition.Session & analysis.SessionTimeDistribution & analysis.SessionSummary
+    key_source = analysis.InArena & analysis.InArenaTimeDistribution & analysis.InArenaSummary
 
     color_code = {'Patch1': 'b', 'Patch2': 'r', 'arena': 'g', 'corridor': 'gray', 'nest': 'k'}
 
     def make(self, key):
         raw_data_dir = acquisition.Experiment.get_data_directory(key)
 
-        session_start, session_end = (acquisition.Session * acquisition.SessionEnd & key).fetch1(
-            'session_start', 'session_end')
+        in_arena_start, in_arena_end = (analysis.InArena * analysis.InArenaEnd & key).fetch1(
+            'in_arena_start', 'in_arena_end')
 
         # subject's position data in the time_slices
-        position = tracking.SubjectPosition.get_session_position(key)
+        position = analysis.InArenaSubjectPosition.get_position(key)
 
-        position_minutes_elapsed = (position.index - session_start).total_seconds() / 60
+        position_minutes_elapsed = (position.index - in_arena_start).total_seconds() / 60
 
         # figure
         fig = plt.figure(figsize=(16, 8))
@@ -63,46 +63,46 @@ class SessionSummaryPlot(dj.Computed):
         aeon_plotting.heatmap(position[non_nan], 50, ax=position_ax, bins=500, alpha=0.5)
 
         # event rate plots
-        session_food_patches = (
-                acquisition.Session
+        in_arena_food_patches = (
+                analysis.InArena
                 * acquisition.ExperimentFoodPatch.join(
             acquisition.ExperimentFoodPatch.RemovalTime, left=True)
                 & key
-                & 'session_start >= food_patch_install_time'
-                & 'session_start < IFNULL(food_patch_remove_time, "2200-01-01")').proj(
+                & 'in_arena_start >= food_patch_install_time'
+                & 'in_arena_start < IFNULL(food_patch_remove_time, "2200-01-01")').proj(
             'food_patch_description')
 
-        for food_patch_key in session_food_patches.fetch(as_dict=True):
+        for food_patch_key in in_arena_food_patches.fetch(as_dict=True):
             pellet_times_df = (acquisition.FoodPatchEvent * acquisition.EventType
                                & food_patch_key
                                & 'event_type = "TriggerPellet"'
-                               & f'event_time BETWEEN "{session_start}" AND "{session_end}"').proj(
+                               & f'event_time BETWEEN "{in_arena_start}" AND "{in_arena_end}"').proj(
                 'event_time').fetch(format='frame', order_by='event_time').reset_index()
             pellet_times_df.set_index('event_time', inplace=True)
             aeon_plotting.rateplot(pellet_times_df, window='600s',
                                    frequency=500, ax=rate_ax, smooth='120s',
-                                   start=session_start, end=session_end,
+                                   start=in_arena_start, end=in_arena_end,
                                    color=self.color_code[food_patch_key['food_patch_description']])
 
             # wheel data
             wheel_data = aeon_api.encoderdata(raw_data_dir.as_posix(),
                                               device=food_patch_key['food_patch_description'],
-                                              start=pd.Timestamp(session_start),
-                                              end=pd.Timestamp(session_end))
+                                              start=pd.Timestamp(in_arena_start),
+                                              end=pd.Timestamp(in_arena_end))
             wheel_distance_travelled = aeon_api.distancetravelled(wheel_data.angle).values
 
-            minutes_elapsed = (wheel_data.index - session_start).total_seconds() / 60
+            minutes_elapsed = (wheel_data.index - in_arena_start).total_seconds() / 60
             distance_ax.plot(minutes_elapsed, wheel_distance_travelled,
                              color=self.color_code[food_patch_key['food_patch_description']])
 
         # ethogram
         in_arena, in_corridor, arena_time, corridor_time = (
-                analysis.SessionTimeDistribution & key).fetch1(
+                analysis.InArenaTimeDistribution & key).fetch1(
             'in_arena', 'in_corridor', 'time_fraction_in_arena', 'time_fraction_in_corridor')
-        nest_keys, in_nests, nests_times = (analysis.SessionTimeDistribution.Nest & key).fetch(
+        nest_keys, in_nests, nests_times = (analysis.InArenaTimeDistribution.Nest & key).fetch(
             'KEY', 'in_nest', 'time_fraction_in_nest')
         patch_names, in_patches, patches_times = (
-                analysis.SessionTimeDistribution.FoodPatch
+                analysis.InArenaTimeDistribution.FoodPatch
                 * acquisition.ExperimentFoodPatch & key).fetch(
             'food_patch_description', 'in_patch', 'time_fraction_in_patch')
 
@@ -127,7 +127,7 @@ class SessionSummaryPlot(dj.Computed):
 
         # pellet
         patch_names, patches_pellet = (
-                analysis.SessionSummary.FoodPatch
+                analysis.InArenaSummary.FoodPatch
                 * acquisition.ExperimentFoodPatch & key).fetch(
             'food_patch_description', 'pellet_count')
         pellet_ax.bar(range(len(patches_pellet)), patches_pellet,
@@ -170,9 +170,9 @@ class SessionSummaryPlot(dj.Computed):
         time_dist_ax.set_ylabel('Fraction of session duration')
 
         # ---- Save fig and insert ----
-        session_dir = _make_session_path(key)
+        save_dir = _make_path(key)
         fig_dict = _save_figs((fig,), ('summary_plot_png',),
-                              save_dir=session_dir, prefix=session_dir.name)
+                              save_dir=save_dir, prefix=save_dir.name)
 
         self.insert1({**key, **fig_dict})
 
@@ -185,11 +185,11 @@ class SubjectRewardRateDifference(dj.Computed):
     definition = """
     -> acquisition.Experiment.Subject
     ---
-    session_count: int
+    in_arena_count: int
     reward_rate_difference_plotly: longblob  # dictionary storing the plotly object (from fig.to_plotly_json())
     """
 
-    key_source = acquisition.Experiment.Subject & analysis.SessionRewardRate
+    key_source = acquisition.Experiment.Subject & analysis.InArenaRewardRate
 
     def make(self, key):
         from aeon.dj_pipeline.api.plotting import plot_reward_rate_differences
@@ -198,20 +198,20 @@ class SubjectRewardRateDifference(dj.Computed):
 
         fig_json = json.loads(fig.to_json())
 
-        self.insert1({**key, 'session_count': len(analysis.SessionRewardRate & key),
+        self.insert1({**key, 'in_arena_count': len(analysis.InArenaRewardRate & key),
                       'reward_rate_difference_plotly': fig_json})
 
     @classmethod
     def delete_outdated_entries(cls):
         """
-        Each entry in this table correspond to one subject. However the plot is capturing
+        Each entry in this table correspond to one subject. However, the plot is capturing
             data for all sessions.
         Hence a dynamic update routine is needed to recompute the plot as new sessions
             become available
         """
         outdated_entries = (cls * (acquisition.Experiment.Subject.aggr(
-            analysis.SessionRewardRate, current_session_count='count(session_start)'))
-                            & 'session_count != current_session_count')
+            analysis.InArenaRewardRate, current_in_arena_count='count(in_arena_start)'))
+                            & 'in_arena_count != current_in_arena_count')
         with dj.config(safemode=False):
             (cls & outdated_entries.fetch('KEY')).delete()
 
@@ -221,21 +221,21 @@ class SubjectWheelTravelledDistance(dj.Computed):
     definition = """
     -> acquisition.Experiment.Subject
     ---
-    session_count: int
+    in_arena_count: int
     wheel_travelled_distance_plotly: longblob  # dictionary storing the plotly object (from fig.to_plotly_json())
     """
 
-    key_source = acquisition.Experiment.Subject & analysis.SessionSummary
+    key_source = acquisition.Experiment.Subject & analysis.InArenaSummary
 
     def make(self, key):
         from aeon.dj_pipeline.api.plotting import plot_wheel_travelled_distance
-        session_keys = (analysis.SessionSummary & key).fetch('KEY')
+        in_arena_keys = (analysis.InArenaSummary & key).fetch('KEY')
 
-        fig = plot_wheel_travelled_distance(session_keys)
+        fig = plot_wheel_travelled_distance(in_arena_keys)
 
         fig_json = json.loads(fig.to_json())
 
-        self.insert1({**key, 'session_count': len(session_keys),
+        self.insert1({**key, 'in_arena_count': len(in_arena_keys),
                       'wheel_travelled_distance_plotly': fig_json})
 
     @classmethod
@@ -247,8 +247,8 @@ class SubjectWheelTravelledDistance(dj.Computed):
             become available
         """
         outdated_entries = (cls * (acquisition.Experiment.Subject.aggr(
-            analysis.SessionSummary, current_session_count='count(session_start)'))
-                            & 'session_count != current_session_count')
+            analysis.InArenaSummary, current_in_arena_count='count(in_arena_start)'))
+                            & 'in_arena_count != current_in_arena_count')
         with dj.config(safemode=False):
             (cls & outdated_entries.fetch('KEY')).delete()
 
@@ -258,19 +258,19 @@ class ExperimentTimeDistribution(dj.Computed):
     definition = """
     -> acquisition.Experiment
     ---
-    session_count: int
+    in_arena_count: int
     time_distribution_plotly: longblob  # dictionary storing the plotly object (from fig.to_plotly_json())
     """
 
     def make(self, key):
         from aeon.dj_pipeline.api.plotting import plot_average_time_distribution
-        session_keys = (analysis.SessionTimeDistribution & key).fetch('KEY')
+        in_arena_keys = (analysis.InArenaTimeDistribution & key).fetch('KEY')
 
-        fig = plot_average_time_distribution(session_keys)
+        fig = plot_average_time_distribution(in_arena_keys)
 
         fig_json = json.loads(fig.to_json())
 
-        self.insert1({**key, 'session_count': len(session_keys),
+        self.insert1({**key, 'in_arena_count': len(in_arena_keys),
                       'time_distribution_plotly': fig_json})
 
     @classmethod
@@ -282,8 +282,8 @@ class ExperimentTimeDistribution(dj.Computed):
             become available
         """
         outdated_entries = (cls * (acquisition.Experiment.aggr(
-            analysis.SessionTimeDistribution, current_session_count='count(session_start)'))
-                            & 'session_count != current_session_count')
+            analysis.InArenaTimeDistribution, current_in_arena_count='count(in_arena_start)'))
+                            & 'in_arena_count != current_in_arena_count')
         with dj.config(safemode=False):
             (cls & outdated_entries.fetch('KEY')).delete()
 
@@ -298,13 +298,13 @@ def delete_outdated_plot_entries():
 # ---------- HELPER FUNCTIONS --------------
 
 
-def _make_session_path(session_key):
+def _make_path(in_arena_key):
     store_stage = pathlib.Path(dj.config['stores']['djstore']['stage'])
-    experiment_name, subject, session_start = (acquisition.Session & session_key).fetch1(
-        'experiment_name', 'subject', 'session_start')
-    session_dir = store_stage / experiment_name / subject / session_start.strftime('%y%m%d_%H%M%S_%f')
-    session_dir.mkdir(parents=True, exist_ok=True)
-    return session_dir
+    experiment_name, subject, in_arena_start = (analysis.InArena & in_arena_key).fetch1(
+        'experiment_name', 'subject', 'in_arena_start')
+    output_dir = store_stage / experiment_name / subject / in_arena_start.strftime('%y%m%d_%H%M%S_%f')
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir
 
 
 def _save_figs(figs, fig_names, save_dir, prefix, extension='.png'):

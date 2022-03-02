@@ -283,12 +283,7 @@ class Chunk(dj.Manual):
         }
 
         device_name = "FrameTop"
-        all_chunks = [
-            aeon_api.chunkdata(rdd, device_name)
-            for rdd in raw_data_dirs.values()
-            if rdd
-        ]
-        all_chunks = pd.concat(all_chunks)
+        all_chunks = aeon_api.chunkdata(raw_data_dirs.values(), device_name)
 
         chunk_list, file_list, file_name_list = [], [], []
         for _, chunk in all_chunks.iterrows():
@@ -681,87 +676,6 @@ class WeightMeasurement(dj.Imported):
                       'confidence': scale_data.stable.values.astype(float)})
 
 
-# ------------------- SESSION --------------------
-
-
-@schema
-class SessionType(dj.Lookup):
-    definition = """
-    session_type: varchar(32)
-    ---
-    type_description: varchar(1000)
-    """
-
-    contents = [
-        (
-            "foraging",
-            "Freely behaving foraging session,"
-            " defined as the time period between the animal"
-            " entering and exiting the arena",
-        )
-    ]
-
-
-@schema
-class Session(dj.Computed):
-    definition = """  # A session spans the time when the animal first enters the arena to when it exits the arena
-    -> Experiment.Subject
-    session_start: datetime(6)
-    ---
-    -> SessionType
-    """
-
-    @property
-    def key_source(self):
-        return dj.U("experiment_name", "subject", "session_start") & (
-            SubjectEnterExit.Time * EventType & 'event_type = "SubjectEnteredArena"'
-        ).proj(session_start="enter_exit_time")
-
-    def make(self, key):
-        self.insert1({**key, "session_type": "foraging"})
-
-
-@schema
-class NeverExitedSession(dj.Manual):
-    definition = """  # Bad session where the animal seemed to have never exited
-    -> Session
-    """
-
-
-@schema
-class SessionEnd(dj.Computed):
-    definition = """
-    -> Session
-    ---
-    session_end: datetime(6)
-    session_duration: float  # (hour)
-    """
-
-    key_source = Session - NeverExitedSession & (
-        Session.proj() * SubjectEnterExit.Time * EventType
-        & 'event_type = "SubjectExitedArena"'
-        & "enter_exit_time > session_start"
-    )
-
-    def make(self, key):
-        session_start = key["session_start"]
-        subject_exit = (
-            SubjectEnterExit.Time
-            & {"subject": key["subject"]}
-            & f'enter_exit_time > "{session_start}"'
-        ).fetch(as_dict=True, limit=1, order_by="enter_exit_time ASC")[0]
-
-        if subject_exit["event_type"] != "SubjectExitedArena":
-            NeverExitedSession.insert1(key, skip_duplicates=True)
-            return
-
-        session_end = subject_exit["enter_exit_time"]
-        duration = (session_end - session_start).total_seconds() / 3600
-
-        # insert
-        self.insert1({**key, "session_end": session_end, "session_duration": duration})
-
-
 # @schema
 # class MultiAnimalSession(dj.Computed):
 #     definition = """
@@ -780,93 +694,6 @@ class SessionEnd(dj.Computed):
 #         """
 
 
-# ------------------- ACQUISITION TIMESLICE --------------------
-
-
-@schema
-class TimeSlice(dj.Computed):
-    definition = """
-    # A short time-slice (e.g. 10 minutes) of the recording of a given animal in the arena
-    -> Session
-    -> Chunk
-    time_slice_start: datetime(6)  # datetime of the start of this time slice
-    ---
-    time_slice_end: datetime(6)    # datetime of the end of this time slice
-    """
-
-    @property
-    def key_source(self):
-        """
-        Chunk for all sessions:
-        + are not "NeverExitedSession"
-        + session_start during this Chunk - i.e. first chunk of the session
-        + session_end during this Chunk - i.e. last chunk of the session
-        + chunk starts after session_start and ends before session_end (or NOW() - i.e. session still on going)
-        """
-        return (
-            Session.join(SessionEnd, left=True).proj(
-                session_end="IFNULL(session_end, NOW())"
-            )
-            * Chunk
-            - NeverExitedSession
-            & SubjectEnterExit
-            & [
-                "session_start BETWEEN chunk_start AND chunk_end",
-                "session_end BETWEEN chunk_start AND chunk_end",
-                "chunk_start >= session_start AND chunk_end <= session_end",
-            ]
-        )
-
-    _time_slice_duration = datetime.timedelta(hours=0, minutes=10, seconds=0)
-
-    def make(self, key):
-        chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
-
-        # -- Determine the time to start time_slicing in this chunk
-        if chunk_start < key["session_start"] < chunk_end:
-            # For chunk containing the session_start - i.e. first chunk of this session
-            start_time = key["session_start"]
-        else:
-            # For chunks after the first chunk of this session
-            start_time = chunk_start
-
-        # -- Determine the time to end time_slicing in this chunk
-        # get the enter/exit events in this chunk that are after the session_start
-        next_enter_exit_events = (
-            SubjectEnterExit.Time * EventType & key & f'enter_exit_time > "{key["session_start"]}"'
-        )
-        if not next_enter_exit_events:
-            # No enter/exit event: time_slices from this whole chunk
-            end_time = chunk_end
-        else:
-            next_event = next_enter_exit_events.fetch(
-                as_dict=True, order_by="enter_exit_time DESC", limit=1
-            )[0]
-            if next_event["event_type"] == "SubjectEnteredArena":
-                NeverExitedSession.insert1(
-                    key, ignore_extra_fields=True, skip_duplicates=True
-                )
-                return
-            end_time = next_event["enter_exit_time"]
-
-        chunk_time_slices = []
-        time_slice_start = start_time
-        while time_slice_start < end_time:
-            time_slice_end = time_slice_start + min(
-                self._time_slice_duration, end_time - time_slice_start
-            )
-            chunk_time_slices.append(
-                {
-                    **key,
-                    "time_slice_start": time_slice_start,
-                    "time_slice_end": time_slice_end,
-                }
-            )
-            time_slice_start = time_slice_end
-
-        self.insert(chunk_time_slices)
-
-
 # ---- Task Protocol categorization ----
 
 
@@ -878,15 +705,3 @@ class TaskProtocol(dj.Lookup):
     protocol_params: longblob
     protocol_description: varchar(255)
     """
-
-
-@schema
-class TimeSliceProtocol(dj.Computed):
-    definition = """
-    -> TimeSlice
-    ---
-    -> TaskProtocol
-    """
-
-    def make(self, key):
-        pass

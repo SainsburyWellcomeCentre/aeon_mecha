@@ -9,7 +9,7 @@ from aeon.dj_pipeline import lab, acquisition, analysis
 
 
 # pio.renderers.default = 'png'
-# pio.orca.config.executable = '~/.conda/envs/tn-aeon/bin/orca'
+# pio.orca.config.executable = '~/.conda/envs/aeon_env/bin/orca'
 # pio.orca.config.use_xvfb = True
 # pio.orca.config.save()
 
@@ -25,7 +25,7 @@ def plot_reward_rate_differences(subject_keys):
     fig = plot_reward_rate_differences(subject_keys)
     ```
     """
-    subj_names, sess_starts, rate_timestamps, rate_diffs = (analysis.SessionRewardRate
+    subj_names, sess_starts, rate_timestamps, rate_diffs = (analysis.InArenaRewardRate
                                                             & subject_keys).fetch(
         'subject', 'session_start', 'pellet_rate_timestamps', 'patch2_patch1_rate_diff')
 
@@ -72,7 +72,7 @@ def plot_wheel_travelled_distance(session_keys):
     """
 
     distance_travelled_query = (
-            analysis.SessionSummary.FoodPatch
+            analysis.InArenaSummary.FoodPatch
             * acquisition.ExperimentFoodPatch.proj('food_patch_description')
             & session_keys)
 
@@ -100,7 +100,7 @@ def plot_average_time_distribution(session_keys):
 
     # Time spent in arena and corridor
     subjects, avg_in_corridor, avg_in_arena = (acquisition.Experiment.Subject & session_keys).aggr(
-        analysis.SessionTimeDistribution,
+        analysis.InArenaTimeDistribution,
         avg_in_corridor='AVG(time_fraction_in_corridor)',
         avg_in_arena='AVG(time_fraction_in_arena)').fetch(
         'subject', 'avg_in_corridor', 'avg_in_arena')
@@ -115,7 +115,7 @@ def plot_average_time_distribution(session_keys):
     subjects, patches, avg_in_patch = (
             dj.U('experiment_name', 'subject', 'food_patch_description')
             & acquisition.Experiment.Subject * acquisition.ExperimentFoodPatch & session_keys).aggr(
-        analysis.SessionTimeDistribution.FoodPatch * acquisition.ExperimentFoodPatch,
+        analysis.InArenaTimeDistribution.FoodPatch * acquisition.ExperimentFoodPatch,
         avg_in_patch='AVG(time_fraction_in_patch)').fetch(
         'subject', 'food_patch_description', 'avg_in_patch')
     subject_list.extend(subjects)
@@ -125,7 +125,7 @@ def plot_average_time_distribution(session_keys):
     # Time spent in nest
     subjects, nests, avg_in_nest = (
             acquisition.Experiment.Subject * lab.ArenaNest & session_keys).aggr(
-        analysis.SessionTimeDistribution.Nest,
+        analysis.InArenaTimeDistribution.Nest,
         avg_in_nest='AVG(time_fraction_in_nest)').fetch(
         'subject', 'nest', 'avg_in_nest')
     subject_list.extend(subjects)

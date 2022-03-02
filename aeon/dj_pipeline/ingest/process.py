@@ -61,9 +61,9 @@ high_priority(acquisition.SubjectAnnotation)
 high_priority(acquisition.SubjectWeight)
 high_priority(acquisition.WheelState)
 high_priority(acquisition.WeightMeasurement)
-high_priority(acquisition.Session)
-high_priority(acquisition.SessionEnd)
-high_priority(acquisition.TimeSlice)
+high_priority(analysis.InArena)
+high_priority(analysis.InArenaEnd)
+high_priority(analysis.InArenaTimeSlice)
 
 # configure a worker to process mid-priority tasks
 mid_priority = DataJointWorker(
@@ -76,16 +76,16 @@ mid_priority = DataJointWorker(
 
 mid_priority(qc.CameraQC)
 mid_priority(tracking.CameraTracking)
-mid_priority(tracking.SubjectPosition)
-mid_priority(analysis.SessionTimeDistribution)
-mid_priority(analysis.SessionSummary)
-mid_priority(analysis.SessionRewardRate)
+mid_priority(analysis.InArenaSubjectPosition)
+mid_priority(analysis.InArenaTimeDistribution)
+mid_priority(analysis.InArenaSummary)
+mid_priority(analysis.InArenaRewardRate)
 # report tables
 mid_priority(report.delete_outdated_plot_entries)
 mid_priority(report.SubjectRewardRateDifference)
 mid_priority(report.SubjectWheelTravelledDistance)
 mid_priority(report.ExperimentTimeDistribution)
-mid_priority(report.SessionSummaryPlot)
+mid_priority(report.InArenaSummaryPlot)
 
 # ---- some wrappers to support execution as script or CLI
 
