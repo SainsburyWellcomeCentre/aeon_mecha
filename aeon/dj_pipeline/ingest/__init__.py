@@ -1,13 +1,32 @@
 import json
 import re
+import pathlib
 from datetime import datetime
-from pathlib import Path
+import yaml
+from aeon.preprocess import api as aeon_api
+from aeon.dj_pipeline import acquisition, lab
 
 
-def load_experiment_setup(setup_json_filepath, experiment_name):
-    # TODO #47 putting imports here to avoid db connection. This function should probably not be in __init__.py. Also overlaps with `exp01_insert_meta.py`. Is that deprecated?
-    from aeon.dj_pipeline import acquisition, lab
+# metadata_yml_filepath = '/ceph/aeon/test2/experiment0.2/2022-03-04T13-52-36/Metadata.yml'
+# raw_data_dirs = ['/ceph/aeon/test2/experiment0.2/']
 
+
+def extract_epoch_metadata(experiment_name, metadata_yml_filepath):
+    metadata_yml_filepath = pathlib.Path(metadata_yml_filepath)
+    epoch_start = datetime.strptime(metadata_yml_filepath.parent.name, '%Y-%m-%dT%H-%M-%S')
+
+    with open(metadata_yml_filepath, "r") as f:
+        experiment_setup = yaml.safe_load(f)
+
+    return {'experiment_name': experiment_name,
+            'epoch_start': epoch_start,
+            'bonsai_workflow': experiment_setup['Workflow'],
+            'revision': experiment_setup['Revision'],
+            'metadata': experiment_setup,
+            'metadata_file_path': metadata_yml_filepath}
+
+
+def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     """
     work-in-progress
     Missing:
@@ -16,15 +35,27 @@ def load_experiment_setup(setup_json_filepath, experiment_name):
     + timestamps of device installation/removal
     """
 
-    setup_json_filepath = Path(setup_json_filepath)
-    file_creation_time = datetime.fromtimestamp(setup_json_filepath.stat().st_ctime)
+    metadata_yml_filepath = pathlib.Path(metadata_yml_filepath)
+    file_creation_time = datetime.fromtimestamp(metadata_yml_filepath.stat().st_ctime)
+    epoch_start = datetime.strptime(metadata_yml_filepath.parent.name, '%Y-%m-%dT%H-%M-%S')
 
-    with open(setup_json_filepath, "r") as f:
-        experiment_setup = json.load(f)
+    with open(metadata_yml_filepath, "r") as f:
+        experiment_setup = yaml.safe_load(f)
+
+    # Check if there has been any changes in the arena setup
+    # by comparing the "Revision" against the most immediate preceding epoch
+    previous_epoch = acquisition.Experiment.aggr(
+        acquisition.Epoch & f'epoch_start < "{epoch_start}"',
+        epoch_start='MAX(epoch_start)').fetch1()
+    if experiment_setup['Revision'] == (acquisition.Epoch.Config & previous_epoch).fetch1('revision'):
+        # if identical revision -> no changes
+        return
+
+    experiment_devices = experiment_setup.pop('Devices')
 
     video_controller = [
         device
-        for device in experiment_setup["Devices"]
+        for device in experiment_devices
         if device["Type"] == "VideoController"
     ]
     assert (
@@ -38,9 +69,27 @@ def load_experiment_setup(setup_json_filepath, experiment_name):
         if name.endswith("Frequency")
     }
 
+    cameras = [
+        device
+        for device in experiment_devices
+        if device["Type"] == "VideoSource"
+    ]
+
+    food_patches = [
+        device
+        for device in experiment_devices
+        if device["Type"] == "Patch"
+    ]
+
+    weight_scales = [
+        device
+        for device in experiment_devices
+        if device["Type"] == "WeightScale"
+    ]
+
     with acquisition.Experiment.connection.transaction:
         # ---- Load cameras ----
-        for device in experiment_setup["Devices"]:
+        for device in experiment_devices:
             if device["Type"] == "VideoSource":
                 camera = device
                 # ---- Check if this is a new camera, add to lab.Camera if needed

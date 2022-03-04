@@ -69,7 +69,7 @@ animals, cameras, food patches setup, etc.
 + These information are either entered by hand, or parsed and inserted from configuration 
     yaml files.
 + For experiment 0.1 these info can be inserted by running 
-the [exp01_insert_meta script](./ingest/exp01_insert_meta.py) (just need to do this once)
+the [exp01_insert_meta script](./ingest/create_experiment_01.py) (just need to do this once)
 
 Tables in DataJoint are written with a `make()` function - 
 instruction to generate and insert new records to itself, based on data from upstream tables. 
