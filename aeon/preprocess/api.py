@@ -250,9 +250,9 @@ def subjectdata(path, start=None, end=None, time=None, tolerance=None):
         time=time,
         tolerance=tolerance)
 
-def annotationreader(file):
-    """Reads session annotations from the specified file."""
-    names = ['time','id','annotation']
+def logreader(file):
+    """Reads message log data from the specified file."""
+    names = ['time','type','message']
     if file is None:
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
     data = pd.read_csv(
@@ -264,24 +264,24 @@ def annotationreader(file):
     data.set_index('time', inplace=True)
     return data
 
-def annotations(path, start=None, end=None, time=None, tolerance=None):
+def logdata(path, start=None, end=None, time=None, tolerance=None):
     '''
-    Extracts session metadata from the specified root path, sorted chronologically,
-    indicating event times of manual annotations in the Experiment 0 arena.
+    Extracts log message data from the specified root path, sorted chronologically,
+    containing alerts and manual annotations for the Experiment 0.2 arena.
 
-    :param str path: The root path where all the session data is stored.
+    :param str path: The root path where all the epoch data is stored.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
     :param datetime, optional time: An object or series specifying the timestamps to extract.
     :param datetime, optional tolerance:
     The maximum distance between original and new timestamps for inexact matches.
-    :return: A pandas data frame containing annotation metadata, sorted by time.
+    :return: A pandas data frame containing log message data, sorted by time.
     '''
     return load(
         path,
-        annotationreader,
-        device='SessionData',
-        prefix='SessionData_Annotations',
+        logreader,
+        device='ExperimentalMetadata',
+        prefix='ExperimentalMetadata_MessageLog',
         extension="*.csv",
         start=start,
         end=end,
