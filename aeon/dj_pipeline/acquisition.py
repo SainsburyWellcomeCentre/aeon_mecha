@@ -242,8 +242,8 @@ class Epoch(dj.Manual):
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
 
-        epoch_list, config_list, metadata_file_list = [], [], []
-        for _, chunk in all_chunks.iterrows():
+        epoch_list = []
+        for i, (_, chunk) in enumerate(all_chunks.iterrows()):
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
             epoch_start = datetime.datetime.strptime(epoch_dir.name, '%Y-%m-%dT%H-%M-%S')
@@ -251,37 +251,50 @@ class Epoch(dj.Manual):
             # --- insert to Epoch ---
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
 
-            if epoch_key in cls.proj():
+            if cls & epoch_key or epoch_key in epoch_list:
                 # skip over those already ingested
                 continue
 
-            epoch_list.append(epoch_key)
-
+            epoch_config, metadata_yml_filepath = None, None
             if experiment_name != 'exp0.1-r0':
                 metadata_yml_filepath = epoch_dir / 'Metadata.yml'
-                assert metadata_yml_filepath.exists()
-                epoch_config = extract_epoch_metadata(experiment_name, metadata_yml_filepath)
+                if metadata_yml_filepath.exists():
+                    epoch_config = extract_epoch_metadata(experiment_name, metadata_yml_filepath)
 
-                metadata_file_list.append(epoch_config['metadata_file_path'])
+                    metadata_yml_filepath = epoch_config['metadata_file_path']
 
-                _, directory, repo_path = _match_experiment_directory(
-                    experiment_name, epoch_config['metadata_file_path'], raw_data_dirs)
-                epoch_config = {
-                    **epoch_config,
-                    **directory,
-                    'metadata_file_path': epoch_config['metadata_file_path'].relative_to(repo_path).as_posix()}
+                    _, directory, repo_path = _match_experiment_directory(
+                        experiment_name, epoch_config['metadata_file_path'], raw_data_dirs)
+                    epoch_config = {
+                        **epoch_config,
+                        **directory,
+                        'metadata_file_path': epoch_config['metadata_file_path'].relative_to(repo_path).as_posix()}
 
-                config_list.append(epoch_config)
+            # find previous epoch end-time
+            previous_epoch_end = None
+            if i > 0:
+                previous_chunk = all_chunks.iloc[i-1]
+                previous_chunk_path = pathlib.Path(previous_chunk.path)
+                previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
+                previous_epoch_start = datetime.datetime.strptime(previous_epoch_dir.name, '%Y-%m-%dT%H-%M-%S')
+                previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=aeon_api.CHUNK_DURATION)
+                previous_epoch_end = min(previous_chunk_end, epoch_start)
 
-        # insert
-        print(f"Insert {len(epoch_list)} new Epochs")
+            with cls.connection.transaction:
+                cls.insert1(epoch_key)
+                if previous_epoch_end:
+                    EpochEnd.insert1(
+                        {"experiment_name": experiment_name,
+                         "epoch_start": previous_epoch_start,
+                         "epoch_end": previous_epoch_end,
+                         "epoch_duration": (previous_epoch_end - previous_epoch_start).total_seconds() / 3600})
+                if epoch_config:
+                    cls.Config.insert1(epoch_config)
+                    ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
 
-        with cls.connection.transaction:
-            cls.insert(epoch_list)
-            cls.Config.insert(config_list)
+            epoch_list.append(epoch_key)
 
-        for metadata_yml_filepath in metadata_file_list:
-            ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
+        print(f"Inserted {len(epoch_list)} new Epochs")
 
 
 @schema
@@ -290,6 +303,7 @@ class EpochEnd(dj.Manual):
     -> Epoch
     ---
     epoch_end: datetime(6)
+    epoch_duration: float  # (hour)
     """
 
 # ------------------- ACQUISITION CHUNK --------------------
