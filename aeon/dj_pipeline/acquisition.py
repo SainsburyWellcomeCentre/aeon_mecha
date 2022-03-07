@@ -233,11 +233,12 @@ class Epoch(dj.Manual):
         metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
         """
 
-    experiment_ref_device_mapper = {'exp0.1-r0': 'FrameTop'}
+    experiment_ref_device_mapper = {'exp0.1-r0': 'FrameTop',
+                                    'exp0.2-r0': 'CameraTop'}
 
     @classmethod
     def ingest_epochs(cls, experiment_name):
-        device_name = Epoch.experiment_ref_device_mapper[experiment_name]
+        device_name = Epoch.experiment_ref_device_mapper.get(experiment_name, 'CameraTop')
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
 
@@ -264,7 +265,7 @@ class Epoch(dj.Manual):
                 metadata_file_list.append(epoch_config['metadata_file_path'])
 
                 _, directory, repo_path = _match_experiment_directory(
-                    epoch_config['metadata_file_path'], raw_data_dirs)
+                    experiment_name, epoch_config['metadata_file_path'], raw_data_dirs)
                 epoch_config = {
                     **epoch_config,
                     **directory,
@@ -317,7 +318,7 @@ class Chunk(dj.Manual):
 
     @classmethod
     def ingest_chunks(cls, experiment_name):
-        device_name = Epoch.experiment_ref_device_mapper[experiment_name]
+        device_name = Epoch.experiment_ref_device_mapper.get(experiment_name, 'CameraTop')
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
 
@@ -350,7 +351,7 @@ class Chunk(dj.Manual):
 
             # chunk file and directory
             raw_data_dir, directory, repo_path = _match_experiment_directory(
-                chunk_rep_file, raw_data_dirs)
+                experiment_name, chunk_rep_file, raw_data_dirs)
 
             chunk_starts.append(chunk_key['chunk_start'])
             chunk_list.append({**chunk_key, **directory, "chunk_end": chunk_end, **epoch_key})
@@ -756,6 +757,7 @@ def _get_all_chunks(experiment_name, device_name):
     raw_data_dirs = {
         dir_type: data_dir
         for dir_type, data_dir in zip(["quality-control", "raw"], raw_data_dirs)
+        if data_dir
     }
 
     return aeon_api.chunkdata(raw_data_dirs.values(), device_name), raw_data_dirs
