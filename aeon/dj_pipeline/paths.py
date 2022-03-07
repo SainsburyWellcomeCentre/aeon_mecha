@@ -1,5 +1,6 @@
-import datajoint as dj
 import pathlib
+
+from . import repository_config
 
 
 def get_repository_path(repository_name):
@@ -7,10 +8,7 @@ def get_repository_path(repository_name):
     Find the directory's full-path corresponding to a given repository_name,
     as configured in dj.config['custom']['repository_config']
     """
-    if 'repository_config' not in dj.config['custom']:
-        raise ValueError('Missing repository configuration ("repository_config") in "custom"')
-
-    repo_path = dj.config['custom']['repository_config'].get(repository_name)
+    repo_path = repository_config.get(repository_name)
     if repo_path is None:
         raise ValueError(f'Repository name not configured: {repository_name}')
 

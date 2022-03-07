@@ -5,12 +5,16 @@ import hashlib
 import uuid
 
 _default_database_prefix = os.getenv("DJ_DB_PREFIX") or "aeon_"
+_default_repository_config = {"ceph_aeon": "/ceph/aeon"}
 
 # safe-guard in case `custom` is not provided
 if "custom" not in dj.config:
     dj.config["custom"] = {}
 
 db_prefix = dj.config["custom"].get("database.prefix", _default_database_prefix)
+
+repository_config = dj.config['custom'].get('repository_config',
+                                            _default_repository_config)
 
 
 def get_schema_name(name):

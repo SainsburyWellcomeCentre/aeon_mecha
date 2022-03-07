@@ -8,6 +8,7 @@ from aeon.preprocess import api as aeon_api
 
 from . import lab, subject
 from . import get_schema_name, paths
+from .ingest import extract_epoch_metadata, ingest_epoch_metadata
 
 
 schema = dj.schema(get_schema_name("acquisition"))
@@ -199,7 +200,7 @@ class ExperimentWeightScale(dj.Manual):
     ---
     -> lab.ArenaNest
     weight_scale_description: varchar(36)
-    weight_scale_sampling_rate: float  # (Hz) scale sampling rate
+    weight_scale_sampling_rate=null: float  # (Hz) scale sampling rate
     """
 
     class RemovalTime(dj.Part):
@@ -218,30 +219,92 @@ class Epoch(dj.Manual):
     definition = """  # A recording period reflecting on/off of the hardware acquisition system
     -> Experiment
     epoch_start: datetime(6)
-    ---
-    bonsai_workflow: varchar(36)
-    setup_json: longblob
-    -> Experiment.Directory
-    setup_file_path: varchar(255)  # path of the file, relative to the data repository
     """
 
-    class Version(dj.Part):
+    class Config(dj.Part):
         definition = """
         -> master
-        source: varchar(16)  # e.g. aeon_experiment or aeon_acquisition (or others)
         ---
-        version_hash: varchar(32)  # e.g. git hash of aeon_experiment used to generated this particular epoch
+        bonsai_workflow: varchar(36)
+        revision: varchar(64)   # e.g. git hash of aeon_experiment used to generated this particular epoch
+        source='': varchar(16)  # e.g. aeon_experiment or aeon_acquisition (or others)
+        metadata: longblob
+        -> Experiment.Directory
+        metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
         """
 
-    @classmethod
-    def generate_epochs(cls, experiment_name):
-        assert Experiment & {
-            "experiment_name": experiment_name
-        }, f"Experiment {experiment_name} does not exist!"
-        # search directory for epoch data folders
-        # load experiment_setup JSON file
-        # update experiment devices (ExperimentCamera, ExperimentFoodPatch)
+    experiment_ref_device_mapper = {'exp0.1-r0': 'FrameTop',
+                                    'exp0.2-r0': 'CameraTop'}
 
+    @classmethod
+    def ingest_epochs(cls, experiment_name):
+        device_name = Epoch.experiment_ref_device_mapper.get(experiment_name, 'CameraTop')
+
+        all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
+
+        epoch_list = []
+        for i, (_, chunk) in enumerate(all_chunks.iterrows()):
+            chunk_rep_file = pathlib.Path(chunk.path)
+            epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
+            epoch_start = datetime.datetime.strptime(epoch_dir.name, '%Y-%m-%dT%H-%M-%S')
+
+            # --- insert to Epoch ---
+            epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
+
+            if cls & epoch_key or epoch_key in epoch_list:
+                # skip over those already ingested
+                continue
+
+            epoch_config, metadata_yml_filepath = None, None
+            if experiment_name != 'exp0.1-r0':
+                metadata_yml_filepath = epoch_dir / 'Metadata.yml'
+                if metadata_yml_filepath.exists():
+                    epoch_config = extract_epoch_metadata(experiment_name, metadata_yml_filepath)
+
+                    metadata_yml_filepath = epoch_config['metadata_file_path']
+
+                    _, directory, repo_path = _match_experiment_directory(
+                        experiment_name, epoch_config['metadata_file_path'], raw_data_dirs)
+                    epoch_config = {
+                        **epoch_config,
+                        **directory,
+                        'metadata_file_path': epoch_config['metadata_file_path'].relative_to(repo_path).as_posix()}
+
+            # find previous epoch end-time
+            previous_epoch_end = None
+            if i > 0:
+                previous_chunk = all_chunks.iloc[i-1]
+                previous_chunk_path = pathlib.Path(previous_chunk.path)
+                previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
+                previous_epoch_start = datetime.datetime.strptime(previous_epoch_dir.name, '%Y-%m-%dT%H-%M-%S')
+                previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=aeon_api.CHUNK_DURATION)
+                previous_epoch_end = min(previous_chunk_end, epoch_start)
+
+            with cls.connection.transaction:
+                cls.insert1(epoch_key)
+                if previous_epoch_end:
+                    EpochEnd.insert1(
+                        {"experiment_name": experiment_name,
+                         "epoch_start": previous_epoch_start,
+                         "epoch_end": previous_epoch_end,
+                         "epoch_duration": (previous_epoch_end - previous_epoch_start).total_seconds() / 3600})
+                if epoch_config:
+                    cls.Config.insert1(epoch_config)
+                    ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
+
+            epoch_list.append(epoch_key)
+
+        print(f"Inserted {len(epoch_list)} new Epochs")
+
+
+@schema
+class EpochEnd(dj.Manual):
+    definition = """ 
+    -> Epoch
+    ---
+    epoch_end: datetime(6)
+    epoch_duration: float  # (hour)
+    """
 
 # ------------------- ACQUISITION CHUNK --------------------
 
@@ -254,6 +317,7 @@ class Chunk(dj.Manual):
     ---
     chunk_end: datetime(6)    # datetime of the end of a given acquisition chunk
     -> Experiment.Directory   # the data directory storing the acquired data for a given chunk
+    -> Epoch
     """
 
     class File(dj.Part):
@@ -267,55 +331,44 @@ class Chunk(dj.Manual):
         """
 
     @classmethod
-    def generate_chunks(cls, experiment_name):
-        assert Experiment & {
-            "experiment_name": experiment_name
-        }, f"Experiment {experiment_name} does not exist!"
+    def ingest_chunks(cls, experiment_name):
+        device_name = Epoch.experiment_ref_device_mapper.get(experiment_name, 'CameraTop')
 
-        raw_data_dirs = Experiment.get_data_directories(
-            {"experiment_name": experiment_name},
-            directory_types=["quality-control", "raw"],
-            as_posix=True,
-        )
-        raw_data_dirs = {
-            dir_type: data_dir
-            for dir_type, data_dir in zip(["quality-control", "raw"], raw_data_dirs)
-        }
+        all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
 
-        device_name = "FrameTop"
-        all_chunks = aeon_api.chunkdata(raw_data_dirs.values(), device_name)
-
-        chunk_list, file_list, file_name_list = [], [], []
+        chunk_starts, chunk_list, file_list, file_name_list = [], [], [], []
         for _, chunk in all_chunks.iterrows():
             chunk_rep_file = pathlib.Path(chunk.path)
+            epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
+            epoch_start = datetime.datetime.strptime(epoch_dir.name, '%Y-%m-%dT%H-%M-%S')
+
+            epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
+            if not (Epoch & epoch_key):
+                # skip over if epoch is not yet inserted
+                continue
+
             chunk_start = chunk.name
             chunk_end = chunk_start + datetime.timedelta(hours=aeon_api.CHUNK_DURATION)
 
             # --- insert to Chunk ---
             chunk_key = {"experiment_name": experiment_name, "chunk_start": chunk_start}
 
-            if chunk_key in cls.proj() or chunk_rep_file.name in file_name_list:
+            if cls.proj() & chunk_key:
+                # skip over those already ingested
                 continue
 
-            # chunk file and directory
-            for k, v in raw_data_dirs.items():
-                raw_data_dir = v
-                if pathlib.Path(raw_data_dir) in list(chunk_rep_file.parents):
-                    directory = (
-                        Experiment.Directory.proj("repository_name")
-                        & {"experiment_name": experiment_name, "directory_type": k}
-                    ).fetch1()
-                    repo_path = paths.get_repository_path(
-                        directory.pop("repository_name")
-                    )
-                    break
-            else:
-                raise FileNotFoundError(
-                    f"Unable to identify the directory"
-                    f" where this chunk is from: {chunk_rep_file}"
-                )
+            if chunk_start in chunk_starts:
+                # handle cases where two chunks with identical start_time
+                # (starts in the same hour) but from 2 consecutive epochs
+                # using epoch_start as chunk_start in this case
+                chunk_key['chunk_start'] = epoch_start
 
-            chunk_list.append({**chunk_key, **directory, "chunk_end": chunk_end})
+            # chunk file and directory
+            raw_data_dir, directory, repo_path = _match_experiment_directory(
+                experiment_name, chunk_rep_file, raw_data_dirs)
+
+            chunk_starts.append(chunk_key['chunk_start'])
+            chunk_list.append({**chunk_key, **directory, "chunk_end": chunk_end, **epoch_key})
             file_name_list.append(
                 chunk_rep_file.name
             )  # handle duplicated files in different folders
@@ -705,3 +758,41 @@ class TaskProtocol(dj.Lookup):
     protocol_params: longblob
     protocol_description: varchar(255)
     """
+
+
+# ---- HELPERS ----
+
+def _get_all_chunks(experiment_name, device_name):
+    raw_data_dirs = Experiment.get_data_directories(
+        {"experiment_name": experiment_name},
+        directory_types=["quality-control", "raw"],
+        as_posix=True,
+    )
+    raw_data_dirs = {
+        dir_type: data_dir
+        for dir_type, data_dir in zip(["quality-control", "raw"], raw_data_dirs)
+        if data_dir
+    }
+
+    return aeon_api.chunkdata(raw_data_dirs.values(), device_name), raw_data_dirs
+
+
+def _match_experiment_directory(experiment_name, path, directories):
+    for k, v in directories.items():
+        raw_data_dir = v
+        if pathlib.Path(raw_data_dir) in list(path.parents):
+            directory = (
+                    Experiment.Directory.proj("repository_name")
+                    & {"experiment_name": experiment_name, "directory_type": k}
+            ).fetch1()
+            repo_path = paths.get_repository_path(
+                directory.pop("repository_name")
+            )
+            break
+    else:
+        raise FileNotFoundError(
+            f"Unable to identify the directory"
+            f" where this chunk is from: {path}"
+        )
+
+    return raw_data_dir, directory, repo_path
