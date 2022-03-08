@@ -474,22 +474,12 @@ def pelletdata(path, device, start=None, end=None, time=None, tolerance=None):
     events = pd.concat([command.event, beambreak.event]).sort_index()
     return pd.DataFrame(events)
 
-def weightreader(file):
-    """Reads electronic scale data from the specified file."""
-    names = ['time','weight','stable']
-    if file is None:
-        return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
-    data = pd.read_csv(file, header=0, names=names)
-    data['time'] = aeon(data['time'])
-    data.set_index('time', inplace=True)
-    return data
-
-def weightdata(path, device='WeightData', start=None, end=None, time=None, tolerance=None):
+def weightdata(path, device='Nest', start=None, end=None, time=None, tolerance=None):
     '''
     Extracts weight data from the specified root path, sorted chronologically,
     for the specified electronic weighing device in the Experiment arena.
 
-    :param str path: The root path where all the session data is stored.
+    :param str path: The root path where all the epoch data is stored.
     :param str patch: The device name used to search for data files.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
@@ -499,12 +489,11 @@ def weightdata(path, device='WeightData', start=None, end=None, time=None, toler
     :return: A pandas data frame, sorted by time, containing absolute weight in grams,
     and a value indicating whether the reading is stable.
     '''
-    return load(
+    return harpdata(
         path,
-        weightreader,
         device,
-        prefix='WeightData',
-        extension="*.csv",
+        register=200,
+        names=['value','stable'],
         start=start,
         end=end,
         time=time,
