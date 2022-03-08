@@ -364,7 +364,8 @@ harpregisters = {
     ('Patch', 35) : ['bitmask'],            # trigger pellet delivery
     ('Patch', 32) : ['bitmask'],            # pellet detected by beam break
     ('VideoController', 68) : ['pwm_mask'], # camera trigger times (top and side)
-    ('FrameTop', 200) : ['x', 'y', 'angle', 'major', 'minor', 'area'],
+    ('PositionTracking', 200) : ['x', 'y', 'angle', 'major', 'minor', 'area'],
+    ('WeightScale', 200) : ['value', 'stable']
 }
 
 def harpreader(file, names=None):
