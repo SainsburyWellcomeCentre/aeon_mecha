@@ -534,7 +534,7 @@ def patchdata(path, patch, start=None, end=None, time=None, tolerance=None):
         time=time,
         tolerance=tolerance)
 
-def positiondata(path, device='FrameTop', start=None, end=None, time=None, tolerance=None):
+def positiondata(path, device='CameraTop', start=None, end=None, time=None, tolerance=None):
     '''
     Extracts all position data from the specified root path, sorted chronologically,
     for the specified camera in the Experiment 0 arena.
