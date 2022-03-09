@@ -612,25 +612,30 @@ def distancetravelled(angle, radius=4.0):
     distance = distance - distance[0]
     return distance
 
-def subjectexcursion(data):
+def subjectvisit(data):
     '''
-    Computes duration and weight metadata for a subject excursion, by subtracting the
-    enter and exit times. Allows for missing data by trying to match subject enter times
-    with subsequent exit times. If the match fails, subject exit metadata is filled with NaN.
+    Computes duration, enter and exit times for a subject visit. Allows for missing data by
+    trying to match subject enter times with subsequent exit times. If the match fails,
+    subject exit metadata is filled with NaN. Any additional metadata columns in the data
+    frame will be paired and included in the output.
 
-    :param DataFrame data: A pandas data frame containing subject state metadata.
-    :return: A pandas data frame containing duration and metadata for each subject.
+    :param DataFrame data: A pandas data frame containing subject enter and exit events.
+    :return: A pandas data frame containing duration and metadata for each visit.
     '''
     enter = data.event == 'Enter'
     exit = data[enter.shift(1, fill_value=False)].reset_index()
     enter = data[enter].reset_index()
     data = enter.join(exit, lsuffix='_enter', rsuffix='_exit')
     valid_subjects = (data.id_enter == data.id_exit) & (data.event_exit == 'Exit')
-    data.loc[~valid_subjects, 'time_exit'] = pd.NaT
-    data.loc[~valid_subjects, 'weight_exit'] = float('nan')
+    if ~valid_subjects.any():
+        data_types = data.dtypes
+        data.loc[~valid_subjects, [name for name in data.columns if '_exit' in name]] = None
+        data = data.astype(data_types)
     data['duration'] = data.time_exit - data.time_enter
     data.rename({ 'time_enter':'enter', 'id_enter':'id', 'time_exit':'exit'}, axis=1, inplace=True)
-    return data[['id', 'weight_enter', 'weight_exit', 'enter', 'exit', 'duration']]
+    data = data[['id'] + [name for name in data.columns if '_' in name] + ['enter', 'exit', 'duration']]
+    data.drop(['id_exit', 'event_enter', 'event_exit'], axis=1, inplace=True)
+    return data
 
 def exportvideo(frames, file, fps, fourcc=None):
     '''
