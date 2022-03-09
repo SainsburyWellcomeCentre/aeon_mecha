@@ -612,9 +612,9 @@ def distancetravelled(angle, radius=4.0):
     distance = distance - distance[0]
     return distance
 
-def subjectduration(data):
+def subjectexcursion(data):
     '''
-    Computes duration and weight metadata for each subject, by subtracting the
+    Computes duration and weight metadata for a subject excursion, by subtracting the
     enter and exit times. Allows for missing data by trying to match subject enter times
     with subsequent exit times. If the match fails, subject exit metadata is filled with NaN.
 
