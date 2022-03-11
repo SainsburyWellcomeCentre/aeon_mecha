@@ -5,7 +5,7 @@
 	- Ensure installation is in your home directory:
 		- On Windows: `C:\Users\<your_username>\anaconda3`
 		- On GNU/Linux: `/home/anaconda3`
-		- On MacOS: `/Users/<your_name>/anaconda3`
+		- On MacOS: `/Users/<your_username>/anaconda3`
 	- Ensure you add anaconda as a path environment variable (even if it says this option is not recommended)
 	- Ensure you do *not* register anaconda as the default version of Python.
 	- _Note_: These installation settings can always be changed posthoc.
