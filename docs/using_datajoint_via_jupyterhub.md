@@ -15,11 +15,6 @@ The examples below use the SWC HPC username `jbhagat`. When you run the commands
     jupyter-lab --no-browser --ip 192.168.234.1 --port 2222
     ```
 
-3) In a new terminal, forward the port the jupyter hub server is running on to a new port (here 2222) on the localhost: 
-    ```
-    ssh -Y jbhagat@localhost -p 9998 -L localhost:2222:192.168.234.1:2222
-    ```
-
-4) In a web browser, enter `localhost:2222` to open up the jupyter hub server via the localhost address.
+3) Copy and paste the URL (starting with ip 192.168.234.1) returned in the terminal from step 2 into your browser.
 
 See `docs/examples/dj_example_notebook.ipynb` for an example notebook that you can play with in the jupyterhub session.
