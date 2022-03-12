@@ -133,3 +133,13 @@ class Zygosity(dj.Manual):
     ---
     zygosity        : enum("Present", "Absent", "Homozygous", "Heterozygous")  # zygosity
     """
+
+
+@schema
+class FoodDeprivationWeight(dj.Manual):
+    definition = """
+    -> Subject
+    weight_time: datetime
+    ---
+    weight: float  
+    """

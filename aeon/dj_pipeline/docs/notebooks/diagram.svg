@@ -1,0 +1,310 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="929pt" height="398pt" viewBox="0.00 0.00 929.12 398.00">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 394)">
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-394 925.12,-394 925.12,4 -4,4"/>
+<!-- SubjectPosition -->
+<g id="node1" class="node">
+<title>SubjectPosition</title>
+<g id="a_node1"><a xlink:title="→ TimeSlice------------------------------timestamps           position_x           position_y           position_z=null      area=null            speed=null           ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="338.62" cy="-17.5" rx="61.75" ry="17.5"/>
+<text text-anchor="middle" x="338.62" y="-14.4" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">SubjectPosition</text>
+</a>
+</g>
+</g>
+<!-- FoodPatchEvent -->
+<g id="node2" class="node">
+<title>FoodPatchEvent</title>
+<g id="a_node2"><a xlink:title="→ Chunk→ ExperimentFoodPatchevent_number         ------------------------------event_time           → EventType">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="65.62" cy="-88.5" rx="65.75" ry="17.5"/>
+<text text-anchor="start" x="21.12" y="-86.4" font-family="arial" text-decoration="underline" font-size="12.00" fill="#00007f" fill-opacity="0.627451">FoodPatchEvent</text>
+</a>
+</g>
+</g>
+<!-- TimeSlice -->
+<g id="node3" class="node">
+<title>TimeSlice</title>
+<g id="a_node3"><a xlink:title="→ Session→ Chunktime_slice_start     ------------------------------time_slice_end       ">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="338.62" cy="-88.5" rx="13" ry="13"/>
+<text text-anchor="middle" x="338.62" y="-85.4" font-family="arial" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">TimeSlice</text>
+</a>
+</g>
+</g>
+<!-- TimeSlice&#45;&gt;SubjectPosition -->
+<g id="edge1" class="edge">
+<title>TimeSlice-&gt;SubjectPosition</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M338.62,-75.48C338.62,-64.28 338.62,-47.49 338.62,-35.03"/>
+</g>
+<!-- EventType -->
+<g id="node4" class="node">
+<title>EventType</title>
+<g id="a_node4"><a xlink:title="event_code           ------------------------------event_type           ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="transparent" points="97.62,-177 33.62,-177 33.62,-142 97.62,-142 97.62,-177"/>
+<text text-anchor="start" x="41.62" y="-158" font-family="arial" text-decoration="underline" font-size="10.00">EventType</text>
+</a>
+</g>
+</g>
+<!-- EventType&#45;&gt;FoodPatchEvent -->
+<g id="edge2" class="edge">
+<title>EventType-&gt;FoodPatchEvent</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M65.62,-141.8C65.62,-130.95 65.62,-116.87 65.62,-106.05"/>
+</g>
+<!-- Arena -->
+<g id="node5" class="node">
+<title>Arena</title>
+<g id="a_node5"><a xlink:title="arena_name           ------------------------------arena_description=&quot;&quot; → ArenaShapearena_x_dim          arena_y_dim          arena_z_dim=0        ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="transparent" points="649.12,-390 606.12,-390 606.12,-355 649.12,-355 649.12,-390"/>
+<text text-anchor="start" x="614.12" y="-371" font-family="arial" text-decoration="underline" font-size="10.00">Arena</text>
+</a>
+</g>
+</g>
+<!-- Experiment -->
+<g id="node13" class="node">
+<title>Experiment</title>
+<g id="a_node13"><a xlink:title="experiment_name      ------------------------------experiment_start_time experiment_description → Arena→ Location">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="562.12,-319 485.12,-319 485.12,-284 562.12,-284 562.12,-319"/>
+<text text-anchor="start" x="493.12" y="-299.4" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Experiment</text>
+</a>
+</g>
+</g>
+<!-- Arena&#45;&gt;Experiment -->
+<g id="edge3" class="edge">
+<title>Arena-&gt;Experiment</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M606.08,-357.2C589.42,-346.15 566.32,-330.83 548.81,-319.21"/>
+</g>
+<!-- ArenaNest -->
+<g id="node15" class="node">
+<title>ArenaNest</title>
+<g id="a_node15"><a xlink:title="→ Arenanest                 ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="768.12,-319 695.12,-319 695.12,-284 768.12,-284 768.12,-319"/>
+<text text-anchor="middle" x="731.62" y="-298.4" font-family="arial" font-size="12.00" fill="darkgreen">ArenaNest</text>
+</a>
+</g>
+</g>
+<!-- Arena&#45;&gt;ArenaNest -->
+<g id="edge4" class="edge">
+<title>Arena-&gt;ArenaNest</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M649.17,-357.2C665.83,-346.15 688.93,-330.83 706.44,-319.21"/>
+</g>
+<!-- Experiment.Subject -->
+<g id="node6" class="node">
+<title>Experiment.Subject</title>
+<g id="a_node6"><a xlink:title="→ Experiment→ Subject">
+<polygon fill="transparent" stroke="transparent" points="575.12,-240 472.12,-240 472.12,-221 575.12,-221 575.12,-240"/>
+<text text-anchor="middle" x="523.62" y="-228" font-family="arial" font-size="10.00">Experiment.Subject</text>
+</a>
+</g>
+</g>
+<!-- Session -->
+<g id="node14" class="node">
+<title>Session</title>
+<g id="a_node14"><a xlink:title="→ Experiment.Subjectsession_start        ">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="523.62" cy="-159.5" rx="13" ry="13"/>
+<text text-anchor="start" x="502.12" y="-157.4" font-family="arial" text-decoration="underline" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">Session</text>
+</a>
+</g>
+</g>
+<!-- Experiment.Subject&#45;&gt;Session -->
+<g id="edge5" class="edge">
+<title>Experiment.Subject-&gt;Session</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M523.62,-220.76C523.62,-208.58 523.62,-186.43 523.62,-172.65"/>
+</g>
+<!-- Camera -->
+<g id="node7" class="node">
+<title>Camera</title>
+<g id="a_node7"><a xlink:title="camera_serial_number ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="transparent" points="260.62,-319 208.62,-319 208.62,-284 260.62,-284 260.62,-319"/>
+<text text-anchor="start" x="216.62" y="-300" font-family="arial" text-decoration="underline" font-size="10.00">Camera</text>
+</a>
+</g>
+</g>
+<!-- ExperimentCamera -->
+<g id="node19" class="node">
+<title>ExperimentCamera</title>
+<g id="a_node19"><a xlink:title="→ Experiment→ Cameracamera_install_time  ------------------------------camera_description   camera_sampling_rate ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="294.62,-248 174.62,-248 174.62,-213 294.62,-213 294.62,-248"/>
+<text text-anchor="start" x="182.62" y="-228.4" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">ExperimentCamera</text>
+</a>
+</g>
+</g>
+<!-- Camera&#45;&gt;ExperimentCamera -->
+<g id="edge6" class="edge">
+<title>Camera-&gt;ExperimentCamera</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M234.62,-283.8C234.62,-272.95 234.62,-258.87 234.62,-248.05"/>
+</g>
+<!-- SessionTimeDistribution.FoodPatch -->
+<g id="node8" class="node">
+<title>SessionTimeDistribution.FoodPatch</title>
+<g id="a_node8"><a xlink:title="→ SessionTimeDistribution→ ExperimentFoodPatch------------------------------time_fraction_in_patch in_patch             ">
+<polygon fill="transparent" stroke="transparent" points="756.12,-27 581.12,-27 581.12,-8 756.12,-8 756.12,-27"/>
+<text text-anchor="middle" x="668.62" y="-15" font-family="arial" font-size="10.00">SessionTimeDistribution.FoodPatch</text>
+</a>
+</g>
+</g>
+<!-- SessionSummary.FoodPatch -->
+<g id="node9" class="node">
+<title>SessionSummary.FoodPatch</title>
+<g id="a_node9"><a xlink:title="→ SessionSummary→ ExperimentFoodPatch------------------------------pellet_count         wheel_distance_travelled ">
+<polygon fill="transparent" stroke="transparent" points="563.12,-27 418.12,-27 418.12,-8 563.12,-8 563.12,-27"/>
+<text text-anchor="middle" x="490.62" y="-15" font-family="arial" font-size="10.00">SessionSummary.FoodPatch</text>
+</a>
+</g>
+</g>
+<!-- SessionSummary -->
+<g id="node10" class="node">
+<title>SessionSummary</title>
+<g id="a_node10"><a xlink:title="→ Session------------------------------total_distance_travelled total_pellet_count   total_wheel_distance_travelled change_in_weight     ">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="523.62" cy="-88.5" rx="13" ry="13"/>
+<text text-anchor="middle" x="523.62" y="-85.4" font-family="arial" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">SessionSummary</text>
+</a>
+</g>
+</g>
+<!-- SessionSummary&#45;&gt;SessionSummary.FoodPatch -->
+<g id="edge7" class="edge">
+<title>SessionSummary-&gt;SessionSummary.FoodPatch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M518.32,-76.41C511.76,-62.7 500.74,-39.64 494.76,-27.16"/>
+</g>
+<!-- Chunk -->
+<g id="node11" class="node">
+<title>Chunk</title>
+<g id="a_node11"><a xlink:title="→ Experimentchunk_start          ------------------------------chunk_end            ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="269.12,-177 218.12,-177 218.12,-142 269.12,-142 269.12,-177"/>
+<text text-anchor="middle" x="243.62" y="-156.4" font-family="arial" font-size="12.00" fill="darkgreen">Chunk</text>
+</a>
+</g>
+</g>
+<!-- Chunk&#45;&gt;FoodPatchEvent -->
+<g id="edge8" class="edge">
+<title>Chunk-&gt;FoodPatchEvent</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M218.12,-148.61C187.46,-136.73 135.81,-116.7 101.22,-103.3"/>
+</g>
+<!-- Chunk&#45;&gt;TimeSlice -->
+<g id="edge9" class="edge">
+<title>Chunk-&gt;TimeSlice</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M266.62,-141.8C286.39,-127.44 313.96,-107.42 328.58,-96.79"/>
+</g>
+<!-- FoodPatchWheel -->
+<g id="node20" class="node">
+<title>FoodPatchWheel</title>
+<g id="a_node20"><a xlink:title="→ Chunk→ ExperimentFoodPatch------------------------------timestamps           angle                intensity            ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="217.62" cy="-88.5" rx="68.25" ry="17.5"/>
+<text text-anchor="middle" x="217.62" y="-85.4" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">FoodPatchWheel</text>
+</a>
+</g>
+</g>
+<!-- Chunk&#45;&gt;FoodPatchWheel -->
+<g id="edge10" class="edge">
+<title>Chunk-&gt;FoodPatchWheel</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M237.33,-141.8C233.24,-130.95 227.94,-116.87 223.86,-106.05"/>
+</g>
+<!-- SessionTimeDistribution -->
+<g id="node12" class="node">
+<title>SessionTimeDistribution</title>
+<g id="a_node12"><a xlink:title="→ Session------------------------------time_fraction_in_corridor in_corridor          time_fraction_in_arena in_arena             ">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="669.62" cy="-88.5" rx="13" ry="13"/>
+<text text-anchor="middle" x="669.62" y="-85.4" font-family="arial" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">SessionTimeDistribution</text>
+</a>
+</g>
+</g>
+<!-- SessionTimeDistribution&#45;&gt;SessionTimeDistribution.FoodPatch -->
+<g id="edge11" class="edge">
+<title>SessionTimeDistribution-&gt;SessionTimeDistribution.FoodPatch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M669.45,-75.48C669.25,-61.74 668.93,-39.56 668.75,-27.32"/>
+</g>
+<!-- SessionTimeDistribution.Nest -->
+<g id="node17" class="node">
+<title>SessionTimeDistribution.Nest</title>
+<g id="a_node17"><a xlink:title="→ SessionTimeDistribution→ ArenaNest------------------------------time_fraction_in_nest in_nest              ">
+<polygon fill="transparent" stroke="transparent" points="921.12,-27 774.12,-27 774.12,-8 921.12,-8 921.12,-27"/>
+<text text-anchor="middle" x="847.62" y="-15" font-family="arial" font-size="10.00">SessionTimeDistribution.Nest</text>
+</a>
+</g>
+</g>
+<!-- SessionTimeDistribution&#45;&gt;SessionTimeDistribution.Nest -->
+<g id="edge12" class="edge">
+<title>SessionTimeDistribution-&gt;SessionTimeDistribution.Nest</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M681.58,-82.87C711.05,-71.44 787.51,-41.8 825.51,-27.07"/>
+</g>
+<!-- Experiment&#45;&gt;Experiment.Subject -->
+<g id="edge13" class="edge">
+<title>Experiment-&gt;Experiment.Subject</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M523.62,-283.8C523.62,-270.08 523.62,-251.19 523.62,-240.27"/>
+</g>
+<!-- Experiment&#45;&gt;Chunk -->
+<g id="edge14" class="edge">
+<title>Experiment-&gt;Chunk</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M484.93,-291C452.35,-282.21 405.05,-267.54 366.62,-248 327.38,-228.04 286.67,-196.59 263.32,-177.33"/>
+</g>
+<!-- ExperimentFoodPatch -->
+<g id="node18" class="node">
+<title>ExperimentFoodPatch</title>
+<g id="a_node18"><a xlink:title="→ Experiment→ FoodPatchfood_patch_install_time ------------------------------food_patch_description wheel_sampling_rate  ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="449.12,-177 314.12,-177 314.12,-142 449.12,-142 449.12,-177"/>
+<text text-anchor="middle" x="381.62" y="-156.4" font-family="arial" font-size="12.00" fill="darkgreen">ExperimentFoodPatch</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;ExperimentFoodPatch -->
+<g id="edge15" class="edge">
+<title>Experiment-&gt;ExperimentFoodPatch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M485.04,-298.09C451.26,-293.69 404.01,-281.5 380.62,-248 366.1,-227.2 370.95,-196.3 376.08,-177.33"/>
+</g>
+<!-- Experiment&#45;&gt;ExperimentCamera -->
+<g id="edge16" class="edge">
+<title>Experiment-&gt;ExperimentCamera</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M484.95,-291.27C436.19,-279.62 351.85,-259.49 294.68,-245.84"/>
+</g>
+<!-- Session&#45;&gt;TimeSlice -->
+<g id="edge17" class="edge">
+<title>Session-&gt;TimeSlice</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M511.77,-154.08C478.44,-141.65 384.13,-106.47 350.62,-93.97"/>
+</g>
+<!-- Session&#45;&gt;SessionSummary -->
+<g id="edge18" class="edge">
+<title>Session-&gt;SessionSummary</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M523.62,-146.48C523.62,-133.97 523.62,-114.48 523.62,-101.85"/>
+</g>
+<!-- Session&#45;&gt;SessionTimeDistribution -->
+<g id="edge19" class="edge">
+<title>Session-&gt;SessionTimeDistribution</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M535.08,-153.09C562.37,-140.19 630.98,-107.76 658.22,-94.89"/>
+</g>
+<!-- ArenaNest&#45;&gt;SessionTimeDistribution.Nest -->
+<g id="edge20" class="edge">
+<title>ArenaNest-&gt;SessionTimeDistribution.Nest</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M738.53,-283.7C760.43,-230.46 827.82,-66.65 844.07,-27.14"/>
+</g>
+<!-- FoodPatch -->
+<g id="node16" class="node">
+<title>FoodPatch</title>
+<g id="a_node16"><a xlink:title="food_patch_serial_number ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="transparent" points="454.12,-248 389.12,-248 389.12,-213 454.12,-213 454.12,-248"/>
+<text text-anchor="start" x="397.12" y="-229" font-family="arial" text-decoration="underline" font-size="10.00">FoodPatch</text>
+</a>
+</g>
+</g>
+<!-- FoodPatch&#45;&gt;ExperimentFoodPatch -->
+<g id="edge21" class="edge">
+<title>FoodPatch-&gt;ExperimentFoodPatch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M411.94,-212.8C405.65,-201.95 397.49,-187.87 391.22,-177.05"/>
+</g>
+<!-- ExperimentFoodPatch&#45;&gt;FoodPatchEvent -->
+<g id="edge22" class="edge">
+<title>ExperimentFoodPatch-&gt;FoodPatchEvent</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M314.09,-143.83C265.77,-133.32 199.19,-118.82 140.62,-106 132.16,-104.15 123.16,-102.17 114.44,-100.25"/>
+</g>
+<!-- ExperimentFoodPatch&#45;&gt;SessionTimeDistribution.FoodPatch -->
+<g id="edge23" class="edge">
+<title>ExperimentFoodPatch-&gt;SessionTimeDistribution.FoodPatch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M395.42,-142C415.62,-118 451.7,-75.8 459.62,-71 486.51,-54.72 568.12,-37.2 621.04,-27.08"/>
+</g>
+<!-- ExperimentFoodPatch&#45;&gt;SessionSummary.FoodPatch -->
+<g id="edge24" class="edge">
+<title>ExperimentFoodPatch-&gt;SessionSummary.FoodPatch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M387.55,-141.81C394.67,-123.24 407.91,-92.97 425.62,-71 440.38,-52.71 462.49,-36.54 476.74,-27.14"/>
+</g>
+<!-- ExperimentFoodPatch&#45;&gt;FoodPatchWheel -->
+<g id="edge25" class="edge">
+<title>ExperimentFoodPatch-&gt;FoodPatchWheel</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M342.34,-141.97C314.67,-130.33 278,-114.9 251.59,-103.79"/>
+</g>
+</g>
+</svg>

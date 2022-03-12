@@ -1,15 +1,21 @@
+# Unmaintained by datajoint_pipeline branch. Use env.yml
 # Users
-python>=3.9.4
+python>=3.9.4, <4
+bottleneck>=2.6.8, <3
+datajoint
 graphviz
 jupyter
 jupyterlab
 matplotlib
+numba>=0.46.0, <1
+numexpr>=1.2.1, <2
 numpy
 opencv-python
-pandas>=1.3
+pandas>=1.3, <2
 scikit-learn
 scipy
 seaborn
+xarray>=0.12.3, <1
 pyyaml
 datajoint
 

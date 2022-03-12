@@ -195,3 +195,10 @@ class FoodPatch(dj.Lookup):
     definition = """  # Physical food patch devices, identified by unique serial number
     food_patch_serial_number: varchar(12)
     """
+
+
+@schema
+class WeightScale(dj.Lookup):
+    definition = """  # Physical weight scale devices, identified by unique serial number
+    weight_scale_serial_number: varchar(12)
+    """
