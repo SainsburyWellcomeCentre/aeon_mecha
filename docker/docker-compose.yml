@@ -1,0 +1,68 @@
+# Setup containers for Aeon DataJoint pipeline ingestion routines
+# Joseph Burling <joseph@datajoint.com>
+# --------------------------------------------------------------------------------------
+# Basic usage:
+#   export CR_PAT=YOUR_TOKEN
+#   echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin
+#   docker image rm ghcr.io/sainsburywellcomecentre/aeon_mecha
+#   docker-compose up --detach
+#   docker-compose down
+#   docker ps -a --no-trunc
+#
+# Container debugging:
+#   export CID=$(docker ps -aqf name=ingest_high)
+#   docker exec -it $CID bash
+#   docker exec -it $CID sudo-run python
+
+# Shared properties across services ----------------------------------------------------
+
+version: "3.9"
+
+x-aeon-docker-image: &aeon-docker-image
+  image: ghcr.io/sainsburywellcomecentre/aeon_mecha:latest
+  pull_policy: always
+
+x-aeon-ingest-common: &aeon-ingest-common
+  <<: *aeon-docker-image
+  environment:
+    DJ_USER: ${DJ_USER:-root}
+    DJ_PASS: ${DJ_PASS:-simple}
+    DJ_HOST: ${DJ_HOST:-host.docker.internal}
+    DJ_DB_PREFIX: ${DJ_DB_PREFIX}
+  volumes:
+    # map raw data directory $LOCAL_CEPH_ROOT on host to $CEPH_ROOT in image
+    - "${LOCAL_CEPH_ROOT:-~/ceph/aeon}:/ceph/aeon"
+    # map image directory $LOCAL_DJ_STORE on host to $DJ_EXT_STORE in image
+    - "${LOCAL_DJ_STORE:-~/ceph/aeon/aeon/dj_store}:/ceph/aeon/aeon/dj_store"
+  extra_hosts:
+    - host.docker.internal:host-gateway # 172.17.0.1
+  init: true
+  deploy:
+    mode: global
+    replicas: 1
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "50m"
+      max-file: "5"
+
+services:
+  ingest_high:
+    <<: *aeon-ingest-common
+    command: ["aeon_ingest", "high_priority", "--duration=-1", "--sleep=30"]
+
+  ingest_mid:
+    <<: *aeon-ingest-common
+    depends_on:
+      ingest_high:
+        condition: service_started
+    deploy:
+      mode: replicated
+      replicas: 3
+    command: ["aeon_ingest", "mid_priority", "--duration=-1", "--sleep=30"]
+
+  dev:
+    <<: *aeon-ingest-common
+    deploy:
+      mode: replicated
+      replicas: 0

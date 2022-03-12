@@ -6,7 +6,9 @@ __pycache__/
 *.egg
 
 # dotenv
-.env
+!docker/template.env
+**/*.env
+
 
 # datajoint
 dj_local_conf.json
@@ -15,6 +17,7 @@ dj_local_conf.json
 .vscode/*
 *.code-workspace
 .idea/
+**/*.ipynb_checkpoints
 
 # misc
 **/.DS_Store
