@@ -8,7 +8,7 @@ from aeon.preprocess import api as aeon_api
 
 from . import lab, subject
 from . import get_schema_name, paths
-from .ingest import extract_epoch_metadata, ingest_epoch_metadata
+from .ingest.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 
 
 schema = dj.schema(get_schema_name("acquisition"))
@@ -726,7 +726,7 @@ class WeightMeasurement(dj.Imported):
                                           start=pd.Timestamp(chunk_start),
                                           end=pd.Timestamp(chunk_end))
 
-        if not weight_data:
+        if not len(weight_data):
             #TODO: no weight data? this is unexpected
             # (pending a bugfix for https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/90)
             return

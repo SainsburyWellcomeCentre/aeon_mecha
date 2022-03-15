@@ -65,6 +65,8 @@ class CameraQC(dj.Imported):
     def make(self, key):
         qc_dir = acquisition.Experiment.get_data_directory(
             key, directory_type='quality-control', as_posix=True)
+        if qc_dir is None:
+            raise FileNotFoundError(f'quality-control directory does not exist - Experiment: {key["experiment_name"]}')
 
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1('chunk_start', 'chunk_end')
 
