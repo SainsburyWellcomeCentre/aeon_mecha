@@ -10,6 +10,7 @@ from datetime import datetime, time
 import pandas as pd
 import numpy as np
 from dotmap import DotMap
+import pdb
 
 DATA = DotMap({'pellet': 'pellet'})
 # The duration of each acquisition chunk, in whole hours.
@@ -35,17 +36,15 @@ def aeon(seconds):
 
     return datetime.datetime(1904, 1, 1) + pd.to_timedelta(seconds, 's')
 
-def get_chunk(time, start=None, end=None):
+def get_chunk(start, end=None):
     '''
     Returns the whole hour acquisition chunk from a single measurement
     timestamp, or a set of chunks from a start and end timestamp.
 
     Inputs
     ------
-    time : datetime or pandas timestamp
-        The measurement timestamp used to return a single chunk.
-    start : datetime or pandas timestamp (optional)
-        The start measurement timestamp used to return a set of chunks.
+    start : datetime or pandas timestamp
+        The measurement timestamp used to return one or a set of chunks.
     end : datetime or pandas timestamp (optional)
         The end measurement timestamp used to return a set of chunks.
 

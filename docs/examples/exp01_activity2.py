@@ -1,7 +1,13 @@
-import datetime
+from datetime import datetime, time
 import pandas as pd
-import aeon.preprocess.api as aeon
 import matplotlib.pyplot as plt
+
+from aeon.preprocess import api2
+
+# <s `chunk` functions
+
+
+# /s>
 
 root = '/ceph/aeon/test2/experiment0.1'
 data = aeon.sessiondata(root)
