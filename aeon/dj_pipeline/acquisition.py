@@ -729,7 +729,7 @@ class WeightMeasurement(dj.Imported):
         if not len(weight_data):
             #TODO: no weight data? this is unexpected
             # (pending a bugfix for https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/90)
-            return
+            raise ValueError(f'No weight measurement found for {key} - this is unexpected')
 
         timestamps = weight_data.index.to_pydatetime()
 

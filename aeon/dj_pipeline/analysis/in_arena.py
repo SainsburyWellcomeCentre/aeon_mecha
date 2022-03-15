@@ -64,6 +64,7 @@ class InArenaEnd(dj.Computed):
         in_arena_start = key["in_arena_start"]
         subject_exit = (
             acquisition.SubjectEnterExit.Time
+            * acquisition.EventType
             & {"subject": key["subject"]}
             & f'enter_exit_time > "{in_arena_start}"'
         ).fetch(as_dict=True, limit=1, order_by="enter_exit_time ASC")[0]
