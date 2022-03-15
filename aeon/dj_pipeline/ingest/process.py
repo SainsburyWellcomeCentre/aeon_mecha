@@ -57,8 +57,8 @@ high_priority = DataJointWorker(
 
 high_priority(acquisition.Epoch.ingest_epochs, experiment_name=_current_experiment)
 high_priority(acquisition.Chunk.ingest_chunks, experiment_name=_current_experiment)
+high_priority(acquisition.ExperimentLog)
 high_priority(acquisition.SubjectEnterExit)
-high_priority(acquisition.SubjectAnnotation)
 high_priority(acquisition.SubjectWeight)
 high_priority(acquisition.WheelState)
 high_priority(acquisition.WeightMeasurement)
