@@ -674,6 +674,9 @@ class WheelState(dj.Imported):
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),
         )
+        # handles rare cases of duplicated state-timestamp
+        wheel_state = wheel_state[~wheel_state.index.duplicated(keep='first')]
+
         self.insert1(key)
         self.Time.insert(
             [
@@ -718,16 +721,21 @@ class WeightMeasurement(dj.Imported):
         weight_scale_description = (ExperimentWeightScale & key).fetch1('weight_scale_description')
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-        scale_data = aeon_api.weightdata(raw_data_dir.as_posix(),
-                                         device=weight_scale_description,
-                                         start=pd.Timestamp(chunk_start),
-                                         end=pd.Timestamp(chunk_end))
+        weight_data = aeon_api.weightdata(raw_data_dir.as_posix(),
+                                          device=weight_scale_description,
+                                          start=pd.Timestamp(chunk_start),
+                                          end=pd.Timestamp(chunk_end))
 
-        timestamps = scale_data.index.to_pydatetime()
+        if not weight_data:
+            #TODO: no weight data? this is unexpected
+            # (pending a bugfix for https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/90)
+            return
+
+        timestamps = weight_data.index.to_pydatetime()
 
         self.insert1({**key, 'timestamps': timestamps,
-                      'weight': scale_data.weight.values,
-                      'confidence': scale_data.stable.values.astype(float)})
+                      'weight': weight_data.weight.values,
+                      'confidence': weight_data.stable.values.astype(float)})
 
 
 # @schema
