@@ -203,7 +203,7 @@ class ExperimentWeightScale(dj.Manual):
     ---
     -> lab.ArenaNest
     weight_scale_description: varchar(36)
-    weight_scale_sampling_rate=null: float  # (Hz) scale sampling rate
+    weight_scale_sampling_rate=null: float  # (Hz) weight scale sampling rate
     """
 
     class RemovalTime(dj.Part):
