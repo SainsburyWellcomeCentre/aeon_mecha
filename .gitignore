@@ -1,8 +1,25 @@
+# Byte-compiled / optimized / DLL files
 __pycache__/
-scratch/
-build/
-dist/
+
+# Distribution / packaging
 *.egg-info/
-.idea/
+*.egg
+
+# dotenv
+!docker/template.env
+**/*.env
+
+# datajoint
+dj_local_conf.json
+
+# IDE
 .vscode/
-*checkpoint.ipynb
+*.code-workspace
+.idea/
+**/*.ipynb_checkpoints
+
+# misc
+**/.DS_Store
+log*.txt
+scratch/
+scratch*.py

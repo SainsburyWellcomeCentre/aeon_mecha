@@ -84,4 +84,9 @@ patches:
   position: *o0
   radius: 4
   starting-torque: 0
-  workflow-path: 
+  workflow-path:
+weight-scales:
+- serial-number: SCALE1
+  description: WeightData
+  nest: 1
+

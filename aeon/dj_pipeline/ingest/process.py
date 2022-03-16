@@ -1,107 +1,164 @@
-import sys
-import os
-import time
-import logging
+"""Start an Aeon ingestion process
 
-from aeon.dj_pipeline import experiment, tracking, analysis
-from .monitor import ProcessJob
+This script defines auto-processing routines to operate the DataJoint pipeline for the
+Aeon project. Three separate "process" functions are defined to call `populate()` for
+different groups of tables, depending on their priority in the ingestion routines (high,
+mid, low).
 
-log = logging.getLogger(__name__)
+Each process function is run in a while-loop with the total run-duration configurable
+via command line argument '--duration' (if not set, runs perpetually)
 
-
-"""
-Auto-processing routines defined to operate the DataJoint pipeline for the Aeon project
-Several "process" functions defined to call the `populate()` for different grouping of tables,
-depending on their priority in the ingestion routines.
-
-Each process function is ran in a while-loop with the total run-duration 
-configurable via environment variable 'POPULATE_DURATION' (if not set, runs perpetually)
-    - the loop will not begin a new cycle after this period of time (in second)
-    - the loop will run perpetually if limit<0 or if limit==None
-    - the script will not be killed _at_ this limit, it will keep executing, 
+    - the loop will not begin a new cycle after this period of time (in seconds)
+    - the loop will run perpetually if duration<0 or if duration==None
+    - the script will not be killed _at_ this limit, it will keep executing,
         and just stop repeating after the time limit is exceeded
 
-Some populate settings (e.g. 'limit', 'max_calls') can be set to process 
-some number of jobs at a time for every iteration of the loop, instead of all jobs.
-This allows the processing to propagate through the pipeline more horizontally
+Usage as a console entrypoint:
+
+        aeon_ingest high_priority
+        aeon_ingest mid_priority -d 600 -s 60
+        aeon_ingest --help
+
 
 Usage as a script:
-    
-    python aeon/dj_pipeline/ingest/process.py high
 
-(or this can be used as python module normally)
+    python ./aeon/dj_pipeline/ingest/process.py --help
+
+
+Usage from python:
+
+    `from aeon.dj_pipeline.ingest.process import run; run(worker_name='high_priority', duration=20, sleep=5)`
 
 """
 
+import logging
+import sys
 
-# ---------------- Auto Ingestion -----------------
-default_run_duration = int(os.environ.get('POPULATE_DURATION', -1))
+import datajoint as dj
+from datajoint_utilities.dj_worker import DataJointWorker, WorkerLog, parse_args  # noqa
 
-settings = {'reserve_jobs': True,
-            'suppress_errors': True,
-            'display_progress': True}
+from aeon.dj_pipeline import acquisition, analysis, db_prefix, qc, report, tracking
+
+# ---- Some constants ----
+
+_logger = logging.getLogger(__name__)
+_current_experiment = "exp0.1-r0"
+worker_schema_name = db_prefix + "workerlog"
+
+# ---- Define worker(s) ----
+# configure a worker to process high-priority tasks
+high_priority = DataJointWorker(
+    "high_priority",
+    worker_schema_name=worker_schema_name,
+    db_prefix=db_prefix,
+    run_duration=-1,
+    sleep_duration=600,
+)
+
+high_priority(acquisition.Epoch.ingest_epochs, experiment_name=_current_experiment)
+high_priority(acquisition.Chunk.ingest_chunks, experiment_name=_current_experiment)
+high_priority(acquisition.SubjectEnterExit)
+high_priority(acquisition.SubjectAnnotation)
+high_priority(acquisition.SubjectWeight)
+high_priority(acquisition.WheelState)
+high_priority(acquisition.WeightMeasurement)
+high_priority(analysis.InArena)
+high_priority(analysis.InArenaEnd)
+high_priority(analysis.InArenaTimeSlice)
+
+# configure a worker to process mid-priority tasks
+mid_priority = DataJointWorker(
+    "mid_priority",
+    worker_schema_name=worker_schema_name,
+    db_prefix=db_prefix,
+    run_duration=-1,
+    sleep_duration=120,
+)
+
+mid_priority(qc.CameraQC)
+mid_priority(tracking.CameraTracking)
+mid_priority(analysis.InArenaSubjectPosition)
+mid_priority(analysis.InArenaTimeDistribution)
+mid_priority(analysis.InArenaSummary)
+mid_priority(analysis.InArenaRewardRate)
+# report tables
+mid_priority(report.delete_outdated_plot_entries)
+mid_priority(report.SubjectRewardRateDifference)
+mid_priority(report.SubjectWheelTravelledDistance)
+mid_priority(report.ExperimentTimeDistribution)
+mid_priority(report.InArenaSummaryPlot)
+
+# ---- some wrappers to support execution as script or CLI
+
+configured_workers = {"high_priority": high_priority, "mid_priority": mid_priority}
 
 
-def process_high_priority(run_duration=default_run_duration, sleep_duration=600):
-    tables_to_process = (experiment.SubjectEnterExit,
-                         experiment.SubjectAnnotation,
-                         experiment.SubjectWeight,
-                         experiment.FoodPatchEvent,
-                         experiment.WheelState,
-                         experiment.Session,
-                         experiment.SessionEnd,
-                         experiment.SessionEpoch)
-    start_time = time.time()
-    while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
+def setup_logging(loglevel):
+    """
+    Setup basic logging
 
-        ProcessJob.log_process_job(experiment.TimeBin)
-        experiment.TimeBin.generate_timebins(experiment_name='exp0.1-r0')
+    :param loglevel: minimum loglevel for emitting messages
+    :type loglevel: int
+    """
 
-        for table_to_process in tables_to_process:
-            ProcessJob.log_process_job(table_to_process)
-            table_to_process.populate(**settings)
-        time.sleep(sleep_duration)
+    if loglevel is None:
+        loglevel = logging.getLevelName(dj.config.get("loglevel", "INFO"))
 
-
-def process_middle_priority(run_duration=default_run_duration, max_calls=20, sleep_duration=5):
-    tables_to_process = (tracking.SubjectPosition,
-                         analysis.SessionTimeDistribution,
-                         analysis.SessionSummary)
-    settings['max_calls'] = max_calls
-    start_time = time.time()
-    while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
-        for table_to_process in tables_to_process:
-            ProcessJob.log_process_job(table_to_process)
-            table_to_process.populate(**settings)
-        time.sleep(sleep_duration)
+    logging.basicConfig(
+        level=loglevel,
+        stream=sys.stdout,
+        format="%(asctime)s %(process)d %(processName)s "
+        "%(levelname)s %(name)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
 
-def process_low_priority(run_duration=default_run_duration, max_calls=5, sleep_duration=5):
-    tables_to_process = (experiment.FoodPatchWheel,
-                         tracking.SubjectDistance)
-    settings['max_calls'] = max_calls
-    start_time = time.time()
-    while (time.time() - start_time < run_duration) or (run_duration is None) or (run_duration < 0):
-        for table_to_process in tables_to_process:
-            ProcessJob.log_process_job(table_to_process)
-            table_to_process.populate(**settings)
-        time.sleep(sleep_duration)
+def run(**kwargs):
+    """
+    Run ingestion routine depending on the configured worker
 
+    :param worker_name: Select the worker
+    :type worker_name: str
+    :param duration: Run duration of the process
+    :type duration: int, optional
+    :param sleep: Sleep time between subsequent runs
+    :type sleep: int, optional
+    :param loglevel: Set the logging output level
+    :type loglevel: str, optional
+    """
 
-actions = {'high': process_high_priority,
-           'middle': process_middle_priority,
-           'low': process_low_priority}
+    setup_logging(kwargs.get("loglevel"))
+    _logger.debug("Starting ingestion process.")
+    _logger.info(f"worker_name={kwargs['worker_name']}")
 
-
-if __name__ == '__main__':
-
-    if len(sys.argv) < 1 or sys.argv[1] not in ('high', 'middle', 'low'):
-        print(f'Usage error! Run ingestion with:\n\t"process.py <mode>"'
-              f'\n\t\t where mode is one of: "high", "middle", "low"')
-        sys.exit(0)
+    worker = configured_workers[kwargs["worker_name"]]
+    worker._run_duration = kwargs["duration"]
+    worker._sleep_duration = kwargs["sleep"]
 
     try:
-        action = sys.argv[1]
-        actions[action]()
+        worker.run()
     except Exception:
-        log.exception("action '{}' encountered an exception:".format(action))
+        _logger.exception(
+            "action '{}' encountered an exception:".format(kwargs["worker_name"])
+        )
+
+    _logger.info("Ingestion process ended.")
+
+
+def cli():
+    """
+    Calls :func:`run` passing the CLI arguments extracted from `sys.argv`
+
+    This function can be used as entry point to create console scripts with setuptools.
+    """
+    args = parse_args(sys.argv[1:])
+    run(
+        worker_name=args.worker_name,
+        duration=args.duration,
+        sleep=args.sleep,
+        loglevel=args.loglevel,
+    )
+
+
+if __name__ == "__main__":
+    cli()

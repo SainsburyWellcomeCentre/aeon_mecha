@@ -1,67 +1,103 @@
+# after Poetry implements PEP 660 then uncomment and remove setuptools:
+# [build-system]
+# requires = ["poetry-core>1.0.7"]
+# build-backend = "poetry.core.masonry.api"
+[build-system]
+requires = ["setuptools", "poetry-core>=1.0.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "aeon"
 version = "0.0.0"
-description = "Code for managing acquired data. Includes preprocessing, querying, and analysis modules."
+description = "Code for managing acquired data. Includes preprocessing, querying, and data qc modules."
 authors = ["Jai Bhagat jkbhagatio@gmail.com", "Goncalo Lopes <goncaloclopes@gmail.com>"]
 license = ""
 readme = "readme.md"
-python = "^3.9.0"
+python = "3.9.*"
 homepage = "https://github.com/sainsburywellcomecentre/aeon_mecha"
 repository = "https://github.com/sainsburywellcomecentre/aeon_mecha"
 documentation = "https://github.com/sainsburywellcomecentre/aeon_mecha"
 
 [tool.poetry]
-name = "aeon"
+name = "aeon_mecha"
 version = "0.0.0"
-description = "Code for managing acquired data. Includes preprocessing, querying, and analysis modules."
-authors = ["Jai Bhagat <jkbhagatio@gmail.com>", "Goncalo Lopes goncaloclopes@gmail.com>"]
+description = "Code for managing acquired data. Includes preprocessing, querying, and data qc modules."
+authors = ["Jai Bhagat <jkbhagatio@gmail.com>", "Goncalo Lopes <goncaloclopes@gmail.com>"]
+keywords = []
+classifiers = [  #! Update me
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+]
 
 [tool.poetry.dependencies]
-python = "^3.9.0"
+python = "=3.9.*"
 blas = "^1.1"
 bottleneck = "^1.2.1"
-datajoint = "*"
+datajoint = "^0.13"
+datajoint-utilities = { git = "https://github.com/vathes/datajoint-utilities.git"}
 dotmap = "*"
 fastparquet = "*"
 graphviz = "*"
+ipykernel = "*"
+isort = "*"
 jupyter = "*"
 jupyterlab = "*"
 matplotlib = "*"
-numba = "^0.46.0"
-numexpr = "^2.6.8"
-numpy = "^1.21.0"
+numba = "^0.46"
+numexpr = "^2.6"
+numpy = "^1.21"
 opencv-python = "*"
-pandas = "^1.3.0"
-pip = "*"
+pandas = "^1.3"
 plotly = "*"
 pyarrow = "*"
+pydotplus = "*"
 pymysql = "*"
+python-graphviz = "*"
+pyyaml = "*"
 scikit-learn = "*"
 scipy = "*"
 seaborn = "*"
+setuptools_scm = "*"
 xarray = "^0.12.3"
 
 [tool.poetry.dev-dependencies]
 bandit = "*"
 black = "*"
 flake8 = "*"
-gh = "*"
-pyan3 = "*"
+pre-commit = "*"
+pyan3 = { git = "https://github.com/Technologicat/pyan.git"}
 pytest = "*"
-tox = "*"
 pytest-cov = "*"
+setuptools = "*"
+tox = "*"
+
+
+[tool.poetry.scripts]
+aeon_ingest = "aeon.dj_pipeline.ingest.process:cli"
 
 [tool.black]
-line-length = 79
-extend-exclude = '''
+line-length = 88
+color = false
+exclude = '''
 /(
-    | .git
-    | .github
-    | .idea
-    | .vscode
+    \.git
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | build
+    | dist
+    | env
+    | venv
 )/
 '''
 
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+[tool.isort]
+# make it compatible with black
+profile = "black"
+color_output = false

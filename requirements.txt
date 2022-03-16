@@ -1,14 +1,17 @@
 python>=3.9, <3.10
-bandit                                            # (dev)
-black                                             # (dev)
+bandit                                                    # (dev)
+black                                                     # (dev)
 blas>=1.1, <2
 bottleneck>=1.2.1, <2
 dotmap
-datajoint
+datajoint>=0.13, <1
+git+https://github.com/vathes/datajoint-utilities.git
 fastparquet
-flake8                                            # (dev)
-gh                                                # (dev)
+flake8                                                    # (dev)
+gh                                                        # (dev)
 graphviz
+ipykernel
+isort
 jupyter
 jupyterlab
 matplotlib
@@ -19,16 +22,21 @@ opencv-python
 pandas>=1.3, <2
 pip
 plotly
-git+https://github.com/Technologicat/pyan.git     # pyan3 (dev)
+poetry-core
+pre-commit                                                # (dev)
+git+https://github.com/Technologicat/pyan.git             # (dev)
 pyarrow
 pydotplus
 pymysql
-pytest                                            # (dev)
-pytest-cov                                        # (dev)
+pytest                                                    # (dev)
+pytest-cov                                                # (dev)
+python-graphviz
+pyyaml
 scikit-learn
 scipy
 seaborn
-tox                                               # (dev)
+setuptools_scm
+tox                                                       # (dev)
 xarray>=0.12.3, <1
   
 # note: dev packages can be separated out in a `env_devs.yml` file in future

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 In the examples below, replace `<your_username>` with your SWC HPC username.
 
 ## Connecting to jupyterhub server:

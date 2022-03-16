@@ -1,0 +1,34 @@
+# docker-compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml up -d
+# docker-compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml down
+# docker compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml config
+
+x-aeon-docker-dev-image: &aeon-docker-dev-image
+  image: ${DEV_CONTAINER_IMAGE:-ghcr.io/SainsburyWellcomeCentre/aeon_mecha:latest}
+
+services:
+  dev:
+    <<: *aeon-docker-dev-image
+    deploy:
+      mode: replicated
+      replicas: 1
+    env_file:
+      - dev.env
+    volumes:
+      - ../.:/aeon_mecha
+      - vscode-server:/home/aeon_db/.vscode-server/extensions
+
+  ingest_high:
+    <<: *aeon-docker-dev-image
+    deploy:
+      mode: replicated
+      replicas: 0
+
+  ingest_mid:
+    <<: *aeon-docker-dev-image
+    deploy:
+      mode: replicated
+      replicas: 0
+
+volumes:
+  vscode-server:
+    name: dev-vscode-server
