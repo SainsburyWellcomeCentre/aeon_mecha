@@ -1,32 +1,73 @@
-import os
+'''
+Low-level api that interfaces with raw data files.
+'''
+
+from pathlib import Path
 import glob
 import math
 import bisect
-import datetime
+from datetime import datetime, time
 import pandas as pd
 import numpy as np
+from dotmap import DotMap
+import pdb
 
-"""The duration of each acquisition chunk, in whole hours."""
+DATA = DotMap({'pellet': 'pellet'})
+# The duration of each acquisition chunk, in whole hours.
 CHUNK_DURATION = 1
-_SECONDS_PER_TICK = 32e-6
+# The default sampling rate of the Harp behavior board, in seconds.
+HARP_FS = 32e-6
 
 def aeon(seconds):
-    """Converts a Harp timestamp, in seconds, to a datetime object."""
+    '''
+    Converts a Harp timestamp (which uses the 1904 date system), in seconds,
+    to a datetime object.
+
+    Inputs
+    ------
+    seconds : uint
+        The number of seconds since the start of the 1904 date system.
+
+    Outputs
+    -------
+    datetime
+        The Harp timestamp as datetime object.
+    '''
+
     return datetime.datetime(1904, 1, 1) + pd.to_timedelta(seconds, 's')
 
-def chunk(time):
+def get_chunk(start, end=None):
     '''
-    Returns the whole hour acquisition chunk for a measurement timestamp.
-    
-    :param datetime or Series time: An object or series specifying the measurement timestamps.
-    :return: A datetime object or series specifying the acquisition chunk for the measurement timestamp.
+    Returns the whole hour acquisition chunk from a single measurement
+    timestamp, or a set of chunks from a start and end timestamp.
+
+    Inputs
+    ------
+    start : datetime or pandas timestamp
+        The measurement timestamp used to return one or a set of chunks.
+    end : datetime or pandas timestamp (optional)
+        The end measurement timestamp used to return a set of chunks.
+
+    Outputs
+    -------
+
     '''
     if isinstance(time, pd.Series):
         hour = CHUNK_DURATION * (time.dt.hour // CHUNK_DURATION)
         return pd.to_datetime(time.dt.date) + pd.to_timedelta(hour, 'h')
     else:
         hour = CHUNK_DURATION * (time.hour // CHUNK_DURATION)
-        return pd.to_datetime(datetime.datetime.combine(time.date(), datetime.time(hour=hour)))
+        return pd.to_datetime(
+            datetime.datetime.combine(time.date(), datetime.time(hour=hour)))
+
+def chunk_key(file):
+    """Returns the acquisition chunk key for the specified file name."""
+    filename = os.path.split(file)[-1]
+    filename = os.path.splitext(filename)[0]
+    chunk_str = filename.split("_")[-1]
+    date_str, time_str = chunk_str.split("T")
+    return datetime.datetime.fromisoformat(
+        date_str + "T" + time_str.replace("-", ":"))
 
 def chunk_range(start, end):
     '''
@@ -36,15 +77,12 @@ def chunk_range(start, end):
     :param datetime end: The right bound of the time range.
     :return: A DatetimeIndex representing the acquisition chunk range.
     '''
-    return pd.date_range(chunk(start), chunk(end), freq=pd.DateOffset(hours=CHUNK_DURATION))
+    return pd.date_range(chunk(start), chunk(end),
+                         freq=pd.DateOffset(hours=CHUNK_DURATION))
 
-def chunk_key(file):
-    """Returns the acquisition chunk key for the specified file name."""
-    filename = os.path.split(file)[-1]
-    filename = os.path.splitext(filename)[0]
-    chunk_str = filename.split("_")[-1]
-    date_str, time_str = chunk_str.split("T")
-    return datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":"))
+
+
+
 
 def chunk_filter(files, timefilter):
     '''
@@ -59,7 +97,7 @@ def chunk_filter(files, timefilter):
     '''
     try:
         chunks = [chunk for chunk in iter(timefilter)]
-        timefilter = lambda x:x in chunks
+        timefilter = lambda x: x in chunks
     except TypeError:
         if not callable(timefilter):
             raise TypeError("timefilter must be iterable or callable")
@@ -71,6 +109,7 @@ def chunk_filter(files, timefilter):
             continue
         matches.append(file)
     return matches
+
 
 def chunk_glob(path, device, prefix=None, extension='*.csv'):
     '''
@@ -85,6 +124,7 @@ def chunk_glob(path, device, prefix=None, extension='*.csv'):
     pathname = path + "/**/" + device + "/" + prefix + extension
     files = glob.glob(pathname)
     return files
+
 
 def load(path, reader, device, prefix=None, extension="*.csv",
          start=None, end=None, time=None, tolerance=None):
@@ -113,7 +153,8 @@ def load(path, reader, device, prefix=None, extension="*.csv",
     else:
         files = []
         fileset = set()
-        datasets = map(lambda dpath:chunk_glob(dpath, device, prefix, extension), path)
+        datasets = map(
+            lambda dpath: chunk_glob(dpath, device, prefix, extension), path)
         for dataset in datasets:
             for fname in dataset:
                 fkey = os.path.split(fname)[1]
@@ -131,7 +172,7 @@ def load(path, reader, device, prefix=None, extension="*.csv",
 
         dataframes = []
         filetimes = [chunk_key(file) for file in files]
-        for key,values in time.groupby(by=chunk):
+        for key, values in time.groupby(by=chunk):
             i = bisect.bisect_left(filetimes, key)
             if i < len(filetimes):
                 frame = reader(files[i])
@@ -144,7 +185,7 @@ def load(path, reader, device, prefix=None, extension="*.csv",
             if missing > 0 and i > 0:
                 # expand reindex to allow adjacent chunks
                 # to fill missing values
-                previous = reader(files[i-1])
+                previous = reader(files[i - 1])
                 data = pd.concat([previous, frame])
                 data = data.reindex(values, method='pad', tolerance=tolerance)
             else:
@@ -153,7 +194,7 @@ def load(path, reader, device, prefix=None, extension="*.csv",
 
         if len(dataframes) == 0:
             return reader(None)
-            
+
         return pd.concat(dataframes)
 
     if start is not None or end is not None:
@@ -172,13 +213,18 @@ def load(path, reader, device, prefix=None, extension="*.csv",
         except KeyError:
             import warnings
             if not data.index.has_duplicates:
-                warnings.warn('data index for {0} contains out-of-order timestamps!'.format(device))
+                warnings.warn(
+                    'data index for {0} contains out-of-order timestamps!'.format(
+                        device))
                 data = data.sort_index()
             else:
-                warnings.warn('data index for {0} contains duplicate keys!'.format(device))
+                warnings.warn(
+                    'data index for {0} contains duplicate keys!'.format(
+                        device))
                 data = data[~data.index.duplicated(keep='first')]
             return data.loc[start:end]
     return data
+
 
 def chunkreader(file):
     """Reads acquisition chunk information for the specified file."""
@@ -186,11 +232,13 @@ def chunkreader(file):
     if file is None:
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
     chunk = chunk_key(file)
-    data = pd.DataFrame({ names[0]: [chunk], names[1]: [file] })
+    data = pd.DataFrame({names[0]: [chunk], names[1]: [file]})
     data.set_index('time', inplace=True)
     return data
 
-def chunkdata(path, device, extension='*.csv', start=None, end=None, time=None, tolerance=None):
+
+def chunkdata(path, device, extension='*.csv', start=None, end=None, time=None,
+              tolerance=None):
     '''
     Extracts all acquisition chunk information from the specified root path, sorted chronologically,
     indicating recorded acquisition chunks for the specified device in the arena.
@@ -215,15 +263,17 @@ def chunkdata(path, device, extension='*.csv', start=None, end=None, time=None, 
         time=time,
         tolerance=tolerance)
 
+
 def sessionreader(file):
     """Reads session metadata from the specified file."""
-    names = ['time','id','weight','event']
+    names = ['time', 'id', 'weight', 'event']
     if file is None:
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
     data = pd.read_csv(file, header=0, names=names)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
     return data
+
 
 def sessiondata(path, start=None, end=None, time=None, tolerance=None):
     '''
@@ -249,9 +299,10 @@ def sessiondata(path, start=None, end=None, time=None, tolerance=None):
         time=time,
         tolerance=tolerance)
 
+
 def annotationreader(file):
     """Reads session annotations from the specified file."""
-    names = ['time','id','annotation']
+    names = ['time', 'id', 'annotation']
     if file is None:
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
     data = pd.read_csv(
@@ -262,6 +313,7 @@ def annotationreader(file):
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
     return data
+
 
 def annotations(path, start=None, end=None, time=None, tolerance=None):
     '''
@@ -287,11 +339,13 @@ def annotations(path, start=None, end=None, time=None, tolerance=None):
         time=time,
         tolerance=tolerance)
 
+
 def videoreader(file):
     """Reads video metadata from the specified file."""
-    names = ['time','hw_counter','hw_timestamp']
+    names = ['time', 'hw_counter', 'hw_timestamp']
     if file is None:
-        return pd.DataFrame(columns=['frame']+names[1:], index=pd.DatetimeIndex([]))
+        return pd.DataFrame(columns=['frame'] + names[1:],
+                            index=pd.DatetimeIndex([]))
     data = pd.read_csv(file, header=0, names=names)
     data.insert(loc=1, column='frame', value=data.index)
     data['time'] = aeon(data['time'])
@@ -299,6 +353,7 @@ def videoreader(file):
     data['epoch'] = file.rsplit(os.sep, maxsplit=3)[1]
     data.set_index('time', inplace=True)
     return data
+
 
 def videodata(path, device, start=None, end=None, time=None, tolerance=None):
     '''
@@ -324,6 +379,7 @@ def videodata(path, device, start=None, end=None, time=None, tolerance=None):
         time=time,
         tolerance=tolerance)
 
+
 def videoclip(path, device, start=None, end=None):
     '''
     Extracts information about a continuous segment of video, possibly stored across
@@ -338,38 +394,42 @@ def videoclip(path, device, start=None, end=None):
     '''
     framedata = videodata(path, device, start=start, end=end)
     if len(framedata) == 0:
-        return pd.DataFrame(columns=['start','duration'], index=pd.DatetimeIndex([]))
+        return pd.DataFrame(columns=['start', 'duration'],
+                            index=pd.DatetimeIndex([]))
     videoclips = framedata.groupby('path')
     startframe = videoclips.frame.min().rename('start')
     duration = (videoclips.frame.max() - startframe).rename('duration')
     return pd.concat([startframe, duration], axis=1)
 
+
 """Maps Harp payload types to numpy data type objects."""
 payloadtypes = {
-    1 : np.dtype(np.uint8),
-    2 : np.dtype(np.uint16),
-    4 : np.dtype(np.uint32),
-    8 : np.dtype(np.uint64),
-    129 : np.dtype(np.int8),
-    130 : np.dtype(np.int16),
-    132 : np.dtype(np.int32),
-    136 : np.dtype(np.int64),
-    68 : np.dtype(np.float32)
+    1: np.dtype(np.uint8),
+    2: np.dtype(np.uint16),
+    4: np.dtype(np.uint32),
+    8: np.dtype(np.uint64),
+    129: np.dtype(np.int8),
+    130: np.dtype(np.int16),
+    132: np.dtype(np.int32),
+    136: np.dtype(np.int64),
+    68: np.dtype(np.float32)
 }
 
 """Map of Harp device registers used in the Experiment 1 arena."""
 harpregisters = {
-    ('Patch', 90) : ['angle, intensity'],   # wheel encoder
-    ('Patch', 35) : ['bitmask'],            # trigger pellet delivery
-    ('Patch', 32) : ['bitmask'],            # pellet detected by beam break
-    ('VideoController', 68) : ['pwm_mask'], # camera trigger times (top and side)
-    ('FrameTop', 200) : ['x', 'y', 'angle', 'major', 'minor', 'area'],
+    ('Patch', 90): ['angle, intensity'],  # wheel encoder
+    ('Patch', 35): ['bitmask'],  # trigger pellet delivery
+    ('Patch', 32): ['bitmask'],  # pellet detected by beam break
+    ('VideoController', 68): ['pwm_mask'],
+    # camera trigger times (top and side)
+    ('FrameTop', 200): ['x', 'y', 'angle', 'major', 'minor', 'area'],
 }
+
 
 def harpreader(file, names=None):
     '''
     Reads Harp data from the specified file.
-    
+
     :param str file: The path to a Harp binary file.
     :param str or array-like names: The optional column labels to use for the data.
     :return: A pandas data frame containing harp event data, sorted by time.
@@ -387,9 +447,11 @@ def harpreader(file, names=None):
     payloadtype = payloadtypes[data[4] & ~0x10]
     elementsize = payloadtype.itemsize
     payloadshape = (length, payloadsize // elementsize)
-    seconds = np.ndarray(length, dtype=np.uint32, buffer=data, offset=5, strides=stride)
-    ticks = np.ndarray(length, dtype=np.uint16, buffer=data, offset=9, strides=stride)
-    seconds = ticks * _SECONDS_PER_TICK + seconds
+    seconds = np.ndarray(length, dtype=np.uint32, buffer=data, offset=5,
+                         strides=stride)
+    ticks = np.ndarray(length, dtype=np.uint16, buffer=data, offset=9,
+                       strides=stride)
+    seconds = ticks * HARP_FS + seconds
     payload = np.ndarray(
         payloadshape,
         dtype=payloadtype,
@@ -399,13 +461,16 @@ def harpreader(file, names=None):
     time.name = 'time'
 
     if names is not None and payloadshape[1] < len(names):
-        data = pd.DataFrame(payload, index=time, columns=names[:payloadshape[1]])
+        data = pd.DataFrame(payload, index=time,
+                            columns=names[:payloadshape[1]])
         data[names[payloadshape[1]:]] = math.nan
         return data
     else:
         return pd.DataFrame(payload, index=time, columns=names)
 
-def harpdata(path, device, register, names=None, start=None, end=None, time=None, tolerance=None):
+
+def harpdata(path, device, register, names=None, start=None, end=None,
+             time=None, tolerance=None):
     '''
     Extracts all harp data from the specified root path, sorted chronologically,
     for an individual register acquired from a device in the Experiment 0 arena.
@@ -432,6 +497,7 @@ def harpdata(path, device, register, names=None, start=None, end=None, time=None
         time=time,
         tolerance=tolerance)
 
+
 def encoderdata(path, device, start=None, end=None, time=None, tolerance=None):
     '''
     Extracts all encoder data from the specified root path, sorted chronologically,
@@ -449,6 +515,7 @@ def encoderdata(path, device, start=None, end=None, time=None, tolerance=None):
         names=['angle', 'intensity'],
         start=start, end=end,
         time=time, tolerance=tolerance)
+
 
 def pelletdata(path, device, start=None, end=None, time=None, tolerance=None):
     '''
@@ -473,15 +540,17 @@ def pelletdata(path, device, start=None, end=None, time=None, tolerance=None):
     events = pd.concat([command.event, beambreak.event]).sort_index()
     return pd.DataFrame(events)
 
+
 def patchreader(file):
     """Reads patch state metadata from the specified file."""
-    names = ['time','threshold','d1','delta']
+    names = ['time', 'threshold', 'd1', 'delta']
     if file is None:
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
     data = pd.read_csv(file, header=0, names=names)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
     return data
+
 
 def patchdata(path, patch, start=None, end=None, time=None, tolerance=None):
     '''
@@ -508,7 +577,9 @@ def patchdata(path, patch, start=None, end=None, time=None, tolerance=None):
         time=time,
         tolerance=tolerance)
 
-def positiondata(path, device='FrameTop', start=None, end=None, time=None, tolerance=None):
+
+def positiondata(path, device='FrameTop', start=None, end=None, time=None,
+                 tolerance=None):
     '''
     Extracts all position data from the specified root path, sorted chronologically,
     for the specified camera in the Experiment 0 arena.
@@ -530,6 +601,7 @@ def positiondata(path, device='FrameTop', start=None, end=None, time=None, toler
         end=end,
         time=time,
         tolerance=tolerance)
+
 
 def videoframes(data):
     '''
@@ -559,12 +631,15 @@ def videoframes(data):
                 index = frameidx
             success, frame = capture.read()
             if not success:
-                raise ValueError('Unable to read frame {0} from video path "{1}".'.format(frameidx, path))
+                raise ValueError(
+                    'Unable to read frame {0} from video path "{1}".'.format(
+                        frameidx, path))
             yield frame
             index = index + 1
     finally:
         if capture is not None:
             capture.release()
+
 
 def distancetravelled(angle, radius=4.0):
     '''
@@ -585,6 +660,7 @@ def distancetravelled(angle, radius=4.0):
     distance = distance - distance[0]
     return distance
 
+
 def sessionduration(data):
     '''
     Computes duration and summary metadata for each session, by subtracting the
@@ -602,8 +678,11 @@ def sessionduration(data):
     data.loc[~valid_sessions, 'time_end'] = pd.NaT
     data.loc[~valid_sessions, 'weight_end'] = float('nan')
     data['duration'] = data.time_end - data.time_start
-    data.rename({ 'time_start':'start', 'id_start':'id', 'time_end':'end'}, axis=1, inplace=True)
-    return data[['id', 'weight_start', 'weight_end', 'start', 'end', 'duration']]
+    data.rename({'time_start': 'start', 'id_start': 'id', 'time_end': 'end'},
+                axis=1, inplace=True)
+    return data[
+        ['id', 'weight_start', 'weight_end', 'start', 'end', 'duration']]
+
 
 def exportvideo(frames, file, fps, fourcc=None):
     '''
@@ -621,8 +700,9 @@ def exportvideo(frames, file, fps, fourcc=None):
         for frame in frames:
             if writer is None:
                 if fourcc is None:
-                    fourcc = cv2.VideoWriter_fourcc('m','p','4','v')
-                writer = cv2.VideoWriter(file, fourcc, fps, (frame.shape[1], frame.shape[0]))
+                    fourcc = cv2.VideoWriter_fourcc('m', 'p', '4', 'v')
+                writer = cv2.VideoWriter(file, fourcc, fps,
+                                         (frame.shape[1], frame.shape[0]))
             writer.write(frame)
     finally:
         if writer is not None:

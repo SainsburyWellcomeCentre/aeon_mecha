@@ -1,8 +1,8 @@
 from datetime import datetime, time
 import pandas as pd
 import matplotlib.pyplot as plt
+from aeon.preprocessing import api as api2
 
-from aeon.preprocess import api2
 
 # <s `chunk` functions
 
