@@ -8,7 +8,7 @@ from aeon.preprocess import api as aeon_api
 
 from . import lab, subject
 from . import get_schema_name, paths
-from .ingest import extract_epoch_metadata, ingest_epoch_metadata
+from .ingest.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 
 
 schema = dj.schema(get_schema_name("acquisition"))
@@ -34,7 +34,10 @@ class EventType(dj.Lookup):
     event_type: varchar(36)
     """
 
-    contents = [(220, 'SubjectEnteredArena'), (221, 'SubjectExitedArena'), (222, 'SubjectRemovedFromArena'),
+    contents = [(220, 'SubjectEnteredArena'),
+                (221, 'SubjectExitedArena'),
+                (222, 'SubjectRemovedFromArena'),
+                (223, 'SubjectRemainedInArena'),
                 (35, "TriggerPellet"), (32, "PelletDetected"), (1000, "No Events")]
 
 
@@ -200,7 +203,7 @@ class ExperimentWeightScale(dj.Manual):
     ---
     -> lab.ArenaNest
     weight_scale_description: varchar(36)
-    weight_scale_sampling_rate=null: float  # (Hz) scale sampling rate
+    weight_scale_sampling_rate=null: float  # (Hz) weight scale sampling rate
     """
 
     class RemovalTime(dj.Part):
@@ -402,7 +405,7 @@ class SubjectEnterExit(dj.Imported):
     -> Chunk
     """
 
-    _enter_exit_event_mapper = {"Start": 220, "End": 221}
+    _enter_exit_event_mapper = {"Start": 220, "End": 221, "Enter": 220, "Exit": 221, "Remain": 223}
 
     class Time(dj.Part):
         definition = """  # Timestamps of each entering/exiting events
@@ -418,7 +421,7 @@ class SubjectEnterExit(dj.Imported):
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
 
         raw_data_dir = Experiment.get_data_directory(key)
-        session_info = aeon_api.sessiondata(
+        subject_data = aeon_api.subjectdata(
             raw_data_dir.as_posix(),
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),
@@ -433,7 +436,7 @@ class SubjectEnterExit(dj.Imported):
                     "event_code": self._enter_exit_event_mapper[r.event],
                     "enter_exit_time": r.name,
                 }
-                for _, r in session_info.iterrows()
+                for _, r in subject_data.iterrows()
                 if r.id in subject_list
             ),
             skip_duplicates=True,
@@ -459,7 +462,7 @@ class SubjectWeight(dj.Imported):
         subject_list = (Experiment.Subject & key).fetch("subject")
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
         raw_data_dir = Experiment.get_data_directory(key)
-        session_info = aeon_api.sessiondata(
+        subject_data = aeon_api.subjectdata(
             raw_data_dir.as_posix(),
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),
@@ -468,7 +471,7 @@ class SubjectWeight(dj.Imported):
         self.WeightTime.insert(
             (
                 {**key, "subject": r.id, "weight": r.weight, "weight_time": r.name}
-                for _, r in session_info.iterrows()
+                for _, r in subject_data.iterrows()
                 if r.id in subject_list
             ),
             skip_duplicates=True,
@@ -476,41 +479,39 @@ class SubjectWeight(dj.Imported):
 
 
 @schema
-class SubjectAnnotation(dj.Imported):
+class ExperimentLog(dj.Imported):
     definition = """  # Experimenter's annotations
     -> Chunk
     """
 
-    class Annotation(dj.Part):
+    class Message(dj.Part):
         definition = """
         -> master
-        -> Experiment.Subject
-        annotation_time: datetime(6)  # datetime of the annotation
+        message_time: datetime(6)  # datetime of the annotation
         ---
-        annotation: varchar(1000)
+        message_type: varchar(32)
+        message: varchar(1000)
         """
 
     def make(self, key):
-        subject_list = (Experiment.Subject & key).fetch("subject")
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
 
         raw_data_dir = Experiment.get_data_directory(key)
-        annotations = aeon_api.annotations(
+        log_messages = aeon_api.logdata(
             raw_data_dir.as_posix(),
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),
         )
 
         self.insert1(key)
-        self.Annotation.insert(
+        self.Message.insert(
             {
                 **key,
-                "subject": r.id,
-                "annotation": r.annotation,
-                "annotation_time": r.name,
+                "message_time": r.name,
+                "message": r.message,
+                "message_type": r.type,
             }
-            for _, r in annotations.iterrows()
-            if r.id in subject_list
+            for _, r in log_messages.iterrows()
         )
 
 
@@ -673,6 +674,9 @@ class WheelState(dj.Imported):
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),
         )
+        # handles rare cases of duplicated state-timestamp
+        wheel_state = wheel_state[~wheel_state.index.duplicated(keep='first')]
+
         self.insert1(key)
         self.Time.insert(
             [
@@ -717,16 +721,21 @@ class WeightMeasurement(dj.Imported):
         weight_scale_description = (ExperimentWeightScale & key).fetch1('weight_scale_description')
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-        scale_data = aeon_api.weightdata(raw_data_dir.as_posix(),
-                                         device=weight_scale_description,
-                                         start=pd.Timestamp(chunk_start),
-                                         end=pd.Timestamp(chunk_end))
+        weight_data = aeon_api.weightdata(raw_data_dir.as_posix(),
+                                          device=weight_scale_description,
+                                          start=pd.Timestamp(chunk_start),
+                                          end=pd.Timestamp(chunk_end))
 
-        timestamps = scale_data.index.to_pydatetime()
+        if not len(weight_data):
+            #TODO: no weight data? this is unexpected
+            # (pending a bugfix for https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/90)
+            raise ValueError(f'No weight measurement found for {key} - this is unexpected')
+
+        timestamps = weight_data.index.to_pydatetime()
 
         self.insert1({**key, 'timestamps': timestamps,
-                      'weight': scale_data.weight.values,
-                      'confidence': scale_data.stable.values.astype(float)})
+                      'weight': weight_data.weight.values,
+                      'confidence': weight_data.stable.values.astype(float)})
 
 
 # @schema

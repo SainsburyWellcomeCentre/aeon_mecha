@@ -9,13 +9,7 @@ _weight_scale_rate = 100
 def create_new_experiment():
     # ---------------- Subject -----------------
     subject_list = [
-        {'subject': 'BAA-1099790', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
-        {'subject': 'BAA-1099791', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
-        {'subject': 'BAA-1099792', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
-        {'subject': 'BAA-1099793', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
-        {'subject': 'BAA-1099794', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
-        {'subject': 'BAA-1099795', 'sex': 'U', 'subject_birth_date': '2021-01-01'},
-        {'subject': 'BAA-1099796', 'sex': 'U', 'subject_birth_date': '2021-01-01'}
+        {'subject': 'BAA-1100700', 'sex': 'U', 'subject_birth_date': '2021-01-01'}
     ]
     subject.Subject.insert(subject_list, skip_duplicates=True)
 
