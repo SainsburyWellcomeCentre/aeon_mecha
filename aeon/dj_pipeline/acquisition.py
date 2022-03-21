@@ -412,7 +412,7 @@ class SubjectEnterExit(dj.Imported):
     -> Chunk
     """
 
-    _enter_exit_event_mapper = {"Start": 220, "End": 221, "Enter": 220, "Exit": 221, "Remain": 223}
+    _enter_exit_event_mapper = {"Enter": 220, "Exit": 221, "Remain": 223}
 
     class Time(dj.Part):
         definition = """  # Timestamps of each entering/exiting events
@@ -438,6 +438,8 @@ class SubjectEnterExit(dj.Imported):
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
+            subject_data.replace('Start', 'Enter', inplace=True)
+            subject_data.replace('End', 'Exit', inplace=True)
         else:
             subject_data = aeon_api.subjectdata(
                 raw_data_dir.as_posix(),
@@ -490,6 +492,8 @@ class SubjectWeight(dj.Imported):
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
+            subject_data.replace('Start', 'Enter', inplace=True)
+            subject_data.replace('End', 'Exit', inplace=True)
         else:
             subject_data = aeon_api.subjectdata(
                 raw_data_dir.as_posix(),
@@ -765,24 +769,6 @@ class WeightMeasurement(dj.Imported):
         self.insert1({**key, 'timestamps': timestamps,
                       'weight': weight_data.weight.values,
                       'confidence': weight_data.stable.values.astype(float)})
-
-
-# @schema
-# class MultiAnimalSession(dj.Computed):
-#     definition = """
-#     -> Experiment
-#     session_start: datetime(6)
-#     ---
-#     -> SessionType
-#     session_end: datetime(6)
-#     session_duration: float  # (hour)
-#     """
-#
-#     class Session(dj.Part):
-#         definition = """
-#         -> master
-#         -> Session
-#         """
 
 
 # ---- Task Protocol categorization ----
