@@ -429,17 +429,9 @@ class SubjectEnterExit(dj.Imported):
         raw_data_dir = Experiment.get_data_directory(key)
 
         if key['experiment_name'] in ('exp0.1-r0', 'social0-r1'):
-            subject_data = aeon_api.load(
-                raw_data_dir.as_posix(),
-                aeon_api.subjectreader,
-                device='SessionData',
-                prefix='SessionData_2',
-                extension="*.csv",
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
-            subject_data.replace('Start', 'Enter', inplace=True)
-            subject_data.replace('End', 'Exit', inplace=True)
+            subject_data = _load_legacy_subjectdata(
+                key['experiment_name'], raw_data_dir.as_posix(),
+                pd.Timestamp(chunk_start), pd.Timestamp(chunk_end))
         else:
             subject_data = aeon_api.subjectdata(
                 raw_data_dir.as_posix(),
@@ -483,17 +475,9 @@ class SubjectWeight(dj.Imported):
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
         raw_data_dir = Experiment.get_data_directory(key)
         if key['experiment_name'] in ('exp0.1-r0', 'social0-r1'):
-            subject_data = aeon_api.load(
-                raw_data_dir.as_posix(),
-                aeon_api.subjectreader,
-                device='SessionData',
-                prefix='SessionData_2',
-                extension="*.csv",
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
-            subject_data.replace('Start', 'Enter', inplace=True)
-            subject_data.replace('End', 'Exit', inplace=True)
+            subject_data = _load_legacy_subjectdata(
+                key['experiment_name'], raw_data_dir.as_posix(),
+                pd.Timestamp(chunk_start), pd.Timestamp(chunk_end))
         else:
             subject_data = aeon_api.subjectdata(
                 raw_data_dir.as_posix(),
@@ -820,3 +804,56 @@ def _match_experiment_directory(experiment_name, path, directories):
         )
 
     return raw_data_dir, directory, repo_path
+
+
+def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
+    assert experiment_name in ('exp0.1-r0', 'social0-r1')
+
+    subject_data = aeon_api.load(
+        data_dir,
+        aeon_api.subjectreader,
+        device='SessionData',
+        prefix='SessionData_2',
+        extension="*.csv",
+        start=start,
+        end=end,
+    )
+    subject_data.replace('Start', 'Enter', inplace=True)
+    subject_data.replace('End', 'Exit', inplace=True)
+
+    if not len(subject_data):
+        return subject_data
+
+    if experiment_name == 'social0-r1':
+        from aeon.util.socialexperiment_helpers import fixID
+
+        sessdf = subject_data.copy()
+        sessdf = sessdf[~sessdf.id.str.contains('test')]
+        sessdf = sessdf[~sessdf.id.str.contains('jeff')]
+        sessdf = sessdf[~sessdf.id.str.contains('OAA')]
+        sessdf = sessdf[~sessdf.id.str.contains('rew')]
+        sessdf = sessdf[~sessdf.id.str.contains('Animal')]
+        sessdf = sessdf[~sessdf.id.str.contains('white')]
+
+        valid_ids = (Experiment.Subject
+                     & {'experiment_name': experiment_name}).fetch('subject')
+
+        fix = lambda x: fixID(x, valid_ids=list(valid_ids))
+        sessdf.id = sessdf.id.apply(fix)
+
+        multi_ids = sessdf[sessdf.id.str.contains(';')]
+        multi_ids_rows = []
+        for _, r in multi_ids.iterrows():
+            for i in r.id.split(';'):
+                multi_ids_rows.append({'time': r.name,
+                                       'id': i,
+                                       'weight': r.weight,
+                                       'event': r.event})
+        multi_ids_rows = pd.DataFrame(multi_ids_rows)
+        if len(multi_ids_rows):
+            multi_ids_rows.set_index('time', inplace=True)
+
+        subject_data = pd.concat([sessdf[~sessdf.id.str.contains(';')], multi_ids_rows])
+        subject_data.sort_index(inplace=True)
+
+    return subject_data

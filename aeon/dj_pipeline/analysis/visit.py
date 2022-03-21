@@ -82,17 +82,9 @@ def ingest_environment_visits(experiment_names=['exp0.2-r0']):
         end = pd.Timestamp.now() if start else None
 
         if experiment_name in ('exp0.1-r0', 'social0-r1'):
-            subject_data = aeon_api.load(
-                raw_data_dir.as_posix(),
-                aeon_api.subjectreader,
-                device='SessionData',
-                prefix='SessionData_2',
-                extension="*.csv",
-                start=start,
-                end=end
-            )
-            subject_data.replace('Start', 'Enter', inplace=True)
-            subject_data.replace('End', 'Exit', inplace=True)
+            subject_data = acquisition._load_legacy_subjectdata(
+                experiment_name, raw_data_dir.as_posix(),
+                start, end)
         else:
             subject_data = aeon_api.subjectdata(
                 raw_data_dir.as_posix(),
