@@ -237,6 +237,7 @@ class Epoch(dj.Manual):
         """
 
     experiment_ref_device_mapper = {'exp0.1-r0': 'FrameTop',
+                                    'social0-r1': 'FrameTop',
                                     'exp0.2-r0': 'CameraTop'}
 
     @classmethod
@@ -286,11 +287,17 @@ class Epoch(dj.Manual):
             with cls.connection.transaction:
                 cls.insert1(epoch_key)
                 if previous_epoch_end:
+                    # insert end-time for previous epoch
                     EpochEnd.insert1(
                         {"experiment_name": experiment_name,
                          "epoch_start": previous_epoch_start,
                          "epoch_end": previous_epoch_end,
                          "epoch_duration": (previous_epoch_end - previous_epoch_start).total_seconds() / 3600})
+                    # update end-time for last chunk of the previous epoch
+                    Chunk.update1({"experiment_name": experiment_name,
+                                   "chunk_start": previous_chunk.name,
+                                   "chunk_end": previous_epoch_end})
+
                 if epoch_config:
                     cls.Config.insert1(epoch_config)
                     ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
@@ -419,8 +426,8 @@ class SubjectEnterExit(dj.Imported):
     def make(self, key):
         subject_list = (Experiment.Subject & key).fetch("subject")
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
-
         raw_data_dir = Experiment.get_data_directory(key)
+
         if key['experiment_name'] in ('exp0.1-r0', 'social0-r1'):
             subject_data = aeon_api.load(
                 raw_data_dir.as_posix(),
