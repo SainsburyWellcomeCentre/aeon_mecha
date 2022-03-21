@@ -1,6 +1,6 @@
 import yaml
 from aeon.dj_pipeline import acquisition, lab, subject
-from pathlib import Path
+import pathlib
 
 _wheel_sampling_rate = 500
 _weight_scale_rate = 100
@@ -120,7 +120,9 @@ def ingest_exp01_metadata(metadata_yml_filepath, experiment_name):
                  'weight_scale_sampling_rate': _weight_scale_rate,
                  **nest_key})
 
+
 # ============ Manual and automatic steps to for experiment 0.1 ingest ============
+
 experiment_name = 'exp0.1-r0'
 
 
@@ -171,7 +173,7 @@ def create_new_experiment():
 
 def add_arena_setup():
     # Arena Setup - Experiment Devices
-    this_file = Path(__file__).expanduser().absolute().resolve()
+    this_file = pathlib.Path(__file__).expanduser().absolute().resolve()
     metadata_yml_filepath = this_file.parent / "setup_yml" / "Experiment0.1.yml"
 
     ingest_exp01_metadata(metadata_yml_filepath, experiment_name)
@@ -180,9 +182,9 @@ def add_arena_setup():
     patch_coordinates = {'Patch1': (1.13, 1.59, 0),
                          'Patch2': (1.19, 0.50, 0)}
 
-    for patch_key in acquisition.ExperimentFoodPatch.fetch('KEY'):
+    for patch_key in (acquisition.ExperimentFoodPatch
+                      & {'experiment_name': experiment_name}).fetch('KEY'):
         patch = (acquisition.ExperimentFoodPatch
-                 & {'experiment_name': experiment_name}
                  & patch_key).fetch1('food_patch_description')
         x, y, z = patch_coordinates[patch]
         acquisition.ExperimentFoodPatch.Position.update1({

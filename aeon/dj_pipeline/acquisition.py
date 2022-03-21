@@ -421,11 +421,22 @@ class SubjectEnterExit(dj.Imported):
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
 
         raw_data_dir = Experiment.get_data_directory(key)
-        subject_data = aeon_api.subjectdata(
-            raw_data_dir.as_posix(),
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
+        if key['experiment_name'] in ('exp0.1-r0', 'social0-r1'):
+            subject_data = aeon_api.load(
+                raw_data_dir.as_posix(),
+                aeon_api.subjectreader,
+                device='SessionData',
+                prefix='SessionData_2',
+                extension="*.csv",
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+        else:
+            subject_data = aeon_api.subjectdata(
+                raw_data_dir.as_posix(),
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
 
         self.insert1(key)
         self.Time.insert(
@@ -462,11 +473,22 @@ class SubjectWeight(dj.Imported):
         subject_list = (Experiment.Subject & key).fetch("subject")
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
         raw_data_dir = Experiment.get_data_directory(key)
-        subject_data = aeon_api.subjectdata(
-            raw_data_dir.as_posix(),
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
+        if key['experiment_name'] in ('exp0.1-r0', 'social0-r1'):
+            subject_data = aeon_api.load(
+                raw_data_dir.as_posix(),
+                aeon_api.subjectreader,
+                device='SessionData',
+                prefix='SessionData_2',
+                extension="*.csv",
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+        else:
+            subject_data = aeon_api.subjectdata(
+                raw_data_dir.as_posix(),
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
         self.insert1(key)
         self.WeightTime.insert(
             (
