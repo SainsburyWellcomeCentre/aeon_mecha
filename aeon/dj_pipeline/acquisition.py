@@ -237,6 +237,7 @@ class Epoch(dj.Manual):
         """
 
     experiment_ref_device_mapper = {'exp0.1-r0': 'FrameTop',
+                                    'social0-r1': 'FrameTop',
                                     'exp0.2-r0': 'CameraTop'}
 
     @classmethod
@@ -286,11 +287,17 @@ class Epoch(dj.Manual):
             with cls.connection.transaction:
                 cls.insert1(epoch_key)
                 if previous_epoch_end:
+                    # insert end-time for previous epoch
                     EpochEnd.insert1(
                         {"experiment_name": experiment_name,
                          "epoch_start": previous_epoch_start,
                          "epoch_end": previous_epoch_end,
                          "epoch_duration": (previous_epoch_end - previous_epoch_start).total_seconds() / 3600})
+                    # update end-time for last chunk of the previous epoch
+                    Chunk.update1({"experiment_name": experiment_name,
+                                   "chunk_start": previous_chunk.name,
+                                   "chunk_end": previous_epoch_end})
+
                 if epoch_config:
                     cls.Config.insert1(epoch_config)
                     ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
@@ -405,7 +412,7 @@ class SubjectEnterExit(dj.Imported):
     -> Chunk
     """
 
-    _enter_exit_event_mapper = {"Start": 220, "End": 221, "Enter": 220, "Exit": 221, "Remain": 223}
+    _enter_exit_event_mapper = {"Enter": 220, "Exit": 221, "Remain": 223}
 
     class Time(dj.Part):
         definition = """  # Timestamps of each entering/exiting events
@@ -419,13 +426,18 @@ class SubjectEnterExit(dj.Imported):
     def make(self, key):
         subject_list = (Experiment.Subject & key).fetch("subject")
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
-
         raw_data_dir = Experiment.get_data_directory(key)
-        subject_data = aeon_api.subjectdata(
-            raw_data_dir.as_posix(),
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
+
+        if key['experiment_name'] in ('exp0.1-r0', 'social0-r1'):
+            subject_data = _load_legacy_subjectdata(
+                key['experiment_name'], raw_data_dir.as_posix(),
+                pd.Timestamp(chunk_start), pd.Timestamp(chunk_end))
+        else:
+            subject_data = aeon_api.subjectdata(
+                raw_data_dir.as_posix(),
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
 
         self.insert1(key)
         self.Time.insert(
@@ -462,11 +474,16 @@ class SubjectWeight(dj.Imported):
         subject_list = (Experiment.Subject & key).fetch("subject")
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
         raw_data_dir = Experiment.get_data_directory(key)
-        subject_data = aeon_api.subjectdata(
-            raw_data_dir.as_posix(),
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
+        if key['experiment_name'] in ('exp0.1-r0', 'social0-r1'):
+            subject_data = _load_legacy_subjectdata(
+                key['experiment_name'], raw_data_dir.as_posix(),
+                pd.Timestamp(chunk_start), pd.Timestamp(chunk_end))
+        else:
+            subject_data = aeon_api.subjectdata(
+                raw_data_dir.as_posix(),
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
         self.insert1(key)
         self.WeightTime.insert(
             (
@@ -738,24 +755,6 @@ class WeightMeasurement(dj.Imported):
                       'confidence': weight_data.stable.values.astype(float)})
 
 
-# @schema
-# class MultiAnimalSession(dj.Computed):
-#     definition = """
-#     -> Experiment
-#     session_start: datetime(6)
-#     ---
-#     -> SessionType
-#     session_end: datetime(6)
-#     session_duration: float  # (hour)
-#     """
-#
-#     class Session(dj.Part):
-#         definition = """
-#         -> master
-#         -> Session
-#         """
-
-
 # ---- Task Protocol categorization ----
 
 
@@ -805,3 +804,56 @@ def _match_experiment_directory(experiment_name, path, directories):
         )
 
     return raw_data_dir, directory, repo_path
+
+
+def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
+    assert experiment_name in ('exp0.1-r0', 'social0-r1')
+
+    subject_data = aeon_api.load(
+        data_dir,
+        aeon_api.subjectreader,
+        device='SessionData',
+        prefix='SessionData_2',
+        extension="*.csv",
+        start=start,
+        end=end,
+    )
+    subject_data.replace('Start', 'Enter', inplace=True)
+    subject_data.replace('End', 'Exit', inplace=True)
+
+    if not len(subject_data):
+        return subject_data
+
+    if experiment_name == 'social0-r1':
+        from aeon.util.socialexperiment_helpers import fixID
+
+        sessdf = subject_data.copy()
+        sessdf = sessdf[~sessdf.id.str.contains('test')]
+        sessdf = sessdf[~sessdf.id.str.contains('jeff')]
+        sessdf = sessdf[~sessdf.id.str.contains('OAA')]
+        sessdf = sessdf[~sessdf.id.str.contains('rew')]
+        sessdf = sessdf[~sessdf.id.str.contains('Animal')]
+        sessdf = sessdf[~sessdf.id.str.contains('white')]
+
+        valid_ids = (Experiment.Subject
+                     & {'experiment_name': experiment_name}).fetch('subject')
+
+        fix = lambda x: fixID(x, valid_ids=list(valid_ids))
+        sessdf.id = sessdf.id.apply(fix)
+
+        multi_ids = sessdf[sessdf.id.str.contains(';')]
+        multi_ids_rows = []
+        for _, r in multi_ids.iterrows():
+            for i in r.id.split(';'):
+                multi_ids_rows.append({'time': r.name,
+                                       'id': i,
+                                       'weight': r.weight,
+                                       'event': r.event})
+        multi_ids_rows = pd.DataFrame(multi_ids_rows)
+        if len(multi_ids_rows):
+            multi_ids_rows.set_index('time', inplace=True)
+
+        subject_data = pd.concat([sessdf[~sessdf.id.str.contains(';')], multi_ids_rows])
+        subject_data.sort_index(inplace=True)
+
+    return subject_data
