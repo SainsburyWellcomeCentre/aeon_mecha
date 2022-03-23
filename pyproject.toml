@@ -69,6 +69,7 @@ xarray = "^0.12.3"
 bandit = "*"
 black = "*"
 flake8 = "*"
+ipdb = "*"
 pre-commit = "*"
 pyan3 = { git = "https://github.com/Technologicat/pyan.git"}
 pytest = "*"

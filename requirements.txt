@@ -10,8 +10,9 @@ fastparquet
 flake8                                                    # (dev)
 gh                                                        # (dev)
 graphviz
+ipdb                                                      # (dev)
 ipykernel
-isort
+isort                                                     # (dev)
 jupyter
 jupyterlab
 matplotlib
