@@ -93,7 +93,8 @@ def load(path, reader, device, prefix=None, extension="*.csv",
     containing device and/or epoch metadata for the Experiment 0.2 arena. If no prefix is
     specified, metadata for all epochs is extracted.
 
-    :param str path: The root path, or prioritised sequence of paths, where epoch data is stored.
+    :param str path: The root path, or prioritised sequence of paths, where epoch data
+    is stored.
     :param callable reader: A callable object used to load epoch metadata from a file.
     :param str, device: The device name prefix used to search for data files.
     :param str, optional prefix: The pathname prefix used to search for data files.
@@ -108,12 +109,13 @@ def load(path, reader, device, prefix=None, extension="*.csv",
     if prefix is None:
         prefix = ""
 
+    # If single path,
     if isinstance(path, str):
         files = chunk_glob(path, device, prefix, extension)
     else:
         files = []
         fileset = set()
-        datasets = map(lambda dpath:chunk_glob(dpath, device, prefix, extension), path)
+        datasets = map(lambda dpath: chunk_glob(dpath, device, prefix, extension), path)
         for dataset in datasets:
             for fname in dataset:
                 fkey = os.path.split(fname)[1]
