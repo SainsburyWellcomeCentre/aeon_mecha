@@ -21,19 +21,21 @@ exp02_data_dict = api.gen_data_dict(exp02_root)
 
 # example of data_dict
 exp02_data_dict = DotMap({
-    'position': 'CameraTop_200',
-    'pellet_triggered_patch1': 'Patch1_35',
-    'pellet_delivered_patch1': 'Patch1_32',
-    'pellet_triggered_patch2': 'Patch2_35',
-    'pellet_delivered_patch2': 'Patch2_32',
-    'wheel_encoder_patch1': 'Patch1_90',
-    'wheel_encoder_patch2': 'Patch2_90',
-    'weight': 'Nest_200'})
+    'position': ('CameraTop_200', 'bin'),
+    'pellet_triggered_patch1': ('Patch1_35', 'bin'),
+    'pellet_delivered_patch1': ('Patch1_32', 'bin'),
+    'pellet_triggered_patch2': ('Patch2_35', 'bin'),
+    'pellet_delivered_patch2': ('Patch2_32', 'bin'),
+    'wheel_encoder_patch1': ('Patch1_90', 'bin'),
+    'wheel_encoder_patch2': ('Patch2_90', 'bin'),
+    'weight': ('Nest_200', 'bin'),
+    'camera_top_raw': ('CameraTop', 'avi'),
+    'camera_top_meta': ('CameraTop', 'csv')
+})
 
 # Start with data from exp02
-
-position_data = api.load(path=exp_root, start_ts=start_ts, end_ts=end_ts,
-                         data=exp02_data_dict.position, pos=None)
+position_data = api.load(path=exp02_root, start_ts=start_ts2, end_ts=end_ts2,
+                         datastream=exp02_data_dict.position)
 patch_names = ['patch1', 'patch2']
 for p in patch_names:
     pellet_data = p + ''
