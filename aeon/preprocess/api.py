@@ -591,7 +591,7 @@ def videoframes(data):
                 index = 0
 
             if frameidx != index:
-                capture.set(cv2.cv2.CAP_PROP_POS_FRAMES, frameidx)
+                capture.set(cv2.CAP_PROP_POS_FRAMES, frameidx)
                 index = frameidx
             success, frame = capture.read()
             if not success:
