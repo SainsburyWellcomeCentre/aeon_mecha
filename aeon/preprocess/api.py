@@ -252,14 +252,10 @@ def subjectdata(path, start=None, end=None, time=None, tolerance=None):
 
 def logreader(file):
     """Reads message log data from the specified file."""
-    names = ['time','type','message']
+    names = ['time','priority','type','message']
     if file is None:
         return pd.DataFrame(columns=names[1:], index=pd.DatetimeIndex([]))
-    data = pd.read_csv(
-        file,
-        header=0,
-        usecols=range(3),
-        names=names)
+    data = pd.read_csv(file, header=0, names=names)
     data['time'] = aeon(data['time'])
     data.set_index('time', inplace=True)
     return data
