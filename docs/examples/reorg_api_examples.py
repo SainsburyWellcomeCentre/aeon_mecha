@@ -5,7 +5,11 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from dotmap import DotMap
 from aeon import api
-
+from aeon.preprocess import api as aeon
+from importlib import reload
+from datetime import datetime, time
+from warnings import warn
+import ipdb
 
 # <s Get position data, pellet delivery data, and patch wheel data
 
@@ -19,18 +23,25 @@ end_ts2 = pd.Timestamp('2022-02-26')
 exp01_data_dict = api.gen_data_dict(exp01_root)
 exp02_data_dict = api.gen_data_dict(exp02_root)
 
-# example of data_dict
+# we provide a metaconfig file in exp root that links data type to a data file and
+# data reader (this is part of the data contract), and data_dict is created from this
+
+# example of data_dict: each key represents a datastream, and each corresponding
+# value contains the corresponding datastream files':
+# 1) prefix; 2) extension; 3) "read_data" function
+spec_ts = pd.date_range("2022-02-24 09:00:00", periods=4*60, freq='min')
+pos_cols = ['x', 'y', 'angle', 'major', 'minor', 'area', 'id']
 exp02_data_dict = DotMap({
-    'position': ('CameraTop_200', 'bin'),
-    'pellet_triggered_patch1': ('Patch1_35', 'bin'),
-    'pellet_delivered_patch1': ('Patch1_32', 'bin'),
-    'pellet_triggered_patch2': ('Patch2_35', 'bin'),
-    'pellet_delivered_patch2': ('Patch2_32', 'bin'),
-    'wheel_encoder_patch1': ('Patch1_90', 'bin'),
-    'wheel_encoder_patch2': ('Patch2_90', 'bin'),
-    'weight': ('Nest_200', 'bin'),
-    'camera_top_raw': ('CameraTop', 'avi'),
-    'camera_top_meta': ('CameraTop', 'csv')
+    'position': ('CameraTop_200', 'bin',
+                 lambda file: api.read_harp(file, cols=pos_cols)),
+    'pellet_triggered_patch1': ('Patch1_35', 'bin', api.read_harp),
+    'pellet_delivered_patch1': ('Patch1_32', 'bin', api.read_harp),
+    'pellet_triggered_patch2': ('Patch2_35', 'bin', api.read_harp),
+    'pellet_delivered_patch2': ('Patch2_32', 'bin', api.read_harp),
+    'wheel_encoder_patch1': ('Patch1_90', 'bin', api.read_harp),
+    'wheel_encoder_patch2': ('Patch2_90', 'bin', api.read_harp),
+    'weight': ('Nest_200', 'bin', api.read_harp),
+    #'camera_top_raw': ('CameraTop', 'avi', api.read_video),
 })
 
 # Start with data from exp02
