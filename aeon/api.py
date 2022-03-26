@@ -108,7 +108,7 @@ def load(exp_root, datastream, start_ts=None, end_ts=None, spec_ts=None, ts_tol=
 
     Outputs
     -------
-    DataFrame
+    data : DataFrame
         The loaded data
     """
     # Procedure:
@@ -119,7 +119,7 @@ def load(exp_root, datastream, start_ts=None, end_ts=None, spec_ts=None, ts_tol=
     # <s Ensure list of paths, and for each path get files for the specified datastream.
     exp_roots = [exp_root] if not isinstance(exp_root, list) else exp_root
     files = set()
-    ds_name, ext = datastream[0], datastream[1]
+    ds_name, ext, read = datastream[0], datastream[1], datastream[2]
     for p in exp_roots:  # for each path, search all epochs + devices
         files.update(Path(p).glob(f"**/**/{ds_name}*.{ext}"))
     files = sorted(files)  # _all_ files that correspond to `ds_name` in `exp_roots`
@@ -127,25 +127,29 @@ def load(exp_root, datastream, start_ts=None, end_ts=None, spec_ts=None, ts_tol=
         warn(f"No files found matching: {exp_roots}/**/**/{ds_name}*.{ext}")
         return
     # /s>
-    # <s Filter files by time.
+    # <s Filter files by time, read all into a single df, and rm irrelevant timestamps.
     filetimes = get_chunktime(file=files)
     # If given `spec_ts`, find nearest files.
     if spec_ts is not None:
-        # Find intersection b/w unique chunks and all filetimes.
+        spec_ts = pd.Series(spec_ts)  # ensure Series.
+        # Find intersection b/w chunk times and all filetimes.
         spec_ts_chunks = get_chunktime(ts=spec_ts).unique()
         file_mask = filetimes.isin(spec_ts_chunks).values
         files = np.asarray(files)[file_mask]
-        filetimes = np.asarray(filetimes)[file_mask]
+        # Read files into a single df and rm irrelevant timestamps.
+        data = pd.concat([read(f) for f in files])
+        data = data.reindex(spec_ts, method='nearest', tolerance=ts_tol)
     # If given `start_ts` and/or `end_ts`, use these as cutoffs.
     elif (start_ts is not None) or (end_ts is not None):
+        # Find files within `start_ts` and `end_ts`.
         file_mask = np.logical_and(filetimes > start_ts, filetimes < end_ts)
         files = files[file_mask]
+        # Read files into a single df and rm irrelevant timestamps.
+        data = pd.concat([read(f) for f in files])
+        data_mask = np.logical_and(data.index < start_ts, data.index < end_ts)
+        data = data.loc[data_mask]
     # /s>
-    # <s Read relevant files into a single df, throwaway unasked for timestamps.
-    for f in files:
-        pass
-    return pd.concat((reader(file) for file in files))
-    # /s>
+    return data
 
 
 def get_chunktime(file=None, ts=None, start_ts=None, end_ts=None,
@@ -219,11 +223,9 @@ def read_harp(file, cols=None, _harp_ptypes=_HARP_T_PTYPES, _harp_res=_HARP_RES)
     [MessageType (1)] [MessageLength (1)] [Address (1)] [Port (1)] [PayloadType (1)]
     [Payload (PayloadType)] [Checksum (1)]
     """
-
     data = np.fromfile(file, dtype=np.uint8)  # read raw uint8-bit data
     if len(data) == 0:  # if empty file, return empty dataframe
         return pd.DataFrame(columns=cols, index=pd.DatetimeIndex([]))
-
     # The number of bytes of each message (+2 for the byte corresponding to
     # MessageType and the byte corresponding to MessageLength itself).
     msg_length = data[1] + 2

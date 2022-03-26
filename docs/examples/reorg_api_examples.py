@@ -19,6 +19,8 @@ start_ts1 = pd.Timestamp('2021-11-26')
 end_ts1 = pd.Timestamp('2021-11-27')
 start_ts2 = pd.Timestamp('2022-02-24')
 end_ts2 = pd.Timestamp('2022-02-26')
+spec_ts2 = pd.date_range("2022-02-24 09:00:00", periods=4*60*60,
+                         freq=pd.Timedelta('1s'))  # 4 hours worth of data
 
 exp01_data_dict = api.gen_data_dict(exp01_root)
 exp02_data_dict = api.gen_data_dict(exp02_root)
@@ -29,8 +31,8 @@ exp02_data_dict = api.gen_data_dict(exp02_root)
 # example of data_dict: each key represents a datastream, and each corresponding
 # value contains the corresponding datastream files':
 # 1) prefix; 2) extension; 3) "read_data" function
-spec_ts = pd.date_range("2022-02-24 09:00:00", periods=4*60, freq='min')
-pos_cols = ['x', 'y', 'angle', 'major', 'minor', 'area', 'id']
+
+pos_cols = ['x', 'y', 'angle', 'major', 'minor', 'area']
 exp02_data_dict = DotMap({
     'position': ('CameraTop_200', 'bin',
                  lambda file: api.read_harp(file, cols=pos_cols)),
@@ -45,7 +47,7 @@ exp02_data_dict = DotMap({
 })
 
 # Start with data from exp02
-position_data = api.load(path=exp02_root, start_ts=start_ts2, end_ts=end_ts2,
+position_data = api.load(path=exp02_root, spec_ts=spec_ts2, ts_tol=pd.Timedelta('0.1s'),
                          datastream=exp02_data_dict.position)
 patch_names = ['patch1', 'patch2']
 for p in patch_names:
