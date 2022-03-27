@@ -9,7 +9,7 @@ from . import acquisition
 from . import get_schema_name
 
 
-schema = dj.schema(get_schema_name('qc'))
+schema = dj.schema(get_schema_name("qc"))
 
 # -------------- Quality Control ---------------------
 
@@ -57,32 +57,48 @@ class CameraQC(dj.Imported):
 
     @property
     def key_source(self):
-        return (acquisition.Chunk
-                * acquisition.ExperimentCamera.join(acquisition.ExperimentCamera.RemovalTime, left=True)
-                & 'chunk_start >= camera_install_time'
-                & 'chunk_start < IFNULL(camera_remove_time, "2200-01-01")')
+        return (
+            acquisition.Chunk
+            * acquisition.ExperimentCamera.join(
+                acquisition.ExperimentCamera.RemovalTime, left=True
+            )
+            & "chunk_start >= camera_install_time"
+            & 'chunk_start < IFNULL(camera_remove_time, "2200-01-01")'
+        )
 
     def make(self, key):
         qc_dir = acquisition.Experiment.get_data_directory(
-            key, directory_type='quality-control', as_posix=True)
+            key, directory_type="quality-control", as_posix=True
+        )
 
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1('chunk_start', 'chunk_end')
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end"
+        )
 
-        camera = (acquisition.ExperimentCamera & key).fetch1('camera_description')
+        camera = (acquisition.ExperimentCamera & key).fetch1("camera_description")
 
-        deltas = aeon_api.load(qc_dir, lambda f: pd.read_parquet(f),
-                               camera, extension='*.parquet',
-                               start=pd.Timestamp(chunk_start),
-                               end=pd.Timestamp(chunk_end))
+        deltas = aeon_api.load(
+            qc_dir,
+            lambda f: pd.read_parquet(f),
+            camera,
+            extension="*.parquet",
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end),
+        )
 
-        self.insert1({**key,
-                      'drop_count': deltas.frame_offset.iloc[-1],
-                      'max_harp_delta': deltas.time_delta.max().total_seconds(),
-                      'max_camera_delta': deltas.hw_timestamp_delta.max() / 1e9,  # convert to seconds
-                      'timestamps': deltas.index.to_pydatetime(),
-                      'time_delta': deltas.time_delta.values / np.timedelta64(1, 's'), # convert to seconds
-                      'frame_delta': deltas.frame_delta.values,
-                      'hw_counter_delta': deltas.hw_counter_delta.values,
-                      'hw_timestamp_delta': deltas.hw_timestamp_delta.values,
-                      'frame_offset': deltas.frame_offset.values})
-
+        self.insert1(
+            {
+                **key,
+                "drop_count": deltas.frame_offset.iloc[-1],
+                "max_harp_delta": deltas.time_delta.max().total_seconds(),
+                "max_camera_delta": deltas.hw_timestamp_delta.max()
+                / 1e9,  # convert to seconds
+                "timestamps": deltas.index.to_pydatetime(),
+                "time_delta": deltas.time_delta.values
+                / np.timedelta64(1, "s"),  # convert to seconds
+                "frame_delta": deltas.frame_delta.values,
+                "hw_counter_delta": deltas.hw_counter_delta.values,
+                "hw_timestamp_delta": deltas.hw_timestamp_delta.values,
+                "frame_offset": deltas.frame_offset.values,
+            }
+        )

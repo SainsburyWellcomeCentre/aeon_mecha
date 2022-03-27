@@ -3,7 +3,7 @@ import datajoint as dj
 from . import get_schema_name
 
 
-schema = dj.schema(get_schema_name('lab'))
+schema = dj.schema(get_schema_name("lab"))
 
 
 # ------------------- GENERAL LAB INFORMATION --------------------
@@ -20,8 +20,15 @@ class Lab(dj.Lookup):
     time_zone       : varchar(64)
     """
 
-    contents = [('SWC', 'Sainsbury Wellcome Centre', 'University College London',
-                 '25 Howland Street London W1T 4JG', 'GMT+1')]
+    contents = [
+        (
+            "SWC",
+            "Sainsbury Wellcome Centre",
+            "University College London",
+            "25 Howland Street London W1T 4JG",
+            "GMT+1",
+        )
+    ]
 
 
 @schema
@@ -34,7 +41,7 @@ class Location(dj.Lookup):
     location_description=''    : varchar(255)
     """
 
-    contents = [('SWC', 'room-0', 'room for experiment 0')]
+    contents = [("SWC", "room-0", "room for experiment 0")]
 
 
 @schema
@@ -113,12 +120,13 @@ class Source(dj.Lookup):
 
 # ------------------- ARENA INFORMATION --------------------
 
+
 @schema
 class ArenaShape(dj.Lookup):
     definition = """
     arena_shape: varchar(32)
     """
-    contents = zip(['square', 'circular', 'rectangular', 'linear'])
+    contents = zip(["square", "circular", "rectangular", "linear"])
 
 
 @schema
@@ -130,6 +138,7 @@ class Arena(dj.Lookup):
     + z-dimension: z=0 is the lowest point of the arena (e.g. the ground)
     TODO: confirm/update this
     """
+
     definition = """
     arena_name: varchar(32)  # unique name of the arena (e.g. circular_2m)
     ---
@@ -141,7 +150,8 @@ class Arena(dj.Lookup):
     """
 
     contents = [
-        ('circle-2m', 'circular arena with 2-meter diameter', 'circular', 2, 2, 0.2)]
+        ("circle-2m", "circular arena with 2-meter diameter", "circular", 2, 2, 0.2)
+    ]
 
 
 @schema

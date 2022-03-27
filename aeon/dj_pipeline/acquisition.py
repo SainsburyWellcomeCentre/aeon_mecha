@@ -23,7 +23,7 @@ class ExperimentType(dj.Lookup):
     experiment_type: varchar(32)
     """
 
-    contents = zip(['foraging', 'social'])
+    contents = zip(["foraging", "social"])
 
 
 @schema
@@ -34,8 +34,14 @@ class EventType(dj.Lookup):
     event_type: varchar(36)
     """
 
-    contents = [(220, 'SubjectEnteredArena'), (221, 'SubjectExitedArena'), (222, 'SubjectRemovedFromArena'),
-                (35, "TriggerPellet"), (32, "PelletDetected"), (1000, "No Events")]
+    contents = [
+        (220, "SubjectEnteredArena"),
+        (221, "SubjectExitedArena"),
+        (222, "SubjectRemovedFromArena"),
+        (35, "TriggerPellet"),
+        (32, "PelletDetected"),
+        (1000, "No Events"),
+    ]
 
 
 # ------------------- Data repository/directory ------------------------
@@ -233,12 +239,13 @@ class Epoch(dj.Manual):
         metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
         """
 
-    experiment_ref_device_mapper = {'exp0.1-r0': 'FrameTop',
-                                    'exp0.2-r0': 'CameraTop'}
+    experiment_ref_device_mapper = {"exp0.1-r0": "FrameTop", "exp0.2-r0": "CameraTop"}
 
     @classmethod
     def ingest_epochs(cls, experiment_name):
-        device_name = Epoch.experiment_ref_device_mapper.get(experiment_name, 'CameraTop')
+        device_name = Epoch.experiment_ref_device_mapper.get(
+            experiment_name, "CameraTop"
+        )
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
 
@@ -246,7 +253,9 @@ class Epoch(dj.Manual):
         for i, (_, chunk) in enumerate(all_chunks.iterrows()):
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(epoch_dir.name, '%Y-%m-%dT%H-%M-%S')
+            epoch_start = datetime.datetime.strptime(
+                epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
+            )
 
             # --- insert to Epoch ---
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
@@ -256,38 +265,58 @@ class Epoch(dj.Manual):
                 continue
 
             epoch_config, metadata_yml_filepath = None, None
-            if experiment_name != 'exp0.1-r0':
-                metadata_yml_filepath = epoch_dir / 'Metadata.yml'
+            if experiment_name != "exp0.1-r0":
+                metadata_yml_filepath = epoch_dir / "Metadata.yml"
                 if metadata_yml_filepath.exists():
-                    epoch_config = extract_epoch_metadata(experiment_name, metadata_yml_filepath)
+                    epoch_config = extract_epoch_metadata(
+                        experiment_name, metadata_yml_filepath
+                    )
 
-                    metadata_yml_filepath = epoch_config['metadata_file_path']
+                    metadata_yml_filepath = epoch_config["metadata_file_path"]
 
                     _, directory, repo_path = _match_experiment_directory(
-                        experiment_name, epoch_config['metadata_file_path'], raw_data_dirs)
+                        experiment_name,
+                        epoch_config["metadata_file_path"],
+                        raw_data_dirs,
+                    )
                     epoch_config = {
                         **epoch_config,
                         **directory,
-                        'metadata_file_path': epoch_config['metadata_file_path'].relative_to(repo_path).as_posix()}
+                        "metadata_file_path": epoch_config["metadata_file_path"]
+                        .relative_to(repo_path)
+                        .as_posix(),
+                    }
 
             # find previous epoch end-time
             previous_epoch_end = None
             if i > 0:
-                previous_chunk = all_chunks.iloc[i-1]
+                previous_chunk = all_chunks.iloc[i - 1]
                 previous_chunk_path = pathlib.Path(previous_chunk.path)
-                previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
-                previous_epoch_start = datetime.datetime.strptime(previous_epoch_dir.name, '%Y-%m-%dT%H-%M-%S')
-                previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=aeon_api.CHUNK_DURATION)
+                previous_epoch_dir = pathlib.Path(
+                    previous_chunk_path.as_posix().split(device_name)[0]
+                )
+                previous_epoch_start = datetime.datetime.strptime(
+                    previous_epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
+                )
+                previous_chunk_end = previous_chunk.name + datetime.timedelta(
+                    hours=aeon_api.CHUNK_DURATION
+                )
                 previous_epoch_end = min(previous_chunk_end, epoch_start)
 
             with cls.connection.transaction:
                 cls.insert1(epoch_key)
                 if previous_epoch_end:
                     EpochEnd.insert1(
-                        {"experiment_name": experiment_name,
-                         "epoch_start": previous_epoch_start,
-                         "epoch_end": previous_epoch_end,
-                         "epoch_duration": (previous_epoch_end - previous_epoch_start).total_seconds() / 3600})
+                        {
+                            "experiment_name": experiment_name,
+                            "epoch_start": previous_epoch_start,
+                            "epoch_end": previous_epoch_end,
+                            "epoch_duration": (
+                                previous_epoch_end - previous_epoch_start
+                            ).total_seconds()
+                            / 3600,
+                        }
+                    )
                 if epoch_config:
                     cls.Config.insert1(epoch_config)
                     ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
@@ -305,6 +334,7 @@ class EpochEnd(dj.Manual):
     epoch_end: datetime(6)
     epoch_duration: float  # (hour)
     """
+
 
 # ------------------- ACQUISITION CHUNK --------------------
 
@@ -332,7 +362,9 @@ class Chunk(dj.Manual):
 
     @classmethod
     def ingest_chunks(cls, experiment_name):
-        device_name = Epoch.experiment_ref_device_mapper.get(experiment_name, 'CameraTop')
+        device_name = Epoch.experiment_ref_device_mapper.get(
+            experiment_name, "CameraTop"
+        )
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
 
@@ -340,7 +372,9 @@ class Chunk(dj.Manual):
         for _, chunk in all_chunks.iterrows():
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(epoch_dir.name, '%Y-%m-%dT%H-%M-%S')
+            epoch_start = datetime.datetime.strptime(
+                epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
+            )
 
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
             if not (Epoch & epoch_key):
@@ -361,14 +395,17 @@ class Chunk(dj.Manual):
                 # handle cases where two chunks with identical start_time
                 # (starts in the same hour) but from 2 consecutive epochs
                 # using epoch_start as chunk_start in this case
-                chunk_key['chunk_start'] = epoch_start
+                chunk_key["chunk_start"] = epoch_start
 
             # chunk file and directory
             raw_data_dir, directory, repo_path = _match_experiment_directory(
-                experiment_name, chunk_rep_file, raw_data_dirs)
+                experiment_name, chunk_rep_file, raw_data_dirs
+            )
 
-            chunk_starts.append(chunk_key['chunk_start'])
-            chunk_list.append({**chunk_key, **directory, "chunk_end": chunk_end, **epoch_key})
+            chunk_starts.append(chunk_key["chunk_start"])
+            chunk_list.append(
+                {**chunk_key, **directory, "chunk_end": chunk_end, **epoch_key}
+            )
             file_name_list.append(
                 chunk_rep_file.name
             )  # handle duplicated files in different folders
@@ -542,7 +579,9 @@ class FoodPatchEvent(dj.Imported):
         )
 
     def make(self, key):
-        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
+            "chunk_start", "chunk_end", "directory_type"
+        )
         food_patch_description = (ExperimentFoodPatch & key).fetch1(
             "food_patch_description"
         )
@@ -607,7 +646,9 @@ class FoodPatchWheel(dj.Imported):
         )
 
     def make(self, key):
-        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
+            "chunk_start", "chunk_end", "directory_type"
+        )
         food_patch_description = (ExperimentFoodPatch & key).fetch1(
             "food_patch_description"
         )
@@ -662,7 +703,9 @@ class WheelState(dj.Imported):
         )
 
     def make(self, key):
-        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
+            "chunk_start", "chunk_end", "directory_type"
+        )
         food_patch_description = (ExperimentFoodPatch & key).fetch1(
             "food_patch_description"
         )
@@ -707,26 +750,38 @@ class WeightMeasurement(dj.Imported):
         +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed
         """
         return (
-            Chunk * ExperimentWeightScale.join(ExperimentWeightScale.RemovalTime, left=True)
+            Chunk
+            * ExperimentWeightScale.join(ExperimentWeightScale.RemovalTime, left=True)
             & "chunk_start >= weight_scale_install_time"
             & 'chunk_start < IFNULL(weight_scale_remove_time, "2200-01-01")'
         )
 
     def make(self, key):
-        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
-        weight_scale_description = (ExperimentWeightScale & key).fetch1('weight_scale_description')
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
+            "chunk_start", "chunk_end", "directory_type"
+        )
+        weight_scale_description = (ExperimentWeightScale & key).fetch1(
+            "weight_scale_description"
+        )
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-        scale_data = aeon_api.weightdata(raw_data_dir.as_posix(),
-                                         device=weight_scale_description,
-                                         start=pd.Timestamp(chunk_start),
-                                         end=pd.Timestamp(chunk_end))
+        scale_data = aeon_api.weightdata(
+            raw_data_dir.as_posix(),
+            device=weight_scale_description,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end),
+        )
 
         timestamps = scale_data.index.to_pydatetime()
 
-        self.insert1({**key, 'timestamps': timestamps,
-                      'weight': scale_data.weight.values,
-                      'confidence': scale_data.stable.values.astype(float)})
+        self.insert1(
+            {
+                **key,
+                "timestamps": timestamps,
+                "weight": scale_data.weight.values,
+                "confidence": scale_data.stable.values.astype(float),
+            }
+        )
 
 
 # @schema
@@ -762,6 +817,7 @@ class TaskProtocol(dj.Lookup):
 
 # ---- HELPERS ----
 
+
 def _get_all_chunks(experiment_name, device_name):
     raw_data_dirs = Experiment.get_data_directories(
         {"experiment_name": experiment_name},
@@ -782,17 +838,14 @@ def _match_experiment_directory(experiment_name, path, directories):
         raw_data_dir = v
         if pathlib.Path(raw_data_dir) in list(path.parents):
             directory = (
-                    Experiment.Directory.proj("repository_name")
-                    & {"experiment_name": experiment_name, "directory_type": k}
+                Experiment.Directory.proj("repository_name")
+                & {"experiment_name": experiment_name, "directory_type": k}
             ).fetch1()
-            repo_path = paths.get_repository_path(
-                directory.pop("repository_name")
-            )
+            repo_path = paths.get_repository_path(directory.pop("repository_name"))
             break
     else:
         raise FileNotFoundError(
-            f"Unable to identify the directory"
-            f" where this chunk is from: {path}"
+            f"Unable to identify the directory" f" where this chunk is from: {path}"
         )
 
     return raw_data_dir, directory, repo_path

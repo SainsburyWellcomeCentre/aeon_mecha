@@ -21,28 +21,32 @@ _CHUNK_DURATION = 1
 # The default temporal resolution of the Harp behavior board, in seconds.
 _HARP_RES = 32e-6
 # Map of Harp payload types to datatypes, including endianness (to read by `ndarray()`)
-_HARP_PTYPES = DotMap({
-    1: '<u1',     # little-endian, unsigned int, 1-byte representation
-    2: '<u2',
-    4: '<u4',
-    8: '<u8',
-    129: '<i1',
-    130: '<i2',
-    132: '<i4',
-    136: '<i8',   # little-endian, signed int, 8-byte representation
-    68: '<f4'     # little-endian, float, 4-byte representation
-})
-_HARP_T_PTYPES = DotMap({
-    17: '<u1',
-    18: '<u2',
-    20: '<u4',
-    24: '<u8',
-    145: '<i1',
-    146: '<i2',
-    148: '<i4',
-    152: '<i8',
-    84: '<f4'
-})
+_HARP_PTYPES = DotMap(
+    {
+        1: "<u1",  # little-endian, unsigned int, 1-byte representation
+        2: "<u2",
+        4: "<u4",
+        8: "<u8",
+        129: "<i1",
+        130: "<i2",
+        132: "<i4",
+        136: "<i8",  # little-endian, signed int, 8-byte representation
+        68: "<f4",  # little-endian, float, 4-byte representation
+    }
+)
+_HARP_T_PTYPES = DotMap(
+    {
+        17: "<u1",
+        18: "<u2",
+        20: "<u4",
+        24: "<u8",
+        145: "<i1",
+        146: "<i2",
+        148: "<i4",
+        152: "<i8",
+        84: "<f4",
+    }
+)
 # Bitmasks that link Harp payload datatypes:
 # non-timestamped -> timestamped:
 # e.g. _HARP_T_PTYPES[17] == (_HARP_PTYPES[1] | _HARP_N2T_BITMASK)
@@ -54,12 +58,12 @@ _HARP_U2F_MASK = 0x40
 # Map of Harp device registers used in the Experiment 1 arena.
 # @todo this isn't used so should be moved out of this module, but kept as doc
 HARP_REGISTERS = {
-    ('Patch', 90): ['angle, intensity'],    # wheel encoder
-    ('Patch', 35): ['bitmask'],             # trigger pellet delivery
-    ('Patch', 32): ['bitmask'],             # pellet detected by beam break
-    ('VideoController', 68): ['pwm_mask'],  # camera trigger times (top and side)
-    ('PositionTracking', 200): ['x', 'y', 'angle', 'major', 'minor', 'area'],
-    ('WeightScale', 200): ['value', 'stable']
+    ("Patch", 90): ["angle, intensity"],  # wheel encoder
+    ("Patch", 35): ["bitmask"],  # trigger pellet delivery
+    ("Patch", 32): ["bitmask"],  # pellet detected by beam break
+    ("VideoController", 68): ["pwm_mask"],  # camera trigger times (top and side)
+    ("PositionTracking", 200): ["x", "y", "angle", "major", "minor", "area"],
+    ("WeightScale", 200): ["value", "stable"],
 }
 
 
@@ -141,9 +145,9 @@ def load(exp_root, datastream, start_ts=None, end_ts=None, spec_ts=None, ts_tol=
         data = pd.concat([read(f) for f in files])
         # @todo hack: currently weight data has duplicate indices - this should be
         # fixed on acquisition side
-        data = data[~data.index.duplicated(keep='last')]
-        data = data.reindex(spec_ts, method='ffill', tolerance=ts_tol)
-        data.index.name = 'time'
+        data = data[~data.index.duplicated(keep="last")]
+        data = data.reindex(spec_ts, method="ffill", tolerance=ts_tol)
+        data.index.name = "time"
     # If given `start_ts` and/or `end_ts`, use these as cutoffs.
     elif (start_ts is not None) or (end_ts is not None):
         # Find files within `start_ts` and `end_ts`.
@@ -157,8 +161,7 @@ def load(exp_root, datastream, start_ts=None, end_ts=None, spec_ts=None, ts_tol=
     return data
 
 
-def get_chunktime(file=None, ts=None, start_ts=None, end_ts=None,
-                  chunk_dur=1):
+def get_chunktime(file=None, ts=None, start_ts=None, end_ts=None, chunk_dur=1):
     """
     Returns acquisition chunk timestamps for given measurement timestamps.
 
@@ -195,12 +198,15 @@ def get_chunktime(file=None, ts=None, start_ts=None, end_ts=None,
     # If `start_ts` and `end_ts` given, then call recursively and return date range
     # between start and end chunk ts.
     if (start_ts is not None) and (end_ts is not None):
-        return pd.date_range(get_chunktime(ts=start_ts)[0], get_chunktime(ts=end_ts)[0],
-                             freq=pd.DateOffset(hours=chunk_dur))
+        return pd.date_range(
+            get_chunktime(ts=start_ts)[0],
+            get_chunktime(ts=end_ts)[0],
+            freq=pd.DateOffset(hours=chunk_dur),
+        )
     # Convert timestamps to Series and return chunk timestamps.
     ts = pd.Series(ts)
     chunk_hour = chunk_dur * (ts.dt.hour // chunk_dur)
-    return pd.to_datetime(ts.dt.date) + pd.to_timedelta(chunk_hour, 'h')
+    return pd.to_datetime(ts.dt.date) + pd.to_timedelta(chunk_hour, "h")
 
 
 def read_harp(file, cols=None, _harp_ptypes=_HARP_T_PTYPES, _harp_res=_HARP_RES):
@@ -249,14 +255,21 @@ def read_harp(file, cols=None, _harp_ptypes=_HARP_T_PTYPES, _harp_res=_HARP_RES)
     # Load the payload into arrays (the relevant device data, the timestamp
     # seconds, and the timestamp microseconds/32). Offsets are for the number of
     # bytes of the preceding entities in each Harp message.
-    p_data = np.ndarray(shape=(n_msgs, n_p_items), dtype=p_type, buffer=data,
-                         offset=11, strides=(msg_length, p_elem_size))
-    p_s = np.ndarray(shape=n_msgs, dtype='<u4', buffer=data, offset=5,
-                     strides=msg_length)
-    p_us_div_32 = np.ndarray(shape=n_msgs, dtype='<u2', buffer=data, offset=9,
-                             strides=msg_length)
+    p_data = np.ndarray(
+        shape=(n_msgs, n_p_items),
+        dtype=p_type,
+        buffer=data,
+        offset=11,
+        strides=(msg_length, p_elem_size),
+    )
+    p_s = np.ndarray(
+        shape=n_msgs, dtype="<u4", buffer=data, offset=5, strides=msg_length
+    )
+    p_us_div_32 = np.ndarray(
+        shape=n_msgs, dtype="<u2", buffer=data, offset=9, strides=msg_length
+    )
     ts = get_aeontime(p_s + (p_us_div_32 * _harp_res))  # timestamps
-    ts.name = 'time'
+    ts.name = "time"
     return pd.DataFrame(p_data, index=ts, columns=cols)
 
 
@@ -264,11 +277,11 @@ def read_csv(file, cols=None):
     """Reads and reformats (with col name list `cols`) a csv file (`file`) into a df"""
     # Remove default header from file, and rename index as 'time'
     data = pd.read_csv(file, header=0, names=cols)
-    data.index.name = 'time'
+    data.index.name = "time"
     data.index = get_aeontime(data.index)
     return data
 
 
 def get_aeontime(seconds):
     """Converts a Harp timestamp, in seconds, to a pandas Series of Timestamps."""
-    return pd.Series(datetime(1904, 1, 1) + pd.to_timedelta(seconds, 's'))
+    return pd.Series(datetime(1904, 1, 1) + pd.to_timedelta(seconds, "s"))

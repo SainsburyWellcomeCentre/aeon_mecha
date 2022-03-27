@@ -3,11 +3,13 @@ import numpy as np
 from dotmap import DotMap
 
 
-HARP_EVENT_BITMASK = DotMap({
-    'pellet_trigger': 0x80,
-    'pellet_detected_in': 0x20,
-    'pellet_detected_out': 0x22,
-})
+HARP_EVENT_BITMASK = DotMap(
+    {
+        "pellet_trigger": 0x80,
+        "pellet_detected_in": 0x20,
+        "pellet_detected_out": 0x22,
+    }
+)
 
 
 def apply_bitmask(df, bitmask):
