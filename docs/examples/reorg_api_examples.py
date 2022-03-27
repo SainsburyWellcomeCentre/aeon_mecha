@@ -1,149 +1,131 @@
+"""
+Examples of how to use aeon.api for both exp01 and exp02 data:
+Gets position data, pellet data, patch wheel data, mouse weight data, and raw vid data.
+"""
 from pathlib import Path
 from datetime import datetime, time
+from importlib import reload
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from dotmap import DotMap
-from aeon import api
-from aeon.preprocess import api as aeon
-from importlib import reload
-from datetime import datetime, time
-from warnings import warn
 import ipdb
+from dotmap import DotMap
 
-# <s Get position data, pellet delivery data, and patch wheel data
+from aeon.io import api
+from aeon import preprocessing as pp
+from aeon.preprocess import api as aeon
 
+
+# Set exp root paths and time periods of interest
 exp01_root = Path('/ceph/aeon/test2/experiment0.1')
 exp02_root = Path('/ceph/aeon/test2/experiment0.2')
 start_ts1 = pd.Timestamp('2021-11-26')
 end_ts1 = pd.Timestamp('2021-11-27')
 start_ts2 = pd.Timestamp('2022-02-24')
 end_ts2 = pd.Timestamp('2022-02-26')
-spec_ts2 = pd.date_range("2022-02-24 09:00:00", periods=4*60*60,
-                         freq=pd.Timedelta('1s'))  # 4 hours worth of data
+spec_ts2 = pd.date_range("2022-02-24 09:00:00", periods=4*60*60*1000,
+                         freq=pd.Timedelta('0.001s'))  # 4 hours worth of data
 
-exp01_data_dict = api.gen_data_dict(exp01_root)
-exp02_data_dict = api.gen_data_dict(exp02_root)
-
-# we provide a metaconfig file in exp root that links data type to a data file and
-# data reader (this is part of the data contract), and data_dict is created from this
+# Set column names & harp bitmasks for returned data
+position_cols = ['x', 'y', 'angle', 'major', 'minor', 'area']
+pellet_trig_cols = ['trig_event_harp_bitmask']
+trig_bitmask = pp.HARP_EVENT_BITMASK.pellet_trigger
+pellet_det_cols = ['det_event_harp_bitmask']
+det_bitmask = pp.HARP_EVENT_BITMASK.pellet_detected_in
+wheel_enc_cols = ['angle', 'intensity']
+weight_cols = ['weight', 'stable?']
 
 # example of data_dict: each key represents a datastream, and each corresponding
 # value contains the corresponding datastream files':
 # 1) prefix; 2) extension; 3) "read_data" function
-
-pos_cols = ['x', 'y', 'angle', 'major', 'minor', 'area']
 exp02_data_dict = DotMap({
-    'position': ('CameraTop_200', 'bin',
-                 lambda file: api.read_harp(file, cols=pos_cols)),
-    'pellet_triggered_patch1': ('Patch1_35', 'bin', api.read_harp),
-    'pellet_delivered_patch1': ('Patch1_32', 'bin', api.read_harp),
-    'pellet_triggered_patch2': ('Patch2_35', 'bin', api.read_harp),
-    'pellet_delivered_patch2': ('Patch2_32', 'bin', api.read_harp),
-    'wheel_encoder_patch1': ('Patch1_90', 'bin', api.read_harp),
-    'wheel_encoder_patch2': ('Patch2_90', 'bin', api.read_harp),
-    'weight': ('Nest_200', 'bin', api.read_harp),
-    #'camera_top_raw': ('CameraTop', 'avi', api.read_video),
+    'position': (
+        'CameraTop_200', 'bin', lambda file: api.read_harp(file, cols=position_cols)),
+    'pellet_triggered_patch1': (
+        'Patch1_35', 'bin', lambda file: api.read_harp(file, cols=pellet_trig_cols)),
+    'pellet_triggered_patch2': (
+        'Patch2_35', 'bin', lambda file: api.read_harp(file, cols=pellet_trig_cols)),
+    'pellet_detected_patch1': (
+        'Patch1_32', 'bin', lambda file: api.read_harp(file, cols=pellet_det_cols)),
+    'pellet_detected_patch2': (
+        'Patch2_32', 'bin', lambda file: api.read_harp(file, cols=pellet_det_cols)),
+    'wheel_encoder_patch1': (
+        'Patch1_90', 'bin', lambda file: api.read_harp(file, cols=wheel_enc_cols)),
+    'wheel_encoder_patch2': (
+        'Patch2_90', 'bin', lambda file: api.read_harp(file, cols=wheel_enc_cols)),
+    'weight': (
+        'Nest_200', 'bin', lambda file: api.read_harp(file, cols=weight_cols)),
 })
+exp01_data_dict = exp02_data_dict.copy()
+exp01_data_dict.weight = (
+    'WeightData', 'csv', lambda file: api.read_csv(file, cols=weight_cols))
+# @todo we could have a config file in the exp root that specifies the "read data"
+# function (as a lambda) for each datastream, and pass this into a function
+# `gen_data_dict()` in the api that generates the data dict for the given dataset.
 
-# Start with data from exp02
-position_data = api.load(path=exp02_root, spec_ts=spec_ts2, ts_tol=pd.Timedelta('0.1s'),
-                         datastream=exp02_data_dict.position)
-patch_names = ['patch1', 'patch2']
-for p in patch_names:
-    pellet_data = p + ''
+# Load data:
+# position data from a specified set of timestamps and timestamp tolerance
+position_data1 = api.load(exp_root=exp02_root, datastream=exp02_data_dict.position,
+                          spec_ts=spec_ts2, ts_tol=pd.Timedelta('0.1s'))
 
-pellet_patch1_data = api.load(path=exp_root, start_ts=start_ts, end_ts=end_ts,
-                               data=exp02_data_dict.pellet, pos='patch1')
-pellet_patch2_data = data.load(path=exp_root, start_ts=start_ts, end_ts=end_ts,
-                               pos=None,
-                          data=DATA.position)
-wheel_patch1_data = data.load(path=exp_root, start_ts=start_ts, end_ts=end_ts, pos=None,
-                          data=DATA.position)
-wheel_patch2_data = data.load(path=exp_root, start_ts=start_ts, end_ts=end_ts, pos=None,
-                          data=DATA.position)
-all_data = api.load(path=exp02_root, start_ts=start_ts, end_ts=end_ts, data='all',
-                    pos=None)  # `'all'` returns dict of dataframes
+# position data from a start and end timestamp
+position_data2 = api.load(exp_root=exp02_root, datastream=exp02_data_dict.position,
+                          start_ts=start_ts2, end_ts=end_ts2)
 
+# patch 1 pellet triggered data
+pellet_trig_data_p1 = (
+    api.load(exp_root=exp02_root, datastream=exp02_data_dict.pellet_triggered_patch1,
+             spec_ts=spec_ts2, ts_tol=pd.Timedelta('0.001s')))
+# since `load()` reindexes at `spec_ts`, we get nans for `spec_ts` times when there
+# was no event: this is a feature, and we can simply ignore these in the returned data:
+pellet_trig_ts_p1 = pp.apply_bitmask(pellet_trig_data_p1, trig_bitmask).index
 
+# patch 2 pellet triggered data
+pellet_trig_data_p2 = (
+    api.load(exp_root=exp02_root, datastream=exp02_data_dict.pellet_triggered_patch2,
+             spec_ts=spec_ts2, ts_tol=pd.Timedelta('0.001s')))
+pellet_trig_ts_p2 = pp.apply_bitmask(pellet_trig_data_p2, trig_bitmask).index
 
+# patch 1 pellet detected data
+pellet_det_data_p1 = (
+    api.load(exp_root=exp02_root, datastream=exp02_data_dict.pellet_detected_patch1,
+             spec_ts=spec_ts2, ts_tol=pd.Timedelta('0.001s')))
+pellet_det_ts_p1 = pp.apply_bitmask(pellet_det_data_p1, det_bitmask).index
 
+# patch 2 pellet detected data
+pellet_det_data_p2 = (
+    api.load(exp_root=exp02_root, datastream=exp02_data_dict.pellet_detected_patch2,
+             spec_ts=spec_ts2, ts_tol=pd.Timedelta('0.001s')))
+pellet_det_ts_p2 = pp.apply_bitmask(pellet_det_data_p2, det_bitmask).index
 
+# patch 1 wheel data
+wheel_enc_data_p1 = (
+    api.load(exp_root=exp02_root, datastream=exp02_data_dict.wheel_encoder_patch1,
+             spec_ts=spec_ts2, ts_tol=pd.Timedelta('0.001s')))
+# remove nans
+enc_angle = wheel_enc_data_p1.angle
+enc_angle = enc_angle[np.where(~np.isnan(enc_angle))[0]]
+wheel_cum_dist_p1 = pp.calc_wheel_cum_dist(enc_angle)
 
+# patch 2 wheel data
+wheel_enc_data_p2 = (
+    api.load(exp_root=exp02_root, datastream=exp02_data_dict.wheel_encoder_patch2,
+             spec_ts=spec_ts2, ts_tol=pd.Timedelta('0.001s')))
+enc_angle = wheel_enc_data_p2.angle
+enc_angle = enc_angle[np.where(~np.isnan(enc_angle))[0]]
+wheel_cum_dist_p2 = pp.calc_wheel_cum_dist(enc_angle)
 
+# weight data
+weight_data = (
+    api.load(exp_root=exp02_root, datastream=exp02_data_dict.weight,
+             spec_ts=spec_ts2, ts_tol=pd.Timedelta('0.001s')))
+weight_data = weight_data.iloc[np.where(~np.isnan(weight_data))[0]]
 
+# old weight data
+old_weight_data = (
+    api.load(exp_root=exp01_root, datastream=exp01_data_dict.weight,
+             start_ts=pd.Timestamp('2022-02-08'), end_ts=pd.Timestamp('2022-02-09')))
 
-
-
-
-
-
-# <s `chunk` functions
-
-
-# /s>
-
-root = '/ceph/aeon/test2/experiment0.1'
-data = aeon.sessiondata(root)
-annotations = aeon.annotations(root)
-
-data = data[data.id.str.startswith('BAA')]  # take only proper sessions
-if len(data) % 2 != 0:  # if number of sessions don't pair up
-    data = data.drop(data.index[-1])  # drop last session (might be ongoing)
-data = aeon.sessionduration(data)  # compute session duration
-
-for session in data.itertuples():  # for all sessions
-    print('{0} on {1}...'.format(session.id,
-                                 session.Index))  # print progress report
-    start = session.Index  # session start time is session index
-    end = start + session.duration  # end time = start time + duration
-    position = aeon.positiondata(root, start=start,
-                                 end=end)  # get position data between start and end
-    position = position[
-        position.area < 2000]  # filter for objects of the correct size
-
-    encoder1 = aeon.encoderdata(root, 'Patch1', start=start,
-                                end=end)  # get encoder data for patch1 between start and end
-    encoder2 = aeon.encoderdata(root, 'Patch2', start=start,
-                                end=end)  # get encoder data for patch2 between start and end
-    pellets1 = aeon.pelletdata(root, 'Patch1', start=start,
-                               end=end)  # get pellet events for patch1 between start and end
-    pellets2 = aeon.pelletdata(root, 'Patch2', start=start,
-                               end=end)  # get pellet events for patch2 between start and end
-
-    wheel1 = aeon.distancetravelled(
-        encoder1.angle)  # compute total distance travelled on patch1 wheel
-    wheel2 = aeon.distancetravelled(
-        encoder2.angle)  # compute total distance travelled on patch2 wheel
-    pellets1 = pellets1[
-        pellets1.event == 'TriggerPellet']  # get timestamps of pellets delivered at patch1
-    pellets2 = pellets2[
-        pellets2.event == 'TriggerPellet']  # get timestamps of pellets delivered at patch2
-
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2,
-                                                 2)  # create a figure with subplots
-
-    ax1.plot(position.x, position.y,
-             alpha=0.4)  # plot position data as a path trajectory
-    forage = position.reindex(pellets1.index,
-                              method='nearest')  # get position data when a pellet is delivered at patch1
-    forage.plot.scatter('x', 'y', s=1, c='red',
-                        ax=ax1)  # plot mouse positions when pellets were delivered
-
-    for trial in pellets1.itertuples():  # for each pellet delivery
-        before = trial.Index - pd.to_timedelta(10,
-                                               's')  # get the previous 10 seconds
-        path = position.loc[
-               before:trial.Index]  # get position data in the time before pellet delivery
-        ax1.plot(path.x, path.y)  # plot path traces preceding pellet delivery
-
-    ax2.hist(position.area, bins=100)  # plot histogram of tracked object size
-
-    wheel1.plot(ax=ax3)  # plot distance travelled on patch1 wheel
-    wheel1.plot(ax=ax4)  # plot distance travelled on patch2 wheel
-    ax3.set_ylabel('distance (cm)')  # set axis label
-    ax4.set_ylabel('distance (cm)')  # set axis label
-
-    fig.savefig('{0}_{1}.png'.format(session.id,
-                                     start.date()))  # save figure tagged with id and date
-    plt.close(fig)  # close figure
+# all_data = api.load(path=exp02_root, start_ts=start_ts, end_ts=end_ts, data='all',
+#                     pos=None)  # `'all'` returns dict of dataframes

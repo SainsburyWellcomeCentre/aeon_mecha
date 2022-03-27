@@ -4,11 +4,10 @@ Low-level api that interfaces with aeon data files.
 Much of aeon data comes from Harp devices: https://www.cf-hw.org/harp) Info on
 protocols used to read from these devices: https://github.com/harp-tech/protocol
 """
-
 from datetime import datetime, time
 from warnings import warn
-
 from pathlib import Path
+
 import pandas as pd
 import numpy as np
 from dotmap import DotMap
@@ -64,14 +63,16 @@ HARP_REGISTERS = {
 }
 
 
-def gen_data_dict(path):
+# @todo this could read a config file in the exp root that specifies "read data"
+#  function (as a lambda) for each datastream.
+def gen_data_dict(exp_root):
     """
     Generates a data dictionary, linking the names of types of data to their respective
     raw data files in a given path.
 
     Inputs
     ------
-    path : str OR Path
+    exp_root : str OR Path
         The path to the experiment data root directory
 
     Outputs
@@ -117,6 +118,7 @@ def load(exp_root, datastream, start_ts=None, end_ts=None, spec_ts=None, ts_tol=
     # 3) Using the associated datastream read fn, load all files together into a DF.
 
     # <s Ensure list of paths, and for each path get files for the specified datastream.
+    ipdb.set_trace()
     exp_roots = [exp_root] if not isinstance(exp_root, list) else exp_root
     files = set()
     ds_name, ext, read = datastream[0], datastream[1], datastream[2]
@@ -138,15 +140,15 @@ def load(exp_root, datastream, start_ts=None, end_ts=None, spec_ts=None, ts_tol=
         files = np.asarray(files)[file_mask]
         # Read files into a single df and rm irrelevant timestamps.
         data = pd.concat([read(f) for f in files])
-        data = data.reindex(spec_ts, method='nearest', tolerance=ts_tol)
+        data = data.reindex(spec_ts, method='ffill', tolerance=ts_tol)
     # If given `start_ts` and/or `end_ts`, use these as cutoffs.
     elif (start_ts is not None) or (end_ts is not None):
         # Find files within `start_ts` and `end_ts`.
         file_mask = np.logical_and(filetimes > start_ts, filetimes < end_ts)
-        files = files[file_mask]
+        files = np.asarray(files)[file_mask]
         # Read files into a single df and rm irrelevant timestamps.
         data = pd.concat([read(f) for f in files])
-        data_mask = np.logical_and(data.index < start_ts, data.index < end_ts)
+        data_mask = np.logical_and(data.index > start_ts, data.index < end_ts)
         data = data.loc[data_mask]
     # /s>
     return data
