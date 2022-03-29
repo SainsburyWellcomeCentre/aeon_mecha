@@ -28,10 +28,24 @@ def get_events_rates(events, window_len_sec, frequency, unit_len_sec=60, start=N
     counts_rolled_smoothed = counts_rolled.rolling(window_len_sec_str if smooth is None else smooth, center=center).mean()
     return counts_rolled_smoothed
 
+def getPairedEvents(metadata):
+    paired_events = None
+    i = 0
+    while i < (len(metadata)-1):
+        if metadata.iloc[i]["event"]=="Start" and metadata.iloc[i+1]["event"]=="End":
+            if paired_events is None:
+                paired_events = metadata.iloc[i:(i+2)]
+            else:
+                paired_events = paired_events.append(metadata.iloc[i:(i+2)])
+            i += 2
+        else:
+            i += 1
+    return paired_events
+
 def getMouseSessionsStartTimesAndDurations(mouse_id, root):
     metadata = api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
-    metadata = aeon.io.utils.getPairedEvents(metadata=metadata)
+    metadata = getPairedEvents(metadata=metadata)
     metadata = api.sessionduration(metadata)
     durations = metadata.loc[metadata.id == mouse_id, "duration"]
     return durations
@@ -40,7 +54,7 @@ def getMouseSessionsStartTimesAndDurations(mouse_id, root):
 def getAllSessionsStartTimes(root):
     metadata = api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
-    metadata = aeon.io.utils.getPairedEvents(metadata=metadata)
+    metadata = getPairedEvents(metadata=metadata)
     metadata = api.sessionduration(metadata)
     answer = metadata.index
     return answer
@@ -49,7 +63,7 @@ def getAllSessionsStartTimes(root):
 def getSessionsDuration(session_start_time, root):
     metadata = api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
-    metadata = aeon.io.utils.getPairedEvents(metadata=metadata)
+    metadata = getPairedEvents(metadata=metadata)
     metadata = api.sessionduration(metadata)
     duration = metadata.loc[session_start_time, "duration"].total_seconds()
     return duration
