@@ -2,7 +2,7 @@ import cv2
 import math
 import numpy as np
 import pandas as pd
-import aeon.preprocess.api as aeon
+import aeon.io.api as aeon
 
 def gridframes(frames, width, height, shape=None):
     '''

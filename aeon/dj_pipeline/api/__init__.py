@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from aeon.preprocess import api as aeon_api
+from aeon.io import api as aeon_api
 from aeon.dj_pipeline import acquisition, paths
 
 from aeon.dj_pipeline.tracking import is_position_in_nest

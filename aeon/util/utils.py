@@ -1,7 +1,7 @@
 import pandas as pd
 
-import aeon.preprocess.api as api
-import aeon.preprocess.utils
+import aeon.io.api as api
+import aeon.io.utils
 
 def get_moving_average(x, window_len_sec, frequency, unit_len_sec=60, start=None, end=None, smooth=None, center=False):
     if start is not None and start < x.index[0]:
@@ -31,7 +31,7 @@ def get_events_rates(events, window_len_sec, frequency, unit_len_sec=60, start=N
 def getMouseSessionsStartTimesAndDurations(mouse_id, root):
     metadata = api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
-    metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
+    metadata = aeon.io.utils.getPairedEvents(metadata=metadata)
     metadata = api.sessionduration(metadata)
     durations = metadata.loc[metadata.id == mouse_id, "duration"]
     return durations
@@ -40,7 +40,7 @@ def getMouseSessionsStartTimesAndDurations(mouse_id, root):
 def getAllSessionsStartTimes(root):
     metadata = api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
-    metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
+    metadata = aeon.io.utils.getPairedEvents(metadata=metadata)
     metadata = api.sessionduration(metadata)
     answer = metadata.index
     return answer
@@ -49,7 +49,7 @@ def getAllSessionsStartTimes(root):
 def getSessionsDuration(session_start_time, root):
     metadata = api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
-    metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
+    metadata = aeon.io.utils.getPairedEvents(metadata=metadata)
     metadata = api.sessionduration(metadata)
     duration = metadata.loc[session_start_time, "duration"].total_seconds()
     return duration

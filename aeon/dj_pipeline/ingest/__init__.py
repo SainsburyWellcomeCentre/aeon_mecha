@@ -2,7 +2,7 @@ import re
 import pathlib
 from datetime import datetime
 import yaml
-from aeon.preprocess import api as aeon_api
+from aeon.io import api as aeon_api
 from aeon.dj_pipeline import acquisition, lab
 from .. import dict_to_uuid
 

@@ -1,5 +1,5 @@
 import pandas as pd
-import aeon.preprocess.api as aeon
+import aeon.io.api as aeon
 
 root = '/ceph/aeon/test2/experiment0.1'
 videobins = aeon.chunkdata(root, 'FrameTop')

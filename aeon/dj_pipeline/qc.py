@@ -2,7 +2,7 @@ import datajoint as dj
 import pandas as pd
 import numpy as np
 
-from aeon.preprocess import api as aeon_api
+from aeon.io import api as aeon_api
 from aeon.util import plotting as aeon_plotting
 
 from . import acquisition
