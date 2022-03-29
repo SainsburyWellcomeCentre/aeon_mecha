@@ -4,7 +4,8 @@ import pandas as pd
 from aeon.analyze.movies import *
 from aeon.analyze.patches import *
 from aeon.util.plotting import *
-import aeon.preprocess.api as aeon
+import aeon.io.api as aeon
+import aeon.io.video as video
 import matplotlib.pyplot as plt
 
 dpi = 300
@@ -83,18 +84,18 @@ for session in data.itertuples():                                     # for all 
     events = in_patch1[in_patch1.astype(np.int8).diff() > 0]
 
     print("Exporting side video...")
-    video = aeon.videodata(root, 'FramePatch1', start=start, end=end)
-    clips = triggerclip(video, events, before='5s', after='10s')
+    frames = aeon.videodata(root, 'FramePatch1', start=start, end=end)
+    clips = triggerclip(frames, events, before='5s', after='10s')
     clips = clips[clips.clip_sequence.isin(list(range(0,5)))]
     movie = collatemovie(clips, lambda f:gridframes(f, 640, 1800, (5, 1)))
     movie = gridmovie(clips, 640, 1800, (5, 1))
-    aeon.exportvideo(movie, '{0}-in_patch1.avi'.format(prefix), 60)
+    video.export(movie, '{0}-in_patch1.avi'.format(prefix), 60)
 
     print("Exporting average top video...")
-    video = aeon.videodata(root, 'FrameTop', start=start, end=end)
-    clips = triggerclip(video, events, before='5s', after='10s')
+    frames = aeon.videodata(root, 'FrameTop', start=start, end=end)
+    clips = triggerclip(frames, events, before='5s', after='10s')
     movie = collatemovie(clips, averageframes)
-    aeon.exportvideo(movie, '{0}-in_arena-Top.avi'.format(prefix), 60)
+    video.export(movie, '{0}-in_arena-Top.avi'.format(prefix), 60)
 
     # Plot wheel trqaces aligned on pellet trigger
     fig, ax = plt.subplots(1, 1)
@@ -110,11 +111,11 @@ for session in data.itertuples():                                     # for all 
     fig.savefig('wheel.png', dpi=dpi)
 
     # Plot side video of reward consumption
-    video = aeon.videodata(root, 'FramePatch1', start=start, end=end)
-    clips = triggerclip(video, events, before='5s', after='10s')
+    frames = aeon.videodata(root, 'FramePatch1', start=start, end=end)
+    clips = triggerclip(frames, events, before='5s', after='10s')
     clips = clips[clips.clip_sequence.isin(list(range(0,5)))]
     movie = gridmovie(clips, 640, 1800, (5, 1))
-    aeon.exportvideo(movie, '{0}-in_patch1.avi'.format(prefix), 60)
+    video.export(movie, '{0}-in_patch1.avi'.format(prefix), 60)
 
     # Plot side video synchronized with wheel trace
     # This one is different from the above since we are actually saving the final rendition
@@ -128,10 +129,10 @@ for session in data.itertuples():                                     # for all 
     gs = fig.add_gridspec(3, 1)
     frame_ax = fig.add_subplot(gs[0:2,0])
     wheel_ax = fig.add_subplot(gs[2, 0])
-    video = aeon.videodata(root, 'FramePatch1', start=start, end=end)
-    clips = triggerclip(video, events, before='6s', after='11s')
+    frames = aeon.videodata(root, 'FramePatch1', start=start, end=end)
+    clips = triggerclip(frames, events, before='6s', after='11s')
     clips = clips[clips.clip_sequence == 5]
-    movie = aeon.videoframes(clips)
+    movie = video.frames(clips)
     motion = (wheel1.diff().rolling('8ms').mean()).reindex(clips.index, method='pad') / 0.008
     wheel_ax.plot((motion.index-motion.index[0]).total_seconds(), motion, 'b')
     ymin, ymax = wheel_ax.get_ylim()

@@ -1,7 +1,6 @@
 import pandas as pd
 
 import aeon.io.api as api
-import aeon.io.utils
 
 def get_moving_average(x, window_len_sec, frequency, unit_len_sec=60, start=None, end=None, smooth=None, center=False):
     if start is not None and start < x.index[0]:

@@ -1,6 +1,6 @@
 import datetime
 import pandas as pd
-import aeon.preprocess.api as aeon
+import aeon.io.api as aeon
 import matplotlib.pyplot as plt
 
 root = '/ceph/aeon/test2/experiment0.1'
