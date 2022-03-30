@@ -1,4 +1,27 @@
 import cv2
+import pandas as pd
+from aeon.io.api import load
+from aeon.io.reader import VideoReader
+
+def clip(path, device, start=None, end=None):
+    '''
+    Extracts information about a continuous segment of video, possibly stored across
+    multiple video files. For each video file covering the segment, a row is returned
+    containing the path, start frame, and duration of the segment stored in that file.
+
+    :param str path: The root path where all the video data is stored.
+    :param str, device: The device prefix used to search for video files.
+    :param datetime, optional start: The left bound of the time range to extract.
+    :param datetime, optional end: The right bound of the time range to extract.
+    :return: A pandas data frame containing video clip storage information.
+    '''
+    framedata = load(path, device, start=start, end=end)
+    if len(framedata) == 0:
+        return pd.DataFrame(columns=['start','duration'], index=pd.DatetimeIndex([]))
+    videoclips = framedata.groupby('path')
+    startframe = videoclips.frame.min().rename('start')
+    duration = (videoclips.frame.max() - startframe).rename('duration')
+    return pd.concat([startframe, duration], axis=1)
 
 def frames(data):
     '''
