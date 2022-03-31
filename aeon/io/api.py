@@ -70,6 +70,14 @@ def chunk_filter(files, timefilter):
         matches.append(file)
     return matches
 
+def _set_index(data):
+    if not isinstance(data.index, pd.DatetimeIndex):
+        data.index = aeon(data.index)
+    data.index.name = 'time'
+
+def _empty(columns):
+    return pd.DataFrame(columns=columns, index=pd.DatetimeIndex([], name='time'))
+
 def load(root, reader, start=None, end=None, time=None, tolerance=None):
     '''
     Extracts data from matching files in the specified root path, sorted chronologically,
@@ -77,7 +85,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None):
     specified, metadata for all epochs is extracted.
 
     :param str path: The root path, or prioritised sequence of paths, where epoch data is stored.
-    :param callable reader: A callable object used to load epoch metadata from a file.
+    :param Reader reader: A callable object used to load epoch metadata from a file.
     :param str, device: The device name prefix used to search for data files.
     :param str, optional prefix: The pathname prefix used to search for data files.
     :param str, optional extension: The optional extension pattern used to search for data files.
@@ -109,8 +117,9 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None):
             i = bisect.bisect_left(filetimes, key)
             if i < len(filetimes):
                 frame = reader.read(files[i])
+                _set_index(frame)
             else:
-                frame = reader.read(None)
+                frame = _empty(reader.columns)
             data = frame.reset_index()
             data.set_index('time', drop=False, inplace=True)
             data = data.reindex(values, method='pad', tolerance=tolerance)
@@ -126,7 +135,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None):
             dataframes.append(data)
 
         if len(dataframes) == 0:
-            return reader.read(None)
+            return _empty(reader.columns)
             
         return pd.concat(dataframes)
 
@@ -137,9 +146,10 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None):
         timefilter = None
 
     if len(files) == 0:
-        return reader.read(None)
+        return _empty(reader.columns)
 
     data = pd.concat([reader.read(file) for file in files])
+    _set_index(data)
     if timefilter is not None:
         try:
             return data.loc[start:end]

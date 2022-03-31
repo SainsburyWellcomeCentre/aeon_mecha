@@ -2,7 +2,7 @@ import os
 import math
 import numpy as np
 import pandas as pd
-from aeon.io.api import aeon, chunk_key, load
+from aeon.io.api import chunk_key
 
 _SECONDS_PER_TICK = 32e-6
 
@@ -20,12 +20,16 @@ payloadtypes = {
 }
 
 class Reader:
-    def __init__(self, name, extension, read):
+    def __init__(self, name, columns, extension):
         self.name = name
+        self.device = name.split('_')[0]
+        self.columns = columns
         self.extension = extension
-        self.read = read
 
-class HarpReader:
+    def read(self, _):
+        return pd.DataFrame(columns=self.columns, index=pd.DatetimeIndex([]))
+
+class HarpReader(Reader):
     """
     Reads data from raw binary files encoded using the Harp protocol.
 
@@ -38,10 +42,8 @@ class HarpReader:
     extension : str, optional
         Extension for data files.
     """
-    def __init__(self, name, columns=None, extension="bin"):
-        self.name = name
-        self.extension = extension
-        self.columns = columns
+    def __init__(self, name, columns, extension="bin"):
+        super().__init__(name, columns, extension)
 
     def read(self, file):
         """
@@ -57,9 +59,6 @@ class HarpReader:
         DataFrame
             Pandas data frame containing Harp event data, sorted by time.
         """
-        if file is None:
-            return pd.DataFrame(columns=self.columns, index=pd.DatetimeIndex([]))
-
         data = np.fromfile(file, dtype=np.uint8)
         if len(data) == 0:
             return pd.DataFrame(columns=self.columns, index=pd.DatetimeIndex([]))
@@ -78,43 +77,28 @@ class HarpReader:
             dtype=payloadtype,
             buffer=data, offset=11,
             strides=(stride, elementsize))
-        time = aeon(seconds)
-        time.name = 'time'
 
         if payloadshape[1] < len(self.columns):
-            data = pd.DataFrame(payload, index=time, columns=self.columns[:payloadshape[1]])
+            data = pd.DataFrame(payload, index=seconds, columns=self.columns[:payloadshape[1]])
             data[self.columns[payloadshape[1]:]] = math.nan
             return data
         else:
-            return pd.DataFrame(payload, index=time, columns=self.columns)
+            return pd.DataFrame(payload, index=seconds, columns=self.columns)
 
-class ChunkReader:
+class ChunkReader(Reader):
     def __init__(self, name, extension):
-        self.name = name
-        self.extension = extension
-        self.columns = ['time', 'path']
+        super().__init__(name, columns=['path'], extension=extension)
     
     def read(self, file):
-        if file is None:
-            return pd.DataFrame(columns=self.columns[1:], index=pd.DatetimeIndex([]))
         chunk = chunk_key(file)
-        data = pd.DataFrame({ self.columns[0]: [chunk], self.columns[1]: [file] })
-        data.set_index('time', inplace=True)
-        return data
+        return pd.DataFrame(file, index=[chunk], columns=self.columns)
 
-class CsvReader:
+class CsvReader(Reader):
     def __init__(self, name, columns, extension="csv"):
-        self.name = name
-        self.extension = extension
-        self.columns = ['time', *columns]
+        super().__init__(name, columns, extension)
 
     def read(self, file):
-        if file is None:
-            return pd.DataFrame(columns=self.columns[1:], index=pd.DatetimeIndex([]))
-        data = pd.read_csv(file, header=0, names=self.columns)
-        data['time'] = aeon(data['time'])
-        data.set_index('time', inplace=True)
-        return data
+        return pd.read_csv(file, header=0, names=self.columns, index_col=0)
 
 class SubjectReader(CsvReader):
     def __init__(self, name):
@@ -156,20 +140,14 @@ class EventReader(HarpReader):
         data['event'] = self.tag
         return data
 
-class VideoReader:
+class VideoReader(CsvReader):
     def __init__(self, name):
-        self.name = name
-        self.extension = "csv"
-        self.columns = ['time', 'hw_counter', 'hw_timestamp']
+        super().__init__(name, columns=['frame', 'hw_counter', 'hw_timestamp', 'path', 'epoch'])
 
     def read(self, file):
         """Reads video metadata from the specified file."""
-        if file is None:
-            return pd.DataFrame(columns=['frame', *self.columns[1:]], index=pd.DatetimeIndex([]))
-        data = pd.read_csv(file, header=0, names=self.columns)
-        data.insert(loc=1, column='frame', value=data.index)
-        data['time'] = aeon(data['time'])
+        data = pd.read_csv(file, header=0, names=self.columns[1:3], index_col=0)
+        data.insert(loc=0, column=self.columns[0], value=data.index)
         data['path'] = os.path.splitext(file)[0] + '.avi'
-        data['epoch'] = file.rsplit(os.sep, maxsplit=3)[1]
-        data.set_index('time', inplace=True)
+        data['epoch'] = file.parts[-3]
         return data
