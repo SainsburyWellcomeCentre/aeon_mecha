@@ -22,9 +22,10 @@ payloadtypes = {
 class Reader:
     def __init__(self, name, columns, extension):
         self.name = name
-        self.device = name.split('_')[0]
         self.columns = columns
         self.extension = extension
+        if name is not None:
+            self.device = name.split('_')[0]
 
     def read(self, _):
         return pd.DataFrame(columns=self.columns, index=pd.DatetimeIndex([]))
