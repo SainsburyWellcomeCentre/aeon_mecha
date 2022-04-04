@@ -3,6 +3,7 @@ import math
 import numpy as np
 import pandas as pd
 from aeon.io.api import chunk_key
+from dotmap import DotMap
 
 _SECONDS_PER_TICK = 32e-6
 _payloadtypes = {
@@ -247,3 +248,24 @@ class VideoReader(CsvReader):
         data['epoch'] = file.parts[-3]
         data.set_index('time', inplace=True)
         return data
+
+def from_dict(data, name=None):
+    reader_type = data.get('type', None)
+    if reader_type is not None:
+        kwargs = {k:v for k,v in data.items() if k != 'type'}
+        return globals()[reader_type](name=name, **kwargs)
+
+    return DotMap({
+        k:from_dict(v, f"{name}_{k}" if name is not None else k)
+        for k,v in data.items()
+    })
+
+def to_dict(dotmap):
+    if isinstance(dotmap, Reader):
+        kwargs = { k:v for k,v in vars(dotmap).items() if k not in ['name','device'] }
+        kwargs['type'] = type(dotmap).__name__
+        return kwargs
+
+    return {
+        k:to_dict(v) for k,v in dotmap.items()
+    }
