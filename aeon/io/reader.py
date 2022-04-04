@@ -108,10 +108,6 @@ class LogReader(CsvReader):
     def __init__(self, name):
         super().__init__(name, columns=['priority', 'type', 'message'])
 
-class VideoReader(CsvReader):
-    def __init__(self, name):
-        super().__init__(name, columns=['hw_counter', 'hw_timestamp'])
-
 class PatchStateReader(CsvReader):
     def __init__(self, name):
         super().__init__(name, columns=['threshold', 'd1', 'delta'])
@@ -143,11 +139,13 @@ class EventReader(HarpReader):
 class VideoReader(CsvReader):
     def __init__(self, name):
         super().__init__(name, columns=['frame', 'hw_counter', 'hw_timestamp', 'path', 'epoch'])
+        self._rawcolumns = ['time'] + self.columns[1:3]
 
     def read(self, file):
         """Reads video metadata from the specified file."""
-        data = pd.read_csv(file, header=0, names=self.columns[1:3], index_col=0)
-        data.insert(loc=0, column=self.columns[0], value=data.index)
+        data = pd.read_csv(file, header=0, names=self._rawcolumns)
+        data.insert(loc=1, column=self.columns[0], value=data.index)
         data['path'] = os.path.splitext(file)[0] + '.avi'
         data['epoch'] = file.parts[-3]
+        data.set_index('time', inplace=True)
         return data
