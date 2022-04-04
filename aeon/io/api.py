@@ -80,21 +80,18 @@ def _empty(columns):
 
 def load(root, reader, start=None, end=None, time=None, tolerance=None):
     '''
-    Extracts data from matching files in the specified root path, sorted chronologically,
-    containing device and/or epoch metadata for the Experiment 0.2 arena. If no prefix is
-    specified, metadata for all epochs is extracted.
+    Extracts chunk data from the root path of an Aeon dataset using the specified data stream
+    reader. A subset of the data can be loaded by specifying an optional time range, or a list
+    of timestamps used to index the data on file. Returned data will be sorted chronologically.
 
-    :param str path: The root path, or prioritised sequence of paths, where epoch data is stored.
-    :param Reader reader: A callable object used to load epoch metadata from a file.
-    :param str, device: The device name prefix used to search for data files.
-    :param str, optional prefix: The pathname prefix used to search for data files.
-    :param str, optional extension: The optional extension pattern used to search for data files.
+    :param str root: The root path, or prioritised sequence of paths, where epoch data is stored.
+    :param Reader reader: A data stream reader object used to read chunk data from the dataset.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
     :param datetime, optional time: An object or series specifying the timestamps to extract.
     :param datetime, optional tolerance:
     The maximum distance between original and new timestamps for inexact matches.
-    :return: A pandas data frame containing epoch event metadata, sorted by priority and time.
+    :return: A pandas data frame containing epoch event metadata, sorted by time.
     '''
     files = set()
     if isinstance(root, str):

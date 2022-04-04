@@ -5,9 +5,7 @@ import pandas as pd
 from aeon.io.api import chunk_key
 
 _SECONDS_PER_TICK = 32e-6
-
-"""Maps Harp payload types to numpy data type objects."""
-payloadtypes = {
+_payloadtypes = {
     1 : np.dtype(np.uint8),
     2 : np.dtype(np.uint16),
     4 : np.dtype(np.uint32),
@@ -20,6 +18,19 @@ payloadtypes = {
 }
 
 class Reader:
+    """Extracts data from raw chunk files in an Aeon dataset.
+    
+    Attributes
+    ----------
+    name : str
+        Full name of the Aeon data stream in the format `<Device>_<DataStream>`.
+    columns : str or array-like
+        Column labels to use for the data.
+    extension : str
+        Extension of data file pathnames.
+    device : str
+        Name of the device associated with the data stream.
+    """
     def __init__(self, name, columns, extension):
         self.name = name
         self.columns = columns
@@ -28,38 +39,16 @@ class Reader:
             self.device = name.split('_')[0]
 
     def read(self, _):
+        """Reads data from the specified chunk file."""
         return pd.DataFrame(columns=self.columns, index=pd.DatetimeIndex([]))
 
 class HarpReader(Reader):
-    """
-    Reads data from raw binary files encoded using the Harp protocol.
-
-    Parameters
-    ----------
-    name : str
-        Name of the Harp data stream.
-    columns : str or array-like, optional
-        The column labels to use for the data.
-    extension : str, optional
-        Extension for data files.
-    """
+    """Extracts data from raw binary files encoded using the Harp protocol."""
     def __init__(self, name, columns, extension="bin"):
         super().__init__(name, columns, extension)
 
     def read(self, file):
-        """
-        Reads data from the specified Harp binary file.
-        
-        Parameters
-        ----------
-        file : str
-            Path to a Harp binary file.
-        
-        Returns
-        -------
-        DataFrame
-            Pandas data frame containing Harp event data, sorted by time.
-        """
+        """Reads data from the specified Harp binary file."""
         data = np.fromfile(file, dtype=np.uint8)
         if len(data) == 0:
             return pd.DataFrame(columns=self.columns, index=pd.DatetimeIndex([]))
@@ -67,7 +56,7 @@ class HarpReader(Reader):
         stride = data[1] + 2
         length = len(data) // stride
         payloadsize = stride - 12
-        payloadtype = payloadtypes[data[4] & ~0x10]
+        payloadtype = _payloadtypes[data[4] & ~0x10]
         elementsize = payloadtype.itemsize
         payloadshape = (length, payloadsize // elementsize)
         seconds = np.ndarray(length, dtype=np.uint32, buffer=data, offset=5, strides=stride)
@@ -87,57 +76,165 @@ class HarpReader(Reader):
             return pd.DataFrame(payload, index=seconds, columns=self.columns)
 
 class ChunkReader(Reader):
+    """Extracts path information from chunk files in the dataset."""
     def __init__(self, name, extension):
         super().__init__(name, columns=['path'], extension=extension)
     
     def read(self, file):
+        """Returns path information for the specified chunk."""
         chunk = chunk_key(file)
         return pd.DataFrame(file, index=[chunk], columns=self.columns)
 
 class CsvReader(Reader):
+    """
+    Extracts data from comma-separated (csv) text files, where the first column
+    stores the Aeon timestamp, in seconds.
+    """
     def __init__(self, name, columns, extension="csv"):
         super().__init__(name, columns, extension)
 
     def read(self, file):
+        """Reads data from the specified CSV text file."""
         return pd.read_csv(file, header=0, names=self.columns, index_col=0)
 
 class SubjectReader(CsvReader):
+    """
+    Extracts metadata for subjects entering and exiting the environment.
+
+    Columns
+    -------
+    id : str
+        Unique identifier of a subject in the environment.
+    weight : float
+        Weight measurement of the subject on entering or exiting the environment.
+    event : str
+        Event type. Can be one of `Enter`, `Exit` or `Remain`.
+    """
     def __init__(self, name):
         super().__init__(name, columns=['id', 'weight', 'event'])
 
 class LogReader(CsvReader):
+    """
+    Extracts message log data.
+    
+    Columns
+    -------
+    priority : str
+        Priority level of the message.
+    type : str
+        Type of the log message.
+    message : str
+        Log message data. Can be structured using tab separated values.
+    """
     def __init__(self, name):
         super().__init__(name, columns=['priority', 'type', 'message'])
 
 class PatchStateReader(CsvReader):
+    """
+    Extracts patch state data for linear depletion foraging patches.
+    
+    Columns
+    -------
+    threshold : float
+        Distance to travel before the next pellet is delivered.
+    d1 : float
+        y-intercept of the line specifying the depletion function.
+    delta : float
+        Slope of the linear depletion function.
+    """
     def __init__(self, name):
         super().__init__(name, columns=['threshold', 'd1', 'delta'])
 
 class EncoderReader(HarpReader):
+    """
+    Extract magnetic encoder data.
+    
+    Columns
+    -------
+    angle : float
+        Absolute angular position, in radians, of the magnetic encoder.
+    intensity : float
+        Intensity of the magnetic field.
+    """
     def __init__(self, name):
         super().__init__(name, columns=['angle', 'intensity'])
 
 class WeightReader(HarpReader):
+    """
+    Extract weight measurements from an electronic weighing device.
+    
+    Columns
+    -------
+    value : float
+        Absolute weight reading, in grams.
+    stable : float
+        Normalized value in the range [0, 1] indicating how much the
+        reading is stable.
+    """
     def __init__(self, name):
         super().__init__(name, columns=['value', 'stable'])
 
 class PositionReader(HarpReader):
+    """
+    Extract 2D position tracking data for a specific camera.
+
+    Columns
+    -------
+    x : float
+        x-coordinate of the object center of mass.
+    y : float
+        y-coordinate of the object center of mass.
+    angle : float
+        angle, in radians, of the ellipse fit to the object.
+    major : float
+        length, in pixels, of the major axis of the ellipse fit to the object.
+    minor : float
+        length, in pixels, of the minor axis of the ellipse fit to the object.
+    area : float
+        number of pixels in the object mass.
+    id : float
+        unique tracking ID of the object in a frame.
+    """
     def __init__(self, name):
         super().__init__(name, columns=['x', 'y', 'angle', 'major', 'minor', 'area', 'id'])
 
 class EventReader(HarpReader):
+    """
+    Extracts event data matching a specific digital I/O bitmask.
+
+    Columns
+    -------
+    event : str
+        Unique identifier for the event code.
+    """
     def __init__(self, name, value, tag):
         super().__init__(name, columns=['event'])
         self.value = value
         self.tag = tag
 
     def read(self, file):
+        """
+        Reads a specific event code from digital data and matches it to the
+        specified unique identifier.
+        """
         data = super().read(self, file)
         data = data[data.event == self.value]
         data['event'] = self.tag
         return data
 
 class VideoReader(CsvReader):
+    """
+    Extracts video frame metadata.
+    
+    Columns
+    -------
+    frame : int
+        Index of the video frame.
+    hw_counter : int
+        Hardware frame counter value for the current frame.
+    hw_timestamp : int
+        Internal camera timestamp for the current frame.
+    """
     def __init__(self, name):
         super().__init__(name, columns=['frame', 'hw_counter', 'hw_timestamp', 'path', 'epoch'])
         self._rawcolumns = ['time'] + self.columns[1:3]
