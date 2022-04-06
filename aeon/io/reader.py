@@ -43,7 +43,7 @@ class Reader:
         """Reads data from the specified chunk file."""
         return pd.DataFrame(columns=self.columns, index=pd.DatetimeIndex([]))
 
-class HarpReader(Reader):
+class Harp(Reader):
     """Extracts data from raw binary files encoded using the Harp protocol."""
     def __init__(self, name, columns, extension="bin"):
         super().__init__(name, columns, extension)
@@ -76,7 +76,7 @@ class HarpReader(Reader):
         else:
             return pd.DataFrame(payload, index=seconds, columns=self.columns)
 
-class ChunkReader(Reader):
+class Chunk(Reader):
     """Extracts path information from chunk files in the dataset."""
     def __init__(self, name, extension):
         super().__init__(name, columns=['path'], extension=extension)
@@ -86,7 +86,7 @@ class ChunkReader(Reader):
         chunk = chunk_key(file)
         return pd.DataFrame(file, index=[chunk], columns=self.columns)
 
-class CsvReader(Reader):
+class Csv(Reader):
     """
     Extracts data from comma-separated (csv) text files, where the first column
     stores the Aeon timestamp, in seconds.
@@ -98,7 +98,7 @@ class CsvReader(Reader):
         """Reads data from the specified CSV text file."""
         return pd.read_csv(file, header=0, names=self.columns, index_col=0)
 
-class SubjectReader(CsvReader):
+class Subject(Csv):
     """
     Extracts metadata for subjects entering and exiting the environment.
 
@@ -114,7 +114,7 @@ class SubjectReader(CsvReader):
     def __init__(self, name):
         super().__init__(name, columns=['id', 'weight', 'event'])
 
-class LogReader(CsvReader):
+class Log(Csv):
     """
     Extracts message log data.
     
@@ -130,7 +130,7 @@ class LogReader(CsvReader):
     def __init__(self, name):
         super().__init__(name, columns=['priority', 'type', 'message'])
 
-class PatchStateReader(CsvReader):
+class PatchState(Csv):
     """
     Extracts patch state data for linear depletion foraging patches.
     
@@ -146,7 +146,7 @@ class PatchStateReader(CsvReader):
     def __init__(self, name):
         super().__init__(name, columns=['threshold', 'd1', 'delta'])
 
-class EncoderReader(HarpReader):
+class Encoder(Harp):
     """
     Extract magnetic encoder data.
     
@@ -160,7 +160,7 @@ class EncoderReader(HarpReader):
     def __init__(self, name):
         super().__init__(name, columns=['angle', 'intensity'])
 
-class WeightReader(HarpReader):
+class Weight(Harp):
     """
     Extract weight measurements from an electronic weighing device.
     
@@ -175,7 +175,7 @@ class WeightReader(HarpReader):
     def __init__(self, name):
         super().__init__(name, columns=['value', 'stable'])
 
-class PositionReader(HarpReader):
+class Position(Harp):
     """
     Extract 2D position tracking data for a specific camera.
 
@@ -199,7 +199,7 @@ class PositionReader(HarpReader):
     def __init__(self, name):
         super().__init__(name, columns=['x', 'y', 'angle', 'major', 'minor', 'area', 'id'])
 
-class EventReader(HarpReader):
+class Event(Harp):
     """
     Extracts event data matching a specific digital I/O bitmask.
 
@@ -223,7 +223,7 @@ class EventReader(HarpReader):
         data['event'] = self.tag
         return data
 
-class VideoReader(CsvReader):
+class Video(Csv):
     """
     Extracts video frame metadata.
     
