@@ -1,5 +1,6 @@
 from enum import Enum
 from aeon.io.reader import *
+from aeon.io.device import compositeStream
 
 class Area(Enum):
     Null = 0
@@ -19,57 +20,42 @@ class RegionReader(HarpReader):
         data['region'] = categorical.rename_categories(Area._member_names_)
         return data
 
-def videoStream(name):
+def video(name):
     return name, { "Video": VideoReader(name) }
 
-def positionStream(name):
+def position(name):
     return name, { "Position": PositionReader(f"{name}_200") }
 
-def regionStream(name):
+def region(name):
     return name, { "Region": RegionReader(f"{name}_201") }
 
-def depletionFunctionStream(name):
+def depletionFunction(name):
     return name, { "DepletionState": PatchStateReader(f"{name}_State") }
 
-def encoderStream(name):
+def encoder(name):
     return name, { "Encoder": EncoderReader(f"{name}_90") }
 
-def feederStream(name):
+def feeder(name):
     return name,{
         "BeamBreak": EventReader(f"{name}_32", 0x20, 'PelletDelivered'),
         "DeliverPellet": EventReader(f"{name}_35", 0x80, 'TriggerPellet')
     }
 
-def patchStream(name):
-    return compositeStream(name, depletionFunctionStream, encoderStream, feederStream)
+def patch(name):
+    return compositeStream(name, depletionFunction, encoder, feeder)
 
-def weightStream(name):
+def weight(name):
     return name, {
         "WeightRaw": WeightReader(f"{name}_200"),
         "WeightFiltered": WeightReader(f"{name}_202"),
         "WeightSubject": WeightReader(f"{name}_204")
     }
 
-def metadataStream(name):
+def metadata(name):
     return name, {
         "EnvironmentState": CsvReader(f"{name}_EnvironmentState", ['state']),
         "SubjectState": SubjectReader(f"{name}_SubjectState")
     }
 
-def messageLogStream(name):
+def messageLog(name):
     return name, { "MessageLog": LogReader(f"{name}_MessageLog") }
-
-def compositeStream(name, *streams):
-    schema = {}
-    if streams is not None:
-        for sch in streams:
-            schema.update(sch(name)[1])
-    return name, schema
-
-class Device:
-    def __init__(self, name, *schemas):
-        self.name = name
-        self.schema = compositeStream(name, *schemas)[1]
-
-    def __iter__(self):
-        return iter((self.name, self.schema))

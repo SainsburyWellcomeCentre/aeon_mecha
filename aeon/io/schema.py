@@ -1,17 +1,18 @@
 from dotmap import DotMap
-from aeon.io.devices import *
+import aeon.io.stream as stream
+from aeon.io.device import Device
 
 exp02 = DotMap([
-    Device("CameraTop", videoStream, positionStream, regionStream),
-    Device("CameraEast", videoStream),
-    Device("CameraNest", videoStream),
-    Device("CameraNorth", videoStream),
-    Device("CameraPatch1", videoStream),
-    Device("CameraPatch2", videoStream),
-    Device("CameraSouth", videoStream),
-    Device("CameraWest", videoStream),
-    Device("ExperimentalMetadata", metadataStream, messageLogStream),
-    Device("Nest", weightStream),
-    Device("Patch1", depletionFunctionStream, encoderStream, feederStream),
-    Device("Patch2", depletionFunctionStream, encoderStream, feederStream)
+    Device("CameraTop", stream.video, stream.position, stream.region),
+    Device("CameraEast", stream.video),
+    Device("CameraNest", stream.video),
+    Device("CameraNorth", stream.video),
+    Device("CameraPatch1", stream.video),
+    Device("CameraPatch2", stream.video),
+    Device("CameraSouth", stream.video),
+    Device("CameraWest", stream.video),
+    Device("ExperimentalMetadata", stream.metadata, stream.messageLog),
+    Device("Nest", stream.weight),
+    Device("Patch1", stream.depletionFunction, stream.encoder, stream.feeder),
+    Device("Patch2", stream.depletionFunction, stream.encoder, stream.feeder)
 ])
