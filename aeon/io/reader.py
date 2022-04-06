@@ -235,23 +235,21 @@ class Video(Csv):
     
     Columns
     -------
-    frame : int
-        Index of the video frame.
     hw_counter : int
         Hardware frame counter value for the current frame.
     hw_timestamp : int
         Internal camera timestamp for the current frame.
     """
     def __init__(self, name):
-        super().__init__(name, columns=['frame', 'hw_counter', 'hw_timestamp', 'path', 'epoch'])
-        self._rawcolumns = ['time'] + self.columns[1:3]
+        super().__init__(name, columns=['hw_counter', 'hw_timestamp', '_frame', '_path', '_epoch'])
+        self._rawcolumns = ['time'] + self.columns[0:2]
 
     def read(self, file):
         """Reads video metadata from the specified file."""
         data = pd.read_csv(file, header=0, names=self._rawcolumns)
-        data.insert(loc=1, column=self.columns[0], value=data.index)
-        data['path'] = os.path.splitext(file)[0] + '.avi'
-        data['epoch'] = file.parts[-3]
+        data['_frame'] = data.index
+        data['_path'] = os.path.splitext(file)[0] + '.avi'
+        data['_epoch'] = file.parts[-3]
         data.set_index('time', inplace=True)
         return data
 
