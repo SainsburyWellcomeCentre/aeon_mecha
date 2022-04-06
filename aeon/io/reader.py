@@ -265,7 +265,6 @@ def to_dict(dotmap):
         kwargs = { k:v for k,v in vars(dotmap).items() if k not in ['name','device'] }
         kwargs['type'] = type(dotmap).__name__
         return kwargs
-
     return {
         k:to_dict(v) for k,v in dotmap.items()
     }
