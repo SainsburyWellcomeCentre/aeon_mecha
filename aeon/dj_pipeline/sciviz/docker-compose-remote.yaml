@@ -22,7 +22,7 @@ services:
     networks:
       - main
   sci-viz:
-    image: datajoint/sciviz:0.1.1
+    image: datajoint/sci-viz:0.1.1
     environment:
       - CHOKIDAR_USEPOLLING=true
       - REACT_APP_DJSCIVIZ_BACKEND_PREFIX=/api
