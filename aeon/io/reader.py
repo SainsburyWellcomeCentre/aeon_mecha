@@ -91,12 +91,18 @@ class Csv(Reader):
     Extracts data from comma-separated (csv) text files, where the first column
     stores the Aeon timestamp, in seconds.
     """
-    def __init__(self, name, columns, extension="csv"):
+    def __init__(self, name, columns, dtype=None, extension="csv"):
         super().__init__(name, columns, extension)
+        self.dtype = dtype
 
     def read(self, file):
         """Reads data from the specified CSV text file."""
-        return pd.read_csv(file, header=0, names=self.columns, index_col=0)
+        return pd.read_csv(
+            file,
+            header=0,
+            names=self.columns,
+            dtype=self.dtype,
+            index_col=0)
 
 class Subject(Csv):
     """
