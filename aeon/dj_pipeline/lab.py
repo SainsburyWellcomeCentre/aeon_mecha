@@ -34,7 +34,8 @@ class Location(dj.Lookup):
     location_description=''    : varchar(255)
     """
 
-    contents = [('SWC', 'room-0', 'room for experiment 0')]
+    contents = [('SWC', 'room-0', 'room for experiment 0'),
+                ('SWC', 'room-1', 'room for social experiment')]
 
 
 @schema

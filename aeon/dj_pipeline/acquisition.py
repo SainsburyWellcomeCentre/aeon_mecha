@@ -294,10 +294,11 @@ class Epoch(dj.Manual):
                          "epoch_end": previous_epoch_end,
                          "epoch_duration": (previous_epoch_end - previous_epoch_start).total_seconds() / 3600})
                     # update end-time for last chunk of the previous epoch
-                    Chunk.update1({"experiment_name": experiment_name,
-                                   "chunk_start": previous_chunk.name,
-                                   "chunk_end": previous_epoch_end})
-
+                    if Chunk & {"experiment_name": experiment_name,
+                                "chunk_start": previous_chunk.name}:
+                        Chunk.update1({"experiment_name": experiment_name,
+                                       "chunk_start": previous_chunk.name,
+                                       "chunk_end": previous_epoch_end})
                 if epoch_config:
                     cls.Config.insert1(epoch_config)
                     ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
@@ -359,6 +360,10 @@ class Chunk(dj.Manual):
 
             chunk_start = chunk.name
             chunk_end = chunk_start + datetime.timedelta(hours=aeon_api.CHUNK_DURATION)
+
+            if EpochEnd & epoch_key:
+                epoch_end = (EpochEnd & epoch_key).fetch1('epoch_end')
+                chunk_end = min(chunk_end, epoch_end)
 
             # --- insert to Chunk ---
             chunk_key = {"experiment_name": experiment_name, "chunk_start": chunk_start}
