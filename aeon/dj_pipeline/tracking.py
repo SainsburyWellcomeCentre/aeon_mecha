@@ -104,9 +104,11 @@ class CameraTracking(dj.Imported):
 
     def make(self, key):
         chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
-
+        camera = (acquisition.ExperimentCamera & key).fetch1('camera_description')
         raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+
         positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
+                                             device=camera,
                                              start=pd.Timestamp(chunk_start),
                                              end=pd.Timestamp(chunk_end))
         # replace id=NaN with -1
