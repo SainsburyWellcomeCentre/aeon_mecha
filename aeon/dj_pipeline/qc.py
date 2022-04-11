@@ -62,25 +62,26 @@ class CameraQC(dj.Imported):
                 & 'chunk_start < IFNULL(camera_remove_time, "2200-01-01")')
 
     def make(self, key):
-        qc_dir = acquisition.Experiment.get_data_directory(
-            key, directory_type='quality-control', as_posix=True)
-        if qc_dir is None:
-            raise FileNotFoundError(f'quality-control directory does not exist - Experiment: {key["experiment_name"]}')
-
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1('chunk_start', 'chunk_end')
-
+        chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
         camera = (acquisition.ExperimentCamera & key).fetch1('camera_description')
+        raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
 
-        deltas = aeon_api.load(qc_dir, lambda f: pd.read_parquet(f),
-                               camera, extension='*.parquet',
-                               start=pd.Timestamp(chunk_start),
-                               end=pd.Timestamp(chunk_end))
+        videodata = aeon_api.videodata(raw_data_dir.as_posix(),
+                                       device=camera,
+                                       start=pd.Timestamp(chunk_start),
+                                       end=pd.Timestamp(chunk_end)).reset_index()
+
+        deltas = videodata[videodata.columns[0:4]].diff()
+        deltas.columns = ['time_delta', 'frame_delta', 'hw_counter_delta', 'hw_timestamp_delta']
+        deltas['frame_offset'] = (deltas.hw_counter_delta - 1).cumsum()
+
+        videodata.set_index('time', inplace=True)
 
         self.insert1({**key,
                       'drop_count': deltas.frame_offset.iloc[-1],
                       'max_harp_delta': deltas.time_delta.max().total_seconds(),
                       'max_camera_delta': deltas.hw_timestamp_delta.max() / 1e9,  # convert to seconds
-                      'timestamps': deltas.index.to_pydatetime(),
+                      'timestamps': videodata.index.to_pydatetime(),
                       'time_delta': deltas.time_delta.values / np.timedelta64(1, 's'), # convert to seconds
                       'frame_delta': deltas.frame_delta.values,
                       'hw_counter_delta': deltas.hw_counter_delta.values,
