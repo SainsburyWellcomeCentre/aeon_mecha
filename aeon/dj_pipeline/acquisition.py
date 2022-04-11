@@ -296,7 +296,8 @@ class Epoch(dj.Manual):
 
             with cls.connection.transaction:
                 cls.insert1(epoch_key)
-                if previous_epoch_end:
+                if previous_epoch_end and not (EpochEnd & {"experiment_name": experiment_name,
+                                                           "epoch_start": previous_epoch_start}):
                     # insert end-time for previous epoch
                     EpochEnd.insert1(
                         {"experiment_name": experiment_name,
@@ -315,7 +316,7 @@ class Epoch(dj.Manual):
 
             epoch_list.append(epoch_key)
 
-        print(f"Inserted {len(epoch_list)} new Epochs")
+        print(f"Insert {len(epoch_list)} new Epoch(s)")
 
 
 @schema
@@ -414,7 +415,7 @@ class Chunk(dj.Manual):
             )
 
         # insert
-        print(f"Insert {len(chunk_list)} new Chunks")
+        print(f"Insert {len(chunk_list)} new Chunk(s)")
 
         with cls.connection.transaction:
             cls.insert(chunk_list)
