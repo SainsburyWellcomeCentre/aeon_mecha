@@ -3,7 +3,10 @@ import pandas as pd
 import numpy as np
 from matplotlib import path
 
-from aeon.io import api as aeon_api
+from aeon.io import api as io_api
+from aeon.io import schema as io_schema
+from aeon.io import reader as io_reader
+from aeon.io import stream as io_stream
 
 from . import lab, acquisition, qc
 from . import get_schema_name, dict_to_uuid
@@ -104,11 +107,18 @@ class CameraTracking(dj.Imported):
 
     def make(self, key):
         chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
+        camera = (acquisition.ExperimentCamera & key).fetch1('camera_description')
 
         raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
-        positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
-                                             start=pd.Timestamp(chunk_start),
-                                             end=pd.Timestamp(chunk_end))
+
+        device = getattr(acquisition._device_schema_mapper[key['experiment_name']], camera)
+
+        positiondata = io_api.load(
+            root=raw_data_dir.as_posix(),
+            reader=device.Position,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end))
+
         # replace id=NaN with -1
         positiondata.fillna({'id': -1}, inplace=True)
 
