@@ -60,8 +60,10 @@ high_priority(acquisition.Chunk.ingest_chunks, experiment_name=_current_experime
 high_priority(acquisition.ExperimentLog)
 high_priority(acquisition.SubjectEnterExit)
 high_priority(acquisition.SubjectWeight)
+high_priority(acquisition.FoodPatchEvent)
 high_priority(acquisition.WheelState)
 high_priority(acquisition.WeightMeasurement)
+
 high_priority(analysis.InArena)
 high_priority(analysis.InArenaEnd)
 high_priority(analysis.InArenaTimeSlice)
@@ -77,6 +79,7 @@ mid_priority = DataJointWorker(
 
 mid_priority(qc.CameraQC)
 mid_priority(tracking.CameraTracking)
+# mid_priority(acquisition.FoodPatchWheel)
 mid_priority(analysis.InArenaSubjectPosition)
 mid_priority(analysis.InArenaTimeDistribution)
 mid_priority(analysis.InArenaSummary)
