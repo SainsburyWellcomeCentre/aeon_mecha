@@ -2,7 +2,7 @@ import datajoint as dj
 import pandas as pd
 import numpy as np
 
-from aeon.io import api as aeon_api
+from aeon.io import api as io_api
 
 from . import acquisition
 from . import get_schema_name
@@ -66,13 +66,16 @@ class CameraQC(dj.Imported):
         camera = (acquisition.ExperimentCamera & key).fetch1('camera_description')
         raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
 
-        videodata = aeon_api.videodata(raw_data_dir.as_posix(),
-                                       device=camera,
-                                       start=pd.Timestamp(chunk_start),
-                                       end=pd.Timestamp(chunk_end)).reset_index()
+        device = getattr(acquisition._device_schema_mapper[key['experiment_name']], camera)
+
+        videodata = io_api.load(
+            root=raw_data_dir.as_posix(),
+            reader=device.Video,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end)).reset_index()
 
         deltas = videodata[videodata.columns[0:4]].diff()
-        deltas.columns = ['time_delta', 'frame_delta', 'hw_counter_delta', 'hw_timestamp_delta']
+        deltas.columns = ['time_delta', 'hw_counter_delta', 'hw_timestamp_delta', 'frame_delta']
         deltas['frame_offset'] = (deltas.hw_counter_delta - 1).cumsum()
 
         videodata.set_index('time', inplace=True)
