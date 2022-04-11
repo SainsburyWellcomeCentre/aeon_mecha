@@ -224,7 +224,7 @@ class Event(Harp):
         Reads a specific event code from digital data and matches it to the
         specified unique identifier.
         """
-        data = super().read(self, file)
+        data = super().read(file)
         data = data[data.event == self.value]
         data['event'] = self.tag
         return data
