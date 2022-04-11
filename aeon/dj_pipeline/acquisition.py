@@ -4,7 +4,7 @@ import pathlib
 import numpy as np
 import pandas as pd
 
-from aeon.preprocess import api as aeon_api
+from aeon.io import api as aeon_api
 
 from . import lab, subject
 from . import get_schema_name, paths
