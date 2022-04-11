@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 
 from aeon.io import api as aeon_api
-from aeon.util import plotting as aeon_plotting
 
 from . import acquisition
 from . import get_schema_name
