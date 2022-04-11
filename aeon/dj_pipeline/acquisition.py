@@ -4,7 +4,10 @@ import pathlib
 import numpy as np
 import pandas as pd
 
-from aeon.io import api as aeon_api
+from aeon.io import api as io_api
+from aeon.io import schema as io_schema
+from aeon.io import reader as io_reader
+from aeon.io import stream as io_stream
 
 from . import lab, subject
 from . import get_schema_name, paths
@@ -12,6 +15,17 @@ from .ingest.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 
 
 schema = dj.schema(get_schema_name("acquisition"))
+
+
+# ------------------- Some Constants --------------------------
+
+_ref_device_mapper = {'exp0.1-r0': 'FrameTop',
+                      'social0-r1': 'FrameTop',
+                      'exp0.2-r0': 'CameraTop'}
+
+_device_schema_mapper = {'exp0.1-r0': io_schema.exp02,
+                         'social0-r1': io_schema.exp02,
+                         'exp0.2-r0': io_schema.exp02}
 
 
 # ------------------- Type Lookup ------------------------
@@ -236,13 +250,9 @@ class Epoch(dj.Manual):
         metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
         """
 
-    experiment_ref_device_mapper = {'exp0.1-r0': 'FrameTop',
-                                    'social0-r1': 'FrameTop',
-                                    'exp0.2-r0': 'CameraTop'}
-
     @classmethod
     def ingest_epochs(cls, experiment_name):
-        device_name = Epoch.experiment_ref_device_mapper.get(experiment_name, 'CameraTop')
+        device_name = _ref_device_mapper.get(experiment_name, 'CameraTop')
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
 
@@ -281,7 +291,7 @@ class Epoch(dj.Manual):
                 previous_chunk_path = pathlib.Path(previous_chunk.path)
                 previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
                 previous_epoch_start = datetime.datetime.strptime(previous_epoch_dir.name, '%Y-%m-%dT%H-%M-%S')
-                previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=aeon_api.CHUNK_DURATION)
+                previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=io_api.CHUNK_DURATION)
                 previous_epoch_end = min(previous_chunk_end, epoch_start)
 
             with cls.connection.transaction:
@@ -343,7 +353,7 @@ class Chunk(dj.Manual):
 
     @classmethod
     def ingest_chunks(cls, experiment_name):
-        device_name = Epoch.experiment_ref_device_mapper.get(experiment_name, 'CameraTop')
+        device_name = _ref_device_mapper.get(experiment_name, 'CameraTop')
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
 
@@ -359,7 +369,7 @@ class Chunk(dj.Manual):
                 continue
 
             chunk_start = chunk.name
-            chunk_end = chunk_start + datetime.timedelta(hours=aeon_api.CHUNK_DURATION)
+            chunk_end = chunk_start + datetime.timedelta(hours=io_api.CHUNK_DURATION)
 
             if EpochEnd & epoch_key:
                 epoch_end = (EpochEnd & epoch_key).fetch1('epoch_end')
@@ -438,11 +448,12 @@ class SubjectEnterExit(dj.Imported):
                 key['experiment_name'], raw_data_dir.as_posix(),
                 pd.Timestamp(chunk_start), pd.Timestamp(chunk_end))
         else:
-            subject_data = aeon_api.subjectdata(
-                raw_data_dir.as_posix(),
+            device = getattr(_device_schema_mapper[key['experiment_name']], 'ExperimentalMetadata')
+            subject_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=device.SubjectState,
                 start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
+                end=pd.Timestamp(chunk_end))
 
         self.insert1(key)
         self.Time.insert(
@@ -484,11 +495,13 @@ class SubjectWeight(dj.Imported):
                 key['experiment_name'], raw_data_dir.as_posix(),
                 pd.Timestamp(chunk_start), pd.Timestamp(chunk_end))
         else:
-            subject_data = aeon_api.subjectdata(
-                raw_data_dir.as_posix(),
+            device = getattr(_device_schema_mapper[key['experiment_name']], 'ExperimentalMetadata')
+            subject_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=device.SubjectState,
                 start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
+                end=pd.Timestamp(chunk_end))
+
         self.insert1(key)
         self.WeightTime.insert(
             (
@@ -519,11 +532,18 @@ class ExperimentLog(dj.Imported):
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
 
         raw_data_dir = Experiment.get_data_directory(key)
-        log_messages = aeon_api.logdata(
-            raw_data_dir.as_posix(),
+
+        device = getattr(_device_schema_mapper[key['experiment_name']], 'ExperimentalMetadata')
+        log_messages = io_api.load(
+            root=raw_data_dir.as_posix(),
+            reader=device.MessageLog,
             start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
+            end=pd.Timestamp(chunk_end))
+        state_messages = io_api.load(
+            root=raw_data_dir.as_posix(),
+            reader=device.EnvironmentState,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end))
 
         self.insert1(key)
         self.Message.insert(
@@ -534,6 +554,15 @@ class ExperimentLog(dj.Imported):
                 "message_type": r.type,
             }
             for _, r in log_messages.iterrows()
+        )
+        self.Message.insert(
+            {
+                **key,
+                "message_time": r.name,
+                "message": r.state,
+                "message_type": 'EnvironmentState',
+            }
+            for _, r in state_messages.iterrows()
         )
 
 
@@ -571,12 +600,22 @@ class FoodPatchEvent(dj.Imported):
         )
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-        pellet_data = aeon_api.pelletdata(
-            raw_data_dir.as_posix(),
-            device=food_patch_description,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
+
+        device = getattr(_device_schema_mapper[key['experiment_name']], food_patch_description)
+
+        pellet_data = pd.concat([
+            io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=device.DeliverPellet,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end)),
+            io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=device.BeamBreak,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end))
+        ])
+        pellet_data.sort_index(inplace=True)
 
         if not len(pellet_data):
             event_list = [
@@ -636,12 +675,15 @@ class FoodPatchWheel(dj.Imported):
         )
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-        wheel_data = aeon_api.encoderdata(
-            raw_data_dir.as_posix(),
-            device=food_patch_description,
+
+        device = getattr(_device_schema_mapper[key['experiment_name']], food_patch_description)
+
+        wheel_data = io_api.load(
+            root=raw_data_dir.as_posix(),
+            reader=device.Encoder,
             start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
+            end=pd.Timestamp(chunk_end))
+
         timestamps = wheel_data.index.to_pydatetime()
 
         self.insert1(
@@ -690,12 +732,15 @@ class WheelState(dj.Imported):
             "food_patch_description"
         )
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-        wheel_state = aeon_api.patchdata(
-            raw_data_dir.as_posix(),
-            patch=food_patch_description,
+
+        device = getattr(_device_schema_mapper[key['experiment_name']], food_patch_description)
+
+        wheel_state = io_api.load(
+            root=raw_data_dir.as_posix(),
+            reader=device.DepletionState,
             start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
+            end=pd.Timestamp(chunk_end))
+
         # handles rare cases of duplicated state-timestamp
         wheel_state = wheel_state[~wheel_state.index.duplicated(keep='first')]
 
@@ -743,10 +788,14 @@ class WeightMeasurement(dj.Imported):
         weight_scale_description = (ExperimentWeightScale & key).fetch1('weight_scale_description')
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-        weight_data = aeon_api.weightdata(raw_data_dir.as_posix(),
-                                          device=weight_scale_description,
-                                          start=pd.Timestamp(chunk_start),
-                                          end=pd.Timestamp(chunk_end))
+
+        device = getattr(_device_schema_mapper[key['experiment_name']], weight_scale_description)
+
+        weight_data = io_api.load(
+            root=raw_data_dir.as_posix(),
+            reader=device.WeightRaw,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end))
 
         if not len(weight_data):
             #TODO: no weight data? this is unexpected
@@ -787,7 +836,10 @@ def _get_all_chunks(experiment_name, device_name):
         if data_dir
     }
 
-    return aeon_api.chunkdata(raw_data_dirs.values(), device_name), raw_data_dirs
+    chunkdata = io_api.load(root=raw_data_dirs.values(),
+                            reader=io_reader.Chunk(device_name, 'csv'))
+
+    return chunkdata, raw_data_dirs
 
 
 def _match_experiment_directory(experiment_name, path, directories):
@@ -814,15 +866,14 @@ def _match_experiment_directory(experiment_name, path, directories):
 def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
     assert experiment_name in ('exp0.1-r0', 'social0-r1')
 
-    subject_data = aeon_api.load(
+    reader = io_reader.Subject('SessionData_2')
+    subject_data = io_api.load(
         data_dir,
-        aeon_api.subjectreader,
-        device='SessionData',
-        prefix='SessionData_2',
-        extension="*.csv",
+        reader=reader,
         start=start,
         end=end,
     )
+
     subject_data.replace('Start', 'Enter', inplace=True)
     subject_data.replace('End', 'Exit', inplace=True)
 
