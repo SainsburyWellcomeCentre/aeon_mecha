@@ -266,7 +266,8 @@ def from_dict(data, name=None):
 
 def to_dict(dotmap):
     if isinstance(dotmap, Reader):
-        kwargs = { k:v for k,v in vars(dotmap).items() if k not in ['name','device'] }
+        kwargs = { k:v for k,v in vars(dotmap).items()
+                       if k not in ['name','device'] and not k.startswith('_') }
         kwargs['type'] = type(dotmap).__name__
         return kwargs
     return {
