@@ -23,7 +23,7 @@ _ref_device_mapper = {'exp0.1-r0': 'FrameTop',
                       'social0-r1': 'FrameTop',
                       'exp0.2-r0': 'CameraTop'}
 
-_device_schema_mapper = {'exp0.1-r0': io_schema.exp02,
+_device_schema_mapper = {'exp0.1-r0': io_schema.exp01,
                          'social0-r1': io_schema.exp02,
                          'exp0.2-r0': io_schema.exp02}
 
