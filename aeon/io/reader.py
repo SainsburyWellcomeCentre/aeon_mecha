@@ -91,8 +91,8 @@ class Chunk(Reader):
 
 class Metadata(Reader):
     """Extracts metadata information from all epochs in the dataset."""
-    def __init__(self):
-        super().__init__('Metadata', columns=['workflow', 'commit', 'metadata'], extension='yml')
+    def __init__(self, name="Metadata"):
+        super().__init__(name, columns=['workflow', 'commit', 'metadata'], extension="yml")
 
     def read(self, file):
         """Returns metadata for the specified epoch."""

@@ -60,7 +60,7 @@ def weight(name):
         "WeightSubject": _reader.Weight(f"{name}_204")
     }
 
-def metadata(name):
+def environment(name):
     """Metadata for environment mode and subjects."""
     return name, {
         "EnvironmentState": _reader.Csv(f"{name}_EnvironmentState", ['state']),
@@ -70,3 +70,7 @@ def metadata(name):
 def messageLog(name):
     """Message log data."""
     return name, { "MessageLog": _reader.Log(f"{name}_MessageLog") }
+
+def metadata(name="Metadata"):
+    """Metadata for acquisition epochs."""
+    return name, _reader.Metadata(name)
