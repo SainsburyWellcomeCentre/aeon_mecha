@@ -1,5 +1,7 @@
 import os
 import math
+import json
+import datetime
 import numpy as np
 import pandas as pd
 from aeon.io.api import chunk_key
@@ -85,6 +87,23 @@ class Chunk(Reader):
         """Returns path information for the specified chunk."""
         chunk = chunk_key(file)
         return pd.DataFrame(file, index=[chunk], columns=self.columns)
+
+class Metadata(Reader):
+    """Extracts metadata information from all epochs in the dataset."""
+    def __init__(self):
+        super().__init__('Metadata', columns=['workflow', 'commit', 'metadata'], extension='yml')
+
+    def read(self, file):
+        """Returns metadata for the specified epoch."""
+        epoch_str = file.parts[-2]
+        date_str, time_str = epoch_str.split("T")
+        time = datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":"))
+        with open(file) as fp:
+            metadata = json.load(fp)
+        workflow = metadata.pop('Workflow')
+        commit = metadata.pop('Commit', pd.NA)
+        data = { 'workflow': workflow, 'commit': commit, 'metadata': [DotMap(metadata)] }
+        return pd.DataFrame(data, index=[time], columns=self.columns)
 
 class Csv(Reader):
     """
