@@ -79,14 +79,15 @@ class Harp(Reader):
             return pd.DataFrame(payload, index=seconds, columns=self.columns)
 
 class Chunk(Reader):
-    """Extracts path information from chunk files in the dataset."""
+    """Extracts path and epoch information from chunk files in the dataset."""
     def __init__(self, name, extension):
-        super().__init__(name, columns=['path'], extension=extension)
+        super().__init__(name, columns=['path', 'epoch'], extension=extension)
     
     def read(self, file):
-        """Returns path information for the specified chunk."""
+        """Returns path and epoch information for the specified chunk."""
         chunk = chunk_key(file)
-        return pd.DataFrame(file, index=[chunk], columns=self.columns)
+        data = { 'path': file, 'epoch': file.parts[-3] }
+        return pd.DataFrame(data, index=[chunk], columns=self.columns)
 
 class Metadata(Reader):
     """Extracts metadata information from all epochs in the dataset."""
