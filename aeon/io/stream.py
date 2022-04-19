@@ -74,3 +74,7 @@ def messageLog(name):
 def metadata(name):
     """Metadata for acquisition epochs."""
     return { name: _reader.Metadata(name) }
+
+def session(name):
+    """Session metadata for Experiment 0.1."""
+    return { name: _reader.Csv(f"{name}_2", columns=['id','weight','event']) }
