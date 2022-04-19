@@ -3,13 +3,18 @@ def compositeStream(name, *args):
     """Merges multiple data streams into one stream."""
     schema = {}
     if args:
-        for sch in args:
-            schema.update(sch(name)[1])
-    return name, schema
+        for stream in args:
+            schema.update(stream(name))
+    return schema
 
 class Device:
     """
+    Groups multiple data streams into a logical device.
     
+    If a device contains a single stream with the same name as the device
+    `name`, it will be considered a singleton, and the stream reader will be
+    paired directly with the device without nesting.
+
     Attributes
     ----------
     name : str
@@ -19,7 +24,11 @@ class Device:
     """
     def __init__(self, name, *args):
         self.name = name
-        self.schema = compositeStream(name, *args)[1]
+        self.schema = compositeStream(name, *args)
 
     def __iter__(self):
+        if len(self.schema) == 1:
+            singleton = self.schema.get(self.name, None)
+            if singleton:
+                return iter((self.name, singleton))
         return iter((self.name, self.schema))

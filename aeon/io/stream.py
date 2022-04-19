@@ -23,27 +23,27 @@ class _RegionReader(_reader.Harp):
 
 def video(name):
     """Video frame metadata."""
-    return name, { "Video": _reader.Video(name) }
+    return { "Video": _reader.Video(name) }
 
 def position(name):
     """Position tracking data for the specified camera."""
-    return name, { "Position": _reader.Position(f"{name}_200") }
+    return { "Position": _reader.Position(f"{name}_200") }
 
 def region(name):
     """Region tracking data for the specified camera."""
-    return name, { "Region": _RegionReader(f"{name}_201") }
+    return { "Region": _RegionReader(f"{name}_201") }
 
 def depletionFunction(name):
     """State of the linear depletion function for foraging patches."""
-    return name, { "DepletionState": _reader.PatchState(f"{name}_State") }
+    return { "DepletionState": _reader.PatchState(f"{name}_State") }
 
 def encoder(name):
     """Wheel magnetic encoder data."""
-    return name, { "Encoder": _reader.Encoder(f"{name}_90") }
+    return { "Encoder": _reader.Encoder(f"{name}_90") }
 
 def feeder(name):
     """Feeder commands and events."""
-    return name, {
+    return {
         "BeamBreak": _reader.Event(f"{name}_32", 0x20, 'PelletDetected'),
         "DeliverPellet": _reader.Event(f"{name}_35", 0x80, 'TriggerPellet')
     }
@@ -54,7 +54,7 @@ def patch(name):
 
 def weight(name):
     """Weight measurement data streams for a specific nest."""
-    return name, {
+    return {
         "WeightRaw": _reader.Weight(f"{name}_200"),
         "WeightFiltered": _reader.Weight(f"{name}_202"),
         "WeightSubject": _reader.Weight(f"{name}_204")
@@ -62,15 +62,15 @@ def weight(name):
 
 def environment(name):
     """Metadata for environment mode and subjects."""
-    return name, {
+    return {
         "EnvironmentState": _reader.Csv(f"{name}_EnvironmentState", ['state']),
         "SubjectState": _reader.Subject(f"{name}_SubjectState")
     }
 
 def messageLog(name):
     """Message log data."""
-    return name, { "MessageLog": _reader.Log(f"{name}_MessageLog") }
+    return { "MessageLog": _reader.Log(f"{name}_MessageLog") }
 
-def metadata(name="Metadata"):
+def metadata(name):
     """Metadata for acquisition epochs."""
-    return name, _reader.Metadata(name)
+    return { name: _reader.Metadata(name) }
