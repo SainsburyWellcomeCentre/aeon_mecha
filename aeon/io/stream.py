@@ -44,7 +44,7 @@ def encoder(name):
 def feeder(name):
     """Feeder commands and events."""
     return {
-        "BeamBreak": _reader.Event(f"{name}_32", 0x20, 'PelletDetected'),
+        "BeamBreak": _reader.Event(f"{name}_32", 0x22, 'PelletDetected'),
         "DeliverPellet": _reader.Event(f"{name}_35", 0x80, 'TriggerPellet')
     }
 
