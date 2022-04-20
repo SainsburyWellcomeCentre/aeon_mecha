@@ -3,7 +3,9 @@ import pandas as pd
 import numpy as np
 import datetime
 
-from aeon.io import api as aeon_api
+from aeon.io import api as io_api
+from aeon.io import utils as io_utils
+
 from aeon.util import utils as aeon_utils
 
 from .. import lab, acquisition, tracking, qc
@@ -396,11 +398,11 @@ class InArenaTimeDistribution(dj.Computed):
         for food_patch_key in food_patch_keys:
             # wheel data
             food_patch_description = (acquisition.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
-            encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
-                                               device=food_patch_description,
-                                               start=pd.Timestamp(in_arena_start),
-                                               end=pd.Timestamp(in_arena_end))
-            wheel_distance_travelled = aeon_api.distancetravelled(encoderdata.angle)
+            encoderdata = io_api.encoderdata(raw_data_dir.as_posix(),
+                                             device=food_patch_description,
+                                             start=pd.Timestamp(in_arena_start),
+                                             end=pd.Timestamp(in_arena_end))
+            wheel_distance_travelled = io_api.distancetravelled(encoderdata.angle)
 
             patch_position = (acquisition.ExperimentFoodPatch.Position & food_patch_key).fetch1(
                 'food_patch_position_x', 'food_patch_position_y')
@@ -490,11 +492,11 @@ class InArenaSummary(dj.Computed):
                 'event_time')
             # wheel data
             food_patch_description = (acquisition.ExperimentFoodPatch & food_patch_key).fetch1('food_patch_description')
-            encoderdata = aeon_api.encoderdata(raw_data_dir.as_posix(),
-                                               device=food_patch_description,
-                                               start=pd.Timestamp(in_arena_start),
-                                               end=pd.Timestamp(in_arena_end))
-            wheel_distance_travelled = aeon_api.distancetravelled(encoderdata.angle).values
+            encoderdata = io_api.encoderdata(raw_data_dir.as_posix(),
+                                             device=food_patch_description,
+                                             start=pd.Timestamp(in_arena_start),
+                                             end=pd.Timestamp(in_arena_end))
+            wheel_distance_travelled = io_utils.distancetravelled(encoderdata.angle).values
 
             food_patch_statistics.append({
                 **key, **food_patch_key,

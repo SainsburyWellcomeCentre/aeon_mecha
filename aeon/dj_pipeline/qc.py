@@ -62,7 +62,8 @@ class CameraQC(dj.Imported):
                 & 'chunk_start < IFNULL(camera_remove_time, "2200-01-01")')
 
     def make(self, key):
-        chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
+        chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+            'chunk_start', 'chunk_end', 'directory_type')
         camera = (acquisition.ExperimentCamera & key).fetch1('camera_description')
         raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
 
