@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=emulateIE7" />
+    <title>Coverage for aeon/qc/video.py: 0%</title>
+    <link rel="icon" sizes="32x32" href="favicon_32.png">
+    <link rel="stylesheet" href="style.css" type="text/css">
+    <script type="text/javascript" src="coverage_html.js" defer></script>
+</head>
+<body class="pyfile">
+<header>
+    <div class="content">
+        <h1>
+            <span class="text">Coverage for </span><b>aeon/qc/video.py</b>:
+            <span class="pc_cov">0%</span>
+        </h1>
+        <div id="help_panel_wrapper">
+            <input id="help_panel_state" type="checkbox">
+            <label for="help_panel_state">
+                <img id="keyboard_icon" src="keybd_closed.png" alt="Show/hide keyboard shortcuts" />
+            </label>
+            <div id="help_panel">
+                <p class="legend">Shortcuts on this page</p>
+                <div>
+                    <p class="keyhelp">
+                        <kbd>r</kbd>
+                        <kbd>m</kbd>
+                        <kbd>x</kbd>
+                        &nbsp; toggle line displays
+                    </p>
+                    <p class="keyhelp">
+                        <kbd>j</kbd>
+                        <kbd>k</kbd> &nbsp; next/prev highlighted chunk
+                    </p>
+                    <p class="keyhelp">
+                        <kbd>0</kbd> &nbsp; (zero) top of page
+                    </p>
+                    <p class="keyhelp">
+                        <kbd>1</kbd> &nbsp; (one) first highlighted chunk
+                    </p>
+                </div>
+            </div>
+        </div>
+        <h2>
+            <span class="text">31 statements &nbsp;</span>
+            <button type="button" class="run button_toggle_run" value="run" data-shortcut="r" title="Toggle lines run">0<span class="text"> run</span></button>
+            <button type="button" class="mis show_mis button_toggle_mis" value="mis" data-shortcut="m" title="Toggle lines missing">31<span class="text"> missing</span></button>
+            <button type="button" class="exc show_exc button_toggle_exc" value="exc" data-shortcut="x" title="Toggle lines excluded">0<span class="text"> excluded</span></button>
+        </h2>
+        <div style="display: none;">
+            <button type="button" class="button_next_chunk" data-shortcut="j">Next highlighted chunk</button>
+            <button type="button" class="button_prev_chunk" data-shortcut="k">Previous highlighted chunk</button>
+            <button type="button" class="button_top_of_page" data-shortcut="0">Goto top of page</button>
+            <button type="button" class="button_first_chunk" data-shortcut="1">Goto first highlighted chunk</button>
+        </div>
+    </div>
+</header>
+<main id="source">
+    <p class="mis show_mis"><span class="n"><a id="t1" href="#t1">1</a></span><span class="t"><span class="key">import</span> <span class="nam">os</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t2" href="#t2">2</a></span><span class="t"><span class="key">import</span> <span class="nam">aeon</span><span class="op">.</span><span class="nam">preprocess</span><span class="op">.</span><span class="nam">api</span> <span class="key">as</span> <span class="nam">aeon</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t3" href="#t3">3</a></span><span class="t"><span class="key">from</span> <span class="nam">pathlib</span> <span class="key">import</span> <span class="nam">Path</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t4" href="#t4">4</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t5" href="#t5">5</a></span><span class="t"><span class="nam">root</span> <span class="op">=</span> <span class="str">'/ceph/aeon/test2/experiment0.1'</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t6" href="#t6">6</a></span><span class="t"><span class="nam">qcroot</span> <span class="op">=</span> <span class="str">'/ceph/aeon/aeon/qc/experiment0.1'</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t7" href="#t7">7</a></span><span class="t"><span class="nam">devicenames</span> <span class="op">=</span> <span class="op">[</span><span class="str">'FrameEast'</span><span class="op">,</span><span class="str">'FrameGate'</span><span class="op">,</span><span class="str">'FrameNorth'</span><span class="op">,</span><span class="str">'FramePatch1'</span><span class="op">,</span><span class="str">'FramePatch2'</span><span class="op">,</span><span class="str">'FrameSouth'</span><span class="op">,</span><span class="str">'FrameTop'</span><span class="op">,</span><span class="str">'FrameWest'</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t8" href="#t8">8</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t9" href="#t9">9</a></span><span class="t"><span class="key">for</span> <span class="nam">device</span> <span class="key">in</span> <span class="nam">devicenames</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t10" href="#t10">10</a></span><span class="t">    <span class="nam">videochunks</span> <span class="op">=</span> <span class="nam">aeon</span><span class="op">.</span><span class="nam">chunkdata</span><span class="op">(</span><span class="nam">root</span><span class="op">,</span> <span class="nam">device</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t11" href="#t11">11</a></span><span class="t">    <span class="nam">videochunks</span><span class="op">[</span><span class="str">'epoch'</span><span class="op">]</span> <span class="op">=</span> <span class="nam">videochunks</span><span class="op">.</span><span class="nam">path</span><span class="op">.</span><span class="nam">str</span><span class="op">.</span><span class="nam">rsplit</span><span class="op">(</span><span class="str">'/'</span><span class="op">,</span> <span class="nam">n</span><span class="op">=</span><span class="num">3</span><span class="op">,</span> <span class="nam">expand</span><span class="op">=</span><span class="key">True</span><span class="op">)</span><span class="op">[</span><span class="num">1</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t12" href="#t12">12</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t13" href="#t13">13</a></span><span class="t">    <span class="nam">stats</span> <span class="op">=</span> <span class="op">[</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t14" href="#t14">14</a></span><span class="t">    <span class="nam">frameshifts</span> <span class="op">=</span> <span class="op">[</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t15" href="#t15">15</a></span><span class="t">    <span class="key">for</span> <span class="op">(</span><span class="nam">key</span><span class="op">,</span> <span class="nam">period</span><span class="op">)</span> <span class="key">in</span> <span class="nam">videochunks</span><span class="op">.</span><span class="nam">groupby</span><span class="op">(</span><span class="nam">by</span><span class="op">=</span><span class="str">'epoch'</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t16" href="#t16">16</a></span><span class="t">        <span class="nam">frame_offset</span> <span class="op">=</span> <span class="num">0</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t17" href="#t17">17</a></span><span class="t">        <span class="nam">path</span> <span class="op">=</span> <span class="nam">Path</span><span class="op">(</span><span class="nam">os</span><span class="op">.</span><span class="nam">path</span><span class="op">.</span><span class="nam">join</span><span class="op">(</span><span class="nam">qcroot</span><span class="op">,</span> <span class="nam">key</span><span class="op">,</span> <span class="nam">device</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t18" href="#t18">18</a></span><span class="t">        <span class="nam">path</span><span class="op">.</span><span class="nam">mkdir</span><span class="op">(</span><span class="nam">parents</span><span class="op">=</span><span class="key">True</span><span class="op">,</span> <span class="nam">exist_ok</span><span class="op">=</span><span class="key">True</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t19" href="#t19">19</a></span><span class="t">        <span class="key">for</span> <span class="nam">chunk</span> <span class="key">in</span> <span class="nam">period</span><span class="op">.</span><span class="nam">itertuples</span><span class="op">(</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t20" href="#t20">20</a></span><span class="t">            <span class="nam">outpath</span> <span class="op">=</span> <span class="nam">Path</span><span class="op">(</span><span class="nam">chunk</span><span class="op">.</span><span class="nam">path</span><span class="op">.</span><span class="nam">replace</span><span class="op">(</span><span class="nam">root</span><span class="op">,</span> <span class="nam">qcroot</span><span class="op">)</span><span class="op">)</span><span class="op">.</span><span class="nam">with_suffix</span><span class="op">(</span><span class="str">'.parquet'</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t">            <span class="nam">print</span><span class="op">(</span><span class="str">'[{1}] Analysing {0} {2}... '</span><span class="op">.</span><span class="nam">format</span><span class="op">(</span><span class="nam">device</span><span class="op">,</span> <span class="nam">key</span><span class="op">,</span><span class="nam">chunk</span><span class="op">.</span><span class="nam">Index</span><span class="op">)</span><span class="op">,</span><span class="nam">end</span><span class="op">=</span><span class="str">""</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t22" href="#t22">22</a></span><span class="t">            <span class="nam">data</span> <span class="op">=</span> <span class="nam">aeon</span><span class="op">.</span><span class="nam">videoreader</span><span class="op">(</span><span class="nam">chunk</span><span class="op">.</span><span class="nam">path</span><span class="op">)</span><span class="op">.</span><span class="nam">reset_index</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t23" href="#t23">23</a></span><span class="t">            <span class="nam">deltas</span> <span class="op">=</span> <span class="nam">data</span><span class="op">[</span><span class="nam">data</span><span class="op">.</span><span class="nam">columns</span><span class="op">[</span><span class="num">0</span><span class="op">:</span><span class="num">4</span><span class="op">]</span><span class="op">]</span><span class="op">.</span><span class="nam">diff</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t">            <span class="nam">deltas</span><span class="op">.</span><span class="nam">columns</span> <span class="op">=</span> <span class="op">[</span> <span class="str">'time_delta'</span><span class="op">,</span> <span class="str">'frame_delta'</span><span class="op">,</span> <span class="str">'hw_counter_delta'</span><span class="op">,</span> <span class="str">'hw_timestamp_delta'</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t25" href="#t25">25</a></span><span class="t">            <span class="nam">deltas</span><span class="op">[</span><span class="str">'frame_offset'</span><span class="op">]</span> <span class="op">=</span> <span class="op">(</span><span class="nam">deltas</span><span class="op">.</span><span class="nam">hw_counter_delta</span> <span class="op">-</span> <span class="num">1</span><span class="op">)</span><span class="op">.</span><span class="nam">cumsum</span><span class="op">(</span><span class="op">)</span> <span class="op">+</span> <span class="nam">frame_offset</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t26" href="#t26">26</a></span><span class="t">            <span class="nam">drop_count</span> <span class="op">=</span> <span class="nam">deltas</span><span class="op">.</span><span class="nam">frame_offset</span><span class="op">.</span><span class="nam">iloc</span><span class="op">[</span><span class="op">-</span><span class="num">1</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t27" href="#t27">27</a></span><span class="t">            <span class="nam">max_harp_delta</span> <span class="op">=</span> <span class="nam">deltas</span><span class="op">.</span><span class="nam">time_delta</span><span class="op">.</span><span class="nam">max</span><span class="op">(</span><span class="op">)</span><span class="op">.</span><span class="nam">total_seconds</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t28" href="#t28">28</a></span><span class="t">            <span class="nam">max_camera_delta</span> <span class="op">=</span> <span class="nam">deltas</span><span class="op">.</span><span class="nam">hw_timestamp_delta</span><span class="op">.</span><span class="nam">max</span><span class="op">(</span><span class="op">)</span> <span class="op">/</span> <span class="num">1e9</span> <span class="com"># convert nanoseconds to seconds</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t29" href="#t29">29</a></span><span class="t">            <span class="nam">print</span><span class="op">(</span><span class="str">'drops: {0} frameOffset: {1}  maxHarpDelta: {2} s  maxCameraDelta: {3} s'</span><span class="op">.</span><span class="nam">format</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t30" href="#t30">30</a></span><span class="t">                <span class="nam">drop_count</span> <span class="op">-</span> <span class="nam">frame_offset</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t31" href="#t31">31</a></span><span class="t">                <span class="nam">drop_count</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t32" href="#t32">32</a></span><span class="t">                <span class="nam">max_harp_delta</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t33" href="#t33">33</a></span><span class="t">                <span class="nam">max_camera_delta</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t34" href="#t34">34</a></span><span class="t">            <span class="nam">stats</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span><span class="op">(</span><span class="nam">drop_count</span><span class="op">,</span> <span class="nam">max_harp_delta</span><span class="op">,</span> <span class="nam">max_camera_delta</span><span class="op">,</span> <span class="nam">chunk</span><span class="op">.</span><span class="nam">path</span><span class="op">)</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t35" href="#t35">35</a></span><span class="t">            <span class="nam">deltas</span><span class="op">.</span><span class="nam">set_index</span><span class="op">(</span><span class="nam">data</span><span class="op">.</span><span class="nam">time</span><span class="op">,</span> <span class="nam">inplace</span><span class="op">=</span><span class="key">True</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t36" href="#t36">36</a></span><span class="t">            <span class="nam">deltas</span><span class="op">.</span><span class="nam">to_parquet</span><span class="op">(</span><span class="nam">outpath</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t37" href="#t37">37</a></span><span class="t">            <span class="nam">frameshifts</span><span class="op">.</span><span class="nam">append</span><span class="op">(</span><span class="nam">deltas</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="mis show_mis"><span class="n"><a id="t38" href="#t38">38</a></span><span class="t">            <span class="nam">frame_offset</span> <span class="op">=</span> <span class="nam">drop_count</span>&nbsp;</span><span class="r"></span></p>
+</main>
+<footer>
+    <div class="content">
+        <p>
+            <a class="nav" href="index.html">&#xab; index</a> &nbsp; &nbsp; <a class="nav" href="https://coverage.readthedocs.io">coverage.py v6.3</a>,
+            created at 2022-02-01 16:45 +0000
+        </p>
+    </div>
+</footer>
+</body>
+</html>
