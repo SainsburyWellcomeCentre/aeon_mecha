@@ -36,6 +36,7 @@ classifiers = [  #! Update me
 
 [tool.poetry.dependencies]
 python = ">=3.9.4"
+dotmap = "*"
 graphviz = "*"
 jupyter = "*"
 jupyterlab = "*"

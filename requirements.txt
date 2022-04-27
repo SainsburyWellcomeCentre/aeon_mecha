@@ -3,6 +3,7 @@
 python>=3.9.4, <4
 bottleneck>=2.6.8, <3
 datajoint
+dotmap
 graphviz
 jupyter
 jupyterlab
