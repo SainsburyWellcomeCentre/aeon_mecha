@@ -88,8 +88,8 @@ class Chunk(Reader):
     
     def read(self, file):
         """Returns path and epoch information for the specified chunk."""
-        chunk = chunk_key(file)
-        data = { 'path': file, 'epoch': file.parts[-3] }
+        epoch, chunk = chunk_key(file)
+        data = { 'path': file, 'epoch': epoch }
         return pd.DataFrame(data, index=[chunk], columns=self.columns)
 
 class Metadata(Reader):
