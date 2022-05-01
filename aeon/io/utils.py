@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 
 def distancetravelled(angle, radius=4.0):
     '''
@@ -36,23 +37,32 @@ def visits(data, onset='Enter', offset='Exit'):
     lsuffix = '_{0}'.format(lonset)
     rsuffix = '_{0}'.format(loffset)
     id_onset = 'id' + lsuffix
-    id_offset = 'id' + rsuffix
     event_onset = 'event' + lsuffix
     event_offset = 'event' + rsuffix
     time_onset = 'time' + lsuffix
     time_offset = 'time' + rsuffix
 
-    data_onset = data.event == onset
-    data_offset = data[data_onset.shift(1, fill_value=False)].reset_index()
-    data_onset = data[data_onset].reset_index()
-    data = data_onset.join(data_offset, lsuffix=lsuffix, rsuffix=rsuffix)
-    valid_subjects = (data[id_onset] == data[id_offset]) & (data[event_offset] == offset)
-    if ~valid_subjects.any():
-        data_types = data.dtypes
-        data.loc[~valid_subjects, [name for name in data.columns if rsuffix in name]] = None
-        data = data.astype(data_types)
+    # find all possible onset / offset pairs
+    data = data.reset_index()
+    data_onset = data[data.event == onset]
+    data_offset = data[data.event == offset]
+    data = pd.merge(data_onset, data_offset, on='id', how='left', suffixes=[lsuffix, rsuffix])
+
+    # valid pairings have the smallest positive duration
     data['duration'] = data[time_offset] - data[time_onset]
+    valid_visits = data[data.duration >= pd.Timedelta(0)]
+    data = data.iloc[valid_visits.groupby([time_onset, 'id']).duration.idxmin()]
+    data = data[data.duration > pd.Timedelta(0)]
+
+    # duplicate offsets indicate missing data from previous pairing
+    missing_data = data.duplicated(subset=time_offset, keep='last')
+    if missing_data.any():
+        data.loc[missing_data, ['duration'] + [name for name in data.columns if rsuffix in name]] = pd.NA
+
+    # rename columns and sort data
     data.rename({ time_onset:lonset, id_onset:'id', time_offset:loffset}, axis=1, inplace=True)
     data = data[['id'] + [name for name in data.columns if '_' in name] + [lonset, loffset, 'duration']]
-    data.drop([id_offset, event_onset, event_offset], axis=1, inplace=True)
+    data.drop([event_onset, event_offset], axis=1, inplace=True)
+    data.sort_index(inplace=True)
+    data.reset_index(drop=True, inplace=True)
     return data
