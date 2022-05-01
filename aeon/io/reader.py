@@ -80,7 +80,10 @@ class Harp(Reader):
 
 class Chunk(Reader):
     """Extracts path and epoch information from chunk files in the dataset."""
-    def __init__(self, name, extension):
+    def __init__(self, reader=None, name=None, extension=None):
+        if isinstance(reader, Reader):
+            name = reader.name
+            extension = reader.extension
         super().__init__(name, columns=['path', 'epoch'], extension=extension)
     
     def read(self, file):
