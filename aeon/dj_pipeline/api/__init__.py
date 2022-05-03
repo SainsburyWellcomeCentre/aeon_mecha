@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+import aeon.io.preprocessing
+import aeon.preprocessing
 from aeon.io import api as aeon_api
 from aeon.io import video as video_api
 from aeon.dj_pipeline import acquisition, paths
@@ -23,7 +25,7 @@ def get_video_frames(experiment_name, device,
 
     vd = aeon_api.videodata(raw_data_dir.as_posix(), device,
                             start=start, end=end, time=time, tolerance=tolerance)
-    video_frames = video_api.frames(vd)
+    video_frames = aeon.preprocessing.extract_frames(vd)
 
     if plot:
         col_count = 4

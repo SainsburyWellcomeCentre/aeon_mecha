@@ -70,3 +70,38 @@ def visits(data, onset='Enter', offset='Exit'):
     data.sort_index(inplace=True)
     data.reset_index(drop=True, inplace=True)
     return data
+
+
+def extract_frames(data):
+    '''
+    Extracts the raw frames corresponding to the provided video metadata.
+
+    :param DataFrame data:
+    A pandas DataFrame where each row specifies video acquisition path and frame number.
+    :return:
+    An object to iterate over numpy arrays for each row in the DataFrame,
+    containing the raw video frame data.
+    '''
+    capture = None
+    filename = None
+    index = 0
+    try:
+        for frameidx, path in zip(data._frame, data._path):
+            if filename != path:
+                if capture is not None:
+                    capture.release()
+                capture = cv2.VideoCapture(path)
+                filename = path
+                index = 0
+
+            if frameidx != index:
+                capture.set(cv2.CAP_PROP_POS_FRAMES, frameidx)
+                index = frameidx
+            success, frame = capture.read()
+            if not success:
+                raise ValueError('Unable to read frame {0} from video path "{1}".'.format(frameidx, path))
+            yield frame
+            index = index + 1
+    finally:
+        if capture is not None:
+            capture.release()

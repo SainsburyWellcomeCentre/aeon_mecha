@@ -9,7 +9,7 @@ import datetime
 import json
 
 from aeon.io import api as aeon_api
-from aeon.util import plotting as aeon_plotting
+from aeon.utils import plotting as aeon_plotting
 
 from . import acquisition, analysis
 from . import get_schema_name

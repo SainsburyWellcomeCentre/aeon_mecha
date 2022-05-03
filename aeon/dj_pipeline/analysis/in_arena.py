@@ -4,7 +4,7 @@ import numpy as np
 import datetime
 
 from aeon.io import api as aeon_api
-from aeon.util import utils as aeon_utils
+from aeon.utils import utils as aeon_utils
 
 from .. import lab, acquisition, tracking, qc
 from .. import get_schema_name

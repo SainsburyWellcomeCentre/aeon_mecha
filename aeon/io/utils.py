@@ -1,68 +1,24 @@
-import numpy as np
-import pandas as pd
+import cv2
 
-def distancetravelled(angle, radius=4.0):
+
+def write_frames(frames, file, fps, fourcc=None):
     '''
-    Calculates the total distance travelled on the wheel, by taking into account
-    its radius and the total number of turns in both directions across time.
+    Exports the specified frame sequence to a new video file.
 
-    :param Series angle: A series of magnetic encoder measurements.
-    :param float radius: The radius of the wheel, in metric units.
-    :return: The total distance travelled on the wheel, in metric units.
+    :param iterable frames: An object to iterate over the raw video frame data.
+    :param str file: The path to the exported video file.
+    :param fps: The frame rate of the exported video.
+    :param optional fourcc:
+    Specifies the four character code of the codec used to compress the frames.
     '''
-    maxvalue = int(np.iinfo(np.uint16).max >> 2)
-    jumpthreshold = maxvalue // 2
-    turns = angle.astype(int).diff()
-    clickup = (turns < -jumpthreshold).astype(int)
-    clickdown = (turns > jumpthreshold).astype(int) * -1
-    turns = (clickup + clickdown).cumsum()
-    distance = 2 * np.pi * radius * (turns + angle / maxvalue)
-    distance = distance - distance[0]
-    return distance
-
-def visits(data, onset='Enter', offset='Exit'):
-    '''
-    Computes duration, onset and offset times from paired events. Allows for missing data
-    by trying to match event onset times with subsequent offset times. If the match fails,
-    event offset metadata is filled with NaN. Any additional metadata columns in the data
-    frame will be paired and included in the output.
-
-    :param DataFrame data: A pandas data frame containing visit onset and offset events.
-    :param str, optional onset: The label used to identify event onsets.
-    :param str, optional offset: The label used to identify event offsets.
-    :return: A pandas data frame containing duration and metadata for each visit.
-    '''
-    lonset = onset.lower()
-    loffset = offset.lower()
-    lsuffix = '_{0}'.format(lonset)
-    rsuffix = '_{0}'.format(loffset)
-    id_onset = 'id' + lsuffix
-    event_onset = 'event' + lsuffix
-    event_offset = 'event' + rsuffix
-    time_onset = 'time' + lsuffix
-    time_offset = 'time' + rsuffix
-
-    # find all possible onset / offset pairs
-    data = data.reset_index()
-    data_onset = data[data.event == onset]
-    data_offset = data[data.event == offset]
-    data = pd.merge(data_onset, data_offset, on='id', how='left', suffixes=[lsuffix, rsuffix])
-
-    # valid pairings have the smallest positive duration
-    data['duration'] = data[time_offset] - data[time_onset]
-    valid_visits = data[data.duration >= pd.Timedelta(0)]
-    data = data.iloc[valid_visits.groupby([time_onset, 'id']).duration.idxmin()]
-    data = data[data.duration > pd.Timedelta(0)]
-
-    # duplicate offsets indicate missing data from previous pairing
-    missing_data = data.duplicated(subset=time_offset, keep='last')
-    if missing_data.any():
-        data.loc[missing_data, ['duration'] + [name for name in data.columns if rsuffix in name]] = pd.NA
-
-    # rename columns and sort data
-    data.rename({ time_onset:lonset, id_onset:'id', time_offset:loffset}, axis=1, inplace=True)
-    data = data[['id'] + [name for name in data.columns if '_' in name] + [lonset, loffset, 'duration']]
-    data.drop([event_onset, event_offset], axis=1, inplace=True)
-    data.sort_index(inplace=True)
-    data.reset_index(drop=True, inplace=True)
-    return data
+    writer = None
+    try:
+        for frame in frames:
+            if writer is None:
+                if fourcc is None:
+                    fourcc = cv2.VideoWriter_fourcc('m','p','4','v')
+                writer = cv2.VideoWriter(file, fourcc, fps, (frame.shape[1], frame.shape[0]))
+            writer.write(frame)
+    finally:
+        if writer is not None:
+            writer.release()
