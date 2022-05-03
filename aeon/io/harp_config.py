@@ -35,6 +35,14 @@ _HARP_N2T_MASK = 0x10
 _HARP_U2I_MASK = 0x80
 # unsigned -> float: e.g. _HARP_PTYPES[68] == (_HARP_PTYPES[1] | _HARP_U2F_BITMASK)
 _HARP_U2F_MASK = 0x40
+# harp event-bitmask map
+_HARP_EVENT_BITMASK = DotMap(
+    {
+        "pellet_trigger": 0x80,
+        "pellet_detected_in": 0x20,
+        "pellet_detected_out": 0x22,
+    }
+)
 # Map of Harp device registers used in the Experiment 1 arena.
 # @todo this isn't used so should be moved out of this module, but kept as doc
 HARP_REGISTERS = {
