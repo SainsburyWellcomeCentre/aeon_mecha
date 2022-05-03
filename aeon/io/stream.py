@@ -80,6 +80,15 @@ def session(name):
     return { name: _reader.Csv(f"{name}_2", columns=['id','weight','event']) }
 
 
+def compositeStream(name, *args):
+    """Merges multiple data streams into one stream."""
+    schema = {}
+    if args:
+        for stream in args:
+            schema.update(stream(name))
+    return schema
+
+
 class Device:
     """
     Groups multiple data streams into a logical device.
@@ -105,12 +114,3 @@ class Device:
             if singleton:
                 return iter((self.name, singleton))
         return iter((self.name, self.schema))
-
-
-def compositeStream(name, *args):
-    """Merges multiple data streams into one stream."""
-    schema = {}
-    if args:
-        for stream in args:
-            schema.update(stream(name))
-    return schema

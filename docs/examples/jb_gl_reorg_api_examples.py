@@ -12,7 +12,8 @@ import matplotlib.pyplot as plt
 import ipdb
 from dotmap import DotMap
 
-from aeon.io import api
+from aeon.io import api, stream
+from aeon.io.stream import Device
 from aeon import preprocessing as pp
 
 
@@ -25,6 +26,36 @@ start_ts2 = pd.Timestamp('2022-02-24')
 end_ts2 = pd.Timestamp('2022-02-26')
 spec_ts2 = pd.date_range("2022-02-24 09:00:00", periods=4*60*60*1000,
                          freq=pd.Timedelta('0.001s'))  # 4 hours worth of data
+
+# Set schemas
+exp01 = DotMap([
+    Device("SessionData", stream.session),
+    Device("FrameTop", stream.video, stream.position),
+    Device("FrameEast", stream.video),
+    Device("FrameGate", stream.video),
+    Device("FrameNorth", stream.video),
+    Device("FramePatch1", stream.video),
+    Device("FramePatch2", stream.video),
+    Device("FrameSouth", stream.video),
+    Device("FrameWest", stream.video),
+    Device("Patch1", stream.depletionFunction, stream.encoder, stream.feeder),
+    Device("Patch2", stream.depletionFunction, stream.encoder, stream.feeder)
+])
+exp02 = DotMap([
+    Device("Metadata", stream.metadata),
+    Device("ExperimentalMetadata", stream.environment, stream.messageLog),
+    Device("CameraTop", stream.video, stream.position, stream.region),
+    Device("CameraEast", stream.video),
+    Device("CameraNest", stream.video),
+    Device("CameraNorth", stream.video),
+    Device("CameraPatch1", stream.video),
+    Device("CameraPatch2", stream.video),
+    Device("CameraSouth", stream.video),
+    Device("CameraWest", stream.video),
+    Device("Nest", stream.weight),
+    Device("Patch1", stream.patch),
+    Device("Patch2", stream.patch)
+])
 
 # Set column names & harp bitmasks for returned data
 position_cols = ['x', 'y', 'angle', 'major', 'minor', 'area']
