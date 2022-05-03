@@ -1,7 +1,7 @@
 import pandas as _pd
 import aeon.io.reader as _reader
-import aeon.io.device as _device
 from enum import Enum as _Enum
+
 
 class Area(_Enum):
     Null = 0
@@ -50,7 +50,7 @@ def feeder(name):
 
 def patch(name):
     """Data streams for a patch."""
-    return _device.compositeStream(name, depletionFunction, encoder, feeder)
+    return compositeStream(name, depletionFunction, encoder, feeder)
 
 def weight(name):
     """Weight measurement data streams for a specific nest."""
@@ -78,3 +78,39 @@ def metadata(name):
 def session(name):
     """Session metadata for Experiment 0.1."""
     return { name: _reader.Csv(f"{name}_2", columns=['id','weight','event']) }
+
+
+class Device:
+    """
+    Groups multiple data streams into a logical device.
+
+    If a device contains a single stream with the same name as the device
+    `name`, it will be considered a singleton, and the stream reader will be
+    paired directly with the device without nesting.
+
+    Attributes
+    ----------
+    name : str
+        Name of the device.
+    args : Any
+        Data streams collected from the device.
+    """
+    def __init__(self, name, *args):
+        self.name = name
+        self.schema = compositeStream(name, *args)
+
+    def __iter__(self):
+        if len(self.schema) == 1:
+            singleton = self.schema.get(self.name, None)
+            if singleton:
+                return iter((self.name, singleton))
+        return iter((self.name, self.schema))
+
+
+def compositeStream(name, *args):
+    """Merges multiple data streams into one stream."""
+    schema = {}
+    if args:
+        for stream in args:
+            schema.update(stream(name))
+    return schema

@@ -1,6 +1,6 @@
 from dotmap import DotMap
 import aeon.io.stream as stream
-from aeon.io.device import Device
+from aeon.io.stream import Device
 
 exp02 = DotMap([
     Device("Metadata", stream.metadata),
