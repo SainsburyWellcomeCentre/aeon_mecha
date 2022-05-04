@@ -17,7 +17,8 @@ import aeon.plotting.plot_functions as pf
 def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", help="Root path for data access", default="/ceph/aeon/test2/experiment0.1")
-    parser.add_argument("--session", help="Session index", default=3, type=int)
+    parser.add_argument("--session_start_time", help="session start time",
+                        type=str, default="2021-10-01 13:03:45.835619")
     parser.add_argument("--start_time", help="Start time (sec)", default=0.0, type=float)
     parser.add_argument("--duration", help="Duration (sec)", default=-1, type=float)
     parser.add_argument("--plot_sample_rate", help="Plot sample rate", default=10.0, type=float)
@@ -32,7 +33,7 @@ def main(argv):
     args = parser.parse_args()
 
     root = args.root
-    session = args.session
+    session_start_time_str = args.session_start_time
     t0_relative = args.start_time
     if args.duration > 0:
         tf_relative = args.start_time+args.duration
@@ -47,12 +48,14 @@ def main(argv):
     title_pattern = args.title_pattern
     fig_filename_pattern = args.fig_filename_pattern
 
+    session_start_time = pd.Timestamp(session_start_time_str)
     metadata = api.sessiondata(root)
     metadata = metadata[metadata.id.str.startswith('BAA')]
     metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
     metadata = api.sessionduration(metadata)
-    session_start = metadata.iloc[session].start
-    duration_sec = metadata.iloc[session].duration.total_seconds()
+    session_index = np.argmin(np.abs(metadata["start"]-session_start_time))
+    session_start = metadata.iloc[session_index].start
+    duration_sec = metadata.iloc[session_index].duration.total_seconds()
     t0_absolute = session_start + datetime.timedelta(seconds=t0_relative)
     if tf_relative is None:
         tf_relative = args.start_time+duration_sec
@@ -70,9 +73,10 @@ def main(argv):
         pellet_vals = api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
         pellets_times = pellet_vals[pellet_vals.event == "{:s}".format(pellet_event_name)].index
         pellets_seconds[patch_to_plot] = (pellets_times-session_start).total_seconds()
+        import pdb; pdb.set_trace()
 
-    duration_sec = metadata.iloc[session].duration.total_seconds()
-    title = title_pattern.format(str(metadata.index[session]), t0_relative, tf_relative, 0, duration_sec)
+    duration_sec = metadata.iloc[session_index].duration.total_seconds()
+    title = title_pattern.format(str(metadata.index[session_index]), t0_relative, tf_relative, 0, duration_sec)
     fig = go.Figure()
     fig = plotly.subplots.make_subplots(rows=1, cols=len(patches_to_plot),
                                         subplot_titles=(patches_to_plot))
