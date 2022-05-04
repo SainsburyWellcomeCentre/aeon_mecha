@@ -3,10 +3,7 @@ import pdb
 import time
 import numpy as np
 import pandas as pd
-import datetime
-import pathlib
 import argparse
-import datetime
 import MySQLdb
 import plotly.graph_objects as go
 import plotly.subplots
@@ -24,9 +21,8 @@ def main(argv):
     parser.add_argument("--start_secs", help="Start time (sec)", default=0.0, type=float)
     parser.add_argument("--duration_secs", help="Duration (sec)", default=-1, type=float)
     parser.add_argument("--plot_sample_rate", help="Plot sample rate", default=10.0, type=float)
-    parser.add_argument("--patchesToPlot", help="Names of patches to plot",
-                        default="COM4,COM7")
-    parser.add_argument("--pellet_event_name", help="Pellet event name to display", default="TriggerPellet")
+    parser.add_argument("--patchesToPlot", help="Names of patches to plot", default="COM4,COM7")
+    parser.add_argument("--pellet_event_label", help="Pellet event name to display", default="TriggerPellet")
     parser.add_argument("--tunneled_host", help="Tunneled host IP address",
                         type=str, default="127.0.0.1")
     parser.add_argument("--db_server_port", help="Database server port",
@@ -38,7 +34,7 @@ def main(argv):
     parser.add_argument("--xlabel", help="xlabel", default="Time (sec)")
     parser.add_argument("--ylabel", help="ylabel", default="Travelled Distance (cm)")
     parser.add_argument("--pellet_color", help="pellet color", default="red")
-    parser.add_argument("--title_pattern", help="title pattern", default="session_start_time {:s}, start_secs={:.02f}, duration_secs={:02f}")
+    parser.add_argument("--title_pattern", help="title pattern", default="session_start_time={:s}, start_secs={:.02f}, duration_secs={:02f}")
     parser.add_argument("--fig_filename_pattern", help="figure filename pattern", default="../../figures/travelled_distance_sessionStart{:s}_startSecs_{:02f}_durationSecs_{:02f}_srate{:.02f}.{:s}")
 
     args = parser.parse_args()
@@ -48,7 +44,7 @@ def main(argv):
     duration_secs = args.duration_secs
     plot_sample_rate = args.plot_sample_rate
     patches_to_plot = args.patchesToPlot.split(",")
-    pellet_event_name = args.pellet_event_name
+    pellet_event_label = args.pellet_event_label
     tunneled_host=args.tunneled_host
     db_server_port = args.db_server_port
     db_user = args.db_user
@@ -59,11 +55,10 @@ def main(argv):
     title_pattern = args.title_pattern
     fig_filename_pattern = args.fig_filename_pattern
 
-    delta = datetime.timedelta(hours=1)
+    delta = pd.Timedelta(1, "hour")
     session_start_time = pd.Timestamp(session_start_time_str)
     session_start_time_minusDelta = session_start_time - delta
     session_start_time_minusDelta_str = session_start_time_minusDelta.strftime("%Y-%m-%d %H:%M:%S")
-    # session_start_time = datetime.datetime.fromisoformat(session_start_time_str)
 
     conn = MySQLdb.connect(host=tunneled_host,
                            port=db_server_port, user=db_user,
@@ -72,11 +67,15 @@ def main(argv):
     # mysql> select in_arena_end from aeon_analysis.__in_arena_end where in_arena_start="2021-10-01 13:03:45.835619";
     sql_stmt = "SELECT in_arena_end FROM aeon_analysis.__in_arena_end WHERE in_arena_start=\"{:s}\"".format(session_start_time_str)
     cur = conn.cursor()
+    print("Executing: " + sql_stmt)
+    start = time.time()
     cur.execute(sql_stmt)
+    end = time.time()
+    print(f"Elapsed time: {end - start} seconds")
     # session_end_time="2021-10-01 17:20:20.224289"
     session_end_time = cur.fetchone()[0]
-    session_end_time_plusDelta = session_end_time + delta
     cur.close()
+    session_end_time_plusDelta = session_end_time + delta
 
     session_end_time_str = session_end_time.strftime("%Y-%m-%d %H:%M:%S")
     session_end_time_plusDelta_str = session_end_time_plusDelta.strftime("%Y-%m-%d %H:%M:%S")
@@ -86,13 +85,13 @@ def main(argv):
     max_travelled_distance = -np.inf
     for patch_to_plot in patches_to_plot:
         # mysql> select timestamps, angle from aeon_acquisition._food_patch_wheel where chunk_start between session_start and session_end;
-        # sql_stmt = "SELECT timestamps, angle FROM aeon_acquisition._food_patch_wheel WHERE chunk_start BETWEEN \"{:s}\" AND \"{:s}\" AND food_patch_serial_number=\"{:s}\"".format(session_start_time_str, session_end_time_str, patch_to_plot)
         sql_stmt = "SELECT timestamps, angle FROM aeon_acquisition._food_patch_wheel WHERE chunk_start BETWEEN \"{:s}\" AND \"{:s}\" AND food_patch_serial_number=\"{:s}\"".format(session_start_time_minusDelta_str, session_end_time_plusDelta_str, patch_to_plot)
-        start = time.time()
         cur = conn.cursor()
+        print("Executing: " + sql_stmt)
+        start = time.time()
         cur.execute(sql_stmt)
         end = time.time()
-        print(f"SQL query for timestaps and angle took {end - start} seconds")
+        print(f"Elapsed time: {end - start} seconds")
         records = cur.fetchall()
         nChuncks = len(records)
         all_angles_series = None
@@ -138,19 +137,19 @@ def main(argv):
         sql_stmt = "SELECT event_time FROM aeon_acquisition._food_patch_event " \
                    "INNER JOIN aeon_acquisition.`#event_type` ON " \
                      "aeon_acquisition._food_patch_event.event_code=aeon_acquisition.`#event_type`.event_code " \
-                   "WHERE aeon_acquisition.`#event_type`.event_type=\"TriggerPellet\" AND "\
+                    "WHERE aeon_acquisition.`#event_type`.event_type=\"{:s}\" AND "\
                          "food_patch_serial_number=\"{:s}\" AND " \
                          "event_time BETWEEN \"{:s}\" AND \"{:s}\"".format(
-                             patch_to_plot, session_start_time_str,
+                             pellet_event_label, patch_to_plot, session_start_time_str,
                              session_end_time_str)
         cur = conn.cursor()
+        print("Executing: " + sql_stmt)
         cur.execute(sql_stmt)
+        print(f"Elapsed time: {end - start} seconds")
         records = cur.fetchall()
         pellets_times = pd.DatetimeIndex([pd.Timestamp(row[0]) for row in records])
         cur.close()
 
-        # pellet_vals = api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
-        # pellets_times = pellet_vals[pellet_vals.event == "{:s}".format(pellet_event_name)].index
         pellets_secs_rel = (pellets_times-session_start_time).total_seconds()
         indices_keep = np.where(np.logical_and(start_secs<=pellets_secs_rel, pellets_secs_rel<max_secs))[0]
         pellets_seconds[patch_to_plot] = pellets_secs_rel[indices_keep]
