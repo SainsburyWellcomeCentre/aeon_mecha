@@ -29,7 +29,7 @@ def main(argv):
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--local", help="run the flask server only locally", action="store_true")
-    parser.add_argument("--port", help="port on which to run the falsh app", default=8060, type=int)
+    parser.add_argument("--port", help="port on which to run the falsh app", default=8050, type=int)
     parser.add_argument("--debug", help="start GUI with debug functionality",
                         action="store_true")
     parser.add_argument("--root", help="Root path for data access", default="/ceph/aeon/test2/experiment0.1")
