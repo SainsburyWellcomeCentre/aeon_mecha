@@ -2,7 +2,8 @@ import cv2
 import math
 import numpy as np
 import pandas as pd
-import aeon.preprocess.api as aeon
+import aeon.io.api as aeon
+import aeon.io.video as video
 
 def gridframes(frames, width, height, shape=None):
     '''
@@ -99,7 +100,7 @@ def collatemovie(clipdata, fun):
     :return: The sequence of processed frames representing the collated movie.
     '''
     clipcount = len(clipdata.groupby('clip_sequence').frame_sequence.count())
-    allframes = aeon.videoframes(clipdata.sort_values(by=['frame_sequence', 'clip_sequence']))
+    allframes = video.frames(clipdata.sort_values(by=['frame_sequence', 'clip_sequence']))
     return groupframes(allframes, clipcount, fun)
 
 def gridmovie(clipdata, width, height, shape=None):

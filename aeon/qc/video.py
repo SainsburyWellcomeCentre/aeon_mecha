@@ -1,5 +1,5 @@
 import os
-import aeon.preprocess.api as aeon
+import aeon.io.api as aeon
 from pathlib import Path
 
 root = '/ceph/aeon/test2/experiment0.1'

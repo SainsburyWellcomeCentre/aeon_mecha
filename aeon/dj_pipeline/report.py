@@ -8,7 +8,7 @@ import re
 import datetime
 import json
 
-from aeon.preprocess import api as aeon_api
+from aeon.io import api as aeon_api
 from aeon.util import plotting as aeon_plotting
 
 from . import acquisition, analysis

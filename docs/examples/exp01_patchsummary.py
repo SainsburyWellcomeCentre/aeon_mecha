@@ -2,7 +2,7 @@ import pandas as pd
 from colorline import colorline
 from aeon.analyze.patches import *
 from aeon.util.plotting import *
-import aeon.preprocess.api as aeon
+import aeon.io.api as aeon
 import matplotlib.pyplot as plt
 
 dpi = 300

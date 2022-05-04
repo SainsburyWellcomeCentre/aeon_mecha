@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from matplotlib import path
 
-from aeon.preprocess import api as aeon_api
+from aeon.io import api as io_api
 
 from . import lab, acquisition, qc
 from . import get_schema_name, dict_to_uuid
@@ -41,6 +41,9 @@ class TrackingParamSet(dj.Lookup):
     unique index (param_set_hash)
     params: longblob  # dictionary of all applicable parameters
     """
+
+    contents = [(0, 'DLC', 'Default DLC method from online Bonsai - with params as empty dictionary',
+                 dict_to_uuid({'tracking_method': 'DLC'}), {})]
 
     @classmethod
     def insert_new_params(cls, tracking_method: str, paramset_description: str,
@@ -99,21 +102,30 @@ class CameraTracking(dj.Imported):
         ks = acquisition.Chunk * acquisition.ExperimentCamera * TrackingParamSet
         return (ks
                 & 'tracking_paramset_id = 0'
-                ^ (qc.CameraQC * acquisition.ExperimentCamera & 'camera_description = "FrameTop"')
+                ^ (qc.CameraQC * acquisition.ExperimentCamera
+                   & f'camera_description in {tuple(set(acquisition._ref_device_mapper.values()))}')
                 )
 
     def make(self, key):
         chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
+        camera = (acquisition.ExperimentCamera & key).fetch1('camera_description')
 
         raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
-        positiondata = aeon_api.positiondata(raw_data_dir.as_posix(),
-                                             start=pd.Timestamp(chunk_start),
-                                             end=pd.Timestamp(chunk_end))
+
+        device = getattr(acquisition._device_schema_mapper[key['experiment_name']], camera)
+
+        positiondata = io_api.load(
+            root=raw_data_dir.as_posix(),
+            reader=device.Position,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end))
+
         # replace id=NaN with -1
         positiondata.fillna({'id': -1}, inplace=True)
 
         # Correct for frame offsets from Camera QC
-        qc_timestamps, qc_frame_offsets, camera_fs = (qc.CameraQC & key).fetch1(
+        qc_timestamps, qc_frame_offsets, camera_fs = (
+                qc.CameraQC * acquisition.ExperimentCamera & key).fetch1(
             'timestamps', 'frame_offset', 'camera_sampling_rate')
         qc_time_offsets = qc_frame_offsets / camera_fs
         qc_time_offsets = np.where(np.isnan(qc_time_offsets), 0, qc_time_offsets)  # set NaNs to 0
