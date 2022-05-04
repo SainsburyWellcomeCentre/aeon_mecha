@@ -1,5 +1,4 @@
 import sys
-import pdb
 import numpy as np
 import pandas as pd
 import argparse
@@ -13,8 +12,6 @@ import aeon.plotting.plot_functions
 
 def main(argv):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mouse_label", help="Mouse label", type=str,
-                        default="BAA-1099791")
     parser.add_argument("--session_start_time", help="session start time",
                         type=str, default="2021-10-01 13:03:45.835619")
     parser.add_argument("--start_secs",
@@ -37,12 +34,11 @@ def main(argv):
     parser.add_argument("--nest_coordinates", help="coordinates of nest", default="170,260,450,540")
     parser.add_argument("--xlabel", help="xlabel", default="x (pixels)")
     parser.add_argument("--ylabel", help="ylabel", default="y (pixels)")
-    parser.add_argument("--title_pattern", help="title pattern", default="Mouse {:s}, session_start_time {:s}, start_secs={:.02f}, duration_secs={:02f}, sample_rate={:.02f} Hz")
-    parser.add_argument("--fig_filename_pattern", help="figure filename pattern", default="../../figures/trajectory_mouse{:s}_sessionStart{:s}_startSecs_{:02f}_durationSecs_{:02f}_srate{:.02f}.{:s}")
+    parser.add_argument("--title_pattern", help="title pattern", default="session_start_time={:s}, start_secs={:.02f}, duration_secs={:02f}, sample_rate={:.02f} Hz")
+    parser.add_argument("--fig_filename_pattern", help="figure filename pattern", default="../../figures/trajectory_sessionStart{:s}_startSecs_{:02f}_durationSecs_{:02f}_srate{:.02f}.{:s}")
 
     args = parser.parse_args()
 
-    mouse_label = args.mouse_label
     session_start_time_str = args.session_start_time
     start_secs = args.start_secs
     duration_secs = args.duration_secs
@@ -69,8 +65,7 @@ def main(argv):
                            port=db_server_port, user=db_user,
                            passwd=db_user_password)
     cur = conn.cursor()
-    sql_stmt = "SELECT timestamps, position_x, position_y FROM aeon_tracking._subject_position WHERE subject=\"{:s}\" AND session_start=\"{:s}\"".format(mouse_label, session_start_time_str)
-
+    sql_stmt = "SELECT timestamps, position_x, position_y FROM aeon_tracking._subject_position WHERE session_start=\"{:s}\"".format(session_start_time_str)
     cur.execute(sql_stmt)
     records = cur.fetchall()
     time_stamps = x = y = None
@@ -102,7 +97,7 @@ def main(argv):
     x = x[indices_keep]
     y = y[indices_keep]
 
-    title = title_pattern.format(mouse_label, session_start_time_str, start_secs, duration_secs, sample_rate)
+    title = title_pattern.format(session_start_time_str, start_secs, duration_secs, sample_rate)
     fig = go.Figure()
     trajectory_trace = aeon.plotting.plot_functions.get_trayectory_trace(x=x, y=y, time_stamps=time_stamps_secs, sample_rate=sample_rate)
     fig.add_trace(trajectory_trace)
@@ -113,9 +108,9 @@ def main(argv):
     fig.add_trace(nest_trace)
     fig.update_layout(title=title, xaxis_title=xlabel, yaxis_title=ylabel, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
 
-    fig.write_image(fig_filename_pattern.format(mouse_label, session_start_time_str, start_secs, duration_secs, sample_rate, "png"))
-    fig.write_html(fig_filename_pattern.format(mouse_label, session_start_time_str, start_secs, duration_secs, sample_rate, "html"))
-    pdb.set_trace()
+    fig.write_image(fig_filename_pattern.format(session_start_time_str, start_secs, duration_secs, sample_rate, "png"))
+    fig.write_html(fig_filename_pattern.format(session_start_time_str, start_secs, duration_secs, sample_rate, "html"))
+    import pdb; pdb.set_trace()
 
 
 if __name__ == "__main__":
