@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import datajoint as dj
 
 sys.path.append("../..")
+import aeon.storage.sqlStorageMgr as sm
 import aeon.plotting.plot_functions
 
 
@@ -61,27 +62,14 @@ def main(argv):
                                     columns=["lower_x", "higher_x",
                                              "lower_y", "higher_y"])
 
-    conn = MySQLdb.connect(host=tunneled_host,
-                           port=db_server_port, user=db_user,
-                           passwd=db_user_password)
-    cur = conn.cursor()
-    sql_stmt = "SELECT timestamps, position_x, position_y FROM aeon_tracking._subject_position WHERE session_start=\"{:s}\"".format(session_start_time_str)
-    cur.execute(sql_stmt)
-    records = cur.fetchall()
-    time_stamps = x = y = None
-    time_stamps = np.array([], dtype=object)
-    x = np.array([], dtype=np.double)
-    y = np.array([], dtype=np.double)
-    for row in records:
-        timestamps_blob = row[0]
-        position_x_blob = row[1]
-        position_y_blob = row[2]
-        time_stamps = np.append(time_stamps,
-                                dj.blob.Blob().unpack(blob=timestamps_blob))
-        x = np.append(x, dj.blob.Blob().unpack(blob=position_x_blob))
-        y = np.append(y, dj.blob.Blob().unpack(blob=position_y_blob))
-    cur.close()
-    conn.close()
+    storageMgr = sm.SQLStorageMgr(host=tunneled_host,
+                                  port=db_server_port,
+                                  user=db_user,
+                                  passwd=db_user_password)
+    positions = storageMgr.getSessionPositions(session_start_time_str=session_start_time_str)
+    time_stamps = positions.index
+    x = positions["x"].to_numpy()
+    y = positions["y"].to_numpy()
     time_stamps0_sec = time_stamps[0].timestamp()
     time_stamps_secs = np.array([ts.timestamp()-time_stamps0_sec
                                  for ts in time_stamps])

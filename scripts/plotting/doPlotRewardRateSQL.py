@@ -8,6 +8,7 @@ import plotly.subplots
 import datajoint as dj
 
 sys.path.append("../..")
+import aeon.storage.sqlStorageMgr as sm
 import aeon.plotting.plot_functions
 
 def main(argv):
@@ -56,21 +57,16 @@ def main(argv):
     fig_filename_pattern = args.fig_filename_pattern
 
     t0_relative = start_secs
+    delta = pd.Timedelta(1, "hour")
     session_start_time = pd.Timestamp(session_start_time_str)
 
     tf_relative = t0_relative + duration_secs
 
-    conn = MySQLdb.connect(host=tunneled_host,
-                           port=db_server_port, user=db_user,
-                           passwd=db_user_password)
-    # mouse_label = BAA-1099791
-    # mysql> select in_arena_end from aeon_analysis.__in_arena_end where in_arena_start="2021-10-01 13:03:45.835619";
-    sql_stmt = "SELECT in_arena_end FROM aeon_analysis.__in_arena_end WHERE in_arena_start=\"{:s}\"".format(session_start_time_str)
-    cur = conn.cursor()
-    cur.execute(sql_stmt)
-    # session_end_time="2021-10-01 17:20:20.224289"
-    session_end_time = cur.fetchone()[0]
-    cur.close()
+    storageMgr = sm.SQLStorageMgr(host=tunneled_host, port=db_server_port,
+                                  user=db_user, passwd=db_user_password)
+    session_end_time = storageMgr.getSessionEndTime(session_start_time_str=
+                                                    session_start_time_str)
+    session_end_time_plusDelta = session_end_time + delta
     session_end_time_str = session_end_time.strftime("%Y-%m-%d %H:%M:%S")
 
     if duration_secs < 0:
@@ -80,20 +76,11 @@ def main(argv):
     reward_rate = {}
     max_reward_rate = -np.inf
     for patch_to_plot in patches_to_plot:
-        sql_stmt = "SELECT event_time FROM aeon_acquisition._food_patch_event " \
-                   "INNER JOIN aeon_acquisition.`#event_type` ON " \
-                     "aeon_acquisition._food_patch_event.event_code=aeon_acquisition.`#event_type`.event_code " \
-                   "WHERE aeon_acquisition.`#event_type`.event_type=\"{:s}\" AND "\
-                         "food_patch_serial_number=\"{:s}\" AND " \
-                         "event_time BETWEEN \"{:s}\" AND \"{:s}\"".format(
-                             pellet_event_label, patch_to_plot, session_start_time_str,
-                             session_end_time_str)
-        cur = conn.cursor()
-        cur.execute(sql_stmt)
-        records = cur.fetchall()
-        cur.close()
-
-        pellets_times = pd.DatetimeIndex([pd.Timestamp(row[0]) for row in records])
+        pellets_times = storageMgr.getFoodPatchEventTimes(
+            start_time_str=session_start_time_str,
+            end_time_str=session_end_time_str,
+            event_label=pellet_event_label,
+            patch_label=patch_to_plot)
         pellets_seconds[patch_to_plot] = (pellets_times-session_start_time).total_seconds()
         pellets_events = pd.DataFrame(index=pd.TimedeltaIndex(data=pellets_seconds[patch_to_plot], unit="s"), data=np.ones(len(pellets_seconds[patch_to_plot])), columns=['count'])
         boundary_df = pd.DataFrame(index=pd.TimedeltaIndex(data=[t0_relative, tf_relative], unit="s"), data=dict(count=[0.0, 0.0]), columns=['count'])
@@ -106,8 +93,7 @@ def main(argv):
         if patch_max_reward_rate>max_reward_rate:
             max_reward_rate = patch_max_reward_rate
 
-    title = title_pattern.format(session_start_time_str, t0_relative,
-                                 tf_relative)
+    title = title_pattern.format(session_start_time_str, t0_relative, tf_relative)
     fig = plotly.subplots.make_subplots(rows=1, cols=len(patches_to_plot), subplot_titles=(patches_to_plot))
     for i, patch_to_plot in enumerate(patches_to_plot):
         trace = go.Scatter(x=reward_rate[patch_to_plot].index.total_seconds(), y=reward_rate[patch_to_plot].iloc[:,0], line=dict(color=trace_color), showlegend=False)
