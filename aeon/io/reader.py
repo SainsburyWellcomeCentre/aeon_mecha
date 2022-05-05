@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from aeon.io.api import chunk_key
 from dotmap import DotMap
+import ipdb
 
 _SECONDS_PER_TICK = 32e-6
 _payloadtypes = {
@@ -35,6 +36,7 @@ class Reader:
         Name of the device associated with the data stream.
     """
     def __init__(self, name, columns, extension):
+        ipdb.set_trace()
         self.name = name
         self.columns = columns
         self.extension = extension
