@@ -2,11 +2,11 @@
 
 def compositeStream(name, *args):
     """Merges multiple data streams into one stream."""
-    schema = {}
+    streams = {}
     if args:
         for stream in args:
-            schema.update(stream(name))
-    return schema
+            streams.update(stream(name))
+    return streams
 
 
 class Device:
@@ -26,11 +26,11 @@ class Device:
     """
     def __init__(self, name, *args):
         self.name = name
-        self.schema = compositeStream(name, *args)
+        self.streams = compositeStream(name, *args)
 
     def __iter__(self):
-        if len(self.schema) == 1:
-            singleton = self.schema.get(self.name, None)
+        if len(self.streams) == 1:
+            singleton = self.streams.get(self.name, None)
             if singleton:
                 return iter((self.name, singleton))
-        return iter((self.name, self.schema))
+        return iter((self.name, self.streams))
