@@ -135,8 +135,10 @@ def run(**kwargs):
     _logger.info(f"worker_name={kwargs['worker_name']}")
 
     worker = configured_workers[kwargs["worker_name"]]
-    worker._run_duration = kwargs["duration"]
-    worker._sleep_duration = kwargs["sleep"]
+    if kwargs.get("duration") is not None:
+        worker._run_duration = kwargs["duration"]
+    if kwargs.get("sleep") is not None:
+        worker._sleep_duration = kwargs["sleep"]
 
     try:
         worker.run()
