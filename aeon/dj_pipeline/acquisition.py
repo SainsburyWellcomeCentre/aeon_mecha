@@ -27,7 +27,7 @@ _ref_device_mapper = {
 
 _device_schema_mapper = {
     "exp0.1-r0": io_schema.exp01,
-    "social0-r1": io_schema.exp02,
+    "social0-r1": io_schema.exp01,
     "exp0.2-r0": io_schema.exp02,
 }
 

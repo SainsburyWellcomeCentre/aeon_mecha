@@ -42,7 +42,7 @@ from aeon.dj_pipeline import acquisition, analysis, db_prefix, qc, report, track
 # ---- Some constants ----
 
 _logger = logging.getLogger(__name__)
-_current_experiment = "exp0.2-r0"
+_current_experiment = "exp0.1-r0"
 worker_schema_name = db_prefix + "workerlog"
 
 # ---- Define worker(s) ----
@@ -79,7 +79,7 @@ mid_priority = DataJointWorker(
 
 mid_priority(qc.CameraQC)
 mid_priority(tracking.CameraTracking)
-# mid_priority(acquisition.FoodPatchWheel)
+mid_priority(acquisition.FoodPatchWheel)
 mid_priority(analysis.InArenaSubjectPosition)
 mid_priority(analysis.InArenaTimeDistribution)
 mid_priority(analysis.InArenaSummary)
