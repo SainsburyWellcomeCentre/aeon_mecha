@@ -20,10 +20,8 @@ def extract_epoch_metadata(experiment_name, metadata_yml_filepath):
     with open(metadata_yml_filepath, "r") as f:
         experiment_setup = yaml.safe_load(f)
 
-    try:
-        commit = experiment_setup.get("Commit", experiment_setup["Revision"])
-    except KeyError:
-        raise KeyError(f'Neither "Commit" nor "Revision" found in Metadata.yml')
+    commit = experiment_setup.get("Commit", experiment_setup.get("Revision"))
+    assert commit, f'Neither "Commit" nor "Revision" found in {metadata_yml_filepath}'
 
     return {
         "experiment_name": experiment_name,
@@ -56,10 +54,9 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
 
     # Check if there has been any changes in the arena setup
     # by comparing the "Commit" against the most immediate preceding epoch
-    try:
-        commit = experiment_setup.get("Commit", experiment_setup["Revision"])
-    except KeyError:
-        raise KeyError(f'Neither "Commit" nor "Revision" found in Metadata.yml')
+
+    commit = experiment_setup.get("Commit", experiment_setup.get("Revision"))
+    assert commit, f'Neither "Commit" nor "Revision" found in {metadata_yml_filepath}'
 
     previous_epoch = (acquisition.Experiment & experiment_key).aggr(
         acquisition.Epoch & f'epoch_start < "{epoch_start}"',
