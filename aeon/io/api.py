@@ -71,7 +71,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None):
     fileset = {
         chunk_key(fname):fname
         for path in root
-        for fname in Path(path).glob(f"**/**/{reader.name}*.{reader.extension}")}
+        for fname in Path(path).glob(f"**/**/{reader.pattern}*.{reader.extension}")}
     files = sorted(fileset.items())
 
     if time is not None:

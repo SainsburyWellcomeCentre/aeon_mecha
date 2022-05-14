@@ -1,17 +1,17 @@
 
-def compositeStream(name, *args):
+def compositeStream(pattern, *args):
     """Merges multiple data streams into one stream."""
     schema = {}
     if args:
         for stream in args:
-            schema.update(stream(name))
+            schema.update(stream(pattern))
     return schema
 
 class Device:
     """
     Groups multiple data streams into a logical device.
     
-    If a device contains a single stream with the same name as the device
+    If a device contains a single stream with the same pattern as the device
     `name`, it will be considered a singleton, and the stream reader will be
     paired directly with the device without nesting.
 

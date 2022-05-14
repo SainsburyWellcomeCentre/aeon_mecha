@@ -12,8 +12,8 @@ class Area(_Enum):
     Patch2 = 5
 
 class _RegionReader(_reader.Harp):
-    def __init__(self, name):
-        super().__init__(name, columns=['region'])
+    def __init__(self, pattern):
+        super().__init__(pattern, columns=['region'])
 
     def read(self, file):
         data = super().read(file)
@@ -21,60 +21,68 @@ class _RegionReader(_reader.Harp):
         data['region'] = categorical.rename_categories(Area._member_names_)
         return data
 
-def video(name):
+def video(pattern):
     """Video frame metadata."""
-    return { "Video": _reader.Video(name) }
+    return { "Video": _reader.Video(pattern) }
 
-def position(name):
+def position(pattern):
     """Position tracking data for the specified camera."""
-    return { "Position": _reader.Position(f"{name}_200") }
+    return { "Position": _reader.Position(f"{pattern}_200") }
 
-def region(name):
+def region(pattern):
     """Region tracking data for the specified camera."""
-    return { "Region": _RegionReader(f"{name}_201") }
+    return { "Region": _RegionReader(f"{pattern}_201") }
 
-def depletionFunction(name):
+def depletionFunction(pattern):
     """State of the linear depletion function for foraging patches."""
-    return { "DepletionState": _reader.PatchState(f"{name}_State") }
+    return { "DepletionState": _reader.PatchState(f"{pattern}_State") }
 
-def encoder(name):
+def encoder(pattern):
     """Wheel magnetic encoder data."""
-    return { "Encoder": _reader.Encoder(f"{name}_90") }
+    return { "Encoder": _reader.Encoder(f"{pattern}_90") }
 
-def feeder(name):
+def feeder(pattern):
     """Feeder commands and events."""
     return {
-        "BeamBreak": _reader.Event(f"{name}_32", 0x22, 'PelletDetected'),
-        "DeliverPellet": _reader.Event(f"{name}_35", 0x80, 'TriggerPellet')
+        "BeamBreak": _reader.Event(f"{pattern}_32", 0x22, 'PelletDetected'),
+        "DeliverPellet": _reader.Event(f"{pattern}_35", 0x80, 'TriggerPellet')
     }
 
-def patch(name):
+def patch(pattern):
     """Data streams for a patch."""
-    return _device.compositeStream(name, depletionFunction, encoder, feeder)
+    return _device.compositeStream(pattern, depletionFunction, encoder, feeder)
 
-def weight(name):
+def weight(pattern):
     """Weight measurement data streams for a specific nest."""
-    return {
-        "WeightRaw": _reader.Weight(f"{name}_200"),
-        "WeightFiltered": _reader.Weight(f"{name}_202"),
-        "WeightSubject": _reader.Weight(f"{name}_204")
-    }
+    return _device.compositeStream(pattern, weight_raw, weight_filtered, weight_subject)
 
-def environment(name):
+def weight_raw(pattern):
+    """Raw weight measurement for a specific nest."""
+    return { "WeightRaw": _reader.Weight(f"{pattern}_200") }
+
+def weight_filtered(pattern):
+    """Filtered weight measurement for a specific nest."""
+    return { "WeightFiltered": _reader.Weight(f"{pattern}_202") }
+
+def weight_subject(pattern):
+    """Subject weight measurement for a specific nest."""
+    return { "WeightSubject": _reader.Weight(f"{pattern}_204") }
+
+def environment(pattern):
     """Metadata for environment mode and subjects."""
     return {
-        "EnvironmentState": _reader.Csv(f"{name}_EnvironmentState", ['state']),
-        "SubjectState": _reader.Subject(f"{name}_SubjectState")
+        "EnvironmentState": _reader.Csv(f"{pattern}_EnvironmentState", ['state']),
+        "SubjectState": _reader.Subject(f"{pattern}_SubjectState")
     }
 
-def messageLog(name):
+def messageLog(pattern):
     """Message log data."""
-    return { "MessageLog": _reader.Log(f"{name}_MessageLog") }
+    return { "MessageLog": _reader.Log(f"{pattern}_MessageLog") }
 
-def metadata(name):
+def metadata(pattern):
     """Metadata for acquisition epochs."""
-    return { name: _reader.Metadata(name) }
+    return { pattern: _reader.Metadata(pattern) }
 
-def session(name):
+def session(pattern):
     """Session metadata for Experiment 0.1."""
-    return { name: _reader.Csv(f"{name}_2", columns=['id','weight','event']) }
+    return { pattern: _reader.Csv(f"{pattern}_2", columns=['id','weight','event']) }

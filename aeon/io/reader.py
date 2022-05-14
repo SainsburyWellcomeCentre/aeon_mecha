@@ -25,21 +25,17 @@ class Reader:
     
     Attributes
     ----------
-    name : str
-        Full name of the Aeon data stream in the format `<Device>_<DataStream>`.
+    pattern : str
+        Pattern used to find raw chunk files, usually in the format `<Device>_<DataStream>`.
     columns : str or array-like
         Column labels to use for the data.
     extension : str
         Extension of data file pathnames.
-    device : str
-        Name of the device associated with the data stream.
     """
-    def __init__(self, name, columns, extension):
-        self.name = name
+    def __init__(self, pattern, columns, extension):
+        self.pattern = pattern
         self.columns = columns
         self.extension = extension
-        if name is not None:
-            self.device = name.split('_')[0]
 
     def read(self, _):
         """Reads data from the specified chunk file."""
@@ -47,8 +43,8 @@ class Reader:
 
 class Harp(Reader):
     """Extracts data from raw binary files encoded using the Harp protocol."""
-    def __init__(self, name, columns, extension="bin"):
-        super().__init__(name, columns, extension)
+    def __init__(self, pattern, columns, extension="bin"):
+        super().__init__(pattern, columns, extension)
 
     def read(self, file):
         """Reads data from the specified Harp binary file."""
@@ -80,11 +76,11 @@ class Harp(Reader):
 
 class Chunk(Reader):
     """Extracts path and epoch information from chunk files in the dataset."""
-    def __init__(self, reader=None, name=None, extension=None):
+    def __init__(self, reader=None, pattern=None, extension=None):
         if isinstance(reader, Reader):
-            name = reader.name
+            pattern = reader.pattern
             extension = reader.extension
-        super().__init__(name, columns=['path', 'epoch'], extension=extension)
+        super().__init__(pattern, columns=['path', 'epoch'], extension=extension)
     
     def read(self, file):
         """Returns path and epoch information for the specified chunk."""
@@ -94,8 +90,8 @@ class Chunk(Reader):
 
 class Metadata(Reader):
     """Extracts metadata information from all epochs in the dataset."""
-    def __init__(self, name="Metadata"):
-        super().__init__(name, columns=['workflow', 'commit', 'metadata'], extension="yml")
+    def __init__(self, pattern="Metadata"):
+        super().__init__(pattern, columns=['workflow', 'commit', 'metadata'], extension="yml")
 
     def read(self, file):
         """Returns metadata for the specified epoch."""
@@ -114,8 +110,8 @@ class Csv(Reader):
     Extracts data from comma-separated (csv) text files, where the first column
     stores the Aeon timestamp, in seconds.
     """
-    def __init__(self, name, columns, dtype=None, extension="csv"):
-        super().__init__(name, columns, extension)
+    def __init__(self, pattern, columns, dtype=None, extension="csv"):
+        super().__init__(pattern, columns, extension)
         self.dtype = dtype
 
     def read(self, file):
@@ -140,8 +136,8 @@ class Subject(Csv):
     event : str
         Event type. Can be one of `Enter`, `Exit` or `Remain`.
     """
-    def __init__(self, name):
-        super().__init__(name, columns=['id', 'weight', 'event'])
+    def __init__(self, pattern):
+        super().__init__(pattern, columns=['id', 'weight', 'event'])
 
 class Log(Csv):
     """
@@ -156,8 +152,8 @@ class Log(Csv):
     message : str
         Log message data. Can be structured using tab separated values.
     """
-    def __init__(self, name):
-        super().__init__(name, columns=['priority', 'type', 'message'])
+    def __init__(self, pattern):
+        super().__init__(pattern, columns=['priority', 'type', 'message'])
 
 class PatchState(Csv):
     """
@@ -172,8 +168,8 @@ class PatchState(Csv):
     delta : float
         Slope of the linear depletion function.
     """
-    def __init__(self, name):
-        super().__init__(name, columns=['threshold', 'd1', 'delta'])
+    def __init__(self, pattern):
+        super().__init__(pattern, columns=['threshold', 'd1', 'delta'])
 
 class Encoder(Harp):
     """
@@ -186,8 +182,8 @@ class Encoder(Harp):
     intensity : float
         Intensity of the magnetic field.
     """
-    def __init__(self, name):
-        super().__init__(name, columns=['angle', 'intensity'])
+    def __init__(self, pattern):
+        super().__init__(pattern, columns=['angle', 'intensity'])
 
 class Weight(Harp):
     """
@@ -201,8 +197,8 @@ class Weight(Harp):
         Normalized value in the range [0, 1] indicating how much the
         reading is stable.
     """
-    def __init__(self, name):
-        super().__init__(name, columns=['value', 'stable'])
+    def __init__(self, pattern):
+        super().__init__(pattern, columns=['value', 'stable'])
 
 class Position(Harp):
     """
@@ -225,8 +221,8 @@ class Position(Harp):
     id : float
         unique tracking ID of the object in a frame.
     """
-    def __init__(self, name):
-        super().__init__(name, columns=['x', 'y', 'angle', 'major', 'minor', 'area', 'id'])
+    def __init__(self, pattern):
+        super().__init__(pattern, columns=['x', 'y', 'angle', 'major', 'minor', 'area', 'id'])
 
 class Event(Harp):
     """
@@ -237,8 +233,8 @@ class Event(Harp):
     event : str
         Unique identifier for the event code.
     """
-    def __init__(self, name, value, tag):
-        super().__init__(name, columns=['event'])
+    def __init__(self, pattern, value, tag):
+        super().__init__(pattern, columns=['event'])
         self.value = value
         self.tag = tag
 
@@ -263,8 +259,8 @@ class Video(Csv):
     hw_timestamp : int
         Internal camera timestamp for the current frame.
     """
-    def __init__(self, name):
-        super().__init__(name, columns=['hw_counter', 'hw_timestamp', '_frame', '_path', '_epoch'])
+    def __init__(self, pattern):
+        super().__init__(pattern, columns=['hw_counter', 'hw_timestamp', '_frame', '_path', '_epoch'])
         self._rawcolumns = ['time'] + self.columns[0:2]
 
     def read(self, file):
@@ -276,21 +272,21 @@ class Video(Csv):
         data.set_index('time', inplace=True)
         return data
 
-def from_dict(data, name=None):
+def from_dict(data, pattern=None):
     reader_type = data.get('type', None)
     if reader_type is not None:
         kwargs = {k:v for k,v in data.items() if k != 'type'}
-        return globals()[reader_type](name=name, **kwargs)
+        return globals()[reader_type](pattern=pattern, **kwargs)
 
     return DotMap({
-        k:from_dict(v, f"{name}_{k}" if name is not None else k)
+        k:from_dict(v, f"{pattern}_{k}" if pattern is not None else k)
         for k,v in data.items()
     })
 
 def to_dict(dotmap):
     if isinstance(dotmap, Reader):
         kwargs = { k:v for k,v in vars(dotmap).items()
-                       if k not in ['name','device'] and not k.startswith('_') }
+                       if k not in ['pattern'] and not k.startswith('_') }
         kwargs['type'] = type(dotmap).__name__
         return kwargs
     return {
