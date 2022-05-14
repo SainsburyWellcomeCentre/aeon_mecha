@@ -21,10 +21,12 @@ class Device:
         Name of the device.
     args : Any
         Data streams collected from the device.
+    pattern : str, optional
+        Pattern used to find raw chunk files, usually in the format `<Device>_<DataStream>`.
     """
-    def __init__(self, name, *args):
+    def __init__(self, name, *args, pattern=None):
         self.name = name
-        self.schema = compositeStream(name, *args)
+        self.schema = compositeStream(name if pattern is None else pattern, *args)
 
     def __iter__(self):
         if len(self.schema) == 1:
