@@ -39,7 +39,11 @@ def chunk_key(file):
     """Returns the acquisition chunk key for the specified file name."""
     epoch = file.parts[-3]
     chunk_str = file.stem.split("_")[-1]
-    date_str, time_str = chunk_str.split("T")
+    try:
+        date_str, time_str = chunk_str.split("T")
+    except ValueError:
+        epoch = file.parts[-2]
+        date_str, time_str = epoch.split("T")
     return epoch, datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":"))
 
 def _set_index(data):
