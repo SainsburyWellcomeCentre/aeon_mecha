@@ -43,10 +43,15 @@ def encoder(pattern):
 
 def feeder(pattern):
     """Feeder commands and events."""
-    return {
-        "BeamBreak": _reader.Event(f"{pattern}_32", 0x22, 'PelletDetected'),
-        "DeliverPellet": _reader.Event(f"{pattern}_35", 0x80, 'TriggerPellet')
-    }
+    return _device.compositeStream(pattern, beam_break, deliver_pellet)
+
+def beam_break(pattern):
+    """Beam break events for pellet detection."""
+    return { "BeamBreak": _reader.BitmaskEvent(f"{pattern}_32", 0x22, 'PelletDetected') }
+
+def deliver_pellet(pattern):
+    """Pellet delivery commands."""
+    return { "DeliverPellet": _reader.BitmaskEvent(f"{pattern}_35", 0x80, 'TriggerPellet') }
 
 def patch(pattern):
     """Data streams for a patch."""
@@ -70,10 +75,15 @@ def weight_subject(pattern):
 
 def environment(pattern):
     """Metadata for environment mode and subjects."""
-    return {
-        "EnvironmentState": _reader.Csv(f"{pattern}_EnvironmentState", ['state']),
-        "SubjectState": _reader.Subject(f"{pattern}_SubjectState")
-    }
+    return _device.compositeStream(pattern, environment_state, subject_state)
+
+def environment_state(pattern):
+    """Environment state log."""
+    return { "EnvironmentState": _reader.Csv(f"{pattern}_EnvironmentState", ['state']) }
+
+def subject_state(pattern):
+    """Subject state log."""
+    return { "SubjectState": _reader.Subject(f"{pattern}_SubjectState") }
 
 def messageLog(pattern):
     """Message log data."""

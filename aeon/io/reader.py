@@ -224,7 +224,7 @@ class Position(Harp):
     def __init__(self, pattern):
         super().__init__(pattern, columns=['x', 'y', 'angle', 'major', 'minor', 'area', 'id'])
 
-class Event(Harp):
+class BitmaskEvent(Harp):
     """
     Extracts event data matching a specific digital I/O bitmask.
 
