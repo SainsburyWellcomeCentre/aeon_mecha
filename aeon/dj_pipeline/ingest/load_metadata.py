@@ -68,11 +68,38 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
         # if identical commit -> no changes
         return
 
-    experiment_devices = experiment_setup.pop("Devices")
+    if isinstance(experiment_setup["Devices"], list):
+        experiment_devices = experiment_setup.pop("Devices")
+    elif isinstance(experiment_setup["Devices"], dict):
+        experiment_devices = []
+        for device_name, device_info in experiment_setup.pop("Devices").items():
+            if device_name.startswith("VideoController"):
+                device_type = "VideoController"
+            elif all(v in device_info for v in ("TriggerFrequency", "FrameEvents")):
+                device_type = "VideoSource"
+            elif all(v in device_info for v in ("PelletDelivered", "PatchEvents")):
+                device_type = "Patch"
+            elif all(v in device_info for v in ("TareWeight", "WeightEvents")):
+                device_type = "WeightScale"
+            elif device_name.startswith("AudioAmbient"):
+                device_type = "AudioAmbient"
+            else:
+                raise ValueError(f"Unrecognized Device Type for {device_name}")
+
+            experiment_devices.append(
+                {"Name": device_name, "Type": device_type, **device_info}
+            )
+    else:
+        raise ValueError(
+            f"Unexpected devices variable type: {type(experiment_setup['Devices'])}"
+        )
+
+    # ---- Video Controller ----
 
     video_controller = [
         device for device in experiment_devices if device["Type"] == "VideoController"
     ]
+
     assert (
         len(video_controller) == 1
     ), "Unable to find one unique VideoController device"
@@ -88,6 +115,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     cameras = [
         device for device in experiment_devices if device["Type"] == "VideoSource"
     ]
+
     camera_list, camera_installation_list, camera_removal_list, camera_position_list = (
         [],
         [],
@@ -294,7 +322,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
         )
         if current_weight_scale_query:
             current_weight_scale_config = current_weight_scale_query.fetch1()
-            new_weight_scale_config = weight_scale_installation
+            new_weight_scale_config = weight_scale_installation.copy()
 
             current_weight_scale_config.pop("weight_scale_install_time")
             new_weight_scale_config.pop("weight_scale_install_time")
