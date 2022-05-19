@@ -2,7 +2,6 @@ import cv2
 import math
 import numpy as np
 import pandas as pd
-import aeon.io.api as aeon
 import aeon.io.video as video
 
 def gridframes(frames, width, height, shape=None):
