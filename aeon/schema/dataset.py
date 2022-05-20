@@ -1,11 +1,12 @@
 from dotmap import DotMap
-import aeon.io.stream as stream
+import aeon.schema.core as stream
+import aeon.schema.foraging as foraging
 from aeon.io.device import Device
 
 exp02 = DotMap([
     Device("Metadata", stream.metadata),
     Device("ExperimentalMetadata", stream.environment, stream.messageLog),
-    Device("CameraTop", stream.video, stream.position, stream.region),
+    Device("CameraTop", stream.video, stream.position, foraging.region),
     Device("CameraEast", stream.video),
     Device("CameraNest", stream.video),
     Device("CameraNorth", stream.video),
@@ -13,13 +14,13 @@ exp02 = DotMap([
     Device("CameraPatch2", stream.video),
     Device("CameraSouth", stream.video),
     Device("CameraWest", stream.video),
-    Device("Nest", stream.weight),
-    Device("Patch1", stream.patch),
-    Device("Patch2", stream.patch)
+    Device("Nest", foraging.weight),
+    Device("Patch1", foraging.patch),
+    Device("Patch2", foraging.patch)
 ])
 
 exp01 = DotMap([
-    Device("SessionData", stream.session),
+    Device("SessionData", foraging.session),
     Device("FrameTop", stream.video, stream.position),
     Device("FrameEast", stream.video),
     Device("FrameGate", stream.video),
@@ -28,6 +29,6 @@ exp01 = DotMap([
     Device("FramePatch2", stream.video),
     Device("FrameSouth", stream.video),
     Device("FrameWest", stream.video),
-    Device("Patch1", stream.depletionFunction, stream.encoder, stream.feeder),
-    Device("Patch2", stream.depletionFunction, stream.encoder, stream.feeder)
+    Device("Patch1", foraging.depletionFunction, stream.encoder, foraging.feeder),
+    Device("Patch2", foraging.depletionFunction, stream.encoder, foraging.feeder)
 ])
