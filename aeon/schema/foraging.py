@@ -22,13 +22,37 @@ class _RegionReader(_reader.Harp):
         data['region'] = categorical.rename_categories(Area._member_names_)
         return data
 
+class _PatchState(_reader.Csv):
+    """
+    Extracts patch state data for linear depletion foraging patches.
+    
+    Columns:
+        threshold (float): Distance to travel before the next pellet is delivered.
+        d1 (float): y-intercept of the line specifying the depletion function.
+        delta (float): Slope of the linear depletion function.
+    """
+    def __init__(self, pattern):
+        super().__init__(pattern, columns=['threshold', 'd1', 'delta'])
+
+class _Weight(_reader.Harp):
+    """
+    Extract weight measurements from an electronic weighing device.
+    
+    Columns:
+        value (float): Absolute weight reading, in grams.
+        stable (float): Normalized value in the range [0, 1]
+            indicating how much the reading is stable.
+    """
+    def __init__(self, pattern):
+        super().__init__(pattern, columns=['value', 'stable'])
+
 def region(pattern):
     """Region tracking data for the specified camera."""
     return { "Region": _RegionReader(f"{pattern}_201") }
 
 def depletionFunction(pattern):
     """State of the linear depletion function for foraging patches."""
-    return { "DepletionState": _reader.PatchState(f"{pattern}_State") }
+    return { "DepletionState": _PatchState(f"{pattern}_State") }
 
 def feeder(pattern):
     """Feeder commands and events."""
@@ -52,15 +76,15 @@ def weight(pattern):
 
 def weight_raw(pattern):
     """Raw weight measurement for a specific nest."""
-    return { "WeightRaw": _reader.Weight(f"{pattern}_200") }
+    return { "WeightRaw": _Weight(f"{pattern}_200") }
 
 def weight_filtered(pattern):
     """Filtered weight measurement for a specific nest."""
-    return { "WeightFiltered": _reader.Weight(f"{pattern}_202") }
+    return { "WeightFiltered": _Weight(f"{pattern}_202") }
 
 def weight_subject(pattern):
     """Subject weight measurement for a specific nest."""
-    return { "WeightSubject": _reader.Weight(f"{pattern}_204") }
+    return { "WeightSubject": _Weight(f"{pattern}_204") }
 
 def session(pattern):
     """Session metadata for Experiment 0.1."""

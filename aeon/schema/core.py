@@ -27,7 +27,7 @@ def subject_state(pattern):
 
 def messageLog(pattern):
     """Message log data."""
-    return { "MessageLog": _reader.Csv(f"{pattern}_MessageLog", columns=['priority', 'type', 'message']) }
+    return { "MessageLog": _reader.Log(f"{pattern}_MessageLog") }
 
 def metadata(pattern):
     """Metadata for acquisition epochs."""

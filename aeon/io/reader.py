@@ -146,18 +146,6 @@ class Log(Csv):
     def __init__(self, pattern):
         super().__init__(pattern, columns=['priority', 'type', 'message'])
 
-class PatchState(Csv):
-    """
-    Extracts patch state data for linear depletion foraging patches.
-    
-    Columns:
-        threshold (float): Distance to travel before the next pellet is delivered.
-        d1 (float): y-intercept of the line specifying the depletion function.
-        delta (float): Slope of the linear depletion function.
-    """
-    def __init__(self, pattern):
-        super().__init__(pattern, columns=['threshold', 'd1', 'delta'])
-
 class Encoder(Harp):
     """
     Extract magnetic encoder data.
@@ -168,18 +156,6 @@ class Encoder(Harp):
     """
     def __init__(self, pattern):
         super().__init__(pattern, columns=['angle', 'intensity'])
-
-class Weight(Harp):
-    """
-    Extract weight measurements from an electronic weighing device.
-    
-    Columns:
-        value (float): Absolute weight reading, in grams.
-        stable (float): Normalized value in the range [0, 1]
-            indicating how much the reading is stable.
-    """
-    def __init__(self, pattern):
-        super().__init__(pattern, columns=['value', 'stable'])
 
 class Position(Harp):
     """
