@@ -15,14 +15,11 @@ class Device:
     `name`, it will be considered a singleton, and the stream reader will be
     paired directly with the device without nesting.
 
-    Attributes
-    ----------
-    name : str
-        Name of the device.
-    args : Any
-        Data streams collected from the device.
-    pattern : str, optional
-        Pattern used to find raw chunk files, usually in the format `<Device>_<DataStream>`.
+    Attributes:
+        name (str): Name of the device.
+        args (Any): Data streams collected from the device.
+        pattern (str, optional): Pattern used to find raw chunk files,
+            usually in the format `<Device>_<DataStream>`.
     """
     def __init__(self, name, *args, pattern=None):
         self.name = name

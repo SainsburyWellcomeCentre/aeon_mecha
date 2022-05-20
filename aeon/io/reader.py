@@ -23,14 +23,11 @@ _payloadtypes = {
 class Reader:
     """Extracts data from raw chunk files in an Aeon dataset.
     
-    Attributes
-    ----------
-    pattern : str
-        Pattern used to find raw chunk files, usually in the format `<Device>_<DataStream>`.
-    columns : str or array-like
-        Column labels to use for the data.
-    extension : str
-        Extension of data file pathnames.
+    Attributes:
+        pattern (str): Pattern used to find raw chunk files,
+            usually in the format `<Device>_<DataStream>`.
+        columns (str or array-like): Column labels to use for the data.
+        extension (str): Extension of data file pathnames.
     """
     def __init__(self, pattern, columns, extension):
         self.pattern = pattern
@@ -127,14 +124,11 @@ class Subject(Csv):
     """
     Extracts metadata for subjects entering and exiting the environment.
 
-    Columns
-    -------
-    id : str
-        Unique identifier of a subject in the environment.
-    weight : float
-        Weight measurement of the subject on entering or exiting the environment.
-    event : str
-        Event type. Can be one of `Enter`, `Exit` or `Remain`.
+    Columns:
+        id (str): Unique identifier of a subject in the environment.
+        weight (float): Weight measurement of the subject on entering
+            or exiting the environment.
+        event (str): Event type. Can be one of `Enter`, `Exit` or `Remain`.
     """
     def __init__(self, pattern):
         super().__init__(pattern, columns=['id', 'weight', 'event'])
@@ -143,14 +137,11 @@ class Log(Csv):
     """
     Extracts message log data.
     
-    Columns
-    -------
-    priority : str
-        Priority level of the message.
-    type : str
-        Type of the log message.
-    message : str
-        Log message data. Can be structured using tab separated values.
+    Columns:
+        priority (str): Priority level of the message.
+        type (str): Type of the log message.
+        message (str): Log message data. Can be structured using tab
+            separated values.
     """
     def __init__(self, pattern):
         super().__init__(pattern, columns=['priority', 'type', 'message'])
@@ -159,14 +150,10 @@ class PatchState(Csv):
     """
     Extracts patch state data for linear depletion foraging patches.
     
-    Columns
-    -------
-    threshold : float
-        Distance to travel before the next pellet is delivered.
-    d1 : float
-        y-intercept of the line specifying the depletion function.
-    delta : float
-        Slope of the linear depletion function.
+    Columns:
+        threshold (float): Distance to travel before the next pellet is delivered.
+        d1 (float): y-intercept of the line specifying the depletion function.
+        delta (float): Slope of the linear depletion function.
     """
     def __init__(self, pattern):
         super().__init__(pattern, columns=['threshold', 'd1', 'delta'])
@@ -175,12 +162,9 @@ class Encoder(Harp):
     """
     Extract magnetic encoder data.
     
-    Columns
-    -------
-    angle : float
-        Absolute angular position, in radians, of the magnetic encoder.
-    intensity : float
-        Intensity of the magnetic field.
+    Columns:
+        angle (float): Absolute angular position, in radians, of the magnetic encoder.
+        intensity (float): Intensity of the magnetic field.
     """
     def __init__(self, pattern):
         super().__init__(pattern, columns=['angle', 'intensity'])
@@ -189,13 +173,10 @@ class Weight(Harp):
     """
     Extract weight measurements from an electronic weighing device.
     
-    Columns
-    -------
-    value : float
-        Absolute weight reading, in grams.
-    stable : float
-        Normalized value in the range [0, 1] indicating how much the
-        reading is stable.
+    Columns:
+        value (float): Absolute weight reading, in grams.
+        stable (float): Normalized value in the range [0, 1]
+            indicating how much the reading is stable.
     """
     def __init__(self, pattern):
         super().__init__(pattern, columns=['value', 'stable'])
@@ -204,22 +185,16 @@ class Position(Harp):
     """
     Extract 2D position tracking data for a specific camera.
 
-    Columns
-    -------
-    x : float
-        x-coordinate of the object center of mass.
-    y : float
-        y-coordinate of the object center of mass.
-    angle : float
-        angle, in radians, of the ellipse fit to the object.
-    major : float
-        length, in pixels, of the major axis of the ellipse fit to the object.
-    minor : float
-        length, in pixels, of the minor axis of the ellipse fit to the object.
-    area : float
-        number of pixels in the object mass.
-    id : float
-        unique tracking ID of the object in a frame.
+    Columns:
+        x (float): x-coordinate of the object center of mass.
+        y (float): y-coordinate of the object center of mass.
+        angle (float): angle, in radians, of the ellipse fit to the object.
+        major (float): length, in pixels, of the major axis of the ellipse
+            fit to the object.
+        minor (float): length, in pixels, of the minor axis of the ellipse
+            fit to the object.
+        area (float): number of pixels in the object mass.
+        id (float): unique tracking ID of the object in a frame.
     """
     def __init__(self, pattern):
         super().__init__(pattern, columns=['x', 'y', 'angle', 'major', 'minor', 'area', 'id'])
@@ -228,10 +203,8 @@ class BitmaskEvent(Harp):
     """
     Extracts event data matching a specific digital I/O bitmask.
 
-    Columns
-    -------
-    event : str
-        Unique identifier for the event code.
+    Columns:
+        event (str): Unique identifier for the event code.
     """
     def __init__(self, pattern, value, tag):
         super().__init__(pattern, columns=['event'])
@@ -252,12 +225,9 @@ class Video(Csv):
     """
     Extracts video frame metadata.
     
-    Columns
-    -------
-    hw_counter : int
-        Hardware frame counter value for the current frame.
-    hw_timestamp : int
-        Internal camera timestamp for the current frame.
+    Columns:
+        hw_counter (int): Hardware frame counter value for the current frame.
+        hw_timestamp (int): Internal camera timestamp for the current frame.
     """
     def __init__(self, pattern):
         super().__init__(pattern, columns=['hw_counter', 'hw_timestamp', '_frame', '_path', '_epoch'])
