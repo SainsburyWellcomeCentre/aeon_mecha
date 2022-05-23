@@ -1,25 +1,33 @@
 
-def compositeStream(name, *args):
+def compositeStream(pattern, *args):
     """Merges multiple data streams into one stream."""
-    schema = {}
+    stream = {}
     if args:
-        for sch in args:
-            schema.update(sch(name)[1])
-    return name, schema
+        for stream in args:
+            stream.update(stream(pattern))
+    return stream
 
 class Device:
     """
+    Groups multiple data streams into a logical device.
     
-    Attributes
-    ----------
-    name : str
-        Name of the device.
-    args : Any
-        Data streams collected from the device.
+    If a device contains a single stream with the same pattern as the device
+    `name`, it will be considered a singleton, and the stream reader will be
+    paired directly with the device without nesting.
+
+    Attributes:
+        name (str): Name of the device.
+        args (Any): Data streams collected from the device.
+        pattern (str, optional): Pattern used to find raw chunk files,
+            usually in the format `<Device>_<DataStream>`.
     """
-    def __init__(self, name, *args):
+    def __init__(self, name, *args, pattern=None):
         self.name = name
-        self.schema = compositeStream(name, *args)[1]
+        self.stream = compositeStream(name if pattern is None else pattern, *args)
 
     def __iter__(self):
-        return iter((self.name, self.schema))
+        if len(self.stream) == 1:
+            singleton = self.stream.get(self.name, None)
+            if singleton:
+                return iter((self.name, singleton))
+        return iter((self.name, self.stream))
