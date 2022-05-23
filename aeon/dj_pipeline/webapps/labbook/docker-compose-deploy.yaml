@@ -26,7 +26,7 @@ services:
     environment:
       - ADD_pharus_TYPE=REST
       - ADD_pharus_ENDPOINT=pharus:5000
-      - ADD_pharus_PREFIX=/api
+      - ADD_pharus_PREFIX=/utils
       - ADD_sciviz_TYPE=REST
       - ADD_sciviz_ENDPOINT=labbook:80
       - ADD_sciviz_PREFIX=/

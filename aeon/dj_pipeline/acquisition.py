@@ -5,12 +5,12 @@ import numpy as np
 import pandas as pd
 
 from aeon.io import api as io_api
-from aeon.io import schema as io_schema
+from aeon.schema import dataset as aeon_schema
 from aeon.io import reader as io_reader
-from aeon.io import utils as io_utils
+from aeon.analyze import utils as analyze_utils
 
-from . import lab, subject
-from . import get_schema_name, paths
+from . import get_schema_name
+from .utils import paths
 from .ingest.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 
 
@@ -19,16 +19,16 @@ schema = dj.schema(get_schema_name("acquisition"))
 
 # ------------------- Some Constants --------------------------
 
-_ref_device_mapper = {
+_ref_device_mapping = {
     "exp0.1-r0": "FrameTop",
     "social0-r1": "FrameTop",
     "exp0.2-r0": "CameraTop",
 }
 
-_device_schema_mapper = {
-    "exp0.1-r0": io_schema.exp01,
-    "social0-r1": io_schema.exp01,
-    "exp0.2-r0": io_schema.exp02,
+_device_schema_mapping = {
+    "exp0.1-r0": aeon_schema.exp01,
+    "social0-r1": aeon_schema.exp01,
+    "exp0.2-r0": aeon_schema.exp02,
 }
 
 
@@ -260,7 +260,7 @@ class Epoch(dj.Manual):
 
     @classmethod
     def ingest_epochs(cls, experiment_name):
-        device_name = _ref_device_mapper.get(experiment_name, "CameraTop")
+        device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
 
@@ -396,7 +396,7 @@ class Chunk(dj.Manual):
 
     @classmethod
     def ingest_chunks(cls, experiment_name):
-        device_name = _ref_device_mapper.get(experiment_name, "CameraTop")
+        device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
 
@@ -500,7 +500,7 @@ class SubjectEnterExit(dj.Imported):
             )
         else:
             device = getattr(
-                _device_schema_mapper[key["experiment_name"]], "ExperimentalMetadata"
+                _device_schema_mapping[key["experiment_name"]], "ExperimentalMetadata"
             )
             subject_data = io_api.load(
                 root=raw_data_dir.as_posix(),
@@ -553,7 +553,7 @@ class SubjectWeight(dj.Imported):
             )
         else:
             device = getattr(
-                _device_schema_mapper[key["experiment_name"]], "ExperimentalMetadata"
+                _device_schema_mapping[key["experiment_name"]], "ExperimentalMetadata"
             )
             subject_data = io_api.load(
                 root=raw_data_dir.as_posix(),
@@ -594,7 +594,7 @@ class ExperimentLog(dj.Imported):
         raw_data_dir = Experiment.get_data_directory(key)
 
         device = getattr(
-            _device_schema_mapper[key["experiment_name"]], "ExperimentalMetadata"
+            _device_schema_mapping[key["experiment_name"]], "ExperimentalMetadata"
         )
         log_messages = io_api.load(
             root=raw_data_dir.as_posix(),
@@ -668,7 +668,7 @@ class FoodPatchEvent(dj.Imported):
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
         device = getattr(
-            _device_schema_mapper[key["experiment_name"]], food_patch_description
+            _device_schema_mapping[key["experiment_name"]], food_patch_description
         )
 
         pellet_data = pd.concat(
@@ -751,7 +751,7 @@ class FoodPatchWheel(dj.Imported):
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
         device = getattr(
-            _device_schema_mapper[key["experiment_name"]], food_patch_description
+            _device_schema_mapping[key["experiment_name"]], food_patch_description
         )
 
         wheel_data = io_api.load(
@@ -774,13 +774,13 @@ class FoodPatchWheel(dj.Imported):
 
     @classmethod
     def get_wheel_data(
-        cls, experiment_name, start, end, patch_name="Patch1", with_io=False
+        cls, experiment_name, start, end, patch_name="Patch1", using_aeon_io=False
     ):
-        if with_io:
+        if using_aeon_io:
             key = {"experiment_name": experiment_name}
             raw_data_dir = Experiment.get_data_directory(key)
 
-            device = getattr(_device_schema_mapper[key["experiment_name"]], patch_name)
+            device = getattr(_device_schema_mapping[key["experiment_name"]], patch_name)
 
             wheel_data = io_api.load(
                 root=raw_data_dir.as_posix(),
@@ -831,7 +831,7 @@ class FoodPatchWheel(dj.Imported):
 
             wheel_data = wheel_data[time_mask]
 
-        wheel_data["distance_travelled"] = io_utils.distancetravelled(
+        wheel_data["distance_travelled"] = analyze_utils.distancetravelled(
             wheel_data["angle"]
         )
         return wheel_data
@@ -877,7 +877,7 @@ class WheelState(dj.Imported):
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
         device = getattr(
-            _device_schema_mapper[key["experiment_name"]], food_patch_description
+            _device_schema_mapping[key["experiment_name"]], food_patch_description
         )
 
         wheel_state = io_api.load(
@@ -941,7 +941,7 @@ class WeightMeasurement(dj.Imported):
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
         device = getattr(
-            _device_schema_mapper[key["experiment_name"]], weight_scale_description
+            _device_schema_mapping[key["experiment_name"]], weight_scale_description
         )
 
         weight_data = io_api.load(
@@ -1041,7 +1041,7 @@ def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
         return subject_data
 
     if experiment_name == "social0-r1":
-        from aeon.util.socialexperiment_helpers import fixID
+        from aeon.analyze.socialexperiment_helpers import fixID
 
         sessdf = subject_data.copy()
         sessdf = sessdf[~sessdf.id.str.contains("test")]

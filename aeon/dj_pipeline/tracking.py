@@ -126,7 +126,7 @@ class CameraTracking(dj.Imported):
             ks
             * (
                 qc.CameraQC * acquisition.ExperimentCamera
-                & f"camera_description in {tuple(set(acquisition._ref_device_mapper.values()))}"
+                & f"camera_description in {tuple(set(acquisition._ref_device_mapping.values()))}"
             ).proj()
             & "tracking_paramset_id = 0"
         )
@@ -142,7 +142,7 @@ class CameraTracking(dj.Imported):
         )
 
         device = getattr(
-            acquisition._device_schema_mapper[key["experiment_name"]], camera
+            acquisition._device_schema_mapping[key["experiment_name"]], camera
         )
 
         positiondata = io_api.load(

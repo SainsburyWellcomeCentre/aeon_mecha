@@ -2,10 +2,8 @@ import datajoint as dj
 import pandas as pd
 import numpy as np
 import datetime
-from tqdm import tqdm
 
-from aeon.io import api as io_api
-from aeon.io import utils as io_utils
+from aeon.analyze import utils as analyze_utils
 
 from .. import lab, acquisition, tracking, qc
 from .. import get_schema_name
@@ -122,7 +120,7 @@ def get_subject_environment_visits(experiment_name, subject, start=None, end=Non
     """
     Function to retrieve the enter/exit times and compute the "visits" to the "environment"
         for a given subject of an experiment
-    Using api method: `io_api.visits()`
+    Using "analyze" method: `aeon.analyze.utils.visits()`
 
     :param str experiment_name: name of the experiment
     :param str subject: name of the subject to retrieve the visits
@@ -156,7 +154,7 @@ def get_subject_environment_visits(experiment_name, subject, start=None, end=Non
     enter_exit_df.replace("SubjectEnteredArena", "Enter", inplace=True)
     enter_exit_df.replace("SubjectExitedArena", "Exit", inplace=True)
 
-    subject_visits = io_utils.visits(enter_exit_df)
+    subject_visits = analyze_utils.visits(enter_exit_df)
 
     return subject_visits
 
