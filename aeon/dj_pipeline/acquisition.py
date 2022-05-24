@@ -964,7 +964,7 @@ class WeightMeasurement(dj.Imported):
             {
                 **key,
                 "timestamps": timestamps,
-                "weight": weight_data.weight.values,
+                "weight": weight_data.value.values,
                 "confidence": weight_data.stable.values.astype(float),
             }
         )
