@@ -4,7 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 from matplotlib.collections import LineCollection
-from aeon.analyze.patches import *
+from aeon.analyze.utils import *
 
 def heatmap(position, frequency, ax=None, **kwargs):
     '''
