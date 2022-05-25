@@ -4,30 +4,34 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 from matplotlib.collections import LineCollection
-from aeon.analyze.patches import *
+from aeon.analyze.utils import *
+
 
 def heatmap(position, frequency, ax=None, **kwargs):
-    '''
+    """
     Draw a heatmap of time spent in each location from specified position data and sampling frequency.
 
     :param Series position: A series of position data containing x and y coordinates.
     :param number frequency: The sampling frequency for the position data.
     :param Axes, optional ax: The Axes on which to draw the heatmap.
-    '''
+    """
     if ax is None:
         ax = plt.gca()
     _, _, _, mesh = ax.hist2d(
-        position.x, position.y,
-        weights = np.ones(len(position)) / frequency,
+        position.x,
+        position.y,
+        weights=np.ones(len(position)) / frequency,
         norm=colors.LogNorm(),
-        **kwargs)
+        **kwargs,
+    )
     ax.invert_yaxis()
     cbar = plt.colorbar(mesh, ax=ax)
-    cbar.set_label('time (s)')
+    cbar.set_label("time (s)")
     return mesh, cbar
 
+
 def circle(x, y, radius, fmt=None, ax=None, **kwargs):
-    '''
+    """
     Plot a circle centered at the given x, y position with the specified radius.
 
     :param number x: The x-component of the circle center.
@@ -35,16 +39,28 @@ def circle(x, y, radius, fmt=None, ax=None, **kwargs):
     :param number radius: The radius of the circle.
     :param str, optional fmt: The format used to plot the circle line.
     :param Axes, optional ax: The Axes on which to draw the circle.
-    '''
+    """
     if ax is None:
         ax = plt.gca()
-    points = pd.DataFrame(np.linspace(0,2 * math.pi, 360),columns=['angle'])
-    points['x'] = radius * np.cos(points.angle) + x
-    points['y'] = radius * np.sin(points.angle) + y
+    points = pd.DataFrame(np.linspace(0, 2 * math.pi, 360), columns=["angle"])
+    points["x"] = radius * np.cos(points.angle) + x
+    points["y"] = radius * np.sin(points.angle) + y
     ax.plot(points.x, points.y, fmt, **kwargs)
 
-def rateplot(events, window, frequency, weight=1, start=None, end=None, smooth=None, center=True, ax=None, **kwargs):
-    '''
+
+def rateplot(
+    events,
+    window,
+    frequency,
+    weight=1,
+    start=None,
+    end=None,
+    smooth=None,
+    center=True,
+    ax=None,
+    **kwargs,
+):
+    """
     Plot the continuous event rate and raster of a discrete event sequence, given the specified
     window size and sampling frequency.
 
@@ -59,22 +75,32 @@ def rateplot(events, window, frequency, weight=1, start=None, end=None, smooth=N
     The size of the smoothing kernel applied to the continuous rate output.
     :param bool, optional center: Specifies whether to center the convolution kernels.
     :param Axes, optional ax: The Axes on which to draw the rate plot and raster.
-    '''
-    label = kwargs.pop('label', None)
-    eventrate = rate(events, window, frequency, weight, start, end, smooth=smooth, center=center)
+    """
+    label = kwargs.pop("label", None)
+    eventrate = rate(
+        events, window, frequency, weight, start, end, smooth=smooth, center=center
+    )
     if ax is None:
         ax = plt.gca()
-    ax.plot((eventrate.index-eventrate.index[0]).total_seconds() / 60, eventrate, label=label, **kwargs)
-    ax.vlines(sessiontime(events.index, eventrate.index[0]), -0.2, -0.1, linewidth=1, **kwargs)
+    ax.plot(
+        (eventrate.index - eventrate.index[0]).total_seconds() / 60,
+        eventrate,
+        label=label,
+        **kwargs,
+    )
+    ax.vlines(
+        sessiontime(events.index, eventrate.index[0]), -0.2, -0.1, linewidth=1, **kwargs
+    )
+
 
 def set_ymargin(ax, bottom, top):
-    '''
+    """
     Set the vertical margins of the specified Axes.
 
     :param Axes ax: The Axes for which to specify the vertical margin.
     :param number bottom: The size of the bottom margin.
     :param number top: The size of the top margins.
-    '''
+    """
     ax.set_ymargin(0)
     ax.autoscale_view()
     ylim = ax.get_ylim()
@@ -83,8 +109,17 @@ def set_ymargin(ax, bottom, top):
     top = ylim[1] + delta * top
     ax.set_ylim(bottom, top)
 
-def colorline(x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(0.0, 1.0), ax=None, **kwargs):
-    '''
+
+def colorline(
+    x,
+    y,
+    z=None,
+    cmap=plt.get_cmap("copper"),
+    norm=plt.Normalize(0.0, 1.0),
+    ax=None,
+    **kwargs,
+):
+    """
     Plot a dynamically colored line on the specified Axes.
 
     :param array-like x, y: The horizontal / vertical coordinates of the data points.
@@ -95,7 +130,7 @@ def colorline(x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(0.0,
     :param matplotlib.colors.Normalize, optional norm:
     The normalizing object used to scale data to the range [0, 1] for indexing the color map.
     :param Axes, optional ax: The Axes on which to draw the colored line.
-    '''
+    """
     if ax is None:
         ax = plt.gca()
     if z is None:

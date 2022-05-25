@@ -1,5 +1,3 @@
-import os
-import glob
 import bisect
 import datetime
 import pandas as pd
@@ -38,37 +36,14 @@ def chunk_range(start, end):
 
 def chunk_key(file):
     """Returns the acquisition chunk key for the specified file name."""
-    filename = os.path.split(file)[-1]
-    filename = os.path.splitext(filename)[0]
-    chunk_str = filename.split("_")[-1]
-    date_str, time_str = chunk_str.split("T")
-    return datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":"))
-
-def chunk_filter(files, timefilter):
-    '''
-    Filters a list of paths using the specified time filter. To use the time filter, files
-    must conform to a naming convention where the timestamp of each acquisition chunk is
-    appended to the end of each file path.
-
-    :param str files: The list of acquisition chunk files to filter.
-    :param iterable or callable timefilter:
-    A list of acquisition chunks or a predicate used to test each file time.
-    :return: A list of all matching filenames.
-    '''
+    epoch = file.parts[-3]
+    chunk_str = file.stem.split("_")[-1]
     try:
-        chunks = [chunk for chunk in iter(timefilter)]
-        timefilter = lambda x:x in chunks
-    except TypeError:
-        if not callable(timefilter):
-            raise TypeError("timefilter must be iterable or callable")
-
-    matches = []
-    for file in files:
-        chunk = chunk_key(file)
-        if not timefilter(chunk):
-            continue
-        matches.append(file)
-    return matches
+        date_str, time_str = chunk_str.split("T")
+    except ValueError:
+        epoch = file.parts[-2]
+        date_str, time_str = epoch.split("T")
+    return epoch, datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":"))
 
 def _set_index(data):
     if not isinstance(data.index, pd.DatetimeIndex):
@@ -93,12 +68,14 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None):
     The maximum distance between original and new timestamps for inexact matches.
     :return: A pandas data frame containing epoch event metadata, sorted by time.
     '''
-    files = set()
     if isinstance(root, str):
         root = [root]
-    for path in root:
-        files.update(Path(path).glob(f"**/**/{reader.name}*.{reader.extension}"))
-    files = sorted(files)
+
+    fileset = {
+        chunk_key(fname):fname
+        for path in root
+        for fname in Path(path).glob(f"**/**/{reader.pattern}*.{reader.extension}")}
+    files = sorted(fileset.items())
 
     if time is not None:
         # ensure input is converted to timestamp series
@@ -109,7 +86,8 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None):
             time.index = time
 
         dataframes = []
-        filetimes = [chunk_key(file) for file in files]
+        filetimes = [chunk for (_, chunk), _ in files]
+        files = [file for _, file in files]
         for key,values in time.groupby(by=chunk):
             i = bisect.bisect_left(filetimes, key)
             if i < len(filetimes):
@@ -137,17 +115,17 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None):
         return pd.concat(dataframes)
 
     if start is not None or end is not None:
-        timefilter = chunk_range(start, end)
-        files = chunk_filter(files, timefilter)
+        chunkfilter = chunk_range(start, end)
+        files = list(filter(lambda item: item[0][1] in chunkfilter, files))
     else:
-        timefilter = None
+        chunkfilter = None
 
     if len(files) == 0:
         return _empty(reader.columns)
 
-    data = pd.concat([reader.read(file) for file in files])
+    data = pd.concat([reader.read(file) for _, file in files])
     _set_index(data)
-    if timefilter is not None:
+    if chunkfilter is not None:
         try:
             return data.loc[start:end]
         except KeyError:

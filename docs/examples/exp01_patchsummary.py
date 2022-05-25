@@ -1,7 +1,7 @@
 import pandas as pd
 from colorline import colorline
 from aeon.analyze.patches import *
-from aeon.util.plotting import *
+from aeon.analyze.plotting import *
 import aeon.io.api as aeon
 import matplotlib.pyplot as plt
 

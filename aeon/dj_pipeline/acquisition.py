@@ -5,12 +5,12 @@ import numpy as np
 import pandas as pd
 
 from aeon.io import api as io_api
-from aeon.io import schema as io_schema
+from aeon.schema import dataset as aeon_schema
 from aeon.io import reader as io_reader
-from aeon.io import stream as io_stream
+from aeon.analyze import utils as analyze_utils
 
-from . import lab, subject
-from . import get_schema_name, paths
+from . import get_schema_name
+from .utils import paths
 from .ingest.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 
 
@@ -19,13 +19,17 @@ schema = dj.schema(get_schema_name("acquisition"))
 
 # ------------------- Some Constants --------------------------
 
-_ref_device_mapper = {'exp0.1-r0': 'FrameTop',
-                      'social0-r1': 'FrameTop',
-                      'exp0.2-r0': 'CameraTop'}
+_ref_device_mapping = {
+    "exp0.1-r0": "FrameTop",
+    "social0-r1": "FrameTop",
+    "exp0.2-r0": "CameraTop",
+}
 
-_device_schema_mapper = {'exp0.1-r0': io_schema.exp01,
-                         'social0-r1': io_schema.exp02,
-                         'exp0.2-r0': io_schema.exp02}
+_device_schema_mapping = {
+    "exp0.1-r0": aeon_schema.exp01,
+    "social0-r1": aeon_schema.exp01,
+    "exp0.2-r0": aeon_schema.exp02,
+}
 
 
 # ------------------- Type Lookup ------------------------
@@ -37,7 +41,7 @@ class ExperimentType(dj.Lookup):
     experiment_type: varchar(32)
     """
 
-    contents = zip(['foraging', 'social'])
+    contents = zip(["foraging", "social"])
 
 
 @schema
@@ -48,11 +52,15 @@ class EventType(dj.Lookup):
     event_type: varchar(36)
     """
 
-    contents = [(220, 'SubjectEnteredArena'),
-                (221, 'SubjectExitedArena'),
-                (222, 'SubjectRemovedFromArena'),
-                (223, 'SubjectRemainedInArena'),
-                (35, "TriggerPellet"), (32, "PelletDetected"), (1000, "No Events")]
+    contents = [
+        (220, "SubjectEnteredArena"),
+        (221, "SubjectExitedArena"),
+        (222, "SubjectRemovedFromArena"),
+        (223, "SubjectRemainedInArena"),
+        (35, "TriggerPellet"),
+        (32, "PelletDetected"),
+        (1000, "No Events"),
+    ]
 
 
 # ------------------- Data repository/directory ------------------------
@@ -239,11 +247,11 @@ class Epoch(dj.Manual):
     """
 
     class Config(dj.Part):
-        definition = """
+        definition = """ # Metadata for the configuration of a given epoch
         -> master
         ---
         bonsai_workflow: varchar(36)
-        revision: varchar(64)   # e.g. git hash of aeon_experiment used to generated this particular epoch
+        commit: varchar(64)   # e.g. git commit hash of aeon_experiment used to generated this particular epoch
         source='': varchar(16)  # e.g. aeon_experiment or aeon_acquisition (or others)
         metadata: longblob
         -> Experiment.Directory
@@ -252,7 +260,7 @@ class Epoch(dj.Manual):
 
     @classmethod
     def ingest_epochs(cls, experiment_name):
-        device_name = _ref_device_mapper.get(experiment_name, 'CameraTop')
+        device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
 
@@ -260,7 +268,9 @@ class Epoch(dj.Manual):
         for i, (_, chunk) in enumerate(all_chunks.iterrows()):
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(epoch_dir.name, '%Y-%m-%dT%H-%M-%S')
+            epoch_start = datetime.datetime.strptime(
+                epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
+            )
 
             # --- insert to Epoch ---
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
@@ -270,46 +280,77 @@ class Epoch(dj.Manual):
                 continue
 
             epoch_config, metadata_yml_filepath = None, None
-            if experiment_name != 'exp0.1-r0':
-                metadata_yml_filepath = epoch_dir / 'Metadata.yml'
+            if experiment_name != "exp0.1-r0":
+                metadata_yml_filepath = epoch_dir / "Metadata.yml"
                 if metadata_yml_filepath.exists():
-                    epoch_config = extract_epoch_metadata(experiment_name, metadata_yml_filepath)
+                    epoch_config = extract_epoch_metadata(
+                        experiment_name, metadata_yml_filepath
+                    )
 
-                    metadata_yml_filepath = epoch_config['metadata_file_path']
+                    metadata_yml_filepath = epoch_config["metadata_file_path"]
 
                     _, directory, repo_path = _match_experiment_directory(
-                        experiment_name, epoch_config['metadata_file_path'], raw_data_dirs)
+                        experiment_name,
+                        epoch_config["metadata_file_path"],
+                        raw_data_dirs,
+                    )
                     epoch_config = {
                         **epoch_config,
                         **directory,
-                        'metadata_file_path': epoch_config['metadata_file_path'].relative_to(repo_path).as_posix()}
+                        "metadata_file_path": epoch_config["metadata_file_path"]
+                        .relative_to(repo_path)
+                        .as_posix(),
+                    }
 
             # find previous epoch end-time
             previous_epoch_end = None
             if i > 0:
-                previous_chunk = all_chunks.iloc[i-1]
+                previous_chunk = all_chunks.iloc[i - 1]
                 previous_chunk_path = pathlib.Path(previous_chunk.path)
-                previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
-                previous_epoch_start = datetime.datetime.strptime(previous_epoch_dir.name, '%Y-%m-%dT%H-%M-%S')
-                previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=io_api.CHUNK_DURATION)
+                previous_epoch_dir = pathlib.Path(
+                    previous_chunk_path.as_posix().split(device_name)[0]
+                )
+                previous_epoch_start = datetime.datetime.strptime(
+                    previous_epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
+                )
+                previous_chunk_end = previous_chunk.name + datetime.timedelta(
+                    hours=io_api.CHUNK_DURATION
+                )
                 previous_epoch_end = min(previous_chunk_end, epoch_start)
 
             with cls.connection.transaction:
                 cls.insert1(epoch_key)
-                if previous_epoch_end and not (EpochEnd & {"experiment_name": experiment_name,
-                                                           "epoch_start": previous_epoch_start}):
+                if previous_epoch_end and not (
+                    EpochEnd
+                    & {
+                        "experiment_name": experiment_name,
+                        "epoch_start": previous_epoch_start,
+                    }
+                ):
                     # insert end-time for previous epoch
                     EpochEnd.insert1(
-                        {"experiment_name": experiment_name,
-                         "epoch_start": previous_epoch_start,
-                         "epoch_end": previous_epoch_end,
-                         "epoch_duration": (previous_epoch_end - previous_epoch_start).total_seconds() / 3600})
+                        {
+                            "experiment_name": experiment_name,
+                            "epoch_start": previous_epoch_start,
+                            "epoch_end": previous_epoch_end,
+                            "epoch_duration": (
+                                previous_epoch_end - previous_epoch_start
+                            ).total_seconds()
+                            / 3600,
+                        }
+                    )
                     # update end-time for last chunk of the previous epoch
-                    if Chunk & {"experiment_name": experiment_name,
-                                "chunk_start": previous_chunk.name}:
-                        Chunk.update1({"experiment_name": experiment_name,
-                                       "chunk_start": previous_chunk.name,
-                                       "chunk_end": previous_epoch_end})
+                    if Chunk & {
+                        "experiment_name": experiment_name,
+                        "chunk_start": previous_chunk.name,
+                    }:
+                        Chunk.update1(
+                            {
+                                "experiment_name": experiment_name,
+                                "chunk_start": previous_chunk.name,
+                                "chunk_end": previous_epoch_end,
+                            }
+                        )
                 if epoch_config:
                     cls.Config.insert1(epoch_config)
                     ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
@@ -327,6 +368,7 @@ class EpochEnd(dj.Manual):
     epoch_end: datetime(6)
     epoch_duration: float  # (hour)
     """
+
 
 # ------------------- ACQUISITION CHUNK --------------------
 
@@ -354,7 +396,7 @@ class Chunk(dj.Manual):
 
     @classmethod
     def ingest_chunks(cls, experiment_name):
-        device_name = _ref_device_mapper.get(experiment_name, 'CameraTop')
+        device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
 
@@ -362,7 +404,9 @@ class Chunk(dj.Manual):
         for _, chunk in all_chunks.iterrows():
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(epoch_dir.name, '%Y-%m-%dT%H-%M-%S')
+            epoch_start = datetime.datetime.strptime(
+                epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
+            )
 
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
             if not (Epoch & epoch_key):
@@ -373,7 +417,7 @@ class Chunk(dj.Manual):
             chunk_end = chunk_start + datetime.timedelta(hours=io_api.CHUNK_DURATION)
 
             if EpochEnd & epoch_key:
-                epoch_end = (EpochEnd & epoch_key).fetch1('epoch_end')
+                epoch_end = (EpochEnd & epoch_key).fetch1("epoch_end")
                 chunk_end = min(chunk_end, epoch_end)
 
             # --- insert to Chunk ---
@@ -387,14 +431,17 @@ class Chunk(dj.Manual):
                 # handle cases where two chunks with identical start_time
                 # (starts in the same hour) but from 2 consecutive epochs
                 # using epoch_start as chunk_start in this case
-                chunk_key['chunk_start'] = epoch_start
+                chunk_key["chunk_start"] = epoch_start
 
             # chunk file and directory
             raw_data_dir, directory, repo_path = _match_experiment_directory(
-                experiment_name, chunk_rep_file, raw_data_dirs)
+                experiment_name, chunk_rep_file, raw_data_dirs
+            )
 
-            chunk_starts.append(chunk_key['chunk_start'])
-            chunk_list.append({**chunk_key, **directory, "chunk_end": chunk_end, **epoch_key})
+            chunk_starts.append(chunk_key["chunk_start"])
+            chunk_list.append(
+                {**chunk_key, **directory, "chunk_end": chunk_end, **epoch_key}
+            )
             file_name_list.append(
                 chunk_rep_file.name
             )  # handle duplicated files in different folders
@@ -444,17 +491,23 @@ class SubjectEnterExit(dj.Imported):
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
         raw_data_dir = Experiment.get_data_directory(key)
 
-        if key['experiment_name'] in ('exp0.1-r0', 'social0-r1'):
+        if key["experiment_name"] in ("exp0.1-r0", "social0-r1"):
             subject_data = _load_legacy_subjectdata(
-                key['experiment_name'], raw_data_dir.as_posix(),
-                pd.Timestamp(chunk_start), pd.Timestamp(chunk_end))
+                key["experiment_name"],
+                raw_data_dir.as_posix(),
+                pd.Timestamp(chunk_start),
+                pd.Timestamp(chunk_end),
+            )
         else:
-            device = getattr(_device_schema_mapper[key['experiment_name']], 'ExperimentalMetadata')
+            device = getattr(
+                _device_schema_mapping[key["experiment_name"]], "ExperimentalMetadata"
+            )
             subject_data = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.SubjectState,
                 start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end))
+                end=pd.Timestamp(chunk_end),
+            )
 
         self.insert1(key)
         self.Time.insert(
@@ -491,17 +544,23 @@ class SubjectWeight(dj.Imported):
         subject_list = (Experiment.Subject & key).fetch("subject")
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
         raw_data_dir = Experiment.get_data_directory(key)
-        if key['experiment_name'] in ('exp0.1-r0', 'social0-r1'):
+        if key["experiment_name"] in ("exp0.1-r0", "social0-r1"):
             subject_data = _load_legacy_subjectdata(
-                key['experiment_name'], raw_data_dir.as_posix(),
-                pd.Timestamp(chunk_start), pd.Timestamp(chunk_end))
+                key["experiment_name"],
+                raw_data_dir.as_posix(),
+                pd.Timestamp(chunk_start),
+                pd.Timestamp(chunk_end),
+            )
         else:
-            device = getattr(_device_schema_mapper[key['experiment_name']], 'ExperimentalMetadata')
+            device = getattr(
+                _device_schema_mapping[key["experiment_name"]], "ExperimentalMetadata"
+            )
             subject_data = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.SubjectState,
                 start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end))
+                end=pd.Timestamp(chunk_end),
+            )
 
         self.insert1(key)
         self.WeightTime.insert(
@@ -534,17 +593,21 @@ class ExperimentLog(dj.Imported):
 
         raw_data_dir = Experiment.get_data_directory(key)
 
-        device = getattr(_device_schema_mapper[key['experiment_name']], 'ExperimentalMetadata')
+        device = getattr(
+            _device_schema_mapping[key["experiment_name"]], "ExperimentalMetadata"
+        )
         log_messages = io_api.load(
             root=raw_data_dir.as_posix(),
             reader=device.MessageLog,
             start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end))
+            end=pd.Timestamp(chunk_end),
+        )
         state_messages = io_api.load(
             root=raw_data_dir.as_posix(),
             reader=device.EnvironmentState,
             start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end))
+            end=pd.Timestamp(chunk_end),
+        )
 
         self.insert1(key)
         self.Message.insert(
@@ -561,7 +624,7 @@ class ExperimentLog(dj.Imported):
                 **key,
                 "message_time": r.name,
                 "message": r.state,
-                "message_type": 'EnvironmentState',
+                "message_type": "EnvironmentState",
             }
             for _, r in state_messages.iterrows()
         )
@@ -595,27 +658,35 @@ class FoodPatchEvent(dj.Imported):
         )
 
     def make(self, key):
-        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
+            "chunk_start", "chunk_end", "directory_type"
+        )
         food_patch_description = (ExperimentFoodPatch & key).fetch1(
             "food_patch_description"
         )
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
-        device = getattr(_device_schema_mapper[key['experiment_name']], food_patch_description)
+        device = getattr(
+            _device_schema_mapping[key["experiment_name"]], food_patch_description
+        )
 
-        pellet_data = pd.concat([
-            io_api.load(
-                root=raw_data_dir.as_posix(),
-                reader=device.DeliverPellet,
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end)),
-            io_api.load(
-                root=raw_data_dir.as_posix(),
-                reader=device.BeamBreak,
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end))
-        ])
+        pellet_data = pd.concat(
+            [
+                io_api.load(
+                    root=raw_data_dir.as_posix(),
+                    reader=device.DeliverPellet,
+                    start=pd.Timestamp(chunk_start),
+                    end=pd.Timestamp(chunk_end),
+                ),
+                io_api.load(
+                    root=raw_data_dir.as_posix(),
+                    reader=device.BeamBreak,
+                    start=pd.Timestamp(chunk_start),
+                    end=pd.Timestamp(chunk_end),
+                ),
+            ]
+        )
         pellet_data.sort_index(inplace=True)
 
         if not len(pellet_data):
@@ -670,20 +741,25 @@ class FoodPatchWheel(dj.Imported):
         )
 
     def make(self, key):
-        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
+            "chunk_start", "chunk_end", "directory_type"
+        )
         food_patch_description = (ExperimentFoodPatch & key).fetch1(
             "food_patch_description"
         )
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
-        device = getattr(_device_schema_mapper[key['experiment_name']], food_patch_description)
+        device = getattr(
+            _device_schema_mapping[key["experiment_name"]], food_patch_description
+        )
 
         wheel_data = io_api.load(
             root=raw_data_dir.as_posix(),
             reader=device.Encoder,
             start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end))
+            end=pd.Timestamp(chunk_end),
+        )
 
         timestamps = wheel_data.index.to_pydatetime()
 
@@ -695,6 +771,70 @@ class FoodPatchWheel(dj.Imported):
                 "intensity": wheel_data.intensity.values,
             }
         )
+
+    @classmethod
+    def get_wheel_data(
+        cls, experiment_name, start, end, patch_name="Patch1", using_aeon_io=False
+    ):
+        if using_aeon_io:
+            key = {"experiment_name": experiment_name}
+            raw_data_dir = Experiment.get_data_directory(key)
+
+            device = getattr(_device_schema_mapping[key["experiment_name"]], patch_name)
+
+            wheel_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=device.Encoder,
+                start=pd.Timestamp(start),
+                end=pd.Timestamp(end),
+            )
+        else:
+            table = cls * Chunk * ExperimentFoodPatch
+            obj_restriction = {
+                "experiment_name": experiment_name,
+                "food_patch_description": patch_name,
+            }
+            start_attr, end_attr = "chunk_start", "chunk_end"
+            fetch_attrs = ["timestamps", "angle"]
+
+            start_restriction = f'"{start}" BETWEEN {start_attr} AND {end_attr}'
+            end_restriction = f'"{end}" BETWEEN {start_attr} AND {end_attr}'
+
+            start_query = table & obj_restriction & start_restriction
+            end_query = table & obj_restriction & end_restriction
+            if not (start_query and end_query):
+                raise ValueError(f"No wheel data found between {start} and {end}")
+
+            time_restriction = (
+                f'{start_attr} >= "{start_query.fetch1(start_attr)}"'
+                f' AND {start_attr} < "{end_query.fetch1(end_attr)}"'
+            )
+
+            fetched_data = (table & obj_restriction & time_restriction).fetch(
+                *fetch_attrs, order_by=start_attr
+            )
+
+            if not len(fetched_data[0]):
+                raise ValueError(f"No wheel data found between {start} and {end}")
+
+            timestamp_attr = next(attr for attr in fetch_attrs if "timestamps" in attr)
+
+            # stack and structure in pandas DataFrame
+            wheel_data = pd.DataFrame(
+                {k: np.hstack(v) for k, v in zip(fetch_attrs, fetched_data)}
+            )
+            wheel_data.set_index(timestamp_attr, inplace=True)
+
+            time_mask = np.logical_and(
+                wheel_data.index >= start, wheel_data.index < end
+            )
+
+            wheel_data = wheel_data[time_mask]
+
+        wheel_data["distance_travelled"] = analyze_utils.distancetravelled(
+            wheel_data["angle"]
+        )
+        return wheel_data
 
 
 @schema
@@ -728,22 +868,27 @@ class WheelState(dj.Imported):
         )
 
     def make(self, key):
-        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
+            "chunk_start", "chunk_end", "directory_type"
+        )
         food_patch_description = (ExperimentFoodPatch & key).fetch1(
             "food_patch_description"
         )
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
-        device = getattr(_device_schema_mapper[key['experiment_name']], food_patch_description)
+        device = getattr(
+            _device_schema_mapping[key["experiment_name"]], food_patch_description
+        )
 
         wheel_state = io_api.load(
             root=raw_data_dir.as_posix(),
             reader=device.DepletionState,
             start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end))
+            end=pd.Timestamp(chunk_end),
+        )
 
         # handles rare cases of duplicated state-timestamp
-        wheel_state = wheel_state[~wheel_state.index.duplicated(keep='first')]
+        wheel_state = wheel_state[~wheel_state.index.duplicated(keep="first")]
 
         self.insert1(key)
         self.Time.insert(
@@ -779,35 +924,50 @@ class WeightMeasurement(dj.Imported):
         +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed
         """
         return (
-            Chunk * ExperimentWeightScale.join(ExperimentWeightScale.RemovalTime, left=True)
+            Chunk
+            * ExperimentWeightScale.join(ExperimentWeightScale.RemovalTime, left=True)
             & "chunk_start >= weight_scale_install_time"
             & 'chunk_start < IFNULL(weight_scale_remove_time, "2200-01-01")'
         )
 
     def make(self, key):
-        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1('chunk_start', 'chunk_end', 'directory_type')
-        weight_scale_description = (ExperimentWeightScale & key).fetch1('weight_scale_description')
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
+            "chunk_start", "chunk_end", "directory_type"
+        )
+        weight_scale_description = (ExperimentWeightScale & key).fetch1(
+            "weight_scale_description"
+        )
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
-        device = getattr(_device_schema_mapper[key['experiment_name']], weight_scale_description)
+        device = getattr(
+            _device_schema_mapping[key["experiment_name"]], weight_scale_description
+        )
 
         weight_data = io_api.load(
             root=raw_data_dir.as_posix(),
             reader=device.WeightRaw,
             start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end))
+            end=pd.Timestamp(chunk_end),
+        )
 
         if not len(weight_data):
-            #TODO: no weight data? this is unexpected
+            # TODO: no weight data? this is unexpected
             # (pending a bugfix for https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/90)
-            raise ValueError(f'No weight measurement found for {key} - this is unexpected')
+            raise ValueError(
+                f"No weight measurement found for {key} - this is unexpected"
+            )
 
         timestamps = weight_data.index.to_pydatetime()
 
-        self.insert1({**key, 'timestamps': timestamps,
-                      'weight': weight_data.weight.values,
-                      'confidence': weight_data.stable.values.astype(float)})
+        self.insert1(
+            {
+                **key,
+                "timestamps": timestamps,
+                "weight": weight_data.value.values,
+                "confidence": weight_data.stable.values.astype(float),
+            }
+        )
 
 
 # ---- Task Protocol categorization ----
@@ -825,6 +985,7 @@ class TaskProtocol(dj.Lookup):
 
 # ---- HELPERS ----
 
+
 def _get_all_chunks(experiment_name, device_name):
     raw_data_dirs = Experiment.get_data_directories(
         {"experiment_name": experiment_name},
@@ -837,8 +998,9 @@ def _get_all_chunks(experiment_name, device_name):
         if data_dir
     }
 
-    chunkdata = io_api.load(root=raw_data_dirs.values(),
-                            reader=io_reader.Chunk(device_name, 'csv'))
+    chunkdata = io_api.load(
+        root=raw_data_dirs.values(), reader=io_reader.Chunk(device_name, "csv")
+    )
 
     return chunkdata, raw_data_dirs
 
@@ -848,26 +1010,23 @@ def _match_experiment_directory(experiment_name, path, directories):
         raw_data_dir = v
         if pathlib.Path(raw_data_dir) in list(path.parents):
             directory = (
-                    Experiment.Directory.proj("repository_name")
-                    & {"experiment_name": experiment_name, "directory_type": k}
+                Experiment.Directory.proj("repository_name")
+                & {"experiment_name": experiment_name, "directory_type": k}
             ).fetch1()
-            repo_path = paths.get_repository_path(
-                directory.pop("repository_name")
-            )
+            repo_path = paths.get_repository_path(directory.pop("repository_name"))
             break
     else:
         raise FileNotFoundError(
-            f"Unable to identify the directory"
-            f" where this chunk is from: {path}"
+            f"Unable to identify the directory" f" where this chunk is from: {path}"
         )
 
     return raw_data_dir, directory, repo_path
 
 
 def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
-    assert experiment_name in ('exp0.1-r0', 'social0-r1')
+    assert experiment_name in ("exp0.1-r0", "social0-r1")
 
-    reader = io_reader.Subject('SessionData_2')
+    reader = io_reader.Subject("SessionData_2")
     subject_data = io_api.load(
         data_dir,
         reader=reader,
@@ -875,42 +1034,42 @@ def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
         end=end,
     )
 
-    subject_data.replace('Start', 'Enter', inplace=True)
-    subject_data.replace('End', 'Exit', inplace=True)
+    subject_data.replace("Start", "Enter", inplace=True)
+    subject_data.replace("End", "Exit", inplace=True)
 
     if not len(subject_data):
         return subject_data
 
-    if experiment_name == 'social0-r1':
-        from aeon.util.socialexperiment_helpers import fixID
+    if experiment_name == "social0-r1":
+        from aeon.analyze.socialexperiment_helpers import fixID
 
         sessdf = subject_data.copy()
-        sessdf = sessdf[~sessdf.id.str.contains('test')]
-        sessdf = sessdf[~sessdf.id.str.contains('jeff')]
-        sessdf = sessdf[~sessdf.id.str.contains('OAA')]
-        sessdf = sessdf[~sessdf.id.str.contains('rew')]
-        sessdf = sessdf[~sessdf.id.str.contains('Animal')]
-        sessdf = sessdf[~sessdf.id.str.contains('white')]
+        sessdf = sessdf[~sessdf.id.str.contains("test")]
+        sessdf = sessdf[~sessdf.id.str.contains("jeff")]
+        sessdf = sessdf[~sessdf.id.str.contains("OAA")]
+        sessdf = sessdf[~sessdf.id.str.contains("rew")]
+        sessdf = sessdf[~sessdf.id.str.contains("Animal")]
+        sessdf = sessdf[~sessdf.id.str.contains("white")]
 
-        valid_ids = (Experiment.Subject
-                     & {'experiment_name': experiment_name}).fetch('subject')
+        valid_ids = (Experiment.Subject & {"experiment_name": experiment_name}).fetch(
+            "subject"
+        )
 
         fix = lambda x: fixID(x, valid_ids=list(valid_ids))
         sessdf.id = sessdf.id.apply(fix)
 
-        multi_ids = sessdf[sessdf.id.str.contains(';')]
+        multi_ids = sessdf[sessdf.id.str.contains(";")]
         multi_ids_rows = []
         for _, r in multi_ids.iterrows():
-            for i in r.id.split(';'):
-                multi_ids_rows.append({'time': r.name,
-                                       'id': i,
-                                       'weight': r.weight,
-                                       'event': r.event})
+            for i in r.id.split(";"):
+                multi_ids_rows.append(
+                    {"time": r.name, "id": i, "weight": r.weight, "event": r.event}
+                )
         multi_ids_rows = pd.DataFrame(multi_ids_rows)
         if len(multi_ids_rows):
-            multi_ids_rows.set_index('time', inplace=True)
+            multi_ids_rows.set_index("time", inplace=True)
 
-        subject_data = pd.concat([sessdf[~sessdf.id.str.contains(';')], multi_ids_rows])
+        subject_data = pd.concat([sessdf[~sessdf.id.str.contains(";")], multi_ids_rows])
         subject_data.sort_index(inplace=True)
 
     return subject_data
