@@ -21,7 +21,7 @@ services:
       mode: replicated
       replicas: 1
     volumes:
-      # - ../.:/aeon_mecha
+      - ../.:/aeon_mecha
       - vscode-server:/home/aeon_db/.vscode-server/extensions
 
   ingest_high:

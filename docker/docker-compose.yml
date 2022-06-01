@@ -47,7 +47,7 @@ x-aeon-ingest-common: &aeon-ingest-common
 services:
   ingest_high:
     <<: *aeon-ingest-common
-    command: ["aeon_ingest", "high_priority", "--duration=-1", "--sleep=30"]
+    command: ["aeon_ingest", "high_priority", "--duration=-1", "--sleep=1200"]
 
   ingest_mid:
     <<: *aeon-ingest-common
@@ -57,7 +57,7 @@ services:
     deploy:
       mode: replicated
       replicas: 3
-    command: ["aeon_ingest", "mid_priority", "--duration=-1", "--sleep=30"]
+    command: ["aeon_ingest", "mid_priority", "--duration=-1", "--sleep=3600"]
 
   dev:
     <<: *aeon-ingest-common
