@@ -69,7 +69,7 @@ RUN awk -v DJSTORE="$DJ_EXT_STORE" -v CEPHROOT="$CEPH_ROOT" \
 # install package dependencies from apt_requirements.txt
 RUN init-apt-deps
 
-# create the conda environment `aeon_env` from yml file
+# create the conda environment `aeon` from yml file
 RUN sudo-run \
     --switch-user=${NEW_USER_NAME} \
     --switch-group=condauser \
@@ -106,7 +106,7 @@ ARG NEW_USER_GROUP
 
 LABEL org.opencontainers.image.authors="DataJoint"
 LABEL org.opencontainers.image.title="aeon_mecha_docker"
-LABEL org.opencontainers.image.description="aeon_mecha pkg with conda environment aeon_env"
+LABEL org.opencontainers.image.description="aeon_mecha pkg with conda environment aeon"
 LABEL org.opencontainers.image.version="$IMAGE_VERSION"
 LABEL org.opencontainers.image.created="$IMAGE_CREATED"
 
