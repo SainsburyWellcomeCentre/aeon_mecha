@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import datetime
 
-from aeon.analyze import utils as analyze_utils
+from aeon.analysis import utils as analysis_utils
 
 from .. import lab, acquisition, tracking, qc
 from .. import get_schema_name
@@ -159,7 +159,7 @@ def ingest_environment_visits(experiment_names=["exp0.2-r0"]):
         enter_exit_df.columns = ["id", "time", "event"]
         enter_exit_df.set_index("time", inplace=True)
 
-        subject_visits = analyze_utils.visits(
+        subject_visits = analysis_utils.visits(
             enter_exit_df, onset="SubjectEnteredArena", offset="SubjectExitedArena"
         )
 

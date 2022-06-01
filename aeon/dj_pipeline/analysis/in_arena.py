@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import datetime
 
-from aeon.analyze import utils as analyze_utils
+from aeon.analysis import utils as analysis_utils
 
 from .. import lab, acquisition, tracking, qc
 from .. import get_schema_name
@@ -667,7 +667,7 @@ class InArenaRewardRate(dj.Computed):
                 pellet_events = np.array([in_arena_start, in_arena_end])
                 no_pellets = True
 
-            pellet_rate = analyze_utils.get_events_rates(
+            pellet_rate = analysis_utils.get_events_rates(
                 events=pd.DataFrame({"event_time": pellet_events}).set_index(
                     "event_time"
                 ),

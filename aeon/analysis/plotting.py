@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from matplotlib.collections import LineCollection
 
-from aeon.analyze.utils import *
+from aeon.analysis.utils import *
 
 
 def heatmap(position, frequency, ax=None, **kwargs):
