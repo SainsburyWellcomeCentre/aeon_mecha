@@ -1,1 +1,1 @@
-#
+See the [contributing guidelines in 'aeon_blog'](https://github.com/sainsburyWellcomeCentre/aeon_blog#contributing).
