@@ -8,17 +8,6 @@ jobs:
   build_and_push:
     runs-on: ubuntu-latest
     steps:
-      - name: Make build space
-        run: |
-          sudo du -hd2 /tmp
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /usr/share/dotnet
-          sudo apt-get clean -y
-          sudo apt-get autoremove -y
-          docker system df
-          docker images -a
-          docker system prune -fa --volumes
-
       - name: Checkout Repository
         uses: actions/checkout@v2
         with:
@@ -32,8 +21,8 @@ jobs:
 
       - name: Assign environment variables
         run: |
-          echo "repository_lower=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-          echo "image_build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
+          echo "repository_lower=$(echo ${{ github.repository }} | tr '[:upper:]' '[:lower:]')" >>$GITHUB_ENV
+          echo "image_build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >>$GITHUB_ENV
 
       - name: Setup QEMU
         uses: docker/setup-qemu-action@v1
@@ -70,7 +59,8 @@ jobs:
             IMAGE_VERSION=${{ steps.previoustag.outputs.tag }}
           context: .
           file: docker/image/Dockerfile
-          platforms: linux/arm64,linux/amd64
+          # platforms: linux/arm64,linux/amd64
+          platforms: linux/amd64
           push: true
           tags: |
             ghcr.io/${{ env.repository_lower }}:latest
