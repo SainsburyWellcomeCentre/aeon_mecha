@@ -8,7 +8,7 @@ from . import acquisition
 from . import get_schema_name
 
 
-schema = dj.schema(get_schema_name('device_stream'))
+schema = dj.schema(get_schema_name("device_stream"))
 
 
 @schema
@@ -17,8 +17,9 @@ class StreamType(dj.Lookup):
     Catalog of all steam types for the different device types used across Project Aeon
     One StreamType corresponds to one reader class in `aeon.io.reader`
     The combination of `stream_reader` and `stream_reader_kwargs` should fully specify
-    the data loading routine for a particular device, using the `aeon.io.api`
+    the data loading routine for a particular device, using the `aeon.io.utils`
     """
+
     definition = """  # Catalog of all stream types used across Project Aeon
     stream_type: varchar(16)
     ---
@@ -33,6 +34,7 @@ class DeviceType(dj.Lookup):
     """
     Catalog of all device types used across Project Aeon
     """
+
     definition = """  # Catalog of all device types used across Project Aeon
     device_type: varchar(16)
     ---
@@ -57,9 +59,10 @@ class Device(dj.Lookup):
 
 # ---- HELPER ----
 
+
 def generate_device_table(device_type):
     schema = dj.schema()
-    device_title = device_type.replace('_', ' ').title().replace(' ', '')
+    device_title = device_type.replace("_", " ").title().replace(" ", "")
 
     @schema
     class ExperimentDevice(dj.Manual):
@@ -83,11 +86,15 @@ def generate_device_table(device_type):
 
     # DeviceDataStream table(s)
 
-    for stream_detail in (StreamType & (DeviceType.Stream & {'device_type': device_type})).fetch(as_dict=True):
-        stream_type = stream_detail['stream_type']
-        stream_title = stream_type.replace('_', ' ').title().replace(' ', '')
+    for stream_detail in (
+        StreamType & (DeviceType.Stream & {"device_type": device_type})
+    ).fetch(as_dict=True):
+        stream_type = stream_detail["stream_type"]
+        stream_title = stream_type.replace("_", " ").title().replace(" ", "")
 
-        reader = getattr(io_reader, stream_detail['stream_reader'])(**stream_detail['stream_reader_kwargs'])
+        reader = getattr(io_reader, stream_detail["stream_reader"])(
+            **stream_detail["stream_reader_kwargs"]
+        )
 
         table_definition = f"""  # Raw per-chunk {stream_title} data stream from {device_title}
             -> acquisition.Chunk
@@ -97,12 +104,12 @@ def generate_device_table(device_type):
             """
 
         for col in reader.columns:
-            table_definition += f'{col}: longblob\n\t\t\t'
+            table_definition += f"{col}: longblob\n\t\t\t"
 
         @schema
         class DeviceDataStream(dj.Imported):
             definition = table_definition
 
-        DeviceDataStream.__name__ = f'{device_title}{stream_title}Stream'
+        DeviceDataStream.__name__ = f"{device_title}{stream_title}Stream"
 
     return schema
