@@ -3,28 +3,70 @@
 # requires = ["poetry-core > 1.0.7"]
 # build-backend = "poetry.core.masonry.api"
 [build-system]
-requires = ["setuptools", "poetry-core>=1.0.0"]
+requires = ["setuptools>=62.0", "wheel>=0.37", "poetry-core>=1.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "aeon_mecha"
 version = "0.0.0"
+requires-python = ">=3.9.4"
 description = "Code for managing acquired data. Includes preprocessing, querying, and analysis modules."
-authors = ["Jai Bhagat jkbhagatio@gmail.com", "Goncalo Lopes <goncaloclopes@gmail.com>"]
-license = ""
+authors = [
+  { name = "Jai Bhagat", email = "jkbhagatio@gmail.com" },
+  { name = "Goncalo Lopes", email = "goncaloclopes@gmail.com" },
+  { name = "Thinh Nguyen", email = "thinh@datajoint.com" },
+  { name = "Joseph Burling", email = "joseph@datajoint.com" },
+]
+license = { file = "license.md" }
 readme = "readme.md"
-python = ">=3.9.4"
-homepage = "https://github.com/projectAeon/data-management"
-repository = "https://github.com/projectAeon/data-management"
-documentation = "https://github.com/projectAeon/data-management"
+dependencies = [
+  "datajoint",
+  "dotmap",
+  "fastparquet",
+  "graphviz",
+  "ipykernel",
+  "jupyter",
+  "jupyterlab",
+  "matplotlib",
+  "numba>=0.46.0, <1",
+  "numpy>=1.21.0",
+  "opencv-python",
+  "pandas>=1.3, <2",
+  "plotly",
+  "poetry-core",
+  "pyarrow",
+  "pydotplus",
+  "pymysql",
+  "pyyaml",
+  "scikit-learn",
+  "scipy",
+  "seaborn",
+  "setuptools_scm",
+  "xarray>=0.12.3, <1",
+]
+
+[project.urls]
+DataJoint = "https://docs.datajoint.org/"
+Homepage = "https://github.com/projectAeon/data-management"
+Repository = "https://github.com/projectAeon/data-management"
+Documentation = "https://github.com/projectAeon/data-management"
+
+[project.scripts]
+aeon_ingest = "aeon.dj_pipeline.ingest.process:cli"
+
+[tool.setuptools]
+packages = ["aeon"]
 
 [tool.poetry]
 name = "aeon_mecha"
 version = "0.0.0"
 description = "Code for managing acquired data. Includes preprocessing, querying, and analysis modules."
-authors = ["Jai Bhagat <jkbhagatio@gmail.com>", "Goncalo Lopes <goncaloclopes@gmail.com>"]
+authors = [
+  "Jai Bhagat <jkbhagatio@gmail.com>",
+  "Goncalo Lopes <goncaloclopes@gmail.com>",
+]
 keywords = []
-classifiers = [  #! Update me
+classifiers = [ #! Update me
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
@@ -33,6 +75,7 @@ classifiers = [  #! Update me
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.9",
 ]
+
 
 [tool.poetry.dependencies]
 python = ">=3.9.4"
