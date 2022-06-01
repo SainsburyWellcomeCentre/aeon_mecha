@@ -1,30 +1,35 @@
-# docker-compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml up -d
-# docker-compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml down
+# docker-compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml build
+# docker-compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml up -d --force-recreate --remove-orphans
+# docker-compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml down --volumes
 # docker compose -f docker/docker-compose.yml -f docker/docker-compose-dev.yml config
-
-x-aeon-docker-dev-image: &aeon-docker-dev-image
-  image: ${DEV_CONTAINER_IMAGE:-ghcr.io/SainsburyWellcomeCentre/aeon_mecha:latest}
+#
+# docker ps -ls --no-trunc
+# docker top aeon_mecha_ingest_high_1 auxf
+#
+# ssh -fN -M -S ~/.ssh/controlmasters/aeon-db2 jburling@hpc-gw1 -J jburling@ssh.swc.ucl.ac.uk -L 127.0.0.1:3306:aeon-db:3306
+# ssh -o ControlPath=~/.ssh/controlmasters/aeon-db2 -O check 1
+# ssh -o ControlPath=~/.ssh/controlmasters/aeon-db2 -O stop 1
 
 services:
   dev:
-    <<: *aeon-docker-dev-image
+    build:
+      context: ../.
+      dockerfile: docker/image/Dockerfile
+    entrypoint: ["sudo-run"]
+    command: ["tail", "-f", "/dev/null"]
     deploy:
       mode: replicated
       replicas: 1
-    env_file:
-      - dev.env
     volumes:
       - ../.:/aeon_mecha
       - vscode-server:/home/aeon_db/.vscode-server/extensions
 
   ingest_high:
-    <<: *aeon-docker-dev-image
     deploy:
       mode: replicated
       replicas: 0
 
   ingest_mid:
-    <<: *aeon-docker-dev-image
     deploy:
       mode: replicated
       replicas: 0

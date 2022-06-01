@@ -4,8 +4,9 @@ max-line-length = 88
 #     - whitespace after '(' (E201)
 #     - whitespace before ')' (E202)
 #     - whitespace before ':') (E203)
-#     - assigning # to a lambda expression (E371)
+#     - assigning to a lambda expression (E371)
 #     - linebreaking before a binary operator (W503)
-extend-ignore = E201, E202, E203, E731, W503
+#     - multiple statments on one line separated by ';' (E702)
+extend-ignore = E201, E202, E203, E731, W503, E702
 # Ignore config setting files for git, github, intellij, vscode.
-exclude = .git, .github, .idea, .vscode
+extend-exclude = .git, .github, .idea, .vscode

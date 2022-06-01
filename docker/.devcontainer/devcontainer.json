@@ -25,7 +25,7 @@
 		},
 		"jupyter.generateSVGPlots": true,
 		"python.condaPath": "/opt/local/conda/bin/conda",
-		"python.defaultInterpreterPath": "/opt/local/conda/envs/aeon_env/bin/python",
+		"python.defaultInterpreterPath": "/opt/local/conda/envs/aeon/bin/python",
 		"python.formatting.blackArgs": [
 			"--line-length=88"
 		],
