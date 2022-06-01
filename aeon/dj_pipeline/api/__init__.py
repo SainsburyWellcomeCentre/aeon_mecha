@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from aeon.preprocess import api as aeon_api
+from aeon.io import api as aeon_api
+from aeon.io import video as video_api
 from aeon.dj_pipeline import acquisition, paths
 
 from aeon.dj_pipeline.tracking import is_position_in_nest
@@ -22,7 +23,7 @@ def get_video_frames(experiment_name, device,
 
     vd = aeon_api.videodata(raw_data_dir.as_posix(), device,
                             start=start, end=end, time=time, tolerance=tolerance)
-    video_frames = aeon_api.videoframes(vd)
+    video_frames = video_api.frames(vd)
 
     if plot:
         col_count = 4

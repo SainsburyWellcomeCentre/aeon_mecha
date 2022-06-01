@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from matplotlib import path
 
-from aeon.preprocess import api as aeon_api
+from aeon.io import api as aeon_api
 
 from . import lab, acquisition, qc
 from . import get_schema_name, dict_to_uuid

@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import datetime
 
-from aeon.preprocess import api as aeon_api
+from aeon.io import api as aeon_api
 from aeon.util import utils as aeon_utils
 
 from .. import lab, acquisition, tracking, qc
