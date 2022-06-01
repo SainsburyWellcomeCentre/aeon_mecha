@@ -1,10 +1,10 @@
 def compositeStream(pattern, *args):
-    """Merges multiple data streams into one stream."""
-    schema = {}
+    """Merges multiple data streams into a single composite stream."""
+    composite = {}
     if args:
         for stream in args:
-            schema.update(stream(pattern))
-    return schema
+            composite.update(stream(pattern))
+    return composite
 
 
 class Device:

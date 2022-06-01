@@ -1,6 +1,6 @@
 # after Poetry implements PEP 660 then uncomment and remove setuptools:
 # [build-system]
-# requires = ["poetry-core > 1.0.7"]
+# requires = ["poetry-core>1.0.7"]
 # build-backend = "poetry.core.masonry.api"
 [build-system]
 requires = ["setuptools>=62.0", "wheel>=0.37", "poetry-core>=1.0.0"]
@@ -20,20 +20,21 @@ authors = [
 license = { file = "license.md" }
 readme = "readme.md"
 dependencies = [
-  "datajoint",
+  "bottleneck>=1.2.1",
+  "datajoint>=0.13",
   "dotmap",
   "fastparquet",
   "graphviz",
   "ipykernel",
+  "isort",
   "jupyter",
   "jupyterlab",
   "matplotlib",
-  "numba>=0.46.0, <1",
-  "numpy>=1.21.0",
-  "opencv-python",
-  "pandas>=1.3, <2",
+  "numba>=0.46",
+  "numexpr>=2.6",
+  "numpy>=1.21",
+  "pandas>=1.3",
   "plotly",
-  "poetry-core",
   "pyarrow",
   "pydotplus",
   "pymysql",
@@ -42,7 +43,7 @@ dependencies = [
   "scipy",
   "seaborn",
   "setuptools_scm",
-  "xarray>=0.12.3, <1",
+  "xarray>=0.12.3",
 ]
 
 [project.urls]
@@ -78,35 +79,54 @@ classifiers = [ #! Update me
 
 
 [tool.poetry.dependencies]
-python = ">=3.9.4"
+python = "=3.9.*"
+blas = "^1.1"
+bottleneck = "^1.2.1"
+datajoint = "^0.13"
+datajoint-utilities = { git = "https://github.com/vathes/datajoint-utilities.git" }
 dotmap = "*"
+fastparquet = "*"
 graphviz = "*"
+ipykernel = "*"
+isort = "*"
 jupyter = "*"
 jupyterlab = "*"
 matplotlib = "*"
-numpy = "*"
+numba = "^0.46"
+numexpr = "^2.6"
+numpy = "^1.21"
 opencv-python = "*"
-pandas = "*"
+pandas = "^1.3"
 plotly = "*"
+pyarrow = "*"
+pydotplus = "*"
+pymysql = "*"
+python-graphviz = "*"
+pyyaml = "*"
 scikit-learn = "*"
 scipy = "*"
 seaborn = "*"
+setuptools_scm = "*"
+xarray = "^0.12.3"
 
 [tool.poetry.dev-dependencies]
 bandit = "*"
 black = "*"
 flake8 = "*"
+ipdb = "*"
+pre-commit = "*"
+pyan3 = { git = "https://github.com/Technologicat/pyan.git" }
 pytest = "*"
+pytest-cov = "*"
 setuptools = "*"
 tox = "*"
-pre-commit = "*"
+
 
 [tool.poetry.scripts]
 aeon_ingest = "aeon.dj_pipeline.ingest.process:cli"
 
 [tool.black]
 line-length = 88
-target-version = ["py39"]
 color = false
 exclude = '''
 /(
