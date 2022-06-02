@@ -8,7 +8,7 @@ import re
 import datetime
 import json
 
-from aeon.analyze import plotting as analyze_plotting
+from aeon.analysis import plotting as analysis_plotting
 
 from . import acquisition, analysis
 from . import get_schema_name
@@ -70,7 +70,7 @@ class InArenaSummaryPlot(dj.Computed):
 
         # position plot
         non_nan = np.logical_and(~np.isnan(position.x), ~np.isnan(position.y))
-        analyze_plotting.heatmap(
+        analysis_plotting.heatmap(
             position[non_nan], 50, ax=position_ax, bins=500, alpha=0.5
         )
 
@@ -98,7 +98,7 @@ class InArenaSummaryPlot(dj.Computed):
                 .reset_index()
             )
             pellet_times_df.set_index("event_time", inplace=True)
-            analyze_plotting.rateplot(
+            analysis_plotting.rateplot(
                 pellet_times_df,
                 window="600s",
                 frequency=500,
@@ -210,7 +210,7 @@ class InArenaSummaryPlot(dj.Computed):
         rate_ax.set_title("foraging rate (bin size = 10 min)")
         distance_ax.set_ylabel("distance travelled (m)")
         ethogram_ax.set_xlabel("time (min)")
-        analyze_plotting.set_ymargin(distance_ax, 0.2, 0.1)
+        analysis_plotting.set_ymargin(distance_ax, 0.2, 0.1)
         for ax in (rate_ax, distance_ax, pellet_ax, time_dist_ax):
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
@@ -221,7 +221,7 @@ class InArenaSummaryPlot(dj.Computed):
         ethogram_ax.spines["right"].set_visible(False)
         ethogram_ax.spines["left"].set_visible(False)
         ethogram_ax.tick_params(left=False, labelleft=False)
-        analyze_plotting.set_ymargin(ethogram_ax, 0.4, 0)
+        analysis_plotting.set_ymargin(ethogram_ax, 0.4, 0)
 
         position_ax.set_aspect("equal")
         position_ax.set_axis_off()

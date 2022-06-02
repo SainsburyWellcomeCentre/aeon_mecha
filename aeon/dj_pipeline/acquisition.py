@@ -7,7 +7,7 @@ import pandas as pd
 from aeon.io import api as io_api
 from aeon.schema import dataset as aeon_schema
 from aeon.io import reader as io_reader
-from aeon.analyze import utils as analyze_utils
+from aeon.analysis import utils as analysis_utils
 
 from . import get_schema_name
 from .utils import paths
@@ -831,7 +831,7 @@ class FoodPatchWheel(dj.Imported):
 
             wheel_data = wheel_data[time_mask]
 
-        wheel_data["distance_travelled"] = analyze_utils.distancetravelled(
+        wheel_data["distance_travelled"] = analysis_utils.distancetravelled(
             wheel_data["angle"]
         )
         return wheel_data
@@ -1042,7 +1042,7 @@ def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
         return subject_data
 
     if experiment_name == "social0-r1":
-        from aeon.analyze.socialexperiment_helpers import fixID
+        from aeon.dj_pipeline.ingest.create_socialexperiment_0 import fixID
 
         sessdf = subject_data.copy()
         sessdf = sessdf[~sessdf.id.str.contains("test")]
