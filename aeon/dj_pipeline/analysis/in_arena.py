@@ -214,8 +214,11 @@ class InArenaSubjectPosition(dj.Imported):
             "time_slice_start", "time_slice_end"
         )
 
+        camera_name = acquisition._ref_device_mapping[key["experiment_name"]]
+
         positiondata = tracking.CameraTracking.get_object_position(
             experiment_name=key["experiment_name"],
+            camera_name=camera_name,
             object_id=-1,
             start=time_slice_start,
             end=time_slice_end,
