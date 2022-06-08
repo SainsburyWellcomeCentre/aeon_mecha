@@ -1,7 +1,7 @@
 from aeon.dj_pipeline import acquisition, lab, subject
 
 
-# ============ Manual and automatic steps to for experiment 0.1 ingest ============
+# ============ Manual and automatic steps to for experiment 0.2 ingest ============
 experiment_name = "exp0.2-r0"
 _weight_scale_rate = 20
 
@@ -9,7 +9,11 @@ _weight_scale_rate = 20
 def create_new_experiment():
     # ---------------- Subject -----------------
     subject_list = [
-        {"subject": "BAA-1100700", "sex": "U", "subject_birth_date": "2021-01-01"}
+        {"subject": "BAA-1100699", "sex": "U", "subject_birth_date": "2021-01-01"},
+        {"subject": "BAA-1100700", "sex": "U", "subject_birth_date": "2021-01-01"},
+        {"subject": "BAA-1100701", "sex": "U", "subject_birth_date": "2021-01-01"},
+        {"subject": "BAA-1100702", "sex": "U", "subject_birth_date": "2021-01-01"},
+        {"subject": "BAA-1100703", "sex": "U", "subject_birth_date": "2021-01-01"},
     ]
     subject.Subject.insert(subject_list, skip_duplicates=True)
 

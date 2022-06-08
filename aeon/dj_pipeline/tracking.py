@@ -274,8 +274,8 @@ def _get_position(
         )
 
     time_restriction = (
-        f'{start_attr} >= "{start_query.fetch1(start_attr)}"'
-        f' AND {start_attr} < "{end_query.fetch1(end_attr)}"'
+        f'{start_attr} >= "{min(start_query.fetch(start_attr))}"'
+        f' AND {start_attr} < "{max(end_query.fetch(end_attr))}"'
     )
 
     # subject's position data in the time slice

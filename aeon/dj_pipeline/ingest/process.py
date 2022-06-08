@@ -35,7 +35,12 @@ import logging
 import sys
 
 import datajoint as dj
-from datajoint_utilities.dj_worker import DataJointWorker, WorkerLog, parse_args  # noqa
+from datajoint_utilities.dj_worker import (
+    DataJointWorker,
+    WorkerLog,
+    ErrorLog,
+    parse_args,
+)  # noqa
 
 from aeon.dj_pipeline import acquisition, analysis, db_prefix, qc, report, tracking
 
