@@ -130,11 +130,25 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None):
             return data.loc[start:end]
         except KeyError:
             import warnings
+            filtered_data = data
             if not data.index.is_monotonic_increasing:
                 warnings.warn('data index for {0} contains out-of-order timestamps!'.format(reader.pattern))
-                data = data.sort_index()
+                filtered_data = filtered_data.sort_index()
             if data.index.has_duplicates:
                 warnings.warn('data index for {0} contains duplicate keys!'.format(reader.pattern))
-                data = data[~data.index.duplicated(keep='first')]
-            return data.loc[start:end]
+                filtered_data = filtered_data[~filtered_data.index.duplicated(keep='first')]
+            # get exact timestamp after start
+            start_timestamp = filtered_data.index[filtered_data.index.get_indexer([start], method='bfill')[0]]
+            # get exact timestamp after end
+            end_timestamp = filtered_data.index[filtered_data.index.get_indexer([end], method='ffill')[0]]
+            if isinstance(data.loc[start_timestamp], pd.DataFrame): # non-unique start index
+                start_timestamp = data.index.get_loc(start_timestamp).nonzero()[0][0]
+            else:
+                start_timestamp = data.index.get_loc(start_timestamp)
+            if isinstance(data.loc[end_timestamp], pd.DataFrame): # non-unique end index
+                end_timestamp = data.index.get_loc(end_timestamp).nonzero()[0][-1]
+            else:
+                end_timestamp = data.index.get_loc(end_timestamp)
+            end_timestamp = end_timestamp if end_timestamp + 1 > len(data) else end_timestamp + 1
+            return data.iloc[start_timestamp:end_timestamp]
     return data
