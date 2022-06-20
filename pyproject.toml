@@ -57,6 +57,7 @@ dev = [
   "black",
   "isort",
   "flake8",
+  "gh",
   "ipdb",
   "pre",
   "pyan3 @ git+https://github.com/Technologicat/pyan.git",
