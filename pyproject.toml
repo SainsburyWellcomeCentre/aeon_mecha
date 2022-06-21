@@ -1,17 +1,19 @@
 [build-system]
-requires = ["setuptools>=62.0", "wheel>=0.37", "poetry-core>=1.0.0"]
+requires = ["setuptools>=62.0", "wheel>=0.37"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "aeon_mecha"
-version = "0.0.0"
+version = "0.1.0"
 requires-python = ">=3.9.4"
-description = "Code for managing acquired data. Includes preprocessing, querying, and analysis modules."
+description = "Code for managing acquired data from Project Aeon experiments. Includes general file IO, data QC, querying, and analysis modules."
 authors = [
   { name = "Jai Bhagat", email = "jkbhagatio@gmail.com" },
   { name = "Goncalo Lopes", email = "goncaloclopes@gmail.com" },
   { name = "Thinh Nguyen", email = "thinh@datajoint.com" },
   { name = "Joseph Burling", email = "joseph@datajoint.com" },
+  { name = "Chang Huan Lo", email = "changhuan.lo@ucl.ac.uk" },
+  { name = "Jaerong Ahn", email = "jaerong.ahn@datajoint.com" },
 ]
 license = { file = "license.md" }
 readme = "readme.md"
@@ -42,15 +44,6 @@ dependencies = [
   "xarray>=0.12.3",
 ]
 
-[project.urls]
-DataJoint = "https://docs.datajoint.org/"
-Homepage = "https://github.com/projectAeon/data-management"
-Repository = "https://github.com/projectAeon/data-management"
-Documentation = "https://github.com/projectAeon/data-management"
-
-[project.scripts]
-aeon_ingest = "aeon.dj_pipeline.ingest.process:cli"
-
 [project.optional-dependencies]
 dev = [
   "bandit",
@@ -66,6 +59,15 @@ dev = [
   "setuptools",
   "tox",
 ]
+
+[project.scripts]
+aeon_ingest = "aeon.dj_pipeline.ingest.process:cli"
+
+[project.urls]
+Homepage = "https://sainsburywellcomecentre.github.io/aeon_docs/"
+Repository = "https://github.com/sainsburyWellcomeCentre/aeon_mecha"
+Documentation = "https://sainsburywellcomecentre.github.io/aeon_docs/"
+DataJoint = "https://docs.datajoint.org/"
 
 [tool.setuptools]
 packages = ["aeon"]
