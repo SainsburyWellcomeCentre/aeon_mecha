@@ -2,9 +2,9 @@ In the examples below, replace `<your_username>` with your SWC HPC username.
 
 # Developing while on the HPC
 
-After you've finished creating the virtual `aeon` environment, activate the environment. Then, add this repository to your python path within the environment by opening a bash terminal and running `python setup.py develop` within this repo's root folder.
+0) After you've finished creating the virtual `aeon` environment, activate the environment. Then, add this repository to your python path within the activated environment by opening a terminal and running `pip install -e <path_to_aeon_mecha>`.
 
-For using an IDE (e.g. PyCharm, VSCode, Jupyter, etc.) from your local machine, you will need to set up local port forwarding from a specified port on the HPC: 
+1) For using an IDE (e.g. PyCharm, VSCode, Jupyter, etc.) from your local machine, you will need to set up local port forwarding from a specified port on the HPC: 
 
 * First, open a terminal and set up SSH local port forwarding to HPC-GW1:  `ssh -L 9999:hpc-gw1:22 <your_username>@ssh.swc.ucl.ac.uk`
 
