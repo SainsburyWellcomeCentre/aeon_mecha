@@ -42,7 +42,7 @@ class InArena(dj.Computed):
                 acquisition.SubjectEnterExit.Time * acquisition.EventType
                 & 'event_type = "SubjectEnteredArena"'
             ).proj(in_arena_start="enter_exit_time")
-            & {"experiment_name": "exp0.1-r0"}
+            & 'experiment_name in ("exp0.1-r0", "exp0.2-r0")'
         )
 
     def make(self, key):
@@ -206,9 +206,9 @@ class InArenaSubjectPosition(dj.Imported):
 
     def make(self, key):
         """
-        The ingest logic here relies on the assumption that there is only one subject in the arena at a time
+        The populate logic here relies on the assumption that there is only one subject in the arena at a time
         The positiondata is associated with that one subject currently in the arena at any timepoints
-        For multi-animal experiments, a mapping of object_id-to-subject is needed to ingest the right position data
+        For multi-animal experiments, a mapping of object_id-to-subject is needed to populate the right position data
         associated with a particular animal
         """
         time_slice_start, time_slice_end = (InArenaTimeSlice & key).fetch1(
@@ -403,6 +403,7 @@ class InArenaTimeDistribution(dj.Computed):
 
         # subject's position data in the time_slices
         position = InArenaSubjectPosition.get_position(key)
+        position.rename({"position_x": "x", "position_y": "y"}, inplace=True)
 
         # filter for objects of the correct size
         valid_position = (position.area > 0) & (position.area < 1000)
@@ -410,7 +411,8 @@ class InArenaTimeDistribution(dj.Computed):
 
         # in corridor
         distance_from_center = tracking.compute_distance(
-            position[["x", "y"]], (tracking.arena_center_x, tracking.arena_center_y)
+            position[["x", "y"]],
+            (tracking.arena_center_x, tracking.arena_center_y),
         )
         in_corridor = (distance_from_center < tracking.arena_outer_radius) & (
             distance_from_center > tracking.arena_inner_radius
@@ -465,7 +467,7 @@ class InArenaTimeDistribution(dj.Computed):
             in_patch = tracking.is_in_patch(
                 position,
                 patch_position,
-                wheel_data.distance_travelled.values,
+                wheel_data.distance_travelled,
                 patch_radius=0.2,
             )
 
@@ -529,7 +531,6 @@ class InArenaSummary(dj.Computed):
     )
 
     def make(self, key):
-        raw_data_dir = acquisition.Experiment.get_data_directory(key)
         in_arena_start, in_arena_end = (InArena * InArenaEnd & key).fetch1(
             "in_arena_start", "in_arena_end"
         )
@@ -544,6 +545,7 @@ class InArenaSummary(dj.Computed):
 
         # subject's position data in this session
         position = InArenaSubjectPosition.get_position(key)
+        position.rename({"position_x": "x", "position_y": "y"}, inplace=True)
 
         valid_position = (position.area > 0) & (
             position.area < 1000
