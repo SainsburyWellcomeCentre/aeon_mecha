@@ -35,14 +35,19 @@ import logging
 import sys
 
 import datajoint as dj
-from datajoint_utilities.dj_worker import DataJointWorker, WorkerLog, parse_args  # noqa
+from datajoint_utilities.dj_worker import (
+    DataJointWorker,
+    WorkerLog,
+    ErrorLog,
+    parse_args,
+)  # noqa
 
 from aeon.dj_pipeline import acquisition, analysis, db_prefix, qc, report, tracking
 
 # ---- Some constants ----
 
 _logger = logging.getLogger(__name__)
-_current_experiment = "exp0.1-r0"
+_current_experiment = "exp0.2-r0"
 worker_schema_name = db_prefix + "workerlog"
 
 # ---- Define worker(s) ----
@@ -57,11 +62,13 @@ high_priority = DataJointWorker(
 
 high_priority(acquisition.Epoch.ingest_epochs, experiment_name=_current_experiment)
 high_priority(acquisition.Chunk.ingest_chunks, experiment_name=_current_experiment)
+high_priority(acquisition.ExperimentLog)
 high_priority(acquisition.SubjectEnterExit)
-high_priority(acquisition.SubjectAnnotation)
 high_priority(acquisition.SubjectWeight)
+high_priority(acquisition.FoodPatchEvent)
 high_priority(acquisition.WheelState)
 high_priority(acquisition.WeightMeasurement)
+
 high_priority(analysis.InArena)
 high_priority(analysis.InArenaEnd)
 high_priority(analysis.InArenaTimeSlice)
@@ -77,6 +84,7 @@ mid_priority = DataJointWorker(
 
 mid_priority(qc.CameraQC)
 mid_priority(tracking.CameraTracking)
+mid_priority(acquisition.FoodPatchWheel)
 mid_priority(analysis.InArenaSubjectPosition)
 mid_priority(analysis.InArenaTimeDistribution)
 mid_priority(analysis.InArenaSummary)
@@ -132,8 +140,10 @@ def run(**kwargs):
     _logger.info(f"worker_name={kwargs['worker_name']}")
 
     worker = configured_workers[kwargs["worker_name"]]
-    worker._run_duration = kwargs["duration"]
-    worker._sleep_duration = kwargs["sleep"]
+    if kwargs.get("duration") is not None:
+        worker._run_duration = kwargs["duration"]
+    if kwargs.get("sleep") is not None:
+        worker._sleep_duration = kwargs["sleep"]
 
     try:
         worker.run()

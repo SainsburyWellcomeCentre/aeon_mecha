@@ -1,8 +1,6 @@
 version: 'v0.0.0'
 LabBook: null
 SciViz:
-  auth:
-    mode: database
   pages:
     Subjects:
       route: /subjects
@@ -238,3 +236,99 @@ SciViz:
                 def dj_query(aeon_report):
                     report = aeon_report
                     return {'query': report.SessionSummaryPlot(), 'fetch_args': ['summary_plot_png']}
+
+    Pipeline Monitor:
+      route: /pipeline_monitor
+      grids:
+        grid1:
+          type: fixed
+          columns: 1
+          row_height: 680
+          components:
+            Worker Status:
+              route: /pipeline_monitor_workerstatus
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_workerlog):
+                    cls = aeon_workerlog.WorkerLog
+                    backtrack_minutes = 60
+                    recent = (
+                        cls.proj(
+                            minute_elapsed="TIMESTAMPDIFF(MINUTE, process_timestamp, UTC_TIMESTAMP())"
+                        )
+                        & f"minute_elapsed < {backtrack_minutes}"
+                    )
+                    recent_jobs = dj.U("process").aggr(
+                        cls & recent,
+                        worker_count="count(DISTINCT pid)",
+                        minutes_since_oldest="TIMESTAMPDIFF(MINUTE, MIN(process_timestamp), UTC_TIMESTAMP())",
+                        minutes_since_newest="TIMESTAMPDIFF(MINUTE, MAX(process_timestamp), UTC_TIMESTAMP())",
+                    )
+                    
+                    return {'query': recent_jobs, 'fetch_args': {'order_by': 'minutes_since_newest ASC'}}
+            Error Log:
+              route: /pipeline_monitor_errorlog
+              x: 0
+              y: 1
+              height: 1
+              width: 1
+              type: table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_workerlog):
+                    cls = aeon_workerlog.ErrorLog.proj(..., '-error_timestamp', minutes_elapsed='TIMESTAMPDIFF(MINUTE, error_timestamp, UTC_TIMESTAMP())')
+                    return {'query': cls, 'fetch_args': {'order_by': 'minutes_elapsed ASC'}}
+            Jobs Log:
+              route: /pipeline_monitor_jobslog
+              x: 0
+              y: 2
+              height: 1
+              width: 1
+              type: table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_workerlog):
+                    workerlog_vm = aeon_workerlog
+                    db_prefix = workerlog_vm.schema.database.replace('workerlog', '')
+                    connection = dj.conn(
+                        host=workerlog_vm.schema.connection.conn_info['host'],
+                        user=workerlog_vm.schema.connection.conn_info['user'],
+                        password=workerlog_vm.schema.connection.conn_info['passwd'],
+                        reset=True)
+                    schema_names = [s for s in dj.list_schemas(connection=connection) if s.startswith(db_prefix)]
+                    jobs_table = None
+                    print(schema_names, flush=True)
+                    for schema_name in schema_names:
+                        vm = dj.VirtualModule(schema_name, schema_name, connection=connection)
+                        jobs_query = dj.U(*vm.schema.jobs.heading.names) & vm.schema.jobs
+                        if jobs_table is None:
+                            jobs_table = jobs_query
+                        else:
+                            jobs_table += jobs_query
+                    jobs_table = jobs_table.proj(..., minutes_elapsed='TIMESTAMPDIFF(MINUTE, timestamp, UTC_TIMESTAMP())')
+                    return {'query': jobs_table, 'fetch_args': {'order_by': 'status DESC, minutes_elapsed ASC'}}
+            Worker Log:
+              route: /pipeline_monitor_workerlog
+              x: 0
+              y: 3
+              height: 1
+              width: 1
+              type: table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_workerlog):
+                      cls = aeon_workerlog.WorkerLog.proj(..., minutes_elapsed='TIMESTAMPDIFF(MINUTE, process_timestamp, UTC_TIMESTAMP())')
+                      return {'query': cls, 'fetch_args': {'order_by': 'minutes_elapsed ASC'}}

@@ -24,3 +24,4 @@ dj_local_conf.json
 log*.txt
 scratch/
 scratch*.py
+**/*.nfs*
