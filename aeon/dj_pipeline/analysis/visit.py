@@ -118,11 +118,11 @@ class OverlapVisit(dj.Computed):
 
 def ingest_environment_visits(experiment_names=["exp0.2-r0"]):
     """
-    Function to ingest into `Visit` and `VisitEnd` for specified experiments (default: 'exp0.2-r0')
+    Function to populate into `Visit` and `VisitEnd` for specified experiments (default: 'exp0.2-r0')
     This ingestion routine handles only those "complete" visits, not ingesting any "on-going" visits
     Using "analyze" method: `aeon.analyze.utils.visits()`
 
-    :param list experiment_names: list of names of the experiment to ingest into the Visit table
+    :param list experiment_names: list of names of the experiment to populate into the Visit table
     """
     place_key = {"place": "environment"}
     for experiment_name in experiment_names:

@@ -171,7 +171,7 @@ def ingest_exp01_metadata(metadata_yml_filepath, experiment_name):
             )
 
 
-# ============ Manual and automatic steps to for experiment 0.1 ingest ============
+# ============ Manual and automatic steps to for experiment 0.1 populate ============
 
 experiment_name = "exp0.1-r0"
 
