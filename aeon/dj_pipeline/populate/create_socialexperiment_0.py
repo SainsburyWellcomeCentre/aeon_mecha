@@ -1,9 +1,9 @@
 import pathlib
 
 from aeon.dj_pipeline import acquisition, lab, subject
-from aeon.dj_pipeline.ingest.create_experiment_01 import ingest_exp01_metadata
+from aeon.dj_pipeline.populate.create_experiment_01 import ingest_exp01_metadata
 
-# ============ Manual and automatic steps to for experiment 0.1 ingest ============
+# ============ Manual and automatic steps to for experiment 0.1 populate ============
 experiment_name = "social0-r1"
 
 

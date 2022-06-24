@@ -22,12 +22,12 @@ Usage as a console entrypoint:
 
 Usage as a script:
 
-    python ./aeon/dj_pipeline/ingest/process.py --help
+    python ./aeon/dj_pipeline/populate/process.py --help
 
 
 Usage from python:
 
-    `from aeon.dj_pipeline.ingest.process import run; run(worker_name='high_priority', duration=20, sleep=5)`
+    `from aeon.dj_pipeline.populate.process import run; run(worker_name='high_priority', duration=20, sleep=5)`
 
 """
 
