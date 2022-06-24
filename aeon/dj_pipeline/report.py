@@ -45,14 +45,13 @@ class InArenaSummaryPlot(dj.Computed):
     }
 
     def make(self, key):
-        raw_data_dir = acquisition.Experiment.get_data_directory(key)
-
         in_arena_start, in_arena_end = (
             analysis.InArena * analysis.InArenaEnd & key
         ).fetch1("in_arena_start", "in_arena_end")
 
         # subject's position data in the time_slices
         position = analysis.InArenaSubjectPosition.get_position(key)
+        position.rename({"position_x": "x", "position_y": "y"}, inplace=True)
 
         position_minutes_elapsed = (
             position.index - in_arena_start
