@@ -51,8 +51,8 @@ class InArenaSummaryPlot(dj.Computed):
 
         # subject's position data in the time_slices
         position = analysis.InArenaSubjectPosition.get_position(key)
-        position.rename({"position_x": "x", "position_y": "y"}, inplace=True)
-
+        position.rename(columns={"position_x": "x", "position_y": "y"}, inplace=True)
+        
         position_minutes_elapsed = (
             position.index - in_arena_start
         ).total_seconds() / 60
