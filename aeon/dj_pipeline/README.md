@@ -69,14 +69,14 @@ animals, cameras, food patches setup, etc.
 + These information are either entered by hand, or parsed and inserted from configuration 
     yaml files.
 + For experiment 0.1 these info can be inserted by running 
-the [exp01_insert_meta script](./ingest/create_experiment_01.py) (just need to do this once)
+the [exp01_insert_meta script](populate/create_experiment_01.py) (just need to do this once)
 
 Tables in DataJoint are written with a `make()` function - 
 instruction to generate and insert new records to itself, based on data from upstream tables. 
 Triggering the auto ingestion and processing/computation routine is essentially 
 calling the `.populate()` method for all relevant tables.
 
-These routines are prepared in this [auto-processing script](./ingest/process.py). 
+These routines are prepared in this [auto-processing script](populate/process.py). 
 Essentially, turning on the auto-processing routine amounts to running the 
 following 3 commands (in different processing threads)
 

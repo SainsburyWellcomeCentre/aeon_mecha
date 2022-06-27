@@ -218,9 +218,9 @@ class CameraTracking(dj.Imported):
 # ---------- HELPER ------------------
 
 
-def compute_distance(position_df, target):
+def compute_distance(position_df, target, xcol="x", ycol="y"):
     assert len(target) == 2
-    return np.sqrt(np.square(position_df[["x", "y"]] - target).sum(axis=1))
+    return np.sqrt(np.square(position_df[[xcol, ycol]] - target).sum(axis=1))
 
 
 def is_in_patch(
@@ -236,7 +236,7 @@ def is_in_patch(
     return in_wheel.groupby(time_slice).apply(lambda x: x.cumsum()) > 0
 
 
-def is_position_in_nest(position_df, nest_key):
+def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y"):
     """
     Given the session key and the position data - arrays of x and y
     return an array of boolean indicating whether or not a position is inside the nest
@@ -246,7 +246,7 @@ def is_position_in_nest(position_df, nest_key):
     )
     nest_path = path.Path(nest_vertices)
 
-    return nest_path.contains_points(position_df[["x", "y"]])
+    return nest_path.contains_points(position_df[[xcol, ycol]])
 
 
 def _get_position(
