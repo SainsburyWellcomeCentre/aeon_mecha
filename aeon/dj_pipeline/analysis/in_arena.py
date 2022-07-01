@@ -201,7 +201,9 @@ class InArenaSubjectPosition(dj.Imported):
     """
 
     key_source = InArenaTimeSlice & (
-        qc.CameraQC * acquisition.ExperimentCamera & 'camera_description = "FrameTop"'
+        tracking.CameraTracking * acquisition.ExperimentCamera
+        & f"camera_description in {tuple(set(acquisition._ref_device_mapping.values()))}"
+        & "tracking_paramset_id = 0"
     )
 
     def make(self, key):
