@@ -21,7 +21,7 @@ def test_epoch_chunk_ingestion(epoch_chunk_ingestion, test_variables, pipeline):
     )
 
 
-def test_epoch_chunk_ingestion(experimentlog_ingestion, test_variables, pipeline):
+def test_experimentlog_ingestion(experimentlog_ingestion, test_variables, pipeline):
     acquisition = pipeline["acquisition"]
 
     assert (
