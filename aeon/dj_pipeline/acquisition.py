@@ -10,6 +10,7 @@ from aeon.io import reader as io_reader
 from aeon.analysis import utils as analysis_utils
 
 from . import get_schema_name
+from . import lab, subject
 from .utils import paths
 from .populate.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 
@@ -259,7 +260,13 @@ class Epoch(dj.Manual):
         """
 
     @classmethod
-    def ingest_epochs(cls, experiment_name):
+    def ingest_epochs(cls, experiment_name, start=None, end=None):
+        """
+        Ingest epochs for the specified "experiment_name"
+        Ingest only epochs that start in between the specified (start, end) time
+         - if not specified, ingest all epochs
+        Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S"
+        """
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
@@ -275,8 +282,17 @@ class Epoch(dj.Manual):
             # --- insert to Epoch ---
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
 
+            # skip over epochs out of the (start, end) range
+            is_out_of_start_end_range = (
+                start
+                and epoch_start < datetime.datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
+            ) or (
+                end
+                and epoch_start > datetime.datetime.strptime(end, "%Y-%m-%d %H:%M:%S")
+            )
+
+            # skip over those already ingested
             if cls & epoch_key or epoch_key in epoch_list:
-                # skip over those already ingested
                 continue
 
             epoch_config, metadata_yml_filepath = None, None
@@ -303,7 +319,7 @@ class Epoch(dj.Manual):
                     }
 
             # find previous epoch end-time
-            previous_epoch_end = None
+            previous_epoch_key = None
             if i > 0:
                 previous_chunk = all_chunks.iloc[i - 1]
                 previous_chunk_path = pathlib.Path(previous_chunk.path)
@@ -317,21 +333,30 @@ class Epoch(dj.Manual):
                     hours=io_api.CHUNK_DURATION
                 )
                 previous_epoch_end = min(previous_chunk_end, epoch_start)
+                previous_epoch_key = {
+                    "experiment_name": experiment_name,
+                    "epoch_start": previous_epoch_start,
+                }
 
-            with cls.connection.transaction:
-                cls.insert1(epoch_key)
-                if previous_epoch_end and not (
-                    EpochEnd
-                    & {
-                        "experiment_name": experiment_name,
-                        "epoch_start": previous_epoch_start,
-                    }
-                ):
+            # insert new epoch
+            if not is_out_of_start_end_range:
+                with cls.connection.transaction:
+                    cls.insert1(epoch_key)
+                    if epoch_config:
+                        cls.Config.insert1(epoch_config)
+                        ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
+                    epoch_list.append(epoch_key)
+            # update previous epoch
+            if (
+                previous_epoch_key
+                and (cls & previous_epoch_key)
+                and not (EpochEnd & previous_epoch_key)
+            ):
+                with cls.connection.transaction:
                     # insert end-time for previous epoch
                     EpochEnd.insert1(
                         {
-                            "experiment_name": experiment_name,
-                            "epoch_start": previous_epoch_start,
+                            **previous_epoch_key,
                             "epoch_end": previous_epoch_end,
                             "epoch_duration": (
                                 previous_epoch_end - previous_epoch_start
@@ -351,11 +376,6 @@ class Epoch(dj.Manual):
                                 "chunk_end": previous_epoch_end,
                             }
                         )
-                if epoch_config:
-                    cls.Config.insert1(epoch_config)
-                    ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
-
-            epoch_list.append(epoch_key)
 
         print(f"Insert {len(epoch_list)} new Epoch(s)")
 

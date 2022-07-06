@@ -1,3 +1,8 @@
+# run all tests:
+# pytest -sv --cov-report term-missing --cov=aeon_mecha -p no:warnings tests/dj_pipeline
+# run one test, debug:
+# pytest [above options] --pdb tests/dj_pipeline/test_ingestion.py -k function_name
+
 import datajoint as dj
 import pytest
 import pathlib
@@ -15,7 +20,9 @@ def dj_config():
     dj.config.load(dj_config_fp)
     dj.config["safemode"] = False
     assert "custom" in dj.config
-    dj.config["custom"]["database.prefix"] = "aeon_test_"
+    dj.config["custom"][
+        "database.prefix"
+    ] = f"u_{dj.config['database.user']}_testsuite_"
     return
 
 
@@ -49,8 +56,8 @@ def pipeline():
 def test_variables():
     return {
         "experiment_name": "exp0.2-r0",
-        "raw_dir": "aeon/data/raw/TEST_SUITE/experiment0.2",
-        "qc_dir": "aeon/data/qc/TEST_SUITE/experiment0.2",
+        "raw_dir": "aeon/data/raw/AEON2/experiment0.2",
+        "qc_dir": "aeon/data/qc/AEON2/experiment0.2",
         "subject_count": 5,
         "epoch_count": 999,
         "chunk_count": 999,
@@ -94,7 +101,18 @@ def new_experiment(pipeline, test_variables):
 def epoch_chunk_ingestion(pipeline, test_variables):
     acquisition = pipeline["acquisition"]
 
-    acquisition.Epoch.ingest_epochs(experiment_name=test_variables["experiment_name"])
+    start = "2022-02-23 17:26:31"
+    end = "2022-02-24 09:28:23"
+    acquisition.Epoch.ingest_epochs(
+        experiment_name=test_variables["experiment_name"], start=start, end=end
+    )
+
+    start = "2022-05-24 08:29:42"
+    end = "2022-05-24 15:59:00"
+    acquisition.Epoch.ingest_epochs(
+        experiment_name=test_variables["experiment_name"], start=start, end=end
+    )
+
     acquisition.Chunk.ingest_chunks(experiment_name=test_variables["experiment_name"])
 
     yield
