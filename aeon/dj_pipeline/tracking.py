@@ -155,10 +155,16 @@ class CameraTracking(dj.Imported):
         # replace id=NaN with -1
         positiondata.fillna({"id": -1}, inplace=True)
 
-        # Correct for frame offsets from Camera QC
+        # Retrieve frame offsets from Camera QC
         qc_timestamps, qc_frame_offsets, camera_fs = (
             qc.CameraQC * acquisition.ExperimentCamera & key
         ).fetch1("timestamps", "frame_offset", "camera_sampling_rate")
+
+        # For cases where position data is shorter than video data (from QC) - truncate video data
+        # - fix for issue: https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/130
+        qc_frame_offsets = qc_frame_offsets[: len(positiondata.index)]
+
+        # Correct for frame offsets from Camera QC
         qc_time_offsets = qc_frame_offsets / camera_fs
         qc_time_offsets = np.where(
             np.isnan(qc_time_offsets), 0, qc_time_offsets
