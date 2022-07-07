@@ -162,7 +162,9 @@ class CameraTracking(dj.Imported):
 
         # For cases where position data is shorter than video data (from QC) - truncate video data
         # - fix for issue: https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/130
-        qc_frame_offsets = qc_frame_offsets[: len(positiondata.index)]
+        max_frame_count = min(len(positiondata), len(qc_timestamps))
+        qc_frame_offsets = qc_frame_offsets[:max_frame_count]
+        positiondata = positiondata[:max_frame_count]
 
         # Correct for frame offsets from Camera QC
         qc_time_offsets = qc_frame_offsets / camera_fs
