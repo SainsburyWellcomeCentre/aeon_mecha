@@ -11,7 +11,7 @@ def test_pipeline_instantiation(pipeline):
     
 
 @mark.instantiation
-def test_exp_creation(pipeline, test_params):
+def test_exp_creation(test_params, pipeline, exp_creation):
     acquisition = pipeline["acquisition"]
     
     experiment_name = test_params["experiment_name"]
