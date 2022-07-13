@@ -3,13 +3,15 @@ from pytest import mark
 
 @mark.instantiation
 def test_pipeline_instantiation(pipeline):
-    acquisition = pipeline["acquisition"]
-    report = pipeline["report"]
     
-    assert hasattr(acquisition, "FoodPatchEvent")
-    assert hasattr(report, "InArenaSummaryPlot")
+    assert hasattr(pipeline["acquisition"], "FoodPatchEvent")
+    assert hasattr(pipeline["lab"], "Arena")
+    assert hasattr(pipeline["qc"], "CameraQC")
+    assert hasattr(pipeline["report"], "InArenaSummaryPlot")
+    assert hasattr(pipeline["subject"], "Subject")
+    assert hasattr(pipeline["tracking"], "CameraTracking")
     
-
+    
 @mark.instantiation
 def test_exp_creation(pipeline, test_params):
     acquisition = pipeline["acquisition"]
