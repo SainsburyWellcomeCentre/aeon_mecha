@@ -20,10 +20,8 @@ _populate_settings = {"suppress_errors": True}
 
 
 def data_dir():
-    """Returns test data directory
-
-    Returns:
-        pathlib.Path: directory path
+    """
+    Returns test data directory
     """
     return os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
 
@@ -97,6 +95,7 @@ def drop_schema():
     _pipeline["acquisition"].schema.drop()
     _pipeline["subject"].schema.drop()
     _pipeline["lab"].schema.drop()
+
     print("\n\nAll schemas dropped")
 
 

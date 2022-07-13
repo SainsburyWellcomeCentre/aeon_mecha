@@ -6,10 +6,10 @@ from pytest import mark
 
 index = 0
 column_name = "position_x"  # data column to run test on
-file_name = "exp0.2-r0-20220524090000-21053810-20220524082942-0-0.npy"  # test file to be saved with get_test_data
+file_name = "exp0.2-r0-20220524090000-21053810-20220524082942-0-0.npy"  # test file to be saved with save_test_data
 
 
-def save_data_camera(pipeline, test_params):
+def save_test_data(pipeline, test_params):
     """save test dataset fetched from tracking.CameraTracking.Object"""
 
     tracking = pipeline["tracking"]
