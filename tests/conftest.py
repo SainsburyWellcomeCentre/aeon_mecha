@@ -173,7 +173,7 @@ def experimentlog_ingestion(pipeline):
 @pytest.fixture(scope="session")
 def camera_qc_ingestion(pipeline, epoch_chunk_ingestion):
     qc = pipeline["qc"]
-    qc.CameraQC.populate()
+    qc.CameraQC.populate(**_populate_settings)
 
     return
 
@@ -181,6 +181,6 @@ def camera_qc_ingestion(pipeline, epoch_chunk_ingestion):
 @pytest.fixture(scope="session")
 def camera_tracking_ingestion(pipeline, camera_qc_ingestion):
     tracking = pipeline["tracking"]
-    tracking.CameraTracking.populate(display_progress=True)
+    tracking.CameraTracking.populate(**_populate_settings)
 
     return
