@@ -91,7 +91,7 @@ def rateplot(
         **kwargs,
     )
     ax.vlines(
-        sessiontime(events.index, eventrate.index[0]), -0.2, -0.1, linewidth=1, **kwargs
+        sessiontime(events.index, eventrate.index[0]), -0.5, -0.1, linewidth=1, **kwargs
     )
 
 
