@@ -1,18 +1,17 @@
-import os
-import datajoint as dj
-import pandas as pd
-import numpy as np
-import pathlib
-import matplotlib.pyplot as plt
-import re
 import datetime
 import json
+import os
+import pathlib
+import re
+
+import datajoint as dj
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 from aeon.analysis import plotting as analysis_plotting
 
-from . import acquisition, analysis
-from . import get_schema_name
-
+from . import acquisition, analysis, get_schema_name
 
 schema = dj.schema(get_schema_name("report"))
 os.environ["DJ_SUPPORT_FILEPATH_MANAGEMENT"] = "TRUE"
@@ -52,20 +51,21 @@ class InArenaSummaryPlot(dj.Computed):
         # subject's position data in the time_slices
         position = analysis.InArenaSubjectPosition.get_position(key)
         position.rename(columns={"position_x": "x", "position_y": "y"}, inplace=True)
-        
+
         position_minutes_elapsed = (
             position.index - in_arena_start
         ).total_seconds() / 60
 
         # figure
-        fig = plt.figure(figsize=(16, 8))
-        gs = fig.add_gridspec(21, 6)
-        rate_ax = fig.add_subplot(gs[:10, :4])
-        distance_ax = fig.add_subplot(gs[10:20, :4])
-        ethogram_ax = fig.add_subplot(gs[20, :4])
-        position_ax = fig.add_subplot(gs[10:, 4:])
-        pellet_ax = fig.add_subplot(gs[:10, 4])
-        time_dist_ax = fig.add_subplot(gs[:10, 5:])
+        fig = plt.figure(figsize=(20, 9))
+        gs = fig.add_gridspec(22, 5)
+        threshold_ax = fig.add_subplot(gs[:3, :3])
+        rate_ax = fig.add_subplot(gs[5:13, :3])
+        distance_ax = fig.add_subplot(gs[14:20, :3])
+        ethogram_ax = fig.add_subplot(gs[20, :3])
+        position_ax = fig.add_subplot(gs[13:, 3:])
+        pellet_ax = fig.add_subplot(gs[2:12, 3])
+        time_dist_ax = fig.add_subplot(gs[2:12, 4:])
 
         # position plot
         non_nan = np.logical_and(~np.isnan(position.x), ~np.isnan(position.y))
@@ -106,6 +106,7 @@ class InArenaSummaryPlot(dj.Computed):
                 start=in_arena_start,
                 end=in_arena_end,
                 color=self.color_code[food_patch_key["food_patch_description"]],
+                label=food_patch_key["food_patch_serial_number"],
             )
 
             # wheel data
@@ -122,6 +123,39 @@ class InArenaSummaryPlot(dj.Computed):
                 minutes_elapsed,
                 wheel_data.distance_travelled.values,
                 color=self.color_code[food_patch_key["food_patch_description"]],
+            )
+
+            # plot wheel threshold
+            wheel_time, wheel_threshold = (
+                acquisition.WheelState.Time
+                & food_patch_key
+                & f'state_timestamp between "{in_arena_start}" and "{in_arena_end}"'
+            ).fetch("state_timestamp", "threshold")
+            wheel_time -= in_arena_start
+            wheel_time /= datetime.timedelta(minutes=1)
+
+            wheel_time = np.append(wheel_time, position_minutes_elapsed[-1])
+
+            for i in range(0, len(wheel_time) - 1):
+                threshold_ax.hlines(
+                    y=wheel_threshold[i],
+                    xmin=wheel_time[i],
+                    xmax=wheel_time[i + 1],
+                    linewidth=2,
+                    color=self.color_code[food_patch_key["food_patch_description"]],
+                    alpha=0.3,
+                )
+            threshold_change_ind = np.where(
+                wheel_threshold[:-1] != wheel_threshold[1:]
+            )[0]
+            threshold_ax.vlines(
+                wheel_time[threshold_change_ind + 1],
+                ymin=wheel_threshold[threshold_change_ind],
+                ymax=wheel_threshold[threshold_change_ind + 1],
+                linewidth=1,
+                linestyle="dashed",
+                color=self.color_code[food_patch_key["food_patch_description"]],
+                alpha=0.4,
             )
 
         # ethogram
@@ -148,7 +182,7 @@ class InArenaSummaryPlot(dj.Computed):
             color=self.color_code["arena"],
             markersize=0.5,
             alpha=0.6,
-            label=f"Times in arena",
+            label=f"arena",
         )
         ethogram_ax.plot(
             position_minutes_elapsed[in_corridor],
@@ -157,7 +191,7 @@ class InArenaSummaryPlot(dj.Computed):
             color=self.color_code["corridor"],
             markersize=0.5,
             alpha=0.6,
-            label=f"Times in corridor",
+            label=f"corridor",
         )
         for in_nest in in_nests:
             ethogram_ax.plot(
@@ -167,7 +201,7 @@ class InArenaSummaryPlot(dj.Computed):
                 color=self.color_code["nest"],
                 markersize=0.5,
                 alpha=0.6,
-                label=f"Times in nest",
+                label=f"nest",
             )
         for patch_idx, (patch_name, in_patch) in enumerate(
             zip(patch_names, in_patches)
@@ -179,7 +213,7 @@ class InArenaSummaryPlot(dj.Computed):
                 color=self.color_code[patch_name],
                 markersize=0.5,
                 alpha=0.6,
-                label=f"Times in {patch_name}",
+                label=f"{patch_name}",
             )
 
         # pellet
@@ -194,7 +228,10 @@ class InArenaSummaryPlot(dj.Computed):
 
         # time distribution
         time_fractions = [arena_time, corridor_time]
-        colors = [self.color_code["arena"], self.color_code["corridor"]]
+        colors = [
+            self.color_code["arena"],
+            self.color_code["corridor"],
+        ]
         time_fractions.extend(nests_times)
         colors.extend([self.color_code["nest"] for _ in nests_times])
         time_fractions.extend(patches_times)
@@ -208,14 +245,24 @@ class InArenaSummaryPlot(dj.Computed):
         rate_ax.set_ylabel("pellets / min")
         rate_ax.set_title("foraging rate (bin size = 10 min)")
         distance_ax.set_ylabel("distance travelled (m)")
+        threshold_ax.set_ylabel("threshold")
+        threshold_ax.set_ylim(
+            [threshold_ax.get_ylim()[0] - 100, threshold_ax.get_ylim()[1] + 100]
+        )
         ethogram_ax.set_xlabel("time (min)")
         analysis_plotting.set_ymargin(distance_ax, 0.2, 0.1)
-        for ax in (rate_ax, distance_ax, pellet_ax, time_dist_ax):
+        for ax in (rate_ax, distance_ax, pellet_ax, time_dist_ax, threshold_ax):
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
             ax.spines["bottom"].set_visible(False)
             ax.tick_params(bottom=False, labelbottom=False)
 
+        ethogram_ax.legend(
+            loc="center left",
+            bbox_to_anchor=(1.01, 2.5),
+            prop={"size": 12},
+            markerscale=40,
+        )
         ethogram_ax.spines["top"].set_visible(False)
         ethogram_ax.spines["right"].set_visible(False)
         ethogram_ax.spines["left"].set_visible(False)
