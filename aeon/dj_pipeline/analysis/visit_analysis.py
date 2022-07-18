@@ -1,10 +1,10 @@
-import datajoint as dj
-import pandas as pd
-import numpy as np
 import datetime
 
-from .. import lab, acquisition, tracking, qc
-from .. import get_schema_name, dict_to_uuid
+import datajoint as dj
+import numpy as np
+import pandas as pd
+
+from .. import acquisition, dict_to_uuid, get_schema_name, lab, qc, tracking
 from .visit import Visit, VisitEnd
 
 schema = dj.schema(get_schema_name("analysis"))
@@ -80,6 +80,7 @@ class VisitSubjectPosition(dj.Computed):
                 "chunk_start >= visit_start AND chunk_end <= visit_end",
             ]
             & 'experiment_name in ("exp0.2-r0")'
+            & "chunk_start < chunk_end"  # in some chunks, end timestamp comes before start (timestamp error)
         )
 
     def make(self, key):
