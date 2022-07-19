@@ -29,7 +29,8 @@ class SQLStorageMgr(storageMgr.StorageMgr):
         cur.close()
         return session_end_time
 
-    def getSessionPositions(self, session_start_time_str):
+    def getSessionPositions(self, session_start_time_str,
+                            start_offset_secs, duration_secs):
         cur = self._conn.cursor()
         sql_stmt = "SELECT timestamps, position_x, position_y FROM aeon_tracking._subject_position WHERE session_start=\"{:s}\"".format(session_start_time_str)
         print("Executing: " + sql_stmt)
@@ -61,6 +62,21 @@ class SQLStorageMgr(storageMgr.StorageMgr):
             end = time.time()
             print(f"Unpacking position y blob took {end - start} seconds ({i+1}/{nChunks})")
         cur.close()
+#         time_stamps = positions.index
+        time_stamps0_sec = time_stamps[0].timestamp()
+        time_stamps_secs = np.array([ts.timestamp()-time_stamps0_sec
+                                     for ts in time_stamps])
+        if duration_secs <0:
+            max_secs = time_stamps_secs.max()
+        else:
+            max_secs = start_offset_secs+duration_secs
+        indices_keep = np.where(
+            np.logical_and(start_offset_secs<=time_stamps_secs,
+                           time_stamps_secs<max_secs))[0]
+#         time_stamps_secs = time_stamps_secs[indices_keep]
+        time_stamps = time_stamps[indices_keep]
+        x = x[indices_keep]
+        y = y[indices_keep]
         answer = pd.DataFrame(data={"x": x, "y": y}, index=time_stamps)
         return answer
 
