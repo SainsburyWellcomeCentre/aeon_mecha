@@ -8,7 +8,7 @@ import pandas as pd
 from .. import acquisition, dict_to_uuid, get_schema_name, lab, qc, tracking
 from .visit import Visit, VisitEnd
 
-schema = dj.schema(get_schema_name("analysis"))
+schema = dj.schema("u_jaeronga_test")
 
 
 # ---------- Position Filtering Method ------------------
@@ -52,13 +52,13 @@ class VisitSubjectPosition(dj.Computed):
         definition = """
         # A short time-slice (e.g. 10 minutes) of the recording of a given animal for a visit
         -> master
-        time_slice_start: datetime(6)  # datetime of the start of this time slice
+        time_slice_start: datetime(6)   # datetime of the start of this time slice
         ---
-        time_slice_end: datetime(6)    # datetime of the end of this time slice
-        timestamps:        longblob  # (datetime) timestamps of the position data
-        position_x:        longblob  # (px) animal's x-position, in the arena's coordinate frame
-        position_y:        longblob  # (px) animal's y-position, in the arena's coordinate frame
-        position_z=null:   longblob  # (px) animal's z-position, in the arena's coordinate frame
+        time_slice_end: datetime(6)     # datetime of the end of this time slice
+        timestamps:        longblob     # (datetime) timestamps of the position data
+        position_x:        longblob     # (px) animal's x-position, in the arena's coordinate frame
+        position_y:        longblob     # (px) animal's y-position, in the arena's coordinate frame
+        position_z=null:   longblob     # (px) animal's z-position, in the arena's coordinate frame
         """
 
     _time_slice_duration = datetime.timedelta(hours=0, minutes=10, seconds=0)
@@ -174,13 +174,14 @@ class VisitSubjectPosition(dj.Computed):
 @schema
 class VisitTimeDistribution(dj.Computed):
     definition = """
-    -> VisitSubjectPosition
-    visit_date: datetime(6)
+    -> Visit
+    visit_end : datetime(6)
+    visit_date: date
+    day_duration: float               # total duration (in hours)
     ---
-    duration: float                   # total duration (in hours)
     time_fraction_in_corridor: float  # fraction of time the animal spent in the corridor in this visit
     in_corridor: longblob             # array of indices for when the animal is in the corridor (index into the position data)
-    time_fraction_in_arena: float        # fraction of time the animal spent in the arena in this visit
+    time_fraction_in_arena: float     # fraction of time the animal spent in the arena in this visit
     in_arena: longblob                # array of indices for when the animal is in the arena (index into the position data)
     """
 
@@ -203,7 +204,7 @@ class VisitTimeDistribution(dj.Computed):
         """
 
     # Work on finished visits
-    key_source = (VisitSubjectPosition & Visit) & (
+    key_source = Visit & (
         VisitEnd * VisitSubjectPosition.TimeSlice & "time_slice_end = visit_end"
     )
 
@@ -216,14 +217,18 @@ class VisitTimeDistribution(dj.Computed):
         )
 
         for visit_date in visit_dates:
+
             print(visit_date)
+
             day_start = datetime.datetime.combine((visit_date).date(), time.min)
             day_end = datetime.datetime.combine((visit_date).date(), time.max)
 
+            day_start = max(day_start, visit_start)
+            day_end = min(day_end, visit_end)
+
             # duration of the visit on the date
-            visit_duration = round(
-                (min(day_end, visit_end) - max(day_start, visit_start))
-                / datetime.timedelta(hours=1),
+            day_duration = round(
+                (day_end - day_start) / datetime.timedelta(hours=1),
                 3,
             )
 
@@ -282,6 +287,9 @@ class VisitTimeDistribution(dj.Computed):
                     {
                         **key,
                         **nest_key,
+                        "visit_end": visit_end,
+                        "day_duration": day_duration,
+                        "visit_date": visit_date.date(),
                         "time_fraction_in_nest": in_nest.mean(),
                         "in_nest": in_nest,
                     }
@@ -345,6 +353,9 @@ class VisitTimeDistribution(dj.Computed):
                     {
                         **key,
                         **food_patch_key,
+                        "visit_end": visit_end,
+                        "day_duration": day_duration,
+                        "visit_date": visit_date.date(),
                         "time_fraction_in_patch": in_patch.mean(),
                         "in_patch": in_patch.values,
                     }
@@ -355,8 +366,9 @@ class VisitTimeDistribution(dj.Computed):
             self.insert1(
                 {
                     **key,
+                    "visit_end": visit_end,
                     "visit_date": visit_date.date(),
-                    "duration": visit_duration,
+                    "day_duration": day_duration,
                     "time_fraction_in_corridor": in_corridor.mean(),
                     "in_corridor": in_corridor.values,
                     "time_fraction_in_arena": in_arena.mean(),
@@ -371,13 +383,13 @@ class VisitTimeDistribution(dj.Computed):
 class VisitSummary(dj.Computed):
     definition = """
     -> VisitSubjectPosition
-    visit_date: datetime(6)
+    visit_date: date
     ---
-    duration: float                   # total duration (in hours)
-    total_distance_travelled: float  # (m) total distance the animal travelled during this visit
-    total_pellet_count: int  # total pellet delivered (triggered) for all patches during this visit
-    total_wheel_distance_travelled: float  # total wheel travelled distance for all patches
-    change_in_weight: float  # weight change before/after the visit
+    day_duration: float                     # total duration (in hours)
+    total_distance_travelled: float         # (m) total distance the animal travelled during this visit
+    total_pellet_count: int                 # total pellet delivered (triggered) for all patches during this visit
+    total_wheel_distance_travelled: float   # total wheel travelled distance for all patches
+    change_in_weight: float                 # weight change before/after the visit
     """
 
     class FoodPatch(dj.Part):
@@ -385,8 +397,8 @@ class VisitSummary(dj.Computed):
         -> master
         -> acquisition.ExperimentFoodPatch
         ---
-        pellet_count: int  # number of pellets being delivered (triggered) by this patch during this visit
-        wheel_distance_travelled: float  # wheel travelled distance during this visit for this patch
+        pellet_count: int                   # number of pellets being delivered (triggered) by this patch during this visit
+        wheel_distance_travelled: float     # wheel travelled distance during this visit for this patch
         """
 
     # Work on finished visits
@@ -403,31 +415,20 @@ class VisitSummary(dj.Computed):
         )
 
         for visit_date in visit_dates:
+
             print(visit_date)
+
             day_start = datetime.datetime.combine((visit_date).date(), time.min)
             day_end = datetime.datetime.combine((visit_date).date(), time.max)
 
+            day_start = max(day_start, visit_start)
+            day_end = min(day_end, visit_end)
+
             # duration of the visit on the date
-            visit_duration = round(
-                (min(day_end, visit_end) - max(day_start, visit_start))
-                / datetime.timedelta(hours=1),
+            day_duration = round(
+                (day_end - day_start) / datetime.timedelta(hours=1),
                 3,
             )
-
-            # subject weights
-            weight_start = (
-                VisitSubjectPosition.TimeSlice * acquisition.SubjectWeight.WeightTime
-                & f'weight_time = "{max(day_start, visit_start)}"'
-            ).fetch1("weight")
-
-            weight_start = (
-                acquisition.SubjectWeight.WeightTime
-                & f'weight_time = "{max(day_start, visit_start)}"'
-            ).fetch1("weight")
-            weight_end = (
-                acquisition.SubjectWeight.WeightTime
-                & f'weight_time = "{min(day_end, visit_end)}"'
-            ).fetch1("weight")
 
             # subject's position data in the time_slices per day
             slice_keys = (
@@ -470,7 +471,12 @@ class VisitSummary(dj.Computed):
             )
             total_distance_travelled = np.nancumsum(position_diff)[-1]
 
-            # food patch data
+            # in food patches - loop through all in-use patches during this visit
+
+            query = acquisition.ExperimentFoodPatch.join(
+                acquisition.ExperimentFoodPatch.RemovalTime, left=True
+            )
+
             food_patch_keys = (
                 query
                 & (
