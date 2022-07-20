@@ -288,8 +288,8 @@ class VisitTimeDistribution(dj.Computed):
                         **key,
                         **nest_key,
                         "visit_end": visit_end,
-                        "day_duration": day_duration,
                         "visit_date": visit_date.date(),
+                        "day_duration": day_duration,
                         "time_fraction_in_nest": in_nest.mean(),
                         "in_nest": in_nest,
                     }
@@ -354,6 +354,7 @@ class VisitTimeDistribution(dj.Computed):
                         **key,
                         **food_patch_key,
                         "visit_end": visit_end,
+                        "visit_date": visit_date.date(),
                         "day_duration": day_duration,
                         "visit_date": visit_date.date(),
                         "time_fraction_in_patch": in_patch.mean(),
@@ -382,14 +383,14 @@ class VisitTimeDistribution(dj.Computed):
 @schema
 class VisitSummary(dj.Computed):
     definition = """
-    -> VisitSubjectPosition
+    -> Visit
+    visit_end : datetime(6)
     visit_date: date
+    day_duration: float               # total duration (in hours)
     ---
-    day_duration: float                     # total duration (in hours)
     total_distance_travelled: float         # (m) total distance the animal travelled during this visit
     total_pellet_count: int                 # total pellet delivered (triggered) for all patches during this visit
     total_wheel_distance_travelled: float   # total wheel travelled distance for all patches
-    change_in_weight: float                 # weight change before/after the visit
     """
 
     class FoodPatch(dj.Part):
@@ -402,7 +403,7 @@ class VisitSummary(dj.Computed):
         """
 
     # Work on finished visits
-    key_source = (VisitSubjectPosition & Visit) & (
+    key_source = Visit & (
         VisitEnd * VisitSubjectPosition.TimeSlice & "time_slice_end = visit_end"
     )
 
@@ -429,6 +430,15 @@ class VisitSummary(dj.Computed):
                 (day_end - day_start) / datetime.timedelta(hours=1),
                 3,
             )
+
+            ## TODO
+            # # subject weights
+            # weight_start = (
+            #     acquisition.SubjectWeight.WeightTime & f'weight_time = "{day_start}"'
+            # ).fetch1("weight")
+            # weight_end = (
+            #     acquisition.SubjectWeight.WeightTime & f'weight_time = "{day_end}"'
+            # ).fetch1("weight")
 
             # subject's position data in the time_slices per day
             slice_keys = (
@@ -472,7 +482,6 @@ class VisitSummary(dj.Computed):
             total_distance_travelled = np.nancumsum(position_diff)[-1]
 
             # in food patches - loop through all in-use patches during this visit
-
             query = acquisition.ExperimentFoodPatch.join(
                 acquisition.ExperimentFoodPatch.RemovalTime, left=True
             )
@@ -515,6 +524,9 @@ class VisitSummary(dj.Computed):
                     {
                         **key,
                         **food_patch_key,
+                        "visit_end": visit_end,
+                        "visit_date": visit_date.date(),
+                        "day_duration": day_duration,
                         "pellet_count": len(pellet_events),
                         "wheel_distance_travelled": wheel_data.distance_travelled.values[
                             -1
@@ -532,9 +544,12 @@ class VisitSummary(dj.Computed):
             self.insert1(
                 {
                     **key,
+                    "visit_end": visit_end,
+                    "visit_date": visit_date.date(),
+                    "day_duration": day_duration,
                     "total_pellet_count": total_pellet_count,
                     "total_wheel_distance_travelled": total_wheel_distance_travelled,
-                    "change_in_weight": weight_end - weight_start,
+                    # "change_in_weight": weight_end - weight_start,
                     "total_distance_travelled": total_distance_travelled,
                 }
             )
