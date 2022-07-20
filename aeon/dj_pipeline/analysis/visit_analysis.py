@@ -1,4 +1,5 @@
 import datetime
+from datetime import time
 
 import datajoint as dj
 import numpy as np
@@ -90,10 +91,10 @@ class VisitSubjectPosition(dj.Computed):
 
         # -- Determine the time to start time_slicing in this chunk
         if chunk_start < key["visit_start"] < chunk_end:
-            # For chunk containing the visit_start - i.e. first chunk of this session
+            # For chunk containing the visit_start - i.e. first chunk of this visit
             start_time = key["visit_start"]
         else:
-            # For chunks after the first chunk of this session
+            # For chunks after the first chunk of this visit
             start_time = chunk_start
 
         # -- Determine the time to end time_slicing in this chunk
@@ -166,32 +167,6 @@ class VisitSubjectPosition(dj.Computed):
         self.insert1(key)
         self.TimeSlice.insert(chunk_time_slices)
 
-    @classmethod
-    def get_position(cls, visit_key):
-        """
-        Given a key to a single Visit, return a Pandas DataFrame for the position data
-        of the subject for the specified Visit time period
-        """
-        assert len(Visit & visit_key) == 1
-
-        start, end = (
-            Visit.join(VisitEnd, left=True).proj(visit_end="IFNULL(visit_end, NOW())")
-            & visit_key
-        ).fetch1("visit_start", "visit_end")
-
-        return tracking._get_position(
-            cls.TimeSlice,
-            object_attr="subject",
-            object_name=visit_key["subject"],
-            start_attr="time_slice_start",
-            end_attr="time_slice_end",
-            start=start,
-            end=end,
-            fetch_attrs=["timestamps", "position_x", "position_y"],
-            attrs_to_scale=["position_x", "position_y"],
-            scale_factor=tracking.pixel_scale,
-        )
-
 
 # -------------- Visit-level analysis ---------------------
 
@@ -199,12 +174,13 @@ class VisitSubjectPosition(dj.Computed):
 @schema
 class VisitTimeDistribution(dj.Computed):
     definition = """
-    -> Visit
-    visit_date: date
+    -> VisitSubjectPosition
+    visit_date: datetime(6)
     ---
-    time_fraction_in_corridor: float  # fraction of time the animal spent in the corridor in this session
+    duration: float                   # total duration (in hours)
+    time_fraction_in_corridor: float  # fraction of time the animal spent in the corridor in this visit
     in_corridor: longblob             # array of indices for when the animal is in the corridor (index into the position data)
-    time_fraction_visit: float        # fraction of time the animal spent in the arena in this session
+    time_fraction_in_arena: float        # fraction of time the animal spent in the arena in this visit
     in_arena: longblob                # array of indices for when the animal is in the arena (index into the position data)
     """
 
@@ -213,7 +189,7 @@ class VisitTimeDistribution(dj.Computed):
         -> master
         -> lab.ArenaNest
         ---
-        time_fraction_in_nest: float  # fraction of time the animal spent in this nest in this session
+        time_fraction_in_nest: float  # fraction of time the animal spent in this nest in this visit
         in_nest: longblob             # array of indices for when the animal is in this nest (index into the position data)
         """
 
@@ -222,21 +198,186 @@ class VisitTimeDistribution(dj.Computed):
         -> master
         -> acquisition.ExperimentFoodPatch
         ---
-        time_fraction_in_patch: float  # fraction of time the animal spent on this patch in this session
+        time_fraction_in_patch: float  # fraction of time the animal spent on this patch in this visit
         in_patch: longblob             # array of indices for when the animal is in this patch (index into the position data)
         """
+
+    # Work on finished visits
+    key_source = (VisitSubjectPosition & Visit) & (
+        VisitEnd * VisitSubjectPosition.TimeSlice & "time_slice_end = visit_end"
+    )
+
+    def make(self, key):
+
+        visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
+
+        visit_dates = pd.date_range(
+            start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
+        )
+
+        for visit_date in visit_dates:
+            print(visit_date)
+            day_start = datetime.datetime.combine((visit_date).date(), time.min)
+            day_end = datetime.datetime.combine((visit_date).date(), time.max)
+
+            # duration of the visit on the date
+            visit_duration = round(
+                (min(day_end, visit_end) - max(day_start, visit_start))
+                / datetime.timedelta(hours=1),
+                3,
+            )
+
+            # subject's position data in the time_slices per day
+            slice_keys = (
+                VisitSubjectPosition.TimeSlice
+                & f'time_slice_start >= "{day_start}"'
+                & f'time_slice_start <= "{day_end}"'
+            ).fetch("KEY")
+
+            fetch_attrs = ["timestamps", "position_x", "position_y"]
+            attrs_to_scale = ["position_x", "position_y"]
+            scale_factor = tracking.pixel_scale
+
+            fetched_data = (VisitSubjectPosition.TimeSlice & slice_keys).fetch(
+                *fetch_attrs
+            )
+
+            timestamp_attr = next(attr for attr in fetch_attrs if "timestamps" in attr)
+
+            # stack and structure in pandas DataFrame
+            position = pd.DataFrame(
+                {
+                    k: np.hstack(v) * scale_factor
+                    if k in attrs_to_scale
+                    else np.hstack(v)
+                    for k, v in zip(fetch_attrs, fetched_data)
+                }
+            )
+            position.set_index(timestamp_attr, inplace=True)
+
+            time_mask = np.logical_and(
+                position.index >= day_start, position.index < day_end
+            )
+            position[time_mask]
+            position.rename(
+                columns={"position_x": "x", "position_y": "y"}, inplace=True
+            )
+
+            # in corridor
+            distance_from_center = tracking.compute_distance(
+                position[["x", "y"]],
+                (tracking.arena_center_x, tracking.arena_center_y),
+            )
+            in_corridor = (distance_from_center < tracking.arena_outer_radius) & (
+                distance_from_center > tracking.arena_inner_radius
+            )
+
+            in_arena = ~in_corridor
+
+            # in nests - loop through all nests in this experiment
+            in_nest_times = []
+            for nest_key in (lab.ArenaNest & key).fetch("KEY"):
+                in_nest = tracking.is_position_in_nest(position, nest_key)
+                in_nest_times.append(
+                    {
+                        **key,
+                        **nest_key,
+                        "time_fraction_in_nest": in_nest.mean(),
+                        "in_nest": in_nest,
+                    }
+                )
+                in_arena = in_arena & ~in_nest
+
+            # in food patches - loop through all in-use patches during this visit
+
+            query = acquisition.ExperimentFoodPatch.join(
+                acquisition.ExperimentFoodPatch.RemovalTime, left=True
+            )
+
+            food_patch_keys = (
+                query
+                & (
+                    VisitSubjectPosition
+                    * acquisition.ExperimentFoodPatch.join(
+                        acquisition.ExperimentFoodPatch.RemovalTime, left=True
+                    )
+                    & key
+                    & f'"{day_start}" >= food_patch_install_time'
+                    & f'"{day_end}" < IFNULL(food_patch_remove_time, "2200-01-01")'
+                ).fetch("KEY")
+            ).fetch("KEY")
+
+            in_food_patch_times = []
+
+            for food_patch_key in food_patch_keys:
+                # wheel data
+                food_patch_description = (
+                    acquisition.ExperimentFoodPatch & food_patch_key
+                ).fetch1("food_patch_description")
+                wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
+                    experiment_name=key["experiment_name"],
+                    start=pd.Timestamp(day_start),
+                    end=pd.Timestamp(day_end),
+                    patch_name=food_patch_description,
+                    using_aeon_io=True,
+                )
+
+                patch_position = (
+                    dj.U(
+                        "food_patch_serial_number",
+                        "food_patch_position_x",
+                        "food_patch_position_y",
+                        "food_patch_description",
+                    )
+                    & acquisition.ExperimentFoodPatch
+                    * acquisition.ExperimentFoodPatch.Position
+                    & food_patch_key
+                ).fetch1("food_patch_position_x", "food_patch_position_y")
+
+                in_patch = tracking.is_in_patch(
+                    position,
+                    patch_position,
+                    wheel_data.distance_travelled,
+                    patch_radius=0.2,
+                )
+
+                in_food_patch_times.append(
+                    {
+                        **key,
+                        **food_patch_key,
+                        "time_fraction_in_patch": in_patch.mean(),
+                        "in_patch": in_patch.values,
+                    }
+                )
+
+                in_arena = in_arena & ~in_patch
+
+            self.insert1(
+                {
+                    **key,
+                    "visit_date": visit_date.date(),
+                    "duration": visit_duration,
+                    "time_fraction_in_corridor": in_corridor.mean(),
+                    "in_corridor": in_corridor.values,
+                    "time_fraction_in_arena": in_arena.mean(),
+                    "in_arena": in_arena.values,
+                }
+            )
+            self.Nest.insert(in_nest_times)
+            self.FoodPatch.insert(in_food_patch_times)
 
 
 @schema
 class VisitSummary(dj.Computed):
     definition = """
-    -> Visit
-    visit_date: date
+    -> VisitSubjectPosition
+    visit_date: datetime(6)
     ---
-    total_distance_travelled: float  # (m) total distance the animal travelled during this session
-    total_pellet_count: int  # total pellet delivered (triggered) for all patches during this session
+    duration: float                   # total duration (in hours)
+    total_distance_travelled: float  # (m) total distance the animal travelled during this visit
+    total_pellet_count: int  # total pellet delivered (triggered) for all patches during this visit
     total_wheel_distance_travelled: float  # total wheel travelled distance for all patches
-    change_in_weight: float  # weight change before/after the session
+    change_in_weight: float  # weight change before/after the visit
     """
 
     class FoodPatch(dj.Part):
@@ -244,6 +385,151 @@ class VisitSummary(dj.Computed):
         -> master
         -> acquisition.ExperimentFoodPatch
         ---
-        pellet_count: int  # number of pellets being delivered (triggered) by this patch during this session
-        wheel_distance_travelled: float  # wheel travelled distance during this session for this patch
+        pellet_count: int  # number of pellets being delivered (triggered) by this patch during this visit
+        wheel_distance_travelled: float  # wheel travelled distance during this visit for this patch
         """
+
+    # Work on finished visits
+    key_source = (VisitSubjectPosition & Visit) & (
+        VisitEnd * VisitSubjectPosition.TimeSlice & "time_slice_end = visit_end"
+    )
+
+    def make(self, key):
+
+        visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
+
+        visit_dates = pd.date_range(
+            start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
+        )
+
+        for visit_date in visit_dates:
+            print(visit_date)
+            day_start = datetime.datetime.combine((visit_date).date(), time.min)
+            day_end = datetime.datetime.combine((visit_date).date(), time.max)
+
+            # duration of the visit on the date
+            visit_duration = round(
+                (min(day_end, visit_end) - max(day_start, visit_start))
+                / datetime.timedelta(hours=1),
+                3,
+            )
+
+            # subject weights
+            weight_start = (
+                VisitSubjectPosition.TimeSlice * acquisition.SubjectWeight.WeightTime
+                & f'weight_time = "{max(day_start, visit_start)}"'
+            ).fetch1("weight")
+
+            weight_start = (
+                acquisition.SubjectWeight.WeightTime
+                & f'weight_time = "{max(day_start, visit_start)}"'
+            ).fetch1("weight")
+            weight_end = (
+                acquisition.SubjectWeight.WeightTime
+                & f'weight_time = "{min(day_end, visit_end)}"'
+            ).fetch1("weight")
+
+            # subject's position data in the time_slices per day
+            slice_keys = (
+                VisitSubjectPosition.TimeSlice
+                & f'time_slice_start >= "{day_start}"'
+                & f'time_slice_start <= "{day_end}"'
+            ).fetch("KEY")
+
+            fetch_attrs = ["timestamps", "position_x", "position_y"]
+            attrs_to_scale = ["position_x", "position_y"]
+            scale_factor = tracking.pixel_scale
+
+            fetched_data = (VisitSubjectPosition.TimeSlice & slice_keys).fetch(
+                *fetch_attrs
+            )
+
+            timestamp_attr = next(attr for attr in fetch_attrs if "timestamps" in attr)
+
+            # stack and structure in pandas DataFrame
+            position = pd.DataFrame(
+                {
+                    k: np.hstack(v) * scale_factor
+                    if k in attrs_to_scale
+                    else np.hstack(v)
+                    for k, v in zip(fetch_attrs, fetched_data)
+                }
+            )
+            position.set_index(timestamp_attr, inplace=True)
+
+            time_mask = np.logical_and(
+                position.index >= day_start, position.index < day_end
+            )
+            position[time_mask]
+            position.rename(
+                columns={"position_x": "x", "position_y": "y"}, inplace=True
+            )
+
+            position_diff = np.sqrt(
+                np.square(np.diff(position.x)) + np.square(np.diff(position.y))
+            )
+            total_distance_travelled = np.nancumsum(position_diff)[-1]
+
+            # food patch data
+            food_patch_keys = (
+                query
+                & (
+                    VisitSubjectPosition
+                    * acquisition.ExperimentFoodPatch.join(
+                        acquisition.ExperimentFoodPatch.RemovalTime, left=True
+                    )
+                    & key
+                    & f'"{day_start}" >= food_patch_install_time'
+                    & f'"{day_end}" < IFNULL(food_patch_remove_time, "2200-01-01")'
+                ).fetch("KEY")
+            ).fetch("KEY")
+
+            food_patch_statistics = []
+
+            for food_patch_key in food_patch_keys:
+                pellet_events = (
+                    acquisition.FoodPatchEvent * acquisition.EventType
+                    & food_patch_key
+                    & 'event_type = "TriggerPellet"'
+                    & f'event_time BETWEEN "{day_start}" AND "{day_end}"'
+                ).fetch("event_time")
+                # wheel data
+                food_patch_description = (
+                    acquisition.ExperimentFoodPatch & food_patch_key
+                ).fetch1("food_patch_description")
+                wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
+                    experiment_name=key["experiment_name"],
+                    start=pd.Timestamp(day_start),
+                    end=pd.Timestamp(day_end),
+                    patch_name=food_patch_description,
+                    using_aeon_io=True,
+                )
+
+                food_patch_statistics.append(
+                    {
+                        **key,
+                        **food_patch_key,
+                        "pellet_count": len(pellet_events),
+                        "wheel_distance_travelled": wheel_data.distance_travelled.values[
+                            -1
+                        ],
+                    }
+                )
+
+            total_pellet_count = np.sum(
+                [p["pellet_count"] for p in food_patch_statistics]
+            )
+            total_wheel_distance_travelled = np.sum(
+                [p["wheel_distance_travelled"] for p in food_patch_statistics]
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "total_pellet_count": total_pellet_count,
+                    "total_wheel_distance_travelled": total_wheel_distance_travelled,
+                    "change_in_weight": weight_end - weight_start,
+                    "total_distance_travelled": total_distance_travelled,
+                }
+            )
+            self.FoodPatch.insert(food_patch_statistics)
