@@ -126,10 +126,12 @@ class VisitSubjectPosition(dj.Computed):
             len(set((tracking.CameraTracking.Object & key).fetch("object_id"))) == 1
         ), "More than one unique object ID found - multiple animal/object mapping not yet supported"
 
+        object_id = (tracking.CameraTracking.Object & key).fetch("object_id")[0]
+
         positiondata = tracking.CameraTracking.get_object_position(
             experiment_name=key["experiment_name"],
             camera_name=camera_name,
-            object_id=-1,
+            object_id=object_id,
             start=chunk_start,
             end=chunk_end,
         )
