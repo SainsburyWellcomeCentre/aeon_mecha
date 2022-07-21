@@ -10,9 +10,10 @@ from aeon.io import api as io_api
 from . import acquisition
 from . import get_schema_name
 
+logger = dj.logger
 
-# schema = dj.schema(get_schema_name("device_stream"))
-schema = dj.schema("u_thinh_device_stream")
+schema_name = get_schema_name("device_stream")
+schema = dj.schema(schema_name)
 
 
 @schema
@@ -49,7 +50,7 @@ class StreamType(dj.Lookup):
         (
             "EnvironmentState",
             "aeon.io.reader.Csv",
-            {"pattern": "{}_EnvironmentState"},
+            {"pattern": "{}_EnvironmentState", "columns": ["state"]},
             "Environment state log",
         ),
         (
@@ -182,6 +183,9 @@ class Device(dj.Lookup):
     """
 
 
+DeviceType._insert_contents()
+
+
 # ---- HELPER ----
 
 
@@ -189,10 +193,13 @@ def generate_device_table(device_type, context=None):
     if context is None:
         context = inspect.currentframe().f_back.f_locals
 
-    schema = dj.schema()
-    device_title = _prettify(device_type)
+    _schema = dj.schema(context=context)
 
-    @schema
+    device_type_key = {"device_type": device_type}
+    device_title = _prettify(device_type)
+    device_type = dj.utils.from_camel_case(device_title)
+
+    @_schema
     class ExperimentDevice(dj.Manual):
         definition = f"""
         # {device_title} placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-{aeon.__version__})
@@ -215,11 +222,13 @@ def generate_device_table(device_type, context=None):
     context[exp_device_table_name] = ExperimentDevice
 
     # DeviceDataStream table(s)
-    for stream_detail in (
-        StreamType & (DeviceType.Stream & {"device_type": device_type})
-    ).fetch(as_dict=True):
+    for stream_detail in (StreamType & (DeviceType.Stream & device_type_key)).fetch(
+        as_dict=True
+    ):
         stream_type = stream_detail["stream_type"]
         stream_title = _prettify(stream_type)
+
+        logger.info(f"Creating stream table: {stream_title}")
 
         for i, n in enumerate(stream_detail["stream_reader"].split(".")):
             if i == 0:
@@ -241,7 +250,7 @@ def generate_device_table(device_type, context=None):
                 continue
             table_definition += f"{col}: longblob\n\t\t\t"
 
-        @schema
+        @_schema
         class DeviceDataStream(dj.Imported):
             definition = table_definition
 
@@ -302,10 +311,15 @@ def generate_device_table(device_type, context=None):
 
         stream_table_name = f"{device_title}{stream_title}"
         DeviceDataStream.__name__ = stream_table_name
-
         context[stream_table_name] = DeviceDataStream
+
+    _schema.activate(schema_name)
 
 
 def _prettify(s):
     s = re.sub(r"[A-Z]", lambda m: f"_{m.group(0)}", s)
     return s.replace("_", " ").title().replace(" ", "")
+
+
+for device_type in DeviceType.fetch("device_type"):
+    generate_device_table(device_type)
