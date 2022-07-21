@@ -124,10 +124,12 @@ class VisitSubjectPosition(dj.Computed):
             len(set((tracking.CameraTracking.Object & key).fetch("object_id"))) == 1
         ), "More than one unique object ID found - multiple animal/object mapping not yet supported"
 
+        object_id = (tracking.CameraTracking.Object & key).fetch1("object_id")
+
         positiondata = tracking.CameraTracking.get_object_position(
             experiment_name=key["experiment_name"],
             camera_name=camera_name,
-            object_id=-1,
+            object_id=object_id,
             start=chunk_start,
             end=chunk_end,
         )
@@ -135,7 +137,7 @@ class VisitSubjectPosition(dj.Computed):
         if not len(positiondata):
             raise ValueError(f"No position data between {chunk_start} and {chunk_end}")
 
-        timestamps = positiondata.index.to_pydatetime()
+        timestamps = positiondata.index.values
         x = positiondata.position_x.values
         y = positiondata.position_y.values
         z = np.full_like(x, 0.0)

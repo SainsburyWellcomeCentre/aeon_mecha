@@ -181,7 +181,7 @@ class CameraTracking(dj.Imported):
                 {
                     **key,
                     "object_id": obj_id,
-                    "timestamps": obj_position.index.to_pydatetime(),
+                    "timestamps": obj_position.index.values,
                     "position_x": obj_position.x.values,
                     "position_y": obj_position.y.values,
                     "area": obj_position.area.values,

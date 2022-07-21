@@ -4,7 +4,7 @@ black                                                     # (dev)
 blas>=1.1, <2
 bottleneck>=1.2.1, <2
 dotmap
-datajoint>=0.13, <1
+datajoint>=0.13.7, <1
 git+https://github.com/vathes/datajoint-utilities.git
 fastparquet
 flake8                                                    # (dev)
