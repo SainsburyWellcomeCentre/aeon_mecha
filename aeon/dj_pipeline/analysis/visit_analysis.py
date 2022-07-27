@@ -8,7 +8,7 @@ import pandas as pd
 from .. import acquisition, dict_to_uuid, get_schema_name, lab, qc, tracking
 from .visit import Visit, VisitEnd
 
-schema = dj.schema("u_jaeronga_test")
+schema = dj.schema(get_schema_name("visit_analysis"))
 
 
 # ---------- Position Filtering Method ------------------
@@ -18,6 +18,7 @@ schema = dj.schema("u_jaeronga_test")
 class PositionFilteringMethod(dj.Lookup):
     definition = """
     pos_filter_method: varchar(16)  
+    
     ---
     pos_filter_method_description: varchar(256)
     """
@@ -59,6 +60,7 @@ class VisitSubjectPosition(dj.Computed):
         position_x:        longblob     # (px) animal's x-position, in the arena's coordinate frame
         position_y:        longblob     # (px) animal's y-position, in the arena's coordinate frame
         position_z=null:   longblob     # (px) animal's z-position, in the arena's coordinate frame
+        area=null:         longblob     # (px^2) animal's size detected in the camera
         """
 
     _time_slice_duration = datetime.timedelta(hours=0, minutes=10, seconds=0)
@@ -143,6 +145,7 @@ class VisitSubjectPosition(dj.Computed):
         x = positiondata.position_x.values
         y = positiondata.position_y.values
         z = np.full_like(x, 0.0)
+        area = positiondata.area.values
 
         chunk_time_slices = []
         time_slice_start = start_time
@@ -162,6 +165,7 @@ class VisitSubjectPosition(dj.Computed):
                     "position_x": x[in_time_slice],
                     "position_y": y[in_time_slice],
                     "position_z": z[in_time_slice],
+                    "area": area[in_time_slice],
                 }
             )
             time_slice_start = time_slice_end
@@ -241,7 +245,7 @@ class VisitTimeDistribution(dj.Computed):
                 & f'time_slice_start <= "{day_end}"'
             ).fetch("KEY")
 
-            fetch_attrs = ["timestamps", "position_x", "position_y"]
+            fetch_attrs = ["timestamps", "position_x", "position_y", "area"]
             attrs_to_scale = ["position_x", "position_y"]
             scale_factor = tracking.pixel_scale
 
@@ -269,6 +273,10 @@ class VisitTimeDistribution(dj.Computed):
             position.rename(
                 columns={"position_x": "x", "position_y": "y"}, inplace=True
             )
+
+            # filter for objects of the correct size
+            valid_position = (position.area > 0) & (position.area < 1000)
+            position[~valid_position] = np.nan
 
             # in corridor
             distance_from_center = tracking.compute_distance(
@@ -299,7 +307,6 @@ class VisitTimeDistribution(dj.Computed):
                 in_arena = in_arena & ~in_nest
 
             # in food patches - loop through all in-use patches during this visit
-
             query = acquisition.ExperimentFoodPatch.join(
                 acquisition.ExperimentFoodPatch.RemovalTime, left=True
             )
