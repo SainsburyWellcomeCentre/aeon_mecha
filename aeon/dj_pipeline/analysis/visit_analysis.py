@@ -8,7 +8,7 @@ import pandas as pd
 from .. import acquisition, dict_to_uuid, get_schema_name, lab, qc, tracking
 from .visit import Visit, VisitEnd
 
-schema = dj.schema(get_schema_name("visit_analysis"))
+schema = dj.schema(get_schema_name("analysis"))
 
 
 # ---------- Position Filtering Method ------------------

@@ -81,10 +81,14 @@ This can be used to produce the ethogram plot.
 
 ## Pipeline Diagram
 
-The diagram below shows the same architecture, with some figures 
-to demonstrate which type of data is stored where.
+The diagram below shows the high level overview of the diagram (only the subset of the tables that are most relevant).
 
-![datajoint_pipeline](./docs/datajoint_pipeline.svg)
+![datajoint_pipeline](./docs/datajoint_overview_diagram.svg)
+
+
+The diagram below shows the analysis portion of the pipeline (work in progress).
+
+![datajoint_analysis_pipeline](./docs/datajoint_analysis_diagram.svg)
 
 
 ## Operating the pipeline - how the auto ingestion/processing work?
@@ -93,8 +97,11 @@ Some meta information about the experiment is entered - e.g. experiment name, pa
 animals, cameras, food patches setup, etc.
 + These information are either entered by hand, or parsed and inserted from configuration 
     yaml files.
-+ For experiment 0.1 these info can be inserted by running 
-the [exp01_insert_meta script](populate/create_experiment_01.py) (just need to do this once)
++ For experiments these info can be inserted by running  
+  + [create_experiment_01](populate/create_experiment_01.py)
+  + [create_socialexperiment_0](populate/create_socialexperiment_0.py)
+  + [create_experiment_02](populate/create_experiment_02.py)
+  (just need to do this once)
 
 Tables in DataJoint are written with a `make()` function - 
 instruction to generate and insert new records to itself, based on data from upstream tables. 
