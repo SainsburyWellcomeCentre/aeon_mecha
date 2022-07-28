@@ -63,7 +63,7 @@ class VisitSubjectPosition(dj.Computed):
         area=null:         longblob     # (px^2) animal's size detected in the camera
         """
 
-    _time_slice_duration = datetime.timedelta(hours=0, minutes=10, seconds=0)
+    _time_slice_duration = np.timedelta64(10, "m")
 
     @property
     def key_source(self):
@@ -148,7 +148,9 @@ class VisitSubjectPosition(dj.Computed):
         area = positiondata.area.values
 
         chunk_time_slices = []
-        time_slice_start = start_time
+        time_slice_start = np.array(start_time, dtype="datetime64[ns]")
+        end_time = np.array(end_time, dtype="datetime64[ns]")
+
         while time_slice_start < end_time:
             time_slice_end = time_slice_start + min(
                 self._time_slice_duration, end_time - time_slice_start
@@ -366,7 +368,7 @@ class VisitTimeDistribution(dj.Computed):
                         **food_patch_key,
                         "visit_date": visit_date.date(),
                         "time_fraction_in_patch": in_patch.mean(),
-                        "in_patch": in_patch.values,
+                        "in_patch": np.where(in_patch)[0],
                     }
                 )
 
@@ -378,9 +380,9 @@ class VisitTimeDistribution(dj.Computed):
                     "visit_date": visit_date.date(),
                     "day_duration": day_duration,
                     "time_fraction_in_corridor": in_corridor.mean(),
-                    "in_corridor": in_corridor.values,
+                    "in_corridor": np.where(in_corridor)[0],
                     "time_fraction_in_arena": in_arena.mean(),
-                    "in_arena": in_arena.values,
+                    "in_arena": np.where(in_arena)[0],
                 }
             )
             self.Nest.insert(in_nest_times)
