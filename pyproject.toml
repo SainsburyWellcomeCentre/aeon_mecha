@@ -20,7 +20,7 @@ readme = "readme.md"
 dependencies = [
   "bottleneck>=1.2.1,<2",
   "datajoint-utilities @ git+https://github.com/datajoint-company/datajoint-utilities",
-  "datajoint>=0.13.6",
+  "datajoint>=0.13.7",
   "dotmap",
   "fastparquet",
   "graphviz",

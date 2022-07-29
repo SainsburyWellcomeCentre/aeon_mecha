@@ -781,12 +781,10 @@ class FoodPatchWheel(dj.Imported):
             end=pd.Timestamp(chunk_end),
         )
 
-        timestamps = wheel_data.index.to_pydatetime()
-
         self.insert1(
             {
                 **key,
-                "timestamps": timestamps,
+                "timestamps": wheel_data.index.values,
                 "angle": wheel_data.angle.values,
                 "intensity": wheel_data.intensity.values,
             }
@@ -978,12 +976,10 @@ class WeightMeasurement(dj.Imported):
                 f"No weight measurement found for {key} - this is unexpected"
             )
 
-        timestamps = weight_data.index.to_pydatetime()
-
         self.insert1(
             {
                 **key,
-                "timestamps": timestamps,
+                "timestamps": weight_data.index.values,
                 "weight": weight_data.value.values,
                 "confidence": weight_data.stable.values.astype(float),
             }

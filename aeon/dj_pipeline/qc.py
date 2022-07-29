@@ -103,7 +103,7 @@ class CameraQC(dj.Imported):
                 "max_harp_delta": deltas.time_delta.max().total_seconds(),
                 "max_camera_delta": deltas.hw_timestamp_delta.max()
                 / 1e9,  # convert to seconds
-                "timestamps": videodata.index.to_pydatetime(),
+                "timestamps": videodata.index.values,
                 "time_delta": deltas.time_delta.values
                 / np.timedelta64(1, "s"),  # convert to seconds
                 "frame_delta": deltas.frame_delta.values,

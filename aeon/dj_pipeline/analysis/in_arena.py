@@ -232,7 +232,7 @@ class InArenaSubjectPosition(dj.Imported):
                 f"No position data between {time_slice_start} and {time_slice_end}"
             )
 
-        timestamps = positiondata.index.to_pydatetime()
+        timestamps = positiondata.index.values
         x = positiondata.position_x.values
         y = positiondata.position_y.values
         z = np.full_like(x, 0.0)
@@ -242,7 +242,7 @@ class InArenaSubjectPosition(dj.Imported):
         position_diff = np.sqrt(
             np.square(np.diff(x)) + np.square(np.diff(y)) + np.square(np.diff(z))
         )
-        time_diff = [t.total_seconds() for t in np.diff(timestamps)]
+        time_diff = np.diff(timestamps) / np.timedelta64(1, "s")
         speed = position_diff / time_diff
         speed = np.hstack((speed[0], speed))
 
@@ -693,7 +693,7 @@ class InArenaRewardRate(dj.Computed):
                 )
 
             if pellet_rate_timestamps is None:
-                pellet_rate_timestamps = pellet_rate.index.to_pydatetime()
+                pellet_rate_timestamps = pellet_rate.index.values
 
             rates[food_patch_key.pop("food_patch_description")] = pellet_rate.values
 
