@@ -382,7 +382,7 @@ class VisitTimeDistribution(dj.Computed):
                     "time_fraction_in_corridor": in_corridor.mean(),
                     "in_corridor": np.array(in_corridor.index[np.where(in_corridor)]),
                     "time_fraction_in_arena": in_arena.mean(),
-                    "in_arena": np.array(in_arena.index[np.where(in_arena)]),
+                    "in_arena": in_arena.index.values[in_arena],
                 }
             )
             self.Nest.insert(in_nest_times)
