@@ -380,7 +380,7 @@ class VisitTimeDistribution(dj.Computed):
                     "visit_date": visit_date.date(),
                     "day_duration": day_duration,
                     "time_fraction_in_corridor": in_corridor.mean(),
-                    "in_corridor": np.array(in_corridor.index[np.where(in_corridor)]),
+                    "in_corridor": in_corridor.index.values[in_corridor],
                     "time_fraction_in_arena": in_arena.mean(),
                     "in_arena": in_arena.index.values[in_arena],
                 }
