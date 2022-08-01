@@ -224,9 +224,9 @@ class VisitTimeDistribution(dj.Computed):
     ---
     day_duration: float               # total duration (in hours)
     time_fraction_in_corridor: float  # fraction of time the animal spent in the corridor in this visit
-    in_corridor: longblob             # array of indices for when the animal is in the corridor (index into the position data)
+    in_corridor: longblob             # array of timestamps for when the animal is in the corridor 
     time_fraction_in_arena: float     # fraction of time the animal spent in the arena in this visit
-    in_arena: longblob                # array of indices for when the animal is in the arena (index into the position data)
+    in_arena: longblob                # array of timestamps for when the animal is in the arena 
     """
 
     class Nest(dj.Part):
@@ -244,7 +244,7 @@ class VisitTimeDistribution(dj.Computed):
         -> acquisition.ExperimentFoodPatch
         ---
         time_fraction_in_patch: float  # fraction of time the animal spent on this patch in this visit
-        in_patch: longblob             # array of indices for when the animal is in this patch (index into the position data)
+        in_patch: longblob             # array of timestamps for when the animal is in this patch 
         """
 
     # Work on finished visits
@@ -368,7 +368,7 @@ class VisitTimeDistribution(dj.Computed):
                         **food_patch_key,
                         "visit_date": visit_date.date(),
                         "time_fraction_in_patch": in_patch.mean(),
-                        "in_patch": np.where(in_patch)[0],
+                        "in_patch": np.array(in_patch.index[np.where(in_patch)]),
                     }
                 )
 
@@ -380,9 +380,9 @@ class VisitTimeDistribution(dj.Computed):
                     "visit_date": visit_date.date(),
                     "day_duration": day_duration,
                     "time_fraction_in_corridor": in_corridor.mean(),
-                    "in_corridor": np.where(in_corridor)[0],
+                    "in_corridor": np.array(in_corridor.index[np.where(in_corridor)]),
                     "time_fraction_in_arena": in_arena.mean(),
-                    "in_arena": np.where(in_arena)[0],
+                    "in_arena": np.array(in_arena.index[np.where(in_arena)]),
                 }
             )
             self.Nest.insert(in_nest_times)
@@ -458,7 +458,7 @@ class VisitSummary(dj.Computed):
             position_diff = np.sqrt(
                 np.square(np.diff(position.x)) + np.square(np.diff(position.y))
             )
-            total_distance_travelled = np.nancumsum(position_diff)[-1]
+            total_distance_travelled = np.nansum(position_diff)
 
             # in food patches - loop through all in-use patches during this visit
             query = acquisition.ExperimentFoodPatch.join(
