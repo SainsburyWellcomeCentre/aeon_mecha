@@ -368,7 +368,7 @@ class VisitTimeDistribution(dj.Computed):
                         **food_patch_key,
                         "visit_date": visit_date.date(),
                         "time_fraction_in_patch": in_patch.mean(),
-                        "in_patch": np.array(in_patch.index[np.where(in_patch)]),
+                        "in_patch": in_patch.index.values[in_patch],
                     }
                 )
 
