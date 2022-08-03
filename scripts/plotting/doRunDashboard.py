@@ -32,7 +32,8 @@ def main(argv):
     parser.add_argument("--port", help="port on which to run the falsh app", default=8050, type=int)
     parser.add_argument("--debug", help="start GUI with debug functionality",
                         action="store_true")
-    parser.add_argument("--root", help="Root path for data access", default="/ceph/aeon/test2/experiment0.1")
+    parser.add_argument("--root", help="Root path for data access",
+                        default="/ceph/aeon/aeon/data/raw/AEON/experiment0.1")
     parser.add_argument("--patches_coordinates", help="coordinates of patches", default="584,597,815,834;614,634,252,271")
     parser.add_argument("--nest_coordinates", help="coordinates of nest", default="170,260,450,540")
     parser.add_argument("--patchesToPlot", help="Names of patches to plot", default="Patch1,Patch2")
@@ -211,7 +212,7 @@ def main(argv):
     @app.callback(Output('interval-component', 'interval'),
                   Input('interval-component', 'n_intervals'))
     def update_metadata(n):
-        print("*** metadata updated {:d} ***".format(n))
+        print("Called update_metadata")
         metadata = aeon.preprocess.api.sessiondata(root)
         metadata = metadata[metadata.id.str.startswith('BAA')]
         metadata = aeon.preprocess.utils.getPairedEvents(metadata=metadata)
@@ -224,6 +225,7 @@ def main(argv):
                   ],
                   Input('mouseNameDropDown', 'value'))
     def get_sessions_start_times(mouseNameDropDown_value):
+        print("Called get_sessions_start_times")
         sessions_start_times = metadata[metadata["id"]==mouseNameDropDown_value]["start"]
         options_sessions_start_times = [{"label": session_start_time, "value": session_start_time} for session_start_time in sessions_start_times]
         return options_sessions_start_times, sessions_start_times.iloc[0], sample_rate_for_trajectory0
@@ -234,6 +236,7 @@ def main(argv):
                  )
     def get_num_trajectory_points_to_plot_label(sRateForTrajectoryPlot_value,
                                                 plotTimeRangeSlider_value):
+        print("Called get_num_trajectory_points_to_plot_label")
         if sRateForTrajectoryPlot_value is None or plotTimeRangeSlider_value is None:
             raise dash.exceptions.PreventUpdate
         num_trajectory_points_to_plot = int((plotTimeRangeSlider_value[1]-plotTimeRangeSlider_value[0])*sRateForTrajectoryPlot_value)
@@ -260,6 +263,7 @@ def main(argv):
                                   plotTimeRangeSlider_max,
                                   plotTimeRangeSlider_marks,
                                   plotTimeRangeSlider_value):
+        print("Called get_plotTimeRange_options")
         ctx = dash.callback_context
         if not ctx.triggered:
             print("not ctx.triggered")
@@ -290,7 +294,7 @@ def main(argv):
                    Output('endTimeInput', 'value')],
                   [Input('plotTimeRangeSlider', 'value')])
     def set_start_end_inputs_from_slider_value(plotTimeRangeSlider_value):
-        print("set_start_end_inputs_from_slider_value called")
+        print("Called set_start_end_inputs_from_slider_value")
         if plotTimeRangeSlider_value is None:
             raise dash.exceptions.PreventUpdate
         return plotTimeRangeSlider_value
