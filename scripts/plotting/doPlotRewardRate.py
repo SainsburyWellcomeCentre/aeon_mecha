@@ -20,7 +20,7 @@ def main(argv):
     parser.add_argument("--patchesToPlotFiles", help="Names of patches to plot", default="Patch1,Patch2")
     parser.add_argument("--storageMgr_type",
                         help="Type of storage manager (SQL | Files)",
-                        type=str, default="Files")
+                        type=str, default="SQL")
     parser.add_argument("--tunneled_host", help="Tunneled host IP address",
                         type=str, default="127.0.0.1")
     parser.add_argument("--db_server_port", help="Database server port",
