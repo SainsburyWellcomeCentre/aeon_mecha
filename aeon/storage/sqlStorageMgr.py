@@ -31,8 +31,8 @@ class SQLStorageMgr(storageMgr.StorageMgr):
 
     def getSessionPositions(self, session_start_time_str,
                             start_offset_secs, duration_secs):
-        cur = self._conn.cursor()
         sql_stmt = "SELECT timestamps, position_x, position_y FROM aeon_tracking._subject_position WHERE session_start=\"{:s}\"".format(session_start_time_str)
+        cur = self._conn.cursor()
         print("Executing: " + sql_stmt)
         start = time.time()
         cur.execute(sql_stmt)
@@ -63,9 +63,10 @@ class SQLStorageMgr(storageMgr.StorageMgr):
             print(f"Unpacking position y blob took {end - start} seconds ({i+1}/{nChunks})")
         cur.close()
 #         time_stamps = positions.index
-        time_stamps0_sec = time_stamps[0].timestamp()
-        time_stamps_secs = np.array([ts.timestamp()-time_stamps0_sec
-                                     for ts in time_stamps])
+        # time_stamps0_sec = time_stamps[0].timestamp()
+        # time_stamps_secs = np.array([ts.timestamp()-time_stamps0_sec for ts in time_stamps])
+        time_stamps0_sec = time_stamps[0]
+        time_stamps_secs = np.array([ts-time_stamps0_sec for ts in time_stamps])
         if duration_secs <0:
             max_secs = time_stamps_secs.max()
         else:
@@ -136,4 +137,66 @@ class SQLStorageMgr(storageMgr.StorageMgr):
         event_times = pd.DatetimeIndex([pd.Timestamp(row[0]) for row in records])
         cur.close()
         return event_times
+
+
+    def getExperimentsNames(self, directory_type="raw"):
+        sql_stmt_pattern = 'SELECT DISTINCT experiment_name FROM aeon_acquisition.experiment__directory WHERE directory_type="{:s}";'
+        sql_stmt = sql_stmt_pattern.format(directory_type)
+        cur = self._conn.cursor()
+        print("Executing: " + sql_stmt)
+        start = time.time()
+        cur.execute(sql_stmt)
+        end = time.time()
+        print(f"Elapsed time: {end - start} seconds")
+        records = cur.fetchall()
+        experiments_names = [row[0] for row in records]
+        cur.close()
+        return experiments_names
+
+
+    def getSubjectsNames(self, experiment_name):
+        sql_stmt = f'SELECT subject FROM aeon_acquisition.experiment__subject WHERE experiment_name="{experiment_name}"'
+        cur = self._conn.cursor()
+        print("Executing: " + sql_stmt)
+        start = time.time()
+        cur.execute(sql_stmt)
+        end = time.time()
+        print(f"Elapsed time: {end - start} seconds")
+        records = cur.fetchall()
+        subjects_names = [row[0] for row in records]
+        cur.close()
+        return subjects_names
+
+
+    def getSessionDuration(self, experiment_name, subject_name, session_start):
+        sql_stmt_pattern = 'SELECT session_duration FROM aeon_acquisition.__session_end WHERE experiment_name="{:s}" AND subject="{:s}" AND session_start="{:s}"'
+        sql_stmt = sql_stmt_pattern.format(experiment_name, subject_name,
+                                           session_start)
+        cur = self._conn.cursor()
+        print("Executing: " + sql_stmt)
+        start = time.time()
+        cur.execute(sql_stmt)
+        end = time.time()
+        print(f"Elapsed time: {end - start} seconds")
+        session_duration_hours = cur.fetchone()[0]
+        cur.close()
+        session_duration_secs = session_duration_hours * 3600
+        return session_duration_secs
+
+
+    def getSubjectSessionsStartTimes(self, experiment_name, subject_name):
+        sql_stmt_pattern = 'SELECT session_start FROM aeon_acquisition.__session WHERE experiment_name="{:s}" AND subject="{:s}";'
+        sql_stmt = sql_stmt_pattern.format(experiment_name, subject_name)
+        cur = self._conn.cursor()
+        print("Executing: " + sql_stmt)
+        start = time.time()
+        cur.execute(sql_stmt)
+        end = time.time()
+        print(f"Elapsed time: {end - start} seconds")
+        records = cur.fetchall()
+        sessions_start_times = [row[0] for row in records]
+        cur.close()
+        return sessions_start_times
+
+
 
