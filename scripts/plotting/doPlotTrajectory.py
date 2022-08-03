@@ -85,8 +85,8 @@ def main(argv):
     time_stamps = positions.index
     x = positions["x"].to_numpy()
     y = positions["y"].to_numpy()
-    time_stamps0_sec = time_stamps[0].timestamp()
-    time_stamps_secs = np.array([ts.timestamp()-time_stamps0_sec
+    time_stamps0_sec = time_stamps[0]
+    time_stamps_secs = np.array([ts-time_stamps0_sec
                                  for ts in time_stamps])
 #     if duration_secs<0:
 #         max_secs = time_stamps_secs.max()
