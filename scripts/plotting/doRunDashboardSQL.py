@@ -12,8 +12,8 @@ import plotly.graph_objects as go
 import plotly.express as px
 import plotly.subplots
 import dash
-import dash_core_components as dcc
-import dash_html_components as html
+from dash import dcc
+from dash import html
 from dash.dependencies import Input, Output, State, ALL, MATCH
 import dash.exceptions
 
@@ -23,6 +23,8 @@ import aeon.preprocess.api
 import aeon.preprocess.utils
 import aeon.signalProcessing.utils
 import aeon.preprocess.utils
+import aeon.storage.sqlStorageMgr as sqlSM
+import aeon.storage.filesStorageMgr as filesSM
 import aeon.plotting.plot_functions
 
 def main(argv):
@@ -56,12 +58,12 @@ def main(argv):
     parser.add_argument("--trajectories_height", help="height of the trajectories plot", type=int, default=1000)
     parser.add_argument("--trajectories_colorscale", help="colorscale for trajectories", default="Rainbow")
     parser.add_argument("--trajectories_opacity", help="opacity for trajectories", default=0.3, type=float)
-    parser.add_argument("--mouse_figure_width", help="width of the mouse_figure plot", type=int, default=1000)
-    parser.add_argument("--mouse_figure_height", help="height of the mouse_figure plot", type=int, default=1000)
+    parser.add_argument("--subject_figure_width", help="width of the subject_figure plot", type=int, default=1000)
+    parser.add_argument("--subject_figure_height", help="height of the subject_figure plot", type=int, default=1000)
     parser.add_argument("--travelled_distance_sample_rate", help="sampling rate for travelled distance plot", default=10.0, type=float)
     parser.add_argument("--storageMgr_type",
                         help="Type of storage manager (SQL | Files)",
-                        type=str, default="Files")
+                        type=str, default="SQL")
     parser.add_argument("--tunneled_host", help="Tunneled host IP address",
                         type=str, default="127.0.0.1")
     parser.add_argument("--db_server_port", help="Database server port",
@@ -70,8 +72,6 @@ def main(argv):
                         default="rapela")
     parser.add_argument("--db_user_password", help="DB user password",
                         type=str, default="rapela-aeon")
-    parser.add_argument("--root", help="Root path for data access",
-                        default="/ceph/aeon/test2/experiment0.1")
 
     args = parser.parse_args()
 
@@ -100,8 +100,8 @@ def main(argv):
     trajectories_width = args.trajectories_width
     trajectories_colorscale = args.trajectories_colorscale
     trajectories_opacity = args.trajectories_opacity
-    mouse_figure_height = args.mouse_figure_height
-    mouse_figure_width = args.mouse_figure_width
+    subject_figure_height = args.subject_figure_height
+    subject_figure_width = args.subject_figure_width
     travelled_distance_sample_rate  = args.travelled_distance_sample_rate
     storageMgr_type = args.storageMgr_type
     tunneled_host=args.tunneled_host
@@ -115,40 +115,50 @@ def main(argv):
                                          port=db_server_port,
                                          user=db_user,
                                          passwd=db_user_password)
-        patches_to_plot = patches_to_plot_sql
+        # patches_to_plot = patches_to_plot_sql
     elif storageMgr_type == "Files":
         storageMgr = filesSM.FilesStorageMgr(root=root)
-        patches_to_plot = patches_to_plot_files
+        # patches_to_plot = patches_to_plot_files
     else:
         raise ValueError(f"Invalid storageMgr_type={storageMgr_type}")
 
-    mouse_names = metadata["id"].unique()
-    options_mouse_names = [{"label": mouse_name, "value": mouse_name} for mouse_name in mouse_names]
+    experiments_names = storageMgr.getExperimentsNames()
+    options_experiments_names = [{"label": experiment_name, "value": experiment_name} for experiment_name in experiments_names]
     cameras = ["FrameTop", "FramePatch1", "FramePatch2", "FrameNorth", "FrameSouth", "FrameEast", "FrameWest", "FrameGate"]
     options_cameras = [{"label": camera, "value": camera} for camera in cameras]
-    sessions_start_times = metadata[metadata["id"]==mouse_names[0]].index
-    options_sessions_start_times = [{"label": session_start_time, "value": session_start_time} for session_start_time in sessions_start_times]
     def serve_layout():
         aDiv = html.Div(children=[
             html.H1(children="Behavioral Analysis Dashboard"),
             html.Hr(),
-            html.H4(children="Mouse Name"),
+            html.H4(children="Experiment Name"),
             dcc.Dropdown(
-                id="mouseNameDropDown",
-                options=options_mouse_names,
-                value=mouse_names[0],
+                id="experimentNameDropdown",
+                options=options_experiments_names,
+                value=experiments_names[0],
+                style={'width': '50%'},
+            ),
+            html.H4(children="Subject Name"),
+            dcc.Dropdown(
+                id="subjectNameDropdown",
                 style={'width': '50%'},
             ),
             html.H4(children="Session Start Time"),
             dcc.Dropdown(
                 id="sessionStartTimeDropdown",
-                options=options_sessions_start_times,
-                value=sessions_start_times[0],
                 style={'width': '50%'},
             ),
             html.H4(children="Plotting Time (sec)"),
-            dcc.RangeSlider(
-                id="plotTimeRangeSlider",
+            html.Div(
+                children=[
+                    dcc.RangeSlider(
+                        min=0,
+                        max=10,
+                        step=1,
+                        value=[3,7],
+                        id="plotTimeRangeSlider",
+                    )
+                ],
+                hidden=False,
             ),
             html.Label(children="Start Time (sec)"),
             dcc.Input(
@@ -188,23 +198,23 @@ def main(argv):
                                 style={'padding': 10, 'flex': 1}
                             ),
                             html.Div(
-                                id="mouse_graph_container",
+                                id="subject_graph_container",
                                 children=[
                                     html.H4(children="Camera"),
                                     dcc.Dropdown(
-                                        id="cameraDropDown",
+                                        id="cameraDropdown",
                                         options=options_cameras,
                                         value=cameras[0],
                                         style={'width': '40%'},
                                     ),
                                     dcc.Graph(
-                                        id="mouse_graph",
+                                        id="subject_graph",
                                     ),
                                 ],
                                 style={'padding': 10, 'flex': 1},
                                 hidden=True,
                             )
-                        ], 
+                        ],
                         style={'display': 'flex', 'flex-direction': 'row'}
                     ),
                     html.H4(children="Activities"),
@@ -221,10 +231,6 @@ def main(argv):
                     )
                 ],
                 hidden=True),
-            dcc.Interval(
-                id='interval-component',
-                interval=metadata_refresh_interval,
-                n_intervals=0)
         ])
         return aDiv
 
@@ -232,27 +238,49 @@ def main(argv):
     app = dash.Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
     app.layout = serve_layout()
 
+    @app.callback([Output('subjectNameDropdown', 'options'),
+                   Output('subjectNameDropdown', 'value')], 
+                  Input('experimentNameDropdown', 'value'))
+    def get_subjects_names(experimentNameDropdown_value):
+        print("Called get_subjects_names")
+        subjects_names = storageMgr.getSubjectsNames(
+            experiment_name=experimentNameDropdown_value)
+        options_subjects_names = [{"label": subject_name, "value": subject_name} 
+                                  for subject_name in subjects_names]
+        return options_subjects_names, options_subjects_names[0]["value"]
+
     @app.callback([Output('sessionStartTimeDropdown', 'options'),
                    Output('sessionStartTimeDropdown', 'value'),
                    Output('sRateInputForTrajectoryPlot', 'value'),
                   ],
-                  Input('mouseNameDropDown', 'value'))
-    def get_sessions_start_times(mouseNameDropDown_value):
-        sessions_start_times = metadata[metadata["id"]==mouseNameDropDown_value]["start"]
+                  Input('subjectNameDropdown', 'value'),
+                  State('experimentNameDropdown', 'value'),
+                 )
+    def get_sessions_start_times(subjectNameDropdown_value,
+                                 experimentNameDropdown_value):
+        print("Called get_sessions_start_times")
+        sessions_start_times = storageMgr.getSubjectSessionsStartTimes(
+            experiment_name=experimentNameDropdown_value,
+            subject_name=subjectNameDropdown_value)
         options_sessions_start_times = [{"label": session_start_time, "value": session_start_time} for session_start_time in sessions_start_times]
-        return options_sessions_start_times, sessions_start_times.iloc[0], sample_rate_for_trajectory0
+        return options_sessions_start_times, sessions_start_times[0], sample_rate_for_trajectory0
 
     @app.callback([Output('nTrajectoryPointsToPlot', 'children'),],
                   [Input('sRateInputForTrajectoryPlot', 'value'),
-                   Input('plotTimeRangeSlider', 'value'),]
+                   Input('plotTimeRangeSlider', 'value'),],
+                  State('experimentNameDropdown', 'value'),
                  )
     def get_num_trajectory_points_to_plot_label(sRateForTrajectoryPlot_value,
-                                                plotTimeRangeSlider_value):
+                                                plotTimeRangeSlider_value,
+                                                experimentNameDropdown_value):
+        print("Called get_num_trajectory_points_to_plot_label")
         if sRateForTrajectoryPlot_value is None or plotTimeRangeSlider_value is None:
+            print("Preventing get_num_trajectory_points_to_plot_label update")
             raise dash.exceptions.PreventUpdate
         num_trajectory_points_to_plot = int((plotTimeRangeSlider_value[1]-plotTimeRangeSlider_value[0])*sRateForTrajectoryPlot_value)
         answer = ["Number of trajectory points to plot: {:d}".format(num_trajectory_points_to_plot)]
         return answer
+
 
     @app.callback([Output('plotTimeRangeSlider', 'min'),
                    Output('plotTimeRangeSlider', 'max'),
@@ -260,9 +288,11 @@ def main(argv):
                    Output('plotTimeRangeSlider', 'value'),
                   ],
                   [Input('sessionStartTimeDropdown', 'value'),
-                   Input('startTimeInput', 'value'), 
+                   Input('startTimeInput', 'value'),
                    Input('endTimeInput', 'value')],
-                  [State('plotTimeRangeSlider', 'min'),
+                  [State("experimentNameDropdown", "value"),
+                   State("subjectNameDropdown", "value"),
+                   State('plotTimeRangeSlider', 'min'),
                    State('plotTimeRangeSlider', 'max'),
                    State('plotTimeRangeSlider', 'marks'),
                    State('plotTimeRangeSlider', 'value')],
@@ -270,10 +300,13 @@ def main(argv):
     def get_plotTimeRange_options(sessionStartTimeDropdown_value,
                                   startTimeInput_value,
                                   endTimeInput_value,
+                                  experimentNameDropdown_value,
+                                  subjectNameDropdown_value,
                                   plotTimeRangeSlider_min,
                                   plotTimeRangeSlider_max,
                                   plotTimeRangeSlider_marks,
                                   plotTimeRangeSlider_value):
+        print("Called get_plotTimeRange_options")
         ctx = dash.callback_context
         if not ctx.triggered:
             print("not ctx.triggered")
@@ -282,36 +315,52 @@ def main(argv):
         print(ctx.triggered[0])
         component_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
+        # import pdb; pdb.set_trace()
         if component_id == "sessionStartTimeDropdown":
-            sessions_duration_sec = metadata[metadata.start == pd.to_datetime(sessionStartTimeDropdown_value)].duration.item().total_seconds()
+            print("Entered sessionStartTimeDropdown")
+            # sessions_duration_sec = metadata[metadata.start == pd.to_datetime(sessionStartTimeDropdown_value)].duration.item().total_seconds()
+            sessions_duration_sec = storageMgr.getSessionDuration(
+                experiment_name=experimentNameDropdown_value,
+                subject_name=subjectNameDropdown_value,
+                session_start=sessionStartTimeDropdown_value)
             slider_min = 0
             slider_max = int(sessions_duration_sec)
             slider_value = [0, slider_max]
         elif component_id == "startTimeInput":
+            print("Entered startTimeInput")
             print("marks=", plotTimeRangeSlider_marks)
             slider_min = plotTimeRangeSlider_min
             slider_max = plotTimeRangeSlider_max
             slider_value = [startTimeInput_value, plotTimeRangeSlider_value[1]]
         elif component_id == "endTimeInput":
+            print("Entered endTimeInput")
             print("marks=", plotTimeRangeSlider_marks)
             slider_min = plotTimeRangeSlider_min
             slider_max = plotTimeRangeSlider_max
             slider_value = [plotTimeRangeSlider_value[0], endTimeInput_value]
+        else:
+            print("Entered else branch")
         slider_marks = dict(zip(range(0, slider_max, 600), [str(aNum) for aNum in range(0, slider_max, 600)]))
+        # import pdb; pdb.set_trace()
         return slider_min, slider_max, slider_marks, slider_value
+
 
     @app.callback([Output('startTimeInput', 'value'),
                    Output('endTimeInput', 'value')],
                   [Input('plotTimeRangeSlider', 'value')])
     def set_start_end_inputs_from_slider_value(plotTimeRangeSlider_value):
-        print("set_start_end_inputs_from_slider_value called")
+        print("Called set_start_end_inputs_from_slider_value")
         if plotTimeRangeSlider_value is None:
+            print("update prevented in set_start_end_inputs_from_slider_value ({:s})".format(flask.request.remote_addr))
             raise dash.exceptions.PreventUpdate
+        print("plotTimeRangeSlider_value: ")
+        print(plotTimeRangeSlider_value)
         return plotTimeRangeSlider_value
+
 
 #     @app.callback([Output('auxStartTime', 'children'),
 #                    Output('auxEndTime', 'children'),
-#                    Output('plotTimeRangeSlider', 'value'],
+#                    Output('plotTimeRangeSlider', 'value')],
 #                   [Input('startTimeInput', 'value'),
 #                    Input('endTimeInput', 'value')],
 #                   )
@@ -339,7 +388,7 @@ def main(argv):
                      plotTimeRangeSlider_value,
                      sRateForTrajectoryPlot_value):
         if plotButton_nClicks == 0:
-            print("update prevented ({:s})".format(flask.request.remote_addr))
+            print("update prevented in update_plots ({:s})".format(flask.request.remote_addr))
             raise dash.exceptions.PreventUpdate
         print("update_plots called ({:s})".format(flask.request.remote_addr))
         patches_coordinates = pd.DataFrame(data=patches_coordinates_matrix,
@@ -356,10 +405,11 @@ def main(argv):
         t0_absolute = session_start + datetime.timedelta(seconds=t0_relative)
         tf_absolute = session_start + datetime.timedelta(seconds=tf_relative)
 
+        session_start_time_str = session_start.strftime("%Y-%m-%d %H:%M:%S.%f")
         positions = storageMgr.getSessionPositions(
             session_start_time_str=session_start_time_str,
-            start_offset_secs=start_offset_secs,
-            duration_secs=duration_secs)
+            start_offset_secs=t0_relative,
+            duration_secs=tf_relative-t0_relative)
         time_stamps = positions.index
         x = positions["x"].to_numpy()
         y = positions["y"].to_numpy()
@@ -482,13 +532,13 @@ def main(argv):
         return fig_trajectory, fig_cumTimePerActivity, fig_travelledDistance, fig_rewardRate, plotsContainer_hidden, plotButton_children
 
     @app.callback(
-        [Output('mouse_graph', 'figure'),
-         Output('mouse_graph_container', 'hidden')],
+        [Output('subject_graph', 'figure'),
+         Output('subject_graph_container', 'hidden')],
         [Input('trajectoryGraph', 'clickData'),
-         Input('cameraDropDown', 'value')],
+         Input('cameraDropdown', 'value')],
         [State('sessionStartTimeDropdown', 'value')]
     )
-    def display_mouse_figure(trajectory_graph_clickData,
+    def display_subject_figure(trajectory_graph_clickData,
                              camera_dropdown_value,
                              session_start_time_dropdown_value):
         if trajectory_graph_clickData is None:
@@ -507,11 +557,11 @@ def main(argv):
             plot_bgcolor='rgba(0,0,0,0)'
         )
         fig = go.Figure(data=go.Image(z=frame), layout=layout)
-        fig.update_layout(height=mouse_figure_height, width=mouse_figure_width)
+        fig.update_layout(height=subject_figure_height, width=subject_figure_width)
         fig.update_xaxes(showticklabels=False)
         fig.update_yaxes(showticklabels=False)
-        mouse_graph_container_hidden = False
-        return fig, mouse_graph_container_hidden
+        subject_graph_container_hidden = False
+        return fig, subject_graph_container_hidden
 
     if(local):
         app.run_server(debug=args.debug, port=args.port)
