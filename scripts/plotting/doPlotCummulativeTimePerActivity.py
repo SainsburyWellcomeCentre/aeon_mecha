@@ -17,7 +17,7 @@ def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--session_start_time", help="Chunk start",
                         type=str, default="2021-10-01 13:03:45.835619")
-    parser.add_argument("--start_secs",
+    parser.add_argument("--start_offset_secs",
                         help="Start plotting start_secs after the start of the session",
                         type=float, default=0.0)
     parser.add_argument("--duration_secs",
@@ -25,7 +25,7 @@ def main(argv):
                         type=float, default=-1.0)
     parser.add_argument("--storageMgr_type",
                         help="Type of storage manager (SQL | Files)",
-                        type=str, default="Files")
+                        type=str, default="SQL")
     parser.add_argument("--tunneled_host", help="Tunneled host IP address",
                         type=str, default="127.0.0.1")
     parser.add_argument("--db_server_port", help="Database server port",
@@ -48,7 +48,7 @@ def main(argv):
     args = parser.parse_args()
 
     session_start_time_str = args.session_start_time
-    start_secs = args.start_secs
+    start_offset_secs = args.start_offset_secs
     duration_secs = args.duration_secs
     storageMgr_type = args.storageMgr_type
     tunneled_host=args.tunneled_host
@@ -72,24 +72,27 @@ def main(argv):
         storageMgr = filesSM.FilesStorageMgr(root=root)
     else:
         raise ValueError(f"Invalid storageMgr_type={storageMgr_type}")
-    positions = storageMgr.getSessionPositions(session_start_time_str=session_start_time_str)
+    positions = storageMgr.getSessionPositions(
+        session_start_time_str=session_start_time_str,
+        start_offset_secs=start_offset_secs,
+        duration_secs=duration_secs)
     time_stamps = positions.index
     x = positions["x"].to_numpy()
     y = positions["y"].to_numpy()
     time_stamps0_sec = time_stamps[0].timestamp()
     time_stamps_secs = np.array([ts.timestamp()-time_stamps0_sec
                                  for ts in time_stamps])
-    if duration_secs<0:
-        max_secs = time_stamps_secs.max()
-    else:
-        max_secs = start_secs + duration_secs
-    indices_keep = np.where(
-        np.logical_and(start_secs<=time_stamps_secs,
-                       time_stamps_secs<max_secs))[0]
-    time_stamps_secs = time_stamps_secs[indices_keep]
-    time_stamps = time_stamps[indices_keep]
-    x = x[indices_keep]
-    y = y[indices_keep]
+#     if duration_secs<0:
+#         max_secs = time_stamps_secs.max()
+#     else:
+#         max_secs = start_secs + duration_secs
+#     indices_keep = np.where(
+#         np.logical_and(start_secs<=time_stamps_secs,
+#                        time_stamps_secs<max_secs))[0]
+#     time_stamps_secs = time_stamps_secs[indices_keep]
+#     time_stamps = time_stamps[indices_keep]
+#     x = x[indices_keep]
+#     y = y[indices_keep]
 
     patches_coordinates = pd.DataFrame(data=patches_coordinates_matrix,
                                        columns=["lower_x", "higher_x",
@@ -101,7 +104,7 @@ def main(argv):
         x=x, y=y,
         patches_coordinates=patches_coordinates,
         nest_coordinates=nest_coordinates)
-    title = title_pattern.format(session_start_time_str, start_secs,
+    title = title_pattern.format(session_start_time_str, start_offset_secs,
                                  duration_secs, storageMgr_type)
     fig = go.Figure()
     cumTimePerActivity_trace = aeon.plotting.plot_functions.get_cumTimePerActivity_barplot_trace(
@@ -111,10 +114,10 @@ def main(argv):
     fig.update_layout(title=title, yaxis_title=ylabel)
     fig.update_yaxes(range=ylim)
     fig.write_image(fig_filename_pattern.format(session_start_time_str,
-                                                start_secs, duration_secs,
+                                                start_offset_secs, duration_secs,
                                                 storageMgr_type, "png"))
     fig.write_html(fig_filename_pattern.format(session_start_time_str,
-                                               start_secs, duration_secs,
+                                               start_offset_secs, duration_secs,
                                                storageMgr_type, "html"))
     pdb.set_trace()
 
