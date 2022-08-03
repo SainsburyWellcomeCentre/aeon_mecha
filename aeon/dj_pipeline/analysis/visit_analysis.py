@@ -82,7 +82,7 @@ class VisitSubjectPosition(dj.Computed):
                 "visit_end BETWEEN chunk_start AND chunk_end",
                 "chunk_start >= visit_start AND chunk_end <= visit_end",
             ]
-            & 'experiment_name in ("exp0.2-r0")'
+            & 'experiment_name in ("exp0.1-r0", "exp0.2-r0")'
             & "chunk_start < chunk_end"  # in some chunks, end timestamp comes before start (timestamp error)
         )
 
