@@ -3,6 +3,9 @@ scratch/
 build/
 dist/
 figures/
+docs/
+results/
+old/
 videos/
 *.egg-info/
 .idea/
