@@ -63,7 +63,7 @@ class VisitSubjectPosition(dj.Computed):
         area=null:         longblob     # (px^2) animal's size detected in the camera
         """
 
-    _time_slice_duration = datetime.timedelta(hours=0, minutes=10, seconds=0)
+    _time_slice_duration = np.timedelta64(10, "m")
 
     @property
     def key_source(self):
@@ -148,7 +148,9 @@ class VisitSubjectPosition(dj.Computed):
         area = positiondata.area.values
 
         chunk_time_slices = []
-        time_slice_start = start_time
+        time_slice_start = np.array(start_time, dtype="datetime64[ns]")
+        end_time = np.array(end_time, dtype="datetime64[ns]")
+
         while time_slice_start < end_time:
             time_slice_end = time_slice_start + min(
                 self._time_slice_duration, end_time - time_slice_start
@@ -222,9 +224,9 @@ class VisitTimeDistribution(dj.Computed):
     ---
     day_duration: float               # total duration (in hours)
     time_fraction_in_corridor: float  # fraction of time the animal spent in the corridor in this visit
-    in_corridor: longblob             # array of indices for when the animal is in the corridor (index into the position data)
+    in_corridor: longblob             # array of timestamps for when the animal is in the corridor 
     time_fraction_in_arena: float     # fraction of time the animal spent in the arena in this visit
-    in_arena: longblob                # array of indices for when the animal is in the arena (index into the position data)
+    in_arena: longblob                # array of timestamps for when the animal is in the arena 
     """
 
     class Nest(dj.Part):
@@ -242,7 +244,7 @@ class VisitTimeDistribution(dj.Computed):
         -> acquisition.ExperimentFoodPatch
         ---
         time_fraction_in_patch: float  # fraction of time the animal spent on this patch in this visit
-        in_patch: longblob             # array of indices for when the animal is in this patch (index into the position data)
+        in_patch: longblob             # array of timestamps for when the animal is in this patch 
         """
 
     # Work on finished visits
@@ -366,7 +368,7 @@ class VisitTimeDistribution(dj.Computed):
                         **food_patch_key,
                         "visit_date": visit_date.date(),
                         "time_fraction_in_patch": in_patch.mean(),
-                        "in_patch": in_patch.values,
+                        "in_patch": in_patch.index.values[in_patch],
                     }
                 )
 
@@ -378,9 +380,9 @@ class VisitTimeDistribution(dj.Computed):
                     "visit_date": visit_date.date(),
                     "day_duration": day_duration,
                     "time_fraction_in_corridor": in_corridor.mean(),
-                    "in_corridor": in_corridor.values,
+                    "in_corridor": in_corridor.index.values[in_corridor],
                     "time_fraction_in_arena": in_arena.mean(),
-                    "in_arena": in_arena.values,
+                    "in_arena": in_arena.index.values[in_arena],
                 }
             )
             self.Nest.insert(in_nest_times)
@@ -456,7 +458,7 @@ class VisitSummary(dj.Computed):
             position_diff = np.sqrt(
                 np.square(np.diff(position.x)) + np.square(np.diff(position.y))
             )
-            total_distance_travelled = np.nancumsum(position_diff)[-1]
+            total_distance_travelled = np.nansum(position_diff)
 
             # in food patches - loop through all in-use patches during this visit
             query = acquisition.ExperimentFoodPatch.join(

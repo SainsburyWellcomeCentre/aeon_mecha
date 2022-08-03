@@ -1,12 +1,12 @@
-import datajoint as dj
-import pandas as pd
-import numpy as np
 import datetime
+
+import datajoint as dj
+import numpy as np
+import pandas as pd
 
 from aeon.analysis import utils as analysis_utils
 
-from .. import lab, acquisition, tracking, qc
-from .. import get_schema_name
+from .. import acquisition, get_schema_name, lab, qc, tracking
 
 schema = dj.schema(get_schema_name("analysis"))
 
@@ -557,7 +557,7 @@ class InArenaSummary(dj.Computed):
         position_diff = np.sqrt(
             np.square(np.diff(position.x)) + np.square(np.diff(position.y))
         )
-        total_distance_travelled = np.nancumsum(position_diff)[-1]
+        total_distance_travelled = np.nansum(position_diff)
 
         # food patch data
         food_patch_keys = (
