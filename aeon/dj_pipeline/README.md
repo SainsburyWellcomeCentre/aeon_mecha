@@ -5,10 +5,15 @@ This pipeline models the data organization and data flow custom-built for Projec
 
 ## Pipeline architecture
 
-Figure below presents an abbreviated view of the pipeline, showing the core tables
-and the overall dataflow
+The diagram below shows the high level overview of the diagram (only the subset of the tables that are most relevant).
 
-![diagram](./docs/diagram.svg)
+![datajoint_pipeline](./docs/datajoint_overview_diagram.svg)
+
+
+The diagram below shows the analysis portion of the pipeline (work in progress).
+
+![datajoint_analysis_pipeline](./docs/datajoint_analysis_diagram.svg)
+
 
 From the diagram above, we can see that the pipeline is organized in layers of
 tables, going top down, from `lookup`-tier (in gray) and `manual`-tier (in green) tables 
@@ -78,18 +83,6 @@ distance the wheel travelled (or per food-patch), etc.
 17. `VisitTimeDistribution` - a table for computation and storing where the animal is at, 
 for each timepoint, e.g. in the nest, in corridor, in arena, in each of the food patches. 
 This can be used to produce the ethogram plot.
-
-## Pipeline Diagram
-
-The diagram below shows the high level overview of the diagram (only the subset of the tables that are most relevant).
-
-![datajoint_pipeline](./docs/datajoint_overview_diagram.svg)
-
-
-The diagram below shows the analysis portion of the pipeline (work in progress).
-
-![datajoint_analysis_pipeline](./docs/datajoint_analysis_diagram.svg)
-
 
 ## Operating the pipeline - how the auto ingestion/processing work?
 
