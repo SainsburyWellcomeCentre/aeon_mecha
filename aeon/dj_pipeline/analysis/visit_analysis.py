@@ -82,7 +82,7 @@ class VisitSubjectPosition(dj.Computed):
                 "visit_end BETWEEN chunk_start AND chunk_end",
                 "chunk_start >= visit_start AND chunk_end <= visit_end",
             ]
-            & 'experiment_name in ("exp0.2-r0")'
+            & 'experiment_name in ("exp0.1-r0", "exp0.2-r0")'
             & "chunk_start < chunk_end"  # in some chunks, end timestamp comes before start (timestamp error)
         )
 
@@ -368,7 +368,7 @@ class VisitTimeDistribution(dj.Computed):
                         **food_patch_key,
                         "visit_date": visit_date.date(),
                         "time_fraction_in_patch": in_patch.mean(),
-                        "in_patch": np.array(in_patch.index[np.where(in_patch)]),
+                        "in_patch": in_patch.index.values[in_patch],
                     }
                 )
 
@@ -380,9 +380,9 @@ class VisitTimeDistribution(dj.Computed):
                     "visit_date": visit_date.date(),
                     "day_duration": day_duration,
                     "time_fraction_in_corridor": in_corridor.mean(),
-                    "in_corridor": np.array(in_corridor.index[np.where(in_corridor)]),
+                    "in_corridor": in_corridor.index.values[in_corridor],
                     "time_fraction_in_arena": in_arena.mean(),
-                    "in_arena": np.array(in_arena.index[np.where(in_arena)]),
+                    "in_arena": in_arena.index.values[in_arena],
                 }
             )
             self.Nest.insert(in_nest_times)
@@ -530,3 +530,90 @@ class VisitSummary(dj.Computed):
                 }
             )
             self.FoodPatch.insert(food_patch_statistics)
+
+    @classmethod
+    def plot_summary(
+        cls,
+        attr,
+        experiment_name="exp0.2-r0",
+        duration_crit=24,
+        per_food_patch=False,
+    ):
+        """plot results from the visit summary table
+
+        Args:
+            attr (str): name of the attribute to plot (e.g., 'pellet_count', 'wheel_distance_travelled', 'total_distance_travelled')
+            experiment_name (str): name of the experiment. Defaults to "exp0.2-r0".
+            duration_crit (int, optional): minimum total duration of the visit to plot (in hrs). Defaults to 24.
+            per_food_patch (bool, optional): separately plot results from different food patch. Defaults to False.
+
+        Returns:
+            fig: figure object
+
+        Examples:
+            >>> fig = VisitSummary.plot_summary(attr='pellet_count', per_food_patch=True)
+            >>> fig = VisitSummary.plot_summary(attr='wheel_distance_travelled', per_food_patch=True)
+            >>> fig = VisitSummary.plot_summary(attr='total_distance_travelled')
+        """
+
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
+        df = pd.DataFrame()
+        visit_dict = (
+            VisitEnd
+            & f'experiment_name="{experiment_name}"'
+            & f"visit_duration > {duration_crit}"
+        ).fetch("subject", "visit_start", "visit_end", as_dict=True)
+        style = "food_patch_description" if per_food_patch else None
+
+        for _ in visit_dict:
+
+            subject, visit_start, visit_end = (
+                _["subject"],
+                _["visit_start"],
+                _["visit_end"],
+            )
+            restr = {
+                "experiment_name": experiment_name,
+                "subject": subject,
+                "visit_start": visit_start,
+                "visit_end": visit_end,
+            }
+            if per_food_patch:
+                temp_df = (
+                    (
+                        (cls.FoodPatch & restr)
+                        * acquisition.ExperimentFoodPatch.proj("food_patch_description")
+                    )
+                    .fetch(format="frame")
+                    .reset_index()
+                )
+            else:
+                temp_df = ((cls & restr)).fetch(format="frame").reset_index()
+            temp_df["subject"] = "_".join([subject, visit_start.strftime("%m%d")])
+            temp_df["day"] = temp_df["visit_date"] - temp_df["visit_date"].min()
+            temp_df["day"] = temp_df["day"].dt.days
+            df = pd.concat([df, temp_df], ignore_index=True)
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        sns.lineplot(
+            data=df,
+            x="day",
+            y=attr,
+            hue="subject",
+            style=style,
+            ax=ax,
+            marker="o",
+        )
+
+        ax.legend(
+            loc="center left",
+            bbox_to_anchor=(1.01, 0.5),
+            prop={"size": 12},
+        )
+        ax.set_ylabel(attr.replace("_", " "))
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        plt.tight_layout()
+        return fig
