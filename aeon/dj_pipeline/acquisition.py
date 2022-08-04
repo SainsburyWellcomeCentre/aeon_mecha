@@ -631,22 +631,28 @@ class ExperimentLog(dj.Imported):
 
         self.insert1(key)
         self.Message.insert(
-            {
-                **key,
-                "message_time": r.name,
-                "message": r.message,
-                "message_type": r.type,
-            }
-            for _, r in log_messages.iterrows()
+            (
+                {
+                    **key,
+                    "message_time": r.name,
+                    "message": r.message,
+                    "message_type": r.type,
+                }
+                for _, r in log_messages.iterrows()
+            ),
+            skip_duplicates=True,
         )
         self.Message.insert(
-            {
-                **key,
-                "message_time": r.name,
-                "message": r.state,
-                "message_type": "EnvironmentState",
-            }
-            for _, r in state_messages.iterrows()
+            (
+                {
+                    **key,
+                    "message_time": r.name,
+                    "message": r.state,
+                    "message_type": "EnvironmentState",
+                }
+                for _, r in state_messages.iterrows()
+            ),
+            skip_duplicates=True,
         )
 
 
