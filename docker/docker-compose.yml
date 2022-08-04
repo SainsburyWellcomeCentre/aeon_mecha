@@ -56,7 +56,7 @@ services:
         condition: service_started
     deploy:
       mode: replicated
-      replicas: 3
+      replicas: 2
     command: ["aeon_ingest", "mid_priority", "--duration=-1", "--sleep=3600"]
 
   dev:
