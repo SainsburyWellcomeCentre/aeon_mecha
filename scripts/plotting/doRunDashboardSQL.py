@@ -27,21 +27,36 @@ import aeon.storage.sqlStorageMgr as sqlSM
 import aeon.storage.filesStorageMgr as filesSM
 import aeon.plotting.plot_functions
 
+def getExperimentsNames():
+    experiments_names = ["exp0.1-r0", "exp0.2-r0"]
+    return experiments_names
+
+def get_root(experiment_name):
+    if experiment_name == "exp0.1-r0":
+        root = "/ceph/aeon/aeon/data/raw/AEON/experiment0.1"
+    elif experiment_name == "exp0.2-r0":
+        root = "/ceph/aeon/aeon/data/raw/AEON2/experiment0.2"
+    else:
+        raise ValueError(f"Invalid experiment_name={experiment_name} in"
+                          "get_root")
+    return root
+
+
 def main(argv):
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--local", help="run the flask server only locally", action="store_true")
-    parser.add_argument("--port", help="port on which to run the falsh app", default=8050, type=int)
+    parser.add_argument("--flask_port", help="port on which to run the falsh app", default=8050, type=int)
+    parser.add_argument("--patches_coordinates", help="coordinates of patches", default="584,597,815,834;614,634,252,271")
     parser.add_argument("--debug", help="start GUI with debug functionality",
                         action="store_true")
-    parser.add_argument("--root", help="Root path for data access", default="/ceph/aeon/test2/experiment0.1")
-    parser.add_argument("--patches_coordinates", help="coordinates of patches", default="584,597,815,834;614,634,252,271")
     parser.add_argument("--nest_coordinates", help="coordinates of nest", default="170,260,450,540")
-    parser.add_argument("--patchesToPlot", help="Names of patches to plot", default="Patch1,Patch2")
+    parser.add_argument("--patchesToPlotSQL", help="Names of patches to plot", default="COM4,COM7")
+    parser.add_argument("--patchesToPlotFiles", help="Names of patches to plot", default="Patch1,Patch2")
     parser.add_argument("--sample_rate_for_trajectory0", help="Initial value for the sample rate for the trajectory", default=0.5, type=float)
     parser.add_argument("--win_length_sec", help="Moving average window length (sec)", default=60.0, type=float)
     parser.add_argument("--reward_rate_time_resolution", help="Time resolution to compute the moving average (sec)", default=0.01, type=float)
-    parser.add_argument("--pellet_event_name", help="Pellet event name to display", default="TriggerPellet")
+    parser.add_argument("--pellet_event_label", help="Pellet event name to display", default="TriggerPellet")
     parser.add_argument("--xlabel_trajectory", help="xlabel for trajectory plot", default="x (pixels)")
     parser.add_argument("--ylabel_trajectory", help="ylabel for trajectory plot", default="y (pixels)")
     parser.add_argument("--ylabel_cumTimePerActivity", help="ylabel", default="Proportion of Time")
@@ -76,14 +91,15 @@ def main(argv):
     args = parser.parse_args()
 
     local = args.local
-    root = args.root
+    flask_port = args.flask_port
     patches_coordinates_matrix = np.matrix(args.patches_coordinates)
     nest_coordinates_matrix = np.matrix(args.nest_coordinates)
-    patches_to_plot = args.patchesToPlot.split(",")
+    patches_to_plot_sql = args.patchesToPlotSQL.split(",")
+    patches_to_plot_files = args.patchesToPlotFiles.split(",")
     sample_rate_for_trajectory0 = args.sample_rate_for_trajectory0
     win_length_sec = args.win_length_sec
     reward_rate_time_resolution = args.reward_rate_time_resolution
-    pellet_event_name = args.pellet_event_name
+    pellet_event_label = args.pellet_event_label
     xlabel_trajectory = args.xlabel_trajectory
     ylabel_trajectory = args.ylabel_trajectory
     ylabel_cumTimePerActivity = args.ylabel_cumTimePerActivity
@@ -108,24 +124,26 @@ def main(argv):
     db_server_port = args.db_server_port
     db_user = args.db_user
     db_user_password = args.db_user_password
-    root = args.root
 
     if storageMgr_type == "SQL":
         storageMgr = sqlSM.SQLStorageMgr(host=tunneled_host,
                                          port=db_server_port,
                                          user=db_user,
                                          passwd=db_user_password)
-        # patches_to_plot = patches_to_plot_sql
+        patches_to_plot = patches_to_plot_sql
     elif storageMgr_type == "Files":
+        experiments_names = getExperimentsNames()
+        root = get_root(experiment_name=experiments_names[0])
         storageMgr = filesSM.FilesStorageMgr(root=root)
-        # patches_to_plot = patches_to_plot_files
+        patches_to_plot = patches_to_plot_files
     else:
         raise ValueError(f"Invalid storageMgr_type={storageMgr_type}")
 
-    experiments_names = storageMgr.getExperimentsNames()
+    experiments_names = getExperimentsNames()
     options_experiments_names = [{"label": experiment_name, "value": experiment_name} for experiment_name in experiments_names]
     cameras = ["FrameTop", "FramePatch1", "FramePatch2", "FrameNorth", "FrameSouth", "FrameEast", "FrameWest", "FrameGate"]
     options_cameras = [{"label": camera, "value": camera} for camera in cameras]
+
     def serve_layout():
         aDiv = html.Div(children=[
             html.H1(children="Behavioral Analysis Dashboard"),
@@ -315,10 +333,8 @@ def main(argv):
         print(ctx.triggered[0])
         component_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
-        # import pdb; pdb.set_trace()
         if component_id == "sessionStartTimeDropdown":
             print("Entered sessionStartTimeDropdown")
-            # sessions_duration_sec = metadata[metadata.start == pd.to_datetime(sessionStartTimeDropdown_value)].duration.item().total_seconds()
             sessions_duration_sec = storageMgr.getSessionDuration(
                 experiment_name=experimentNameDropdown_value,
                 subject_name=subjectNameDropdown_value,
@@ -379,11 +395,13 @@ def main(argv):
                    Output('plotButton', 'children'),
                   ],
                   [Input('plotButton', 'n_clicks')],
-                  [State('sessionStartTimeDropdown', 'value'),
+                  [State("experimentNameDropdown", "value"),
+                   State('sessionStartTimeDropdown', 'value'),
                    State('plotTimeRangeSlider', 'value'),
                    State('sRateInputForTrajectoryPlot', 'value')],
                   )
     def update_plots(plotButton_nClicks,
+                     experimentNameDropdown_value,
                      sessionStartTimeDropdown_value,
                      plotTimeRangeSlider_value,
                      sRateForTrajectoryPlot_value):
@@ -401,21 +419,26 @@ def main(argv):
         t0_relative = plotTimeRangeSlider_value[0]
         tf_relative = plotTimeRangeSlider_value[1]
 
-        session_start = pd.Timestamp(sessionStartTimeDropdown_value)
-        t0_absolute = session_start + datetime.timedelta(seconds=t0_relative)
-        tf_absolute = session_start + datetime.timedelta(seconds=tf_relative)
+        session_start_time = pd.Timestamp(sessionStartTimeDropdown_value)
+        t0_absolute = session_start_time + datetime.timedelta(seconds=t0_relative)
+        tf_absolute = session_start_time + datetime.timedelta(seconds=tf_relative)
 
-        session_start_time_str = session_start.strftime("%Y-%m-%d %H:%M:%S.%f")
+        session_start_time_str = session_start_time.strftime("%Y-%m-%d %H:%M:%S.%f")
+
+        session_end_time = storageMgr.getSessionEndTime(
+            experiment_name=experimentNameDropdown_value,
+            session_start_time_str=session_start_time_str)
+        session_end_time_str = session_end_time.strftime("%Y-%m-%d %H:%M:%S.%f")
+
         positions = storageMgr.getSessionPositions(
-            session_start_time_str=session_start_time_str,
+            session_start_time=session_start_time,
             start_offset_secs=t0_relative,
             duration_secs=tf_relative-t0_relative)
-        time_stamps = positions.index
+        timestamps = positions.index
         x = positions["x"].to_numpy()
         y = positions["y"].to_numpy()
-        time_stamps0_sec = time_stamps[0].timestamp()
-        time_stamps_secs = np.array([ts.timestamp()-time_stamps0_sec
-                                     for ts in time_stamps])
+        # timestamps_secs = (timestamps - timestamps[0])/np.timedelta64(1, "s")
+        timestamps_secs = (timestamps - session_start_time)/np.timedelta64(1, "s")
 
         # trajectory figure
         fig_trajectory = go.Figure()
@@ -424,7 +447,7 @@ def main(argv):
             fig_trajectory.add_trace(patch_trace)
         nest_trace = aeon.plotting.plot_functions.get_patches_traces(patches_coordinates=nest_coordinates)[0]
         fig_trajectory.add_trace(nest_trace)
-        trajectory_trace = aeon.plotting.plot_functions.get_trayectory_trace(x=x, y=y, time_stamps=time_stamps, sample_rate=sRateForTrajectoryPlot_value, colorscale=trajectories_colorscale, opacity=trajectories_opacity)
+        trajectory_trace = aeon.plotting.plot_functions.get_trayectory_trace(x=x, y=y, timestamps=timestamps_secs, sample_rate=sRateForTrajectoryPlot_value, colorscale=trajectories_colorscale, opacity=trajectories_opacity)
         fig_trajectory.add_trace(trajectory_trace)
         fig_trajectory.update_layout(xaxis_title=xlabel_trajectory,
                                      yaxis_title=ylabel_trajectory,
@@ -455,21 +478,21 @@ def main(argv):
         max_travelled_distance = -np.inf
         for patch_to_plot in patches_to_plot:
             angles = storageMgr.getWheelAngles(
-                start_time_str=session_start_time_minusDelta_str,
-                end_time_str=session_end_time_plusDelta_str,
+                experiment_name=experimentNameDropdown_value,
+                session_start_time=session_start_time,
+                start_offset_secs=t0_relative,
+                duration_secs=tf_relative-t0_relative,
                 patch_label=patch_to_plot)
-            travelled_distance[patch_to_plot] = api.distancetravelled(angles)
+            travelled_distance[patch_to_plot] = aeon.preprocess.api.distancetravelled(angles)
             if travelled_distance[patch_to_plot][-1]>max_travelled_distance:
                 max_travelled_distance = travelled_distance[patch_to_plot][-1]
-            travelled_seconds[patch_to_plot] = (travelled_distance[patch_to_plot].index-session_start).total_seconds()
-            # pellet_vals = aeon.preprocess.api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
-            # pellets_times = pellet_vals[pellet_vals.event == "{:s}".format(pellet_event_name)].index
+            travelled_seconds[patch_to_plot] = (travelled_distance[patch_to_plot].index-session_start_time).total_seconds()
             pellets_times = storageMgr.getFoodPatchEventTimes(
-                start_time_str=session_start_time_str,
-                end_time_str=session_end_time_str,
+                start_time_str=t0_absolute,
+                end_time_str=tf_absolute,
                 event_label=pellet_event_label,
                 patch_label=patch_to_plot)
-            pellets_seconds[patch_to_plot] = (pellets_times-session_start).total_seconds()
+            pellets_seconds[patch_to_plot] = (pellets_times-session_start_time).total_seconds()
 
         fig_travelledDistance = go.Figure()
         fig_travelledDistance = plotly.subplots.make_subplots(rows=1, cols=len(patches_to_plot),
@@ -484,25 +507,24 @@ def main(argv):
             else:
                 fig_travelledDistance.update_yaxes(range=(-20, max_travelled_distance), row=1, col=i+1)
             fig_travelledDistance.update_xaxes(title_text=xlabel_travelledDistance, row=1, col=i+1)
+        # fig_travelledDistance = go.Figure()
 
         # reward rate figure
-        pellets_seconds = {}
+#         pellets_seconds = {}
         reward_rate = {}
         max_reward_rate = -np.inf
         time = np.arange(t0_relative, tf_relative, reward_rate_time_resolution)
         for patch_to_plot in patches_to_plot:
-            # wheel_encoder_vals = aeon.preprocess.api.encoderdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
-            # pellet_vals = aeon.preprocess.api.pelletdata(root, patch_to_plot, start=t0_absolute, end=tf_absolute)
-            # pellets_times = pellet_vals[pellet_vals.event == "{:s}".format(pellet_event_name)].index
-            pellets_times = storageMgr.getFoodPatchEventTimes(
-                start_time_str=session_start_time_str,
-                end_time_str=session_end_time_str,
-                event_label=pellet_event_label,
-                patch_label=patch_to_plot)
-            pellets_seconds[patch_to_plot] = (pellets_times-session_start).total_seconds()
+#             pellets_times = storageMgr.getFoodPatchEventTimes(
+#                 start_time_str=t0_absolute,
+#                 end_time_str=tf_absolute,
+#                 event_label=pellet_event_label,
+#                 patch_label=patch_to_plot)
+#             pellets_seconds[patch_to_plot] = (pellets_times-session_start_time).total_seconds()
             pellets_indices = ((pellets_seconds[patch_to_plot]-t0_relative)/reward_rate_time_resolution).astype(int)
             pellets_samples = np.zeros(len(time), dtype=np.double)
-            pellets_samples[pellets_indices] = 1.0
+            if len(pellets_indices)>0:
+                pellets_samples[pellets_indices] = 1.0
             win_length_samples = int(win_length_sec/reward_rate_time_resolution)
             reward_rate[patch_to_plot] = aeon.signalProcessing.utils.moving_average(values=pellets_samples, N=win_length_samples)
             patch_max_reward_rate = max(reward_rate[patch_to_plot])
@@ -525,6 +547,7 @@ def main(argv):
             else:
                 fig_rewardRate.update_yaxes(range=(0, max_reward_rate), row=1, col=i+1)
             fig_rewardRate.update_xaxes(title_text=xlabel_rewardRate, row=1, col=i+1)
+            # import pdb; pdb.set_trace()
 
         plotsContainer_hidden = False
         plotButton_children = "Update"
@@ -536,11 +559,13 @@ def main(argv):
          Output('subject_graph_container', 'hidden')],
         [Input('trajectoryGraph', 'clickData'),
          Input('cameraDropdown', 'value')],
-        [State('sessionStartTimeDropdown', 'value')]
+        [State('sessionStartTimeDropdown', 'value'),
+         State('experimentNameDropdown', 'value')]
     )
     def display_subject_figure(trajectory_graph_clickData,
-                             camera_dropdown_value,
-                             session_start_time_dropdown_value):
+                               camera_dropdown_value,
+                               session_start_time_dropdown_value,
+                               experimentNameDropdown_value):
         if trajectory_graph_clickData is None:
             raise dash.exceptions.PreventUpdate
         video_data_duration_sec = 0.1
@@ -548,6 +573,7 @@ def main(argv):
         session_start_time_dropdown_value = pd.to_datetime(session_start_time_dropdown_value)
         frame_start_time = session_start_time_dropdown_value + datetime.timedelta(seconds=frame_delay)
         video_data_end_time = session_start_time_dropdown_value + datetime.timedelta(seconds=frame_delay+video_data_duration_sec)
+        root = get_root(experiment_name=experimentNameDropdown_value)
         video_data = aeon.preprocess.api.videodata(root, camera_dropdown_value, start=frame_start_time, end=video_data_end_time)
         first_two_video_data_rows = video_data.iloc[0:1]
         frame = next(aeon.preprocess.api.videoframes(first_two_video_data_rows))
@@ -564,9 +590,9 @@ def main(argv):
         return fig, subject_graph_container_hidden
 
     if(local):
-        app.run_server(debug=args.debug, port=args.port)
+        app.run_server(debug=args.debug, port=flask_port)
     else:
-        app.run_server(debug=args.debug, port=args.port, host="0.0.0.0")
+        app.run_server(debug=args.debug, port=args.flask_port, host="0.0.0.0")
 
 if __name__=="__main__":
     main(sys.argv)
