@@ -4,9 +4,9 @@ import scipy.interpolate
 import plotly.graph_objects as go
 
 
-def get_trayectory_trace(x, y, time_stamps=None, sample_rate=None,
+def get_trayectory_trace(x, y, timestamps=None, sample_rate=None,
                          colorscale="Rainbow", opacity=0.3):
-    if time_stamps is None:
+    if timestamps is None:
         trace = go.Scatter(x=x, y=y, mode="markers")
     else:
         if sample_rate is not None:
@@ -16,20 +16,20 @@ def get_trayectory_trace(x, y, time_stamps=None, sample_rate=None,
             nan_indices_list = sorted(nan_indices)
             x = np.delete(x, nan_indices_list)
             y = np.delete(y, nan_indices_list)
-            time_stamps = np.delete(time_stamps, nan_indices_list)
+            timestamps = np.delete(timestamps, nan_indices_list)
             # done removing nan from x and y
-            tck, u = scipy.interpolate.splprep([x, y], s=0, u=time_stamps)
-            min_time = time_stamps.min()
-            max_time = time_stamps.max()
+            tck, u = scipy.interpolate.splprep([x, y], s=0, u=timestamps)
+            min_time = timestamps.min()
+            max_time = timestamps.max()
             dt = 1.0/sample_rate
-            time_stamps = np.arange(min_time, max_time, dt)
-            x, y = scipy.interpolate.splev(time_stamps, tck)
+            timestamps = np.arange(min_time, max_time, dt)
+            x, y = scipy.interpolate.splev(timestamps, tck)
         trace = go.Scatter(x=x, y=y, mode="markers",
-                           marker={"color": time_stamps,
+                           marker={"color": timestamps,
                                    "opacity": opacity,
                                    "colorscale": colorscale,
                                    "colorbar": {"title": "Time"}},
-                           customdata=time_stamps,
+                           customdata=timestamps,
                            hovertemplate="<b>x:</b>%{x:.3f}<br><b>y</b>:%{y:.3f}<br><b>time</b>:%{customdata} sec",
                            showlegend=False,
                            )
