@@ -10,12 +10,18 @@ import numpy as np
 import pandas as pd
 
 from aeon.analysis import plotting as analysis_plotting
+from aeon.dj_pipeline.analysis.visit import Visit, VisitEnd
+from aeon.dj_pipeline.analysis.visit_analysis import *
 
 from . import acquisition, analysis, get_schema_name
 
 schema = dj.schema(get_schema_name("report"))
 os.environ["DJ_SUPPORT_FILEPATH_MANAGEMENT"] = "TRUE"
 
+experiment_name = "exp0.2-r0"
+MIN_VISIT_DURATION = 24  # in hours (minimum duration of visit for analysis)
+WHEEL_DIST_CRIT = 1  # in cm (minimum wheel distance travelled)
+MIN_BOUT_DURATION = 1  # in seconds (minimum foraging bout duration)
 
 """
     DataJoint schema dedicated for tables containing figures
@@ -440,6 +446,68 @@ def delete_outdated_plot_entries():
         ExperimentTimeDistribution,
     ):
         tbl.delete_outdated_entries()
+
+
+@schema
+class VisitSummaryPlot(dj.Computed):
+    definition = """
+    -> VisitSummary
+    ---
+    pellet_count_plotly:             longblob  # Dictionary storing the plotly object (from fig.to_plotly_json())
+    wheel_distance_travelled_plotly: longblob
+    total_distance_travelled_plotly: longblob  
+    foraging_bouts_plotly:           longblob  
+    """
+
+    key_source = dj.U("experiment_name", "subject", "visit_start", "visit_end") & (
+        VisitEnd
+        & f'experiment_name="{experiment_name}"'
+        & f"visit_duration > {MIN_VISIT_DURATION}"
+    )
+
+    def make(self, key):
+        from aeon.dj_pipeline.utils.plotting import (
+            plot_foraging_bouts,
+            plot_summary_per_visit,
+        )
+
+        fig = plot_summary_per_visit(
+            key,
+            attr="pellet_count",
+            per_food_patch=True,
+        )
+        fig_pellet = json.loads(fig.to_json())
+
+        fig = plot_summary_per_visit(
+            key,
+            attr="wheel_distance_travelled",
+            per_food_patch=True,
+        )
+        fig_wheel_dist = json.loads(fig.to_json())
+
+        fig = plot_summary_per_visit(
+            key,
+            attr="total_distance_travelled",
+        )
+        fig_total_dist = json.loads(fig.to_json())
+
+        fig = plot_foraging_bouts(
+            key,
+            wheel_dist_crit=WHEEL_DIST_CRIT,
+            min_bout_duration=MIN_BOUT_DURATION,
+            using_aeon_io=False,
+        )
+        fig_foraginng_bouts = json.loads(fig.to_json())
+
+        self.insert1(
+            {
+                **key,
+                "pellet_count_plotly": fig_pellet,
+                "wheel_distance_travelled_plotly": fig_wheel_dist,
+                "total_distance_travelled_plotly": fig_total_dist,
+                "foraging_bouts_plotly": fig_foraginng_bouts,
+            }
+        )
 
 
 # ---------- HELPER FUNCTIONS --------------
