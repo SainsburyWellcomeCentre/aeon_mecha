@@ -100,6 +100,7 @@ def main(argv):
             event_label=pellet_event_label,
             patch_label=patch_to_plot)
         pellets_seconds[patch_to_plot] = (pellets_times-session_start_time).total_seconds()
+        import pdb; pdb.set_trace()
         pellets_events = pd.DataFrame(index=pd.TimedeltaIndex(data=pellets_seconds[patch_to_plot], unit="s"), data=np.ones(len(pellets_seconds[patch_to_plot])), columns=['count'])
         boundary_df = pd.DataFrame(index=pd.TimedeltaIndex(data=[t0_relative, tf_relative], unit="s"), data=dict(count=[0.0, 0.0]), columns=['count'])
         pellets_events = pellets_events.append(other=boundary_df)
