@@ -5,6 +5,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.io as pio
 import seaborn as sns
+import seaborn as sns
 
 from aeon.dj_pipeline import acquisition, analysis, lab
 from aeon.dj_pipeline.analysis.visit import Visit, VisitEnd
