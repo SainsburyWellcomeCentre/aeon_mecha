@@ -82,28 +82,28 @@ def main(argv):
         session_start_time_str=session_start_time_str,
         start_offset_secs=start_offset_secs,
         duration_secs=duration_secs)
-    time_stamps = positions.index
+    timestamps = positions.index
     x = positions["x"].to_numpy()
     y = positions["y"].to_numpy()
-    time_stamps0_sec = time_stamps[0]
-    time_stamps_secs = np.array([ts-time_stamps0_sec
-                                 for ts in time_stamps])
-#     if duration_secs<0:
-#         max_secs = time_stamps_secs.max()
-#     else:
-#         max_secs = start_offset_secs+duration_secs
-#     indices_keep = np.where(
-#         np.logical_and(start_offset_secs<=time_stamps_secs,
-#                        time_stamps_secs<max_secs))[0]
-#     time_stamps_secs = time_stamps_secs[indices_keep]
-#     time_stamps = time_stamps[indices_keep]
-#     x = x[indices_keep]
-#     y = y[indices_keep]
+    # timestamps0_sec = timestamps[0]
+    # timestamps_secs = np.array([ts-timestamps0_sec
+    #                              for ts in timestamps])
+    timestamps_secs = (timestamps - timestamps[0])/np.timedelta64(1, "s")
+    if duration_secs<0:
+        max_secs = timestamps_secs.max()
+    else:
+        max_secs = start_offset_secs+duration_secs
+    indices_keep = np.where(
+        np.logical_and(start_offset_secs<=timestamps_secs,
+                       timestamps_secs<max_secs))[0]
+    timestamps_secs = timestamps_secs[indices_keep]
+    x = x[indices_keep]
+    y = y[indices_keep]
 
     title = title_pattern.format(session_start_time_str, start_offset_secs, duration_secs, sample_rate, storageMgr_type)
     storageMgr_type = args.storageMgr_type
     fig = go.Figure()
-    trajectory_trace = aeon.plotting.plot_functions.get_trayectory_trace(x=x, y=y, time_stamps=time_stamps_secs, sample_rate=sample_rate)
+    trajectory_trace = aeon.plotting.plot_functions.get_trayectory_trace(x=x, y=y, timestamps=timestamps_secs, sample_rate=sample_rate)
     fig.add_trace(trajectory_trace)
     patches_traces = aeon.plotting.plot_functions.get_patches_traces(patches_coordinates=patches_coordinates)
     for patch_trace in patches_traces:
