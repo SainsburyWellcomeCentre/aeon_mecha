@@ -201,93 +201,6 @@ def plot_average_time_distribution(session_keys):
     return fig
 
 
-def plot_visit_summary(
-    visit_key,
-    attr,
-    experiment_name="exp0.2-r0",
-    duration_crit=24,
-    per_food_patch=False,
-):
-    """plot results from the visit summary table
-
-    Args:
-        attr (str): name of the attribute to plot (e.g., 'pellet_count', 'wheel_distance_travelled', 'total_distance_travelled')
-        experiment_name (str): name of the experiment. Defaults to "exp0.2-r0".
-        duration_crit (int, optional): minimum total duration of the visit to plot (in hrs). Defaults to 24.
-        per_food_patch (bool, optional): separately plot results from different food patch. Defaults to False.
-
-    Returns:
-        fig: figure object
-
-    Examples:
-        >>> fig = VisitSummary.plot_summary(attr='pellet_count', per_food_patch=True)
-        >>> fig = VisitSummary.plot_summary(attr='wheel_distance_travelled', per_food_patch=True)
-        >>> fig = VisitSummary.plot_summary(attr='total_distance_travelled')
-    """
-
-    df = pd.DataFrame()
-    visit_dict = (
-        VisitEnd
-        & f'experiment_name="{experiment_name}"'
-        & f"visit_duration > {duration_crit}"
-    ).fetch("subject", "visit_start", "visit_end", as_dict=True)
-    style = "food_patch_description" if per_food_patch else None
-
-    for _ in visit_dict:
-
-        subject, visit_start, visit_end = (
-            _["subject"],
-            _["visit_start"],
-            _["visit_end"],
-        )
-        restr = {
-            "experiment_name": experiment_name,
-            "subject": subject,
-            "visit_start": visit_start,
-            "visit_end": visit_end,
-        }
-        if per_food_patch:
-            visit_per_day_df = (
-                (
-                    (table.FoodPatch & restr)
-                    * acquisition.ExperimentFoodPatch.proj("food_patch_description")
-                )
-                .fetch(format="frame")
-                .reset_index()
-            )
-        else:
-            visit_per_day_df = ((table & restr)).fetch(format="frame").reset_index()
-        visit_per_day_df["subject"] = "_".join([subject, visit_start.strftime("%m%d")])
-        visit_per_day_df["day"] = (
-            visit_per_day_df["visit_date"] - visit_per_day_df["visit_date"].min()
-        )
-        visit_per_day_df["day"] = visit_per_day_df["day"].dt.days
-        df = pd.concat([df, visit_per_day_df], ignore_index=True)
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-    sns.lineplot(
-        data=df,
-        x="day",
-        y=attr,
-        hue="subject",
-        style=style,
-        ax=ax,
-        marker="o",
-    )
-
-    ax.legend(
-        loc="center left",
-        bbox_to_anchor=(1.01, 0.5),
-        prop={"size": 12},
-    )
-    ax.set_ylabel(attr.replace("_", " "))
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    plt.tight_layout()
-
-    return fig
-
-
 def plot_summary_per_visit(
     visit_key,
     attr,
@@ -298,7 +211,7 @@ def plot_summary_per_visit(
     Args:
         visit_key (dict) : Key from the VisitSummary table
         attr (str): Name of the attribute to plot (e.g., 'pellet_count', 'wheel_distance_travelled', 'total_distance_travelled')
-        per_food_patch (bool, optional): Separately plot results from different food patch. Defaults to False.
+        per_food_patch (bool, optional): Separately plot results from different food patches. Defaults to False.
 
     Returns:
         fig: Figure object
@@ -313,7 +226,9 @@ def plot_summary_per_visit(
         visit_key["subject"],
         visit_key["visit_start"],
     )
-    style = "food_patch_description" if per_food_patch else None
+
+    per_food_patch = False if attr.startswith("total") else True
+    color = "food_patch_description" if per_food_patch else None
 
     if per_food_patch:  # split by food patch
         visit_per_day_df = (
@@ -337,25 +252,24 @@ def plot_summary_per_visit(
     )
     visit_per_day_df["day"] = visit_per_day_df["day"].dt.days
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-    sns.lineplot(
-        data=visit_per_day_df,
+    fig = px.line(
+        visit_per_day_df,
         x="day",
         y=attr,
-        style=style,
-        ax=ax,
-        marker="o",
+        color=color,
+        markers=True,
+        labels={attr: attr.replace("_", " ")},
+        hover_name="visit_date",
+        hover_data=["visit_date"],
+        width=700,
+        height=400,
+        template="simple_white",
+        title=visit_per_day_df["subject"][0],
     )
-
-    ax.legend(
-        loc="center left",
-        bbox_to_anchor=(1.01, 0.5),
-        prop={"size": 12},
+    fig.update_traces(mode="markers+lines", hovertemplate=None)
+    fig.update_layout(
+        legend_title="", hovermode="x", yaxis_tickformat="digits", yaxis_range=[0, None]
     )
-    ax.set_ylabel(attr.replace("_", " "))
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    plt.tight_layout()
 
     return fig
 
@@ -380,7 +294,7 @@ def plot_foraging_bouts(
     Examples:
         >>> fig = plot_foraging_bouts(visit_key, wheel_dist_crit=1, min_bout_duration=1)
     """
-    
+
     subject, visit_start = (
         visit_key["subject"],
         visit_key["visit_start"],
