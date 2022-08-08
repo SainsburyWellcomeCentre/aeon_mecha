@@ -76,23 +76,8 @@ def main(argv):
         session_start_time_str=session_start_time_str,
         start_offset_secs=start_offset_secs,
         duration_secs=duration_secs)
-    time_stamps = positions.index
     x = positions["x"].to_numpy()
     y = positions["y"].to_numpy()
-    time_stamps0_sec = time_stamps[0].timestamp()
-    time_stamps_secs = np.array([ts.timestamp()-time_stamps0_sec
-                                 for ts in time_stamps])
-#     if duration_secs<0:
-#         max_secs = time_stamps_secs.max()
-#     else:
-#         max_secs = start_secs + duration_secs
-#     indices_keep = np.where(
-#         np.logical_and(start_secs<=time_stamps_secs,
-#                        time_stamps_secs<max_secs))[0]
-#     time_stamps_secs = time_stamps_secs[indices_keep]
-#     time_stamps = time_stamps[indices_keep]
-#     x = x[indices_keep]
-#     y = y[indices_keep]
 
     patches_coordinates = pd.DataFrame(data=patches_coordinates_matrix,
                                        columns=["lower_x", "higher_x",
