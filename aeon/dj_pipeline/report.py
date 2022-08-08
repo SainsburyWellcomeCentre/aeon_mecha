@@ -449,7 +449,7 @@ def delete_outdated_plot_entries():
 
 
 @schema
-class VisitSummaryPlot(dj.Computed):
+class VisitDailySummaryPlot(dj.Computed):
     definition = """
     -> VisitSummary
     ---
@@ -468,24 +468,24 @@ class VisitSummaryPlot(dj.Computed):
     def make(self, key):
         from aeon.dj_pipeline.utils.plotting import (
             plot_foraging_bouts,
-            plot_summary_per_visit,
+            plot_visit_daily_summary,
         )
 
-        fig = plot_summary_per_visit(
+        fig = plot_visit_daily_summary(
             key,
             attr="pellet_count",
             per_food_patch=True,
         )
         fig_pellet = json.loads(fig.to_json())
 
-        fig = plot_summary_per_visit(
+        fig = plot_visit_daily_summary(
             key,
             attr="wheel_distance_travelled",
             per_food_patch=True,
         )
         fig_wheel_dist = json.loads(fig.to_json())
 
-        fig = plot_summary_per_visit(
+        fig = plot_visit_daily_summary(
             key,
             attr="total_distance_travelled",
         )

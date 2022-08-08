@@ -201,7 +201,7 @@ def plot_average_time_distribution(session_keys):
     return fig
 
 
-def plot_summary_per_visit(
+def plot_visit_daily_summary(
     visit_key,
     attr,
     per_food_patch=False,
@@ -217,9 +217,9 @@ def plot_summary_per_visit(
         fig: Figure object
 
     Examples:
-        >>> fig = plot_summary_per_visit(visit_key, attr='pellet_count', per_food_patch=True)
-        >>> fig = plot_summary_per_visit(visit_key, attr='wheel_distance_travelled', per_food_patch=True)
-        >>> fig = plot_summary_per_visit(visit_key, attr='total_distance_travelled')
+        >>> fig = plot_visit_daily_summary(visit_key, attr='pellet_count', per_food_patch=True)
+        >>> fig = plot_visit_daily_summary(visit_key, attr='wheel_distance_travelled', per_food_patch=True)
+        >>> fig = plot_visit_daily_summary(visit_key, attr='total_distance_travelled')
     """
 
     subject, visit_start = (
@@ -227,7 +227,7 @@ def plot_summary_per_visit(
         visit_key["visit_start"],
     )
 
-    per_food_patch = False if attr.startswith("total") else True
+    per_food_patch = not attr.startswith("total")
     color = "food_patch_description" if per_food_patch else None
 
     if per_food_patch:  # split by food patch
