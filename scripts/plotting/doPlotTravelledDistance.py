@@ -99,13 +99,13 @@ def main(argv):
             start_time_str=session_start_time_minusDelta_str,
             end_time_str=session_end_time_plusDelta_str,
             patch_label=patch_to_plot)
-        timestamps_secs = angles.index
-        timestamps_secs_rel = (timestamps_secs - session_start_time).total_seconds()
+        timestamps = angles.index
+        timestamps_secs = (timestamps - timestamps[0])/np.timedelta64(1, "s")
         if duration_secs < 0:
-            max_secs = timestamps_secs_rel.max()
+            max_secs = timestamps_secs.max()
         else:
             max_secs = start_secs + duration_secs
-        indices_keep = np.where(np.logical_and(start_secs<=timestamps_secs_rel, timestamps_secs_rel<max_secs))[0]
+        indices_keep = np.where(np.logical_and(start_secs<=timestamps_secs, timestamps_secs<max_secs))[0]
         angles = angles[indices_keep]
         travelled_distance[patch_to_plot] = api.distancetravelled(angles)
         travelled_seconds[patch_to_plot] = (travelled_distance[patch_to_plot].index-session_start_time).total_seconds()
