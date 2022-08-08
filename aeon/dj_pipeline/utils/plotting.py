@@ -320,24 +320,23 @@ def plot_foraging_bouts(
         axis=1,
     )
 
-    fig, ax = plt.subplots(figsize=(12, 6))
-    sns.lineplot(
-        data=visit_per_day_df,
+    fig = px.line(
+        visit_per_day_df,
         x="day",
         y="foraging_bouts",
-        style="food_patch_description",
-        ax=ax,
-        marker="o",
+        color="food_patch_description",
+        markers=True,
+        labels={"foraging_bouts": "foraging_bouts".replace("_", " ")},
+        hover_name="visit_date",
+        hover_data=["visit_date"],
+        width=700,
+        height=400,
+        template="simple_white",
+        title=visit_per_day_df["subject"][0],
     )
-
-    ax.legend(
-        loc="center left",
-        bbox_to_anchor=(1.01, 0.5),
-        prop={"size": 12},
+    fig.update_traces(mode="markers+lines", hovertemplate=None)
+    fig.update_layout(
+        legend_title="", hovermode="x", yaxis_tickformat="digits", yaxis_range=[0, None]
     )
-    ax.set_ylabel("foraging_bouts".replace("_", " "))
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    plt.tight_layout()
 
     return fig
