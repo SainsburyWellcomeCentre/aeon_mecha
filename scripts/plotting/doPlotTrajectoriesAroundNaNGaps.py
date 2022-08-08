@@ -67,7 +67,7 @@ def main(argv):
                                              "lower_y", "higher_y"])
     x = position["x"].to_numpy()
     y = position["y"].to_numpy()
-    time_stamps = (position.index-session_start).total_seconds().to_numpy()
+    timestamps = (position.index-session_start).total_seconds().to_numpy()
     nan_run_thr = 5
     not_nan_indices_x = set(np.where(np.logical_not(np.isnan(x)))[0])
     not_nan_indices_y = set(np.where(np.logical_not(np.isnan(y)))[0])

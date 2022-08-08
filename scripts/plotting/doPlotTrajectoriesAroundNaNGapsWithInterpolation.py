@@ -67,17 +67,17 @@ def main(argv):
                                              "lower_y", "higher_y"])
     x = position["x"].to_numpy()
     y = position["y"].to_numpy()
-    time_stamps = (position.index-session_start).total_seconds().to_numpy()
+    timestamps = (position.index-session_start).total_seconds().to_numpy()
     nan_run_thr = 5
     not_nan_indices_x = set(np.where(np.logical_not(np.isnan(x)))[0])
     not_nan_indices_y = set(np.where(np.logical_not(np.isnan(y)))[0])
     not_nan_indices = np.array(sorted(not_nan_indices_x.union(not_nan_indices_y)))
     x_no_nan = x[not_nan_indices]
     y_no_nan = y[not_nan_indices]
-    time_stamps_no_nan = time_stamps[not_nan_indices]
-    time_stamps_interpolated = np.linspace(start=time_stamps[0], stop=time_stamps[-1], num=max_points)
-    tck, u = scipy.interpolate.splprep([x_no_nan, y_no_nan], s=0, u=time_stamps_no_nan)
-    x_interpolated, y_interpolated = scipy.interpolate.splev(time_stamps_interpolated, tck)
+    timestamps_no_nan = timestamps[not_nan_indices]
+    timestamps_interpolated = np.linspace(start=timestamps[0], stop=timestamps[-1], num=max_points)
+    tck, u = scipy.interpolate.splprep([x_no_nan, y_no_nan], s=0, u=timestamps_no_nan)
+    x_interpolated, y_interpolated = scipy.interpolate.splev(timestamps_interpolated, tck)
 
     not_nan_indices_largeGap_indices = np.where(np.diff(not_nan_indices)>nan_run_thr)[0]+1
     nan_indices_bounds = np.empty((len(not_nan_indices_largeGap_indices), 2), dtype=np.int)
@@ -103,9 +103,9 @@ def main(argv):
         trace_around_nan = go.Scatter(x=x_around_nan, y=y_around_nan, name="Orig {:d}".format(i), mode="markers")
         fig.add_trace(trace_around_nan)
 
-        time_start = time_stamps[nan_indices_bounds[i, 0]-margin]
-        time_end = time_stamps[nan_indices_bounds[i, 1]+margin]
-        indices_interpolated = np.where(np.logical_and(time_start<=time_stamps_interpolated, time_stamps_interpolated<time_end))[0]
+        time_start = timestamps[nan_indices_bounds[i, 0]-margin]
+        time_end = timestamps[nan_indices_bounds[i, 1]+margin]
+        indices_interpolated = np.where(np.logical_and(time_start<=timestamps_interpolated, timestamps_interpolated<time_end))[0]
         x_around_nan_interpolated = x_interpolated[indices_interpolated]
         y_around_nan_interpolated = y_interpolated[indices_interpolated]
         trace_around_nan_interpolated = go.Scatter(x=x_around_nan_interpolated, y=y_around_nan_interpolated, name="Int {:d}".format(i), mode="markers")
