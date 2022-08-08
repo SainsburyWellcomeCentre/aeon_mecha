@@ -388,14 +388,19 @@ class VisitTimeDistribution(dj.Computed):
             self.Nest.insert(in_nest_times)
             self.FoodPatch.insert(in_food_patch_times)
 
+    @classmethod
     def _get_foraging_bouts(
-        row, wheel_dist_crit=1, min_duration=1, using_aeon_io=False
+        cls,
+        visit_per_day_row,
+        wheel_dist_crit=None,
+        min_bout_duration=None,
+        using_aeon_io=False,
     ):
 
         # Get number of foraging bouts
         nb_bouts = 0
 
-        in_patch = row["in_patch"]
+        in_patch = visit_per_day_row["in_patch"]
         if np.size(in_patch) == 0:  # no food patch position timestamps
             return nb_bouts
 
@@ -403,7 +408,11 @@ class VisitTimeDistribution(dj.Computed):
             np.where((np.diff(in_patch) / 1e6) > np.timedelta64(20))[0] + 1
         )  # timestamp index where state changes
 
-        print(row["subject"], row["visit_date"], row["food_patch_description"])
+        # print(
+        #     visit_per_day_row["subject"],
+        #     visit_per_day_row["visit_date"],
+        #     visit_per_day_row["food_patch_description"],
+        # )
 
         if np.size(change_ind) == 0:  # one contiguous block
 
@@ -411,14 +420,14 @@ class VisitTimeDistribution(dj.Computed):
             ts_duration = (wheel_end - wheel_start) / np.timedelta64(
                 1, "s"
             )  # in seconds
-            if ts_duration < min_duration:
+            if ts_duration < min_bout_duration:
                 return nb_bouts
 
             wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
                 experiment_name="exp0.2-r0",
                 start=wheel_start,
                 end=wheel_end,
-                patch_name=row["food_patch_description"],
+                patch_name=visit_per_day_row["food_patch_description"],
                 using_aeon_io=using_aeon_io,
             )
             if wheel_data.distance_travelled[-1] > wheel_dist_crit:
@@ -438,7 +447,7 @@ class VisitTimeDistribution(dj.Computed):
             ts_duration = (ts_array[-1] - ts_array[0]) / np.timedelta64(
                 1, "s"
             )  # in seconds
-            if ts_duration < min_duration:
+            if ts_duration < min_bout_duration:
                 continue
 
             wheel_start, wheel_end = ts_array[0], ts_array[-1]
@@ -449,95 +458,15 @@ class VisitTimeDistribution(dj.Computed):
                 experiment_name="exp0.2-r0",
                 start=wheel_start,
                 end=wheel_end,
-                patch_name=row["food_patch_description"],
+                patch_name=visit_per_day_row["food_patch_description"],
                 using_aeon_io=using_aeon_io,
             )
 
             if wheel_data.distance_travelled[-1] > wheel_dist_crit:
                 nb_bouts += 1
 
-        print(f"nb_bouts = {nb_bouts}")
+        # print(f"nb_bouts = {nb_bouts}")
         return nb_bouts
-
-    @classmethod
-    def plot_foraging_bouts(
-        cls,
-        experiment_name="exp0.2-r0",
-        duration_crit=24,
-        wheel_dist_crit=1,
-        min_duration=1,
-        using_aeon_io=False,
-    ):
-
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-
-        df = pd.DataFrame()
-        visit_dict = (
-            VisitEnd
-            & f'experiment_name="{experiment_name}"'
-            & f"visit_duration > {duration_crit}"
-        ).fetch("subject", "visit_start", "visit_end", as_dict=True)
-        style = "food_patch_description"
-
-        for _ in visit_dict:
-
-            subject, visit_start, visit_end = (
-                _["subject"],
-                _["visit_start"],
-                _["visit_end"],
-            )
-            restr = {
-                "experiment_name": experiment_name,
-                "subject": subject,
-                "visit_start": visit_start,
-                "visit_end": visit_end,
-            }
-
-            temp_df = (
-                (
-                    (cls.FoodPatch & restr)
-                    * acquisition.ExperimentFoodPatch.proj("food_patch_description")
-                )
-                .fetch(format="frame")
-                .reset_index()
-            )
-
-            temp_df["subject"] = "_".join([subject, visit_start.strftime("%m%d")])
-            temp_df["day"] = temp_df["visit_date"] - temp_df["visit_date"].min()
-            temp_df["day"] = temp_df["day"].dt.days
-            temp_df["foraging_bouts"] = temp_df.apply(
-                cls._get_foraging_bouts,
-                wheel_dist_crit=wheel_dist_crit,
-                min_duration=min_duration,
-                using_aeon_io=using_aeon_io,
-                axis=1,
-            )
-
-            df = pd.concat([df, temp_df], ignore_index=True)
-
-        fig, ax = plt.subplots(figsize=(12, 6))
-        sns.lineplot(
-            data=df,
-            x="day",
-            y="foraging_bouts",
-            hue="subject",
-            style=style,
-            ax=ax,
-            marker="o",
-        )
-
-        ax.legend(
-            loc="center left",
-            bbox_to_anchor=(1.01, 0.5),
-            prop={"size": 12},
-        )
-        ax.set_ylabel("foraging_bouts".replace("_", " "))
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        plt.tight_layout()
-
-        return fig
 
 
 @schema
@@ -681,91 +610,3 @@ class VisitSummary(dj.Computed):
                 }
             )
             self.FoodPatch.insert(food_patch_statistics)
-
-    @classmethod
-    def plot_summary(
-        cls,
-        attr,
-        experiment_name="exp0.2-r0",
-        duration_crit=24,
-        per_food_patch=False,
-    ):
-        """plot results from the visit summary table
-
-        Args:
-            attr (str): name of the attribute to plot (e.g., 'pellet_count', 'wheel_distance_travelled', 'total_distance_travelled')
-            experiment_name (str): name of the experiment. Defaults to "exp0.2-r0".
-            duration_crit (int, optional): minimum total duration of the visit to plot (in hrs). Defaults to 24.
-            per_food_patch (bool, optional): separately plot results from different food patch. Defaults to False.
-
-        Returns:
-            fig: figure object
-
-        Examples:
-            >>> fig = VisitSummary.plot_summary(attr='pellet_count', per_food_patch=True)
-            >>> fig = VisitSummary.plot_summary(attr='wheel_distance_travelled', per_food_patch=True)
-            >>> fig = VisitSummary.plot_summary(attr='total_distance_travelled')
-        """
-
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-
-        df = pd.DataFrame()
-        visit_dict = (
-            VisitEnd
-            & f'experiment_name="{experiment_name}"'
-            & f"visit_duration > {duration_crit}"
-        ).fetch("subject", "visit_start", "visit_end", as_dict=True)
-        style = "food_patch_description" if per_food_patch else None
-
-        for _ in visit_dict:
-
-            subject, visit_start, visit_end = (
-                _["subject"],
-                _["visit_start"],
-                _["visit_end"],
-            )
-            restr = {
-                "experiment_name": experiment_name,
-                "subject": subject,
-                "visit_start": visit_start,
-                "visit_end": visit_end,
-            }
-            if per_food_patch:
-                temp_df = (
-                    (
-                        (cls.FoodPatch & restr)
-                        * acquisition.ExperimentFoodPatch.proj("food_patch_description")
-                    )
-                    .fetch(format="frame")
-                    .reset_index()
-                )
-            else:
-                temp_df = ((cls & restr)).fetch(format="frame").reset_index()
-            temp_df["subject"] = "_".join([subject, visit_start.strftime("%m%d")])
-            temp_df["day"] = temp_df["visit_date"] - temp_df["visit_date"].min()
-            temp_df["day"] = temp_df["day"].dt.days
-            df = pd.concat([df, temp_df], ignore_index=True)
-
-        fig, ax = plt.subplots(figsize=(12, 6))
-        sns.lineplot(
-            data=df,
-            x="day",
-            y=attr,
-            hue="subject",
-            style=style,
-            ax=ax,
-            marker="o",
-        )
-
-        ax.legend(
-            loc="center left",
-            bbox_to_anchor=(1.01, 0.5),
-            prop={"size": 12},
-        )
-        ax.set_ylabel(attr.replace("_", " "))
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        plt.tight_layout()
-
-        return fig
