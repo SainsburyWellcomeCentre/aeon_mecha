@@ -455,7 +455,7 @@ class VisitDailySummaryPlot(dj.Computed):
     foraging_bouts_plotly:           longblob  
     """
 
-    MIN_VISIT_DURATION = 24  # in hours (minimum duration of visit for analysis)
+   _min_visit_duration = 24  # in hours (minimum duration of visit for analysis)
 
     key_source = dj.U("experiment_name", "subject", "visit_start", "visit_end") & (
         VisitEnd
