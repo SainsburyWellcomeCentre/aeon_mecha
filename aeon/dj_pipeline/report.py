@@ -460,7 +460,7 @@ class VisitDailySummaryPlot(dj.Computed):
     key_source = dj.U("experiment_name", "subject", "visit_start", "visit_end") & (
         VisitEnd
         & f"experiment_name= 'exp0.2-r0'"
-        & f"visit_duration > {MIN_VISIT_DURATION}"
+        & f"visit_duration > {self._min_visit_duration}"
     )
 
     def make(self, key):
