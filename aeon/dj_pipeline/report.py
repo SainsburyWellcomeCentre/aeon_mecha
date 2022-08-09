@@ -18,9 +18,6 @@ from . import acquisition, analysis, get_schema_name
 schema = dj.schema(get_schema_name("report"))
 os.environ["DJ_SUPPORT_FILEPATH_MANAGEMENT"] = "TRUE"
 
-MIN_VISIT_DURATION = 24  # in hours (minimum duration of visit for analysis)
-WHEEL_DIST_CRIT = 1  # in cm (minimum wheel distance travelled)
-MIN_BOUT_DURATION = 1  # in seconds (minimum foraging bout duration)
 
 """
     DataJoint schema dedicated for tables containing figures
@@ -458,6 +455,8 @@ class VisitDailySummaryPlot(dj.Computed):
     foraging_bouts_plotly:           longblob  
     """
 
+    MIN_VISIT_DURATION = 24  # in hours (minimum duration of visit for analysis)
+
     key_source = dj.U("experiment_name", "subject", "visit_start", "visit_end") & (
         VisitEnd
         & f"experiment_name= 'exp0.2-r0'"
@@ -469,6 +468,9 @@ class VisitDailySummaryPlot(dj.Computed):
             plot_foraging_bouts,
             plot_visit_daily_summary,
         )
+
+        WHEEL_DIST_CRIT = 1  # in cm (minimum wheel distance travelled)
+        MIN_BOUT_DURATION = 1  # in seconds (minimum foraging bout duration)
 
         fig = plot_visit_daily_summary(
             key,
