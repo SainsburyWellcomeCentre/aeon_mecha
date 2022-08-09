@@ -469,8 +469,8 @@ class VisitDailySummaryPlot(dj.Computed):
             plot_visit_daily_summary,
         )
 
-        WHEEL_DIST_CRIT = 1  # in cm (minimum wheel distance travelled)
-        MIN_BOUT_DURATION = 1  # in seconds (minimum foraging bout duration)
+        wheel_dist_crit = 1  # in cm (minimum wheel distance travelled)
+        min_bout_duration = 1  # in seconds (minimum foraging bout duration)
 
         fig = plot_visit_daily_summary(
             key,
