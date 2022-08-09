@@ -18,7 +18,6 @@ from . import acquisition, analysis, get_schema_name
 schema = dj.schema(get_schema_name("report"))
 os.environ["DJ_SUPPORT_FILEPATH_MANAGEMENT"] = "TRUE"
 
-experiment_name = "exp0.2-r0"
 MIN_VISIT_DURATION = 24  # in hours (minimum duration of visit for analysis)
 WHEEL_DIST_CRIT = 1  # in cm (minimum wheel distance travelled)
 MIN_BOUT_DURATION = 1  # in seconds (minimum foraging bout duration)
@@ -461,7 +460,7 @@ class VisitDailySummaryPlot(dj.Computed):
 
     key_source = dj.U("experiment_name", "subject", "visit_start", "visit_end") & (
         VisitEnd
-        & f'experiment_name="{experiment_name}"'
+        & f"experiment_name= 'exp0.2-r0'"
         & f"visit_duration > {MIN_VISIT_DURATION}"
     )
 

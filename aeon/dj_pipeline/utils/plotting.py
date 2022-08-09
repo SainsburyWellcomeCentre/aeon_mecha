@@ -315,7 +315,7 @@ def plot_foraging_bouts(
     )
     visit_per_day_df["day"] = visit_per_day_df["day"].dt.days
     visit_per_day_df["foraging_bouts"] = visit_per_day_df.apply(
-        VisitTimeDistribution._get_foraging_bouts,
+        _get_foraging_bouts,
         args=(wheel_dist_crit, min_bout_duration, using_aeon_io),
         axis=1,
     )
@@ -340,3 +340,86 @@ def plot_foraging_bouts(
     )
 
     return fig
+
+
+def _get_foraging_bouts(
+    visit_per_day_row,
+    wheel_dist_crit=None,
+    min_bout_duration=None,
+    using_aeon_io=False,
+):
+    """A function that calculates the number of foraging bouts. Works on this table query
+
+            (VisitTimeDistribution.FoodPatch & visit_key)
+            * acquisition.ExperimentFoodPatch.proj("food_patch_description")
+
+        This will iterate over this table entries and store results in a new column ('foraging_bouts')
+
+    Args:
+        visit_per_day_row (pd.DataFrame): A single row of the pandas dataframe
+
+    Returns:
+        nb_bouts (int): Number of foraging bouts
+    """
+
+    # Get number of foraging bouts
+    nb_bouts = 0
+
+    in_patch = visit_per_day_row["in_patch"]
+    if np.size(in_patch) == 0:  # no food patch position timestamps
+        return nb_bouts
+
+    change_ind = (
+        np.where((np.diff(in_patch) / 1e6) > np.timedelta64(20))[0] + 1
+    )  # timestamp index where state changes
+
+    if np.size(change_ind) == 0:  # one contiguous block
+
+        wheel_start, wheel_end = in_patch[0], in_patch[-1]
+        ts_duration = (wheel_end - wheel_start) / np.timedelta64(1, "s")  # in seconds
+        if ts_duration < min_bout_duration:
+            return nb_bouts
+
+        wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
+            experiment_name=visit_per_day_row["experiment_name"],
+            start=wheel_start,
+            end=wheel_end,
+            patch_name=visit_per_day_row["food_patch_description"],
+            using_aeon_io=using_aeon_io,
+        )
+        if wheel_data.distance_travelled[-1] > wheel_dist_crit:
+            return nb_bouts + 1
+        else:
+            return nb_bouts
+
+    # fetch contiguous timestamp blocks
+    for i in range(len(change_ind) + 1):
+        if i == 0:
+            ts_array = in_patch[: change_ind[i]]
+        elif i == len(change_ind):
+            ts_array = in_patch[change_ind[i - 1] :]
+        else:
+            ts_array = in_patch[change_ind[i - 1] : change_ind[i]]
+
+        ts_duration = (ts_array[-1] - ts_array[0]) / np.timedelta64(
+            1, "s"
+        )  # in seconds
+        if ts_duration < min_bout_duration:
+            continue
+
+        wheel_start, wheel_end = ts_array[0], ts_array[-1]
+        if wheel_start > wheel_end:  # skip if timestamps were misaligned
+            continue
+
+        wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
+            experiment_name=visit_per_day_row["experiment_name"],
+            start=wheel_start,
+            end=wheel_end,
+            patch_name=visit_per_day_row["food_patch_description"],
+            using_aeon_io=using_aeon_io,
+        )
+
+        if wheel_data.distance_travelled[-1] > wheel_dist_crit:
+            nb_bouts += 1
+
+    return nb_bouts
