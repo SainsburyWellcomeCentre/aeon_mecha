@@ -15,7 +15,7 @@ import pathlib
 import datajoint as dj
 import pytest
 
-_tear_down = False  # always set to True since most fixtures are session-scoped
+_tear_down = True  # always set to True since most fixtures are session-scoped
 _populate_settings = {"suppress_errors": True}
 
 
