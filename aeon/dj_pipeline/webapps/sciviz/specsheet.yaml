@@ -1,6 +1,7 @@
 version: 'v0.0.0'
 LabBook: null
 SciViz:
+  auth: True
   pages:
     Subjects:
       route: /subjects
