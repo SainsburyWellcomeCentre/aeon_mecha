@@ -455,12 +455,12 @@ class VisitDailySummaryPlot(dj.Computed):
     foraging_bouts_plotly:           longblob  
     """
 
-   _min_visit_duration = 24  # in hours (minimum duration of visit for analysis)
+    _min_visit_duration = 24  # in hours (minimum duration of visit for analysis)
 
     key_source = dj.U("experiment_name", "subject", "visit_start", "visit_end") & (
         VisitEnd
         & f"experiment_name= 'exp0.2-r0'"
-        & f"visit_duration > {self._min_visit_duration}"
+        & f"visit_duration > {_min_visit_duration}"
     )
 
     def make(self, key):
@@ -494,8 +494,8 @@ class VisitDailySummaryPlot(dj.Computed):
 
         fig = plot_foraging_bouts(
             key,
-            wheel_dist_crit=WHEEL_DIST_CRIT,
-            min_bout_duration=MIN_BOUT_DURATION,
+            wheel_dist_crit=wheel_dist_crit,
+            min_bout_duration=min_bout_duration,
             using_aeon_io=False,
         )
         fig_foraginng_bouts = json.loads(fig.to_json())
