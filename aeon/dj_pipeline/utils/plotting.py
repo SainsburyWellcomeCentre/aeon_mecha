@@ -1,12 +1,14 @@
 import datajoint as dj
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.io as pio
-import matplotlib.pyplot as plt
+import seaborn as sns
 
-from aeon.dj_pipeline import lab, acquisition, analysis
-
+from aeon.dj_pipeline import acquisition, analysis, lab
+from aeon.dj_pipeline.analysis.visit import Visit, VisitEnd
+from aeon.dj_pipeline.analysis.visit_analysis import VisitSummary, VisitTimeDistribution
 
 # pio.renderers.default = 'png'
 # pio.orca.config.executable = '~/.conda/envs/aeon_env/bin/orca'
@@ -197,3 +199,227 @@ def plot_average_time_distribution(session_keys):
     fig.update_xaxes(tickangle=45)
 
     return fig
+
+
+def plot_visit_daily_summary(
+    visit_key,
+    attr,
+    per_food_patch=False,
+):
+    """plot results from VisitSummary per visit
+
+    Args:
+        visit_key (dict) : Key from the VisitSummary table
+        attr (str): Name of the attribute to plot (e.g., 'pellet_count', 'wheel_distance_travelled', 'total_distance_travelled')
+        per_food_patch (bool, optional): Separately plot results from different food patches. Defaults to False.
+
+    Returns:
+        fig: Figure object
+
+    Examples:
+        >>> fig = plot_visit_daily_summary(visit_key, attr='pellet_count', per_food_patch=True)
+        >>> fig = plot_visit_daily_summary(visit_key, attr='wheel_distance_travelled', per_food_patch=True)
+        >>> fig = plot_visit_daily_summary(visit_key, attr='total_distance_travelled')
+    """
+
+    subject, visit_start = (
+        visit_key["subject"],
+        visit_key["visit_start"],
+    )
+
+    per_food_patch = not attr.startswith("total")
+    color = "food_patch_description" if per_food_patch else None
+
+    if per_food_patch:  # split by food patch
+        visit_per_day_df = (
+            (
+                (VisitSummary.FoodPatch & visit_key)
+                * acquisition.ExperimentFoodPatch.proj("food_patch_description")
+            )
+            .fetch(format="frame")
+            .reset_index()
+        )
+    else:
+        visit_per_day_df = (
+            ((VisitSummary & visit_key)).fetch(format="frame").reset_index()
+        )
+        if not attr.startswith("total"):
+            attr = "total_" + attr
+
+    visit_per_day_df["subject"] = "_".join([subject, visit_start.strftime("%m%d")])
+    visit_per_day_df["day"] = (
+        visit_per_day_df["visit_date"] - visit_per_day_df["visit_date"].min()
+    )
+    visit_per_day_df["day"] = visit_per_day_df["day"].dt.days
+
+    fig = px.line(
+        visit_per_day_df,
+        x="day",
+        y=attr,
+        color=color,
+        markers=True,
+        labels={attr: attr.replace("_", " ")},
+        hover_name="visit_date",
+        hover_data=["visit_date"],
+        width=700,
+        height=400,
+        template="simple_white",
+        title=visit_per_day_df["subject"][0],
+    )
+    fig.update_traces(mode="markers+lines", hovertemplate=None)
+    fig.update_layout(
+        legend_title="", hovermode="x", yaxis_tickformat="digits", yaxis_range=[0, None]
+    )
+
+    return fig
+
+
+def plot_foraging_bouts(
+    visit_key,
+    wheel_dist_crit=None,
+    min_bout_duration=None,
+    using_aeon_io=False,
+):
+    """plot the number of foraging bouts per visit
+
+    Args:
+        visit_key (dict) : Key from the VisitTimeDistribution table
+        wheel_dist_crit (int) : Minimum wheel distance travelled (in cm)
+        min_bout_duration (int) : Minimum foraging bout duration (in seconds)
+        using_aeon_io (bool) : Use aeon api to calculate wheel distance. Otherwise use datajoint tables. Defaults to False.
+
+    Returns:
+        fig: Figure object
+
+    Examples:
+        >>> fig = plot_foraging_bouts(visit_key, wheel_dist_crit=1, min_bout_duration=1)
+    """
+
+    subject, visit_start = (
+        visit_key["subject"],
+        visit_key["visit_start"],
+    )
+
+    visit_per_day_df = (
+        (
+            (VisitTimeDistribution.FoodPatch & visit_key)
+            * acquisition.ExperimentFoodPatch.proj("food_patch_description")
+        )
+        .fetch(format="frame")
+        .reset_index()
+    )
+
+    visit_per_day_df["subject"] = "_".join([subject, visit_start.strftime("%m%d")])
+    visit_per_day_df["day"] = (
+        visit_per_day_df["visit_date"] - visit_per_day_df["visit_date"].min()
+    )
+    visit_per_day_df["day"] = visit_per_day_df["day"].dt.days
+    visit_per_day_df["foraging_bouts"] = visit_per_day_df.apply(
+        _get_foraging_bouts,
+        args=(wheel_dist_crit, min_bout_duration, using_aeon_io),
+        axis=1,
+    )
+
+    fig = px.line(
+        visit_per_day_df,
+        x="day",
+        y="foraging_bouts",
+        color="food_patch_description",
+        markers=True,
+        labels={"foraging_bouts": "foraging_bouts".replace("_", " ")},
+        hover_name="visit_date",
+        hover_data=["visit_date"],
+        width=700,
+        height=400,
+        template="simple_white",
+        title=visit_per_day_df["subject"][0],
+    )
+    fig.update_traces(mode="markers+lines", hovertemplate=None)
+    fig.update_layout(
+        legend_title="", hovermode="x", yaxis_tickformat="digits", yaxis_range=[0, None]
+    )
+
+    return fig
+
+
+def _get_foraging_bouts(
+    visit_per_day_row,
+    wheel_dist_crit=None,
+    min_bout_duration=None,
+    using_aeon_io=False,
+):
+    """A function that calculates the number of foraging bouts. Works on this table query
+
+            (VisitTimeDistribution.FoodPatch & visit_key)
+            * acquisition.ExperimentFoodPatch.proj("food_patch_description")
+
+        This will iterate over this table entries and store results in a new column ('foraging_bouts')
+
+    Args:
+        visit_per_day_row (pd.DataFrame): A single row of the pandas dataframe
+
+    Returns:
+        nb_bouts (int): Number of foraging bouts
+    """
+
+    # Get number of foraging bouts
+    nb_bouts = 0
+
+    in_patch = visit_per_day_row["in_patch"]
+    if np.size(in_patch) == 0:  # no food patch position timestamps
+        return nb_bouts
+
+    change_ind = (
+        np.where((np.diff(in_patch) / 1e6) > np.timedelta64(20))[0] + 1
+    )  # timestamp index where state changes
+
+    if np.size(change_ind) == 0:  # one contiguous block
+
+        wheel_start, wheel_end = in_patch[0], in_patch[-1]
+        ts_duration = (wheel_end - wheel_start) / np.timedelta64(1, "s")  # in seconds
+        if ts_duration < min_bout_duration:
+            return nb_bouts
+
+        wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
+            experiment_name=visit_per_day_row["experiment_name"],
+            start=wheel_start,
+            end=wheel_end,
+            patch_name=visit_per_day_row["food_patch_description"],
+            using_aeon_io=using_aeon_io,
+        )
+        if wheel_data.distance_travelled[-1] > wheel_dist_crit:
+            return nb_bouts + 1
+        else:
+            return nb_bouts
+
+    # fetch contiguous timestamp blocks
+    for i in range(len(change_ind) + 1):
+        if i == 0:
+            ts_array = in_patch[: change_ind[i]]
+        elif i == len(change_ind):
+            ts_array = in_patch[change_ind[i - 1] :]
+        else:
+            ts_array = in_patch[change_ind[i - 1] : change_ind[i]]
+
+        ts_duration = (ts_array[-1] - ts_array[0]) / np.timedelta64(
+            1, "s"
+        )  # in seconds
+        if ts_duration < min_bout_duration:
+            continue
+
+        wheel_start, wheel_end = ts_array[0], ts_array[-1]
+        if wheel_start > wheel_end:  # skip if timestamps were misaligned
+            continue
+
+        wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
+            experiment_name=visit_per_day_row["experiment_name"],
+            start=wheel_start,
+            end=wheel_end,
+            patch_name=visit_per_day_row["food_patch_description"],
+            using_aeon_io=using_aeon_io,
+        )
+
+        if wheel_data.distance_travelled[-1] > wheel_dist_crit:
+            nb_bouts += 1
+
+    return nb_bouts
