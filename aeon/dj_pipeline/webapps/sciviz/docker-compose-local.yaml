@@ -10,6 +10,7 @@ services:
     environment:
       # - FLASK_ENV=development # enables logging to console from Flask
       - PHARUS_SPEC_PATH=/main/specs/specsheet.yaml # for dynamic utils spec
+      - PHARUS_MODE=DEV
     user: ${HOST_UID}:anaconda
     volumes:
       - ./specsheet.yaml:/main/specs/specsheet.yaml #copy the spec over to /main/specs/YOUR_SPEC_NAME
@@ -23,17 +24,16 @@ services:
             gunicorn --bind 0.0.0.0:$${PHARUS_PORT} pharus.server:app &
             GUNICORN_PID=$$!
         }
-        ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -f -i /tmp/keys/buaws-chen.pem ec2-user@3.128.2.214 -L 3306:buaws-chen-cf-rds.c0pqrqs42ez1.us-east-2.rds.amazonaws.com:3306 -N
         pharus_update
         echo "[$$(date -u '+%Y-%m-%d %H:%M:%S')][DataJoint]: Monitoring Pharus updates..."
         INIT_TIME=$$(date +%s)
-        LAST_MOD_TIME=$$(date -r $$API_SPEC_PATH +%s)
+        LAST_MOD_TIME=$$(date -r $$PHARUS_SPEC_PATH +%s)
         DELTA=$$(expr $$LAST_MOD_TIME - $$INIT_TIME)
         while true; do
-           CURR_LAST_MOD_TIME=$$(date -r $$API_SPEC_PATH +%s)
+           CURR_LAST_MOD_TIME=$$(date -r $$PHARUS_SPEC_PATH +%s)
            CURR_DELTA=$$(expr $$CURR_LAST_MOD_TIME - $$INIT_TIME)
            if [ "$$DELTA" -lt "$$CURR_DELTA" ]; then
-               echo "[$$(date -u '+%Y-%m-%d %H:%M:%S')][DataJoint]: Reloading Pharus since \`$$API_SPEC_PATH\` changed."
+               echo "[$$(date -u '+%Y-%m-%d %H:%M:%S')][DataJoint]: Reloading Pharus since \`$$PHARUS_SPEC_PATH\` changed."
                pharus_update
                DELTA=$$CURR_DELTA
            else
@@ -50,8 +50,9 @@ services:
     image: jverswijver/sci-viz:0.1.3-beta.3
     environment:
       - CHOKIDAR_USEPOLLING=true
-      - REACT_APP_DJSCIVIZ_BACKEND_PREFIX=/utils
+      - REACT_APP_DJSCIVIZ_BACKEND_PREFIX=/api
       - DJSCIVIZ_SPEC_PATH=specsheet.yaml
+      - DJSCIVIZ_MODE=DEV
     volumes:
       - ./specsheet.yaml:/main/specsheet.yaml
     # ports:
@@ -72,13 +73,13 @@ services:
         sciviz_update
         echo "[$$(date -u '+%Y-%m-%d %H:%M:%S')][DataJoint]: Monitoring SciViz updates..."
         INIT_TIME=$$(date +%s)
-        LAST_MOD_TIME=$$(date -r $$FRONTEND_SPEC_PATH +%s)
+        LAST_MOD_TIME=$$(date -r $$DJSCIVIZ_SPEC_PATH +%s)
         DELTA=$$(expr $$LAST_MOD_TIME - $$INIT_TIME)
         while true; do
-           CURR_LAST_MOD_TIME=$$(date -r $$FRONTEND_SPEC_PATH +%s)
+           CURR_LAST_MOD_TIME=$$(date -r $$DJSCIVIZ_SPEC_PATH +%s)
            CURR_DELTA=$$(expr $$CURR_LAST_MOD_TIME - $$INIT_TIME)
            if [ "$$DELTA" -lt "$$CURR_DELTA" ]; then
-               echo "[$$(date -u '+%Y-%m-%d %H:%M:%S')][DataJoint]: Reloading SciViz since \`$$FRONTEND_SPEC_PATH\` changed."
+               echo "[$$(date -u '+%Y-%m-%d %H:%M:%S')][DataJoint]: Reloading SciViz since \`$$DJSCIVIZ_SPEC_PATH\` changed."
                sciviz_update
                DELTA=$$CURR_DELTA
            else
@@ -88,11 +89,11 @@ services:
     networks:
       - main
   fakeservices.datajoint.io:
-    image: datajoint/nginx:v0.0.18
+    image: datajoint/nginx:v0.1.1
     environment:
       - ADD_pharus_TYPE=REST
       - ADD_pharus_ENDPOINT=pharus:5000
-      - ADD_pharus_PREFIX=/utils
+      - ADD_pharus_PREFIX=/api
       - ADD_sciviz_TYPE=REST
       - ADD_sciviz_ENDPOINT=sci-viz:3000
       - ADD_sciviz_PREFIX=/

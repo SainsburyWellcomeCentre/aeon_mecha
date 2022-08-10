@@ -447,7 +447,7 @@ def delete_outdated_plot_entries():
 @schema
 class VisitDailySummaryPlot(dj.Computed):
     definition = """
-    -> VisitSummary
+    -> Visit
     ---
     pellet_count_plotly:             longblob  # Dictionary storing the plotly object (from fig.to_plotly_json())
     wheel_distance_travelled_plotly: longblob
@@ -455,12 +455,11 @@ class VisitDailySummaryPlot(dj.Computed):
     foraging_bouts_plotly:           longblob  
     """
 
-    _min_visit_duration = 24  # in hours (minimum duration of visit for analysis)
-
-    key_source = dj.U("experiment_name", "subject", "visit_start", "visit_end") & (
-        VisitEnd
+    key_source = (
+        Visit
+        & analysis.VisitSummary
+        & (VisitEnd & f"visit_duration > 24")
         & f"experiment_name= 'exp0.2-r0'"
-        & f"visit_duration > {_min_visit_duration}"
     )
 
     def make(self, key):
