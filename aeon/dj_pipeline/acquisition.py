@@ -1,19 +1,18 @@
-import datajoint as dj
 import datetime
 import pathlib
+
+import datajoint as dj
 import numpy as np
 import pandas as pd
 
-from aeon.io import api as io_api
-from aeon.schema import dataset as aeon_schema
-from aeon.io import reader as io_reader
 from aeon.analysis import utils as analysis_utils
+from aeon.io import api as io_api
+from aeon.io import reader as io_reader
+from aeon.schema import dataset as aeon_schema
 
-from . import get_schema_name
-from . import lab, subject
-from .utils import paths
+from . import get_schema_name, lab, subject
 from .populate.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
-
+from .utils import paths
 
 schema = dj.schema(get_schema_name("acquisition"))
 
@@ -952,35 +951,38 @@ class WeightMeasurement(dj.Imported):
             * ExperimentWeightScale.join(ExperimentWeightScale.RemovalTime, left=True)
             & "chunk_start >= weight_scale_install_time"
             & 'chunk_start < IFNULL(weight_scale_remove_time, "2200-01-01")'
+            & 'experiment_name="exp0.2-r0"'
         )
 
     def make(self, key):
         chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
             "chunk_start", "chunk_end", "directory_type"
         )
-        weight_scale_description = (ExperimentWeightScale & key).fetch1(
-            "weight_scale_description"
-        )
+        weight_scale_descriptions = ("Nest", "WeightNest")
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
-        device = getattr(
-            _device_schema_mapping[key["experiment_name"]], weight_scale_description
-        )
+        for weight_scale in weight_scale_descriptions:
 
-        weight_data = io_api.load(
-            root=raw_data_dir.as_posix(),
-            reader=device.WeightRaw,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
+            device = getattr(
+                _device_schema_mapping[key["experiment_name"]], weight_scale
+            )
+
+            weight_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=device.WeightRaw,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            if len(weight_data):
+                break
 
         if not len(weight_data):
-            # TODO: no weight data? this is unexpected
-            # (pending a bugfix for https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/90)
             raise ValueError(
                 f"No weight measurement found for {key} - this is unexpected"
             )
+        weight_data.sort_index(inplace=True)
 
         self.insert1(
             {
