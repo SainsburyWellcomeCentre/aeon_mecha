@@ -965,28 +965,28 @@ class WeightMeasurement(dj.Imported):
             "weight_scale_description"
         )
 
-        weight_device = getattr(
+        device = getattr(
             _device_schema_mapping[key["experiment_name"]], weight_scale_description
-        ).WeightRaw
+        )
 
         weight_data = io_api.load(
             root=raw_data_dir.as_posix(),
-            reader=weight_device,
+            reader=device.WeightRaw,
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),
         )
 
         if not len(
             weight_data
-        ):  # in some sessions, the food patch device was mapped to "Nest"
+        ):  # in some sessions, the food patch deice was mapped to "Nest"
 
-            weight_device = getattr(
-                _device_schema_mapping[key["experiment_name"]], "Nest"
-            ).WeightRaw
+            device = getattr(
+                _device_schema_mapping[key["experiment_name"]], weight_scale_description
+            )
 
             weight_data = io_api.load(
                 root=raw_data_dir.as_posix(),
-                reader=weight_device,
+                reader=device.WeightRaw,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
