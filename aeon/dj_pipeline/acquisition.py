@@ -981,7 +981,7 @@ class WeightMeasurement(dj.Imported):
         ):  # in some sessions, the food patch deice was mapped to "Nest"
 
             device = getattr(
-                _device_schema_mapping[key["experiment_name"]], weight_scale_description
+                _device_schema_mapping[key["experiment_name"]], "Nest"
             )
 
             weight_data = io_api.load(
