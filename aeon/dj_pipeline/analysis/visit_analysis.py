@@ -8,6 +8,7 @@ import pandas as pd
 from .. import acquisition, dict_to_uuid, get_schema_name, lab, qc, tracking
 from .visit import Visit, VisitEnd
 
+logger = dj.logger
 schema = dj.schema(get_schema_name("analysis"))
 
 
@@ -40,6 +41,15 @@ class PositionFilteringParamSet(dj.Lookup):
 
 
 # ---------- Animal Position per Visit ------------------
+
+
+@schema
+class AnimalObjectMapping(dj.Manual):
+    definition = """
+    -> analysis.Visit
+    ---
+    object_id: int
+    """
 
 
 @schema
@@ -124,11 +134,17 @@ class VisitSubjectPosition(dj.Computed):
         # -- Retrieve position data
         camera_name = acquisition._ref_device_mapping[key["experiment_name"]]
 
-        assert (
-            len(set((tracking.CameraTracking.Object & key).fetch("object_id"))) == 1
-        ), "More than one unique object ID found - multiple animal/object mapping not yet supported"
-
-        object_id = (tracking.CameraTracking.Object & key).fetch1("object_id")
+        if len(set((tracking.CameraTracking.Object & key).fetch("object_id"))) == 1:
+            object_id = (tracking.CameraTracking.Object & key).fetch1("object_id")
+        else:
+            logger.info(
+                '"More than one unique object ID found - using animal/object mapping from AnimalObjectMapping"'
+            )
+            if not (AnimalObjectMapping & key):
+                raise ValueError(
+                    f"More than one unique object ID found for {key} - no AnimalObjectMapping defined"
+                )
+            object_id = (AnimalObjectMapping & key).fetch1("object_id")
 
         positiondata = tracking.CameraTracking.get_object_position(
             experiment_name=key["experiment_name"],
