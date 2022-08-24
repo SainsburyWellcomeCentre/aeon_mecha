@@ -101,6 +101,15 @@ class TrackingParamSet(dj.Lookup):
 
 
 @schema
+class TrackingObjectType(dj.Lookup):
+    definition = """
+    tracking_object_type: varchar(36)
+    """
+
+    contents = zip(["body_part", "animal"])
+
+
+@schema
 class CameraTracking(dj.Imported):
     definition = """  # Tracked objects position data from a particular camera, using a particular tracking method, for a particular chunk
     -> acquisition.Chunk
@@ -113,6 +122,7 @@ class CameraTracking(dj.Imported):
         -> master
         object_id: int    # object with id = -1 means "unknown/not sure", could potentially be the same object as those with other id value
         ---
+        -> [nullable] TrackingObjectType
         timestamps:        longblob  # (datetime) timestamps of the position data
         position_x:        longblob  # (px) object's x-position, in the arena's coordinate frame
         position_y:        longblob  # (px) object's y-position, in the arena's coordinate frame
