@@ -46,7 +46,7 @@ services:
     networks:
       - main
   reverse-proxy:
-    image: datajoint/nginx:v0.1.0
+    image: datajoint/nginx:v0.1.1
     environment:
       - ADD_pharus_TYPE=REST
       - ADD_pharus_ENDPOINT=pharus:5000
