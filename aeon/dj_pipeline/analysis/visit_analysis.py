@@ -284,7 +284,7 @@ class VisitTimeDistribution(dj.Computed):
             # filter out maintenance period
             maintenance_filter = np.full(len(position.index), False)
 
-            maintenance_start, maintenance_stop = query.fetch(
+            maintenance_start, maintenance_stop = maintenance_period.fetch(
                 "chunk_start", "chunk_end"
             )
 
