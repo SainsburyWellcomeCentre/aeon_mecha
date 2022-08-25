@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from .. import acquisition, dict_to_uuid, get_schema_name, lab, qc, tracking
+from ..acquisition import Chunk, ExperimentLog
 from .visit import Visit, VisitEnd
 
 schema = dj.schema(get_schema_name("analysis"))
@@ -258,6 +259,10 @@ class VisitTimeDistribution(dj.Computed):
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
         )
 
+        maintenance_period = Chunk & (
+            ExperimentLog.Message() & 'message="Maintenance"'
+        )  # get the maintenance info
+
         for visit_date in visit_dates:
             day_start = datetime.datetime.combine(visit_date.date(), time.min)
             day_end = datetime.datetime.combine(visit_date.date(), time.max)
@@ -275,6 +280,19 @@ class VisitTimeDistribution(dj.Computed):
             position = VisitSubjectPosition.get_position(
                 subject=key["subject"], start=day_start, end=day_end
             )
+
+            # filter out maintenance period
+            maintenance_filter = np.full(len(position.index), False)
+
+            maintenance_start, maintenance_stop = query.fetch(
+                "chunk_start", "chunk_end"
+            )
+
+            for start, stop in zip(maintenance_start, maintenance_stop):
+                maintenance_filter += (position.index >= start) & (
+                    position.index <= stop
+                )
+            position[maintenance_filter] = np.nan
 
             # filter for objects of the correct size
             valid_position = (position.area > 0) & (position.area < 1000)
