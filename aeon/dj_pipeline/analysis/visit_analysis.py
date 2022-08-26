@@ -315,7 +315,7 @@ class VisitTimeDistribution(dj.Computed):
                 len(position), False
             )  # initialize boolean filter array
 
-            start_timestaps = np.array(
+            start_timestamps = np.array(
                 np.append(
                     day_start,
                     daily_log_df.loc[
@@ -336,10 +336,10 @@ class VisitTimeDistribution(dj.Computed):
             )  # end time
 
             for maintenance_start, maintenance_end in zip(
-                start_timestaps, end_timestamps
+                start_timestamps, end_timestamps
             ):
-                maintenance_filter = _make_maintenance_filter(
-                    position, maintenance_filter, maintenance_start, maintenance_end
+                maintenance_filter += (position.index >= maintenance_start) & (
+                    position.index <= maintenance_end
                 )
             position[maintenance_filter] = np.nan
 
@@ -536,7 +536,7 @@ class VisitSummary(dj.Computed):
                 len(position), False
             )  # initialize boolean filter array
 
-            start_timestaps = np.array(
+            start_timestamps = np.array(
                 np.append(
                     day_start,
                     daily_log_df.loc[
@@ -557,10 +557,10 @@ class VisitSummary(dj.Computed):
             )  # end time
 
             for maintenance_start, maintenance_end in zip(
-                start_timestaps, end_timestamps
+                start_timestamps, end_timestamps
             ):
-                maintenance_filter = _make_maintenance_filter(
-                    position, maintenance_filter, maintenance_start, maintenance_end
+                maintenance_filter += (position.index >= maintenance_start) & (
+                    position.index <= maintenance_end
                 )
             position[maintenance_filter] = np.nan
 
