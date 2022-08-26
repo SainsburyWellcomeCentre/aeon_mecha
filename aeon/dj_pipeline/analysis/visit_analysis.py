@@ -276,6 +276,20 @@ class VisitTimeDistribution(dj.Computed):
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
         )
 
+        # get logs from ExperimentLog
+        log_df = (
+            (
+                ExperimentLog.Message()
+                & 'message IN ("Maintenance", "Experiment")'
+                & f'message_time BETWEEN "{visit_start}" AND "{visit_end}"'
+            )
+            .fetch(format="frame")
+            .reset_index()
+        )
+        log_df = log_df[
+            log_df["message"].shift() != log_df["message"]
+        ]  # remove duplicates and keep the first one
+
         for visit_date in visit_dates:
             day_start = datetime.datetime.combine(visit_date.date(), time.min)
             day_end = datetime.datetime.combine(visit_date.date(), time.max)
@@ -294,58 +308,40 @@ class VisitTimeDistribution(dj.Computed):
                 subject=key["subject"], start=day_start, end=day_end
             )
 
-            # filter out maintenance period
-            log_period = (
-                (
-                    ExperimentLog.Message()
-                    & 'message IN ("Maintenance", "Experiment")'
-                    & f'message_time BETWEEN "{day_start}" AND "{day_end}"'
+            # filter out maintenance period based on logs
+            daily_log_df = log_df[log_df["message_time"].between(day_start, day_end)]
+
+            maintenance_filter = np.full(
+                len(position), False
+            )  # initialize boolean filter array
+
+            start_timestaps = np.array(
+                np.append(
+                    day_start,
+                    daily_log_df.loc[
+                        daily_log_df["message"] == "Maintenance", "message_time"
+                    ],
+                ),
+                dtype="datetime64[ns]",
+            )  # start time
+
+            end_timestamps = np.array(
+                np.append(
+                    daily_log_df.loc[
+                        daily_log_df["message"] == "Experiment", "message_time"
+                    ],
+                    day_end,
+                ),
+                dtype="datetime64[ns]",
+            )  # end time
+
+            for maintenance_start, maintenance_end in zip(
+                start_timestaps, end_timestamps
+            ):
+                maintenance_filter = _make_maintenance_filter(
+                    position, maintenance_filter, maintenance_start, maintenance_end
                 )
-                .fetch(format="frame")
-                .reset_index()
-            )
-
-            if len(log_period):  # if log message exists on a given time period
-                log_period["state_change"] = (
-                    log_period.replace({"Maintenance": 0, "Experiment": 1})["message"]
-                    .diff()
-                    .abs()
-                    .fillna(1)
-                )
-
-                maintenance_filter = np.full(
-                    len(position), False
-                )  # initialize boolean filter array
-
-                maintenance_start = maintenance_stop = np.nan
-
-                for _, row in log_period.iterrows():
-                    if row["message"] == "Maintenance" and row["state_change"]:
-                        maintenance_start = row["message_time"]
-                    if row["message"] == "Experiment":
-                        maintenance_stop = row["message_time"]
-
-                    if not pd.isnull(maintenance_start) and not pd.isnull(
-                        maintenance_stop
-                    ):
-
-                        maintenance_filter = _make_maintenance_filter(
-                            position,
-                            maintenance_filter,
-                            maintenance_start,
-                            maintenance_stop,
-                        )
-                        maintenance_start = maintenance_stop = np.nan
-
-                if not pd.isnull(maintenance_start) and pd.isnull(maintenance_stop):
-                    maintenance_stop = day_end
-                    maintenance_filter = _make_maintenance_filter(
-                        position,
-                        maintenance_filter,
-                        maintenance_start,
-                        maintenance_stop,
-                    )
-                position[maintenance_filter] = np.nan
+            position[maintenance_filter] = np.nan
 
             # filter for objects of the correct size
             valid_position = (position.area > 0) & (position.area < 1000)
@@ -492,6 +488,20 @@ class VisitSummary(dj.Computed):
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
         )
 
+        # get logs from ExperimentLog
+        log_df = (
+            (
+                ExperimentLog.Message()
+                & 'message IN ("Maintenance", "Experiment")'
+                & f'message_time BETWEEN "{visit_start}" AND "{visit_end}"'
+            )
+            .fetch(format="frame")
+            .reset_index()
+        )
+        log_df = log_df[
+            log_df["message"].shift() != log_df["message"]
+        ]  # remove duplicates and keep the first one
+
         for visit_date in visit_dates:
             day_start = datetime.datetime.combine((visit_date).date(), time.min)
             day_end = datetime.datetime.combine((visit_date).date(), time.max)
@@ -519,58 +529,40 @@ class VisitSummary(dj.Computed):
                 subject=key["subject"], start=day_start, end=day_end
             )
 
-            # filter out maintenance period
-            log_period = (
-                (
-                    ExperimentLog.Message()
-                    & 'message IN ("Maintenance", "Experiment")'
-                    & f'message_time BETWEEN "{day_start}" AND "{day_end}"'
+            # filter out maintenance period based on logs
+            daily_log_df = log_df[log_df["message_time"].between(day_start, day_end)]
+
+            maintenance_filter = np.full(
+                len(position), False
+            )  # initialize boolean filter array
+
+            start_timestaps = np.array(
+                np.append(
+                    day_start,
+                    daily_log_df.loc[
+                        daily_log_df["message"] == "Maintenance", "message_time"
+                    ],
+                ),
+                dtype="datetime64[ns]",
+            )  # start time
+
+            end_timestamps = np.array(
+                np.append(
+                    daily_log_df.loc[
+                        daily_log_df["message"] == "Experiment", "message_time"
+                    ],
+                    day_end,
+                ),
+                dtype="datetime64[ns]",
+            )  # end time
+
+            for maintenance_start, maintenance_end in zip(
+                start_timestaps, end_timestamps
+            ):
+                maintenance_filter = _make_maintenance_filter(
+                    position, maintenance_filter, maintenance_start, maintenance_end
                 )
-                .fetch(format="frame")
-                .reset_index()
-            )
-
-            if len(log_period):  # if log message exists on a given time period
-                log_period["state_change"] = (
-                    log_period.replace({"Maintenance": 0, "Experiment": 1})["message"]
-                    .diff()
-                    .abs()
-                    .fillna(1)
-                )
-
-                maintenance_filter = np.full(
-                    len(position), False
-                )  # initialize boolean filter array
-
-                maintenance_start = maintenance_stop = np.nan
-
-                for _, row in log_period.iterrows():
-                    if row["message"] == "Maintenance" and row["state_change"]:
-                        maintenance_start = row["message_time"]
-                    if row["message"] == "Experiment":
-                        maintenance_stop = row["message_time"]
-
-                    if not pd.isnull(maintenance_start) and not pd.isnull(
-                        maintenance_stop
-                    ):
-
-                        maintenance_filter = _make_maintenance_filter(
-                            position,
-                            maintenance_filter,
-                            maintenance_start,
-                            maintenance_stop,
-                        )
-                        maintenance_start = maintenance_stop = np.nan
-
-                if not pd.isnull(maintenance_start) and pd.isnull(maintenance_stop):
-                    maintenance_stop = day_end
-                    maintenance_filter = _make_maintenance_filter(
-                        position,
-                        maintenance_filter,
-                        maintenance_start,
-                        maintenance_stop,
-                    )
-                position[maintenance_filter] = np.nan
+            position[maintenance_filter] = np.nan
 
             # filter for objects of the correct size
             valid_position = (position.area > 0) & (position.area < 1000)
