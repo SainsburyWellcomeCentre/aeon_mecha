@@ -46,7 +46,7 @@ class PositionFilteringParamSet(dj.Lookup):
 @schema
 class AnimalObjectMapping(dj.Manual):
     definition = """
-    -> analysis.Visit
+    -> Visit
     ---
     object_id: int
     """
