@@ -281,7 +281,7 @@ class VisitTimeDistribution(dj.Computed):
             & 'message IN ("Maintenance", "Experiment")'
             & f'message_time BETWEEN "{visit_start}" AND "{visit_end}"'
         )
-        log_df = log_df.fetch(format="frame").reset_index()
+        log_df = log_df.fetch(format="frame", order_by="message_time").reset_index()
         log_df = log_df[log_df["message"].shift() != log_df["message"]].reset_index(
             drop=True
         )  # remove duplicates and keep the first one
@@ -292,7 +292,7 @@ class VisitTimeDistribution(dj.Computed):
             log_df.drop(index=0, inplace=True)  # look for the first maintenance
 
         # Last entry is the visit end
-        if (log_df.tail(1)["message"] == "Maintenance").values:
+        if (log_df.iloc[-1]["message"] == "Maintenance"):
 
             log_df_end = log_df.tail(1)
             log_df_end["message_time"], log_df_end["message"] = (
@@ -506,7 +506,7 @@ class VisitSummary(dj.Computed):
             & 'message IN ("Maintenance", "Experiment")'
             & f'message_time BETWEEN "{visit_start}" AND "{visit_end}"'
         )
-        log_df = log_df.fetch(format="frame").reset_index()
+        log_df = log_df.fetch(format="frame", order_by="message_time").reset_index()
         log_df = log_df[log_df["message"].shift() != log_df["message"]].reset_index(
             drop=True
         )  # remove duplicates and keep the first one
@@ -517,7 +517,7 @@ class VisitSummary(dj.Computed):
             log_df.drop(index=0, inplace=True)  # look for the first maintenance
 
         # Last entry is the visit end
-        if (log_df.tail(1)["message"] == "Maintenance").values:
+        if (log_df.iloc[-1]["message"] == "Maintenance"):
 
             log_df_end = log_df.tail(1)
             log_df_end["message_time"], log_df_end["message"] = (
