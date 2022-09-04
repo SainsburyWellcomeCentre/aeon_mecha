@@ -317,7 +317,9 @@ class VisitTimeDistribution(dj.Computed):
 
         for visit_date in visit_dates:
             day_start = datetime.datetime.combine(visit_date.date(), time.min)
-            day_end = datetime.datetime.combine(visit_date.date(), time.max)
+            day_end = datetime.datetime.combine(
+                visit_date.date() + datetime.timedelta(days=1), time.min
+            )
 
             day_start = max(day_start, visit_start)
             day_end = min(day_end, visit_end)
@@ -540,7 +542,9 @@ class VisitSummary(dj.Computed):
 
         for visit_date in visit_dates:
             day_start = datetime.datetime.combine(visit_date.date(), time.min)
-            day_end = datetime.datetime.combine(visit_date.date(), time.max)
+            day_end = datetime.datetime.combine(
+                visit_date.date() + datetime.timedelta(days=1), time.min
+            )
 
             day_start = max(day_start, visit_start)
             day_end = min(day_end, visit_end)
