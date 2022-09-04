@@ -292,7 +292,7 @@ class VisitTimeDistribution(dj.Computed):
             log_df.drop(index=0, inplace=True)  # look for the first maintenance
 
         # Last entry is the visit end
-        if (log_df.iloc[-1]["message"] == "Maintenance"):
+        if log_df.iloc[-1]["message"] == "Maintenance":
 
             log_df_end = log_df.tail(1)
             log_df_end["message_time"], log_df_end["message"] = (
@@ -319,7 +319,7 @@ class VisitTimeDistribution(dj.Computed):
             day_start = datetime.datetime.combine(visit_date.date(), time.min)
             day_end = datetime.datetime.combine(
                 visit_date.date() + datetime.timedelta(days=1), time.min
-            )
+            )  # start of the next day
 
             day_start = max(day_start, visit_start)
             day_end = min(day_end, visit_end)
@@ -336,25 +336,21 @@ class VisitTimeDistribution(dj.Computed):
             )
 
             # filter out maintenance period based on logs
-            maintenance_filter = np.full(len(position), False)
-
             while maintenance_period:
                 (maintenance_start, maintenance_end) = maintenance_period[0]
 
-                if day_end < maintenance_start:
+                if day_end < maintenance_start:  # no more maintenance for this date
                     break
-                bool_mask = np.full(len(position), False)
-                bool_mask = (position.index >= maintenance_start) & (
+
+                maintenance_filter = (position.index >= maintenance_start) & (
                     position.index <= maintenance_end
                 )
-                if bool_mask.sum():
-                    maintenance_filter += bool_mask
-                    if day_end >= maintenance_end:
-                        maintenance_period.popleft()
-                    else:
-                        break
+                position[maintenance_filter] = np.nan
 
-            position[maintenance_filter] = np.nan
+                if day_end >= maintenance_end:  # remove this range
+                    maintenance_period.popleft()
+                else:
+                    break
 
             # filter for objects of the correct size
             valid_position = (position.area > 0) & (position.area < 1000)
@@ -517,7 +513,7 @@ class VisitSummary(dj.Computed):
             log_df.drop(index=0, inplace=True)  # look for the first maintenance
 
         # Last entry is the visit end
-        if (log_df.iloc[-1]["message"] == "Maintenance"):
+        if log_df.iloc[-1]["message"] == "Maintenance":
 
             log_df_end = log_df.tail(1)
             log_df_end["message_time"], log_df_end["message"] = (
@@ -544,7 +540,7 @@ class VisitSummary(dj.Computed):
             day_start = datetime.datetime.combine(visit_date.date(), time.min)
             day_end = datetime.datetime.combine(
                 visit_date.date() + datetime.timedelta(days=1), time.min
-            )
+            )  # start of the next day
 
             day_start = max(day_start, visit_start)
             day_end = min(day_end, visit_end)
@@ -561,25 +557,21 @@ class VisitSummary(dj.Computed):
             )
 
             # filter out maintenance period based on logs
-            maintenance_filter = np.full(len(position), False)
-
             while maintenance_period:
                 (maintenance_start, maintenance_end) = maintenance_period[0]
 
-                if day_end < maintenance_start:
+                if day_end < maintenance_start:  # no more maintenance for this date
                     break
-                bool_mask = np.full(len(position), False)
-                bool_mask = (position.index >= maintenance_start) & (
+
+                maintenance_filter = (position.index >= maintenance_start) & (
                     position.index <= maintenance_end
                 )
-                if bool_mask.sum():
-                    maintenance_filter += bool_mask
-                    if day_end >= maintenance_end:
-                        maintenance_period.popleft()
-                    else:
-                        break
+                position[maintenance_filter] = np.nan
 
-            position[maintenance_filter] = np.nan
+                if day_end >= maintenance_end:  # remove this range
+                    maintenance_period.popleft()
+                else:
+                    break
 
             # filter for objects of the correct size
             valid_position = (position.area > 0) & (position.area < 1000)
