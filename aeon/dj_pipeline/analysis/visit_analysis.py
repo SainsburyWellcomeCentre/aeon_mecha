@@ -21,7 +21,6 @@ schema = dj.schema(get_schema_name("analysis"))
 class PositionFilteringMethod(dj.Lookup):
     definition = """
     pos_filter_method: varchar(16)  
-    
     ---
     pos_filter_method_description: varchar(256)
     """
