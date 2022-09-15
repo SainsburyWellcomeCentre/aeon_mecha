@@ -1,4 +1,5 @@
 import datetime
+from collections import deque
 from datetime import time
 
 import datajoint as dj
@@ -6,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from .. import acquisition, dict_to_uuid, get_schema_name, lab, qc, tracking
+from ..acquisition import Chunk, ExperimentLog
 from .visit import Visit, VisitEnd
 
 logger = dj.logger
@@ -273,9 +275,51 @@ class VisitTimeDistribution(dj.Computed):
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
         )
 
+        # get logs from ExperimentLog
+        log_df = dj.U("experiment_name", "message_time", "message") & (
+            ExperimentLog.Message()
+            & 'message IN ("Maintenance", "Experiment")'
+            & f'message_time BETWEEN "{visit_start}" AND "{visit_end}"'
+        )
+        log_df = log_df.fetch(format="frame", order_by="message_time").reset_index()
+        log_df = log_df[log_df["message"].shift() != log_df["message"]].reset_index(
+            drop=True
+        )  # remove duplicates and keep the first one
+
+        # An experiment starts with visit start (anything before the first maintenance is experiment)
+        # Delete the row if it starts with "Experiment"
+        if log_df.iloc[0]["message"] == "Experiment":
+            log_df.drop(index=0, inplace=True)  # look for the first maintenance
+
+        # Last entry is the visit end
+        if log_df.iloc[-1]["message"] == "Maintenance":
+
+            log_df_end = log_df.tail(1)
+            log_df_end["message_time"], log_df_end["message"] = (
+                pd.Timestamp(visit_end),
+                "VisitEnd",
+            )
+            log_df = pd.concat([log_df, log_df_end])
+            log_df.reset_index(drop=True, inplace=True)
+
+        start_timestamps = log_df.loc[
+            log_df["message"] == "Maintenance", "message_time"
+        ].values
+        end_timestamps = log_df.loc[
+            log_df["message"] != "Maintenance", "message_time"
+        ].values
+        maintenance_period = deque(
+            [
+                (pd.Timestamp(start), pd.Timestamp(end))
+                for start, end in zip(start_timestamps, end_timestamps)
+            ]
+        )  # queue object. pop out from left after use
+
         for visit_date in visit_dates:
             day_start = datetime.datetime.combine(visit_date.date(), time.min)
-            day_end = datetime.datetime.combine(visit_date.date(), time.max)
+            day_end = datetime.datetime.combine(
+                visit_date.date() + datetime.timedelta(days=1), time.min
+            )  # start of the next day
 
             day_start = max(day_start, visit_start)
             day_end = min(day_end, visit_end)
@@ -291,10 +335,26 @@ class VisitTimeDistribution(dj.Computed):
                 subject=key["subject"], start=day_start, end=day_end
             )
 
+            # filter out maintenance period based on logs
+            while maintenance_period:
+                (maintenance_start, maintenance_end) = maintenance_period[0]
+
+                if day_end < maintenance_start:  # no more maintenance for this date
+                    break
+
+                maintenance_filter = (position.index >= maintenance_start) & (
+                    position.index <= maintenance_end
+                )
+                position[maintenance_filter] = np.nan
+
+                if day_end >= maintenance_end:  # remove this range
+                    maintenance_period.popleft()
+                else:
+                    break
+
             # filter for objects of the correct size
             valid_position = (position.area > 0) & (position.area < 1000)
             position[~valid_position] = np.nan
-
             position.rename(
                 columns={"position_x": "x", "position_y": "y"}, inplace=True
             )
@@ -436,9 +496,51 @@ class VisitSummary(dj.Computed):
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
         )
 
+        # get logs from ExperimentLog
+        log_df = dj.U("experiment_name", "message_time", "message") & (
+            ExperimentLog.Message()
+            & 'message IN ("Maintenance", "Experiment")'
+            & f'message_time BETWEEN "{visit_start}" AND "{visit_end}"'
+        )
+        log_df = log_df.fetch(format="frame", order_by="message_time").reset_index()
+        log_df = log_df[log_df["message"].shift() != log_df["message"]].reset_index(
+            drop=True
+        )  # remove duplicates and keep the first one
+
+        # An experiment starts with visit start (anything before the first maintenance is experiment)
+        # Delete the row if it starts with "Experiment"
+        if log_df.iloc[0]["message"] == "Experiment":
+            log_df.drop(index=0, inplace=True)  # look for the first maintenance
+
+        # Last entry is the visit end
+        if log_df.iloc[-1]["message"] == "Maintenance":
+
+            log_df_end = log_df.tail(1)
+            log_df_end["message_time"], log_df_end["message"] = (
+                pd.Timestamp(visit_end),
+                "VisitEnd",
+            )
+            log_df = pd.concat([log_df, log_df_end])
+            log_df.reset_index(drop=True, inplace=True)
+
+        start_timestamps = log_df.loc[
+            log_df["message"] == "Maintenance", "message_time"
+        ].values
+        end_timestamps = log_df.loc[
+            log_df["message"] != "Maintenance", "message_time"
+        ].values
+        maintenance_period = deque(
+            [
+                (pd.Timestamp(start), pd.Timestamp(end))
+                for start, end in zip(start_timestamps, end_timestamps)
+            ]
+        )  # queue object. pop out from left after use
+
         for visit_date in visit_dates:
-            day_start = datetime.datetime.combine((visit_date).date(), time.min)
-            day_end = datetime.datetime.combine((visit_date).date(), time.max)
+            day_start = datetime.datetime.combine(visit_date.date(), time.min)
+            day_end = datetime.datetime.combine(
+                visit_date.date() + datetime.timedelta(days=1), time.min
+            )  # start of the next day
 
             day_start = max(day_start, visit_start)
             day_end = min(day_end, visit_end)
@@ -449,19 +551,27 @@ class VisitSummary(dj.Computed):
                 3,
             )
 
-            ## TODO
-            # # subject weights
-            # weight_start = (
-            #     acquisition.SubjectWeight.WeightTime & f'weight_time = "{day_start}"'
-            # ).fetch1("weight")
-            # weight_end = (
-            #     acquisition.SubjectWeight.WeightTime & f'weight_time = "{day_end}"'
-            # ).fetch1("weight")
-
             # subject's position data in the time_slices per day
             position = VisitSubjectPosition.get_position(
                 subject=key["subject"], start=day_start, end=day_end
             )
+
+            # filter out maintenance period based on logs
+            while maintenance_period:
+                (maintenance_start, maintenance_end) = maintenance_period[0]
+
+                if day_end < maintenance_start:  # no more maintenance for this date
+                    break
+
+                maintenance_filter = (position.index >= maintenance_start) & (
+                    position.index <= maintenance_end
+                )
+                position[maintenance_filter] = np.nan
+
+                if day_end >= maintenance_end:  # remove this range
+                    maintenance_period.popleft()
+                else:
+                    break
 
             # filter for objects of the correct size
             valid_position = (position.area > 0) & (position.area < 1000)
