@@ -21,7 +21,6 @@ schema = dj.schema(get_schema_name("analysis"))
 class PositionFilteringMethod(dj.Lookup):
     definition = """
     pos_filter_method: varchar(16)  
-    
     ---
     pos_filter_method_description: varchar(256)
     """
@@ -274,53 +273,15 @@ class VisitTimeDistribution(dj.Computed):
         visit_dates = pd.date_range(
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
         )
-
-        # get logs from ExperimentLog
-        log_df = dj.U("experiment_name", "message_time", "message") & (
-            ExperimentLog.Message()
-            & 'message IN ("Maintenance", "Experiment")'
-            & f'message_time BETWEEN "{visit_start}" AND "{visit_end}"'
+        maintenance_period = _get_maintenance_periods(
+            key["experiment_name"], visit_start, visit_end
         )
-        log_df = log_df.fetch(format="frame", order_by="message_time").reset_index()
-        log_df = log_df[log_df["message"].shift() != log_df["message"]].reset_index(
-            drop=True
-        )  # remove duplicates and keep the first one
-
-        # An experiment starts with visit start (anything before the first maintenance is experiment)
-        # Delete the row if it starts with "Experiment"
-        if log_df.iloc[0]["message"] == "Experiment":
-            log_df.drop(index=0, inplace=True)  # look for the first maintenance
-
-        # Last entry is the visit end
-        if log_df.iloc[-1]["message"] == "Maintenance":
-
-            log_df_end = log_df.tail(1)
-            log_df_end["message_time"], log_df_end["message"] = (
-                pd.Timestamp(visit_end),
-                "VisitEnd",
-            )
-            log_df = pd.concat([log_df, log_df_end])
-            log_df.reset_index(drop=True, inplace=True)
-
-        start_timestamps = log_df.loc[
-            log_df["message"] == "Maintenance", "message_time"
-        ].values
-        end_timestamps = log_df.loc[
-            log_df["message"] != "Maintenance", "message_time"
-        ].values
-        maintenance_period = deque(
-            [
-                (pd.Timestamp(start), pd.Timestamp(end))
-                for start, end in zip(start_timestamps, end_timestamps)
-            ]
-        )  # queue object. pop out from left after use
 
         for visit_date in visit_dates:
             day_start = datetime.datetime.combine(visit_date.date(), time.min)
             day_end = datetime.datetime.combine(
                 visit_date.date() + datetime.timedelta(days=1), time.min
             )  # start of the next day
-
             day_start = max(day_start, visit_start)
             day_end = min(day_end, visit_end)
 
@@ -329,28 +290,14 @@ class VisitTimeDistribution(dj.Computed):
                 (day_end - day_start) / datetime.timedelta(hours=1),
                 3,
             )
-
             # subject's position data in the time_slices per day
             position = VisitSubjectPosition.get_position(
                 subject=key["subject"], start=day_start, end=day_end
             )
-
             # filter out maintenance period based on logs
-            while maintenance_period:
-                (maintenance_start, maintenance_end) = maintenance_period[0]
-
-                if day_end < maintenance_start:  # no more maintenance for this date
-                    break
-
-                maintenance_filter = (position.index >= maintenance_start) & (
-                    position.index <= maintenance_end
-                )
-                position[maintenance_filter] = np.nan
-
-                if day_end >= maintenance_end:  # remove this range
-                    maintenance_period.popleft()
-                else:
-                    break
+            position = _filter_out_maintenance_periods(
+                position, maintenance_period, day_end
+            )
 
             # filter for objects of the correct size
             valid_position = (position.area > 0) & (position.area < 1000)
@@ -358,7 +305,6 @@ class VisitTimeDistribution(dj.Computed):
             position.rename(
                 columns={"position_x": "x", "position_y": "y"}, inplace=True
             )
-
             # in corridor
             distance_from_center = tracking.compute_distance(
                 position[["x", "y"]],
@@ -367,9 +313,7 @@ class VisitTimeDistribution(dj.Computed):
             in_corridor = (distance_from_center < tracking.arena_outer_radius) & (
                 distance_from_center > tracking.arena_inner_radius
             )
-
             in_arena = ~in_corridor
-
             # in nests - loop through all nests in this experiment
             in_nest_times = []
             for nest_key in (lab.ArenaNest & key).fetch("KEY"):
@@ -384,12 +328,10 @@ class VisitTimeDistribution(dj.Computed):
                     }
                 )
                 in_arena = in_arena & ~in_nest
-
             # in food patches - loop through all in-use patches during this visit
             query = acquisition.ExperimentFoodPatch.join(
                 acquisition.ExperimentFoodPatch.RemovalTime, left=True
             )
-
             food_patch_keys = (
                 query
                 & (
@@ -404,7 +346,6 @@ class VisitTimeDistribution(dj.Computed):
             ).fetch("KEY")
 
             in_food_patch_times = []
-
             for food_patch_key in food_patch_keys:
                 # wheel data
                 food_patch_description = (
@@ -417,26 +358,19 @@ class VisitTimeDistribution(dj.Computed):
                     patch_name=food_patch_description,
                     using_aeon_io=True,
                 )
-
+                # filter out maintenance period based on logs
+                wheel_data = _filter_out_maintenance_periods(
+                    wheel_data, maintenance_period, day_end
+                )
                 patch_position = (
-                    dj.U(
-                        "food_patch_serial_number",
-                        "food_patch_position_x",
-                        "food_patch_position_y",
-                        "food_patch_description",
-                    )
-                    & acquisition.ExperimentFoodPatch
-                    * acquisition.ExperimentFoodPatch.Position
-                    & food_patch_key
+                    acquisition.ExperimentFoodPatch.Position & food_patch_key
                 ).fetch1("food_patch_position_x", "food_patch_position_y")
-
                 in_patch = tracking.is_in_patch(
                     position,
                     patch_position,
                     wheel_data.distance_travelled,
                     patch_radius=0.2,
                 )
-
                 in_food_patch_times.append(
                     {
                         **key,
@@ -446,7 +380,6 @@ class VisitTimeDistribution(dj.Computed):
                         "in_patch": in_patch.index.values[in_patch],
                     }
                 )
-
                 in_arena = in_arena & ~in_patch
 
             self.insert1(
@@ -495,46 +428,9 @@ class VisitSummary(dj.Computed):
         visit_dates = pd.date_range(
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
         )
-
-        # get logs from ExperimentLog
-        log_df = dj.U("experiment_name", "message_time", "message") & (
-            ExperimentLog.Message()
-            & 'message IN ("Maintenance", "Experiment")'
-            & f'message_time BETWEEN "{visit_start}" AND "{visit_end}"'
+        maintenance_period = _get_maintenance_periods(
+            key["experiment_name"], visit_start, visit_end
         )
-        log_df = log_df.fetch(format="frame", order_by="message_time").reset_index()
-        log_df = log_df[log_df["message"].shift() != log_df["message"]].reset_index(
-            drop=True
-        )  # remove duplicates and keep the first one
-
-        # An experiment starts with visit start (anything before the first maintenance is experiment)
-        # Delete the row if it starts with "Experiment"
-        if log_df.iloc[0]["message"] == "Experiment":
-            log_df.drop(index=0, inplace=True)  # look for the first maintenance
-
-        # Last entry is the visit end
-        if log_df.iloc[-1]["message"] == "Maintenance":
-
-            log_df_end = log_df.tail(1)
-            log_df_end["message_time"], log_df_end["message"] = (
-                pd.Timestamp(visit_end),
-                "VisitEnd",
-            )
-            log_df = pd.concat([log_df, log_df_end])
-            log_df.reset_index(drop=True, inplace=True)
-
-        start_timestamps = log_df.loc[
-            log_df["message"] == "Maintenance", "message_time"
-        ].values
-        end_timestamps = log_df.loc[
-            log_df["message"] != "Maintenance", "message_time"
-        ].values
-        maintenance_period = deque(
-            [
-                (pd.Timestamp(start), pd.Timestamp(end))
-                for start, end in zip(start_timestamps, end_timestamps)
-            ]
-        )  # queue object. pop out from left after use
 
         for visit_date in visit_dates:
             day_start = datetime.datetime.combine(visit_date.date(), time.min)
@@ -550,36 +446,20 @@ class VisitSummary(dj.Computed):
                 (day_end - day_start) / datetime.timedelta(hours=1),
                 3,
             )
-
             # subject's position data in the time_slices per day
             position = VisitSubjectPosition.get_position(
                 subject=key["subject"], start=day_start, end=day_end
             )
-
             # filter out maintenance period based on logs
-            while maintenance_period:
-                (maintenance_start, maintenance_end) = maintenance_period[0]
-
-                if day_end < maintenance_start:  # no more maintenance for this date
-                    break
-
-                maintenance_filter = (position.index >= maintenance_start) & (
-                    position.index <= maintenance_end
-                )
-                position[maintenance_filter] = np.nan
-
-                if day_end >= maintenance_end:  # remove this range
-                    maintenance_period.popleft()
-                else:
-                    break
-
+            position = _filter_out_maintenance_periods(
+                position, maintenance_period, day_end
+            )
             # filter for objects of the correct size
             valid_position = (position.area > 0) & (position.area < 1000)
             position[~valid_position] = np.nan
             position.rename(
                 columns={"position_x": "x", "position_y": "y"}, inplace=True
             )
-
             position_diff = np.sqrt(
                 np.square(np.diff(position.x)) + np.square(np.diff(position.y))
             )
@@ -589,7 +469,6 @@ class VisitSummary(dj.Computed):
             query = acquisition.ExperimentFoodPatch.join(
                 acquisition.ExperimentFoodPatch.RemovalTime, left=True
             )
-
             food_patch_keys = (
                 query
                 & (
@@ -604,7 +483,6 @@ class VisitSummary(dj.Computed):
             ).fetch("KEY")
 
             food_patch_statistics = []
-
             for food_patch_key in food_patch_keys:
                 pellet_events = (
                     acquisition.FoodPatchEvent * acquisition.EventType
@@ -612,6 +490,13 @@ class VisitSummary(dj.Computed):
                     & 'event_type = "TriggerPellet"'
                     & f'event_time BETWEEN "{day_start}" AND "{day_end}"'
                 ).fetch("event_time")
+                # filter out maintenance period based on logs
+                pellet_events = _filter_out_maintenance_periods(
+                    pd.DataFrame(pellet_events).set_index(0),
+                    maintenance_period,
+                    day_end,
+                    dropna=True,
+                ).index.values
                 # wheel data
                 food_patch_description = (
                     acquisition.ExperimentFoodPatch & food_patch_key
@@ -622,6 +507,10 @@ class VisitSummary(dj.Computed):
                     end=pd.Timestamp(day_end),
                     patch_name=food_patch_description,
                     using_aeon_io=True,
+                )
+                # filter out maintenance period based on logs
+                wheel_data = _filter_out_maintenance_periods(
+                    wheel_data, maintenance_period, day_end
                 )
 
                 food_patch_statistics.append(
@@ -655,3 +544,66 @@ class VisitSummary(dj.Computed):
                 }
             )
             self.FoodPatch.insert(food_patch_statistics)
+
+
+def _get_maintenance_periods(experiment_name, start, end):
+    # get logs from ExperimentLog
+    log_df = (
+        ExperimentLog.Message.proj("message")
+        & {"experiment_name": experiment_name}
+        & 'message IN ("Maintenance", "Experiment")'
+        & f'message_time BETWEEN "{start}" AND "{end}"'
+    )
+    log_df = log_df.fetch(format="frame", order_by="message_time").reset_index()
+    log_df = log_df[log_df["message"].shift() != log_df["message"]].reset_index(
+        drop=True
+    )  # remove duplicates and keep the first one
+
+    # An experiment starts with visit start (anything before the first maintenance is experiment)
+    # Delete the row if it starts with "Experiment"
+    if log_df.iloc[0]["message"] == "Experiment":
+        log_df.drop(index=0, inplace=True)  # look for the first maintenance
+
+    # Last entry is the visit end
+    if log_df.iloc[-1]["message"] == "Maintenance":
+        log_df_end = log_df.tail(1)
+        log_df_end["message_time"], log_df_end["message"] = (
+            pd.Timestamp(end),
+            "VisitEnd",
+        )
+        log_df = pd.concat([log_df, log_df_end])
+        log_df.reset_index(drop=True, inplace=True)
+
+    start_timestamps = log_df.loc[
+        log_df["message"] == "Maintenance", "message_time"
+    ].values
+    end_timestamps = log_df.loc[
+        log_df["message"] != "Maintenance", "message_time"
+    ].values
+
+    return deque(
+        [
+            (pd.Timestamp(start), pd.Timestamp(end))
+            for start, end in zip(start_timestamps, end_timestamps)
+        ]
+    )  # queue object. pop out from left after use
+
+
+def _filter_out_maintenance_periods(
+    data_df, maintenance_period, end_time, dropna=False
+):
+    while maintenance_period:
+        (maintenance_start, maintenance_end) = maintenance_period[0]
+        if end_time < maintenance_start:  # no more maintenance for this date
+            break
+        maintenance_filter = (data_df.index >= maintenance_start) & (
+            data_df.index <= maintenance_end
+        )
+        data_df[maintenance_filter] = np.nan
+        if end_time >= maintenance_end:  # remove this range
+            maintenance_period.popleft()
+        else:
+            break
+    if dropna:
+        data_df.dropna(inplace=True)
+    return data_df

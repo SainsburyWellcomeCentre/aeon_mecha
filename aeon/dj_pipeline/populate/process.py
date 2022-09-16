@@ -85,6 +85,12 @@ mid_priority = DataJointWorker(
 mid_priority(qc.CameraQC)
 mid_priority(tracking.CameraTracking)
 mid_priority(acquisition.FoodPatchWheel)
+
+mid_priority(
+    analysis.visit.ingest_environment_visits, experiment_names=[_current_experiment]
+)
+mid_priority(analysis.OverlapVisit)
+
 mid_priority(analysis.VisitSubjectPosition)
 mid_priority(analysis.VisitTimeDistribution)
 mid_priority(analysis.VisitSummary)
