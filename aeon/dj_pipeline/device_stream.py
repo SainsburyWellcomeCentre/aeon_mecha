@@ -231,7 +231,7 @@ def generate_device_table(device_type, context=None):
         stream_type = stream_detail["stream_type"]
         stream_title = _prettify(stream_type)
 
-        logger.info(f"Creating stream table: {stream_title}")
+        logger.info(f"Creating stream table: {device_title}{stream_title}")
 
         for i, n in enumerate(stream_detail["stream_reader"].split(".")):
             if i == 0:
@@ -324,5 +324,7 @@ def _prettify(s):
     return s.replace("_", " ").title().replace(" ", "")
 
 
-for device_type in DeviceType.fetch("device_type"):
-    generate_device_table(device_type)
+def main():
+    for device_type in DeviceType.fetch("device_type"):
+        logger.info(f"Generating stream table(s) for: {device_type}")
+        generate_device_table(device_type)
