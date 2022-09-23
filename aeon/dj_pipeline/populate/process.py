@@ -68,6 +68,7 @@ high_priority(acquisition.SubjectWeight)
 high_priority(acquisition.FoodPatchEvent)
 high_priority(acquisition.WheelState)
 high_priority(acquisition.WeightMeasurement)
+high_priority(acquisition.WeightMeasurementFiltered)
 
 high_priority(
     analysis.ingest_environment_visits, experiment_names=[_current_experiment]

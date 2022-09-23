@@ -965,45 +965,89 @@ class WeightMeasurement(dj.Imported):
             "weight_scale_description"
         )
 
-        device = getattr(
-            _device_schema_mapping[key["experiment_name"]], weight_scale_description
-        )
-
-        weight_data = io_api.load(
-            root=raw_data_dir.as_posix(),
-            reader=device.WeightRaw,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
-
-        if not len(
-            weight_data
-        ):  # in some sessions, the food patch deice was mapped to "Nest"
-
+        # in some epochs/chunks, the food patch device was mapped to "Nest"
+        for device_name in (weight_scale_description, "Nest"):
             device = getattr(
-                _device_schema_mapping[key["experiment_name"]], "Nest"
+                _device_schema_mapping[key["experiment_name"]], device_name
             )
-
             weight_data = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.WeightRaw,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
-
-        if not len(weight_data):
+            if len(weight_data):
+                break
+        else:
             raise ValueError(f"No weight measurement found for {key}")
 
-        else:
-            weight_data.sort_index(inplace=True)
-            self.insert1(
-                {
-                    **key,
-                    "timestamps": weight_data.index.values,
-                    "weight": weight_data.value.values,
-                    "confidence": weight_data.stable.values.astype(float),
-                }
+        weight_data.sort_index(inplace=True)
+        self.insert1(
+            {
+                **key,
+                "timestamps": weight_data.index.values,
+                "weight": weight_data.value.values,
+                "confidence": weight_data.stable.values.astype(float),
+            }
+        )
+
+
+@schema
+class WeightMeasurementFiltered(dj.Imported):
+    definition = """  # Raw scale measurement associated with a given ExperimentScale
+    -> WeightMeasurement
+    ---
+    weight_filtered:       longblob     # measured weights filtered
+    weight_subject_timestamps: longblob # (datetime) timestamps of weight_subject data
+    weight_subject:        longblob     # 
+    """
+
+    def make(self, key):
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
+            "chunk_start", "chunk_end", "directory_type"
+        )
+        raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
+        weight_scale_description = (ExperimentWeightScale & key).fetch1(
+            "weight_scale_description"
+        )
+
+        # in some epochs/chunks, the food patch device was mapped to "Nest"
+        for device_name in (weight_scale_description, "Nest"):
+            device = getattr(
+                _device_schema_mapping[key["experiment_name"]], device_name
             )
+            weight_filtered = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=device.WeightFiltered,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+            if len(weight_filtered):
+                break
+        else:
+            raise ValueError(
+                f"No filtered weight measurement found for {key} - this is truly unexpected - a bug?"
+            )
+
+        weight_subject = io_api.load(
+            root=raw_data_dir.as_posix(),
+            reader=device.WeightSubject,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end),
+        )
+
+        assert len(weight_filtered)
+
+        weight_filtered.sort_index(inplace=True)
+        weight_subject.sort_index(inplace=True)
+        self.insert1(
+            {
+                **key,
+                "weight_filtered": weight_filtered.value.values,
+                "weight_subject_timestamps": weight_subject.index.values,
+                "weight_subject": weight_subject.value.values,
+            }
+        )
 
 
 # ---- Task Protocol categorization ----
