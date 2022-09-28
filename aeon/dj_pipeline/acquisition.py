@@ -10,8 +10,8 @@ from aeon.io import api as io_api
 from aeon.io import reader as io_reader
 from aeon.schema import dataset as aeon_schema
 
-from . import get_schema_name, lab, subject
-from .populate.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
+from . import get_schema_name
+from .utils.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 from .utils import paths
 
 schema = dj.schema(get_schema_name("acquisition"))
@@ -1122,7 +1122,7 @@ def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
         return subject_data
 
     if experiment_name == "social0-r1":
-        from aeon.dj_pipeline.populate.create_socialexperiment_0 import fixID
+        from aeon.dj_pipeline.create_experiments.create_socialexperiment_0 import fixID
 
         sessdf = subject_data.copy()
         sessdf = sessdf[~sessdf.id.str.contains("test")]

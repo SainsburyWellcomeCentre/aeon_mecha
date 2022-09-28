@@ -4,7 +4,7 @@ from datetime import datetime
 import yaml
 
 from aeon.dj_pipeline import acquisition, lab
-from .. import dict_to_uuid
+from aeon.dj_pipeline import dict_to_uuid
 
 
 _weight_scale_rate = 100
