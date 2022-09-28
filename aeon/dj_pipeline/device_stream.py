@@ -245,6 +245,7 @@ def generate_device_table(device_type, context=None):
             -> Experiment{device_title}
             -> acquisition.Chunk
             ---
+            size: int              # number of data points acquired from this stream for a given chunk
             timestamps: longblob   # (datetime) timestamps of {stream_type} data
             """
 
@@ -256,6 +257,8 @@ def generate_device_table(device_type, context=None):
         @_schema
         class DeviceDataStream(dj.Imported):
             definition = table_definition
+            _stream_reader = reader
+            _stream_detail = stream_detail
 
             @property
             def key_source(self):
@@ -283,10 +286,10 @@ def generate_device_table(device_type, context=None):
                     f"{device_type}_description"
                 )
 
-                stream = reader(
+                stream = self._stream_reader(
                     **{
                         k: v.format(device_description) if k == "pattern" else v
-                        for k, v in stream_detail["stream_reader_kwargs"].items()
+                        for k, v in self._stream_detail["stream_reader_kwargs"].items()
                     }
                 )
 
@@ -297,12 +300,10 @@ def generate_device_table(device_type, context=None):
                     end=pd.Timestamp(chunk_end),
                 )
 
-                if not len(stream_data):
-                    raise ValueError(f"No stream data found for {key}")
-
                 self.insert1(
                     {
                         **key,
+                        "size": len(stream_data),
                         "timestamps": stream_data.index.values,
                         **{
                             c: stream_data[c].values
@@ -325,6 +326,7 @@ def _prettify(s):
 
 
 def main():
+    context = inspect.currentframe().f_back.f_locals
     for device_type in DeviceType.fetch("device_type"):
         logger.info(f"Generating stream table(s) for: {device_type}")
-        generate_device_table(device_type)
+        generate_device_table(device_type, context=context)
