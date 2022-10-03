@@ -1,19 +1,18 @@
-import datajoint as dj
 import datetime
 import pathlib
+
+import datajoint as dj
 import numpy as np
 import pandas as pd
 
-from aeon.io import api as io_api
-from aeon.schema import dataset as aeon_schema
-from aeon.io import reader as io_reader
 from aeon.analysis import utils as analysis_utils
+from aeon.io import api as io_api
+from aeon.io import reader as io_reader
+from aeon.schema import dataset as aeon_schema
 
-from . import get_schema_name
-from . import lab, subject
-from .utils import paths
+from . import get_schema_name, lab, subject
 from .populate.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
-
+from .utils import paths
 
 schema = dj.schema(get_schema_name("acquisition"))
 
@@ -955,14 +954,16 @@ class WeightMeasurement(dj.Imported):
         )
 
     def make(self, key):
+
         chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
             "chunk_start", "chunk_end", "directory_type"
         )
+
+        raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
+
         weight_scale_description = (ExperimentWeightScale & key).fetch1(
             "weight_scale_description"
         )
-
-        raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
         device = getattr(
             _device_schema_mapping[key["experiment_name"]], weight_scale_description
@@ -975,21 +976,34 @@ class WeightMeasurement(dj.Imported):
             end=pd.Timestamp(chunk_end),
         )
 
-        if not len(weight_data):
-            # TODO: no weight data? this is unexpected
-            # (pending a bugfix for https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/90)
-            raise ValueError(
-                f"No weight measurement found for {key} - this is unexpected"
+        if not len(
+            weight_data
+        ):  # in some sessions, the food patch deice was mapped to "Nest"
+
+            device = getattr(
+                _device_schema_mapping[key["experiment_name"]], "Nest"
             )
 
-        self.insert1(
-            {
-                **key,
-                "timestamps": weight_data.index.values,
-                "weight": weight_data.value.values,
-                "confidence": weight_data.stable.values.astype(float),
-            }
-        )
+            weight_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=device.WeightRaw,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+        if not len(weight_data):
+            raise ValueError(f"No weight measurement found for {key}")
+
+        else:
+            weight_data.sort_index(inplace=True)
+            self.insert1(
+                {
+                    **key,
+                    "timestamps": weight_data.index.values,
+                    "weight": weight_data.value.values,
+                    "confidence": weight_data.stable.values.astype(float),
+                }
+            )
 
 
 # ---- Task Protocol categorization ----
