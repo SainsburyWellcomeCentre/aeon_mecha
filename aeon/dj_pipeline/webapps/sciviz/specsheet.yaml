@@ -28,31 +28,8 @@ SciViz:
                     subject_session_count = acquisition.Experiment.Subject.aggr(acquisition.SessionEnd.join(acquisition.Session, left=True), ..., session_count='count(session_start)')
                     subject_latest_session = acquisition.Experiment.Subject.aggr(acquisition.Session, session_start='max(session_start)').join(acquisition.SessionEnd, left=True)
                     return {'query': subject_session_count * subject_latest_session, 'fetch_args': []}
-    Visits:
-      route: /visits
-      grids:
-        grid2:
-          type: fixed
-          columns: 1
-          row_height: 700
-          components:
-            Visits:
-              route: /query2
-              link: /per_visit_report
-              x: 0
-              y: 0
-              height: 1
-              width: 1
-              type: antd-table
-              restriction: >
-                def restriction(**kwargs):
-                    return dict(**kwargs)
-              dj_query: >
-                def dj_query(aeon_analysis_visit):
-                    query = aeon_analysis_visit.Visit.join(aeon_analysis_visit.VisitEnd, left=True).proj('visit_end', visit_duration='IFNULL(visit_duration, -1)')
-                    return {'query': query, 'fetch_args': []}
     VisitSummary:
-      route: /summary_visits
+      route: /visit_summary
       grids:
         grid3:
           type: fixed
@@ -60,7 +37,7 @@ SciViz:
           row_height: 700
           components:
             VisitSummary:
-              route: /visits_summary_grid3_1
+              route: /visit_summary_grid3_1
               link: /per_visit_report
               x: 0
               y: 0
@@ -71,8 +48,9 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_analysis_visit_analysis):
-                    query = aeon_analysis_visit_analysis.VisitSummary
+                def dj_query(aeon_analysis):
+                    query = aeon_analysis.Visit.join(aeon_analysis.VisitEnd, left=True).join(aeon_analysis.VisitSummary, left=True)
+                    query = query.proj(visit_end='IFNULL(visit_end, -1)', visit_duration='IFNULL(visit_duration, -1)', day_duration='IFNULL(visit_duration, -1)', total_distance_travelled='IFNULL(visit_duration, -1)', total_pellet_count='IFNULL(visit_duration, -1)', total_wheel_distance_travelled='IFNULL(visit_duration, -1)')
                     return {'query': query, 'fetch_args': []}
 
     ExperimentReport:
