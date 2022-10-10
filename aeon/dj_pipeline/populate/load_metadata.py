@@ -5,7 +5,7 @@ from datetime import datetime
 import pandas as pd
 import yaml
 
-from aeon.dj_pipeline import acquisition, lab
+from aeon.dj_pipeline import acquisition, lab, subject
 
 from .. import dict_to_uuid
 
