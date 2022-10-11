@@ -53,7 +53,7 @@ def _set_index(data):
 def _empty(columns):
     return pd.DataFrame(columns=columns, index=pd.DatetimeIndex([], name='time'))
 
-def load(root, reader, start=None, end=None, time=None, tolerance=None):
+def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=None):
     '''
     Extracts chunk data from the root path of an Aeon dataset using the specified data stream
     reader. A subset of the data can be loaded by specifying an optional time range, or a list
@@ -66,15 +66,17 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None):
     :param datetime, optional time: An object or series specifying the timestamps to extract.
     :param datetime, optional tolerance:
     The maximum distance between original and new timestamps for inexact matches.
+    :param str, optional epoch: A wildcard pattern to use when searching epoch data.
     :return: A pandas data frame containing epoch event metadata, sorted by time.
     '''
     if isinstance(root, str):
         root = [root]
 
+    epoch_pattern = "**" if epoch is None else epoch
     fileset = {
         chunk_key(fname):fname
         for path in root
-        for fname in Path(path).glob(f"**/**/{reader.pattern}*.{reader.extension}")}
+        for fname in Path(path).glob(f"{epoch_pattern}/**/{reader.pattern}_*.{reader.extension}")}
     files = sorted(fileset.items())
 
     if time is not None:
