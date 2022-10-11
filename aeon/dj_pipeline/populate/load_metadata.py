@@ -14,7 +14,7 @@ _weight_scale_nest = 1
 _colony_csv_path = pathlib.Path("/ceph/aeon/aeon/colony/colony.csv")
 
 
-def ingest_subject(colony_csv_path: path.Pathlib = _colony_csv_path) -> None:
+def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
     """Ingest subject information from the colony.csv file"""
     colony_df = pd.read_csv(colony_csv_path, skiprows=[1, 2])
     colony_df.rename(columns={"Id": "subject"}, inplace=True)
