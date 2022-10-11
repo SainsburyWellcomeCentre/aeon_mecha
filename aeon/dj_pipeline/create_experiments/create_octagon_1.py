@@ -29,7 +29,7 @@ def create_new_experiment():
             "arena_name": "octagon-1m",
             "lab": "SWC",
             "location": "464",
-            "experiment_type": "first-to-port",
+            "experiment_type": "social",
         },
         skip_duplicates=True,
     )

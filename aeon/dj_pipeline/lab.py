@@ -44,6 +44,7 @@ class Location(dj.Lookup):
     contents = [
         ("SWC", "room-0", "room for experiment 0"),
         ("SWC", "room-1", "room for social experiment"),
+        ("SWC", "464", "room for social experiment using octagon arena"),
     ]
 
 
@@ -154,7 +155,7 @@ class Arena(dj.Lookup):
 
     contents = [
         ("circle-2m", "circular arena with 2-meter diameter", "circular", 2, 2, 0.2),
-        ("octagon", "octagon arena", "octagon", 1.8, 1.8, 0.2),
+        ("octagon-1m", "octagon arena with 1-m diameter", "octagon", 1, 1, 0.2),
     ]
 
 

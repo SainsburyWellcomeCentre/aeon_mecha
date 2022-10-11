@@ -23,12 +23,14 @@ _ref_device_mapping = {
     "exp0.1-r0": "FrameTop",
     "social0-r1": "FrameTop",
     "exp0.2-r0": "CameraTop",
+    "oct1.0-r0": "CameraTop",
 }
 
 _device_schema_mapping = {
     "exp0.1-r0": aeon_schema.exp01,
     "social0-r1": aeon_schema.exp01,
     "exp0.2-r0": aeon_schema.exp02,
+    "oct1.0-r0": aeon_schema.exp02,
 }
 
 
