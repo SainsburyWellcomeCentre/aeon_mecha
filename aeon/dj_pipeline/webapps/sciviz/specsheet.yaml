@@ -40,7 +40,7 @@ SciViz:
           components:
             VisitSummary:
               route: /visit_summary_grid3_1
-              link: /
+              link: /per_visit_report
               x: 0
               y: 0
               height: 1
@@ -183,41 +183,42 @@ SciViz:
 
     PerVisitReport:
       hidden: true
-      route: /
+      route: /per_visit_report
       grids:
-        type: fixed
-        route: /
-        columns: 1
-        row_height: 400
-        components:
-          comp1:
-            route: /per_visit_meta
-            x: 0
-            y: 0
-            height: 1
-            width: 1
-            type: metadata
-            restriction: >
-              def restriction(**kwargs):
-                  return dict(**kwargs)
-            dj_query: >
-              def dj_query(aeon_analysis):
-                  query = aeon_analysis.VisitSummary()
-                  return {'query': query, 'fetch_args': []}
-          comp2:
-            route: /per_visit_summary_plot
-            x: 0
-            y: 1
-            height: 1
-            width: 1
-            type: file:image:attach
-            restriction: >
-              def restriction(**kwargs):
-                  return dict(**kwargs)
-            dj_query: >
-              def dj_query(aeon_report):
-                  report = aeon_report
-                  return {'query': report.VisitSummaryPlot(), 'fetch_args': ['summary_plot_png']}
+        per_visit_report:
+          type: fixed
+          route: /per_visit_report
+          columns: 1
+          row_height: 400
+          components:
+            comp1:
+              route: /per_visit_meta
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: metadata
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_analysis):
+                    query = aeon_analysis.VisitSummary()
+                    return {'query': query, 'fetch_args': []}
+            comp2:
+              route: /per_visit_summary_plot
+              x: 0
+              y: 1
+              height: 1
+              width: 1
+              type: file:image:attach
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_report):
+                    report = aeon_report
+                    return {'query': report.VisitDailySummaryPlot(), 'fetch_args': ['summary_plot_png']}
 
     VisitDailySummary:
       route: /visit_daily_summary
@@ -270,7 +271,6 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_report):
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['foraging_bouts_plotly'])
-
     PipelineMonitor:
       route: /pipeline_monitor
       grids:
