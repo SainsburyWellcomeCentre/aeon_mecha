@@ -1,5 +1,6 @@
+# HOST_UID=$(id -u) docker-compose -f docker-compose-local.yaml down --volumes
 # HOST_UID=$(id -u) docker-compose -f docker-compose-local.yaml up
-#
+
 # Access using fakeservices.datajoint.io
 version: '2.4'
 services:

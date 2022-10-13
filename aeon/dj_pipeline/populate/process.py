@@ -35,14 +35,15 @@ import logging
 import sys
 
 import datajoint as dj
-from datajoint_utilities.dj_worker import (
+from datajoint_utilities.dj_worker import (  # noqa
     DataJointWorker,
-    WorkerLog,
     ErrorLog,
+    WorkerLog,
     parse_args,
-)  # noqa
+)
 
 from aeon.dj_pipeline import acquisition, analysis, db_prefix, qc, report, tracking
+from aeon.dj_pipeline.populate import load_metadata
 
 # ---- Some constants ----
 
@@ -60,6 +61,7 @@ high_priority = DataJointWorker(
     sleep_duration=600,
 )
 
+high_priority(load_metadata.ingest_subject)
 high_priority(acquisition.Epoch.ingest_epochs, experiment_name=_current_experiment)
 high_priority(acquisition.Chunk.ingest_chunks, experiment_name=_current_experiment)
 high_priority(acquisition.ExperimentLog)

@@ -1,14 +1,28 @@
-import re
 import pathlib
+import re
 import datetime
+
+import pandas as pd
 import yaml
 
-from aeon.dj_pipeline import acquisition, lab
+from aeon.dj_pipeline import acquisition, lab, subject
 from aeon.dj_pipeline import dict_to_uuid
 
 
 _weight_scale_rate = 100
 _weight_scale_nest = 1
+_colony_csv_path = pathlib.Path("/ceph/aeon/aeon/colony/colony.csv")
+
+
+def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
+    """Ingest subject information from the colony.csv file"""
+    colony_df = pd.read_csv(colony_csv_path, skiprows=[1, 2])
+    colony_df.rename(columns={"Id": "subject"}, inplace=True)
+    colony_df["sex"] = "U"
+    colony_df["subject_birth_date"] = "2021-01-01"
+    colony_df["subject_description"] = ""
+    subject.Subject.insert(colony_df, skip_duplicates=True, ignore_extra_fields=True)
+    subject.Subject()
 
 
 def extract_epoch_metadata(experiment_name, metadata_yml_filepath):
@@ -16,13 +30,10 @@ def extract_epoch_metadata(experiment_name, metadata_yml_filepath):
     epoch_start = datetime.datetime.strptime(
         metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
     )
-
     with open(metadata_yml_filepath, "r") as f:
         experiment_setup = yaml.safe_load(f)
-
     commit = experiment_setup.get("Commit", experiment_setup.get("Revision"))
     assert commit, f'Neither "Commit" nor "Revision" found in {metadata_yml_filepath}'
-
     return {
         "experiment_name": experiment_name,
         "epoch_start": epoch_start,
@@ -40,7 +51,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     + camera/patch location
     + patch, weightscale serial number
     """
-
     metadata_yml_filepath = pathlib.Path(metadata_yml_filepath)
     file_creation_time = datetime.datetime.fromtimestamp(
         metadata_yml_filepath.stat().st_ctime
@@ -48,18 +58,13 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     epoch_start = datetime.datetime.strptime(
         metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
     )
-
     with open(metadata_yml_filepath, "r") as f:
         experiment_setup = yaml.safe_load(f)
-
     experiment_key = {"experiment_name": experiment_name}
-
     # Check if there has been any changes in the arena setup
     # by comparing the "Commit" against the most immediate preceding epoch
-
     commit = experiment_setup.get("Commit", experiment_setup.get("Revision"))
     assert commit, f'Neither "Commit" nor "Revision" found in {metadata_yml_filepath}'
-
     previous_epoch = (acquisition.Experiment & experiment_key).aggr(
         acquisition.Epoch & f'epoch_start < "{epoch_start}"',
         epoch_start="MAX(epoch_start)",
@@ -69,7 +74,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     ).fetch1("commit"):
         # if identical commit -> no changes
         return
-
     if isinstance(experiment_setup["Devices"], list):
         experiment_devices = experiment_setup.pop("Devices")
     elif isinstance(experiment_setup["Devices"], dict):
@@ -91,7 +95,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                 device_type = "Photodiode"
             else:
                 raise ValueError(f"Unrecognized Device Type for {device_name}")
-
             experiment_devices.append(
                 {"Name": device_name, "Type": device_type, **device_info}
             )
@@ -99,29 +102,23 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
         raise ValueError(
             f"Unexpected devices variable type: {type(experiment_setup['Devices'])}"
         )
-
     # ---- Video Controller ----
-
     video_controller = [
         device for device in experiment_devices if device["Type"] == "VideoController"
     ]
-
     assert (
         len(video_controller) == 1
     ), "Unable to find one unique VideoController device"
     video_controller = video_controller[0]
-
     device_frequency_mapper = {
         name: float(value)
         for name, value in video_controller.items()
         if name.endswith("Frequency")
     }
-
     # ---- Load cameras ----
     cameras = [
         device for device in experiment_devices if device["Type"] == "VideoSource"
     ]
-
     camera_list, camera_installation_list, camera_removal_list, camera_position_list = (
         [],
         [],
@@ -132,7 +129,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
         # ---- Check if this is a new camera, add to lab.Camera if needed
         camera_key = {"camera_serial_number": camera["SerialNumber"]}
         camera_list.append(camera_key)
-
         camera_installation = {
             "experiment_name": experiment_name,
             **camera_key,
@@ -160,7 +156,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                 "camera_rotation_y": None,
                 "camera_rotation_z": None,
             }
-
         # ---- Check if this camera is currently installed
         # If the same camera serial number is currently installed
         # check for any changes in configuration, if not, skip this
@@ -174,13 +169,10 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                 acquisition.ExperimentCamera.Position, left=True
             ).fetch1()
             new_camera_config = {**camera_installation, **camera_position}
-
             current_camera_config.pop("camera_install_time")
             new_camera_config.pop("camera_install_time")
-
             if dict_to_uuid(current_camera_config) == dict_to_uuid(new_camera_config):
                 continue
-
             # ---- Remove old camera
             camera_removal_list.append(
                 {
@@ -188,12 +180,10 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                     "camera_remove_time": epoch_start,
                 }
             )
-
         # ---- Install new camera
         camera_installation_list.append(camera_installation)
         if "position" in camera:
             camera_position_list.append(camera_position)
-
     # remove the currently installed cameras that are absent in this config
     camera_removal_list.extend(
         (
@@ -203,7 +193,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             & experiment_key
         ).fetch("KEY")
     )
-
     # ---- Load food patches ----
     food_patches = [
         device for device in experiment_devices if device["Type"] == "Patch"
@@ -220,7 +209,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             "food_patch_serial_number": patch.get("SerialNumber") or patch["PortName"]
         }
         patch_list.append(patch_key)
-
         patch_installation = {
             **patch_key,
             "experiment_name": experiment_name,
@@ -246,7 +234,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                 "food_patch_position_y": None,
                 "food_patch_position_z": None,
             }
-
         # ---- Check if this camera is currently installed
         # If the same camera serial number is currently installed
         # check for any changes in configuration, if not, skip this
@@ -261,13 +248,10 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                 acquisition.ExperimentFoodPatch.Position, left=True
             ).fetch1()
             new_patch_config = {**patch_installation, **patch_position}
-
             current_patch_config.pop("food_patch_install_time")
             new_patch_config.pop("food_patch_install_time")
-
             if dict_to_uuid(current_patch_config) == dict_to_uuid(new_patch_config):
                 continue
-
             # ---- Remove old food patch
             patch_removal_list.append(
                 {
@@ -275,12 +259,10 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                     "food_patch_remove_time": epoch_start,
                 }
             )
-
         # ---- Install new food patch
         patch_installation_list.append(patch_installation)
         if "position" in patch:
             patch_position_list.append(patch_position)
-
     # remove the currently installed patches that are absent in this config
     patch_removal_list.extend(
         (
@@ -290,7 +272,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             & experiment_key
         ).fetch("KEY")
     )
-
     # ---- Load weight scales ----
     weight_scales = [
         device for device in experiment_devices if device["Type"] == "WeightScale"
@@ -307,7 +288,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             or weight_scale["PortName"]
         }
         weight_scale_list.append(weight_scale_key)
-
         arena_key = (lab.Arena & acquisition.Experiment & experiment_key).fetch1("KEY")
         weight_scale_installation = {
             "experiment_name": experiment_name,
@@ -318,7 +298,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             "weight_scale_description": weight_scale["Name"],
             "weight_scale_sampling_rate": float(_weight_scale_rate),
         }
-
         # ---- Check if this weight scale is currently installed - if so, remove it
         current_weight_scale_query = (
             acquisition.ExperimentWeightScale
@@ -329,15 +308,12 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
         if current_weight_scale_query:
             current_weight_scale_config = current_weight_scale_query.fetch1()
             new_weight_scale_config = weight_scale_installation.copy()
-
             current_weight_scale_config.pop("weight_scale_install_time")
             new_weight_scale_config.pop("weight_scale_install_time")
-
             if dict_to_uuid(current_weight_scale_config) == dict_to_uuid(
                 new_weight_scale_config
             ):
                 continue
-
             # ---- Remove old weight scale
             weight_scale_removal_list.append(
                 {
@@ -345,10 +321,8 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                     "weight_scale_remove_time": epoch_start,
                 }
             )
-
         # ---- Install new weight scale
         weight_scale_installation_list.append(weight_scale_installation)
-
     # remove the currently installed weight scales that are absent in this config
     weight_scale_removal_list.extend(
         (
@@ -358,19 +332,16 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             & experiment_key
         ).fetch("KEY")
     )
-
     # ---- insert ----
     def insert():
         lab.Camera.insert(camera_list, skip_duplicates=True)
         acquisition.ExperimentCamera.RemovalTime.insert(camera_removal_list)
         acquisition.ExperimentCamera.insert(camera_installation_list)
         acquisition.ExperimentCamera.Position.insert(camera_position_list)
-
         lab.FoodPatch.insert(patch_list, skip_duplicates=True)
         acquisition.ExperimentFoodPatch.RemovalTime.insert(patch_removal_list)
         acquisition.ExperimentFoodPatch.insert(patch_installation_list)
         acquisition.ExperimentFoodPatch.Position.insert(patch_position_list)
-
         lab.WeightScale.insert(weight_scale_list, skip_duplicates=True)
         acquisition.ExperimentWeightScale.RemovalTime.insert(weight_scale_removal_list)
         acquisition.ExperimentWeightScale.insert(weight_scale_installation_list)
