@@ -210,8 +210,16 @@ def generate_device_table(device_type, context=None):
         -> Device
         {device_type}_install_time: datetime(6)   # time of the {device_type} placed and started operation at this position
         ---
-        {device_type}_description: varchar(36)
+        {device_type}_name: varchar(36)
         """
+
+        class Attribute(dj.Part):
+            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
+            -> master
+            attribute_name    : varchar(32)
+            ---
+            attribute_value='': varchar(2000)
+            """
 
         class RemovalTime(dj.Part):
             definition = f"""
@@ -231,7 +239,7 @@ def generate_device_table(device_type, context=None):
         stream_type = stream_detail["stream_type"]
         stream_title = _prettify(stream_type)
 
-        logger.info(f"Creating stream table: {stream_title}")
+        logger.info(f"Creating stream table: {device_title}{stream_title}")
 
         for i, n in enumerate(stream_detail["stream_reader"].split(".")):
             if i == 0:
@@ -245,6 +253,7 @@ def generate_device_table(device_type, context=None):
             -> Experiment{device_title}
             -> acquisition.Chunk
             ---
+            size: int              # number of data points acquired from this stream for a given chunk
             timestamps: longblob   # (datetime) timestamps of {stream_type} data
             """
 
@@ -256,6 +265,8 @@ def generate_device_table(device_type, context=None):
         @_schema
         class DeviceDataStream(dj.Imported):
             definition = table_definition
+            _stream_reader = reader
+            _stream_detail = stream_detail
 
             @property
             def key_source(self):
@@ -279,14 +290,12 @@ def generate_device_table(device_type, context=None):
                     key, directory_type=dir_type
                 )
 
-                device_description = (ExperimentDevice & key).fetch1(
-                    f"{device_type}_description"
-                )
+                device_name = (ExperimentDevice & key).fetch1(f"{device_type}_name")
 
-                stream = reader(
+                stream = self._stream_reader(
                     **{
-                        k: v.format(device_description) if k == "pattern" else v
-                        for k, v in stream_detail["stream_reader_kwargs"].items()
+                        k: v.format(device_name) if k == "pattern" else v
+                        for k, v in self._stream_detail["stream_reader_kwargs"].items()
                     }
                 )
 
@@ -297,12 +306,10 @@ def generate_device_table(device_type, context=None):
                     end=pd.Timestamp(chunk_end),
                 )
 
-                if not len(stream_data):
-                    raise ValueError(f"No stream data found for {key}")
-
                 self.insert1(
                     {
                         **key,
+                        "size": len(stream_data),
                         "timestamps": stream_data.index.values,
                         **{
                             c: stream_data[c].values
@@ -324,5 +331,8 @@ def _prettify(s):
     return s.replace("_", " ").title().replace(" ", "")
 
 
-for device_type in DeviceType.fetch("device_type"):
-    generate_device_table(device_type)
+def main():
+    context = inspect.currentframe().f_back.f_locals
+    for device_type in DeviceType.fetch("device_type"):
+        logger.info(f"Generating stream table(s) for: {device_type}")
+        generate_device_table(device_type, context=context)

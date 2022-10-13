@@ -1,13 +1,13 @@
 import pathlib
 import re
-from datetime import datetime
+import datetime
 
 import pandas as pd
 import yaml
 
 from aeon.dj_pipeline import acquisition, lab, subject
+from aeon.dj_pipeline import dict_to_uuid
 
-from .. import dict_to_uuid
 
 _weight_scale_rate = 100
 _weight_scale_nest = 1
@@ -27,7 +27,7 @@ def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
 
 def extract_epoch_metadata(experiment_name, metadata_yml_filepath):
     metadata_yml_filepath = pathlib.Path(metadata_yml_filepath)
-    epoch_start = datetime.strptime(
+    epoch_start = datetime.datetime.strptime(
         metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
     )
     with open(metadata_yml_filepath, "r") as f:
@@ -52,8 +52,10 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     + patch, weightscale serial number
     """
     metadata_yml_filepath = pathlib.Path(metadata_yml_filepath)
-    file_creation_time = datetime.fromtimestamp(metadata_yml_filepath.stat().st_ctime)
-    epoch_start = datetime.strptime(
+    file_creation_time = datetime.datetime.fromtimestamp(
+        metadata_yml_filepath.stat().st_ctime
+    )
+    epoch_start = datetime.datetime.strptime(
         metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
     )
     with open(metadata_yml_filepath, "r") as f:
@@ -87,6 +89,10 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                 device_type = "WeightScale"
             elif device_name.startswith("AudioAmbient"):
                 device_type = "AudioAmbient"
+            elif device_name.startswith("Wall"):
+                device_type = "Wall"
+            elif device_name.startswith("Photodiode"):
+                device_type = "Photodiode"
             else:
                 raise ValueError(f"Unrecognized Device Type for {device_name}")
             experiment_devices.append(
