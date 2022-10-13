@@ -1,9 +1,16 @@
+import inspect
+
 def compositeStream(pattern, *args):
     """Merges multiple data streams into a single composite stream."""
     composite = {}
     if args:
         for stream in args:
-            composite.update(stream(pattern))
+            if inspect.isclass(stream):
+                for method in vars(stream).values():
+                    if isinstance(method, staticmethod):
+                        composite.update(method.__func__(pattern))
+            else:
+                composite.update(stream(pattern))
     return composite
 
 
