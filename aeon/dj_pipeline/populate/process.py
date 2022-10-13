@@ -31,101 +31,15 @@ Usage from python:
 
 """
 
-import logging
 import sys
+from datajoint_utilities.dj_worker import parse_args
 
-import datajoint as dj
-from datajoint_utilities.dj_worker import (  # noqa
-    DataJointWorker,
-    ErrorLog,
-    WorkerLog,
-    parse_args,
-)
+from aeon.dj_pipeline.populate.worker import high_priority, mid_priority, logger
 
-from aeon.dj_pipeline import acquisition, analysis, db_prefix, qc, report, tracking
-from aeon.dj_pipeline.populate import load_metadata
-
-# ---- Some constants ----
-
-_logger = logging.getLogger(__name__)
-_current_experiment = "exp0.2-r0"
-worker_schema_name = db_prefix + "workerlog"
-
-# ---- Define worker(s) ----
-# configure a worker to process high-priority tasks
-high_priority = DataJointWorker(
-    "high_priority",
-    worker_schema_name=worker_schema_name,
-    db_prefix=db_prefix,
-    run_duration=-1,
-    sleep_duration=600,
-)
-
-high_priority(load_metadata.ingest_subject)
-high_priority(acquisition.Epoch.ingest_epochs, experiment_name=_current_experiment)
-high_priority(acquisition.Chunk.ingest_chunks, experiment_name=_current_experiment)
-high_priority(acquisition.ExperimentLog)
-high_priority(acquisition.SubjectEnterExit)
-high_priority(acquisition.SubjectWeight)
-high_priority(acquisition.FoodPatchEvent)
-high_priority(acquisition.WheelState)
-high_priority(acquisition.WeightMeasurement)
-high_priority(acquisition.WeightMeasurementFiltered)
-
-high_priority(
-    analysis.ingest_environment_visits, experiment_names=[_current_experiment]
-)
-
-# configure a worker to process mid-priority tasks
-mid_priority = DataJointWorker(
-    "mid_priority",
-    worker_schema_name=worker_schema_name,
-    db_prefix=db_prefix,
-    run_duration=-1,
-    sleep_duration=120,
-)
-
-mid_priority(qc.CameraQC)
-mid_priority(tracking.CameraTracking)
-mid_priority(acquisition.FoodPatchWheel)
-
-mid_priority(
-    analysis.visit.ingest_environment_visits, experiment_names=[_current_experiment]
-)
-mid_priority(analysis.OverlapVisit)
-
-mid_priority(analysis.VisitSubjectPosition)
-mid_priority(analysis.VisitTimeDistribution)
-mid_priority(analysis.VisitSummary)
-# report tables
-mid_priority(report.delete_outdated_plot_entries)
-mid_priority(report.SubjectRewardRateDifference)
-mid_priority(report.SubjectWheelTravelledDistance)
-mid_priority(report.ExperimentTimeDistribution)
 
 # ---- some wrappers to support execution as script or CLI
 
 configured_workers = {"high_priority": high_priority, "mid_priority": mid_priority}
-
-
-def setup_logging(loglevel):
-    """
-    Setup basic logging
-
-    :param loglevel: minimum loglevel for emitting messages
-    :type loglevel: int
-    """
-
-    if loglevel is None:
-        loglevel = logging.getLevelName(dj.config.get("loglevel", "INFO"))
-
-    logging.basicConfig(
-        level=loglevel,
-        stream=sys.stdout,
-        format="%(asctime)s %(process)d %(processName)s "
-        "%(levelname)s %(name)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
 
 
 def run(**kwargs):
@@ -142,9 +56,9 @@ def run(**kwargs):
     :type loglevel: str, optional
     """
 
-    setup_logging(kwargs.get("loglevel"))
-    _logger.debug("Starting ingestion process.")
-    _logger.info(f"worker_name={kwargs['worker_name']}")
+    logger.setLevel(kwargs.get("loglevel"))
+    logger.debug("Starting ingestion process.")
+    logger.info(f"worker_name={kwargs['worker_name']}")
 
     worker = configured_workers[kwargs["worker_name"]]
     if kwargs.get("duration") is not None:
@@ -155,11 +69,11 @@ def run(**kwargs):
     try:
         worker.run()
     except Exception:
-        _logger.exception(
+        logger.exception(
             "action '{}' encountered an exception:".format(kwargs["worker_name"])
         )
 
-    _logger.info("Ingestion process ended.")
+    logger.info("Ingestion process ended.")
 
 
 def cli():
