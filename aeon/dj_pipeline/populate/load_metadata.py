@@ -5,7 +5,7 @@ from datetime import datetime
 import pandas as pd
 import yaml
 
-from aeon.dj_pipeline import acquisition, lab, subject, experiment
+from aeon.dj_pipeline import acquisition, lab, subject
 
 from .. import dict_to_uuid
 
@@ -22,7 +22,9 @@ def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
     colony_df["subject_birth_date"] = "2021-01-01"
     colony_df["subject_description"] = ""
     subject.Subject.insert(colony_df, skip_duplicates=True, ignore_extra_fields=True)
-    experiment.Experiment.Subject.insert((subject.Subject * experiment.Experiment).proj(), skip_duplicates=True)
+    acquisition.Experiment.Subject.insert(
+        (subject.Subject * acquisition.Experiment).proj(), skip_duplicates=True
+    )
 
 
 def extract_epoch_metadata(experiment_name, metadata_yml_filepath):
