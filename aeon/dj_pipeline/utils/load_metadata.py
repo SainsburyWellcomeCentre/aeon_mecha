@@ -22,7 +22,9 @@ def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
     colony_df["subject_birth_date"] = "2021-01-01"
     colony_df["subject_description"] = ""
     subject.Subject.insert(colony_df, skip_duplicates=True, ignore_extra_fields=True)
-    subject.Subject()
+    acquisition.Experiment.Subject.insert(
+        (subject.Subject * acquisition.Experiment).proj(), skip_duplicates=True
+    )
 
 
 def extract_epoch_metadata(experiment_name, metadata_yml_filepath):

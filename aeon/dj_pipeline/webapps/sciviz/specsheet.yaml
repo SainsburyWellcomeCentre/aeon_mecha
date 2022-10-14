@@ -27,8 +27,8 @@ SciViz:
                     acquisition = aeon_acquisition
                     visit_analysis = aeon_analysis
                     query = acquisition.Experiment.Subject.aggr(visit_analysis.VisitEnd.join(visit_analysis.Visit, left=True), first_visit_start='MIN(visit_start)', last_visit_end='MAX(visit_end)', total_visit_count='COUNT(visit_start)', total_visit_duration='SUM(visit_duration)')
-                    query = query.proj("first_visit_start", "last_visit_end", "total_visit_count", total_visit_duration = "CAST(total_visit_duration AS DOUBLE(10, 3))")
-                    return {'query': query, 'fetch_args': []}
+                    query = query.proj("first_visit_start", "last_visit_end", "total_visit_count", total_visit_duration="CAST(total_visit_duration AS DOUBLE(10, 3))")
+                    return {'query': query, 'fetch_args': {'order_by': 'last_visit_end DESC'}}
 
     VisitSummary:
       route: /visit_summary
@@ -40,7 +40,7 @@ SciViz:
           components:
             VisitSummary:
               route: /visit_summary_grid3_1
-              link: /
+              link: /per_visit_report
               x: 0
               y: 0
               height: 1
@@ -54,7 +54,7 @@ SciViz:
                     query = aeon_analysis.Visit.aggr(aeon_analysis.VisitSummary, ..., duration="SUM(day_duration)", total_distance_travelled="SUM(total_distance_travelled)", total_pellet_count="SUM(total_pellet_count)", total_wheel_distance_travelled="SUM(total_wheel_distance_travelled)", keep_all_rows=True)
                     query = query.join(aeon_analysis.VisitEnd, left=True)
                     query = query.proj("visit_end", total_pellet_count="CAST(total_pellet_count AS DOUBLE)", duration="CAST(duration AS DOUBLE(10, 3))", total_distance_travelled="CAST(total_distance_travelled AS DOUBLE(10, 3))", total_wheel_distance_travelled="CAST(total_wheel_distance_travelled AS DOUBLE(10, 3))")
-                    return {'query': query, 'fetch_args': []}
+                    return {'query': query, 'fetch_args': {'order_by': 'visit_end DESC'}}
 
     ExperimentReport:
       route: /experiment_report
@@ -183,41 +183,44 @@ SciViz:
 
     PerVisitReport:
       hidden: true
-      route: /
+      route: /per_visit_report
       grids:
-        type: fixed
-        route: /
-        columns: 1
-        row_height: 400
-        components:
-          comp1:
-            route: /per_visit_meta
-            x: 0
-            y: 0
-            height: 1
-            width: 1
-            type: metadata
-            restriction: >
-              def restriction(**kwargs):
-                  return dict(**kwargs)
-            dj_query: >
-              def dj_query(aeon_analysis):
-                  query = aeon_analysis.VisitSummary()
-                  return {'query': query, 'fetch_args': []}
-          comp2:
-            route: /per_visit_summary_plot
-            x: 0
-            y: 1
-            height: 1
-            width: 1
-            type: file:image:attach
-            restriction: >
-              def restriction(**kwargs):
-                  return dict(**kwargs)
-            dj_query: >
-              def dj_query(aeon_report):
-                  report = aeon_report
-                  return {'query': report.VisitSummaryPlot(), 'fetch_args': ['summary_plot_png']}
+        per_visit_report:
+          type: fixed
+          route: /per_visit_report
+          columns: 1
+          row_height: 400
+          components:
+            comp1:
+              route: /per_visit_meta
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: metadata
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_analysis):
+                    query = aeon_analysis.Visit.aggr(aeon_analysis.VisitSummary, ..., duration="SUM(day_duration)", total_distance_travelled="SUM(total_distance_travelled)", total_pellet_count="SUM(total_pellet_count)", total_wheel_distance_travelled="SUM(total_wheel_distance_travelled)", keep_all_rows=True)
+                    query = query.join(aeon_analysis.VisitEnd, left=True)
+                    query = query.proj("visit_end", total_pellet_count="CAST(total_pellet_count AS DOUBLE)", duration="CAST(duration AS DOUBLE(10, 3))", total_distance_travelled="CAST(total_distance_travelled AS DOUBLE(10, 3))", total_wheel_distance_travelled="CAST(total_wheel_distance_travelled AS DOUBLE(10, 3))")
+                    return {'query': query, 'fetch_args': []}
+            comp2:
+              route: /per_visit_summary_plot
+              x: 0
+              y: 1
+              height: 1
+              width: 1
+              type: file:image:attach
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_report):
+                    report = aeon_report
+                    return {'query': report.VisitDailySummaryPlot(), 'fetch_args': ['summary_plot_png']}
 
     VisitDailySummary:
       route: /visit_daily_summary
@@ -270,7 +273,6 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_report):
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['foraging_bouts_plotly'])
-
     PipelineMonitor:
       route: /pipeline_monitor
       grids:
