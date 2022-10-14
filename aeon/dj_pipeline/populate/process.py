@@ -56,7 +56,7 @@ def run(**kwargs):
     :type loglevel: str, optional
     """
 
-    logger.setLevel(kwargs.get("loglevel"))
+    logger.setLevel(kwargs.get("loglevel", "INFO"))
     logger.debug("Starting ingestion process.")
     logger.info(f"worker_name={kwargs['worker_name']}")
 
