@@ -29,7 +29,7 @@ def create_new_experiment():
             "arena_name": "octagon-1m",
             "lab": "SWC",
             "location": "464",
-            "experiment_type": "first-to-port",
+            "experiment_type": "social",
         },
         skip_duplicates=True,
     )
@@ -59,8 +59,6 @@ def create_new_experiment():
         skip_duplicates=True,
     )
 
-    
-
 
 def main():
     create_new_experiment()
@@ -68,4 +66,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
