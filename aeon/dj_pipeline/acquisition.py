@@ -10,8 +10,8 @@ from aeon.io import api as io_api
 from aeon.io import reader as io_reader
 from aeon.schema import dataset as aeon_schema
 
-from . import get_schema_name, lab, subject
-from .populate.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
+from . import get_schema_name
+from .utils.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 from .utils import paths
 
 schema = dj.schema(get_schema_name("acquisition"))
@@ -23,12 +23,14 @@ _ref_device_mapping = {
     "exp0.1-r0": "FrameTop",
     "social0-r1": "FrameTop",
     "exp0.2-r0": "CameraTop",
+    "oct1.0-r0": "CameraTop",
 }
 
 _device_schema_mapping = {
     "exp0.1-r0": aeon_schema.exp01,
     "social0-r1": aeon_schema.exp01,
     "exp0.2-r0": aeon_schema.exp02,
+    "oct1.0-r0": aeon_schema.exp02,
 }
 
 
@@ -965,45 +967,89 @@ class WeightMeasurement(dj.Imported):
             "weight_scale_description"
         )
 
-        device = getattr(
-            _device_schema_mapping[key["experiment_name"]], weight_scale_description
-        )
-
-        weight_data = io_api.load(
-            root=raw_data_dir.as_posix(),
-            reader=device.WeightRaw,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
-
-        if not len(
-            weight_data
-        ):  # in some sessions, the food patch deice was mapped to "Nest"
-
+        # in some epochs/chunks, the food patch device was mapped to "Nest"
+        for device_name in (weight_scale_description, "Nest"):
             device = getattr(
-                _device_schema_mapping[key["experiment_name"]], "Nest"
+                _device_schema_mapping[key["experiment_name"]], device_name
             )
-
             weight_data = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.WeightRaw,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
-
-        if not len(weight_data):
+            if len(weight_data):
+                break
+        else:
             raise ValueError(f"No weight measurement found for {key}")
 
-        else:
-            weight_data.sort_index(inplace=True)
-            self.insert1(
-                {
-                    **key,
-                    "timestamps": weight_data.index.values,
-                    "weight": weight_data.value.values,
-                    "confidence": weight_data.stable.values.astype(float),
-                }
+        weight_data.sort_index(inplace=True)
+        self.insert1(
+            {
+                **key,
+                "timestamps": weight_data.index.values,
+                "weight": weight_data.value.values,
+                "confidence": weight_data.stable.values.astype(float),
+            }
+        )
+
+
+@schema
+class WeightMeasurementFiltered(dj.Imported):
+    definition = """  # Raw scale measurement associated with a given ExperimentScale
+    -> WeightMeasurement
+    ---
+    weight_filtered:       longblob     # measured weights filtered
+    weight_subject_timestamps: longblob # (datetime) timestamps of weight_subject data
+    weight_subject:        longblob     # 
+    """
+
+    def make(self, key):
+        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
+            "chunk_start", "chunk_end", "directory_type"
+        )
+        raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
+        weight_scale_description = (ExperimentWeightScale & key).fetch1(
+            "weight_scale_description"
+        )
+
+        # in some epochs/chunks, the food patch device was mapped to "Nest"
+        for device_name in (weight_scale_description, "Nest"):
+            device = getattr(
+                _device_schema_mapping[key["experiment_name"]], device_name
             )
+            weight_filtered = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=device.WeightFiltered,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+            if len(weight_filtered):
+                break
+        else:
+            raise ValueError(
+                f"No filtered weight measurement found for {key} - this is truly unexpected - a bug?"
+            )
+
+        weight_subject = io_api.load(
+            root=raw_data_dir.as_posix(),
+            reader=device.WeightSubject,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end),
+        )
+
+        assert len(weight_filtered)
+
+        weight_filtered.sort_index(inplace=True)
+        weight_subject.sort_index(inplace=True)
+        self.insert1(
+            {
+                **key,
+                "weight_filtered": weight_filtered.value.values,
+                "weight_subject_timestamps": weight_subject.index.values,
+                "weight_subject": weight_subject.value.values,
+            }
+        )
 
 
 # ---- Task Protocol categorization ----
@@ -1078,7 +1124,7 @@ def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
         return subject_data
 
     if experiment_name == "social0-r1":
-        from aeon.dj_pipeline.populate.create_socialexperiment_0 import fixID
+        from aeon.dj_pipeline.create_experiments.create_socialexperiment_0 import fixID
 
         sessdf = subject_data.copy()
         sessdf = sessdf[~sessdf.id.str.contains("test")]

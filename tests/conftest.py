@@ -112,7 +112,7 @@ def pipeline(dj_config):
 
 @pytest.fixture(autouse=True, scope="session")
 def experiment_creation(test_params, pipeline):
-    from aeon.dj_pipeline.populate import create_experiment_02
+    from aeon.dj_pipeline.create_experiments import create_experiment_02
 
     create_experiment_02.main()
 
