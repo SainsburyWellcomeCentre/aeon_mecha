@@ -32,6 +32,7 @@ Usage from python:
 """
 
 import sys
+import datajoint as dj
 from datajoint_utilities.dj_worker import parse_args
 
 from aeon.dj_pipeline.populate.worker import high_priority, mid_priority, logger
@@ -55,8 +56,9 @@ def run(**kwargs):
     :param loglevel: Set the logging output level
     :type loglevel: str, optional
     """
+    loglevel = kwargs.get("loglevel") or dj.config.get("loglevel", "INFO")
 
-    logger.setLevel(kwargs.get("loglevel"))
+    logger.setLevel(loglevel)
     logger.debug("Starting ingestion process.")
     logger.info(f"worker_name={kwargs['worker_name']}")
 
