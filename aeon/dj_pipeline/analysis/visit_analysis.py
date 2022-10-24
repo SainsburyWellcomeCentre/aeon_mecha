@@ -324,7 +324,7 @@ class VisitTimeDistribution(dj.Computed):
                         **nest_key,
                         "visit_date": visit_date.date(),
                         "time_fraction_in_nest": in_nest.mean(),
-                        "in_nest": in_nest,
+                        "in_nest": in_nest.index.values[in_nest],
                     }
                 )
                 in_arena = in_arena & ~in_nest
@@ -365,7 +365,7 @@ class VisitTimeDistribution(dj.Computed):
                 patch_position = (
                     acquisition.ExperimentFoodPatch.Position & food_patch_key
                 ).fetch1("food_patch_position_x", "food_patch_position_y")
-                in_patch = tracking.is_in_patch(
+                in_patch = tracking.is_position_in_patch(
                     position,
                     patch_position,
                     wheel_data.distance_travelled,
