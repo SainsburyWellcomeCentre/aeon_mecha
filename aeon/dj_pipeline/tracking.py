@@ -1,13 +1,11 @@
 import datajoint as dj
-import pandas as pd
+import matplotlib.path
 import numpy as np
-from matplotlib import path
+import pandas as pd
 
 from aeon.io import api as io_api
 
-from . import lab, acquisition, qc
-from . import get_schema_name, dict_to_uuid
-
+from . import acquisition, dict_to_uuid, get_schema_name, lab, qc
 
 schema = dj.schema(get_schema_name("tracking"))
 
@@ -231,9 +229,9 @@ def compute_distance(position_df, target, xcol="x", ycol="y"):
     return np.sqrt(np.square(position_df[[xcol, ycol]] - target).sum(axis=1))
 
 
-def is_in_patch(
+def is_position_in_patch(
     position_df, patch_position, wheel_distance_travelled, patch_radius=0.2
-):
+) -> pd.Series:
     distance_from_patch = compute_distance(position_df, patch_position)
     in_patch = distance_from_patch < patch_radius
     exit_patch = in_patch.astype(np.int8).diff() < 0
@@ -244,7 +242,7 @@ def is_in_patch(
     return in_wheel.groupby(time_slice).apply(lambda x: x.cumsum()) > 0
 
 
-def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y"):
+def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y") -> pd.Series:
     """
     Given the session key and the position data - arrays of x and y
     return an array of boolean indicating whether or not a position is inside the nest
@@ -252,9 +250,9 @@ def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y"):
     nest_vertices = list(
         zip(*(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y"))
     )
-    nest_path = path.Path(nest_vertices)
-
-    return nest_path.contains_points(position_df[[xcol, ycol]])
+    nest_path = matplotlib.path.Path(nest_vertices)
+    position["in_nest"] = nest_path.contains_points(position_df[[xcol, ycol]])
+    return position["in_nest"]
 
 
 def _get_position(
