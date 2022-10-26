@@ -251,8 +251,8 @@ def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y") -> pd.Series:
         zip(*(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y"))
     )
     nest_path = matplotlib.path.Path(nest_vertices)
-    position["in_nest"] = nest_path.contains_points(position_df[[xcol, ycol]])
-    return position["in_nest"]
+    position_df["in_nest"] = nest_path.contains_points(position_df[[xcol, ycol]])
+    return position_df["in_nest"]
 
 
 def _get_position(
