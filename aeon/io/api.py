@@ -76,7 +76,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
     fileset = {
         chunk_key(fname):fname
         for path in root
-        for fname in Path(path).glob(f"{epoch_pattern}/**/{reader.pattern}_*.{reader.extension}")}
+        for fname in Path(path).glob(f"{epoch_pattern}/**/{reader.pattern}*.{reader.extension}")}
     files = sorted(fileset.items())
 
     if time is not None:
@@ -132,11 +132,12 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
             return data.loc[start:end]
         except KeyError:
             import warnings
-            if not data.index.has_duplicates:
-                warnings.warn('data index for {0} contains out-of-order timestamps!'.format(reader.pattern))
-                data = data.sort_index()
-            else:
-                warnings.warn('data index for {0} contains duplicate keys!'.format(reader.pattern))
-                data = data[~data.index.duplicated(keep='first')]
-            return data.loc[start:end]
+            # if not data.index.has_duplicates:
+            #     warnings.warn('data index for {0} contains out-of-order timestamps!'.format(reader.pattern))
+            #     data = data.sort_index()
+            # else:
+            #     warnings.warn('data index for {0} contains duplicate keys!'.format(reader.pattern))
+            #     data = data[~data.index.duplicated(keep='first')]
+            # return data.loc[start:end]
+            return data
     return data
