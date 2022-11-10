@@ -11,8 +11,8 @@ from aeon.io import reader as io_reader
 from aeon.schema import dataset as aeon_schema
 
 from . import get_schema_name
-from .utils.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 from .utils import paths
+from .utils.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 
 schema = dj.schema(get_schema_name("acquisition"))
 
@@ -612,54 +612,62 @@ class ExperimentLog(dj.Imported):
     def make(self, key):
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
 
-        raw_data_dir = Experiment.get_data_directory(key)
+        self.insert1(key)
 
+        # Populate the part table
+        raw_data_dir = Experiment.get_data_directory(key)
         device = getattr(
             _device_schema_mapping[key["experiment_name"]], "ExperimentalMetadata"
         )
-        log_messages = io_api.load(
-            root=raw_data_dir.as_posix(),
-            reader=device.MessageLog,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
-        state_messages = io_api.load(
-            root=raw_data_dir.as_posix(),
-            reader=device.EnvironmentState,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
 
-        self.insert1(key)
-        self.Message.insert(
-            (
-                {
-                    **key,
-                    "message_time": r.name,
-                    "message": r.message,
-                    "message_type": r.type,
-                }
-                for _, r in log_messages.iterrows()
-            ),
-            skip_duplicates=True,
-        )
-        self.Message.insert(
-            (
-                {
-                    **key,
-                    "message_time": r.name,
-                    "message": r.state,
-                    "message_type": "EnvironmentState",
-                }
-                for _, r in state_messages.iterrows()
-            ),
-            skip_duplicates=True,
-        )
+        try:
+            log_messages: pd.DataFrame = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=device.MessageLog,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.Message.insert(
+                (
+                    {
+                        **key,
+                        "message_time": r.name,
+                        "message": r.message,
+                        "message_type": r.type,
+                    }
+                    for _, r in log_messages.iterrows()
+                ),
+                skip_duplicates=True,
+            )
+        except:
+            print("Can't read from device.MessageLog")
+
+        try:
+            state_messages: pd.DataFrame = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=device.EnvironmentState,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.Message.insert(
+                (
+                    {
+                        **key,
+                        "message_time": r.name,
+                        "message": r.state,
+                        "message_type": "EnvironmentState",
+                    }
+                    for _, r in state_messages.iterrows()
+                ),
+                skip_duplicates=True,
+            )
+        except:
+            print("Can't read from device.EnvironmentState")
 
 
 # ------------------- EVENTS --------------------
-
-
 @schema
 class FoodPatchEvent(dj.Imported):
     definition = """  # events associated with a given ExperimentFoodPatch

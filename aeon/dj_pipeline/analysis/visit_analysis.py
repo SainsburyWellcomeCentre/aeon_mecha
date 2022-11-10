@@ -428,6 +428,7 @@ class VisitSummary(dj.Computed):
         visit_dates = pd.date_range(
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
         )
+
         maintenance_period = _get_maintenance_periods(
             key["experiment_name"], visit_start, visit_end
         )
@@ -548,13 +549,17 @@ class VisitSummary(dj.Computed):
 
 def _get_maintenance_periods(experiment_name, start, end):
     # get logs from ExperimentLog
-    log_df = (
+    query = (
         ExperimentLog.Message.proj("message")
         & {"experiment_name": experiment_name}
         & 'message IN ("Maintenance", "Experiment")'
         & f'message_time BETWEEN "{start}" AND "{end}"'
     )
-    log_df = log_df.fetch(format="frame", order_by="message_time").reset_index()
+
+    if len(query) == 0:
+        return None
+
+    log_df = query.fetch(format="frame", order_by="message_time").reset_index()
     log_df = log_df[log_df["message"].shift() != log_df["message"]].reset_index(
         drop=True
     )  # remove duplicates and keep the first one
