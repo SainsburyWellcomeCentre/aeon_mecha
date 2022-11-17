@@ -14,6 +14,7 @@ from . import get_schema_name
 from .utils import paths
 from .utils.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 
+logger = dj.logger
 schema = dj.schema(get_schema_name("acquisition"))
 
 
@@ -641,8 +642,7 @@ class ExperimentLog(dj.Imported):
                 skip_duplicates=True,
             )
         except:
-            print("Can't read from device.MessageLog")
-
+            logger.warning("Can't read from device.MessageLog")
         try:
             state_messages: pd.DataFrame = io_api.load(
                 root=raw_data_dir.as_posix(),
@@ -664,7 +664,7 @@ class ExperimentLog(dj.Imported):
                 skip_duplicates=True,
             )
         except:
-            print("Can't read from device.EnvironmentState")
+            logger.warning("Can't read from device.EnvironmentState")
 
 
 # ------------------- EVENTS --------------------
