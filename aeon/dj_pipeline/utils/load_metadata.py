@@ -53,10 +53,11 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     + camera/patch location
     + patch, weightscale serial number
     """
+    if experiment_name.startswith("oct"):
+        ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath)
+        return
+
     metadata_yml_filepath = pathlib.Path(metadata_yml_filepath)
-    file_creation_time = datetime.datetime.fromtimestamp(
-        metadata_yml_filepath.stat().st_ctime
-    )
     epoch_start = datetime.datetime.strptime(
         metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
     )
@@ -144,7 +145,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             camera_position = {
                 **camera_key,
                 "experiment_name": experiment_name,
-                "camera_install_time": file_creation_time,
+                "camera_install_time": epoch_start,
                 "camera_position_x": camera["position"]["x"],
                 "camera_position_y": camera["position"]["y"],
                 "camera_position_z": camera["position"]["z"],
@@ -225,7 +226,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             patch_position = {
                 **patch_key,
                 "experiment_name": experiment_name,
-                "food_patch_install_time": file_creation_time,
+                "food_patch_install_time": epoch_start,
                 "food_patch_position_x": patch["position"]["x"],
                 "food_patch_position_y": patch["position"]["y"],
                 "food_patch_position_z": patch["position"]["z"],
@@ -353,3 +354,47 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     else:
         with acquisition.Experiment.connection.transaction:
             insert()
+
+
+def ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath):
+    """
+    Temporary ingestion routine to load devices' meta information for Octagon arena experiments
+    """
+    from aeon.dj_pipeline import device_stream
+
+    oct01_devices = [
+        ("Metadata", "Metadata"),
+        ("CameraTop", "Camera"),
+        ("CameraColorTop", "Camera"),
+        ("ExperimentalMetadata", "ExperimentalMetadata"),
+        ("Photodiode", "Photodiode"),
+        ("OSC", "OSC"),
+        ("TaskLogic", "TaskLogic"),
+        ("Wall1", "Wall"),
+        ("Wall2", "Wall"),
+        ("Wall3", "Wall"),
+        ("Wall4", "Wall"),
+        ("Wall5", "Wall"),
+        ("Wall6", "Wall"),
+        ("Wall7", "Wall"),
+        ("Wall8", "Wall"),
+    ]
+
+    epoch_start = datetime.datetime.strptime(
+        metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
+    )
+
+    for device_idx, (device_name, device_type) in enumerate(oct01_devices):
+        device_sn = f"oct01_{device_idx}"
+        device_stream.Device.insert1(
+            {"device_serial_number": device_sn, "device_type": device_type},
+            skip_duplicates=True,
+        )
+        experiment_table = getattr(device_stream, f"Experiment{device_type}")
+        if not (
+            experiment_table
+            & {"experiment_name": experiment_name, "device_serial_number": device_sn}
+        ):
+            experiment_table.insert1(
+                (experiment_name, device_sn, epoch_start, device_name)
+            )
