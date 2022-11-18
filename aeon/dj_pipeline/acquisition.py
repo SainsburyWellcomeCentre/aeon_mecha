@@ -622,49 +622,49 @@ class ExperimentLog(dj.Imported):
         )
 
         try:
-            log_messages: pd.DataFrame = io_api.load(
+            # handles corrupted files - issue: https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/153
+            log_messages = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.MessageLog,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
-
-            self.Message.insert(
-                (
-                    {
-                        **key,
-                        "message_time": r.name,
-                        "message": r.message,
-                        "message_type": r.type,
-                    }
-                    for _, r in log_messages.iterrows()
-                ),
-                skip_duplicates=True,
-            )
-        except:
+        except IndexError:
             logger.warning("Can't read from device.MessageLog")
-        try:
-            state_messages: pd.DataFrame = io_api.load(
-                root=raw_data_dir.as_posix(),
-                reader=device.EnvironmentState,
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
+            log_messages = pd.DataFrame()
 
-            self.Message.insert(
-                (
-                    {
-                        **key,
-                        "message_time": r.name,
-                        "message": r.state,
-                        "message_type": "EnvironmentState",
-                    }
-                    for _, r in state_messages.iterrows()
-                ),
-                skip_duplicates=True,
-            )
-        except:
-            logger.warning("Can't read from device.EnvironmentState")
+        state_messages = io_api.load(
+            root=raw_data_dir.as_posix(),
+            reader=device.EnvironmentState,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end),
+        )
+
+        self.insert1(key)
+        self.Message.insert(
+            (
+                {
+                    **key,
+                    "message_time": r.name,
+                    "message": r.message,
+                    "message_type": r.type,
+                }
+                for _, r in log_messages.iterrows()
+            ),
+            skip_duplicates=True,
+        )
+        self.Message.insert(
+            (
+                {
+                    **key,
+                    "message_time": r.name,
+                    "message": r.state,
+                    "message_type": "EnvironmentState",
+                }
+                for _, r in state_messages.iterrows()
+            ),
+            skip_duplicates=True,
+        )
 
 
 # ------------------- EVENTS --------------------
