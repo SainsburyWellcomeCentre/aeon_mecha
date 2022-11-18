@@ -302,7 +302,7 @@ def generate_device_table(device_type, context=None):
                 self.insert1(
                     {
                         **key,
-                        "size": len(stream_data),
+                        "sample_count": len(stream_data),
                         "timestamps": stream_data.index.values,
                         **{
                             c: stream_data[c].values
