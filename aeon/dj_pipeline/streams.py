@@ -14,10 +14,8 @@ from . import acquisition, dict_to_uuid, get_schema_name
 
 logger = dj.logger
 
-# schema_name = get_schema_name("device_stream")
-schema_name = (
-    f'u_{dj.config["database.user"]}_device_stream'  # still experimental feature
-)
+schema_name = get_schema_name("streams")
+# schema_name = f'u_{dj.config["database.user"]}_streams'  # still experimental feature
 schema = dj.schema(schema_name)
 
 

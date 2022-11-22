@@ -360,7 +360,7 @@ def ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath):
     """
     Temporary ingestion routine to load devices' meta information for Octagon arena experiments
     """
-    from aeon.dj_pipeline import device_stream
+    from aeon.dj_pipeline import streams
 
     oct01_devices = [
         ("Metadata", "Metadata"),
@@ -386,11 +386,11 @@ def ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath):
 
     for device_idx, (device_name, device_type) in enumerate(oct01_devices):
         device_sn = f"oct01_{device_idx}"
-        device_stream.Device.insert1(
+        streams.Device.insert1(
             {"device_serial_number": device_sn, "device_type": device_type},
             skip_duplicates=True,
         )
-        experiment_table = getattr(device_stream, f"Experiment{device_type}")
+        experiment_table = getattr(streams, f"Experiment{device_type}")
         if not (
             experiment_table
             & {"experiment_name": experiment_name, "device_serial_number": device_sn}
