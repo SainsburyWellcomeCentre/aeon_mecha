@@ -7,7 +7,6 @@ import numpy as np
 import pandas as pd
 
 from .. import acquisition, dict_to_uuid, get_schema_name, lab, qc, tracking
-from ..acquisition import Chunk, ExperimentLog
 from .visit import Visit, VisitEnd
 
 logger = dj.logger
@@ -273,7 +272,7 @@ class VisitTimeDistribution(dj.Computed):
         visit_dates = pd.date_range(
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
         )
-        maintenance_period = _get_maintenance_periods(
+        maintenance_period = get_maintenance_periods(
             key["experiment_name"], visit_start, visit_end
         )
 
@@ -295,7 +294,7 @@ class VisitTimeDistribution(dj.Computed):
                 subject=key["subject"], start=day_start, end=day_end
             )
             # filter out maintenance period based on logs
-            position = _filter_out_maintenance_periods(
+            position = filter_out_maintenance_periods(
                 position, maintenance_period, day_end
             )
 
@@ -359,7 +358,7 @@ class VisitTimeDistribution(dj.Computed):
                     using_aeon_io=True,
                 )
                 # filter out maintenance period based on logs
-                wheel_data = _filter_out_maintenance_periods(
+                wheel_data = filter_out_maintenance_periods(
                     wheel_data, maintenance_period, day_end
                 )
                 patch_position = (
@@ -428,7 +427,7 @@ class VisitSummary(dj.Computed):
         visit_dates = pd.date_range(
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
         )
-        maintenance_period = _get_maintenance_periods(
+        maintenance_period = get_maintenance_periods(
             key["experiment_name"], visit_start, visit_end
         )
 
@@ -451,7 +450,7 @@ class VisitSummary(dj.Computed):
                 subject=key["subject"], start=day_start, end=day_end
             )
             # filter out maintenance period based on logs
-            position = _filter_out_maintenance_periods(
+            position = filter_out_maintenance_periods(
                 position, maintenance_period, day_end
             )
             # filter for objects of the correct size
@@ -491,7 +490,7 @@ class VisitSummary(dj.Computed):
                     & f'event_time BETWEEN "{day_start}" AND "{day_end}"'
                 ).fetch("event_time")
                 # filter out maintenance period based on logs
-                pellet_events = _filter_out_maintenance_periods(
+                pellet_events = filter_out_maintenance_periods(
                     pd.DataFrame(pellet_events).set_index(0),
                     maintenance_period,
                     day_end,
@@ -509,7 +508,7 @@ class VisitSummary(dj.Computed):
                     using_aeon_io=True,
                 )
                 # filter out maintenance period based on logs
-                wheel_data = _filter_out_maintenance_periods(
+                wheel_data = filter_out_maintenance_periods(
                     wheel_data, maintenance_period, day_end
                 )
 
@@ -546,10 +545,128 @@ class VisitSummary(dj.Computed):
             self.FoodPatch.insert(food_patch_statistics)
 
 
-def _get_maintenance_periods(experiment_name, start, end):
-    # get logs from ExperimentLog
+@schema
+class VisitForagingBout(dj.Computed):
+    definition = """ # A time period spanning the time when the animal enters a food patch and moves the wheel to when it leaves the food patch
+    -> Visit
+    -> acquisition.ExperimentFoodPatch
+    bout_start: datetime(6)                    # start time of bout
+    --- 
+    bout_end: datetime(6)                      # end time of bout
+    bout_duration: float                       # (seconds)
+    wheel_distance_travelled: float            # (cm)
+    pellet_count: int                          # number of pellet trigger events
+    """
+
+    # Work on 24/7 experiments
+    key_source = (
+        Visit
+        & VisitSummary
+        & (VisitEnd & f"visit_duration > 24")
+        & f"experiment_name= 'exp0.2-r0'"
+    ) * acquisition.ExperimentFoodPatch
+
+    def make(self, key):
+        visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
+
+        # get in_patch timestamps
+        food_patch_description = (acquisition.ExperimentFoodPatch & key).fetch1(
+            "food_patch_description"
+        )
+        in_patch_times = np.concatenate(
+            (
+                VisitTimeDistribution.FoodPatch * acquisition.ExperimentFoodPatch & key
+            ).fetch("in_patch", order_by="visit_date")
+        )
+        maintenance_period = get_maintenance_periods(
+            key["experiment_name"], visit_start, visit_end
+        )
+        in_patch_times = filter_out_maintenance_periods(
+            pd.DataFrame(
+                [[food_patch_description]] * len(in_patch_times),
+                columns=["region"],
+                index=in_patch_times,
+            ),
+            maintenance_period,
+            visit_end,
+            True,
+        ).index.values
+
+        # get pellet data
+        chunk_keys = (
+            acquisition.Chunk
+            & f'chunk_start BETWEEN "{pd.Timestamp(visit_start).floor("H")}" AND "{visit_end}"'
+        ).fetch("KEY")
+        patch = (
+            (
+                dj.U("event_time", "event_type")
+                & (
+                    acquisition.FoodPatchEvent * acquisition.EventType
+                    & chunk_keys
+                    & key
+                    & f'event_time BETWEEN "{visit_start}" AND "{visit_end}"'
+                    & 'event_type = "TriggerPellet"'
+                )
+            )
+            .fetch(order_by="event_time", format="frame")
+            .reset_index()
+            .set_index("event_time")
+        )
+        # TODO: handle multiple retries of pellet delivery
+        maintenance_period = get_maintenance_periods(
+            key["experiment_name"], visit_start, visit_end
+        )
+        patch = filter_out_maintenance_periods(
+            patch, maintenance_period, visit_end, True
+        )
+
+        if len(in_patch_times):
+            change_ind = (
+                np.where((np.diff(in_patch_times) / 1e6) > np.timedelta64(20))[0] + 1
+            )  # timestamp index where state changes
+
+            for i in range(len(change_ind) + 1):
+                if i == 0:
+                    ts_array = in_patch_times[: change_ind[i]]
+                elif i == len(change_ind):
+                    ts_array = in_patch_times[change_ind[i - 1] :]
+                else:
+                    ts_array = in_patch_times[change_ind[i - 1] : change_ind[i]]
+
+                wheel_start, wheel_end = ts_array[0], ts_array[-1]
+                if wheel_start > wheel_end:  # skip if timestamps were misaligned
+                    continue
+
+                wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
+                    experiment_name=key["experiment_name"],
+                    start=wheel_start,
+                    end=wheel_end,
+                    patch_name=food_patch_description,
+                    using_aeon_io=True,
+                )
+                maintenance_period = get_maintenance_periods(
+                    key["experiment_name"], visit_start, visit_end
+                )
+                wheel_data = filter_out_maintenance_periods(
+                    wheel_data, maintenance_period, visit_end, True
+                )
+                self.insert1(
+                    {
+                        **key,
+                        "bout_start": ts_array[0],
+                        "bout_end": ts_array[-1],
+                        "bout_duration": (ts_array[-1] - ts_array[0])
+                        / np.timedelta64(1, "s"),
+                        "wheel_distance_travelled": wheel_data.distance_travelled[-1],
+                        "pellet_count": len(patch.loc[wheel_start:wheel_end]),
+                    }
+                )
+
+
+def get_maintenance_periods(experiment_name, start, end):
+    # get logs from acquisition.ExperimentLog
     log_df = (
-        ExperimentLog.Message.proj("message")
+        acquisition.ExperimentLog.Message.proj("message")
         & {"experiment_name": experiment_name}
         & 'message IN ("Maintenance", "Experiment")'
         & f'message_time BETWEEN "{start}" AND "{end}"'
@@ -589,9 +706,7 @@ def _get_maintenance_periods(experiment_name, start, end):
     )  # queue object. pop out from left after use
 
 
-def _filter_out_maintenance_periods(
-    data_df, maintenance_period, end_time, dropna=False
-):
+def filter_out_maintenance_periods(data_df, maintenance_period, end_time, dropna=False):
     while maintenance_period:
         (maintenance_start, maintenance_end) = maintenance_period[0]
         if end_time < maintenance_start:  # no more maintenance for this date

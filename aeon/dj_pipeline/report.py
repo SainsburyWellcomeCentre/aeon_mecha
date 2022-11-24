@@ -452,7 +452,12 @@ class VisitDailySummaryPlot(dj.Computed):
     pellet_count_plotly:             longblob  # Dictionary storing the plotly object (from fig.to_plotly_json())
     wheel_distance_travelled_plotly: longblob
     total_distance_travelled_plotly: longblob  
-    foraging_bouts_plotly:           longblob  
+    weight_patch_plotly:                longblob
+    foraging_bouts_plotly:              longblob  
+    foraging_bouts_pellet_count_plotly: longblob
+    foraging_bouts_duration_plotly:     longblob
+    region_time_fraction_daily_plotly:  longblob
+    region_time_fraction_hourly_plotly: longblob
     """
 
     key_source = (
@@ -464,12 +469,17 @@ class VisitDailySummaryPlot(dj.Computed):
 
     def make(self, key):
         from aeon.dj_pipeline.utils.plotting import (
-            plot_foraging_bouts,
+            plot_foraging_bouts_count,
+            plot_foraging_bouts_distribution,
             plot_visit_daily_summary,
+            plot_visit_time_distribution,
+            plot_weight_patch_data,
         )
 
-        wheel_dist_crit = 1  # in cm (minimum wheel distance travelled)
+        # bout criteria
+        min_wheel_dist = 1  # in cm (minimum wheel distance travelled)
         min_bout_duration = 1  # in seconds (minimum foraging bout duration)
+        min_pellet_count = 3  # minimum number of pellets
 
         fig = plot_visit_daily_summary(
             key,
@@ -491,13 +501,51 @@ class VisitDailySummaryPlot(dj.Computed):
         )
         fig_total_dist = json.loads(fig.to_json())
 
-        fig = plot_foraging_bouts(
+        fig = plot_weight_patch_data(
             key,
-            wheel_dist_crit=wheel_dist_crit,
-            min_bout_duration=min_bout_duration,
-            using_aeon_io=False,
         )
-        fig_foraginng_bouts = json.loads(fig.to_json())
+        fig_weight_patch = json.loads(fig.to_json())
+
+        fig = plot_foraging_bouts_count(
+            key,
+            per_food_patch=True,
+            min_bout_duration=min_bout_duration,
+            min_pellet_count=min_pellet_count,
+            min_wheel_dist=min_wheel_dist,
+        )
+        fig_foraging_bouts = json.loads(fig.to_json())
+
+        fig = plot_foraging_bouts_distribution(
+            key,
+            "pellet_count",
+            per_food_patch=True,
+            min_bout_duration=min_bout_duration,
+            min_pellet_count=min_pellet_count,
+            min_wheel_dist=min_wheel_dist,
+        )
+        fig_foraging_bouts_pellet_count = json.loads(fig.to_json())
+
+        fig = plot_foraging_bouts_distribution(
+            key,
+            "bout_duration",
+            per_food_patch=False,
+            min_bout_duration=min_bout_duration,
+            min_pellet_count=min_pellet_count,
+            min_wheel_dist=min_wheel_dist,
+        )
+        fig_foraging_bouts_duration = json.loads(fig.to_json())
+
+        fig = plot_visit_time_distribution(
+            key,
+            freq="D",
+        )
+        fig_region_time_fraction_daily = json.loads(fig.to_json())
+
+        fig = plot_visit_time_distribution(
+            key,
+            freq="H",
+        )
+        fig_region_time_fraction_hourly = json.loads(fig.to_json())
 
         self.insert1(
             {
@@ -505,7 +553,12 @@ class VisitDailySummaryPlot(dj.Computed):
                 "pellet_count_plotly": fig_pellet,
                 "wheel_distance_travelled_plotly": fig_wheel_dist,
                 "total_distance_travelled_plotly": fig_total_dist,
-                "foraging_bouts_plotly": fig_foraginng_bouts,
+                "weight_patch_plotly": fig_weight_patch,
+                "foraging_bouts_plotly": fig_foraging_bouts,
+                "foraging_bouts_pellet_count_plotly": fig_foraging_bouts_pellet_count,
+                "foraging_bouts_duration_plotly": fig_foraging_bouts_duration,
+                "region_time_fraction_daily_plotly": fig_region_time_fraction_daily,
+                "region_time_fraction_hourly_plotly": fig_region_time_fraction_hourly,
             }
         )
 
