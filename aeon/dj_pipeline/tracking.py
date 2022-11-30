@@ -239,7 +239,7 @@ def is_position_in_patch(
         position_df.index, method="pad"
     )
     time_slice = exit_patch.cumsum()
-    return in_wheel.groupby(time_slice).apply(lambda x: x.cumsum()) > 0
+    return in_patch & (in_wheel.groupby(time_slice).apply(lambda x: x.cumsum()) > 0)
 
 
 def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y") -> pd.Series:
