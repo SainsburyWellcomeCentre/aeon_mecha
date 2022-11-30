@@ -127,11 +127,6 @@ class DeviceType(dj.Lookup):
             (foraging.patch,),
         ),
         (
-            "Food Patch",
-            "Food patch",
-            (foraging.patch,),
-        ),
-        (
             "Photodiode",
             "Photodiode",
             (octagon.photodiode,),
