@@ -593,16 +593,11 @@ class VisitForagingBout(dj.Computed):
         ).index.values
 
         # get pellet data
-        chunk_keys = (
-            acquisition.Chunk
-            & f'chunk_start BETWEEN "{pd.Timestamp(visit_start).floor("H")}" AND "{visit_end}"'
-        ).fetch("KEY")
         patch = (
             (
                 dj.U("event_time", "event_type")
                 & (
                     acquisition.FoodPatchEvent * acquisition.EventType
-                    & chunk_keys
                     & key
                     & f'event_time BETWEEN "{visit_start}" AND "{visit_end}"'
                     & 'event_type = "TriggerPellet"'

@@ -803,11 +803,6 @@ def _get_patch_data(visit_key):
 
     visit_start, visit_end = (VisitEnd & visit_key).fetch1("visit_start", "visit_end")
 
-    chunk_keys = (
-        acquisition.Chunk
-        & f'chunk_start BETWEEN "{pd.Timestamp(visit_start).floor("H")}" AND "{visit_end}"'
-    ).fetch("KEY")
-
     # Get pellet trigger dataframe for all patches
     patch = (
         (
@@ -816,7 +811,6 @@ def _get_patch_data(visit_key):
                 acquisition.FoodPatchEvent
                 * acquisition.EventType
                 * acquisition.ExperimentFoodPatch
-                & chunk_keys
                 & f'event_time BETWEEN "{visit_start}" AND "{visit_end}"'
                 & 'event_type = "TriggerPellet"'
             )
