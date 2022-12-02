@@ -666,7 +666,11 @@ def get_maintenance_periods(experiment_name, start, end):
         & 'message IN ("Maintenance", "Experiment")'
         & f'message_time BETWEEN "{start}" AND "{end}"'
     )
-    log_df = log_df.fetch(format="frame", order_by="message_time").reset_index()
+
+    if len(query) == 0:
+        return None
+
+    log_df = query.fetch(format="frame", order_by="message_time").reset_index()
     log_df = log_df[log_df["message"].shift() != log_df["message"]].reset_index(
         drop=True
     )  # remove duplicates and keep the first one
