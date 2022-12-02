@@ -613,8 +613,6 @@ class ExperimentLog(dj.Imported):
     def make(self, key):
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
 
-        self.insert1(key)
-
         # Populate the part table
         raw_data_dir = Experiment.get_data_directory(key)
         device = getattr(

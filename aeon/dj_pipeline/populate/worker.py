@@ -79,6 +79,7 @@ mid_priority(analysis.OverlapVisit)
 mid_priority(analysis.VisitSubjectPosition)
 mid_priority(analysis.VisitTimeDistribution)
 mid_priority(analysis.VisitSummary)
+mid_priority(analysis.VisitForagingBout)
 # report tables
 mid_priority(report.delete_outdated_plot_entries)
 mid_priority(report.SubjectRewardRateDifference)

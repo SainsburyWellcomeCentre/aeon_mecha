@@ -1,14 +1,21 @@
 import datajoint as dj
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import plotly.io as pio
-import seaborn as sns
 
 from aeon.dj_pipeline import acquisition, analysis, lab
 from aeon.dj_pipeline.analysis.visit import Visit, VisitEnd
-from aeon.dj_pipeline.analysis.visit_analysis import VisitSummary, VisitTimeDistribution
+from aeon.dj_pipeline.analysis.visit_analysis import (
+    VisitSummary,
+    VisitTimeDistribution,
+    VisitForagingBout,
+    get_maintenance_periods,
+    filter_out_maintenance_periods,
+)
+from plotly.subplots import make_subplots
+from scipy.signal import savgol_filter
 
 # pio.renderers.default = 'png'
 # pio.orca.config.executable = '~/.conda/envs/aeon_env/bin/orca'
@@ -222,11 +229,6 @@ def plot_visit_daily_summary(
         >>> fig = plot_visit_daily_summary(visit_key, attr='total_distance_travelled')
     """
 
-    subject, visit_start = (
-        visit_key["subject"],
-        visit_key["visit_start"],
-    )
-
     per_food_patch = not attr.startswith("total")
     color = "food_patch_description" if per_food_patch else None
 
@@ -246,180 +248,586 @@ def plot_visit_daily_summary(
         if not attr.startswith("total"):
             attr = "total_" + attr
 
-    visit_per_day_df["subject"] = "_".join([subject, visit_start.strftime("%m%d")])
     visit_per_day_df["day"] = (
         visit_per_day_df["visit_date"] - visit_per_day_df["visit_date"].min()
     )
     visit_per_day_df["day"] = visit_per_day_df["day"].dt.days
 
-    fig = px.line(
+    fig = px.bar(
         visit_per_day_df,
-        x="day",
+        x="visit_date",
         y=attr,
         color=color,
-        markers=True,
-        labels={attr: attr.replace("_", " ")},
+        labels={
+            attr: attr.replace("_", " "),
+            "visit_date": "date",
+        },
         hover_name="visit_date",
-        hover_data=["visit_date"],
+        hover_data=["day"],
         width=700,
         height=400,
         template="simple_white",
-        title=visit_per_day_df["subject"][0],
+        title=visit_key["subject"] + "<br><i>" + attr.replace("_", " ") + " (daily)",
     )
-    fig.update_traces(mode="markers+lines", hovertemplate=None)
+
     fig.update_layout(
-        legend_title="", hovermode="x", yaxis_tickformat="digits", yaxis_range=[0, None]
+        legend=dict(
+            title="", orientation="h", yanchor="bottom", y=0.98, xanchor="right", x=1
+        ),
+        hovermode="x",
+        yaxis_tickformat="digits",
+        yaxis_range=[0, None],
     )
 
     return fig
 
 
-def plot_foraging_bouts(
+def plot_foraging_bouts_count(
     visit_key,
-    wheel_dist_crit=None,
-    min_bout_duration=None,
-    using_aeon_io=False,
+    freq="D",
+    per_food_patch=False,
+    min_bout_duration=0,
+    min_pellet_count=0,
+    min_wheel_dist=0,
 ):
     """plot the number of foraging bouts per visit
 
     Args:
-        visit_key (dict) : Key from the VisitTimeDistribution table
-        wheel_dist_crit (int) : Minimum wheel distance travelled (in cm)
-        min_bout_duration (int) : Minimum foraging bout duration (in seconds)
-        using_aeon_io (bool) : Use aeon api to calculate wheel distance. Otherwise use datajoint tables. Defaults to False.
+        visit_key (dict): Key from the Visit table
+        freq (str): Frequency level at which the visit time distribution is plotted. Corresponds to pandas freq.
+        per_food_patch (bool, optional): Separately plot results from different food patches. Defaults to False.
+        min_bout_duration (int): Minimum foraging bout duration (in seconds)
+        min_pellet_count (int): Minimum number of pellets
+        min_wheel_dist (int): Minimum wheel distance travelled (in cm)
 
     Returns:
         fig: Figure object
 
     Examples:
-        >>> fig = plot_foraging_bouts(visit_key, wheel_dist_crit=1, min_bout_duration=1)
+        >>> fig = plot_foraging_bouts_count(visit_key, freq="D", per_food_patch=True, min_bout_duration=1, min_wheel_dist=1)
     """
 
-    subject, visit_start = (
-        visit_key["subject"],
-        visit_key["visit_start"],
-    )
-
-    visit_per_day_df = (
+    # Get all foraging bouts for the visit
+    foraging_bouts = (
         (
-            (VisitTimeDistribution.FoodPatch & visit_key)
-            * acquisition.ExperimentFoodPatch.proj("food_patch_description")
+            dj.U(
+                "bout_start",
+                "bout_end",
+                "bout_duration",
+                "food_patch_description",
+                "pellet_count",
+                "wheel_distance_travelled",
+            )
+            & (VisitForagingBout * acquisition.ExperimentFoodPatch & visit_key)
         )
-        .fetch(format="frame")
+        .fetch(order_by="bout_start", format="frame")
         .reset_index()
     )
 
-    visit_per_day_df["subject"] = "_".join([subject, visit_start.strftime("%m%d")])
-    visit_per_day_df["day"] = (
-        visit_per_day_df["visit_date"] - visit_per_day_df["visit_date"].min()
-    )
-    visit_per_day_df["day"] = visit_per_day_df["day"].dt.days
-    visit_per_day_df["foraging_bouts"] = visit_per_day_df.apply(
-        _get_foraging_bouts,
-        args=(wheel_dist_crit, min_bout_duration, using_aeon_io),
-        axis=1,
+    # Apply filter
+    foraging_bouts = foraging_bouts[
+        (foraging_bouts["bout_duration"] >= min_bout_duration)
+        & (foraging_bouts["pellet_count"] >= min_pellet_count)
+        & (foraging_bouts["wheel_distance_travelled"] >= min_wheel_dist)
+    ]
+
+    group_by_attrs = (
+        [foraging_bouts["bout_start"].dt.floor(freq), "food_patch_description"]
+        if per_food_patch
+        else [foraging_bouts["bout_start"].dt.floor("D")]
     )
 
-    fig = px.line(
-        visit_per_day_df,
-        x="day",
-        y="foraging_bouts",
-        color="food_patch_description",
-        markers=True,
-        labels={"foraging_bouts": "foraging_bouts".replace("_", " ")},
-        hover_name="visit_date",
-        hover_data=["visit_date"],
+    foraging_bouts_count = (
+        foraging_bouts.groupby(group_by_attrs).size().reset_index(name="count")
+    )
+
+    visit_start = (VisitEnd & visit_key).fetch1("visit_start")
+    foraging_bouts_count["day"] = (
+        foraging_bouts_count["bout_start"].dt.date - visit_start.date()
+    ).dt.days
+
+    fig = px.bar(
+        foraging_bouts_count,
+        x="bout_start",
+        y="count",
+        color="food_patch_description" if per_food_patch else None,
+        labels={
+            "bout_start": "date" if freq == "D" else "time",
+        },
+        hover_data=["day"],
         width=700,
         height=400,
         template="simple_white",
-        title=visit_per_day_df["subject"][0],
+        title=visit_key["subject"]
+        + "<br><i>Foraging bouts: count (freq='"
+        + freq
+        + "')",
     )
-    fig.update_traces(mode="markers+lines", hovertemplate=None)
+
     fig.update_layout(
-        legend_title="", hovermode="x", yaxis_tickformat="digits", yaxis_range=[0, None]
+        legend=dict(
+            title="", orientation="h", yanchor="bottom", y=0.98, xanchor="right", x=1
+        ),
+        hovermode="x",
+        yaxis_tickformat="digits",
+        yaxis_range=[0, None],
     )
 
     return fig
 
 
-def _get_foraging_bouts(
-    visit_per_day_row,
-    wheel_dist_crit=None,
-    min_bout_duration=None,
-    using_aeon_io=False,
+def plot_foraging_bouts_distribution(
+    visit_key,
+    attr,
+    per_food_patch=False,
+    min_bout_duration=0,
+    min_pellet_count=0,
+    min_wheel_dist=0,
 ):
-    """A function that calculates the number of foraging bouts. Works on this table query
-
-            (VisitTimeDistribution.FoodPatch & visit_key)
-            * acquisition.ExperimentFoodPatch.proj("food_patch_description")
-
-        This will iterate over this table entries and store results in a new column ('foraging_bouts')
+    """plot distribution of foraging bout attributes
 
     Args:
-        visit_per_day_row (pd.DataFrame): A single row of the pandas dataframe
+        visit_key (dict): Key from the Visit table
+        attr (str): Options include: pellet_count, bout_duration, wheel_distance_travelled
+        per_food_patch (bool, optional): Separately plot results from different food patches. Defaults to False.
+        min_bout_duration (int): Minimum foraging bout duration (in seconds)
+        min_pellet_count (int): Minimum number of pellets
+        min_wheel_dist (int): Minimum wheel distance travelled (in cm)
 
     Returns:
-        nb_bouts (int): Number of foraging bouts
+        fig: Figure object
+
+    Examples:
+        >>> fig = plot_foraging_bouts_distribution(visit_key, "pellet_count", True, 0, 3, 0)
+        >>> fig = plot_foraging_bouts_distribution(visit_key, "wheel_distance_travelled")
+        >>> fig = plot_foraging_bouts_distribution(visit_key, "bout_duration")
     """
 
-    # Get number of foraging bouts
-    nb_bouts = 0
-
-    in_patch = visit_per_day_row["in_patch"]
-    if np.size(in_patch) == 0:  # no food patch position timestamps
-        return nb_bouts
-
-    change_ind = (
-        np.where((np.diff(in_patch) / 1e6) > np.timedelta64(20))[0] + 1
-    )  # timestamp index where state changes
-
-    if np.size(change_ind) == 0:  # one contiguous block
-
-        wheel_start, wheel_end = in_patch[0], in_patch[-1]
-        ts_duration = (wheel_end - wheel_start) / np.timedelta64(1, "s")  # in seconds
-        if ts_duration < min_bout_duration:
-            return nb_bouts
-
-        wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
-            experiment_name=visit_per_day_row["experiment_name"],
-            start=wheel_start,
-            end=wheel_end,
-            patch_name=visit_per_day_row["food_patch_description"],
-            using_aeon_io=using_aeon_io,
+    # Get all foraging bouts for the visit
+    foraging_bouts = (
+        (
+            dj.U(
+                "bout_start",
+                "bout_end",
+                "bout_duration",
+                "food_patch_description",
+                "pellet_count",
+                "wheel_distance_travelled",
+            )
+            & (VisitForagingBout * acquisition.ExperimentFoodPatch & visit_key)
         )
-        if wheel_data.distance_travelled[-1] > wheel_dist_crit:
-            return nb_bouts + 1
-        else:
-            return nb_bouts
+        .fetch(order_by="bout_start", format="frame")
+        .reset_index()
+    )
 
-    # fetch contiguous timestamp blocks
-    for i in range(len(change_ind) + 1):
-        if i == 0:
-            ts_array = in_patch[: change_ind[i]]
-        elif i == len(change_ind):
-            ts_array = in_patch[change_ind[i - 1] :]
-        else:
-            ts_array = in_patch[change_ind[i - 1] : change_ind[i]]
+    # Apply filter
+    foraging_bouts = foraging_bouts[
+        (foraging_bouts["bout_duration"] >= min_bout_duration)
+        & (foraging_bouts["pellet_count"] >= min_pellet_count)
+        & (foraging_bouts["wheel_distance_travelled"] >= min_wheel_dist)
+    ]
 
-        ts_duration = (ts_array[-1] - ts_array[0]) / np.timedelta64(
-            1, "s"
-        )  # in seconds
-        if ts_duration < min_bout_duration:
-            continue
-
-        wheel_start, wheel_end = ts_array[0], ts_array[-1]
-        if wheel_start > wheel_end:  # skip if timestamps were misaligned
-            continue
-
-        wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
-            experiment_name=visit_per_day_row["experiment_name"],
-            start=wheel_start,
-            end=wheel_end,
-            patch_name=visit_per_day_row["food_patch_description"],
-            using_aeon_io=using_aeon_io,
+    fig = go.Figure()
+    if per_food_patch:
+        patch_names = (acquisition.ExperimentFoodPatch & visit_key).fetch(
+            "food_patch_description"
+        )
+        for patch in patch_names:
+            bouts = foraging_bouts[foraging_bouts["food_patch_description"] == patch]
+            fig.add_trace(
+                go.Violin(
+                    x=bouts["bout_start"].dt.date,
+                    y=bouts[attr],
+                    legendgroup=patch,
+                    scalegroup=patch,
+                    name=patch,
+                    side="negative" if patch == "Patch1" else "positive",
+                )
+            )
+    else:
+        fig.add_trace(
+            go.Violin(
+                x=foraging_bouts["bout_start"].dt.date,
+                y=foraging_bouts[attr],
+            )
         )
 
-        if wheel_data.distance_travelled[-1] > wheel_dist_crit:
-            nb_bouts += 1
+    fig.update_traces(
+        box_visible=True,
+        meanline_visible=True,
+    )
 
-    return nb_bouts
+    fig.update_layout(
+        title_text=visit_key["subject"]
+        + "<br><i>Foraging bouts: "
+        + attr.replace("_", " "),
+        xaxis_title="date",
+        yaxis_title=attr.replace("_", " "),
+        violingap=0,
+        violingroupgap=0,
+        violinmode="overlay",
+        width=700,
+        height=400,
+        template="simple_white",
+        legend=dict(orientation="h", yanchor="bottom", y=1, xanchor="right", x=1),
+    )
+
+    return fig
+
+
+def plot_visit_time_distribution(visit_key, freq="D"):
+    """plot fraction of time spent in each region per visit
+
+    Args:
+        visit_key (dict): Key from the Visit table
+        freq (str): Frequency level at which the visit time distribution is plotted. Corresponds to pandas freq.
+
+    Returns:
+        fig: Figure object
+
+    Examples:
+        >>> fig = plot_visit_time_distribution(visit_key, freq="D")
+        >>> fig = plot_visit_time_distribution(visit_key, freq="H")
+    """
+
+    region = _get_region_data(visit_key)
+
+    # Compute time spent per region
+    time_spent = (
+        region.groupby([region.index.floor(freq), "region"])
+        .size()
+        .reset_index(name="count")
+    )
+    time_spent["time_fraction"] = time_spent["count"] / time_spent.groupby(
+        "timestamps"
+    )["count"].transform("sum")
+    time_spent["day"] = (
+        time_spent["timestamps"] - time_spent["timestamps"].min()
+    ).dt.days
+
+    fig = px.bar(
+        time_spent,
+        x="timestamps",
+        y="time_fraction",
+        color="region",
+        hover_data=["day"],
+        labels={
+            "time_fraction": "time fraction",
+            "timestamps": "date" if freq == "D" else "time",
+        },
+        title=visit_key["subject"]
+        + "<br><i>Fraction of time spent in each region (freq='"
+        + freq
+        + "')",
+        width=700,
+        height=400,
+        template="simple_white",
+    )
+
+    fig.update_layout(
+        hovermode="x",
+        yaxis_tickformat="digits",
+        yaxis_range=[0, None],
+        legend=dict(
+            title="", orientation="h", yanchor="bottom", y=0.98, xanchor="right", x=1
+        ),
+    )
+
+    return fig
+
+
+def _get_region_data(
+    visit_key, attrs=["in_nest", "in_arena", "in_corridor", "in_patch"]
+):
+    """Retrieve region data from VisitTimeDistribution tables.
+
+    Args:
+        visit_key (dict): Key from the Visit table
+        attrs (list, optional): List of column names (in VisitTimeDistribution tables) to retrieve. Defaults to all.
+
+    Returns:
+        region (pd.DataFrame): Timestamped region info
+    """
+
+    visit_start, visit_end = (VisitEnd & visit_key).fetch1("visit_start", "visit_end")
+    region = pd.DataFrame()
+
+    # Get region timestamps
+    for attr in attrs:
+        if attr == "in_nest":  # Nest
+            in_nest = np.concatenate(
+                (VisitTimeDistribution.Nest & visit_key).fetch(
+                    attr, order_by="visit_date"
+                )
+            )
+            region = pd.concat(
+                [
+                    region,
+                    pd.DataFrame(
+                        [[attr.replace("in_", "")]] * len(in_nest),
+                        columns=["region"],
+                        index=in_nest,
+                    ),
+                ]
+            )
+        elif attr == "in_patch":  # Food patch
+            # Find all patches
+            patches = np.unique(
+                (
+                    VisitTimeDistribution.FoodPatch * acquisition.ExperimentFoodPatch
+                    & visit_key
+                ).fetch("food_patch_description")
+            )
+            for patch in patches:
+                in_patch = np.concatenate(
+                    (
+                        VisitTimeDistribution.FoodPatch
+                        * acquisition.ExperimentFoodPatch
+                        & visit_key
+                        & f"food_patch_description = '{patch}'"
+                    ).fetch("in_patch", order_by="visit_date")
+                )
+                region = pd.concat(
+                    [
+                        region,
+                        pd.DataFrame(
+                            [[patch.lower()]] * len(in_patch),
+                            columns=["region"],
+                            index=in_patch,
+                        ),
+                    ]
+                )
+        else:  # corridor, arena
+            in_other = np.concatenate(
+                (VisitTimeDistribution & visit_key).fetch(attr, order_by="visit_date")
+            )
+            region = pd.concat(
+                [
+                    region,
+                    pd.DataFrame(
+                        [[attr.replace("in_", "")]] * len(in_other),
+                        columns=["region"],
+                        index=in_other,
+                    ),
+                ]
+            )
+    region = region.sort_index().rename_axis("timestamps")
+
+    # Exclude data during maintenance
+    maintenance_period = get_maintenance_periods(
+        visit_key["experiment_name"], visit_start, visit_end
+    )
+    region = filter_out_maintenance_periods(
+        region, maintenance_period, visit_end, dropna=True
+    )
+
+    return region
+
+
+def plot_weight_patch_data(
+    visit_key, freq="H", smooth_weight=True, min_weight=0, max_weight=35
+):
+    """plot subject weight and patch data (pellet trigger count) per visit
+
+    Args:
+        visit_key (dict): Key from the Visit table
+        freq (str): Frequency level at which patch data is plotted. Corresponds to pandas freq.
+        smooth_weight (bool, optional): Apply savgol filter to subject weight. Defaults to True
+        min_weight (bool, optional): Lower bound of subject weight. Defaults to 0
+        max_weight (bool, optional): Upper bound of subject weight. Defaults to 35
+
+    Returns:
+        fig: Figure object
+
+    Examples:
+        >>> fig = plot_weight_patch_data(visit_key, freq="H", smooth_weight=True)
+        >>> fig = plot_weight_patch_data(visit_key, freq="D")
+    """
+
+    subject_weight = _get_filtered_subject_weight(
+        visit_key, smooth_weight, min_weight, max_weight
+    )
+
+    # Count pellet trigger per patch per day/hour/...
+    patch = _get_patch_data(visit_key)
+    patch_summary = (
+        patch.groupby(
+            [
+                # group by freq and patch
+                patch.index.to_series().dt.floor(freq),
+                "food_patch_description",
+            ]
+        )
+        .count()
+        .unstack(fill_value=0)  # fill none count with 0s
+        .stack()
+        .reset_index()
+    )
+
+    # Get patch names
+    patch_names = patch["food_patch_description"].unique()
+    patch_names.sort()
+
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # Add trace for each patch
+    for p in patch_names:
+        fig.add_trace(
+            go.Bar(
+                x=patch_summary[patch_summary["food_patch_description"] == p][
+                    "event_time"
+                ],
+                y=patch_summary[patch_summary["food_patch_description"] == p][
+                    "event_type"
+                ],
+                name=p,
+            ),
+            secondary_y=False,
+        )
+
+    # Add subject weight trace
+    fig.add_trace(
+        go.Scatter(
+            x=subject_weight.index,
+            y=subject_weight["weight_subject"],
+            mode="lines+markers",
+            opacity=0.5,
+            name="subject weight",
+            marker=dict(
+                size=3,
+            ),
+            legendrank=1,
+        ),
+        secondary_y=True,
+    )
+
+    fig.update_layout(
+        barmode="stack",
+        hovermode="x",
+        title_text=visit_key["subject"]
+        + "<br><i>Weight and pellet count (freq='"
+        + freq
+        + "')",
+        xaxis_title="date" if freq == "D" else "time",
+        yaxis=dict(title="pellet count"),
+        yaxis2=dict(title="weight"),
+        width=700,
+        height=400,
+        template="simple_white",
+        legend=dict(
+            title="",
+            orientation="h",
+            yanchor="bottom",
+            y=0.98,
+            xanchor="right",
+            x=1,
+            traceorder="normal",
+        ),
+    )
+
+    return fig
+
+
+def _get_filtered_subject_weight(
+    visit_key, smooth_weight=True, min_weight=0, max_weight=35
+):
+    """Retrieve subject weight from WeightMeasurementFiltered table.
+
+    Args:
+        visit_key (dict): Key from the Visit table
+        smooth_weight (bool, optional): Apply savgol filter to subject weight. Defaults to True
+        min_weight (bool, optional): Lower bound of subject weight. Defaults to 0
+        max_weight (bool, optional): Upper bound of subject weight. Defaults to 35
+
+    Returns:
+        subject_weight (pd.DataFrame): Timestamped weight data
+    """
+
+    visit_start, visit_end = (VisitEnd & visit_key).fetch1("visit_start", "visit_end")
+
+    chunk_keys = (
+        acquisition.Chunk
+        & f'chunk_start BETWEEN "{pd.Timestamp(visit_start).floor("H")}" AND "{visit_end}"'
+    ).fetch("KEY")
+
+    # Create subject_weight dataframe
+    subject_weight = (
+        pd.DataFrame(
+            (
+                dj.U("weight_subject_timestamps", "weight_subject")
+                & (acquisition.WeightMeasurementFiltered & chunk_keys)
+            ).fetch(order_by="chunk_start")
+        )
+        .explode(["weight_subject_timestamps", "weight_subject"])
+        .set_index("weight_subject_timestamps")
+        .dropna()
+    )
+    subject_weight = subject_weight.loc[visit_start:visit_end]
+
+    # Exclude data during maintenance
+    maintenance_period = get_maintenance_periods(
+        visit_key["experiment_name"], visit_start, visit_end
+    )
+    subject_weight = filter_out_maintenance_periods(
+        subject_weight, maintenance_period, visit_end, dropna=True
+    )
+
+    # Drop rows where weight is out of specified range
+    subject_weight = subject_weight.drop(
+        subject_weight[
+            (subject_weight["weight_subject"] < min_weight)
+            | (subject_weight["weight_subject"] > max_weight)
+        ].index
+    )
+
+    # Downsample data to every minute
+    subject_weight = subject_weight.resample("1T").mean().dropna()
+
+    if smooth_weight:
+        subject_weight["weight_subject"] = savgol_filter(
+            subject_weight["weight_subject"], 10, 3
+        )
+
+    return subject_weight
+
+
+def _get_patch_data(visit_key):
+    """Retrieve all patch (pellet trigger) data from FoodPatchEvent table.
+
+    Args:
+        visit_key (dict): Key from the Visit table
+
+    Returns:
+        patch (pd.DataFrame): Timestamped pellet trigger events
+    """
+
+    visit_start, visit_end = (VisitEnd & visit_key).fetch1("visit_start", "visit_end")
+
+    # Get pellet trigger dataframe for all patches
+    patch = (
+        (
+            dj.U("event_time", "event_type", "food_patch_description")
+            & (
+                acquisition.FoodPatchEvent
+                * acquisition.EventType
+                * acquisition.ExperimentFoodPatch
+                & f'event_time BETWEEN "{visit_start}" AND "{visit_end}"'
+                & 'event_type = "TriggerPellet"'
+            )
+        )
+        .fetch(order_by="event_time", format="frame")
+        .reset_index()
+        .set_index("event_time")
+    )
+
+    # TODO: handle repeat attempts (pellet delivery trigger and beam break)
+
+    # Exclude data during maintenance
+    maintenance_period = get_maintenance_periods(
+        visit_key["experiment_name"], visit_start, visit_end
+    )
+    patch = filter_out_maintenance_periods(
+        patch, maintenance_period, visit_end, dropna=True
+    )
+
+    return patch

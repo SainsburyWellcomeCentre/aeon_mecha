@@ -222,14 +222,14 @@ SciViz:
                     report = aeon_report
                     return {'query': report.VisitDailySummaryPlot(), 'fetch_args': ['summary_plot_png']}
 
-    VisitDailySummary:
-      route: /visit_daily_summary
+    Visits247:
+      route: /visits247
       grids:
         visit_daily_summary:
           route: /visit_daily_summary_grid1
           type: dynamic
-          columns: 2
-          row_height: 2000
+          columns: 1
+          row_height: 4000
           restriction: >
             def restriction(**kwargs):
                 return dict(**kwargs)
@@ -265,6 +265,15 @@ SciViz:
                 def dj_query(aeon_report):
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['total_distance_travelled_plotly'])
             comp4:
+              route: /visit_daily_summary_weight_patch
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_report):
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['weight_patch_plotly'])
+            comp5:
               route: /visit_daily_summary_foraging_bouts
               type: plot:plotly:stored_json
               restriction: >
@@ -273,6 +282,43 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_report):
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['foraging_bouts_plotly'])
+            comp6:
+              route: /visit_daily_summary_foraging_bouts_pellet_count
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_report):
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['foraging_bouts_pellet_count_plotly'])
+            comp7:
+              route: /visit_daily_summary_foraging_bouts_duration
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_report):
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['foraging_bouts_duration_plotly'])
+            comp8:
+              route: /visit_daily_summary_region_time_fraction_daily
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_report):
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['region_time_fraction_daily_plotly'])
+            comp9:
+              route: /visit_daily_summary_region_time_fraction_hourly
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_report):
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['region_time_fraction_hourly_plotly'])
+
     PipelineMonitor:
       route: /pipeline_monitor
       grids:
