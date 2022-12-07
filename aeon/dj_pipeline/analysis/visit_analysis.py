@@ -660,7 +660,7 @@ class VisitForagingBout(dj.Computed):
 
 def get_maintenance_periods(experiment_name, start, end):
     # get logs from acquisition.ExperimentLog
-    log_df = (
+    query = (
         acquisition.ExperimentLog.Message.proj("message")
         & {"experiment_name": experiment_name}
         & 'message IN ("Maintenance", "Experiment")'
