@@ -1,9 +1,8 @@
 import datajoint as dj
-from datajoint_utilities.dj_worker import DataJointWorker, WorkerLog, ErrorLog
+from datajoint_utilities.dj_worker import DataJointWorker, ErrorLog, WorkerLog
 
 from aeon.dj_pipeline import acquisition, analysis, db_prefix, qc, report, tracking
 from aeon.dj_pipeline.utils import load_metadata
-
 
 __all__ = ["high_priority", "mid_priority", "WorkerLog", "ErrorLog", "logger"]
 
@@ -60,8 +59,10 @@ mid_priority(analysis.VisitSubjectPosition)
 mid_priority(analysis.VisitTimeDistribution)
 mid_priority(analysis.VisitSummary)
 mid_priority(analysis.VisitForagingBout)
+
 # report tables
 mid_priority(report.delete_outdated_plot_entries)
 mid_priority(report.SubjectRewardRateDifference)
 mid_priority(report.SubjectWheelTravelledDistance)
 mid_priority(report.ExperimentTimeDistribution)
+mid_priority(report.VisitDailySummaryPlot)
