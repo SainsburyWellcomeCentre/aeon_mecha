@@ -629,7 +629,9 @@ class VisitForagingBout(dj.Computed):
                     ts_array = in_patch_times[change_ind[i - 1] : change_ind[i]]
 
                 wheel_start, wheel_end = ts_array[0], ts_array[-1]
-                if wheel_start > wheel_end:  # skip if timestamps were misaligned
+                if (
+                    wheel_start >= wheel_end
+                ):  # skip if timestamps were misaligned or a single timestamp
                     continue
 
                 wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
