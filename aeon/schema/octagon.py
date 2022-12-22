@@ -24,7 +24,7 @@ class OSC:
             'typetag',
             'wall_id',
             'r', 'g', 'b', 'a',
-            'delay']) }
+            'delay', 'aperture_angle']) }
 
     @staticmethod
     def gratings_slice(pattern):
@@ -36,6 +36,7 @@ class OSC:
             'spatial_frequency',
             'temporal_frequency',
             'angle',
+            'aperture_angle',
             'delay']) }
 
     @staticmethod
