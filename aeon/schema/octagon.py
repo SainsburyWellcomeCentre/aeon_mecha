@@ -71,6 +71,26 @@ class OSC:
     @staticmethod
     def start_new_session(pattern):
         return { "StartNewSession": _reader.Csv(f"{pattern}_startnewsession_*", columns=['typetag', 'path' ]) }
+    
+    @staticmethod
+    def tracking_response(pattern):
+        return { "TrackingResponse": _reader.Csv(f"{pattern}_return_tracking_response_*", columns=[
+            'typetag',
+            'dont-know',
+            'response_position_x_1',
+            'response_position_y_1',
+            'response_theta_1',
+            'response_area_1'])}
+    
+    @staticmethod
+    def tracking_slice_onset(pattern):
+        return { "TrackingSliceOnset": _reader.Csv(f"{pattern}_return_tracking_slice_onset_*", columns=[
+            'typetag',
+            'dont-know',
+            'slice_onset_position_x_1',
+            'slice_onset_position_y_1',
+            'slice_onset_theta_1',
+            'slice_onset_area_1'])}
 
 class TaskLogic:
     @staticmethod
