@@ -1,5 +1,6 @@
 import inspect
 import re
+from collections import defaultdict
 from functools import cached_property
 from typing import NamedTuple
 
@@ -16,103 +17,18 @@ from aeon.io import api as io_api
 logger = dj.logger
 
 
-# schema_name = get_schema_name("streams")
-schema_name = f'u_{dj.config["database.user"]}_streams'
-# schema_name = f'u_{dj.config["database.user"]}_test'
+# schema_name = f'u_{dj.config["database.user"]}_test'  # for testing
+schema_name = get_schema_name("streams")
 schema = dj.schema(schema_name)
 
 
-def _prettify(s):
-    s = re.sub(r"[A-Z]", lambda m: f"_{m.group(0)}", s)
-    return s.replace("_", " ").title().replace(" ", "")
+class DeviceConfig(NamedTuple):
 
+    type: str
+    desc: int
+    streams: tuple
 
-@schema
-class StreamType(dj.Lookup):
-    """
-    Catalog of all steam types for the different device types used across Project Aeon
-    One StreamType corresponds to one reader class in `aeon.io.reader`
-    The combination of `stream_reader` and `stream_reader_kwargs` should fully specify
-    the data loading routine for a particular device, using the `aeon.io.utils`
-    """
-
-    definition = """  # Catalog of all stream types used across Project Aeon
-    stream_type: varchar(20)
-    ---
-    stream_reader: varchar(256)     # name of the reader class found in `aeon_mecha` package (e.g. aeon.io.reader.Video)
-    stream_reader_kwargs: longblob  # keyword arguments to instantiate the reader class
-    stream_description='': varchar(256)
-    stream_hash: uuid  # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
-    unique index (stream_hash)
-    """
-
-    @classmethod
-    def insert_streams(cls, *streams):
-        composite = {}
-        pattern = "{pattern}"
-        for stream_obj in streams:
-            if inspect.isclass(stream_obj):
-                for method in vars(stream_obj).values():
-                    if isinstance(method, staticmethod):
-                        composite.update(method.__func__(pattern))
-            else:
-                composite.update(stream_obj(pattern))
-
-        stream_entries = []
-        for stream_name, stream_reader in composite.items():
-            if stream_name == pattern:
-                stream_name = stream_reader.__class__.__name__
-            entry = {
-                "stream_type": stream_name,
-                "stream_reader": f"{stream_reader.__module__}.{stream_reader.__class__.__name__}",
-                "stream_reader_kwargs": {
-                    k: v
-                    for k, v in vars(stream_reader).items()
-                    if k
-                    in inspect.signature(stream_reader.__class__.__init__).parameters
-                },
-            }
-            entry["stream_hash"] = dict_to_uuid(
-                {
-                    **entry["stream_reader_kwargs"],
-                    "stream_reader": entry["stream_reader"],
-                }
-            )
-            q_param = cls & {"stream_hash": entry["stream_hash"]}
-            if q_param:  # If the specified stream type already exists
-                pname = q_param.fetch1("stream_type")
-                if pname != stream_name:
-                    # If the existed stream type does not have the same name:
-                    #   human error, trying to add the same content with different name
-                    raise dj.DataJointError(
-                        f"The specified stream type already exists - name: {pname}"
-                    )
-
-            stream_entries.append(entry)
-
-        cls.insert(stream_entries, skip_duplicates=True)
-        return stream_entries
-
-
-@schema
-class DeviceType(dj.Lookup):
-    """
-    Catalog of all device types used across Project Aeon
-    """
-
-    definition = """  # Catalog of all device types used across Project Aeon
-    device_type: varchar(36)
-    ---
-    device_description='': varchar(256)
-    """
-
-    class Stream(dj.Part):
-        definition = """  # Data stream(s) associated with a particular device type
-        -> master
-        -> StreamType
-        """
-
-    _devices_config = [
+    _DEVICE_CONFIG = [
         (
             "Camera",
             "Camera device",
@@ -125,12 +41,12 @@ class DeviceType(dj.Lookup):
             (stream.environment, stream.messageLog),
         ),
         (
-            "Nest Scale",
+            "NestScale",
             "Weight scale at nest",
             (foraging.weight,),
         ),
         (
-            "Food Patch",
+            "FoodPatch",
             "Food patch",
             (foraging.patch,),
         ),
@@ -157,15 +73,124 @@ class DeviceType(dj.Lookup):
     ]
 
     @classmethod
-    def insert_devices(cls):
-        for device_type, device_desc, device_streams in cls._devices_config:
-            stream_entries = StreamType.insert_streams(*device_streams)
+    def create_device_configs(
+        cls,
+    ):
+
+        return [DeviceConfig(*config) for config in cls._DEVICE_CONFIG]
+
+
+@schema
+class StreamType(dj.Lookup):
+    """
+    Catalog of all steam types for the different device types used across Project Aeon
+    One StreamType corresponds to one reader class in `aeon.io.reader`
+    The combination of `stream_reader` and `stream_reader_kwargs` should fully specify
+    the data loading routine for a particular device, using the `aeon.io.utils`
+    """
+
+    definition = """  # Catalog of all stream types used across Project Aeon
+    stream_type:            varchar(20)
+    ---
+    stream_reader:          varchar(256)     # name of the reader class found in `aeon_mecha` package (e.g. aeon.io.reader.Video)
+    stream_reader_kwargs:   longblob  # keyword arguments to instantiate the reader class
+    stream_description='':  varchar(256)
+    stream_hash:            uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
+    """
+
+    @staticmethod
+    def get_stream_entries(device: DeviceConfig, pattern="{pattern}") -> dict:
+
+        composite = aeon.io.device.compositeStream(pattern, *device.streams)
+        stream_entries = []
+        for stream_name, stream_reader in composite.items():
+            if stream_name == pattern:
+                stream_name = stream_reader.__class__.__name__
+            entry = {
+                "stream_type": stream_name,
+                "stream_reader": f"{stream_reader.__module__}.{stream_reader.__class__.__name__}",
+                "stream_reader_kwargs": {
+                    k: v
+                    for k, v in vars(stream_reader).items()
+                    if k
+                    in inspect.signature(stream_reader.__class__.__init__).parameters
+                },
+            }
+            entry["stream_hash"] = dict_to_uuid(
+                {
+                    **entry["stream_reader_kwargs"],
+                    "stream_reader": entry["stream_reader"],
+                }
+            )
+            stream_entries.append(entry)
+
+        return stream_entries
+
+    @classmethod
+    def insert_streams(cls, device_configs: list = []) -> list[dict]:
+
+        if not device_configs:
+            device_configs: list[DeviceConfig] = DeviceConfig.create_device_configs()
+
+        for device in device_configs:
+
+            stream_entries = cls.get_stream_entries(device)
+            for entry in stream_entries:
+                q_param = cls & {"stream_hash": entry["stream_hash"]}
+                if q_param:  # If the specified stream type already exists
+                    pname = q_param.fetch1("stream_type")
+                    if pname != entry["stream_type"]:
+                        # If the existed stream type does not have the same name:
+                        #   human error, trying to add the same content with different name
+                        raise dj.DataJointError(
+                            f"The specified stream type already exists - name: {pname}"
+                        )
+
+            cls.insert(stream_entries, skip_duplicates=True)
+
+
+@schema
+class DeviceType(dj.Lookup):
+    """
+    Catalog of all device types used across Project Aeon
+    """
+
+    definition = """  # Catalog of all device types used across Project Aeon
+    device_type:             varchar(36)
+    ---
+    device_description='':   varchar(256)
+    """
+
+    class Stream(dj.Part):
+        definition = """  # Data stream(s) associated with a particular device type
+        -> master
+        -> StreamType
+        """
+
+    @classmethod
+    def insert_devices(cls, device_configs: list = []):
+
+        if not device_configs:
+            device_configs: list[DeviceConfig] = DeviceConfig.create_device_configs()
+
+        for device in device_configs:
+
+            stream_entries = StreamType.get_stream_entries(device)
+
             with cls.connection.transaction:
-                cls.insert1((device_type, device_desc), skip_duplicates=True)
+
+                cls.insert1(
+                    {
+                        "device_type": device.type,
+                        "device_description": device.desc,
+                    },
+                    skip_duplicates=True,
+                )
+
                 cls.Stream.insert(
                     [
                         {
-                            "device_type": device_type,
+                            "device_type": device.type,
                             "stream_type": e["stream_type"],
                         }
                         for e in stream_entries
@@ -183,56 +208,64 @@ class Device(dj.Lookup):
     """
 
 
-# ---- HELPER ----
+class DeviceTableTemplate:
 
+    from aeon.dj_pipeline import acquisition
 
-def generate_device_table(device_type, context=None):
-    if context is None:
-        context = inspect.currentframe().f_back.f_locals
+    @staticmethod
+    def get_device_template(device_type):
 
-    _schema = dj.schema(context=context)
+        device_title = device_type
+        device_type = dj.utils.from_camel_case(device_type)
 
-    device_title = _prettify(device_type)
-    device_type = dj.utils.from_camel_case(device_title)
-
-    @_schema
-    class ExperimentDevice(dj.Manual):
-        definition = f"""
-        # {device_title} placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-{aeon.__version__})
-        -> acquisition.Experiment
-        -> Device
-        {device_type}_install_time: datetime(6)   # time of the {device_type} placed and started operation at this position
-        ---
-        {device_type}_name: varchar(36)
-        """
-
-        class Attribute(dj.Part):
-            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
-            -> master
-            attribute_name    : varchar(32)
-            ---
-            attribute_value='': varchar(2000)
-            """
-
-        class RemovalTime(dj.Part):
+        class ExperimentDevice(dj.Manual):
             definition = f"""
-            -> master
+            # {device_title} placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-{aeon.__version__})
+            -> acquisition.Experiment
+            -> Device
+            {device_type}_install_time: datetime(6)   # time of the {device_type} placed and started operation at this position
             ---
-            {device_type}_remove_time: datetime(6)  # time of the camera being removed from this position
+            {device_type}_name: varchar(36)
             """
 
-    exp_device_table_name = f"Experiment{device_title}"
-    ExperimentDevice.__name__ = exp_device_table_name
-    context[exp_device_table_name] = ExperimentDevice
+            class Attribute(dj.Part):
+                definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
+                -> master
+                attribute_name    : varchar(32)
+                ---
+                attribute_value='': varchar(2000)
+                """
 
-    # DeviceDataStream table(s)
-    for stream_detail in (
-        StreamType & (DeviceType.Stream & {"device_type": device_type})
-    ).fetch(as_dict=True):
-        stream_type = stream_detail["stream_type"]
-        stream_title = _prettify(stream_type)
+            class RemovalTime(dj.Part):
+                definition = f"""
+                -> master
+                ---
+                {device_type}_remove_time: datetime(6)  # time of the camera being removed from this position
+                """
 
-        logger.info(f"Creating stream table: {device_title}{stream_title}")
+        logger.info(f"Creating device table: Experiment{device_title}")
+        ExperimentDevice.__name__ = f"Experiment{device_title}"
+
+        return ExperimentDevice
+
+    def get_device_stream_template(self, device_type, stream_type):
+
+        # device_title = _prettify(device_type)
+        # stream_title = _prettify(stream_type)
+
+        ExperimentDevice = DeviceTableTemplate.get_device_template(device_type)
+        exp_device_table_name = f"Experiment{device_type}"
+
+        # DeviceDataStream table(s)
+        stream_detail = (
+            StreamType
+            & (
+                DeviceType.Stream
+                & {"device_type": device_type, "stream_type": stream_type}
+            )
+        ).fetch1()
+
+        logger.info(f"Creating stream table: {device_type}{stream_type}")
 
         for i, n in enumerate(stream_detail["stream_reader"].split(".")):
             if i == 0:
@@ -242,8 +275,8 @@ def generate_device_table(device_type, context=None):
 
         stream = reader(**stream_detail["stream_reader_kwargs"])
 
-        table_definition = f"""  # Raw per-chunk {stream_title} data stream from {device_title} (auto-generated with aeon_mecha-{aeon.__version__})
-            -> Experiment{device_title}
+        table_definition = f"""  # Raw per-chunk {stream_type} data stream from {device_type} (auto-generated with aeon_mecha-{aeon.__version__})
+            -> Experiment{device_type}
             -> acquisition.Chunk
             ---
             sample_count: int      # number of data points acquired from this stream for a given chunk
@@ -255,7 +288,6 @@ def generate_device_table(device_type, context=None):
                 continue
             table_definition += f"{col}: longblob\n\t\t\t"
 
-        @_schema
         class DeviceDataStream(dj.Imported):
             definition = table_definition
             _stream_reader = reader
@@ -312,29 +344,118 @@ def generate_device_table(device_type, context=None):
                     }
                 )
 
-        stream_table_name = f"{device_title}{stream_title}"
-        DeviceDataStream.__name__ = stream_table_name
-        context[stream_table_name] = DeviceDataStream
+        self._DeviceDataStream = DeviceDataStream
+        self._DeviceDataStream.__name__ = f"{device_type}{stream_type}"
 
-    _schema.activate(schema_name)
-
-
-def _prettify(s):
-    s = re.sub(r"[A-Z]", lambda m: f"_{m.group(0)}", s)
-    return s.replace("_", " ").title().replace(" ", "")
+        return self._DeviceDataStream
 
 
-# ---- MAIN BLOCK ----
-if __name__ == "__main__":
+class DeviceTableManager:
+    def __init__(self, context=None):
 
-    # Populate StreamType
+        if context is None:
+            self.context = inspect.currentframe().f_back.f_locals
+        else:
+            self.context = context
+
+        self._schema = dj.schema(context=self.context)
+        self._device_tables = []
+        self._device_stream_tables = []
+        self._device_types = DeviceType.fetch("device_type")
+        self._device_stream_map = defaultdict(
+            list
+        )  # dictionary for showing hierarchical relationship between device type and stream type
+
+    def _add_device_tables(self):
+        for device_type in self._device_types:
+            table_name = f"Experiment{device_type}"
+            if table_name not in self._device_tables:
+                self._device_tables.append(table_name)
+
+    def _add_device_stream_tables(self):
+        for device_type in self._device_types:
+            for stream_type in (
+                StreamType & (DeviceType.Stream & {"device_type": device_type})
+            ).fetch("stream_type"):
+
+                table_name = f"{device_type}{stream_type}"
+                if table_name not in self._device_stream_tables:
+                    self._device_stream_tables.append(table_name)
+
+                self._device_stream_map[device_type].append(stream_type)
+
+    @property
+    def device_types(self):
+        return self._device_types
+
+    @cached_property
+    def device_tables(self) -> list:
+        self._add_device_tables()
+        return self._device_tables
+
+    @cached_property
+    def device_stream_tables(self) -> list:
+        if not self._device_stream_tables:
+            self._add_device_stream_tables()
+        return self._device_stream_tables
+
+    @cached_property
+    def device_stream_map(self) -> dict:
+
+        self._add_device_stream_tables()
+        return self._device_stream_tables
+
+    def create_device_tables(self):
+
+        for device_table in self.device_tables:
+
+            device_type = re.sub(r"\bExperiment", "", device_table)
+
+            table_class = DeviceTableTemplate.get_device_template(device_type)
+
+            self.context[table_class.__name__] = table_class
+            self._schema(table_class, context=self.context)
+
+        self._schema.activate(schema_name)
+
+    def create_device_stream_tables(self, table_template: DeviceTableTemplate):
+
+        for device_stream in self.device_stream_tables:
+
+            device_type, stream_type = dj.utils.from_camel_case(device_stream).split(
+                "_"
+            )
+
+            table_class = table_template.get_device_stream_template(
+                device_type, stream_type
+            )
+
+            self.context[table_class.__name__] = table_class
+            self._schema(table_class, context=self.context)
+
+        self._schema.activate(schema_name)
+
+
+# Main function
+def main():
+
+    # # Populate StreamType
     StreamType.insert_streams()
 
-    # Populate DeviceType
+    # # Populate DeviceType
     DeviceType.insert_devices()
 
     # Populate device tables
     context = inspect.currentframe().f_back.f_locals
-    for device_type in DeviceType.fetch("device_type"):
-        logger.info(f"Generating stream table(s) for: {device_type}")
-        generate_device_table(device_type, context=context)
+    tbmg = DeviceTableManager(context=context)
+
+    # # List all tables
+    tbmg.device_tables
+    tbmg.device_stream_tables
+
+    # Create device & device stream tables
+    tbmg.create_device_tables()
+    tbmg.create_device_stream_tables()
+
+
+main()
