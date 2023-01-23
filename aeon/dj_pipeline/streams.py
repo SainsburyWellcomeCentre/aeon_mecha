@@ -1,22 +1,30 @@
-import datajoint as dj
-import pandas as pd
-import numpy as np
 import inspect
 import re
+from functools import cached_property
+from typing import NamedTuple
+
+import datajoint as dj
+import pandas as pd
 
 import aeon
-from aeon.io import api as io_api
 import aeon.schema.core as stream
 import aeon.schema.foraging as foraging
 import aeon.schema.octagon as octagon
-
-from . import acquisition, dict_to_uuid, get_schema_name
+from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name
+from aeon.io import api as io_api
 
 logger = dj.logger
 
-schema_name = get_schema_name("streams")
-# schema_name = f'u_{dj.config["database.user"]}_streams'  # still experimental feature
+
+# schema_name = get_schema_name("streams")
+schema_name = f'u_{dj.config["database.user"]}_streams'
+# schema_name = f'u_{dj.config["database.user"]}_test'
 schema = dj.schema(schema_name)
+
+
+def _prettify(s):
+    s = re.sub(r"[A-Z]", lambda m: f"_{m.group(0)}", s)
+    return s.replace("_", " ").title().replace(" ", "")
 
 
 @schema
@@ -184,7 +192,6 @@ def generate_device_table(device_type, context=None):
 
     _schema = dj.schema(context=context)
 
-    device_type_key = {"device_type": device_type}
     device_title = _prettify(device_type)
     device_type = dj.utils.from_camel_case(device_title)
 
@@ -219,9 +226,9 @@ def generate_device_table(device_type, context=None):
     context[exp_device_table_name] = ExperimentDevice
 
     # DeviceDataStream table(s)
-    for stream_detail in (StreamType & (DeviceType.Stream & device_type_key)).fetch(
-        as_dict=True
-    ):
+    for stream_detail in (
+        StreamType & (DeviceType.Stream & {"device_type": device_type})
+    ).fetch(as_dict=True):
         stream_type = stream_detail["stream_type"]
         stream_title = _prettify(stream_type)
 
@@ -318,15 +325,16 @@ def _prettify(s):
 
 
 # ---- MAIN BLOCK ----
+if __name__ == "__main__":
 
+    # Populate StreamType
+    StreamType.insert_streams()
 
-def main():
+    # Populate DeviceType
     DeviceType.insert_devices()
 
+    # Populate device tables
     context = inspect.currentframe().f_back.f_locals
     for device_type in DeviceType.fetch("device_type"):
         logger.info(f"Generating stream table(s) for: {device_type}")
         generate_device_table(device_type, context=context)
-
-
-main()
