@@ -21,6 +21,16 @@ schema = dj.schema(schema_name)
 
 
 class DeviceConfig:
+    """Class for storing & generating device type configuration
+
+    Examples:
+
+        device_configs = DeviceConfig.get_configs()
+        device =  device_configs[0]
+        print(f"{device.type}, {device.desc}, {device.streams}")
+
+        >> Camera, Camera device, (<function video at 0x7f63ab05bc10>, <function position at 0x7f63ab0083a0>, <function region at 0x7f63ab0088b0>)
+    """
 
     DEVICE = namedtuple("DEVICE", "type desc streams")
 
