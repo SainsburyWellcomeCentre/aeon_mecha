@@ -1,8 +1,7 @@
 import inspect
 import re
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from functools import cached_property
-from typing import NamedTuple
 
 import aeon
 import aeon.schema.core as stream
@@ -21,13 +20,11 @@ schema_name = get_schema_name("streams")
 schema = dj.schema(schema_name)
 
 
-class DeviceConfig(NamedTuple):
+class DeviceConfig:
 
-    type: str
-    desc: int
-    streams: tuple
+    DEVICE = namedtuple("DEVICE", "type desc streams")
 
-    _DEVICE_CONFIG = [
+    CONFIGS = [
         (
             "Camera",
             "Camera device",
@@ -72,10 +69,8 @@ class DeviceConfig(NamedTuple):
     ]
 
     @classmethod
-    def create_device_configs(cls, config=None):
-        if config is None:
-            config = cls._DEVICE_CONFIG
-        return [DeviceConfig(*c) for c in config]
+    def get_configs(cls):
+        return [cls.DEVICE(*c) for c in cls.CONFIGS]
 
 
 @schema
@@ -126,10 +121,10 @@ class StreamType(dj.Lookup):
         return stream_entries
 
     @classmethod
-    def insert_streams(cls, device_configs: list = []) -> list[dict]:
+    def insert_streams(cls, device_configs: list[DeviceConfig] = []) -> list[dict]:
 
         if not device_configs:
-            device_configs: list[DeviceConfig] = DeviceConfig.create_device_configs()
+            device_configs = DeviceConfig.get_configs()
 
         for device in device_configs:
 
@@ -170,7 +165,7 @@ class DeviceType(dj.Lookup):
     def insert_devices(cls, device_configs: list = []):
 
         if not device_configs:
-            device_configs: list[DeviceConfig] = DeviceConfig.create_device_configs()
+            device_configs: list[DeviceConfig] = DeviceConfig.get_configs()
 
         for device in device_configs:
 
