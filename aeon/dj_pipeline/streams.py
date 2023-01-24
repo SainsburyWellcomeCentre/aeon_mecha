@@ -4,13 +4,12 @@ from collections import defaultdict
 from functools import cached_property
 from typing import NamedTuple
 
-import datajoint as dj
-import pandas as pd
-
 import aeon
 import aeon.schema.core as stream
 import aeon.schema.foraging as foraging
 import aeon.schema.octagon as octagon
+import datajoint as dj
+import pandas as pd
 from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name
 from aeon.io import api as io_api
 
@@ -95,6 +94,7 @@ class StreamType(dj.Lookup):
     stream_reader_kwargs:   longblob  # keyword arguments to instantiate the reader class
     stream_description='':  varchar(256)
     stream_hash:            uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
+    unique index (stream_hash)
     """
 
     @staticmethod
@@ -239,7 +239,6 @@ class DeviceTableTemplate:
                 {device_type}_remove_time: datetime(6)  # time of the camera being removed from this position
                 """
 
-        logger.info(f"Creating device table: Experiment{device_title}")
         ExperimentDevice.__name__ = f"Experiment{device_title}"
 
         return ExperimentDevice
@@ -258,8 +257,6 @@ class DeviceTableTemplate:
                 & {"device_type": device_type, "stream_type": stream_type}
             )
         ).fetch1()
-
-        logger.info(f"Creating stream table: {device_type}{stream_type}")
 
         for i, n in enumerate(stream_detail["stream_reader"].split(".")):
             if i == 0:
@@ -434,6 +431,7 @@ class DeviceTableManager:
 
 # Main function
 def main():
+
     # # Populate StreamType
     StreamType.insert_streams()
 
@@ -441,7 +439,7 @@ def main():
     DeviceType.insert_devices()
 
     # Populate device tables
-    tbmg = DeviceTableManager(context=inspect.currentframe().f_locals)
+    tbmg = DeviceTableManager(context=inspect.currentframe().f_back.f_locals)
 
     # # List all tables
     # tbmg.device_tables
