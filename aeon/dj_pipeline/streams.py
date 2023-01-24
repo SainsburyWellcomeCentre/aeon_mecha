@@ -162,10 +162,10 @@ class DeviceType(dj.Lookup):
         """
 
     @classmethod
-    def insert_devices(cls, device_configs: list = []):
+    def insert_devices(cls, device_configs: list[DeviceConfig] = []):
 
         if not device_configs:
-            device_configs: list[DeviceConfig] = DeviceConfig.get_configs()
+            device_configs = DeviceConfig.get_configs()
 
         for device in device_configs:
 
@@ -202,137 +202,133 @@ class Device(dj.Lookup):
     """
 
 
-class DeviceTableTemplate:
-    @staticmethod
-    def get_device_template(device_type):
+def get_device_template(device_type):
+    """Returns table class template for ExperimentDevice"""
+    device_title = device_type
+    device_type = dj.utils.from_camel_case(device_type)
 
-        device_title = device_type
-        device_type = dj.utils.from_camel_case(device_type)
+    class ExperimentDevice(dj.Manual):
+        definition = f"""
+        # {device_title} placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-{aeon.__version__})
+        -> acquisition.Experiment
+        -> Device
+        {device_type}_install_time: datetime(6)   # time of the {device_type} placed and started operation at this position
+        ---
+        {device_type}_name: varchar(36)
+        """
 
-        class ExperimentDevice(dj.Manual):
+        class Attribute(dj.Part):
+            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
+            -> master
+            attribute_name    : varchar(32)
+            ---
+            attribute_value='': varchar(2000)
+            """
+
+        class RemovalTime(dj.Part):
             definition = f"""
-            # {device_title} placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-{aeon.__version__})
-            -> acquisition.Experiment
-            -> Device
-            {device_type}_install_time: datetime(6)   # time of the {device_type} placed and started operation at this position
+            -> master
             ---
-            {device_type}_name: varchar(36)
+            {device_type}_remove_time: datetime(6)  # time of the camera being removed from this position
             """
 
-            class Attribute(dj.Part):
-                definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
-                -> master
-                attribute_name    : varchar(32)
-                ---
-                attribute_value='': varchar(2000)
-                """
+    ExperimentDevice.__name__ = f"Experiment{device_title}"
 
-            class RemovalTime(dj.Part):
-                definition = f"""
-                -> master
-                ---
-                {device_type}_remove_time: datetime(6)  # time of the camera being removed from this position
-                """
+    return ExperimentDevice
 
-        ExperimentDevice.__name__ = f"Experiment{device_title}"
 
-        return ExperimentDevice
+def get_device_stream_template(device_type, stream_type):
+    """Returns table class template for DeviceDataStream"""
 
-    @staticmethod
-    def get_device_stream_template(device_type, stream_type):
+    ExperimentDevice = get_device_template(device_type)
+    exp_device_table_name = f"Experiment{device_type}"
 
-        ExperimentDevice = DeviceTableTemplate.get_device_template(device_type)
-        exp_device_table_name = f"Experiment{device_type}"
+    # DeviceDataStream table(s)
+    stream_detail = (
+        StreamType
+        & (DeviceType.Stream & {"device_type": device_type, "stream_type": stream_type})
+    ).fetch1()
 
-        # DeviceDataStream table(s)
-        stream_detail = (
-            StreamType
-            & (
-                DeviceType.Stream
-                & {"device_type": device_type, "stream_type": stream_type}
+    for i, n in enumerate(stream_detail["stream_reader"].split(".")):
+        if i == 0:
+            reader = aeon
+        else:
+            reader = getattr(reader, n)
+
+    stream = reader(**stream_detail["stream_reader_kwargs"])
+
+    table_definition = f"""  # Raw per-chunk {stream_type} data stream from {device_type} (auto-generated with aeon_mecha-{aeon.__version__})
+        -> Experiment{device_type}
+        -> acquisition.Chunk
+        ---
+        sample_count: int      # number of data points acquired from this stream for a given chunk
+        timestamps: longblob   # (datetime) timestamps of {stream_type} data
+        """
+
+    for col in stream.columns:
+        if col.startswith("_"):
+            continue
+        table_definition += f"{col}: longblob\n\t\t\t"
+
+    class DeviceDataStream(dj.Imported):
+        definition = table_definition
+        _stream_reader = reader
+        _stream_detail = stream_detail
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and {exp_device_table_name} with overlapping time
+            +  Chunk(s) that started after {exp_device_table_name} install time and ended before {exp_device_table_name} remove time
+            +  Chunk(s) that started after {exp_device_table_name} install time for {exp_device_table_name} that are not yet removed
+            """
+            return (
+                acquisition.Chunk
+                * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
+                & f"chunk_start >= {device_type}_install_time"
+                & f'chunk_start < IFNULL({device_type}_remove_time, "2200-01-01")'
             )
-        ).fetch1()
 
-        for i, n in enumerate(stream_detail["stream_reader"].split(".")):
-            if i == 0:
-                reader = aeon
-            else:
-                reader = getattr(reader, n)
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(
+                key, directory_type=dir_type
+            )
 
-        stream = reader(**stream_detail["stream_reader_kwargs"])
+            device_name = (ExperimentDevice & key).fetch1(f"{device_type}_name")
 
-        table_definition = f"""  # Raw per-chunk {stream_type} data stream from {device_type} (auto-generated with aeon_mecha-{aeon.__version__})
-            -> Experiment{device_type}
-            -> acquisition.Chunk
-            ---
-            sample_count: int      # number of data points acquired from this stream for a given chunk
-            timestamps: longblob   # (datetime) timestamps of {stream_type} data
-            """
+            stream = self._stream_reader(
+                **{
+                    k: v.format(**{k: device_name}) if k == "pattern" else v
+                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
+                }
+            )
 
-        for col in stream.columns:
-            if col.startswith("_"):
-                continue
-            table_definition += f"{col}: longblob\n\t\t\t"
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
 
-        class DeviceDataStream(dj.Imported):
-            definition = table_definition
-            _stream_reader = reader
-            _stream_detail = stream_detail
-
-            @property
-            def key_source(self):
-                f"""
-                Only the combination of Chunk and {exp_device_table_name} with overlapping time
-                +  Chunk(s) that started after {exp_device_table_name} install time and ended before {exp_device_table_name} remove time
-                +  Chunk(s) that started after {exp_device_table_name} install time for {exp_device_table_name} that are not yet removed
-                """
-                return (
-                    acquisition.Chunk
-                    * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
-                    & f"chunk_start >= {device_type}_install_time"
-                    & f'chunk_start < IFNULL({device_type}_remove_time, "2200-01-01")'
-                )
-
-            def make(self, key):
-                chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                    "chunk_start", "chunk_end", "directory_type"
-                )
-                raw_data_dir = acquisition.Experiment.get_data_directory(
-                    key, directory_type=dir_type
-                )
-
-                device_name = (ExperimentDevice & key).fetch1(f"{device_type}_name")
-
-                stream = self._stream_reader(
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
                     **{
-                        k: v.format(**{k: device_name}) if k == "pattern" else v
-                        for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                    }
-                )
+                        c: stream_data[c].values
+                        for c in stream.columns
+                        if not c.startswith("_")
+                    },
+                }
+            )
 
-                stream_data = io_api.load(
-                    root=raw_data_dir.as_posix(),
-                    reader=stream,
-                    start=pd.Timestamp(chunk_start),
-                    end=pd.Timestamp(chunk_end),
-                )
+    DeviceDataStream.__name__ = f"{device_type}{stream_type}"
 
-                self.insert1(
-                    {
-                        **key,
-                        "sample_count": len(stream_data),
-                        "timestamps": stream_data.index.values,
-                        **{
-                            c: stream_data[c].values
-                            for c in stream.columns
-                            if not c.startswith("_")
-                        },
-                    }
-                )
-
-        DeviceDataStream.__name__ = f"{device_type}{stream_type}"
-
-        return DeviceDataStream
+    return DeviceDataStream
 
 
 class DeviceTableManager:
@@ -401,7 +397,7 @@ class DeviceTableManager:
 
             device_type = re.sub(r"\bExperiment", "", device_table)
 
-            table_class = DeviceTableTemplate.get_device_template(device_type)
+            table_class = get_device_template(device_type)
 
             self.context[table_class.__name__] = table_class
             self._schema(table_class, context=self.context)
@@ -414,9 +410,7 @@ class DeviceTableManager:
 
             for stream_type in self.device_stream_map[device_type]:
 
-                table_class = DeviceTableTemplate.get_device_stream_template(
-                    device_type, stream_type
-                )
+                table_class = get_device_stream_template(device_type, stream_type)
 
                 self.context[table_class.__name__] = table_class
                 self._schema(table_class, context=self.context)
