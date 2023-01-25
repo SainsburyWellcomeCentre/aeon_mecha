@@ -3,12 +3,13 @@ import re
 from collections import defaultdict, namedtuple
 from functools import cached_property
 
+import datajoint as dj
+import pandas as pd
+
 import aeon
 import aeon.schema.core as stream
 import aeon.schema.foraging as foraging
 import aeon.schema.octagon as octagon
-import datajoint as dj
-import pandas as pd
 from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name
 from aeon.io import api as io_api
 
@@ -20,67 +21,58 @@ schema_name = get_schema_name("streams")
 schema = dj.schema(schema_name)
 
 
-class DeviceConfig:
-    """Class for storing & generating device type configuration
+__all__ = [
+    "StreamType",
+    "DeviceType",
+    "Device",
+]
 
-    Examples:
 
-        device_configs = DeviceConfig.get_configs()
-        device =  device_configs[0]
-        print(f"{device.type}, {device.desc}, {device.streams}")
-
-        >> Camera, Camera device, (<function video at 0x7f63ab05bc10>, <function position at 0x7f63ab0083a0>, <function region at 0x7f63ab0088b0>)
-    """
-
-    DEVICE = namedtuple("DEVICE", "type desc streams")
-
-    CONFIGS = [
-        (
-            "Camera",
-            "Camera device",
-            (stream.video, stream.position, foraging.region),
-        ),
-        ("Metadata", "Metadata", (stream.metadata,)),
-        (
-            "ExperimentalMetadata",
-            "ExperimentalMetadata",
-            (stream.environment, stream.messageLog),
-        ),
-        (
-            "NestScale",
-            "Weight scale at nest",
-            (foraging.weight,),
-        ),
-        (
-            "FoodPatch",
-            "Food patch",
-            (foraging.patch,),
-        ),
-        (
-            "Photodiode",
-            "Photodiode",
-            (octagon.photodiode,),
-        ),
-        (
-            "OSC",
-            "OSC",
-            (octagon.OSC,),
-        ),
-        (
-            "TaskLogic",
-            "TaskLogic",
-            (octagon.TaskLogic,),
-        ),
-        (
-            "Wall",
-            "Wall",
-            (octagon.Wall,),
-        ),
-    ]
-
-    @classmethod
-    def get_configs(cls):
-        return [cls.DEVICE(*c) for c in cls.CONFIGS]
+# Read from this list of device configurations
+# (device_type, description, streams)
+DEVICE_CONFIGS = [
+    (
+        "Camera",
+        "Camera device",
+        (stream.video, stream.position, foraging.region),
+    ),
+    ("Metadata", "Metadata", (stream.metadata,)),
+    (
+        "ExperimentalMetadata",
+        "ExperimentalMetadata",
+        (stream.environment, stream.messageLog),
+    ),
+    (
+        "NestScale",
+        "Weight scale at nest",
+        (foraging.weight,),
+    ),
+    (
+        "FoodPatch",
+        "Food patch",
+        (foraging.patch,),
+    ),
+    (
+        "Photodiode",
+        "Photodiode",
+        (octagon.photodiode,),
+    ),
+    (
+        "OSC",
+        "OSC",
+        (octagon.OSC,),
+    ),
+    (
+        "TaskLogic",
+        "TaskLogic",
+        (octagon.TaskLogic,),
+    ),
+    (
+        "Wall",
+        "Wall",
+        (octagon.Wall,),
+    ),
+]
 
 
 @schema
@@ -103,9 +95,9 @@ class StreamType(dj.Lookup):
     """
 
     @staticmethod
-    def get_stream_entries(device: DeviceConfig, pattern="{pattern}") -> dict:
+    def get_stream_entries(device_streams: tuple, pattern="{pattern}") -> dict:
 
-        composite = aeon.io.device.compositeStream(pattern, *device.streams)
+        composite = aeon.io.device.compositeStream(pattern, *device_streams)
         stream_entries = []
         for stream_name, stream_reader in composite.items():
             if stream_name == pattern:
@@ -131,14 +123,14 @@ class StreamType(dj.Lookup):
         return stream_entries
 
     @classmethod
-    def insert_streams(cls, device_configs: list[DeviceConfig] = []) -> list[dict]:
+    def insert_streams(cls, device_configs: list[namedtuple] = []):
 
         if not device_configs:
-            device_configs = DeviceConfig.get_configs()
+            device_configs = get_device_configs()
 
         for device in device_configs:
 
-            stream_entries = cls.get_stream_entries(device)
+            stream_entries = cls.get_stream_entries(device.streams)
             for entry in stream_entries:
                 q_param = cls & {"stream_hash": entry["stream_hash"]}
                 if q_param:  # If the specified stream type already exists
@@ -172,14 +164,14 @@ class DeviceType(dj.Lookup):
         """
 
     @classmethod
-    def insert_devices(cls, device_configs: list[DeviceConfig] = []):
+    def insert_devices(cls, device_configs: list[namedtuple] = []):
 
         if not device_configs:
-            device_configs = DeviceConfig.get_configs()
+            device_configs = get_device_configs()
 
         for device in device_configs:
 
-            stream_entries = StreamType.get_stream_entries(device)
+            stream_entries = StreamType.get_stream_entries(device.streams)
 
             with cls.connection.transaction:
 
@@ -210,6 +202,16 @@ class Device(dj.Lookup):
     ---
     -> DeviceType
     """
+
+
+## --------- Helper functions & classes --------- ##
+
+
+def get_device_configs(device_configs=DEVICE_CONFIGS) -> list[namedtuple]:
+    """Returns a list of device configurations from DEVICE_CONFIGS"""
+
+    device = namedtuple("device", "type desc streams")
+    return [device._make(c) for c in device_configs]
 
 
 def get_device_template(device_type):
@@ -431,10 +433,10 @@ class DeviceTableManager:
 # Main function
 def main():
 
-    # # Populate StreamType
+    # Populate StreamType
     StreamType.insert_streams()
 
-    # # Populate DeviceType
+    # Populate DeviceType
     DeviceType.insert_devices()
 
     # Populate device tables
