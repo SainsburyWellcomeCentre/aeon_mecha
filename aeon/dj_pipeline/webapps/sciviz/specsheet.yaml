@@ -423,11 +423,11 @@ SciViz:
           columns: 1
           row_height: 1000
           components:
-            Subject Form:
+            Subject Entry:
               route: /subject_form
               x: 0
               y: 0
-              height: 0.5
+              height: 0.3
               width: 1
               type: form
               tables:
@@ -445,3 +445,31 @@ SciViz:
                 - type: attribute
                   input: Description
                   destination: subject_description
+            Experiment Entry:
+              route: /exp_form
+              x: 0
+              y: 0.3
+              height: 0.5
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment
+              map:
+                - type: attribute
+                  input: Experiment ID
+                  destination: experiment_name
+                - type: attribute
+                  input: Start Time
+                  destination: experiment_start_time
+                - type: attribute
+                  input: Description
+                  destination: experiment_description
+                - type: table
+                  input: Lab Arena
+                  destination: aeon_lab.Arena
+                - type: table
+                  input: Lab Location
+                  destination: aeon_lab.Location
+                - type: attribute
+                  input: Experiment Type
+                  destination: experiment_type
