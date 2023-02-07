@@ -1,22 +1,78 @@
-import datajoint as dj
-import pandas as pd
-import numpy as np
 import inspect
 import re
+from collections import defaultdict, namedtuple
+from functools import cached_property
+
+import datajoint as dj
+import pandas as pd
 
 import aeon
-from aeon.io import api as io_api
 import aeon.schema.core as stream
 import aeon.schema.foraging as foraging
 import aeon.schema.octagon as octagon
-
-from . import acquisition, dict_to_uuid, get_schema_name
+from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name
+from aeon.io import api as io_api
 
 logger = dj.logger
 
+
+# schema_name = f'u_{dj.config["database.user"]}_test'  # for testing
 schema_name = get_schema_name("streams")
-# schema_name = f'u_{dj.config["database.user"]}_streams'  # still experimental feature
 schema = dj.schema(schema_name)
+
+
+__all__ = [
+    "StreamType",
+    "DeviceType",
+    "Device",
+]
+
+
+# Read from this list of device configurations
+# (device_type, description, streams)
+DEVICE_CONFIGS = [
+    (
+        "Camera",
+        "Camera device",
+        (stream.video, stream.position, foraging.region),
+    ),
+    ("Metadata", "Metadata", (stream.metadata,)),
+    (
+        "ExperimentalMetadata",
+        "ExperimentalMetadata",
+        (stream.environment, stream.messageLog),
+    ),
+    (
+        "NestScale",
+        "Weight scale at nest",
+        (foraging.weight,),
+    ),
+    (
+        "FoodPatch",
+        "Food patch",
+        (foraging.patch,),
+    ),
+    (
+        "Photodiode",
+        "Photodiode",
+        (octagon.photodiode,),
+    ),
+    (
+        "OSC",
+        "OSC",
+        (octagon.OSC,),
+    ),
+    (
+        "TaskLogic",
+        "TaskLogic",
+        (octagon.TaskLogic,),
+    ),
+    (
+        "Wall",
+        "Wall",
+        (octagon.Wall,),
+    ),
+]
 
 
 @schema
@@ -29,27 +85,19 @@ class StreamType(dj.Lookup):
     """
 
     definition = """  # Catalog of all stream types used across Project Aeon
-    stream_type: varchar(20)
+    stream_type:            varchar(20)
     ---
-    stream_reader: varchar(256)     # name of the reader class found in `aeon_mecha` package (e.g. aeon.io.reader.Video)
-    stream_reader_kwargs: longblob  # keyword arguments to instantiate the reader class
-    stream_description='': varchar(256)
-    stream_hash: uuid  # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
+    stream_reader:          varchar(256)     # name of the reader class found in `aeon_mecha` package (e.g. aeon.io.reader.Video)
+    stream_reader_kwargs:   longblob  # keyword arguments to instantiate the reader class
+    stream_description='':  varchar(256)
+    stream_hash:            uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
     unique index (stream_hash)
     """
 
-    @classmethod
-    def insert_streams(cls, *streams):
-        composite = {}
-        pattern = "{pattern}"
-        for stream_obj in streams:
-            if inspect.isclass(stream_obj):
-                for method in vars(stream_obj).values():
-                    if isinstance(method, staticmethod):
-                        composite.update(method.__func__(pattern))
-            else:
-                composite.update(stream_obj(pattern))
+    @staticmethod
+    def get_stream_entries(device_streams: tuple, pattern="{pattern}") -> dict:
 
+        composite = aeon.io.device.compositeStream(pattern, *device_streams)
         stream_entries = []
         for stream_name, stream_reader in composite.items():
             if stream_name == pattern:
@@ -70,20 +118,31 @@ class StreamType(dj.Lookup):
                     "stream_reader": entry["stream_reader"],
                 }
             )
-            q_param = cls & {"stream_hash": entry["stream_hash"]}
-            if q_param:  # If the specified stream type already exists
-                pname = q_param.fetch1("stream_type")
-                if pname != stream_name:
-                    # If the existed stream type does not have the same name:
-                    #   human error, trying to add the same content with different name
-                    raise dj.DataJointError(
-                        f"The specified stream type already exists - name: {pname}"
-                    )
-
             stream_entries.append(entry)
 
-        cls.insert(stream_entries, skip_duplicates=True)
         return stream_entries
+
+    @classmethod
+    def insert_streams(cls, device_configs: list[namedtuple] = []):
+
+        if not device_configs:
+            device_configs = get_device_configs()
+
+        for device in device_configs:
+
+            stream_entries = cls.get_stream_entries(device.streams)
+            for entry in stream_entries:
+                q_param = cls & {"stream_hash": entry["stream_hash"]}
+                if q_param:  # If the specified stream type already exists
+                    pname = q_param.fetch1("stream_type")
+                    if pname != entry["stream_type"]:
+                        # If the existed stream type does not have the same name:
+                        #   human error, trying to add the same content with different name
+                        raise dj.DataJointError(
+                            f"The specified stream type already exists - name: {pname}"
+                        )
+
+            cls.insert(stream_entries, skip_duplicates=True)
 
 
 @schema
@@ -93,9 +152,9 @@ class DeviceType(dj.Lookup):
     """
 
     definition = """  # Catalog of all device types used across Project Aeon
-    device_type: varchar(36)
+    device_type:             varchar(36)
     ---
-    device_description='': varchar(256)
+    device_description='':   varchar(256)
     """
 
     class Stream(dj.Part):
@@ -104,60 +163,30 @@ class DeviceType(dj.Lookup):
         -> StreamType
         """
 
-    _devices_config = [
-        (
-            "Camera",
-            "Camera device",
-            (stream.video, stream.position, foraging.region),
-        ),
-        ("Metadata", "Metadata", (stream.metadata,)),
-        (
-            "ExperimentalMetadata",
-            "ExperimentalMetadata",
-            (stream.environment, stream.messageLog),
-        ),
-        (
-            "Nest Scale",
-            "Weight scale at nest",
-            (foraging.weight,),
-        ),
-        (
-            "Food Patch",
-            "Food patch",
-            (foraging.patch,),
-        ),
-        (
-            "Photodiode",
-            "Photodiode",
-            (octagon.photodiode,),
-        ),
-        (
-            "OSC",
-            "OSC",
-            (octagon.OSC,),
-        ),
-        (
-            "TaskLogic",
-            "TaskLogic",
-            (octagon.TaskLogic,),
-        ),
-        (
-            "Wall",
-            "Wall",
-            (octagon.Wall,),
-        ),
-    ]
-
     @classmethod
-    def insert_devices(cls):
-        for device_type, device_desc, device_streams in cls._devices_config:
-            stream_entries = StreamType.insert_streams(*device_streams)
+    def insert_devices(cls, device_configs: list[namedtuple] = []):
+
+        if not device_configs:
+            device_configs = get_device_configs()
+
+        for device in device_configs:
+
+            stream_entries = StreamType.get_stream_entries(device.streams)
+
             with cls.connection.transaction:
-                cls.insert1((device_type, device_desc), skip_duplicates=True)
+
+                cls.insert1(
+                    {
+                        "device_type": device.type,
+                        "device_description": device.desc,
+                    },
+                    skip_duplicates=True,
+                )
+
                 cls.Stream.insert(
                     [
                         {
-                            "device_type": device_type,
+                            "device_type": device.type,
                             "stream_type": e["stream_type"],
                         }
                         for e in stream_entries
@@ -175,20 +204,21 @@ class Device(dj.Lookup):
     """
 
 
-# ---- HELPER ----
+## --------- Helper functions & classes --------- ##
 
 
-def generate_device_table(device_type, context=None):
-    if context is None:
-        context = inspect.currentframe().f_back.f_locals
+def get_device_configs(device_configs=DEVICE_CONFIGS) -> list[namedtuple]:
+    """Returns a list of device configurations from DEVICE_CONFIGS"""
 
-    _schema = dj.schema(context=context)
+    device = namedtuple("device", "type desc streams")
+    return [device._make(c) for c in device_configs]
 
-    device_type_key = {"device_type": device_type}
-    device_title = _prettify(device_type)
-    device_type = dj.utils.from_camel_case(device_title)
 
-    @_schema
+def get_device_template(device_type):
+    """Returns table class template for ExperimentDevice"""
+    device_title = device_type
+    device_type = dj.utils.from_camel_case(device_type)
+
     class ExperimentDevice(dj.Manual):
         definition = f"""
         # {device_title} placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-{aeon.__version__})
@@ -214,119 +244,211 @@ def generate_device_table(device_type, context=None):
             {device_type}_remove_time: datetime(6)  # time of the camera being removed from this position
             """
 
-    exp_device_table_name = f"Experiment{device_title}"
-    ExperimentDevice.__name__ = exp_device_table_name
-    context[exp_device_table_name] = ExperimentDevice
+    ExperimentDevice.__name__ = f"Experiment{device_title}"
+
+    return ExperimentDevice
+
+
+def get_device_stream_template(device_type, stream_type):
+    """Returns table class template for DeviceDataStream"""
+
+    ExperimentDevice = get_device_template(device_type)
+    exp_device_table_name = f"Experiment{device_type}"
 
     # DeviceDataStream table(s)
-    for stream_detail in (StreamType & (DeviceType.Stream & device_type_key)).fetch(
-        as_dict=True
-    ):
-        stream_type = stream_detail["stream_type"]
-        stream_title = _prettify(stream_type)
+    stream_detail = (
+        StreamType
+        & (DeviceType.Stream & {"device_type": device_type, "stream_type": stream_type})
+    ).fetch1()
 
-        logger.info(f"Creating stream table: {device_title}{stream_title}")
+    for i, n in enumerate(stream_detail["stream_reader"].split(".")):
+        if i == 0:
+            reader = aeon
+        else:
+            reader = getattr(reader, n)
 
-        for i, n in enumerate(stream_detail["stream_reader"].split(".")):
-            if i == 0:
-                reader = aeon
-            else:
-                reader = getattr(reader, n)
+    stream = reader(**stream_detail["stream_reader_kwargs"])
 
-        stream = reader(**stream_detail["stream_reader_kwargs"])
+    table_definition = f"""  # Raw per-chunk {stream_type} data stream from {device_type} (auto-generated with aeon_mecha-{aeon.__version__})
+        -> Experiment{device_type}
+        -> acquisition.Chunk
+        ---
+        sample_count: int      # number of data points acquired from this stream for a given chunk
+        timestamps: longblob   # (datetime) timestamps of {stream_type} data
+        """
 
-        table_definition = f"""  # Raw per-chunk {stream_title} data stream from {device_title} (auto-generated with aeon_mecha-{aeon.__version__})
-            -> Experiment{device_title}
-            -> acquisition.Chunk
-            ---
-            sample_count: int      # number of data points acquired from this stream for a given chunk
-            timestamps: longblob   # (datetime) timestamps of {stream_type} data
+    for col in stream.columns:
+        if col.startswith("_"):
+            continue
+        table_definition += f"{col}: longblob\n\t\t\t"
+
+    class DeviceDataStream(dj.Imported):
+        definition = table_definition
+        _stream_reader = reader
+        _stream_detail = stream_detail
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and {exp_device_table_name} with overlapping time
+            +  Chunk(s) that started after {exp_device_table_name} install time and ended before {exp_device_table_name} remove time
+            +  Chunk(s) that started after {exp_device_table_name} install time for {exp_device_table_name} that are not yet removed
             """
+            return (
+                acquisition.Chunk
+                * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
+                & f"chunk_start >= {device_type}_install_time"
+                & f'chunk_start < IFNULL({device_type}_remove_time, "2200-01-01")'
+            )
 
-        for col in stream.columns:
-            if col.startswith("_"):
-                continue
-            table_definition += f"{col}: longblob\n\t\t\t"
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(
+                key, directory_type=dir_type
+            )
 
-        @_schema
-        class DeviceDataStream(dj.Imported):
-            definition = table_definition
-            _stream_reader = reader
-            _stream_detail = stream_detail
+            device_name = (ExperimentDevice & key).fetch1(f"{device_type}_name")
 
-            @property
-            def key_source(self):
-                f"""
-                Only the combination of Chunk and {exp_device_table_name} with overlapping time
-                +  Chunk(s) that started after {exp_device_table_name} install time and ended before {exp_device_table_name} remove time
-                +  Chunk(s) that started after {exp_device_table_name} install time for {exp_device_table_name} that are not yet removed
-                """
-                return (
-                    acquisition.Chunk
-                    * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
-                    & f"chunk_start >= {device_type}_install_time"
-                    & f'chunk_start < IFNULL({device_type}_remove_time, "2200-01-01")'
-                )
+            stream = self._stream_reader(
+                **{
+                    k: v.format(**{k: device_name}) if k == "pattern" else v
+                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
+                }
+            )
 
-            def make(self, key):
-                chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                    "chunk_start", "chunk_end", "directory_type"
-                )
-                raw_data_dir = acquisition.Experiment.get_data_directory(
-                    key, directory_type=dir_type
-                )
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
 
-                device_name = (ExperimentDevice & key).fetch1(f"{device_type}_name")
-
-                stream = self._stream_reader(
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
                     **{
-                        k: v.format(**{k: device_name}) if k == "pattern" else v
-                        for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                    }
-                )
+                        c: stream_data[c].values
+                        for c in stream.columns
+                        if not c.startswith("_")
+                    },
+                }
+            )
 
-                stream_data = io_api.load(
-                    root=raw_data_dir.as_posix(),
-                    reader=stream,
-                    start=pd.Timestamp(chunk_start),
-                    end=pd.Timestamp(chunk_end),
-                )
+    DeviceDataStream.__name__ = f"{device_type}{stream_type}"
 
-                self.insert1(
-                    {
-                        **key,
-                        "sample_count": len(stream_data),
-                        "timestamps": stream_data.index.values,
-                        **{
-                            c: stream_data[c].values
-                            for c in stream.columns
-                            if not c.startswith("_")
-                        },
-                    }
-                )
-
-        stream_table_name = f"{device_title}{stream_title}"
-        DeviceDataStream.__name__ = stream_table_name
-        context[stream_table_name] = DeviceDataStream
-
-    _schema.activate(schema_name)
+    return DeviceDataStream
 
 
-def _prettify(s):
-    s = re.sub(r"[A-Z]", lambda m: f"_{m.group(0)}", s)
-    return s.replace("_", " ").title().replace(" ", "")
+class DeviceTableManager:
+    def __init__(self, context=None):
+
+        if context is None:
+            self.context = inspect.currentframe().f_back.f_locals
+        else:
+            self.context = context
+
+        self._schema = dj.schema(context=self.context)
+        self._device_tables = []
+        self._device_stream_tables = []
+        self._device_types = DeviceType.fetch("device_type")
+        self._device_stream_map = defaultdict(
+            list
+        )  # dictionary for showing hierarchical relationship between device type and stream type
+
+    def _add_device_tables(self):
+        for device_type in self._device_types:
+            table_name = f"Experiment{device_type}"
+            if table_name not in self._device_tables:
+                self._device_tables.append(table_name)
+
+    def _add_device_stream_tables(self):
+        for device_type in self._device_types:
+            for stream_type in (
+                StreamType & (DeviceType.Stream & {"device_type": device_type})
+            ).fetch("stream_type"):
+
+                table_name = f"{device_type}{stream_type}"
+                if table_name not in self._device_stream_tables:
+                    self._device_stream_tables.append(table_name)
+
+                self._device_stream_map[device_type].append(stream_type)
+
+    @property
+    def device_types(self):
+        return self._device_types
+
+    @cached_property
+    def device_tables(self) -> list:
+        """
+        Name of the device tables to be created
+        """
+
+        self._add_device_tables()
+        return self._device_tables
+
+    @cached_property
+    def device_stream_tables(self) -> list:
+        """
+        Name of the device stream tables to be created
+        """
+        self._add_device_stream_tables()
+        return self._device_stream_tables
+
+    @cached_property
+    def device_stream_map(self) -> dict:
+        self._add_device_stream_tables()
+        return self._device_stream_map
+
+    def create_device_tables(self):
+
+        for device_table in self.device_tables:
+
+            device_type = re.sub(r"\bExperiment", "", device_table)
+
+            table_class = get_device_template(device_type)
+
+            self.context[table_class.__name__] = table_class
+            self._schema(table_class, context=self.context)
+
+        self._schema.activate(schema_name)
+
+    def create_device_stream_tables(self):
+
+        for device_type in self.device_stream_map:
+
+            for stream_type in self.device_stream_map[device_type]:
+
+                table_class = get_device_stream_template(device_type, stream_type)
+
+                self.context[table_class.__name__] = table_class
+                self._schema(table_class, context=self.context)
+
+        self._schema.activate(schema_name)
 
 
-# ---- MAIN BLOCK ----
-
-
+# Main function
 def main():
+
+    # Populate StreamType
+    StreamType.insert_streams()
+
+    # Populate DeviceType
     DeviceType.insert_devices()
 
-    context = inspect.currentframe().f_back.f_locals
-    for device_type in DeviceType.fetch("device_type"):
-        logger.info(f"Generating stream table(s) for: {device_type}")
-        generate_device_table(device_type, context=context)
+    # Populate device tables
+    tbmg = DeviceTableManager(context=inspect.currentframe().f_back.f_locals)
+
+    # # List all tables
+    # tbmg.device_tables
+    # tbmg.device_stream_tables
+
+    # Create device & device stream tables
+    tbmg.create_device_tables()
+    tbmg.create_device_stream_tables()
 
 
 main()
