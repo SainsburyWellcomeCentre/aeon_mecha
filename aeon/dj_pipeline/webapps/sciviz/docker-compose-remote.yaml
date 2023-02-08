@@ -39,6 +39,7 @@ services:
       - sh
       - -c
       - |
+        pip install git+https://github.com/SainsburyWellcomeCentre/aeon_mecha.git@datajont_pipeline &
         python frontend_gen.py
         npm run build
         mv ./build /usr/share/nginx/html

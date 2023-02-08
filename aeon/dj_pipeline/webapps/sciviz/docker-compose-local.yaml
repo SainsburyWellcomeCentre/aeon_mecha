@@ -20,6 +20,7 @@ services:
       - sh
       - -c
       - |
+        pip install git+https://github.com/SainsburyWellcomeCentre/aeon_mecha.git@datajont_pipeline &
         pharus_update() {
             [ -z "$$GUNICORN_PID" ] || kill $$GUNICORN_PID
             gunicorn --bind 0.0.0.0:$${PHARUS_PORT} pharus.server:app &
