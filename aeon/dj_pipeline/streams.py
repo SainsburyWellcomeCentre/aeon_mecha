@@ -16,16 +16,16 @@ from aeon.io import api as io_api
 logger = dj.logger
 
 
-# schema_name = f'u_{dj.config["database.user"]}_test'  # for testing
-schema_name = get_schema_name("streams")
+schema_name = f'u_{dj.config["database.user"]}_streams'  # for testing
+# schema_name = get_schema_name("streams")
 schema = dj.schema(schema_name)
 
 
-__all__ = [
-    "StreamType",
-    "DeviceType",
-    "Device",
-]
+# __all__ = [
+#     "StreamType",
+#     "DeviceType",
+#     "Device",
+# ]
 
 
 # Read from this list of device configurations
@@ -129,7 +129,6 @@ class StreamType(dj.Lookup):
             device_configs = get_device_configs()
 
         for device in device_configs:
-
             stream_entries = cls.get_stream_entries(device.streams)
             for entry in stream_entries:
                 q_param = cls & {"stream_hash": entry["stream_hash"]}
@@ -165,16 +164,11 @@ class DeviceType(dj.Lookup):
 
     @classmethod
     def insert_devices(cls, device_configs: list[namedtuple] = []):
-
         if not device_configs:
             device_configs = get_device_configs()
-
         for device in device_configs:
-
             stream_entries = StreamType.get_stream_entries(device.streams)
-
             with cls.connection.transaction:
-
                 cls.insert1(
                     {
                         "device_type": device.type,
@@ -182,7 +176,6 @@ class DeviceType(dj.Lookup):
                     },
                     skip_duplicates=True,
                 )
-
                 cls.Stream.insert(
                     [
                         {
@@ -451,4 +444,4 @@ def main():
     tbmg.create_device_stream_tables()
 
 
-main()
+# main()

@@ -2,6 +2,29 @@ version: "v0.1.0"
 LabBook: null
 SciViz:
   auth: True
+  override: |    
+    from pharus.component_interface import SlideshowComponent, type_map
+    from aeon.dj_pipeline.utils.video import retrieve_video_frames
+
+    class AeonStreamerComponent(SlideshowComponent):
+        def dj_query_route(self):
+            fetch_metadata = self.fetch_metadata
+    
+            # Dj query provided should return only a video location
+            fetched_args = (fetch_metadata["query"] & self.restriction).fetch1(
+                *fetch_metadata["fetch_args"]
+            )
+              
+            return (
+                NumpyEncoder.dumps(
+                    retrieve_video_frames(**fetched_args, **request.args["start_frame"])
+                ),
+                200,
+                {"Content-Type": "application/json"},
+            )
+    
+    type_map = dict({"aeon_video_streamer": AeonStreamerComponent}, **type_map)
+
   pages:
     Subjects:
       route: /subjects
@@ -319,6 +342,77 @@ SciViz:
                 def dj_query(aeon_report):
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['region_time_fraction_hourly_plotly'])
 
+    VideoStream:
+      route: /videostream
+      grids:
+        grid1:
+          type: fixed
+          columns: 2
+          row_height: 680
+          components:
+            experiment_dropdown:
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: dropdown-query
+              channel: stream_experiment_selector
+              route: /videostream_experiment_dropdown
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_acquisition):
+                    acquisition = aeon_acquisition
+                    return {'query': aeon_acquisition.Experiment(), 'fetch_args': ['experiment_name']}
+            camera_dropdown:
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              route: /videostream_camera_dropdown
+              type: dropdown-query
+              channel: stream_camera_selector
+              channels: [ stream_experiment_selector ]
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_acquisition):
+                    acquisition = aeon_acquisition
+                    return {'query': aeon_acquisition.ExperimentCamera(), 'fetch_args': ['camera_description']}
+            time_range_selector:
+              x: 0
+              y: 1
+              height: 1
+              width: 1
+              type: daterangepicker
+              channel: stream_time_selector
+            video_streamer:
+              x: 1
+              y: 0
+              height: 1
+              width: 3
+              type: slideshow
+              route: /videostream_video_streamer
+              batch_size: 3
+              chunk_size: 50
+              buffer_size: 30
+              max_FPS: 50
+              channels: [ stream_experiment_selector, stream_camera_selector, stream_time_selector ]
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(test_group1_simple):
+                    # SOME QUERY THAT RETURNS ONLY ONE RECORD ONE COLUMN THAT IS THE VIDEO NAME
+                    TableA, TableB = (test_group1_simple.TableA, test_group1_simple.TableB)
+                    q = ((TableA * TableB).proj(
+                        ...,
+                        #_sciviz_font='IF(a_name = "Raphael", "rgb(255, 0, 0)", NULL)',
+                        _sciviz_background='IF(a_name = "Raphael", "rgba(50, 255, 0, 0.16)", "NULL")',
+                        ))
+                    return {'query': q, 'fetch_args': {'order_by': '_sciviz_background ASC'}}
     PipelineMonitor:
       route: /pipeline_monitor
       grids:
