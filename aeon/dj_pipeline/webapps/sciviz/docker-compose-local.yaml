@@ -7,7 +7,7 @@ services:
   pharus:
     cpus: 2.0
     mem_limit: 4g
-    image: datajoint/pharus:0.8.0
+    image: jverswijver/pharus:0.8.0py3.9
     environment:
       # - FLASK_ENV=development # enables logging to console from Flask
       - PHARUS_SPEC_PATH=/main/specs/specsheet.yaml # for dynamic utils spec
@@ -20,7 +20,8 @@ services:
       - sh
       - -c
       - |
-        pip install git+https://github.com/SainsburyWellcomeCentre/aeon_mecha.git@datajont_pipeline &
+        apk add --update git g++ &&
+        pip install git+https://github.com/SainsburyWellcomeCentre/aeon_mecha.git@datajoint_pipeline &&
         pharus_update() {
             [ -z "$$GUNICORN_PID" ] || kill $$GUNICORN_PID
             gunicorn --bind 0.0.0.0:$${PHARUS_PORT} pharus.server:app &
@@ -48,13 +49,14 @@ services:
       - main
   sci-viz:
     cpus: 2.0
-    mem_limit: 4g
+    mem_limit: 16g
     image: datajoint/sci-viz:1.1.0
     environment:
       - CHOKIDAR_USEPOLLING=true
       - REACT_APP_DJSCIVIZ_BACKEND_PREFIX=/api
       - DJSCIVIZ_SPEC_PATH=specsheet.yaml
       - DJSCIVIZ_MODE=DEV
+      - NODE_OPTIONS="--max-old-space-size=12000"
     volumes:
       - ./specsheet.yaml:/main/specsheet.yaml
     # ports:

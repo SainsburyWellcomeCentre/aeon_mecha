@@ -6,7 +6,7 @@ SciViz:
     from pharus.component_interface import SlideshowComponent, type_map
     from aeon.dj_pipeline.utils.video import retrieve_video_frames
 
-    class AeonStreamerComponent(SlideshowComponent):
+    class AeonSlideshowComponent(SlideshowComponent):
         def dj_query_route(self):
             fetch_metadata = self.fetch_metadata
     
@@ -23,7 +23,7 @@ SciViz:
                 {"Content-Type": "application/json"},
             )
     
-    type_map = dict({"aeon_video_streamer": AeonStreamerComponent}, **type_map)
+    type_map = dict({"slideshow-aeon": AeonSlideshowComponent}, **type_map)
 
   pages:
     Subjects:
@@ -347,8 +347,8 @@ SciViz:
       grids:
         grid1:
           type: fixed
-          columns: 2
-          row_height: 680
+          columns: 3
+          row_height: 100
           components:
             experiment_dropdown:
               x: 0
@@ -367,7 +367,7 @@ SciViz:
                     return {'query': aeon_acquisition.Experiment(), 'fetch_args': ['experiment_name']}
             camera_dropdown:
               x: 0
-              y: 0
+              y: 1
               height: 1
               width: 1
               route: /videostream_camera_dropdown
@@ -379,11 +379,11 @@ SciViz:
                     return dict(**kwargs)
               dj_query: >
                 def dj_query(aeon_acquisition):
-                    acquisition = aeon_acquisition
-                    return {'query': aeon_acquisition.ExperimentCamera(), 'fetch_args': ['camera_description']}
+                    q = aeon_acquisition.ExperimentCamera.proj('camera_description')
+                    return {'query': q, 'fetch_args': ['camera_description']}
             time_range_selector:
               x: 0
-              y: 1
+              y: 2
               height: 1
               width: 1
               type: daterangepicker
@@ -391,9 +391,9 @@ SciViz:
             video_streamer:
               x: 1
               y: 0
-              height: 1
-              width: 3
-              type: slideshow
+              height: 5
+              width: 2
+              type: slideshow-aeon
               route: /videostream_video_streamer
               batch_size: 3
               chunk_size: 50
@@ -404,15 +404,9 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(test_group1_simple):
-                    # SOME QUERY THAT RETURNS ONLY ONE RECORD ONE COLUMN THAT IS THE VIDEO NAME
-                    TableA, TableB = (test_group1_simple.TableA, test_group1_simple.TableB)
-                    q = ((TableA * TableB).proj(
-                        ...,
-                        #_sciviz_font='IF(a_name = "Raphael", "rgb(255, 0, 0)", NULL)',
-                        _sciviz_background='IF(a_name = "Raphael", "rgba(50, 255, 0, 0.16)", "NULL")',
-                        ))
-                    return {'query': q, 'fetch_args': {'order_by': '_sciviz_background ASC'}}
+                def dj_query(aeon_acquisition):
+                    q = aeon_acquisition.ExperimentCamera
+                    return {'query': q, 'fetch_args': []}
     PipelineMonitor:
       route: /pipeline_monitor
       grids:

@@ -11,8 +11,8 @@ import aeon.io.reader as io_reader
 
 
 camera_name = "CameraTop"
-start_time = datetime.datetime(2022, 7, 23, 11, 0)
-end_time = datetime.datetime(2022, 7, 23, 12, 0)
+# start_time = datetime.datetime(2022, 7, 23, 11, 0)
+# end_time = datetime.datetime(2022, 7, 23, 12, 0)
 raw_data_dir = pathlib.Path("/ceph/aeon/aeon/data/raw/AEON2/experiment0.2")
 
 
