@@ -16,10 +16,6 @@ end_time = datetime.datetime(2022, 7, 23, 12, 0)
 raw_data_dir = pathlib.Path("/ceph/aeon/aeon/data/raw/AEON2/experiment0.2")
 
 
-def user_input(camera_name, start_time, end_time, desired_fps=50):
-    pass
-
-
 def retrieve_video_frames(
     camera_name, start_time, end_time, desired_fps=50, chunk_size=1000000, **kwargs
 ):
@@ -31,7 +27,9 @@ def retrieve_video_frames(
         end=pd.Timestamp(end_time),
     )
     if not len(videodata):
-        raise ValueError("No video data found for the specified camera and time period")
+        raise ValueError(
+            f"No video data found for {camera_name} camera and time period: {start_time} - {end_time}"
+        )
 
     # downsample
     actual_fps = 1 / np.median(np.diff(videodata.index) / np.timedelta64(1, "s"))
