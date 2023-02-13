@@ -21,7 +21,7 @@ def user_input(camera_name, start_time, end_time, desired_fps=50):
 
 
 def retrieve_video_frames(
-    camera_name, start_time, end_time, desired_fps=50, chunk_size=1000000
+    camera_name, start_time, end_time, desired_fps=50, chunk_size=1000000, **kwargs
 ):
     # do some data loading
     videodata = io_api.load(
