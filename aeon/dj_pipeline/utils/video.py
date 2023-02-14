@@ -17,8 +17,16 @@ raw_data_dir = pathlib.Path("/ceph/aeon/aeon/data/raw/AEON2/experiment0.2")
 
 
 def retrieve_video_frames(
-    camera_name, start_time, end_time, desired_fps=50, chunk_size=1000000, **kwargs
+    camera_name,
+    start_time,
+    end_time,
+    desired_fps=50,
+    start_frame=0,
+    chunk_size=50,
+    **kwargs,
 ):
+    start_time = datetime.datetime(2022, 7, 23, 11, 0)
+    end_time = datetime.datetime(2022, 7, 23, 12, 0)
     # do some data loading
     videodata = io_api.load(
         root=raw_data_dir.as_posix(),
@@ -31,6 +39,8 @@ def retrieve_video_frames(
             f"No video data found for {camera_name} camera and time period: {start_time} - {end_time}"
         )
 
+    videodata = videodata[start_frame:]
+
     # downsample
     actual_fps = 1 / np.median(np.diff(videodata.index) / np.timedelta64(1, "s"))
     final_fps = min(desired_fps, actual_fps)
@@ -41,13 +51,13 @@ def retrieve_video_frames(
     frames = io_video.frames(framedata)
 
     encoded_frames = []
-    total_bytes = 0
+    frame_count = 0
     for f in frames:
-        if total_bytes >= chunk_size:
+        if frame_count >= chunk_size:
             break
         encoded_f = cv2.imencode(".jpeg", f)[1].tobytes()
         encoded_frames.append(base64.b64encode(encoded_f))
-        total_bytes += len(encoded_f)
+        frame_count += 1
 
     last_frame_time = framedata.index[len(encoded_frames) - 1]
 
