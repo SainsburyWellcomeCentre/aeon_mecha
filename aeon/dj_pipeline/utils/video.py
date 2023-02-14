@@ -49,11 +49,14 @@ def retrieve_video_frames(
         encoded_frames.append(base64.b64encode(encoded_f))
         total_bytes += len(encoded_f)
 
+    last_frame_time = framedata.index[len(encoded_frames) - 1]
+
     return {
-        "frame_meta": {
+        "frameMeta": {
             "fps": final_fps,
-            "frame_count": len(encoded_frames),
-            "end_time": str(framedata.index[len(encoded_frames) - 1]),
+            "frameCount": len(encoded_frames),
+            "endTime": str(last_frame_time),
+            "finalChunk": bool(last_frame_time >= end_time),
         },
         "frame_data": encoded_frames,
     }
