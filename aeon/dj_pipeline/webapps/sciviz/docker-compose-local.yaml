@@ -103,9 +103,10 @@ services:
       - ADD_sciviz_ENDPOINT=sci-viz:3000
       - ADD_sciviz_PREFIX=/
       - HTTPS_PASSTHRU=TRUE
+      - DEPLOYMENT_PORT
     ports:
       - "443:443"
-      - "80:80"
+      - "${DEPLOYMENT_PORT:-80}:80"
     networks:
       - main
 networks:
