@@ -16,6 +16,7 @@ services:
     volumes:
       - ./specsheet.yaml:/main/specs/specsheet.yaml #copy the spec over to /main/specs/YOUR_SPEC_NAME
       - ./apk_requirements.txt:/tmp/apk_requirements.txt
+      - /ceph/aeon/aeon:/ceph/aeon/aeon
     command:
       - sh
       - -c
@@ -102,7 +103,7 @@ services:
       - ADD_sciviz_TYPE=REST
       - ADD_sciviz_ENDPOINT=sci-viz:3000
       - ADD_sciviz_PREFIX=/
-      - HTTPS_PASSTHRU=TRUE
+#      - HTTPS_PASSTHRU=TRUE
       - DEPLOYMENT_PORT
     ports:
       - "443:443"
