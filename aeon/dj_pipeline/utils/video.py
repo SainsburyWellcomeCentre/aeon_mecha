@@ -56,7 +56,7 @@ def retrieve_video_frames(
         if frame_count >= chunk_size:
             break
         encoded_f = cv2.imencode(".jpeg", f)[1].tobytes()
-        encoded_frames.append(base64.b64encode(encoded_f))
+        encoded_frames.append(base64.b64encode(encoded_f).decode())
         frame_count += 1
 
     last_frame_time = framedata.index[len(encoded_frames) - 1]
