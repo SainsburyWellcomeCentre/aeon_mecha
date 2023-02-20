@@ -65,8 +65,8 @@ def retrieve_video_frames(
         "frameMeta": {
             "fps": final_fps,
             "frameCount": len(encoded_frames),
-            "endTime": str(last_frame_time),
+            # "endTime": str(last_frame_time),
             "finalChunk": bool(last_frame_time >= end_time),
         },
-        "frame_data": encoded_frames,
+        "frames": encoded_frames,
     }
