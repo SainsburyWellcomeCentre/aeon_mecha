@@ -19,8 +19,8 @@ SciViz:
               )
               kwargs = {**fetched_args, **request.args}
               kwargs['camera_name'] = kwargs.pop('camera_description')
-              kwargs['start_time'] = datetime.utcfromtimestamp(kwargs.pop('startTime'))
-              kwargs['end_time'] = datetime.utcfromtimestamp(kwargs.pop('endTime'))
+              kwargs['start_time'] = datetime.utcfromtimestamp(int(kwargs.pop('startTime')))
+              kwargs['end_time'] = datetime.utcfromtimestamp(int(kwargs.pop('endTime')))
               kwargs['start_frame'] = int(kwargs.pop('start_frame'))
               kwargs['chunk_size'] = int(kwargs.pop('chunk_size'))
                 

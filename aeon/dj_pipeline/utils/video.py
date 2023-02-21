@@ -11,8 +11,8 @@ import aeon.io.reader as io_reader
 
 
 camera_name = "CameraTop"
-start_time = datetime.datetime(2022, 7, 23, 11, 0)
-end_time = datetime.datetime(2022, 7, 23, 12, 0)
+start_time = datetime.datetime(2022, 4, 3, 13, 0, 0)
+end_time = datetime.datetime(2022, 4, 3, 15, 0, 0)
 raw_data_dir = pathlib.Path("/ceph/aeon/aeon/data/raw/AEON2/experiment0.2")
 
 
@@ -25,8 +25,6 @@ def retrieve_video_frames(
     chunk_size=50,
     **kwargs,
 ):
-    start_time = datetime.datetime(2022, 4, 3, 13, 0, 0)
-    end_time = datetime.datetime(2022, 4, 3, 15, 0, 0)
     # do some data loading
     videodata = io_api.load(
         root=raw_data_dir.as_posix(),
@@ -62,7 +60,7 @@ def retrieve_video_frames(
         "frameMeta": {
             "fps": final_fps,
             "frameCount": len(encoded_frames),
-            # "endTime": str(last_frame_time),
+            "endTime": str(last_frame_time),
             "finalChunk": bool(last_frame_time >= end_time),
         },
         "frames": encoded_frames,
