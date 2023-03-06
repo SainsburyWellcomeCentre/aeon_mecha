@@ -76,7 +76,7 @@ class OSC:
     def tracking_response(pattern):
         return { "TrackingResponse": _reader.Csv(f"{pattern}_return_tracking_response_*", columns=[
             'typetag',
-            'dont-know',
+            'id',
             'response_position_x_1',
             'response_position_y_1',
             'response_theta_1',
@@ -86,7 +86,7 @@ class OSC:
     def tracking_slice_onset(pattern):
         return { "TrackingSliceOnset": _reader.Csv(f"{pattern}_return_tracking_slice_onset_*", columns=[
             'typetag',
-            'dont-know',
+            'id',
             'slice_onset_position_x_1',
             'slice_onset_position_y_1',
             'slice_onset_theta_1',
