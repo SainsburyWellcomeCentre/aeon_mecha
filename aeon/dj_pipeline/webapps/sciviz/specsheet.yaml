@@ -416,17 +416,46 @@ SciViz:
                       return {'query': cls, 'fetch_args': {'order_by': 'minutes_elapsed ASC'}}
 
     DataEntry:
-      route: /subject_entry
+      route: /data_entry
       grids:
         grid5:
           type: fixed
           columns: 1
           row_height: 1000
           components:
+            Lab Entry:
+              route: /lab_form
+              x: 0
+              y: 0
+              height: 0.4
+              width: 1
+              type: form
+              tables:
+                - aeon_lab.Arena
+              map:
+                - type: attribute
+                  input: Arena Name
+                  destination: arena_name
+                - type: table
+                  input: Arena Shape
+                  destination: aeon_lab.ArenaShape
+                - type: attribute
+                  input: X Dimension
+                  destination: arena_x_dim
+                - type: attribute
+                  input: Y Dimension
+                  destination: arena_y_dim
+                - type: attribute
+                  input: Z Dimension
+                  destination: arena_z_dim
+                - type: attribute
+                  input: Arena Description
+                  destination: arena_description
+
             Subject Entry:
               route: /subject_form
               x: 0
-              y: 0
+              y: 0.4
               height: 0.3
               width: 1
               type: form
@@ -443,13 +472,14 @@ SciViz:
                   input: Date of Birth
                   destination: subject_birth_date
                 - type: attribute
-                  input: Description
+                  input: Subject Description
                   destination: subject_description
+
             Experiment Entry:
               route: /exp_form
               x: 0
-              y: 0.3
-              height: 0.5
+              y: 0.7
+              height: 0.4
               width: 1
               type: form
               tables:
@@ -470,6 +500,3 @@ SciViz:
                 - type: table
                   input: Lab Location
                   destination: aeon_lab.Location
-                - type: attribute
-                  input: Experiment Type
-                  destination: experiment_type
