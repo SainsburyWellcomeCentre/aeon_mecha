@@ -10,7 +10,7 @@ from aeon.io import api as io_api
 from aeon.io import reader as io_reader
 from aeon.schema import dataset as aeon_schema
 
-from . import get_schema_name
+from . import get_schema_name, lab, subject
 from .utils import paths
 from .utils.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 
