@@ -1,5 +1,6 @@
 from aeon.dj_pipeline import acquisition, lab, subject
 
+experiment_type = "presocial"
 experiment_name = "presocial0.1-a2"  # AEON2 acquisition computer
 location = "4th floor"
 
@@ -7,6 +8,10 @@ location = "4th floor"
 def create_new_experiment():
 
     lab.Location.insert1({"lab": "SWC", "location": location}, skip_duplicates=True)
+
+    acquisition.ExperimentType.insert1(
+        {"experiment_type": experiment_type}, skip_duplicates=True
+    )
 
     acquisition.Experiment.insert1(
         {
@@ -16,7 +21,7 @@ def create_new_experiment():
             "arena_name": "circle-2m",
             "lab": "SWC",
             "location": location,
-            "experiment_type": "presocial",
+            "experiment_type": experiment_type,
         },
         skip_duplicates=True,
     )
