@@ -28,7 +28,7 @@ def create_new_experiment():
 
     acquisition.Experiment.Subject.insert(
         [
-            {"experiment_name": experiment_name, "subject": s["subject"]}
+            {"experiment_name": experiment_name, "subject": s}
             for s in subject.Subject.fetch("subject")
         ],
         skip_duplicates=True,
