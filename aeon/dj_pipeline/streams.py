@@ -16,16 +16,15 @@ from aeon.io import api as io_api
 logger = dj.logger
 
 
-schema_name = f'u_{dj.config["database.user"]}_streams'  # for testing
-# schema_name = get_schema_name("streams")
+schema_name = get_schema_name("streams")
 schema = dj.schema(schema_name)
 
 
-# __all__ = [
-#     "StreamType",
-#     "DeviceType",
-#     "Device",
-# ]
+__all__ = [
+    "StreamType",
+    "DeviceType",
+    "Device",
+]
 
 
 # Read from this list of device configurations
