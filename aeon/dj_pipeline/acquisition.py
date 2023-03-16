@@ -25,6 +25,7 @@ _ref_device_mapping = {
     "social0-r1": "FrameTop",
     "exp0.2-r0": "CameraTop",
     "oct1.0-r0": "CameraTop",
+    "presocial0.1-a2": "CameraTop",
 }
 
 _device_schema_mapping = {
@@ -32,6 +33,7 @@ _device_schema_mapping = {
     "social0-r1": aeon_schema.exp01,
     "exp0.2-r0": aeon_schema.exp02,
     "oct1.0-r0": aeon_schema.exp02,
+    "presocial0.1-a2": aeon_schema.presocial,
 }
 
 
@@ -119,9 +121,10 @@ class Experiment(dj.Manual):
 
     @classmethod
     def get_data_directory(cls, experiment_key, directory_type="raw", as_posix=False):
-        repo_name, dir_path = (
-            cls.Directory & experiment_key & {"directory_type": directory_type}
-        ).fetch1("repository_name", "directory_path")
+        query = cls.Directory & experiment_key & {"directory_type": directory_type}
+        if not query:
+            return
+        repo_name, dir_path = query.fetch1("repository_name", "directory_path")
         data_directory = paths.get_repository_path(repo_name) / dir_path
         if not data_directory.exists():
             return None
