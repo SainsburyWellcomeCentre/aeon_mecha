@@ -762,6 +762,11 @@ def _get_filtered_subject_weight(
         .set_index("weight_subject_timestamps")
         .dropna()
     )
+
+    # Return empty dataframe if no weight data
+    if subject_weight.empty:
+        return subject_weight
+
     subject_weight = subject_weight.loc[visit_start:visit_end]
 
     # Exclude data during maintenance

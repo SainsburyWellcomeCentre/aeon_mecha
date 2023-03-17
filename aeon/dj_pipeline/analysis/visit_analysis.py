@@ -629,7 +629,9 @@ class VisitForagingBout(dj.Computed):
                     ts_array = in_patch_times[change_ind[i - 1] : change_ind[i]]
 
                 wheel_start, wheel_end = ts_array[0], ts_array[-1]
-                if wheel_start > wheel_end:  # skip if timestamps were misaligned
+                if (
+                    wheel_start >= wheel_end
+                ):  # skip if timestamps were misaligned or a single timestamp
                     continue
 
                 wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
@@ -660,7 +662,7 @@ class VisitForagingBout(dj.Computed):
 
 def get_maintenance_periods(experiment_name, start, end):
     # get logs from acquisition.ExperimentLog
-    log_df = (
+    query = (
         acquisition.ExperimentLog.Message.proj("message")
         & {"experiment_name": experiment_name}
         & 'message IN ("Maintenance", "Experiment")'
