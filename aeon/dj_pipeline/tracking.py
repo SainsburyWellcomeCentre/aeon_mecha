@@ -26,7 +26,10 @@ class TrackingMethod(dj.Lookup):
     tracking_method_description: varchar(256)
     """
 
-    contents = [("DLC", "Online DeepLabCut as part of Bonsai workflow")]
+    contents = [
+        ("DLC", "Online DeepLabCut as part of Bonsai workflow"),
+        ("SLEAP", "Online SLEAP as part of Bonsai workflow"),
+    ]
 
 
 @schema
@@ -48,7 +51,14 @@ class TrackingParamSet(dj.Lookup):
             "Default DLC method from online Bonsai - with params as empty dictionary",
             dict_to_uuid({"tracking_method": "DLC"}),
             {},
-        )
+        ),
+        (
+            1,
+            "SLEAP",
+            "Default SLEAP method from online Bonsai - with params as empty dictionary",
+            dict_to_uuid({"tracking_method": "SLEAP"}),
+            {},
+        ),
     ]
 
     @classmethod
