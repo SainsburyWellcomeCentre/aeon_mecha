@@ -1,12 +1,24 @@
 import datajoint as dj
 
-from . import get_schema_name
-
+from . import acquisition, get_schema_name, subject
 
 schema = dj.schema(get_schema_name("lab"))
 
 
 # ------------------- GENERAL LAB INFORMATION --------------------
+
+
+@schema
+class Colony(dj.Lookup):
+    # This table will interact with Bonsai directly.
+    definition = """
+    -> subject.Subject
+    ---
+    -> acquisition.Experiment
+    sex                     : enum('M', 'F', 'U')
+    dob                     : date  # date of birth
+    note=''                 : varchar(1024)
+    """
 
 
 @schema
