@@ -511,3 +511,89 @@ SciViz:
                 def dj_query(aeon_workerlog):
                       cls = aeon_workerlog.WorkerLog.proj(..., minutes_elapsed='TIMESTAMPDIFF(MINUTE, process_timestamp, UTC_TIMESTAMP())')
                       return {'query': cls, 'fetch_args': {'order_by': 'minutes_elapsed ASC'}}
+
+    DataEntry:
+      route: /data_entry
+      grids:
+        grid5:
+          type: fixed
+          columns: 1
+          row_height: 1000
+          components:
+            Lab Entry:
+              route: /lab_form
+              x: 0
+              y: 0
+              height: 0.4
+              width: 1
+              type: form
+              tables:
+                - aeon_lab.Arena
+              map:
+                - type: attribute
+                  input: Arena Name
+                  destination: arena_name
+                - type: table
+                  input: Arena Shape
+                  destination: aeon_lab.ArenaShape
+                - type: attribute
+                  input: X Dimension
+                  destination: arena_x_dim
+                - type: attribute
+                  input: Y Dimension
+                  destination: arena_y_dim
+                - type: attribute
+                  input: Z Dimension
+                  destination: arena_z_dim
+                - type: attribute
+                  input: Arena Description
+                  destination: arena_description
+
+            Subject Entry:
+              route: /subject_form
+              x: 0
+              y: 0.4
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_subject.Subject
+              map:
+                - type: attribute
+                  input: Subject ID
+                  destination: subject
+                - type: attribute
+                  input: Sex
+                  destination: sex
+                - type: attribute
+                  input: Date of Birth
+                  destination: subject_birth_date
+                - type: attribute
+                  input: Subject Description
+                  destination: subject_description
+
+            Experiment Entry:
+              route: /exp_form
+              x: 0
+              y: 0.7
+              height: 0.4
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment
+              map:
+                - type: attribute
+                  input: Experiment ID
+                  destination: experiment_name
+                - type: attribute
+                  input: Start Time
+                  destination: experiment_start_time
+                - type: attribute
+                  input: Description
+                  destination: experiment_description
+                - type: table
+                  input: Lab Arena
+                  destination: aeon_lab.Arena
+                - type: table
+                  input: Lab Location
+                  destination: aeon_lab.Location
