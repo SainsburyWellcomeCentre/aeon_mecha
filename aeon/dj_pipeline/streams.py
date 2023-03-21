@@ -39,7 +39,7 @@ DEVICE_CONFIGS = [
     (
         "ExperimentalMetadata",
         "ExperimentalMetadata",
-        (stream.environment, stream.messageLog),
+        (stream.environment, stream.messageLog, stream.subject_state),
     ),
     (
         "NestScale",
