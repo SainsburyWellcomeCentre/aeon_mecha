@@ -1,13 +1,11 @@
+import datetime
 import pathlib
 import re
-import datetime
 
 import pandas as pd
 import yaml
 
-from aeon.dj_pipeline import acquisition, lab, subject
-from aeon.dj_pipeline import dict_to_uuid
-
+from aeon.dj_pipeline import acquisition, dict_to_uuid, lab, subject
 
 _weight_scale_rate = 100
 _weight_scale_nest = 1
@@ -55,6 +53,10 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     """
     if experiment_name.startswith("oct"):
         ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath)
+        return
+
+    if experiment_name.startswith("presocial"):
+        ingest_epoch_metadata_presocial(experiment_name, metadata_yml_filepath)
         return
 
     metadata_yml_filepath = pathlib.Path(metadata_yml_filepath)
@@ -386,6 +388,48 @@ def ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath):
 
     for device_idx, (device_name, device_type) in enumerate(oct01_devices):
         device_sn = f"oct01_{device_idx}"
+        streams.Device.insert1(
+            {"device_serial_number": device_sn, "device_type": device_type},
+            skip_duplicates=True,
+        )
+        experiment_table = getattr(streams, f"Experiment{device_type}")
+        if not (
+            experiment_table
+            & {"experiment_name": experiment_name, "device_serial_number": device_sn}
+        ):
+            experiment_table.insert1(
+                (experiment_name, device_sn, epoch_start, device_name)
+            )
+
+
+def ingest_epoch_metadata_presocial(experiment_name, metadata_yml_filepath):
+    """
+    Test ingestion routine to load devices' meta information for presocial experiment.
+    """
+    from aeon.dj_pipeline import streams
+
+    presocial_devices = [
+        ("ClockSynchronizer", "ClockSynchronizer"),
+        ("VideoController", "VideoController"),
+        ("CameraTop", "Camera"),
+        ("CameraWest", "Camera"),
+        ("CameraEast", "Camera"),
+        ("CameraNorth", "Camera"),
+        ("CameraSouth", "Camera"),
+        ("CameraPatch1", "Camera"),
+        ("CameraPatch2", "Camera"),
+        ("CameraNest", "Camera"),
+        ("AudioAmbient", "AudioAmbient"),
+        ("Patch1", "FoodPatch"),
+        ("Patch2", "FoodPatch"),
+    ]
+
+    epoch_start = datetime.datetime.strptime(
+        metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
+    )
+
+    for device_idx, (device_name, device_type) in enumerate(presocial_devices):
+        device_sn = f"presocial_{device_idx}"
         streams.Device.insert1(
             {"device_serial_number": device_sn, "device_type": device_type},
             skip_duplicates=True,
