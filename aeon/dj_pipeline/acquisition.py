@@ -10,7 +10,7 @@ from aeon.io import api as io_api
 from aeon.io import reader as io_reader
 from aeon.schema import dataset as aeon_schema
 
-from . import get_schema_name
+from . import get_schema_name, lab, subject
 from .utils import paths
 from .utils.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 
@@ -31,7 +31,7 @@ _device_schema_mapping = {
     "exp0.1-r0": aeon_schema.exp01,
     "social0-r1": aeon_schema.exp01,
     "exp0.2-r0": aeon_schema.exp02,
-    "oct1.0-r0": aeon_schema.exp02,
+    "oct1.0-r0": aeon_schema.octagon01,
 }
 
 

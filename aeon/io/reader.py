@@ -193,9 +193,29 @@ class BitmaskEvent(Harp):
         specified unique identifier.
         """
         data = super().read(file)
-        data = data[data.event == self.value]
+        data = data[data.event & self.value > 0]
         data['event'] = self.tag
         return data
+
+class DigitalBitmask(Harp):
+    """
+    Extracts event data matching a specific digital I/O bitmask.
+
+    Columns:
+        event (str): Unique identifier for the event code.
+    """
+    def __init__(self, pattern, mask, columns):
+        super().__init__(pattern, columns)
+        self.mask = mask
+
+    def read(self, file):
+        """
+        Reads a specific event code from digital data and matches it to the
+        specified unique identifier.
+        """
+        data = super().read(file)
+        state = data[self.columns] & self.mask
+        return state[(state.diff() != 0).values] != 0
 
 class Video(Csv):
     """

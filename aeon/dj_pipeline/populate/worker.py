@@ -1,10 +1,31 @@
 import datajoint as dj
-from datajoint_utilities.dj_worker import DataJointWorker, ErrorLog, WorkerLog
+from datajoint_utilities.dj_worker import (
+    DataJointWorker,
+    WorkerLog,
+    ErrorLog,
+    is_djtable,
+)
 
-from aeon.dj_pipeline import acquisition, analysis, db_prefix, qc, report, tracking
+from aeon.dj_pipeline import (
+    acquisition,
+    analysis,
+    db_prefix,
+    qc,
+    report,
+    tracking,
+    streams,
+)
 from aeon.dj_pipeline.utils import load_metadata
 
-__all__ = ["high_priority", "mid_priority", "WorkerLog", "ErrorLog", "logger"]
+
+__all__ = [
+    "high_priority",
+    "mid_priority",
+    "streams_worker",
+    "WorkerLog",
+    "ErrorLog",
+    "logger",
+]
 
 # ---- Some constants ----
 logger = dj.logger
@@ -66,3 +87,18 @@ mid_priority(report.SubjectRewardRateDifference)
 mid_priority(report.SubjectWheelTravelledDistance)
 mid_priority(report.ExperimentTimeDistribution)
 mid_priority(report.VisitDailySummaryPlot)
+
+# ---- Define worker(s) ----
+# configure a worker to ingest all data streams
+streams_worker = DataJointWorker(
+    "streams_worker",
+    worker_schema_name=worker_schema_name,
+    db_prefix=db_prefix,
+    run_duration=1,
+    sleep_duration=600,
+)
+
+for attr in vars(streams).values():
+    if is_djtable(attr) and hasattr(attr, "populate"):
+        streams_worker(attr)
+

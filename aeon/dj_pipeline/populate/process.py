@@ -35,12 +35,21 @@ import sys
 import datajoint as dj
 from datajoint_utilities.dj_worker import parse_args
 
-from aeon.dj_pipeline.populate.worker import high_priority, mid_priority, logger
+from aeon.dj_pipeline.populate.worker import (
+    high_priority,
+    mid_priority,
+    streams_worker,
+    logger,
+)
 
 
 # ---- some wrappers to support execution as script or CLI
 
-configured_workers = {"high_priority": high_priority, "mid_priority": mid_priority}
+configured_workers = {
+    "high_priority": high_priority,
+    "mid_priority": mid_priority,
+    "streams_worker": streams_worker,
+}
 
 
 def run(**kwargs):
