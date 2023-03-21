@@ -84,7 +84,7 @@ mid_priority(report.delete_outdated_plot_entries)
 mid_priority(report.SubjectRewardRateDifference)
 mid_priority(report.SubjectWheelTravelledDistance)
 mid_priority(report.ExperimentTimeDistribution)
-
+mid_priority(report.VisitDailySummaryPlot)
 
 # ---- Define worker(s) ----
 # configure a worker to ingest all data streams
