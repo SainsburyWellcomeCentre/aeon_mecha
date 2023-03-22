@@ -3,16 +3,16 @@ LabBook: null
 SciViz:
   auth: True
   component_interface:
-    override: |    
+    override: |
       from datetime import datetime
       from pharus.component_interface import SlideshowComponent, NumpyEncoder, type_map
       from flask import request
       from aeon.dj_pipeline.utils.video import retrieve_video_frames
-  
+
       class AeonSlideshowComponent(SlideshowComponent):
           def dj_query_route(self):
               fetch_metadata = self.fetch_metadata
-      
+
               # Dj query provided should return only a video location
               fetched_args = (fetch_metadata["query"] & self.restriction).fetch1(
                   *fetch_metadata["fetch_args"]
@@ -31,10 +31,44 @@ SciViz:
                   200,
                   {"Content-Type": "application/json"},
               )
-      
+
       type_map = dict({"slideshow:aeon": AeonSlideshowComponent}, **type_map)
 
   pages:
+    Colony:
+      route: /colony_entry
+      grids:
+        grid1:
+          type: fixed
+          columns: 1
+          row_height: 1000
+          components:
+            Colony Entry:
+              route: /colony_form
+              x: 0
+              y: 0
+              height: 0.5
+              width: 1
+              type: form
+              tables:
+                - aeon_lab.Colony
+              map:
+                - type: attribute
+                  input: Subject
+                  destination: subject
+                - type: attribute
+                  input: Reference Weight
+                  destination: reference_weight
+                - type: attribute
+                  input: Sex
+                  destination: sex
+                - type: attribute
+                  input: Date of Birth
+                  destination: dob
+                - type: attribute
+                  input: Note
+                  destination: note
+
     Subjects:
       route: /subjects
       grids:
@@ -382,7 +416,7 @@ SciViz:
               route: /videostream_camera_dropdown
               type: dropdown-query
               channel: stream_camera_selector
-              channels: [ stream_experiment_selector ]
+              channels: [stream_experiment_selector]
               restriction: >
                 def restriction(**kwargs):
                     return dict(**kwargs)
@@ -408,7 +442,12 @@ SciViz:
               chunk_size: 50
               buffer_size: 30
               max_FPS: 50
-              channels: [ stream_experiment_selector, stream_camera_selector, stream_time_selector ]
+              channels:
+                [
+                  stream_experiment_selector,
+                  stream_camera_selector,
+                  stream_time_selector,
+                ]
               restriction: >
                 def restriction(**kwargs):
                     return dict(**kwargs)
