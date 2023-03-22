@@ -64,7 +64,7 @@ SciViz:
                   destination: sex
                 - type: attribute
                   input: Date of Birth
-                  destination: dob
+                  destination: subject_birth_date
                 - type: attribute
                   input: Note
                   destination: note
