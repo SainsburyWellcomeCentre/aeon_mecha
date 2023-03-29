@@ -10,7 +10,7 @@ ARG IMAGE_CREATED=2021-11-11T11:11:11Z
 ARG IMAGE_VERSION=v0.0.0a
 
 # main build stage =====================================================================
-FROM ghcr.io/iamamutt/conda_base:latest as aeon_mecha_docker_pre
+FROM ghcr.io/ttngu207/conda_base:latest as aeon_mecha_docker_pre
 
 # inherit global args
 ARG NEW_USER_NAME
@@ -60,10 +60,10 @@ RUN cp -f ${AEON_PKG}/docker/image/apt_requirements.txt /srv/conda/apt_requireme
 
 # create the local and global datajoint config files, hard-coding the data paths
 RUN awk -v DJSTORE="$DJ_EXT_STORE" -v CEPHROOT="$CEPH_ROOT" \
-        '{sub(/{{ DJ_EXT_STORE }}/,DJSTORE);sub(/{{ CEPH_ROOT }}/,CEPHROOT)} 1' \
-        /tmp/.datajoint_config.json | tee \
-            ${AEON_PKG}/dj_local_config.json \
-            ${NEW_USER_HOME}/.datajoint_config.json > /dev/null && \
+    '{sub(/{{ DJ_EXT_STORE }}/,DJSTORE);sub(/{{ CEPH_ROOT }}/,CEPHROOT)} 1' \
+    /tmp/.datajoint_config.json | tee \
+    ${AEON_PKG}/dj_local_config.json \
+    ${NEW_USER_HOME}/.datajoint_config.json > /dev/null && \
     chown ${NEW_USER_UID}:${NEW_USER_GID} ${NEW_USER_HOME}/.datajoint_config.json
 
 # install package dependencies from apt_requirements.txt
@@ -82,15 +82,15 @@ RUN sudo-run \
     pip install -e ${AEON_PKG}/.
 
 RUN mkdir -p -m 6775 \
-        ${NEW_USER_HOME}/.vscode-server/extensions \
-        ${NEW_USER_HOME}/.vscode-server-insiders/extensions && \
+    ${NEW_USER_HOME}/.vscode-server/extensions \
+    ${NEW_USER_HOME}/.vscode-server-insiders/extensions && \
     chown -R ${NEW_USER_NAME}:${NEW_USER_GROUP} ${NEW_USER_HOME}/.vscode-server* && \
     echo "$IMAGE_CREATED" > /tmp/$(echo $IMAGE_CREATED | awk '{gsub(/\:/,"-");print}')
 
 # delete logs and unnecessary files copied over from this repo
 RUN rm -rf \
-        /var/log/lastlog /var/log/faillog \
-        ${AEON_PKG}/docker /var/tmp/* /tmp/* && \
+    /var/log/lastlog /var/log/faillog \
+    ${AEON_PKG}/docker /var/tmp/* /tmp/* && \
     $CONDA_ROOT/bin/conda clean -yqa && \
     touch /var/log/lastlog && \
     touch /var/log/faillog
