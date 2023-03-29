@@ -1,6 +1,7 @@
 from dotmap import DotMap
 import aeon.schema.core as stream
 import aeon.schema.foraging as foraging
+import aeon.schema.octagon as octagon
 from aeon.io.device import Device
 
 exp02 = DotMap([
@@ -31,4 +32,22 @@ exp01 = DotMap([
     Device("FrameWest", stream.video),
     Device("Patch1", foraging.depletionFunction, stream.encoder, foraging.feeder),
     Device("Patch2", foraging.depletionFunction, stream.encoder, foraging.feeder)
+])
+
+octagon01 = DotMap([
+    Device("Metadata", stream.metadata),
+    Device("CameraTop", stream.video, stream.position),
+    Device("CameraColorTop", stream.video),
+    Device("ExperimentalMetadata", stream.subject_state),
+    Device("Photodiode", octagon.photodiode),
+    Device("OSC", octagon.OSC),
+    Device("TaskLogic", octagon.TaskLogic),
+    Device("Wall1", octagon.Wall),
+    Device("Wall2", octagon.Wall),
+    Device("Wall3", octagon.Wall),
+    Device("Wall4", octagon.Wall),
+    Device("Wall5", octagon.Wall),
+    Device("Wall6", octagon.Wall),
+    Device("Wall7", octagon.Wall),
+    Device("Wall8", octagon.Wall)
 ])

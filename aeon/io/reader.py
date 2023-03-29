@@ -21,10 +21,10 @@ _payloadtypes = {
 }
 
 class Reader:
-    """Extracts data from raw chunk files in an Aeon dataset.
+    """Extracts data from raw files in an Aeon dataset.
     
     Attributes:
-        pattern (str): Pattern used to find raw chunk files,
+        pattern (str): Pattern used to find raw files,
             usually in the format `<Device>_<DataStream>`.
         columns (str or array-like): Column labels to use for the data.
         extension (str): Extension of data file pathnames.
@@ -35,7 +35,7 @@ class Reader:
         self.extension = extension
 
     def read(self, _):
-        """Reads data from the specified chunk file."""
+        """Reads data from the specified file."""
         return pd.DataFrame(columns=self.columns, index=pd.DatetimeIndex([]))
 
 class Harp(Reader):
@@ -193,9 +193,29 @@ class BitmaskEvent(Harp):
         specified unique identifier.
         """
         data = super().read(file)
-        data = data[data.event == self.value]
+        data = data[data.event & self.value > 0]
         data['event'] = self.tag
         return data
+
+class DigitalBitmask(Harp):
+    """
+    Extracts event data matching a specific digital I/O bitmask.
+
+    Columns:
+        event (str): Unique identifier for the event code.
+    """
+    def __init__(self, pattern, mask, columns):
+        super().__init__(pattern, columns)
+        self.mask = mask
+
+    def read(self, file):
+        """
+        Reads a specific event code from digital data and matches it to the
+        specified unique identifier.
+        """
+        data = super().read(file)
+        state = data[self.columns] & self.mask
+        return state[(state.diff() != 0).values] != 0
 
 class Video(Csv):
     """

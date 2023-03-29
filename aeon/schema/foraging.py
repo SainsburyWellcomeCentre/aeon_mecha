@@ -48,11 +48,11 @@ class _Weight(_reader.Harp):
 
 def region(pattern):
     """Region tracking data for the specified camera."""
-    return { "Region": _RegionReader(f"{pattern}_201") }
+    return { "Region": _RegionReader(f"{pattern}_201_*") }
 
 def depletionFunction(pattern):
     """State of the linear depletion function for foraging patches."""
-    return { "DepletionState": _PatchState(f"{pattern}_State") }
+    return { "DepletionState": _PatchState(f"{pattern}_State_*") }
 
 def feeder(pattern):
     """Feeder commands and events."""
@@ -60,11 +60,11 @@ def feeder(pattern):
 
 def beam_break(pattern):
     """Beam break events for pellet detection."""
-    return { "BeamBreak": _reader.BitmaskEvent(f"{pattern}_32", 0x22, 'PelletDetected') }
+    return { "BeamBreak": _reader.BitmaskEvent(f"{pattern}_32_*", 0x22, 'PelletDetected') }
 
 def deliver_pellet(pattern):
     """Pellet delivery commands."""
-    return { "DeliverPellet": _reader.BitmaskEvent(f"{pattern}_35", 0x80, 'TriggerPellet') }
+    return { "DeliverPellet": _reader.BitmaskEvent(f"{pattern}_35_*", 0x80, 'TriggerPellet') }
 
 def patch(pattern):
     """Data streams for a patch."""
@@ -76,16 +76,16 @@ def weight(pattern):
 
 def weight_raw(pattern):
     """Raw weight measurement for a specific nest."""
-    return { "WeightRaw": _Weight(f"{pattern}_200") }
+    return { "WeightRaw": _Weight(f"{pattern}_200_*") }
 
 def weight_filtered(pattern):
     """Filtered weight measurement for a specific nest."""
-    return { "WeightFiltered": _Weight(f"{pattern}_202") }
+    return { "WeightFiltered": _Weight(f"{pattern}_202_*") }
 
 def weight_subject(pattern):
     """Subject weight measurement for a specific nest."""
-    return { "WeightSubject": _Weight(f"{pattern}_204") }
+    return { "WeightSubject": _Weight(f"{pattern}_204_*") }
 
 def session(pattern):
     """Session metadata for Experiment 0.1."""
-    return { pattern: _reader.Csv(f"{pattern}_2", columns=['id','weight','event']) }
+    return { pattern: _reader.Csv(f"{pattern}_2*", columns=['id','weight','event']) }
