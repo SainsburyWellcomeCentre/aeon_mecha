@@ -3,16 +3,14 @@ LabBook: null
 SciViz:
   auth: True
   component_interface:
-    override: |    
+    override: |
       from datetime import datetime
       from pharus.component_interface import SlideshowComponent, NumpyEncoder, type_map
       from flask import request
       from aeon.dj_pipeline.utils.video import retrieve_video_frames
-  
       class AeonSlideshowComponent(SlideshowComponent):
           def dj_query_route(self):
               fetch_metadata = self.fetch_metadata
-      
               # Dj query provided should return only a video location
               fetched_args = (fetch_metadata["query"] & self.restriction).fetch1(
                   *fetch_metadata["fetch_args"]
@@ -31,10 +29,42 @@ SciViz:
                   200,
                   {"Content-Type": "application/json"},
               )
-      
       type_map = dict({"slideshow:aeon": AeonSlideshowComponent}, **type_map)
-
   pages:
+    Colony:
+      route: /colony_entry
+      grids:
+        grid1:
+          type: fixed
+          columns: 1
+          row_height: 1000
+          components:
+            Colony Entry:
+              route: /colony_form
+              x: 0
+              y: 0
+              height: 0.5
+              width: 1
+              type: form
+              tables:
+                - aeon_lab.Colony
+              map:
+                - type: attribute
+                  input: Subject
+                  destination: subject
+                - type: attribute
+                  input: Reference Weight
+                  destination: reference_weight
+                - type: attribute
+                  input: Sex
+                  destination: sex
+                - type: attribute
+                  input: Date of Birth
+                  destination: subject_birth_date
+                - type: attribute
+                  input: Note
+                  destination: note
+
     Subjects:
       route: /subjects
       grids:
@@ -61,7 +91,6 @@ SciViz:
                     query = acquisition.Experiment.Subject.aggr(visit_analysis.VisitEnd.join(visit_analysis.Visit, left=True), first_visit_start='MIN(visit_start)', last_visit_end='MAX(visit_end)', total_visit_count='COUNT(visit_start)', total_visit_duration='SUM(visit_duration)')
                     query = query.proj("first_visit_start", "last_visit_end", "total_visit_count", total_visit_duration="CAST(total_visit_duration AS DOUBLE(10, 3))")
                     return {'query': query, 'fetch_args': {'order_by': 'last_visit_end DESC'}}
-
     VisitSummary:
       route: /visit_summary
       grids:
@@ -87,7 +116,6 @@ SciViz:
                     query = query.join(aeon_analysis.VisitEnd, left=True)
                     query = query.proj("visit_end", total_pellet_count="CAST(total_pellet_count AS DOUBLE)", duration="CAST(duration AS DOUBLE(10, 3))", total_distance_travelled="CAST(total_distance_travelled AS DOUBLE(10, 3))", total_wheel_distance_travelled="CAST(total_wheel_distance_travelled AS DOUBLE(10, 3))")
                     return {'query': query, 'fetch_args': {'order_by': 'visit_end DESC'}}
-
     ExperimentReport:
       route: /experiment_report
       grids:
@@ -114,7 +142,6 @@ SciViz:
                 def dj_query(aeon_report):
                     report = aeon_report
                     return {'query': report.ExperimentTimeDistribution(), 'fetch_args': ['time_distribution_plotly']}
-
     SubjectReport:
       route: /subject_report
       grids:
@@ -160,7 +187,6 @@ SciViz:
                 def dj_query(aeon_report):
                     report = aeon_report
                     return {'query': report.SubjectWheelTravelledDistance(), 'fetch_args': ['wheel_travelled_distance_plotly']}
-
     PerSubjectReport:
       hidden: true
       route: /per_subject_report
@@ -212,7 +238,6 @@ SciViz:
                 def dj_query(aeon_report):
                     report = aeon_report
                     return {'query': report.SubjectWheelTravelledDistance(), 'fetch_args': ['wheel_travelled_distance_plotly']}
-
     PerVisitReport:
       hidden: true
       route: /per_visit_report
@@ -253,7 +278,6 @@ SciViz:
                 def dj_query(aeon_report):
                     report = aeon_report
                     return {'query': report.VisitDailySummaryPlot(), 'fetch_args': ['summary_plot_png']}
-
     Visits247:
       route: /visits247
       grids:
@@ -350,7 +374,6 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_report):
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['region_time_fraction_hourly_plotly'])
-
     VideoStream:
       route: /videostream
       grids:
@@ -382,7 +405,7 @@ SciViz:
               route: /videostream_camera_dropdown
               type: dropdown-query
               channel: stream_camera_selector
-              channels: [ stream_experiment_selector ]
+              channels: [stream_experiment_selector]
               restriction: >
                 def restriction(**kwargs):
                     return dict(**kwargs)
@@ -408,7 +431,12 @@ SciViz:
               chunk_size: 50
               buffer_size: 30
               max_FPS: 50
-              channels: [ stream_experiment_selector, stream_camera_selector, stream_time_selector ]
+              channels:
+                [
+                  stream_experiment_selector,
+                  stream_camera_selector,
+                  stream_time_selector,
+                ]
               restriction: >
                 def restriction(**kwargs):
                     return dict(**kwargs)
@@ -511,3 +539,88 @@ SciViz:
                 def dj_query(aeon_workerlog):
                       cls = aeon_workerlog.WorkerLog.proj(..., minutes_elapsed='TIMESTAMPDIFF(MINUTE, process_timestamp, UTC_TIMESTAMP())')
                       return {'query': cls, 'fetch_args': {'order_by': 'minutes_elapsed ASC'}}
+    DataEntry:
+      route: /data_entry
+      grids:
+        grid5:
+          type: fixed
+          columns: 1
+          row_height: 1000
+          components:
+            Lab Entry:
+              route: /lab_form
+              x: 0
+              y: 0
+              height: 0.4
+              width: 1
+              type: form
+              tables:
+                - aeon_lab.Arena
+              map:
+                - type: attribute
+                  input: Arena Name
+                  destination: arena_name
+                - type: table
+                  input: Arena Shape
+                  destination: aeon_lab.ArenaShape
+                - type: attribute
+                  input: X Dimension
+                  destination: arena_x_dim
+                - type: attribute
+                  input: Y Dimension
+                  destination: arena_y_dim
+                - type: attribute
+                  input: Z Dimension
+                  destination: arena_z_dim
+                - type: attribute
+                  input: Arena Description
+                  destination: arena_description
+
+            Subject Entry:
+              route: /subject_form
+              x: 0
+              y: 0.4
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_subject.Subject
+              map:
+                - type: attribute
+                  input: Subject ID
+                  destination: subject
+                - type: attribute
+                  input: Sex
+                  destination: sex
+                - type: attribute
+                  input: Date of Birth
+                  destination: subject_birth_date
+                - type: attribute
+                  input: Subject Description
+                  destination: subject_description
+
+            Experiment Entry:
+              route: /exp_form
+              x: 0
+              y: 0.7
+              height: 0.4
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment
+              map:
+                - type: attribute
+                  input: Experiment ID
+                  destination: experiment_name
+                - type: attribute
+                  input: Start Time
+                  destination: experiment_start_time
+                - type: attribute
+                  input: Description
+                  destination: experiment_description
+                - type: table
+                  input: Lab Arena
+                  destination: aeon_lab.Arena
+                - type: table
+                  input: Lab Location
+                  destination: aeon_lab.Location
