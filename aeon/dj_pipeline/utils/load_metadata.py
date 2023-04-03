@@ -1,13 +1,13 @@
+import datetime
 import pathlib
 import re
-import datetime
 
+import numpy as np
 import pandas as pd
 import yaml
 
-from aeon.dj_pipeline import acquisition, lab, subject
-from aeon.dj_pipeline import dict_to_uuid
-
+from aeon.dj_pipeline import acquisition, dict_to_uuid, lab, subject
+from aeon.io import api as io_api
 
 _weight_scale_rate = 100
 _weight_scale_nest = 1
@@ -32,14 +32,26 @@ def extract_epoch_metadata(experiment_name, metadata_yml_filepath):
     epoch_start = datetime.datetime.strptime(
         metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
     )
-    with open(metadata_yml_filepath, "r") as f:
-        experiment_setup = yaml.safe_load(f)
-    commit = experiment_setup.get("Commit", experiment_setup.get("Revision"))
+    experiment_setup: dict = (
+        io_api.load(
+            str(metadata_yml_filepath.parent),
+            acquisition._device_schema_mapping[experiment_name].Metadata,
+        )
+        .reset_index()
+        .to_dict("records")[0]
+    )
+
+    commit = experiment_setup.get("commit")
+    if isinstance(commit, float) and np.isnan(commit):
+        commit = experiment_setup["metadata"]["Revision"]
+    else:
+        commit = None
+
     assert commit, f'Neither "Commit" nor "Revision" found in {metadata_yml_filepath}'
     return {
         "experiment_name": experiment_name,
         "epoch_start": epoch_start,
-        "bonsai_workflow": experiment_setup["Workflow"],
+        "bonsai_workflow": experiment_setup["workflow"],
         "commit": commit,
         "metadata": experiment_setup,
         "metadata_file_path": metadata_yml_filepath,
@@ -61,8 +73,12 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     epoch_start = datetime.datetime.strptime(
         metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
     )
-    with open(metadata_yml_filepath, "r") as f:
-        experiment_setup = yaml.safe_load(f)
+
+    experiment_setup = io_api.load(
+        str(metadata_yml_filepath.parent),
+        acquisition._device_schema_mapping[experiment_name].Metadata,
+    )
+
     experiment_key = {"experiment_name": experiment_name}
     # Check if there has been any changes in the arena setup
     # by comparing the "Commit" against the most immediate preceding epoch
