@@ -18,6 +18,13 @@ class TestLoad(unittest.TestCase):
             end=pd.Timestamp('2022-06-06T13:00:49'))
         self.assertGreater(len(data), 0, "data range is empty")
 
+    def test_load_filter_nonchunked(self):
+        data = aeon.load(
+            './tests/data/nonmonotonic',
+            exp02.Metadata,
+            start=pd.Timestamp('2022-06-06T09:00:00'))
+        self.assertGreater(len(data), 0, "data range is empty")
+
     def test_load_monotonic(self):
         data = aeon.load('./tests/data/monotonic', exp02.Patch2.Encoder)
         self.assertTrue(data.index.is_monotonic_increasing)
