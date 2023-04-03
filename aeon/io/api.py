@@ -117,17 +117,16 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
         return pd.concat(dataframes)
 
     if start is not None or end is not None:
-        chunkfilter = chunk_range(start, end)
-        files = list(filter(lambda item: item[0][1] in chunkfilter, files))
-    else:
-        chunkfilter = None
+        chunk_start = chunk(start) if start is not None else pd.Timestamp.min
+        chunk_end = chunk(end) if end is not None else pd.Timestamp.max
+        files = list(filter(lambda item: chunk_start <= chunk(item[0][1]) <= chunk_end, files))
 
     if len(files) == 0:
         return _empty(reader.columns)
 
     data = pd.concat([reader.read(file) for _, file in files])
     _set_index(data)
-    if chunkfilter is not None:
+    if start is not None or end is not None:
         try:
             return data.loc[start:end]
         except KeyError:
@@ -139,5 +138,4 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
                 warnings.warn('data index for {0} contains duplicate keys!'.format(reader.pattern))
                 data = data[~data.index.duplicated(keep='first')]
             return data.loc[start:end]
-            return data
     return data
