@@ -123,17 +123,28 @@ def get_device_info(schema: DotMap) -> dict[dict]:
                 device_info[device_name]["stream_type"].append(stream_type)
                 device_info[device_name]["reader"].append(schema[device_name].__class__)
 
-    """Add a 'pattern' key with a value of e.g., ['{pattern}_State', '{pattern}_90', '{pattern}_32','{pattern}_35']"""
+    """Add a kwargs such as pattern, columns, extension, dtype 
+    e.g., {'pattern': '{pattern}_SubjectState',
+            'columns': ['id', 'weight', 'event'],
+            'extension': 'csv',
+            'dtype': None}"""
 
+    # Add a kwargs that includes pattern
     for device_name in device_info:
         if pattern := schema_dict[device_name].get("pattern"):
-            pattern = pattern.replace(device_name, "{pattern}")
-            device_info[device_name]["pattern"].append(pattern)
+            schema_dict[device_name]["pattern"] = pattern.replace(
+                device_name, "{pattern}"
+            )
+            device_info[device_name]["kwargs"].append(schema_dict[device_name])
         else:
             for stream_type in device_info[device_name]["stream_type"]:
                 pattern = schema_dict[device_name][stream_type]["pattern"]
-                pattern = pattern.replace(device_name, "{pattern}")
-                device_info[device_name]["pattern"].append(pattern)
+                schema_dict[device_name][stream_type]["pattern"] = pattern.replace(
+                    device_name, "{pattern}"
+                )
+                device_info[device_name]["kwargs"].append(
+                    schema_dict[device_name][stream_type]
+                )
 
     return device_info
 
