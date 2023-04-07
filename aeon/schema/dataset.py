@@ -121,3 +121,40 @@ def get_device_info(schema: DotMap) -> dict[dict]:
                 device_info[device_name]["pattern"].append(pattern)
 
     return device_info
+
+
+def add_device_type(schema: DotMap, metadata_yml_filepath: Path):
+    """Update device_info with device_type based on metadata.yml.
+
+    Args:
+        schema (DotMap): DotMap object (e.g., exp02)
+        metadata_yml_filepath (Path): Path to metadata.yml.
+
+    Returns:
+        device_info (dict): Updated device_info.
+    """
+    from aeon.io import api
+
+    meta_data = (
+        api.load(
+            str(metadata_yml_filepath.parent),
+            schema.Metadata,
+        )
+        .reset_index()
+        .to_dict("records")[0]["metadata"]
+    )
+
+    # Get device_type_mapper based on metadata.yml {'CameraTop': 'VideoSource', 'Patch1': 'Patch'}
+    device_type_mapper = {}
+    for item in meta_data.Devices:
+        device_type_mapper[item.Name] = item.Type
+
+    device_info = {
+        device_name: {
+            "device_type": device_type_mapper.get(device_name, None),
+            **device_info[device_name],
+        }
+        for device_name in device_info
+    }
+
+    return device_info
