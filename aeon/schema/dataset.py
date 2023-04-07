@@ -99,6 +99,8 @@ def get_device_info(schema: DotMap) -> dict[dict]:
     import json
     from collections import defaultdict
 
+    from aeon.dj_pipeline import dict_to_uuid
+
     schema_json = json.dumps(schema, default=lambda o: o.__dict__, indent=4)
     schema_dict = json.loads(schema_json)
 
@@ -123,27 +125,40 @@ def get_device_info(schema: DotMap) -> dict[dict]:
                 device_info[device_name]["stream_type"].append(stream_type)
                 device_info[device_name]["reader"].append(schema[device_name].__class__)
 
-    """Add a kwargs such as pattern, columns, extension, dtype 
+    """Add a kwargs such as pattern, columns, extension, dtype and hash
     e.g., {'pattern': '{pattern}_SubjectState',
             'columns': ['id', 'weight', 'event'],
             'extension': 'csv',
             'dtype': None}"""
-
-    # Add a kwargs that includes pattern
     for device_name in device_info:
         if pattern := schema_dict[device_name].get("pattern"):
             schema_dict[device_name]["pattern"] = pattern.replace(
                 device_name, "{pattern}"
             )
-            device_info[device_name]["kwargs"].append(schema_dict[device_name])
+
+            # Add stream_reader_kwargs
+            kwargs = schema_dict[device_name]
+            device_info[device_name]["stream_reader_kwargs"].append(kwargs)
+            stream_reader = device_info[device_name]["stream_reader"]
+            # Add hash
+            device_info[device_name]["stream_hash"].append(
+                dict_to_uuid({**kwargs, "stream_reader": stream_reader})
+            )
+
         else:
             for stream_type in device_info[device_name]["stream_type"]:
                 pattern = schema_dict[device_name][stream_type]["pattern"]
                 schema_dict[device_name][stream_type]["pattern"] = pattern.replace(
                     device_name, "{pattern}"
                 )
-                device_info[device_name]["kwargs"].append(
-                    schema_dict[device_name][stream_type]
+                # Add stream_reader_kwargs
+                kwargs = schema_dict[device_name][stream_type]
+                device_info[device_name]["stream_reader_kwargs"].append(kwargs)
+                stream_ind = device_info[device_name]["stream_type"].index(stream_type)
+                stream_reader = device_info[device_name]["stream_reader"][stream_ind]
+                # Add hash
+                device_info[device_name]["stream_hash"].append(
+                    dict_to_uuid({**kwargs, "stream_reader": stream_reader})
                 )
 
     return device_info
