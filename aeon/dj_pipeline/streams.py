@@ -2,9 +2,11 @@ import inspect
 import re
 from collections import defaultdict, namedtuple
 from functools import cached_property
+from pathlib import Path
 
 import datajoint as dj
 import pandas as pd
+from dotmap import DotMap
 
 import aeon
 import aeon.schema.core as stream
@@ -21,11 +23,11 @@ schema_name = f'u_{dj.config["database.user"]}_streams'  # for testing
 schema = dj.schema(schema_name)
 
 
-# __all__ = [
-#     "StreamType",
-#     "DeviceType",
-#     "Device",
-# ]
+__all__ = [
+    "StreamType",
+    "DeviceType",
+    "Device",
+]
 
 
 # Read from this list of device configurations
@@ -85,63 +87,32 @@ class StreamType(dj.Lookup):
     """
 
     definition = """  # Catalog of all stream types used across Project Aeon
-    stream_type:            varchar(20)
+    stream_type          : varchar(20)
     ---
-    stream_reader:          varchar(256)     # name of the reader class found in `aeon_mecha` package (e.g. aeon.io.reader.Video)
-    stream_reader_kwargs:   longblob  # keyword arguments to instantiate the reader class
-    stream_description='':  varchar(256)
-    stream_hash:            uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
+    stream_reader        : varchar(256)     # name of the reader class found in `aeon_mecha` package (e.g. aeon.io.reader.Video)
+    stream_reader_kwargs : longblob  # keyword arguments to instantiate the reader class
+    stream_description='': varchar(256)
+    stream_hash          : uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
     unique index (stream_hash)
     """
 
-    @staticmethod
-    def get_stream_entries(device_streams: tuple, pattern="{pattern}") -> dict:
-
-        composite = aeon.io.device.compositeStream(pattern, *device_streams)
-        stream_entries = []
-        for stream_name, stream_reader in composite.items():
-            if stream_name == pattern:
-                stream_name = stream_reader.__class__.__name__
-            entry = {
-                "stream_type": stream_name,
-                "stream_reader": f"{stream_reader.__module__}.{stream_reader.__class__.__name__}",
-                "stream_reader_kwargs": {
-                    k: v
-                    for k, v in vars(stream_reader).items()
-                    if k
-                    in inspect.signature(stream_reader.__class__.__init__).parameters
-                },
-            }
-            entry["stream_hash"] = dict_to_uuid(
-                {
-                    **entry["stream_reader_kwargs"],
-                    "stream_reader": entry["stream_reader"],
-                }
-            )
-            stream_entries.append(entry)
-
-        return stream_entries
-
     @classmethod
-    def insert_streams(cls, device_configs: list[namedtuple] = []):
+    def insert_streams(cls, schema: DotMap):
 
-        if not device_configs:
-            device_configs = get_device_configs()
+        stream_entries = get_stream_entries(schema)
 
-        for device in device_configs:
-            stream_entries = cls.get_stream_entries(device.streams)
-            for entry in stream_entries:
-                q_param = cls & {"stream_hash": entry["stream_hash"]}
-                if q_param:  # If the specified stream type already exists
-                    pname = q_param.fetch1("stream_type")
-                    if pname != entry["stream_type"]:
-                        # If the existed stream type does not have the same name:
-                        #   human error, trying to add the same content with different name
-                        raise dj.DataJointError(
-                            f"The specified stream type already exists - name: {pname}"
-                        )
+        for entry in stream_entries:
+            q_param = cls & {"stream_hash": entry["stream_hash"]}
+            if q_param:  # If the specified stream type already exists
+                pname = q_param.fetch1("stream_type")
+                if pname != entry["stream_type"]:
+                    # If the existed stream type does not have the same name:
+                    #   human error, trying to add the same content with different name
+                    raise dj.DataJointError(
+                        f"The specified stream type already exists - name: {pname}"
+                    )
 
-            cls.insert(stream_entries, skip_duplicates=True)
+        cls.insert(stream_entries, skip_duplicates=True)
 
 
 @schema
@@ -423,25 +394,161 @@ class DeviceTableManager:
         self._schema.activate(schema_name)
 
 
-# Main function
-def main():
+def get_device_info(schema: DotMap) -> dict[dict]:
+    """
+    Read from the above DotMap object and returns a device dictionary as the following.
 
-    # Populate StreamType
-    StreamType.insert_streams()
+    Args:
+        schema (DotMap): DotMap object (e.g., exp02, octagon01)
 
-    # Populate DeviceType
-    DeviceType.insert_devices()
+    Returns:
+        device_info (dict[dict]): A dictionary of device information
 
-    # Populate device tables
-    tbmg = DeviceTableManager(context=inspect.currentframe().f_back.f_locals)
+        e.g.   {'CameraTop':
+                    {'stream_type': ['Video', 'Position', 'Region'],
+                        'reader': [
+                                    aeon.io.reader.Video,
+                                    aeon.io.reader.Position,
+                                    aeon.schema.foraging._RegionReader
+                                ],
+                        'pattern': ['{pattern}', '{pattern}_200', '{pattern}_201']
+                    }
+                }
+    """
+    import json
+    from collections import defaultdict
 
-    # # List all tables
-    # tbmg.device_tables
-    # tbmg.device_stream_tables
+    from aeon.dj_pipeline import dict_to_uuid
 
-    # Create device & device stream tables
-    tbmg.create_device_tables()
-    tbmg.create_device_stream_tables()
+    schema_json = json.dumps(schema, default=lambda o: o.__dict__, indent=4)
+    schema_dict = json.loads(schema_json)
+
+    device_info = {}
+
+    for device_name in schema:
+        if not device_name.startswith("_"):
+            device_info[device_name] = defaultdict(list)
+            if isinstance(schema[device_name], DotMap):
+                for stream_type in schema[device_name].keys():
+                    if schema[device_name][stream_type].__class__.__module__ in [
+                        "aeon.io.reader",
+                        "aeon.schema.foraging",
+                        "aeon.schema.octagon",
+                    ]:
+                        device_info[device_name]["stream_type"].append(stream_type)
+                        device_info[device_name]["reader"].append(
+                            schema[device_name][stream_type].__class__
+                        )
+            else:
+                stream_type = schema[device_name].__class__.__name__
+                device_info[device_name]["stream_type"].append(stream_type)
+                device_info[device_name]["reader"].append(schema[device_name].__class__)
+
+    """Add a kwargs such as pattern, columns, extension, dtype and hash
+    e.g., {'pattern': '{pattern}_SubjectState',
+            'columns': ['id', 'weight', 'event'],
+            'extension': 'csv',
+            'dtype': None}"""
+    for device_name in device_info:
+        if pattern := schema_dict[device_name].get("pattern"):
+            schema_dict[device_name]["pattern"] = pattern.replace(
+                device_name, "{pattern}"
+            )
+
+            # Add stream_reader_kwargs
+            kwargs = schema_dict[device_name]
+            device_info[device_name]["stream_reader_kwargs"].append(kwargs)
+            stream_reader = device_info[device_name]["stream_reader"]
+            # Add hash
+            device_info[device_name]["stream_hash"].append(
+                dict_to_uuid({**kwargs, "stream_reader": stream_reader})
+            )
+
+        else:
+            for stream_type in device_info[device_name]["stream_type"]:
+                pattern = schema_dict[device_name][stream_type]["pattern"]
+                schema_dict[device_name][stream_type]["pattern"] = pattern.replace(
+                    device_name, "{pattern}"
+                )
+                # Add stream_reader_kwargs
+                kwargs = schema_dict[device_name][stream_type]
+                device_info[device_name]["stream_reader_kwargs"].append(kwargs)
+                stream_ind = device_info[device_name]["stream_type"].index(stream_type)
+                stream_reader = device_info[device_name]["stream_reader"][stream_ind]
+                # Add hash
+                device_info[device_name]["stream_hash"].append(
+                    dict_to_uuid({**kwargs, "stream_reader": stream_reader})
+                )
+
+    return device_info
 
 
-# main()
+def add_device_type(schema: DotMap, metadata_yml_filepath: Path):
+    """Update device_info with device_type based on metadata.yml.
+
+    Args:
+        schema (DotMap): DotMap object (e.g., exp02)
+        metadata_yml_filepath (Path): Path to metadata.yml.
+
+    Returns:
+        device_info (dict): Updated device_info.
+    """
+    from aeon.io import api
+
+    meta_data = (
+        api.load(
+            str(metadata_yml_filepath.parent),
+            schema.Metadata,
+        )
+        .reset_index()
+        .to_dict("records")[0]["metadata"]
+    )
+
+    # Get device_type_mapper based on metadata.yml {'CameraTop': 'VideoSource', 'Patch1': 'Patch'}
+    device_type_mapper = {}
+    for item in meta_data.Devices:
+        device_type_mapper[item.Name] = item.Type
+
+    device_info = {
+        device_name: {
+            "device_type": device_type_mapper.get(device_name, None),
+            **device_info[device_name],
+        }
+        for device_name in device_info
+    }
+
+    return device_info
+
+
+def get_stream_entries(schema: DotMap) -> list[dict]:
+    """Returns a list of dictionaries containing the stream entries for a given device,
+
+    Args:
+        schema (DotMap): DotMap object (e.g., exp02, octagon01)
+
+    Returns:
+    stream_info (list[dict]): list of dictionaries containing the stream entries for a given device,
+
+        e.g. {'stream_type': 'EnvironmentState',
+        'stream_reader': aeon.io.reader.Csv,
+        'stream_reader_kwargs': {'pattern': '{pattern}_EnvironmentState',
+        'columns': ['state'],
+        'extension': 'csv',
+        'dtype': None}
+    """
+    device_info = get_device_info(schema)
+    return [
+        {
+            "stream_type": stream_type,
+            "stream_reader": stream_reader,
+            "stream_reader_kwargs": stream_reader_kwargs,
+            "stream_hash": stream_hash,
+        }
+        for stream_info in device_info.values()
+        for stream_type, stream_reader, stream_reader_kwargs, stream_hash in zip(
+            stream_info["stream_type"],
+            stream_info["stream_reader"],
+            stream_info["stream_reader_kwargs"],
+            stream_info["stream_hash"],
+        )
+    ]
