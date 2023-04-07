@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from dotmap import DotMap
 
 import aeon.schema.core as stream
@@ -63,9 +65,27 @@ octagon01 = DotMap(
 
 def get_device_info(schema: DotMap) -> dict[dict]:
     """
-    Read from the above DotMap object and returns device dictionary {device_name: {stream_name: reader}}
+    Read from the above DotMap object and returns a device dictionary as the following.
+
+    Args:
+        schema (DotMap): DotMap object (e.g., exp02)
+
+    e.g.   {'CameraTop':
+                {'stream_type': ['Video', 'Position', 'Region'],
+                    'reader': [
+                                aeon.io.reader.Video,
+                                aeon.io.reader.Position,
+                                aeon.schema.foraging._RegionReader
+                            ],
+                    'pattern': ['{pattern}', '{pattern}_200', '{pattern}_201']
+                }
+            }
     """
+    import json
     from collections import defaultdict
+
+    schema_json = json.dumps(schema, default=lambda o: o.__dict__, indent=4)
+    schema_dict = json.loads(schema_json)
 
     device_info = {}
 
@@ -87,4 +107,17 @@ def get_device_info(schema: DotMap) -> dict[dict]:
                 stream_type = schema[device_name].__class__.__name__
                 device_info[device_name]["stream_type"].append(stream_type)
                 device_info[device_name]["reader"].append(schema[device_name].__class__)
+
+    """Add a 'pattern' key with a value of e.g., ['{pattern}_State', '{pattern}_90', '{pattern}_32','{pattern}_35']"""
+
+    for device_name in device_info:
+        if pattern := schema_dict[device_name].get("pattern"):
+            pattern = pattern.replace(device_name, "{pattern}")
+            device_info[device_name]["pattern"].append(pattern)
+        else:
+            for stream_type in device_info[device_name]["stream_type"]:
+                pattern = schema_dict[device_name][stream_type]["pattern"]
+                pattern = pattern.replace(device_name, "{pattern}")
+                device_info[device_name]["pattern"].append(pattern)
+
     return device_info
