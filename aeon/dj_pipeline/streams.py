@@ -134,29 +134,39 @@ class DeviceType(dj.Lookup):
         """
 
     @classmethod
-    def insert_devices(cls, device_configs: list[namedtuple] = []):
-        if not device_configs:
-            device_configs = get_device_configs()
-        for device in device_configs:
-            stream_entries = StreamType.get_stream_entries(device.streams)
-            with cls.connection.transaction:
-                cls.insert1(
-                    {
-                        "device_type": device.type,
-                        "device_description": device.desc,
-                    },
-                    skip_duplicates=True,
-                )
-                cls.Stream.insert(
-                    [
+    def insert_device_types(cls, schema: DotMap, metadata_yml_filepath: Path):
+        """Use dataset.schema and metadata.yml to insert device types and streams. Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml."""
+        device_info = get_device_info(schema)
+        device_type_mapper = get_device_type(schema, metadata_yml_filepath)
+
+        device_info = {
+            device_name: {
+                "device_type": device_type_mapper.get(device_name, None),
+                **device_info[device_name],
+            }
+            for device_name in device_info
+        }
+
+        for device_name, info in device_info.items():
+            if info["device_type"]:
+                with cls.connections.transaction:
+                    cls.insert1(
                         {
-                            "device_type": device.type,
-                            "stream_type": e["stream_type"],
-                        }
-                        for e in stream_entries
-                    ],
-                    skip_duplicates=True,
-                )
+                            "device_type": info["device_type"],
+                            "device_description": "",
+                        },
+                        skip_duplicates=True,
+                    )
+                    cls.Stream.insert(
+                        [
+                            {
+                                "device_type": info["device_type"],
+                                "stream_type": e,
+                            }
+                            for e in info["stream_type"]
+                        ],
+                        skip_duplicates=True,
+                    )
 
 
 @schema
@@ -483,8 +493,8 @@ def get_device_info(schema: DotMap) -> dict[dict]:
     return device_info
 
 
-def add_device_type(schema: DotMap, metadata_yml_filepath: Path):
-    """Update device_info with device_type based on metadata.yml.
+def get_device_type(schema: DotMap, metadata_yml_filepath: Path):
+    """Returns a mapping dictionary between device name and device type based on the dataset schema and metadata.yml from the experiment.
 
     Args:
         schema (DotMap): DotMap object (e.g., exp02)
