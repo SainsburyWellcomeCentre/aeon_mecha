@@ -181,13 +181,6 @@ class Device(dj.Lookup):
 ## --------- Helper functions & classes --------- ##
 
 
-def get_device_configs(device_configs=DEVICE_CONFIGS) -> list[namedtuple]:
-    """Returns a list of device configurations from DEVICE_CONFIGS"""
-
-    device = namedtuple("device", "type desc streams")
-    return [device._make(c) for c in device_configs]
-
-
 def get_device_template(device_type):
     """Returns table class template for ExperimentDevice"""
     device_title = device_type
@@ -493,7 +486,7 @@ def get_device_info(schema: DotMap) -> dict[dict]:
     return device_info
 
 
-def get_device_type(schema: DotMap, metadata_yml_filepath: Path):
+def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
     """Returns a mapping dictionary between device name and device type based on the dataset schema and metadata.yml from the experiment.
 
     Args:
@@ -501,7 +494,8 @@ def get_device_type(schema: DotMap, metadata_yml_filepath: Path):
         metadata_yml_filepath (Path): Path to metadata.yml.
 
     Returns:
-        device_info (dict): Updated device_info.
+        device_type_mapper (dict): {"device_name", "device_type"}
+         e.g. {'CameraTop': 'VideoSource', 'Patch1': 'Patch'}
     """
     from aeon.io import api
 
@@ -514,20 +508,12 @@ def get_device_type(schema: DotMap, metadata_yml_filepath: Path):
         .to_dict("records")[0]["metadata"]
     )
 
-    # Get device_type_mapper based on metadata.yml {'CameraTop': 'VideoSource', 'Patch1': 'Patch'}
+    # Get device_type_mapper based on metadata.yml
     device_type_mapper = {}
     for item in meta_data.Devices:
         device_type_mapper[item.Name] = item.Type
 
-    device_info = {
-        device_name: {
-            "device_type": device_type_mapper.get(device_name, None),
-            **device_info[device_name],
-        }
-        for device_name in device_info
-    }
-
-    return device_info
+    return device_type_mapper
 
 
 def get_stream_entries(schema: DotMap) -> list[dict]:
