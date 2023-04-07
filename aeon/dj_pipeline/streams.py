@@ -1,6 +1,7 @@
 import inspect
+import json
 import re
-from collections import defaultdict, namedtuple
+from collections import defaultdict
 from functools import cached_property
 from pathlib import Path
 
@@ -9,9 +10,6 @@ import pandas as pd
 from dotmap import DotMap
 
 import aeon
-import aeon.schema.core as stream
-import aeon.schema.foraging as foraging
-import aeon.schema.octagon as octagon
 from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name
 from aeon.io import api as io_api
 
@@ -27,53 +25,6 @@ __all__ = [
     "StreamType",
     "DeviceType",
     "Device",
-]
-
-
-# Read from this list of device configurations
-# (device_type, description, streams)
-DEVICE_CONFIGS = [
-    (
-        "Camera",
-        "Camera device",
-        (stream.video, stream.position, foraging.region),
-    ),
-    ("Metadata", "Metadata", (stream.metadata,)),
-    (
-        "ExperimentalMetadata",
-        "ExperimentalMetadata",
-        (stream.environment, stream.messageLog),
-    ),
-    (
-        "NestScale",
-        "Weight scale at nest",
-        (foraging.weight,),
-    ),
-    (
-        "FoodPatch",
-        "Food patch",
-        (foraging.patch,),
-    ),
-    (
-        "Photodiode",
-        "Photodiode",
-        (octagon.photodiode,),
-    ),
-    (
-        "OSC",
-        "OSC",
-        (octagon.OSC,),
-    ),
-    (
-        "TaskLogic",
-        "TaskLogic",
-        (octagon.TaskLogic,),
-    ),
-    (
-        "Wall",
-        "Wall",
-        (octagon.Wall,),
-    ),
 ]
 
 
@@ -137,7 +88,7 @@ class DeviceType(dj.Lookup):
     def insert_device_types(cls, schema: DotMap, metadata_yml_filepath: Path):
         """Use dataset.schema and metadata.yml to insert device types and streams. Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml."""
         device_info = get_device_info(schema)
-        device_type_mapper = get_device_type(schema, metadata_yml_filepath)
+        device_type_mapper = get_device_mapper(schema, metadata_yml_filepath)
 
         device_info = {
             device_name: {
@@ -418,12 +369,7 @@ def get_device_info(schema: DotMap) -> dict[dict]:
                     }
                 }
     """
-    import json
-    from collections import defaultdict
-
-    from aeon.dj_pipeline import dict_to_uuid
-
-    schema_json = json.dumps(schema, default=lambda o: o.__dict__, indent=4)
+    schema_json = json.dumps(schema, default=lambda x: x.__dict__, indent=4)
     schema_dict = json.loads(schema_json)
 
     device_info = {}
