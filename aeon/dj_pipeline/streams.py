@@ -97,16 +97,19 @@ class DeviceType(dj.Lookup):
             }
             for device_name in device_info
         }
-
+        #! return only a list of device types that have been inserted.
         for device_name, info in device_info.items():
             if info["device_type"]:
+
+                if cls & {"device_type": info["device_type"]}:
+                    continue
+
                 with cls.connections.transaction:
                     cls.insert1(
                         {
                             "device_type": info["device_type"],
                             "device_description": "",
                         },
-                        skip_duplicates=True,
                     )
                     cls.Stream.insert(
                         [
@@ -116,7 +119,6 @@ class DeviceType(dj.Lookup):
                             }
                             for e in info["stream_type"]
                         ],
-                        skip_duplicates=True,
                     )
 
 
@@ -159,10 +161,10 @@ def get_device_template(device_type):
             definition = f"""
             -> master
             ---
-            {device_type}_remove_time: datetime(6)  # time of the camera being removed from this position
+            {device_type}_remove_time: datetime(6)  # time of the {device_type} being removed
             """
 
-    ExperimentDevice.__name__ = f"Experiment{device_title}"
+    ExperimentDevice.__name__ = f"{device_title}"
 
     return ExperimentDevice
 
@@ -171,7 +173,7 @@ def get_device_stream_template(device_type, stream_type):
     """Returns table class template for DeviceDataStream"""
 
     ExperimentDevice = get_device_template(device_type)
-    exp_device_table_name = f"Experiment{device_type}"
+    exp_device_table_name = f"{device_type}"
 
     # DeviceDataStream table(s)
     stream_detail = (
@@ -188,7 +190,7 @@ def get_device_stream_template(device_type, stream_type):
     stream = reader(**stream_detail["stream_reader_kwargs"])
 
     table_definition = f"""  # Raw per-chunk {stream_type} data stream from {device_type} (auto-generated with aeon_mecha-{aeon.__version__})
-        -> Experiment{device_type}
+        -> {device_type}
         -> acquisition.Chunk
         ---
         sample_count: int      # number of data points acquired from this stream for a given chunk
@@ -262,6 +264,8 @@ def get_device_stream_template(device_type, stream_type):
 
 
 class DeviceTableManager:
+
+    # TODO: Simplify this class.
     def __init__(self, context=None):
 
         if context is None:
@@ -360,7 +364,7 @@ def get_device_info(schema: DotMap) -> dict[dict]:
 
         e.g.   {'CameraTop':
                     {'stream_type': ['Video', 'Position', 'Region'],
-                        'reader': [
+                        'stream_reader': [
                                     aeon.io.reader.Video,
                                     aeon.io.reader.Position,
                                     aeon.schema.foraging._RegionReader
@@ -385,13 +389,15 @@ def get_device_info(schema: DotMap) -> dict[dict]:
                         "aeon.schema.octagon",
                     ]:
                         device_info[device_name]["stream_type"].append(stream_type)
-                        device_info[device_name]["reader"].append(
+                        device_info[device_name]["stream_reader"].append(
                             schema[device_name][stream_type].__class__
                         )
             else:
                 stream_type = schema[device_name].__class__.__name__
                 device_info[device_name]["stream_type"].append(stream_type)
-                device_info[device_name]["reader"].append(schema[device_name].__class__)
+                device_info[device_name]["stream_reader"].append(
+                    schema[device_name].__class__
+                )
 
     """Add a kwargs such as pattern, columns, extension, dtype and hash
     e.g., {'pattern': '{pattern}_SubjectState',
