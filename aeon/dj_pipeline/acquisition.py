@@ -12,7 +12,7 @@ from aeon.schema import dataset as aeon_schema
 
 from . import get_schema_name, lab, subject
 from .utils import paths
-from .utils.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
+from .utils.load_metadata import extract_epoch_config, ingest_epoch_metadata
 
 logger = dj.logger
 schema = dj.schema(get_schema_name("acquisition"))
@@ -303,7 +303,7 @@ class Epoch(dj.Manual):
             if experiment_name != "exp0.1-r0":
                 metadata_yml_filepath = epoch_dir / "Metadata.yml"
                 if metadata_yml_filepath.exists():
-                    epoch_config = extract_epoch_metadata(
+                    epoch_config = extract_epoch_config(
                         experiment_name, metadata_yml_filepath
                     )
 
