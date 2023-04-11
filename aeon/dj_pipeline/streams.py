@@ -439,7 +439,7 @@ def get_device_info(schema: DotMap) -> dict[dict]:
 
 
 def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
-    """Returns a mapping dictionary between device name and device type based on the dataset schema and metadata.yml from the experiment.
+    """Returns a mapping dictionary between device name and device type based on the dataset schema and metadata.yml from the experiment. Store the mapper dictionary and read from it if the type info doesn't exist in Metadata.yml.
 
     Args:
         schema (DotMap): DotMap object (e.g., exp02)
@@ -449,8 +449,11 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
         device_type_mapper (dict): {"device_name", "device_type"}
          e.g. {'CameraTop': 'VideoSource', 'Patch1': 'Patch'}
     """
+    import os
+
     from aeon.io import api
 
+    metadata_yml_filepath = Path(metadata_yml_filepath)
     meta_data = (
         api.load(
             str(metadata_yml_filepath.parent),
@@ -460,10 +463,27 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
         .to_dict("records")[0]["metadata"]
     )
 
-    # Get device_type_mapper based on metadata.yml
+    # Store the mapper dictionary here
+    repository_root = (
+        os.popen("git rev-parse --show-toplevel").read().strip()
+    )  # repo root path
+    filename = Path(
+        repository_root + "/aeon/dj_pipeline/create_experiments/device_type_mapper.json"
+    )
+
     device_type_mapper = {}
-    for item in meta_data.Devices:
-        device_type_mapper[item.Name] = item.Type
+
+    if filename.is_file():
+        with filename.open("r") as f:
+            device_type_mapper = json.load(f)
+
+    try:  # if the device type is not in the mapper, add it
+        for item in meta_data.Devices:
+            device_type_mapper[item.Name] = item.Type
+        with filename.open("w") as f:
+            json.dump(device_type_mapper, f)
+    except AttributeError:
+        pass
 
     return device_type_mapper
 
