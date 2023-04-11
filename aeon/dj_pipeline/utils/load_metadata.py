@@ -2,9 +2,12 @@ import datetime
 import json
 import pathlib
 import re
+from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from dotmap import DotMap
 
 from aeon.dj_pipeline import acquisition, dict_to_uuid, lab, streams, subject
 from aeon.io import api as io_api
@@ -29,13 +32,25 @@ def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
 
 def ingest_streams():
     """Insert into stream.streamType table all streams in the dataset schema."""
-    from dotmap import DotMap
-
     from aeon.schema import dataset
 
     schemas = [v for v in dataset.__dict__.values() if isinstance(v, DotMap)]
     for schema in schemas:
-        streams.StreamType.insert_streams(schema)
+
+        stream_entries = get_stream_entries(schema)
+
+        for entry in stream_entries:
+            q_param = streams.StreamType & {"stream_hash": entry["stream_hash"]}
+            if q_param:  # If the specified stream type already exists
+                pname = q_param.fetch1("stream_type")
+                if pname != entry["stream_type"]:
+                    # If the existed stream type does not have the same name:
+                    # human error, trying to add the same content with different name
+                    raise dj.DataJointError(
+                        f"The specified stream type already exists - name: {pname}"
+                    )
+
+        streams.StreamType.insert(stream_entries, skip_duplicates=True)
 
 
 def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> dict:
@@ -412,3 +427,177 @@ def ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath):
             experiment_table.insert1(
                 (experiment_name, device_sn, epoch_start, device_name)
             )
+
+
+# region Get stream & device information
+def get_device_info(schema: DotMap) -> dict[dict]:
+    """
+    Read from the above DotMap object and returns a device dictionary as the following.
+
+    Args:
+        schema (DotMap): DotMap object (e.g., exp02, octagon01)
+
+    Returns:
+        device_info (dict[dict]): A dictionary of device information
+
+        e.g.   {'CameraTop':
+                    {'stream_type': ['Video', 'Position', 'Region'],
+                        'stream_reader': [
+                                    aeon.io.reader.Video,
+                                    aeon.io.reader.Position,
+                                    aeon.schema.foraging._RegionReader
+                                ],
+                        'pattern': ['{pattern}', '{pattern}_200', '{pattern}_201']
+                    }
+                }
+    """
+    schema_json = json.dumps(schema, default=lambda x: x.__dict__, indent=4)
+    schema_dict = json.loads(schema_json)
+
+    device_info = {}
+
+    for device_name in schema:
+        if not device_name.startswith("_"):
+            device_info[device_name] = defaultdict(list)
+            if isinstance(schema[device_name], DotMap):
+                for stream_type in schema[device_name].keys():
+                    if schema[device_name][stream_type].__class__.__module__ in [
+                        "aeon.io.reader",
+                        "aeon.schema.foraging",
+                        "aeon.schema.octagon",
+                    ]:
+                        device_info[device_name]["stream_type"].append(stream_type)
+                        device_info[device_name]["stream_reader"].append(
+                            schema[device_name][stream_type].__class__
+                        )
+            else:
+                stream_type = schema[device_name].__class__.__name__
+                device_info[device_name]["stream_type"].append(stream_type)
+                device_info[device_name]["stream_reader"].append(
+                    schema[device_name].__class__
+                )
+
+    """Add a kwargs such as pattern, columns, extension, dtype and hash
+    e.g., {'pattern': '{pattern}_SubjectState',
+            'columns': ['id', 'weight', 'event'],
+            'extension': 'csv',
+            'dtype': None}"""
+    for device_name in device_info:
+        if pattern := schema_dict[device_name].get("pattern"):
+            schema_dict[device_name]["pattern"] = pattern.replace(
+                device_name, "{pattern}"
+            )
+
+            # Add stream_reader_kwargs
+            kwargs = schema_dict[device_name]
+            device_info[device_name]["stream_reader_kwargs"].append(kwargs)
+            stream_reader = device_info[device_name]["stream_reader"]
+            # Add hash
+            device_info[device_name]["stream_hash"].append(
+                dict_to_uuid({**kwargs, "stream_reader": stream_reader})
+            )
+
+        else:
+            for stream_type in device_info[device_name]["stream_type"]:
+                pattern = schema_dict[device_name][stream_type]["pattern"]
+                schema_dict[device_name][stream_type]["pattern"] = pattern.replace(
+                    device_name, "{pattern}"
+                )
+                # Add stream_reader_kwargs
+                kwargs = schema_dict[device_name][stream_type]
+                device_info[device_name]["stream_reader_kwargs"].append(kwargs)
+                stream_ind = device_info[device_name]["stream_type"].index(stream_type)
+                stream_reader = device_info[device_name]["stream_reader"][stream_ind]
+                # Add hash
+                device_info[device_name]["stream_hash"].append(
+                    dict_to_uuid({**kwargs, "stream_reader": stream_reader})
+                )
+
+    return device_info
+
+
+def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
+    """Returns a mapping dictionary between device name and device type based on the dataset schema and metadata.yml from the experiment. Store the mapper dictionary and read from it if the type info doesn't exist in Metadata.yml.
+
+    Args:
+        schema (DotMap): DotMap object (e.g., exp02)
+        metadata_yml_filepath (Path): Path to metadata.yml.
+
+    Returns:
+        device_type_mapper (dict): {"device_name", "device_type"}
+         e.g. {'CameraTop': 'VideoSource', 'Patch1': 'Patch'}
+    """
+    import os
+
+    from aeon.io import api
+
+    metadata_yml_filepath = Path(metadata_yml_filepath)
+    meta_data = (
+        api.load(
+            str(metadata_yml_filepath.parent),
+            schema.Metadata,
+        )
+        .reset_index()
+        .to_dict("records")[0]["metadata"]
+    )
+
+    # Store the mapper dictionary here
+    repository_root = (
+        os.popen("git rev-parse --show-toplevel").read().strip()
+    )  # repo root path
+    filename = Path(
+        repository_root + "/aeon/dj_pipeline/create_experiments/device_type_mapper.json"
+    )
+
+    device_type_mapper = {}
+
+    if filename.is_file():
+        with filename.open("r") as f:
+            device_type_mapper = json.load(f)
+
+    try:  # if the device type is not in the mapper, add it
+        for item in meta_data.Devices:
+            device_type_mapper[item.Name] = item.Type
+        with filename.open("w") as f:
+            json.dump(device_type_mapper, f)
+    except AttributeError:
+        pass
+
+    return device_type_mapper
+
+
+def get_stream_entries(schema: DotMap) -> list[dict]:
+    """Returns a list of dictionaries containing the stream entries for a given device,
+
+    Args:
+        schema (DotMap): DotMap object (e.g., exp02, octagon01)
+
+    Returns:
+    stream_info (list[dict]): list of dictionaries containing the stream entries for a given device,
+
+        e.g. {'stream_type': 'EnvironmentState',
+        'stream_reader': aeon.io.reader.Csv,
+        'stream_reader_kwargs': {'pattern': '{pattern}_EnvironmentState',
+        'columns': ['state'],
+        'extension': 'csv',
+        'dtype': None}
+    """
+    device_info = get_device_info(schema)
+    return [
+        {
+            "stream_type": stream_type,
+            "stream_reader": stream_reader,
+            "stream_reader_kwargs": stream_reader_kwargs,
+            "stream_hash": stream_hash,
+        }
+        for stream_info in device_info.values()
+        for stream_type, stream_reader, stream_reader_kwargs, stream_hash in zip(
+            stream_info["stream_type"],
+            stream_info["stream_reader"],
+            stream_info["stream_reader_kwargs"],
+            stream_info["stream_hash"],
+        )
+    ]
+
+
+# endregion
