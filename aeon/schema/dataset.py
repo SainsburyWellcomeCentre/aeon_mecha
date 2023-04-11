@@ -6,6 +6,8 @@ import aeon.schema.octagon as octagon
 from aeon.io import reader
 from aeon.io.device import Device
 
+__all__ = ["exp02", "exp01", "octagon01", "presocial"]
+
 exp02 = DotMap(
     [
         Device("Metadata", stream.metadata),

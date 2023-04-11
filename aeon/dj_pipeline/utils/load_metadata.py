@@ -6,7 +6,7 @@ import re
 import numpy as np
 import pandas as pd
 
-from aeon.dj_pipeline import acquisition, dict_to_uuid, lab, subject
+from aeon.dj_pipeline import acquisition, dict_to_uuid, lab, streams, subject
 from aeon.io import api as io_api
 
 _weight_scale_rate = 100
@@ -25,6 +25,17 @@ def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
     acquisition.Experiment.Subject.insert(
         (subject.Subject * acquisition.Experiment).proj(), skip_duplicates=True
     )
+
+
+def ingest_streams():
+    """Insert into stream.streamType table all streams in the dataset schema."""
+    from dotmap import DotMap
+
+    from aeon.schema import dataset
+
+    schemas = [v for v in dataset.__dict__.values() if isinstance(v, DotMap)]
+    for schema in schemas:
+        streams.StreamType.insert_streams(schema)
 
 
 def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> dict:
