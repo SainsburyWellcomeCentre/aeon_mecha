@@ -65,43 +65,6 @@ class DeviceType(dj.Lookup):
         -> StreamType
         """
 
-    @classmethod
-    def insert_device_types(cls, schema: DotMap, metadata_yml_filepath: Path):
-        """Use dataset.schema and metadata.yml to insert device types and streams. Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml."""
-        device_info = get_device_info(schema)
-        device_type_mapper = get_device_mapper(schema, metadata_yml_filepath)
-
-        device_info = {
-            device_name: {
-                "device_type": device_type_mapper.get(device_name, None),
-                **device_info[device_name],
-            }
-            for device_name in device_info
-        }
-        # Return only a list of device types that have been inserted.
-        for device_name, info in device_info.items():
-            if info["device_type"]:
-
-                if cls & {"device_type": info["device_type"]}:
-                    continue
-
-                with cls.connections.transaction:
-                    cls.insert1(
-                        {
-                            "device_type": info["device_type"],
-                            "device_description": "",
-                        },
-                    )
-                    cls.Stream.insert(
-                        [
-                            {
-                                "device_type": info["device_type"],
-                                "stream_type": e,
-                            }
-                            for e in info["stream_type"]
-                        ],
-                    )
-
 
 @schema
 class Device(dj.Lookup):

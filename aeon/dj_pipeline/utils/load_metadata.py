@@ -31,7 +31,7 @@ def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
 
 
 def ingest_streams():
-    """Insert into stream.streamType table all streams in the dataset schema."""
+    """Insert into streams.streamType table all streams in the dataset schema."""
     from aeon.schema import dataset
 
     schemas = [v for v in dataset.__dict__.values() if isinstance(v, DotMap)]
@@ -51,6 +51,54 @@ def ingest_streams():
                     )
 
         streams.StreamType.insert(stream_entries, skip_duplicates=True)
+
+
+def insert_devices(schema: DotMap, metadata_yml_filepath: Path):
+    """Use dataset.schema and metadata.yml to insert into streams.DeviceType and streams.Device. Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml."""
+    device_info: dict[dict] = get_device_info(schema)
+    device_type_mapper, device_sn = get_device_mapper(schema, metadata_yml_filepath)
+
+    # Add device type to device_info.
+    device_info = {
+        device_name: {
+            "device_type": device_type_mapper.get(device_name, None),
+            **device_info[device_name],
+        }
+        for device_name in device_info
+    }
+    # Return only a list of device types that have been inserted.
+    for device_name, info in device_info.items():
+
+        if info["device_type"]:
+
+            streams.DeviceType.insert1(
+                {
+                    "device_type": info["device_type"],
+                    "device_description": "",
+                },
+                skip_duplicates=True,
+            )
+            streams.DeviceType.Stream.insert(
+                [
+                    {
+                        "device_type": info["device_type"],
+                        "stream_type": e,
+                    }
+                    for e in info["stream_type"]
+                ],
+                skip_duplicates=True,
+            )
+
+            if device_sn[device_name]:
+                if streams.Device & {"device_serial_number": device_sn[device_name]}:
+                    continue
+                streams.Device.insert1(
+                    {
+                        "device_serial_number": device_sn[device_name],
+                        "device_type": info["device_type"],
+                    },
+                    skip_duplicates=True,
+                )
 
 
 def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> dict:
@@ -526,6 +574,8 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
     Returns:
         device_type_mapper (dict): {"device_name", "device_type"}
          e.g. {'CameraTop': 'VideoSource', 'Patch1': 'Patch'}
+        device_sn (dict): {"device_name", "serial_number"}
+         e.g. {'CameraTop': '21053810'}
     """
     import os
 
@@ -549,7 +599,8 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
         repository_root + "/aeon/dj_pipeline/create_experiments/device_type_mapper.json"
     )
 
-    device_type_mapper = {}
+    device_type_mapper = {}  # {device_name: device_type}
+    device_sn = {}  # device serial number
 
     if filename.is_file():
         with filename.open("r") as f:
@@ -558,12 +609,15 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
     try:  # if the device type is not in the mapper, add it
         for item in meta_data.Devices:
             device_type_mapper[item.Name] = item.Type
+            device_sn[item.Name] = (
+                item.SerialNumber if not isinstance(item.SerialNumber, DotMap) else None
+            )
         with filename.open("w") as f:
             json.dump(device_type_mapper, f)
     except AttributeError:
         pass
 
-    return device_type_mapper
+    return device_type_mapper, device_sn
 
 
 def get_stream_entries(schema: DotMap) -> list[dict]:
