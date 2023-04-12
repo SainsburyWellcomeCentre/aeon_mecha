@@ -15,16 +15,9 @@ from aeon.io import api as io_api
 logger = dj.logger
 
 
-schema_name = f'u_{dj.config["database.user"]}_streams'  # for testing
-# schema_name = get_schema_name("streams")
+# schema_name = f'u_{dj.config["database.user"]}_streams'  # for testing
+schema_name = get_schema_name("streams")
 schema = dj.schema(schema_name)
-
-
-__all__ = [
-    "StreamType",
-    "DeviceType",
-    "Device",
-]
 
 
 @schema
@@ -75,7 +68,7 @@ class Device(dj.Lookup):
     """
 
 
-## --------- Helper functions & classes --------- ##
+# region Helper functions for creating device tables.
 
 
 def get_device_template(device_type):
@@ -208,8 +201,8 @@ def get_device_stream_template(device_type, stream_type):
 
 
 class DeviceTableManager:
+    """Class for managing device tables"""
 
-    # TODO: Simplify this class.
     def __init__(self, context=None):
 
         if context is None:
@@ -218,21 +211,13 @@ class DeviceTableManager:
             self.context = context
 
         self._schema = dj.schema(context=self.context)
-        self._device_tables = []
         self._device_stream_tables = []
-        self._device_types = DeviceType.fetch("device_type")
         self._device_stream_map = defaultdict(
             list
         )  # dictionary for showing hierarchical relationship between device type and stream type
 
-    def _add_device_tables(self):
-        for device_type in self._device_types:
-            table_name = f"Experiment{device_type}"
-            if table_name not in self._device_tables:
-                self._device_tables.append(table_name)
-
     def _add_device_stream_tables(self):
-        for device_type in self._device_types:
+        for device_type in self.device_tables:
             for stream_type in (
                 StreamType & (DeviceType.Stream & {"device_type": device_type})
             ).fetch("stream_type"):
@@ -243,18 +228,13 @@ class DeviceTableManager:
 
                 self._device_stream_map[device_type].append(stream_type)
 
-    @property
-    def device_types(self):
-        return self._device_types
-
     @cached_property
     def device_tables(self) -> list:
         """
         Name of the device tables to be created
         """
 
-        self._add_device_tables()
-        return self._device_tables
+        return list(DeviceType.fetch("device_type"))
 
     @cached_property
     def device_stream_tables(self) -> list:
@@ -271,9 +251,7 @@ class DeviceTableManager:
 
     def create_device_tables(self):
 
-        for device_table in self.device_tables:
-
-            device_type = re.sub(r"\bExperiment", "", device_table)
+        for device_type in self.device_tables:
 
             table_class = get_device_template(device_type)
 
@@ -294,3 +272,14 @@ class DeviceTableManager:
                 self._schema(table_class, context=self.context)
 
         self._schema.activate(schema_name)
+
+
+# endregion
+
+
+if __name__ == "__main__":
+
+    # Create device & device stream tables
+    tbmg = DeviceTableManager(context=inspect.currentframe().f_back.f_locals)
+    tbmg.create_device_tables()
+    tbmg.create_device_stream_tables()
