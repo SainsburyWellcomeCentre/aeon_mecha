@@ -578,6 +578,12 @@ def get_device_info(schema: DotMap) -> dict[dict]:
                         if k in required_args
                     }
                     device_info[device_name]["stream_reader_kwargs"].append(kwargs)
+                    # Add hash
+                    device_info[device_name]["stream_hash"].append(
+                        dict_to_uuid(
+                            {**kwargs, "stream_reader": _get_class_path(stream_obj)}
+                        )
+                    )
         else:
             stream_type = device.__class__.__name__
             device_info[device_name]["stream_type"].append(stream_type)
@@ -597,6 +603,11 @@ def get_device_info(schema: DotMap) -> dict[dict]:
                 k: v for k, v in schema_dict[device_name].items() if k in required_args
             }
             device_info[device_name]["stream_reader_kwargs"].append(kwargs)
+            # Add hash
+            device_info[device_name]["stream_hash"].append(
+                dict_to_uuid({**kwargs, "stream_reader": _get_class_path(device)})
+            )
+    return device_info
 
 
 def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
