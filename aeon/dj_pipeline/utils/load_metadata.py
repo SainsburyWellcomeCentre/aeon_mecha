@@ -11,7 +11,14 @@ import numpy as np
 import pandas as pd
 from dotmap import DotMap
 
-from aeon.dj_pipeline import acquisition, dict_to_uuid, lab, streams, subject
+from aeon.dj_pipeline import (
+    acquisition,
+    dict_to_uuid,
+    get_schema_name,
+    lab,
+    streams,
+    subject,
+)
 from aeon.io import api as io_api
 
 _weight_scale_rate = 100
@@ -56,52 +63,90 @@ def ingest_streams():
 
 
 def ingest_devices(schema: DotMap, metadata_yml_filepath: Path):
-    """Use dataset.schema and metadata.yml to insert into streams.DeviceType and streams.Device. Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml."""
+    """Use dataset.schema and metadata.yml to insert into streams.DeviceType and streams.Device. Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml. It then creates new device tables under streams schema."""
     device_info: dict[dict] = get_device_info(schema)
     device_type_mapper, device_sn = get_device_mapper(schema, metadata_yml_filepath)
 
-    # Add device type to device_info.
+    # Add device type to device_info. Only add if device types that are defined in Metadata.yml
     device_info = {
         device_name: {
-            "device_type": device_type_mapper.get(device_name, None),
+            "device_type": device_type_mapper.get(device_name),
             **device_info[device_name],
         }
         for device_name in device_info
+        if device_type_mapper.get(device_name)
     }
-    # Return only a list of device types that have been inserted.
-    for device_name, info in device_info.items():
 
-        if info["device_type"]:
+    # Create a map of device_type to stream_type.
+    device_stream_map: dict[list] = {}
 
-            streams.DeviceType.insert1(
-                {
-                    "device_type": info["device_type"],
-                    "device_description": "",
-                },
-                skip_duplicates=True,
-            )
-            streams.DeviceType.Stream.insert(
-                [
-                    {
-                        "device_type": info["device_type"],
-                        "stream_type": e,
-                    }
-                    for e in info["stream_type"]
-                ],
-                skip_duplicates=True,
-            )
+    for device_config in device_info.values():
+        device_type = device_config["device_type"]
+        stream_types = device_config["stream_type"]
 
-            if streams.Device & {"device_serial_number": device_sn[device_name]}:
-                continue
+        if device_type not in device_stream_map:
+            device_stream_map[device_type] = []
 
-            streams.Device.insert1(
-                {
-                    "device_serial_number": device_sn[device_name]
-                    or device_name,  #! insert device name if not exists
-                    "device_type": info["device_type"],
-                },
-                skip_duplicates=True,
-            )
+        for stream_type in stream_types:
+            if stream_type not in device_stream_map[device_type]:
+                device_stream_map[device_type].append(stream_type)
+
+    # List only new device & stream types that need to be inserted & created.
+    new_device_types = [
+        {"device_type": device_type}
+        for device_type in device_stream_map.keys()
+        if not streams.DeviceType & {"device_type": device_type}
+    ]
+
+    new_device_stream_types = [
+        {"device_type": device_type, "stream_type": stream_type}
+        for device_type, stream_list in device_stream_map.items()
+        for stream_type in stream_list
+        if not streams.DeviceType.Stream
+        & {"device_type": device_type, "stream_type": stream_type}
+    ]
+
+    new_devices = [
+        {
+            "device_serial_number": device_sn[device_name],
+            "device_type": device_config["device_type"],
+        }
+        for device_name, device_config in device_info.items()
+        if device_sn[device_name]
+        and not streams.Device & {"device_serial_number": device_sn[device_name]}
+    ]
+
+    # Insert new entries.
+    if new_device_types:
+        streams.DeviceType.insert(new_device_types)
+
+    if new_device_stream_types:
+        streams.DeviceType.Stream.insert(new_device_stream_types)
+
+    if new_devices:
+        streams.Device.insert(new_devices)
+
+    # Create tables.
+    context = inspect.currentframe().f_back.f_locals
+
+    for device_info in new_device_types:
+        table_class = streams.get_device_template(device_info["device_type"])
+        context[table_class.__name__] = table_class
+        streams.schema(table_class, context=context)
+
+    # Create device_type tables
+    for device_info in new_device_stream_types:
+        table_class = streams.get_device_stream_template(
+            device_info["device_type"], device_info["stream_type"]
+        )
+        context[table_class.__name__] = table_class
+        streams.schema(table_class, context=context)
+
+    streams.schema.activate(streams.schema_name, add_objects=context)
+    vm = dj.VirtualModule(streams.schema_name, streams.schema_name)
+    for k, v in vm.__dict__.items():
+        if "Table" in str(v.__class__):
+            streams.__dict__[k] = v
 
 
 def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> dict:
