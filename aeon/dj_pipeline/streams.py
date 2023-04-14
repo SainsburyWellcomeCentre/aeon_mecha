@@ -1,15 +1,8 @@
-import inspect
-import re
-from collections import defaultdict
-from functools import cached_property
-from pathlib import Path
-
 import datajoint as dj
 import pandas as pd
-from dotmap import DotMap
 
 import aeon
-from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name
+from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.io import api as io_api
 
 logger = dj.logger
@@ -71,7 +64,7 @@ class Device(dj.Lookup):
 # region Helper functions for creating device tables.
 
 
-def get_device_template(device_type):
+def get_device_template(device_type: str):
     """Returns table class template for ExperimentDevice"""
     device_title = device_type
     device_type = dj.utils.from_camel_case(device_type)
@@ -80,7 +73,7 @@ def get_device_template(device_type):
         definition = f"""
         # {device_title} placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-{aeon.__version__})
         -> acquisition.Experiment
-        -> Device
+        -> streams.Device
         {device_type}_install_time: datetime(6)   # time of the {device_type} placed and started operation at this position
         ---
         {device_type}_name: varchar(36)
@@ -106,7 +99,7 @@ def get_device_template(device_type):
     return ExperimentDevice
 
 
-def get_device_stream_template(device_type, stream_type):
+def get_device_stream_template(device_type: str, stream_type: str):
     """Returns table class template for DeviceDataStream"""
 
     ExperimentDevice = get_device_template(device_type)
@@ -200,86 +193,4 @@ def get_device_stream_template(device_type, stream_type):
     return DeviceDataStream
 
 
-class DeviceTableManager:
-    """Class for managing device tables"""
-
-    def __init__(self, context=None):
-
-        if context is None:
-            self.context = inspect.currentframe().f_back.f_locals
-        else:
-            self.context = context
-
-        self._schema = dj.schema(context=self.context)
-        self._device_stream_tables = []
-        self._device_stream_map = defaultdict(
-            list
-        )  # dictionary for showing hierarchical relationship between device type and stream type
-
-    def _add_device_stream_tables(self):
-        for device_type in self.device_tables:
-            for stream_type in (
-                StreamType & (DeviceType.Stream & {"device_type": device_type})
-            ).fetch("stream_type"):
-
-                table_name = f"{device_type}{stream_type}"
-                if table_name not in self._device_stream_tables:
-                    self._device_stream_tables.append(table_name)
-
-                self._device_stream_map[device_type].append(stream_type)
-
-    @cached_property
-    def device_tables(self) -> list:
-        """
-        Name of the device tables to be created
-        """
-
-        return list(DeviceType.fetch("device_type"))
-
-    @cached_property
-    def device_stream_tables(self) -> list:
-        """
-        Name of the device stream tables to be created
-        """
-        self._add_device_stream_tables()
-        return self._device_stream_tables
-
-    @cached_property
-    def device_stream_map(self) -> dict:
-        self._add_device_stream_tables()
-        return self._device_stream_map
-
-    def create_device_tables(self):
-
-        for device_type in self.device_tables:
-
-            table_class = get_device_template(device_type)
-
-            self.context[table_class.__name__] = table_class
-            self._schema(table_class, context=self.context)
-
-        self._schema.activate(schema_name)
-
-    def create_device_stream_tables(self):
-
-        for device_type in self.device_stream_map:
-
-            for stream_type in self.device_stream_map[device_type]:
-
-                table_class = get_device_stream_template(device_type, stream_type)
-
-                self.context[table_class.__name__] = table_class
-                self._schema(table_class, context=self.context)
-
-        self._schema.activate(schema_name)
-
-
 # endregion
-
-
-if __name__ == "__main__":
-
-    # Create device & device stream tables
-    tbmg = DeviceTableManager(context=inspect.currentframe().f_back.f_locals)
-    tbmg.create_device_tables()
-    tbmg.create_device_stream_tables()
