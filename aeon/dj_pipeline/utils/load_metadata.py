@@ -184,9 +184,10 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
         )
     )
 
-    devices: dict = {
-        d.pop("Name"): d for d in devices
-    }  # {deivce_name: device_config}  #! may not work for presocial
+    if isinstance(devices, list):  # In exp02, it is a list of dict. In presocial. It's a dict of dict.
+        devices: dict = {
+            d.pop("Name"): d for d in devices
+        }  # {deivce_name: device_config}
 
     return {
         "experiment_name": experiment_name,
