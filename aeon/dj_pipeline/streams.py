@@ -1,3 +1,5 @@
+import inspect
+
 import datajoint as dj
 import pandas as pd
 
@@ -11,6 +13,8 @@ logger = dj.logger
 # schema_name = f'u_{dj.config["database.user"]}_streams'  # for testing
 schema_name = get_schema_name("streams")
 schema = dj.schema(schema_name)
+
+schema.spawn_missing_classes()
 
 
 @schema
@@ -194,3 +198,25 @@ def get_device_stream_template(device_type: str, stream_type: str):
 
 
 # endregion
+
+
+def main():
+
+    context = inspect.currentframe().f_back.f_locals
+
+    # Create tables.
+    for device_info in (DeviceType).fetch(as_dict=True):
+        table_class = get_device_template(device_info["device_type"])
+        context[table_class.__name__] = table_class
+        schema(table_class, context=context)
+
+    # Create DeviceDataStream tables.
+    for device_info in (DeviceType.Stream).fetch(as_dict=True):
+        table_class = get_device_stream_template(
+            device_info["device_type"], device_info["stream_type"]
+        )
+        context[table_class.__name__] = table_class
+        schema(table_class, context=context)
+
+
+main()

@@ -39,7 +39,7 @@ def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
     )
 
 
-def ingest_streams():
+def insert_stream_types():
     """Insert into streams.streamType table all streams in the dataset schema."""
     from aeon.schema import dataset
 
@@ -62,7 +62,7 @@ def ingest_streams():
         streams.StreamType.insert(stream_entries, skip_duplicates=True)
 
 
-def ingest_devices(schema: DotMap, metadata_yml_filepath: Path):
+def insert_device_types(schema: DotMap, metadata_yml_filepath: Path):
     """Use dataset.schema and metadata.yml to insert into streams.DeviceType and streams.Device. Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml. It then creates new device tables under streams schema."""
     device_info: dict[dict] = get_device_info(schema)
     device_type_mapper, device_sn = get_device_mapper(schema, metadata_yml_filepath)
@@ -126,28 +126,6 @@ def ingest_devices(schema: DotMap, metadata_yml_filepath: Path):
     if new_devices:
         streams.Device.insert(new_devices)
 
-    # Create tables.
-    context = inspect.currentframe().f_back.f_locals
-
-    for device_info in new_device_types:
-        table_class = streams.get_device_template(device_info["device_type"])
-        context[table_class.__name__] = table_class
-        streams.schema(table_class, context=context)
-
-    # Create device_type tables
-    for device_info in new_device_stream_types:
-        table_class = streams.get_device_stream_template(
-            device_info["device_type"], device_info["stream_type"]
-        )
-        context[table_class.__name__] = table_class
-        streams.schema(table_class, context=context)
-
-    streams.schema.activate(streams.schema_name, add_objects=context)
-    vm = dj.VirtualModule(streams.schema_name, streams.schema_name)
-    for k, v in vm.__dict__.items():
-        if "Table" in str(v.__class__):
-            streams.__dict__[k] = v
-
 
 def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> dict:
     """Parse experiment metadata YAML file and extract epoch configuration.
@@ -208,6 +186,8 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     """
     from aeon.dj_pipeline import streams
 
+    streams = dj.VirtualModule("streams", get_schema_name("streams"))
+
     if experiment_name.startswith("oct"):
         ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath)
         return
@@ -233,11 +213,12 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     }  # May not be needed?
 
     # Insert into each device table
+    device_list = []
     for device_name, device_config in epoch_config["metadata"].items():
         if table := getattr(streams, device_config["Type"], None):
             device_sn = device_config.get("SerialNumber", device_config.get("PortName"))
             device_key = {"device_serial_number": device_sn}
-
+            device_list.append(device_key)
             if not (
                 table
                 & {
@@ -245,7 +226,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                     "device_serial_number": device_sn,
                 }
             ):
-
                 table_entry = {
                     "experiment_name": experiment_name,
                     "device_serial_number": device_sn,
@@ -271,11 +251,13 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
 
                 """Check if this camera is currently installed. If the same camera serial number is currently installed check for any changes in configuration. If not, skip this"""
                 current_device_query = (
-                    table.Attribute - table.RemovalTime & experiment_key & device_key
+                    table - table.RemovalTime & experiment_key & device_key
                 )
 
                 if current_device_query:
-                    current_device_config: list[dict] = current_device_query.fetch(
+                    current_device_config: list[dict] = (
+                        table.Attribute & current_device_query
+                    ).fetch(
                         "experiment_name",
                         "device_serial_number",
                         "attribute_name",
@@ -298,46 +280,26 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                         continue
 
                     # Remove old device
-                    table_removal_entry = [
-                        {
-                            **entry,
-                            f"{dj.utils.from_camel_case(table.__name__)}_removal_time": epoch_config[
-                                "epoch_start"
-                            ],
-                        }
-                        for entry in current_device_config
-                    ]
+                    table_removal_entry = {
+                        **table_entry,
+                        f"{dj.utils.from_camel_case(table.__name__)}_removal_time": epoch_config[
+                            "epoch_start"
+                        ],
+                    }
 
                 # Insert into table.
                 with table.connection.in_transaction:
                     table.insert1(table_entry)
                     table.Attribute.insert(table_attribute_entry)
-                    table.RemovalTime.insert(table_removal_entry)
+                    table.RemovalTime.insert1(
+                        table_removal_entry, ignore_extra_fields=True
+                    )
 
     # Remove the currently installed devices that are absent in this config
-    device_removal_list.extend(
-        (table - table.RemovalTime - device_list & experiment_key).fetch("KEY")
-    )
-
-    # Insert
-    # def insert():
-    #     lab.Camera.insert(camera_list, skip_duplicates=True)
-    #     acquisition.ExperimentCamera.RemovalTime.insert(camera_removal_list)
-    #     acquisition.ExperimentCamera.insert(camera_installation_list)
-    #     acquisition.ExperimentCamera.Position.insert(camera_position_list)
-    #     lab.FoodPatch.insert(patch_list, skip_duplicates=True)
-    #     acquisition.ExperimentFoodPatch.RemovalTime.insert(patch_removal_list)
-    #     acquisition.ExperimentFoodPatch.insert(patch_installation_list)
-    #     acquisition.ExperimentFoodPatch.Position.insert(patch_position_list)
-    #     lab.WeightScale.insert(weight_scale_list, skip_duplicates=True)
-    #     acquisition.ExperimentWeightScale.RemovalTime.insert(weight_scale_removal_list)
-    #     acquisition.ExperimentWeightScale.insert(weight_scale_installation_list)
-
-    # if acquisition.Experiment.connection.in_transaction:
-    #     insert()
-    # else:
-    #     with acquisition.Experiment.connection.transaction:
-    #         insert()
+    device_removal_list = (
+        table - table.RemovalTime - device_list & experiment_key
+    ).fetch("KEY")
+    table.RemovalTime.insert1(device_removal_list, ignore_extra_fields=True)
 
 
 # region Get stream & device information

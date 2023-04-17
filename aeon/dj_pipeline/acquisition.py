@@ -10,17 +10,17 @@ from aeon.io import api as io_api
 from aeon.io import reader as io_reader
 from aeon.schema import dataset as aeon_schema
 
-from . import get_schema_name, lab, subject
+from . import get_schema_name, lab, streams, subject
 from .utils import paths
 from .utils.load_metadata import (
     extract_epoch_config,
-    ingest_devices,
     ingest_epoch_metadata,
+    insert_device_types,
 )
 
 logger = dj.logger
 schema = dj.schema(get_schema_name("acquisition"))
-
+# streams = dj.VirtualModule("streams", get_schema_name("streams"))
 
 # ------------------- Some Constants --------------------------
 
@@ -354,10 +354,11 @@ class Epoch(dj.Manual):
                         cls.Config.insert1(epoch_config)
 
                         # Ingest streams.DeviceType, streams.Device and create device tables.
-                        ingest_devices(
+                        insert_device_types(
                             _device_schema_mapping[epoch_key["experiment_name"]],
                             metadata_yml_filepath,
                         )
+                        streams.main()
 
                         ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
                     epoch_list.append(epoch_key)
