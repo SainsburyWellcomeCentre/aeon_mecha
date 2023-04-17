@@ -515,8 +515,9 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
         for item in meta_data.Devices:
             device_type_mapper[item.Name] = item.Type
             device_sn[item.Name] = (
-                item.SerialNumber if not isinstance(item.SerialNumber, DotMap) else None
-            )
+                item.SerialNumber or item.PortName or None
+            )  # assign either the serial number (if it exists) or port name. If neither exists, assign None
+
         with filename.open("w") as f:
             json.dump(device_type_mapper, f)
     except AttributeError:
