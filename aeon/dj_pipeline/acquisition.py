@@ -352,16 +352,24 @@ class Epoch(dj.Manual):
                     cls.insert1(epoch_key)
                     if epoch_config:
                         cls.Config.insert1(epoch_config)
-
+                if metadata_yml_filepath and metadata_yml_filepath.exists():
+                    try:
                         # Ingest streams.DeviceType, streams.Device and create device tables.
                         insert_device_types(
                             _device_schema_mapping[epoch_key["experiment_name"]],
                             metadata_yml_filepath,
                         )
                         streams.main()
+                        with cls.connection.transaction:
+                            ingest_epoch_metadata(
+                                experiment_name, metadata_yml_filepath
+                            )
+                        epoch_list.append(epoch_key)
+                    except Exception as e:
+                        (cls.Config & epoch_key).delete_quick()
+                        (cls & epoch_key).delete_quick()
+                        raise e
 
-                        ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
-                    epoch_list.append(epoch_key)
             # update previous epoch
             if (
                 previous_epoch_key
