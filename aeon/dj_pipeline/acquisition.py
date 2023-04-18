@@ -10,7 +10,7 @@ from aeon.io import api as io_api
 from aeon.io import reader as io_reader
 from aeon.schema import dataset as aeon_schema
 
-from . import get_schema_name, lab, streams, subject
+from . import get_schema_name, lab, subject
 from .utils import paths
 from .utils.load_metadata import (
     extract_epoch_config,
@@ -275,6 +275,7 @@ class Epoch(dj.Manual):
          - if not specified, ingest all epochs
         Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S"
         """
+        from aeon.dj_pipeline import acquisition, streams
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)

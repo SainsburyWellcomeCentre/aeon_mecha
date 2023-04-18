@@ -137,6 +137,7 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
     Returns:
         dict: epoch_config [dict]
     """
+    
     metadata_yml_filepath = pathlib.Path(metadata_yml_filepath)
     epoch_start = datetime.datetime.strptime(
         metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
@@ -184,9 +185,8 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     + camera/patch location
     + patch, weightscale serial number
     """
-    from aeon.dj_pipeline import streams
 
-    streams = dj.VirtualModule("streams", get_schema_name("streams"))
+    # streams = dj.VirtualModule("streams", get_schema_name("streams"))
 
     if experiment_name.startswith("oct"):
         ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath)
@@ -214,92 +214,87 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
 
     # Insert into each device table
     device_list = []
+    device_removal_list = []
+    
     for device_name, device_config in epoch_config["metadata"].items():
         if table := getattr(streams, device_config["Type"], None):
             device_sn = device_config.get("SerialNumber", device_config.get("PortName"))
             device_key = {"device_serial_number": device_sn}
-            device_list.append(device_key)
-            if not (
-                table
-                & {
-                    "experiment_name": experiment_name,
-                    "device_serial_number": device_sn,
-                }
-            ):
-                table_entry = {
-                    "experiment_name": experiment_name,
-                    "device_serial_number": device_sn,
-                    f"{dj.utils.from_camel_case(table.__name__)}_install_time": epoch_config[
-                        "epoch_start"
-                    ],
-                    f"{dj.utils.from_camel_case(table.__name__)}_name": device_name,
-                }
 
-                table_attribute_entry = [
+            device_list.append(device_key)
+            table_entry = {
+                "experiment_name": experiment_name,
+                **device_key,
+                f"{dj.utils.from_camel_case(table.__name__)}_install_time": epoch_config[
+                    "epoch_start"
+                ],
+                f"{dj.utils.from_camel_case(table.__name__)}_name": device_name,
+            }
+
+            table_attribute_entry = [
+                {
+                    **table_entry,
+                    "attribute_name": attribute_name,
+                    "attribute_value": attribute_value,
+                }
+                for attribute_name, attribute_value in device_config.items()
+            ]
+
+            """Check if this camera is currently installed. If the same camera serial number is currently installed check for any changes in configuration. If not, skip this"""
+            current_device_query = (
+                table - table.RemovalTime & experiment_key & device_key
+            )
+
+            if current_device_query:
+                current_device_config: list[dict] = (
+                    table.Attribute & current_device_query
+                ).fetch(
+                    "experiment_name",
+                    "device_serial_number",
+                    "attribute_name",
+                    "attribute_value",
+                    as_dict=True,
+                )
+                new_device_config: list[dict] = [
                     {
-                        "experiment_name": experiment_name,
-                        "device_serial_number": device_sn,
-                        f"{dj.utils.from_camel_case(table.__name__)}_install_time": epoch_config[
-                            "epoch_start"
-                        ],
-                        f"{dj.utils.from_camel_case(table.__name__)}_name": device_name,
-                        "attribute_name": attribute_name,
-                        "attribute_value": attribute_value,
+                        k: v
+                        for k, v in entry.items()
+                        if k
+                        != f"{dj.utils.from_camel_case(table.__name__)}_install_time"
                     }
-                    for attribute_name, attribute_value in device_config.items()
+                    for entry in table_attribute_entry
                 ]
 
-                """Check if this camera is currently installed. If the same camera serial number is currently installed check for any changes in configuration. If not, skip this"""
-                current_device_query = (
-                    table - table.RemovalTime & experiment_key & device_key
-                )
+                if dict_to_uuid(current_device_config) == dict_to_uuid(
+                    new_device_config
+                ):  # Skip if none of the configuration has changed.
+                    continue
 
-                if current_device_query:
-                    current_device_config: list[dict] = (
-                        table.Attribute & current_device_query
-                    ).fetch(
-                        "experiment_name",
-                        "device_serial_number",
-                        "attribute_name",
-                        "attribute_value",
-                        as_dict=True,
-                    )
-                    new_device_config: list[dict] = [
-                        {
-                            k: v
-                            for k, v in entry.items()
-                            if k
-                            != f"{dj.utils.from_camel_case(table.__name__)}_install_time"
-                        }
-                        for entry in table_attribute_entry
-                    ]
+                # Remove old device
+                table_removal_entry = {
+                    **table_entry,
+                    f"{dj.utils.from_camel_case(table.__name__)}_removal_time": epoch_config[
+                        "epoch_start"
+                    ],
+                }
 
-                    if dict_to_uuid(current_device_config) == dict_to_uuid(
-                        new_device_config
-                    ):  # Skip if none of the configuration has changed.
-                        continue
-
-                    # Remove old device
-                    table_removal_entry = {
-                        **table_entry,
-                        f"{dj.utils.from_camel_case(table.__name__)}_removal_time": epoch_config[
-                            "epoch_start"
-                        ],
-                    }
-
-                # Insert into table.
-                with table.connection.in_transaction:
-                    table.insert1(table_entry)
-                    table.Attribute.insert(table_attribute_entry)
+            # Insert into table.
+            with table.connection.in_transaction:
+                table.insert1(table_entry, skip_duplicates=True)
+                table.Attribute.insert(table_attribute_entry, ignore_extra_fields=True)
+                try:
                     table.RemovalTime.insert1(
                         table_removal_entry, ignore_extra_fields=True
                     )
+                except NameError:
+                    pass
 
-    # Remove the currently installed devices that are absent in this config
-    device_removal_list = (
-        table - table.RemovalTime - device_list & experiment_key
-    ).fetch("KEY")
-    table.RemovalTime.insert1(device_removal_list, ignore_extra_fields=True)
+            # Remove the currently installed devices that are absent in this config
+            device_removal_list = (
+                table - table.RemovalTime - device_list & experiment_key
+            ).fetch("KEY")
+            if device_removal_list:
+                table.RemovalTime.insert(device_removal_list, ignore_extra_fields=True)
 
 
 # region Get stream & device information

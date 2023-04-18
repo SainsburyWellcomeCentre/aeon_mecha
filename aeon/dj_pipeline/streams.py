@@ -217,6 +217,3 @@ def main():
         )
         context[table_class.__name__] = table_class
         schema(table_class, context=context)
-
-
-main()
