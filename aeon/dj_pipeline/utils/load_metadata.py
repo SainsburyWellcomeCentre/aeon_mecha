@@ -183,8 +183,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     Make entries into device tables
     """
 
-    # streams = dj.VirtualModule("streams", get_schema_name("streams"))
-
     if experiment_name.startswith("oct"):
         ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath)
         return
@@ -279,15 +277,8 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                 })
 
             # Insert into table.
-            with table.connection.in_transaction:
             table.insert1(table_entry, skip_duplicates=True)
             table.Attribute.insert(table_attribute_entry, ignore_extra_fields=True)
-                try:
-                    table.RemovalTime.insert1(
-                        table_removal_entry, ignore_extra_fields=True
-                    )
-                except NameError:
-                    pass
 
     # Remove the currently installed devices that are absent in this config
     device_removal_list.extend(
@@ -464,7 +455,7 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
     )
 
     device_type_mapper = {}  # {device_name: device_type}
-    device_sn = {}  # device serial number
+    device_sn = {}  # {device_name: device_sn}
 
     if filename.is_file():
         with filename.open("r") as f:
@@ -472,10 +463,15 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
 
     try:  # if the device type is not in the mapper, add it
         for item in meta_data.Devices:
-            device_type_mapper[item.Name] = item.Type
-            device_sn[item.Name] = (
-                item.SerialNumber or item.PortName or None
-            )  # assign either the serial number (if it exists) or port name. If neither exists, assign None
+            if isinstance(item, DotMap):
+                device_type_mapper[item.Name] = item.Type
+                device_sn[item.Name] = (
+                    item.SerialNumber or item.PortName or None
+                )  # assign either the serial number (if it exists) or port name. If neither exists, assign None
+            elif isinstance(item, str): # presocial
+                if meta_data.Devices[item].get("Type"):
+                    device_type_mapper[item] = meta_data.Devices[item].get("Type")
+                device_sn[item] = meta_data.Devices[item].get("SerialNumber") or meta_data.Devices[item].get("PortName") or None
 
         with filename.open("w") as f:
             json.dump(device_type_mapper, f)
