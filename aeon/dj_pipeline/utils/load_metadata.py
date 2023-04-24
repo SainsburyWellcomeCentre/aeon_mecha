@@ -260,29 +260,28 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                     {
                         k: v
                         for k, v in entry.items()
-                        if k
-                        != f"{dj.utils.from_camel_case(table.__name__)}_install_time"
+                        if dj.utils.from_camel_case(table.__name__) not in k
                     }
                     for entry in table_attribute_entry
                 ]
 
-                if dict_to_uuid(current_device_config) == dict_to_uuid(
-                    new_device_config
+                if dict_to_uuid({config["attribute_name"]: config["attribute_value"] for config in current_device_config}) == dict_to_uuid(
+                    {config["attribute_name"]: config["attribute_value"] for config in new_device_config}
                 ):  # Skip if none of the configuration has changed.
                     continue
 
                 # Remove old device
-                table_removal_entry = {
-                    **table_entry,
+                device_removal_list.append({
+                    **current_device_query.fetch1("KEY"),
                     f"{dj.utils.from_camel_case(table.__name__)}_removal_time": epoch_config[
                         "epoch_start"
                     ],
-                }
+                })
 
             # Insert into table.
             with table.connection.in_transaction:
-                table.insert1(table_entry, skip_duplicates=True)
-                table.Attribute.insert(table_attribute_entry, ignore_extra_fields=True)
+            table.insert1(table_entry, skip_duplicates=True)
+            table.Attribute.insert(table_attribute_entry, ignore_extra_fields=True)
                 try:
                     table.RemovalTime.insert1(
                         table_removal_entry, ignore_extra_fields=True
@@ -290,12 +289,13 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                 except NameError:
                     pass
 
-            # Remove the currently installed devices that are absent in this config
-            device_removal_list = (
-                table - table.RemovalTime - device_list & experiment_key
-            ).fetch("KEY")
-            if device_removal_list:
-                table.RemovalTime.insert(device_removal_list, ignore_extra_fields=True)
+    # Remove the currently installed devices that are absent in this config
+    device_removal_list.extend(
+        (table - table.RemovalTime - device_list & experiment_key
+    ).fetch("KEY"))
+    
+    if device_removal_list:
+        table.RemovalTime.insert(device_removal_list, ignore_extra_fields=True)
 
 
 # region Get stream & device information
