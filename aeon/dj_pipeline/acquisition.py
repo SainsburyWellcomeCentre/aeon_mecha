@@ -360,7 +360,7 @@ class Epoch(dj.Manual):
                             _device_schema_mapping[epoch_key["experiment_name"]],
                             metadata_yml_filepath,
                         )
-                        streams.main()
+                        streams.main()  # create device tables under streams schema
                         with cls.connection.transaction:
                             ingest_epoch_metadata(
                                 experiment_name, metadata_yml_filepath

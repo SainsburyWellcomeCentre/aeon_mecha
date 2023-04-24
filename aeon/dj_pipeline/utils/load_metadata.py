@@ -74,7 +74,7 @@ def insert_device_types(schema: DotMap, metadata_yml_filepath: Path):
             **device_info[device_name],
         }
         for device_name in device_info
-        if device_type_mapper.get(device_name)
+        if device_type_mapper.get(device_name) and device_sn.get(device_name)
     }
 
     # Create a map of device_type to stream_type.
@@ -180,10 +180,7 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
 
 def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     """
-    work-in-progress
-    Missing:
-    + camera/patch location
-    + patch, weightscale serial number
+    Make entries into device tables
     """
 
     # streams = dj.VirtualModule("streams", get_schema_name("streams"))
@@ -212,12 +209,16 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
         if name.endswith("Frequency")
     }  # May not be needed?
 
+    schema = acquisition._device_schema_mapping[experiment_name]
+    device_type_mapper, _ = get_device_mapper(schema, metadata_yml_filepath)
+    
     # Insert into each device table
     device_list = []
     device_removal_list = []
     
     for device_name, device_config in epoch_config["metadata"].items():
-        if table := getattr(streams, device_config["Type"], None):
+        if table := getattr(streams, device_type_mapper.get(device_name) or "", None):
+            
             device_sn = device_config.get("SerialNumber", device_config.get("PortName"))
             device_key = {"device_serial_number": device_sn}
 
