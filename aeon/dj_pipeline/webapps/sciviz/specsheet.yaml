@@ -36,7 +36,7 @@ SciViz:
 
   pages:
     Colony:
-      route: /colony_entry
+      route: /colony_page
       grids:
         grid1:
           type: fixed
@@ -68,6 +68,19 @@ SciViz:
                 - type: attribute
                   input: Note
                   destination: note
+            Colony:
+              route: /colony_page_table
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: antd-table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_lab):
+                    return {'query': aeon_lab.Colony(), 'fetch_args': []}
 
     Subjects:
       route: /subjects
@@ -422,7 +435,7 @@ SciViz:
                     return dict(**kwargs)
               dj_query: >
                 def dj_query(aeon_acquisition):
-                    q = aeon_acquisition.ExperimentCamera.proj('camera_description')
+                    q = dj.U('camera_description') & acquisition.ExperimentCamera
                     return {'query': q, 'fetch_args': ['camera_description']}
             time_range_selector:
               x: 0
