@@ -6,14 +6,15 @@ services:
   pharus:
     cpus: 2.0
     mem_limit: 4g
-    image: jverswijver/pharus:0.8.0py3.9
+    image: datajoint/pharus:0.8.4
     environment:
       # - FLASK_ENV=development # enables logging to console from Flask
-      - PHARUS_SPEC_PATH=/main/specs/specsheet.yaml # for dynamic utils spec
+      - PHARUS_SPEC_PATH=/main/specsheet.yaml # for dynamic utils spec
     user: ${HOST_UID}:anaconda
     volumes:
-      - ./specsheet.yaml:/main/specs/specsheet.yaml #copy the spec over to /main/specs/YOUR_SPEC_NAME
+      - ./specsheet.yaml:/main/specsheet.yaml #copy the spec over to /main/specs/YOUR_SPEC_NAME
       - ./apk_requirements.txt:/tmp/apk_requirements.txt
+      - /ceph/aeon/aeon:/ceph/aeon/aeon
     command:
       - sh
       - -c
@@ -29,11 +30,11 @@ services:
   sci-viz:
     cpus: 2.0
     mem_limit: 16g
-    image: jverswijver/sci-viz:1.1.1-bugfix2
+    image: datajoint/sci-viz:2.3.0
     environment:
       - CHOKIDAR_USEPOLLING=true
       - REACT_APP_DJSCIVIZ_BACKEND_PREFIX=/aeon/utils
-      - DJSCIVIZ_SPEC_PATH=specsheet.yaml
+      - DJSCIVIZ_SPEC_PATH=/main/specsheet.yaml
       - NODE_OPTIONS="--max-old-space-size=12000"
     volumes:
       - ./specsheet.yaml:/main/specsheet.yaml
@@ -43,10 +44,7 @@ services:
       - sh
       - -c
       - |
-        python frontend_gen.py
-        npm run build
-        mv ./build /usr/share/nginx/html
-        nginx -g "daemon off;"
+        sh sci-viz-hotreload-prod.sh
     networks:
       - main
   reverse-proxy:
