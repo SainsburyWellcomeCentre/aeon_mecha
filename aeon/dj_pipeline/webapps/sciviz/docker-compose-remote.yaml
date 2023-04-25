@@ -6,7 +6,7 @@ services:
   pharus:
     cpus: 2.0
     mem_limit: 4g
-    image: datajoint/pharus:0.8.4
+    image: jverswijver/pharus:0.8.0py3.9
     environment:
       # - FLASK_ENV=development # enables logging to console from Flask
       - PHARUS_SPEC_PATH=/main/specsheet.yaml # for dynamic utils spec
