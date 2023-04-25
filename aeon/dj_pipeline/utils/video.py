@@ -5,8 +5,6 @@ import pathlib
 import datetime
 import cv2
 
-from aeon.dj_pipeline import acquisition
-
 from aeon.io import api as io_api
 from aeon.io import video as io_video
 import aeon.io.reader as io_reader
@@ -22,6 +20,8 @@ def retrieve_video_frames(
     chunk_size=50,
     **kwargs,
 ):
+    from aeon.dj_pipeline import acquisition
+
     raw_data_dir = acquisition.Experiment.get_data_directory(
         {"experiment_name": experiment_name}
     )
