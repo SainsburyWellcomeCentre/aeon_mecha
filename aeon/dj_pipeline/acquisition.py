@@ -12,11 +12,6 @@ from aeon.schema import dataset as aeon_schema
 
 from . import get_schema_name, lab, subject
 from .utils import paths
-from .utils.load_metadata import (
-    extract_epoch_config,
-    ingest_epoch_metadata,
-    insert_device_types,
-)
 
 logger = dj.logger
 schema = dj.schema(get_schema_name("acquisition"))
@@ -275,7 +270,14 @@ class Epoch(dj.Manual):
          - if not specified, ingest all epochs
         Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S"
         """
-        from aeon.dj_pipeline import acquisition, streams
+        from aeon.dj_pipeline import streams
+
+        from .utils.load_metadata import (
+            extract_epoch_config,
+            ingest_epoch_metadata,
+            insert_device_types,
+        )
+        
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
@@ -354,13 +356,14 @@ class Epoch(dj.Manual):
                     if epoch_config:
                         cls.Config.insert1(epoch_config)
                 if metadata_yml_filepath and metadata_yml_filepath.exists():
+                    
                     try:
                         # Ingest streams.DeviceType, streams.Device and create device tables.
                         insert_device_types(
                             _device_schema_mapping[epoch_key["experiment_name"]],
                             metadata_yml_filepath,
                         )
-                        streams.main()  # create device tables under streams schema
+                        streams.main(context=streams.__dict__)  # create device tables under streams schema
                         with cls.connection.transaction:
                             ingest_epoch_metadata(
                                 experiment_name, metadata_yml_filepath
