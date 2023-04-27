@@ -182,7 +182,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     """
     Make entries into device tables
     """
-
+    
     if experiment_name.startswith("oct"):
         ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath)
         return
@@ -281,12 +281,18 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             table.Attribute.insert(table_attribute_entry, ignore_extra_fields=True)
 
     # Remove the currently installed devices that are absent in this config
-    device_removal_list.extend(
-        (table - table.RemovalTime - device_list & experiment_key
-    ).fetch("KEY"))
+    for device_type in streams.DeviceType.fetch("device_type"):
+        table = getattr(streams, device_type)
     
-    if device_removal_list:
-        table.RemovalTime.insert(device_removal_list, ignore_extra_fields=True)
+        device_removal_list.extend(
+            (table - table.RemovalTime - device_list & experiment_key
+        ).fetch("KEY"))
+        
+        if device_removal_list:
+            try:
+                table.RemovalTime.insert(device_removal_list, ignore_extra_fields=True)
+            except:
+                pass
 
 
 # region Get stream & device information
