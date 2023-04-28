@@ -281,20 +281,20 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             table.Attribute.insert(table_attribute_entry, ignore_extra_fields=True)
 
     # Remove the currently installed devices that are absent in this config
+    device_removal = lambda device_type, device_entry: any(dj.utils.      from_camel_case(device_type) in k for k in device_entry)  # returns True if the device type is found in the attribute name
+    
     for device_type in streams.DeviceType.fetch("device_type"):
         table = getattr(streams, device_type)
-    
+
         device_removal_list.extend(
             (table - table.RemovalTime - device_list & experiment_key
-        ).fetch("KEY"))
+        ).fetch("KEY"))  # could be VideoSource or Patch
         
-        if device_removal_list:
-            try:
-                table.RemovalTime.insert(device_removal_list, ignore_extra_fields=True)
-            except:
-                pass
-
-
+        for device_entry in device_removal_list:
+            if device_removal(device_type, device_entry):
+                table.RemovalTime.insert1(device_entry)
+            
+        
 # region Get stream & device information
 def get_stream_entries(schema: DotMap) -> list[dict]:
     """Returns a list of dictionaries containing the stream entries for a given device,
