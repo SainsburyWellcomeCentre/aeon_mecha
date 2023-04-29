@@ -1,7 +1,8 @@
 version: "v0.1.0"
 LabBook: null
 SciViz:
-  auth: True
+  auth:
+    mode: "database"
   component_interface:
     override: |
       from datetime import datetime
@@ -588,7 +589,7 @@ SciViz:
                   input: Arena Description
                   destination: arena_description
 
-            Subject Entry:
+            SubjectEntry:
               route: /subject_form
               x: 0
               y: 0.4
@@ -636,3 +637,23 @@ SciViz:
                 - type: table
                   input: Lab Location
                   destination: aeon_lab.Location
+
+            Experiment Subjet Entry:
+              route: /exp_subject_form
+              x: 0
+              y: 1.1
+              height: 0.4
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment.Subject
+
+            Experiment Directory Entry:
+              route: /exp_subject_dir_form
+              x: 0
+              y: 1.5
+              height: 0.4
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment.Directory
