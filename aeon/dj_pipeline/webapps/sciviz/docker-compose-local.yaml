@@ -7,19 +7,23 @@ services:
   pharus:
     cpus: 2.0
     mem_limit: 4g
-    image: datajoint/pharus:0.7.3
+    image: jverswijver/pharus:0.8.5-PY_VER-3.9
     environment:
       # - FLASK_ENV=development # enables logging to console from Flask
-      - PHARUS_SPEC_PATH=/main/specs/specsheet.yaml # for dynamic utils spec
+      - PHARUS_SPEC_PATH=/main/specsheet.yaml # for dynamic utils spec
       - PHARUS_MODE=DEV
-    user: ${HOST_UID}:anaconda
+    user: root
     volumes:
-      - ./specsheet.yaml:/main/specs/specsheet.yaml #copy the spec over to /main/specs/YOUR_SPEC_NAME
+      - ./specsheet.yaml:/main/specsheet.yaml #copy the spec over to /main/specs/YOUR_SPEC_NAME
       - ./apk_requirements.txt:/tmp/apk_requirements.txt
+      - /ceph/aeon/aeon:/ceph/aeon/aeon
     command:
       - sh
       - -c
       - |
+        apk add --update git g++ &&
+        git clone -b datajoint_pipeline https://github.com/ttngu207/aeon_mecha.git &&
+        pip install -e ./aeon_mecha &&
         pharus_update() {
             [ -z "$$GUNICORN_PID" ] || kill $$GUNICORN_PID
             gunicorn --bind 0.0.0.0:$${PHARUS_PORT} pharus.server:app &
@@ -47,13 +51,15 @@ services:
       - main
   sci-viz:
     cpus: 2.0
-    mem_limit: 4g
-    image: datajoint/sci-viz:1.1.1
+    mem_limit: 16g
+    image: datajoint/sci-viz:2.3.2
     environment:
       - CHOKIDAR_USEPOLLING=true
       - REACT_APP_DJSCIVIZ_BACKEND_PREFIX=/api
-      - DJSCIVIZ_SPEC_PATH=specsheet.yaml
+      - DJSCIVIZ_SPEC_PATH=/main/specsheet.yaml
       - DJSCIVIZ_MODE=DEV
+      - NODE_OPTIONS="--max-old-space-size=12000"
+    user: root
     volumes:
       - ./specsheet.yaml:/main/specsheet.yaml
     # ports:
@@ -62,31 +68,7 @@ services:
       - sh
       - -c
       - |
-        sciviz_update() {
-            [ -z "$$NGINX_PID" ] || kill $$NGINX_PID
-            rm -R /usr/share/nginx/html
-            python frontend_gen.py
-            yarn build
-            mv ./build /usr/share/nginx/html
-            nginx -g "daemon off;" &
-            NGINX_PID=$$!
-        }
-        sciviz_update
-        echo "[$$(date -u '+%Y-%m-%d %H:%M:%S')][DataJoint]: Monitoring SciViz updates..."
-        INIT_TIME=$$(date +%s)
-        LAST_MOD_TIME=$$(date -r $$DJSCIVIZ_SPEC_PATH +%s)
-        DELTA=$$(expr $$LAST_MOD_TIME - $$INIT_TIME)
-        while true; do
-           CURR_LAST_MOD_TIME=$$(date -r $$DJSCIVIZ_SPEC_PATH +%s)
-           CURR_DELTA=$$(expr $$CURR_LAST_MOD_TIME - $$INIT_TIME)
-           if [ "$$DELTA" -lt "$$CURR_DELTA" ]; then
-               echo "[$$(date -u '+%Y-%m-%d %H:%M:%S')][DataJoint]: Reloading SciViz since \`$$DJSCIVIZ_SPEC_PATH\` changed."
-               sciviz_update
-               DELTA=$$CURR_DELTA
-           else
-               sleep 5
-           fi
-        done
+        sh sci-viz-hotreload-dev.sh
     networks:
       - main
   fakeservices.datajoint.io:
@@ -98,10 +80,11 @@ services:
       - ADD_sciviz_TYPE=REST
       - ADD_sciviz_ENDPOINT=sci-viz:3000
       - ADD_sciviz_PREFIX=/
-      - HTTPS_PASSTHRU=TRUE
+      #      - HTTPS_PASSTHRU=TRUE
+      - DEPLOYMENT_PORT
     ports:
       - "443:443"
-      - "80:80"
+      - "${DEPLOYMENT_PORT:-80}:80"
     networks:
       - main
 networks:
