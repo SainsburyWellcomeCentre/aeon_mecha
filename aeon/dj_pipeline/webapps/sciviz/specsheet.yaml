@@ -1,7 +1,8 @@
 version: "v0.1.0"
 LabBook: null
 SciViz:
-  auth: True
+  auth:
+    mode: "database"
   component_interface:
     override: |
       from datetime import datetime
@@ -68,6 +69,16 @@ SciViz:
                 - type: attribute
                   input: Note
                   destination: note
+          # component_templates:
+          #   Colony Table:
+          #     route: /colony_meta
+          #     type: metadata
+          #     restriction: >
+          #       def restriction(**kwargs):
+          #           return dict(**kwargs)
+          #     dj_query: >
+          #       def dj_query(aeon_lab):
+          #           return dict(query=aeon_lab.Colony(), fetch_args=[])
 
     Subjects:
       route: /subjects
@@ -563,7 +574,7 @@ SciViz:
               route: /lab_form
               x: 0
               y: 0
-              height: 0.4
+              height: 0.5
               width: 1
               type: form
               tables:
@@ -591,7 +602,7 @@ SciViz:
             Subject Entry:
               route: /subject_form
               x: 0
-              y: 0.4
+              y: 0.5
               height: 0.3
               width: 1
               type: form
@@ -614,15 +625,15 @@ SciViz:
             Experiment Entry:
               route: /exp_form
               x: 0
-              y: 0.7
-              height: 0.4
+              y: 0.8
+              height: 0.5
               width: 1
               type: form
               tables:
                 - aeon_acquisition.Experiment
               map:
                 - type: attribute
-                  input: Experiment ID
+                  input: Experiment Name
                   destination: experiment_name
                 - type: attribute
                   input: Start Time
@@ -636,3 +647,47 @@ SciViz:
                 - type: table
                   input: Lab Location
                   destination: aeon_lab.Location
+                - type: attribute
+                  input: Experiment Type
+                  destination: experiment_type
+
+            Experiment Subject Entry:
+              route: /exp_subject_form
+              x: 0
+              y: 1.3
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment.Subject
+              map:
+                - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.Experiment
+                - type: table
+                  input: Subject in the experiment
+                  destination: aeon_subject.Subject
+
+            Experiment Directory Entry:
+              route: /exp_subject_dir_form
+              x: 0
+              y: 1.6
+              height: 0.3
+
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment.Directory
+              map:
+                - type: table
+                  input: Directory Type
+                  destination: aeon_acquisition.DirectoryType
+                - type: table
+                  input: Pipeline Repository
+                  destination: aeon_acquisition.PipelineRepository
+                - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.Experiment
+                - type: attribute
+                  input: Path to Experiment Directory
+                  destination: directory_path
