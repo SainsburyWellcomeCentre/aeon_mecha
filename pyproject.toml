@@ -92,3 +92,8 @@ exclude = '''
 [tool.isort]
 profile = "black"
 color_output = false
+
+[tool.pytest.ini_options]
+markers = [
+    "api",
+]
