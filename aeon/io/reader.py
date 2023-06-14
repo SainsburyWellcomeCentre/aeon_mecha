@@ -64,7 +64,7 @@ class Harp(Reader):
             buffer=data, offset=11,
             strides=(stride, elementsize))
 
-        if payloadshape[1] < len(self.columns):
+        if self.columns is not None and payloadshape[1] < len(self.columns):
             data = pd.DataFrame(payload, index=seconds, columns=self.columns[:payloadshape[1]])
             data[self.columns[payloadshape[1]:]] = math.nan
             return data
