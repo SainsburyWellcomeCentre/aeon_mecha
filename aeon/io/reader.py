@@ -146,6 +146,16 @@ class Log(Csv):
     def __init__(self, pattern):
         super().__init__(pattern, columns=['priority', 'type', 'message'])
 
+class Heartbeat(Harp):
+    """
+    Extract periodic heartbeat event data.
+    
+    Columns:
+        second (int): The whole second corresponding to the heartbeat, in seconds.
+    """
+    def __init__(self, pattern):
+        super().__init__(pattern, columns=['second'])
+
 class Encoder(Harp):
     """
     Extract magnetic encoder data.
