@@ -198,30 +198,10 @@ def get_device_stream_template(device_type: str, stream_type: str):
     return DeviceDataStream
 
 # endregion
-def get_device_table_definition(device_template):
-    """Returns table definition for ExperimentDevice.
-
-    Args:
-        device_type (str): Device type (e.g., Patch, VideoSource)
-
-    Returns:
-        device_table_def (str): Table definition for ExperimentDevice.
-    """
-
-    replacements = {
-        "ExperimentDevice": device_type,
-        "{device_title}": dj.utils.from_camel_case(device_type),
-        "{device_type}": dj.utils.from_camel_case(device_type),
-        "{aeon.__version__}": aeon.__version__
-    }
-    
-    for old, new in replacements.items():
-        device_table_def = device_table_def.replace(old, new)
-    return device_table_def + "\n\n"
-
 
 
 def main(context=None):
+    
     import re
     if context is None:
         context = inspect.currentframe().f_back.f_locals
@@ -254,7 +234,7 @@ def main(context=None):
                     f.write(full_def)
             else:
                 with open("existing_module.py", "w") as f:
-                    full_def = """import datajoint as dj\n\n""" + full_def
+                    full_def = """import datajoint as dj\nimport pandas as pd\nfrom aeon.dj_pipeline import acquisition\nfrom aeon.io import api as io_api\n\n""" + full_def
                     f.write(full_def)
     
     # Create DeviceDataStream tables.
@@ -282,8 +262,10 @@ def main(context=None):
 
             replacements = {
                 "DeviceDataStream": f"{device_type}{stream_type}","ExperimentDevice": device_type,
-                'f"chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time"': f"'chunk_start >= {device_type}_install_time'",
-                'f\'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, "2200-01-01")\'': f'chunk_start < IFNULL({device_type}_removal_time, "2200-01-01")',
+                'f"chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time"': f"'chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time'",
+                """f'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, "2200-01-01")'""": f"""'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, "2200-01-01")'""",
+                'f"{dj.utils.from_camel_case(device_type)}_name"': f"'{dj.utils.from_camel_case(device_type)}_name'",
+                "{device_type}": device_type,
                 "{stream_type}": stream_type,
                 "{aeon.__version__}": aeon.__version__,
             }
