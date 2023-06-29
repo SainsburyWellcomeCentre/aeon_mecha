@@ -6,11 +6,11 @@ services:
   pharus:
     cpus: 2.0
     mem_limit: 4g
-    image: jverswijver/pharus:0.8.0py3.9
+    image: jverswijver/pharus:0.8.5-PY_VER-3.9
     environment:
       # - FLASK_ENV=development # enables logging to console from Flask
       - PHARUS_SPEC_PATH=/main/specsheet.yaml # for dynamic utils spec
-    user: ${HOST_UID}:anaconda
+    user: root
     volumes:
       - ./specsheet.yaml:/main/specsheet.yaml #copy the spec over to /main/specs/YOUR_SPEC_NAME
       - ./apk_requirements.txt:/tmp/apk_requirements.txt
@@ -30,12 +30,13 @@ services:
   sci-viz:
     cpus: 2.0
     mem_limit: 16g
-    image: datajoint/sci-viz:2.3.0
+    image: jverswijver/sci-viz:2.3.3-hotfix2
     environment:
       - CHOKIDAR_USEPOLLING=true
-      - REACT_APP_DJSCIVIZ_BACKEND_PREFIX=/aeon/utils
+      - REACT_APP_DJSCIVIZ_BACKEND_PREFIX=/api
       - DJSCIVIZ_SPEC_PATH=/main/specsheet.yaml
       - NODE_OPTIONS="--max-old-space-size=12000"
+    user: root
     volumes:
       - ./specsheet.yaml:/main/specsheet.yaml
     # ports:
@@ -48,15 +49,15 @@ services:
     networks:
       - main
   reverse-proxy:
-    image: datajoint/nginx:v0.2.4
+    image: datajoint/nginx:v0.2.5
     environment:
       - ADD_pharus_TYPE=REST
       - ADD_pharus_ENDPOINT=pharus:5000
-      - ADD_pharus_PREFIX=/utils
+      - ADD_pharus_PREFIX=/api
       - ADD_sciviz_TYPE=REST
       - ADD_sciviz_ENDPOINT=sci-viz:3000
       - ADD_sciviz_PREFIX=/
-      #      - HTTPS_PASSTHRU=TRUE
+      # - HTTPS_PASSTHRU=TRUE
       #      - CERTBOT_HOST=letsencrypt:80
       - DEPLOYMENT_PORT
     #      - SUBDOMAINS
@@ -64,8 +65,8 @@ services:
     #    volumes:
     #      - ./letsencrypt-keys:/etc/letsencrypt:ro
     ports:
-      #      - "443:443"
-      - "${DEPLOYMENT_PORT}:80"
+      # - "443:443"
+      - "8443:80"
     networks:
       - main
 networks:

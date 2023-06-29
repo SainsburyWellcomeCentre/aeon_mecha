@@ -7,12 +7,12 @@ services:
   pharus:
     cpus: 2.0
     mem_limit: 4g
-    image: datajoint/pharus:0.8.4
+    image: jverswijver/pharus:0.8.5-PY_VER-3.9
     environment:
       # - FLASK_ENV=development # enables logging to console from Flask
       - PHARUS_SPEC_PATH=/main/specsheet.yaml # for dynamic utils spec
       - PHARUS_MODE=DEV
-    user: ${HOST_UID}:anaconda
+    user: root
     volumes:
       - ./specsheet.yaml:/main/specsheet.yaml #copy the spec over to /main/specs/YOUR_SPEC_NAME
       - ./apk_requirements.txt:/tmp/apk_requirements.txt
@@ -52,13 +52,14 @@ services:
   sci-viz:
     cpus: 2.0
     mem_limit: 16g
-    image: datajoint/sci-viz:2.3.0
+    image: datajoint/sci-viz:2.3.2
     environment:
       - CHOKIDAR_USEPOLLING=true
       - REACT_APP_DJSCIVIZ_BACKEND_PREFIX=/api
       - DJSCIVIZ_SPEC_PATH=/main/specsheet.yaml
       - DJSCIVIZ_MODE=DEV
       - NODE_OPTIONS="--max-old-space-size=12000"
+    user: root
     volumes:
       - ./specsheet.yaml:/main/specsheet.yaml
     # ports:
@@ -79,7 +80,7 @@ services:
       - ADD_sciviz_TYPE=REST
       - ADD_sciviz_ENDPOINT=sci-viz:3000
       - ADD_sciviz_PREFIX=/
-#      - HTTPS_PASSTHRU=TRUE
+      #      - HTTPS_PASSTHRU=TRUE
       - DEPLOYMENT_PORT
     ports:
       - "443:443"
