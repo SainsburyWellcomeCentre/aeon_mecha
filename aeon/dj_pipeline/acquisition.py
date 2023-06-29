@@ -25,6 +25,8 @@ _ref_device_mapping = {
     "exp0.2-r0": "CameraTop",
     "oct1.0-r0": "CameraTop",
     "presocial0.1-a2": "CameraTop",
+    "presocial0.1-a3": "CameraTop",
+    "presocial0.1-a4": "CameraTop",
 }
 
 _device_schema_mapping = {
@@ -33,6 +35,8 @@ _device_schema_mapping = {
     "exp0.2-r0": aeon_schema.exp02,
     "oct1.0-r0": aeon_schema.octagon01,
     "presocial0.1-a2": aeon_schema.presocial,
+    "presocial0.1-a3": aeon_schema.presocial,
+    "presocial0.1-a4": aeon_schema.presocial,
 }
 
 
@@ -120,14 +124,17 @@ class Experiment(dj.Manual):
 
     @classmethod
     def get_data_directory(cls, experiment_key, directory_type="raw", as_posix=False):
-        repo_name, dir_path = (
-            cls.Directory & experiment_key & {"directory_type": directory_type}
-        ).fetch1("repository_name", "directory_path")
-        data_directory = paths.get_repository_path(repo_name) / dir_path
-        if not data_directory.exists():
-            return None
-        return data_directory.as_posix() if as_posix else data_directory
-
+        
+        try:
+            repo_name, dir_path = (
+                cls.Directory & experiment_key & {"directory_type": directory_type}
+            ).fetch1("repository_name", "directory_path")
+            data_directory = paths.get_repository_path(repo_name) / dir_path
+            if not data_directory.exists():
+                return None
+            return data_directory.as_posix() if as_posix else data_directory
+        except dj.errors.DataJointError:
+            return
     @classmethod
     def get_data_directories(
         cls, experiment_key, directory_types=["raw"], as_posix=False

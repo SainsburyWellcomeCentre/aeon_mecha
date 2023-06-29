@@ -1,4 +1,5 @@
 import inspect
+import os
 
 import datajoint as dj
 import pandas as pd
@@ -124,12 +125,12 @@ def get_device_stream_template(device_type: str, stream_type: str):
     stream = reader(**stream_detail["stream_reader_kwargs"])
 
     table_definition = f"""  # Raw per-chunk {stream_type} data stream from {device_type} (auto-generated with aeon_mecha-{aeon.__version__})
-        -> {device_type}
-        -> acquisition.Chunk
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) timestamps of {stream_type} data
-        """
+    -> {device_type}
+    -> acquisition.Chunk
+    ---
+    sample_count: int      # number of data points acquired from this stream for a given chunk
+    timestamps: longblob   # (datetime) timestamps of {stream_type} data
+    """
 
     for col in stream.columns:
         if col.startswith("_"):
@@ -196,27 +197,102 @@ def get_device_stream_template(device_type: str, stream_type: str):
 
     return DeviceDataStream
 
-
 # endregion
 
 
-
 def main(context=None):
+    
+    import re
     if context is None:
         context = inspect.currentframe().f_back.f_locals
 
-    # Create tables.
+    # Create DeviceType tables.
     for device_info in (DeviceType).fetch(as_dict=True):
-        table_class = get_device_template(device_info["device_type"])
-        context[table_class.__name__] = table_class
-        schema(table_class, context=context)
-        
+        if device_info["device_type"] not in locals():
+            table_class = get_device_template(device_info["device_type"])
+            context[table_class.__name__] = table_class
+            schema(table_class, context=context)
+            
+            device_table_def = inspect.getsource(table_class).lstrip()
+            replacements = {
+            "ExperimentDevice": device_info["device_type"],
+            "{device_title}": dj.utils.from_camel_case(device_info["device_type"]),
+            "{device_type}": dj.utils.from_camel_case(device_info["device_type"]),
+            "{aeon.__version__}": aeon.__version__
+            }
+            for old, new in replacements.items():
+                device_table_def = device_table_def.replace(old, new)
+            full_def = "@schema \n" + device_table_def + "\n\n"
+            if os.path.exists("existing_module.py"):
+                with open("existing_module.py", "r") as f:
+                    existing_content = f.read()
+                    
+                if full_def in existing_content:
+                    continue
+
+                with open("existing_module.py", "a") as f:
+                    f.write(full_def)
+            else:
+                with open("existing_module.py", "w") as f:
+                    full_def = """import datajoint as dj\nimport pandas as pd\n\nimport aeon\nfrom aeon.dj_pipeline import acquisition\nfrom aeon.io import api as io_api\n\n""" + full_def
+                    f.write(full_def)
+    
     # Create DeviceDataStream tables.
     for device_info in (DeviceType.Stream).fetch(as_dict=True):
-        table_class = get_device_stream_template(
-            device_info["device_type"], device_info["stream_type"]
-        )
-        context[table_class.__name__] = table_class
-        schema(table_class, context=context)
+        
+        device_type = device_info['device_type']
+        stream_type = device_info['stream_type']
+        table_name = f"{device_type}{stream_type}"
+        
+        if table_name not in locals():
+            table_class = get_device_stream_template(
+            device_type, stream_type)
+            context[table_class.__name__] = table_class
+            schema(table_class, context=context)
+            
+            stream_obj = table_class.__dict__["_stream_reader"]
+            reader = stream_obj.__module__ + '.' + stream_obj.__name__
+            stream_detail = table_class.__dict__["_stream_detail"]
+            
+            device_stream_table_def = inspect.getsource(table_class).lstrip()
 
+            old_definition = f"""# Raw per-chunk {stream_type} data stream from {device_type} (auto-generated with aeon_mecha-{aeon.__version__})
+            -> {device_type}
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of {stream_type} data
+            """
+
+            replacements = {
+                "DeviceDataStream": f"{device_type}{stream_type}","ExperimentDevice": device_type,
+                'f"chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time"': f"'chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time'",
+                """f'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, "2200-01-01")'""": f"""'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, "2200-01-01")'""",
+                'f"{dj.utils.from_camel_case(device_type)}_name"': f"'{dj.utils.from_camel_case(device_type)}_name'",
+                "{device_type}": device_type,
+                "{stream_type}": stream_type,
+                "{aeon.__version__}": aeon.__version__,
+            }
+            for old, new in replacements.items():
+                new_definition = old_definition.replace(old, new)
+                
+            replacements["table_definition"] = '"""'+new_definition+'"""'
+            
+            for old, new in replacements.items():
+                device_stream_table_def = device_stream_table_def.replace(old, new)
+            
+            device_stream_table_def = re.sub(r'_stream_reader\s*=\s*reader', f'_stream_reader = {reader}', device_stream_table_def)  # insert reader
+            device_stream_table_def = re.sub(r'_stream_detail\s*=\s*stream_detail', f'_stream_detail = {stream_detail}', device_stream_table_def)  # insert stream details  
+                
+            full_def = "@schema \n" + device_stream_table_def + "\n\n"
+ 
+            with open("existing_module.py", "r") as f:
+                existing_content = f.read()
+                    
+            if full_def in existing_content:
+                continue
+
+            with open("existing_module.py", "a") as f:
+                f.write(full_def)
+        
 main()
