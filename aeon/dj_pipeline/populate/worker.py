@@ -1,8 +1,8 @@
 import datajoint as dj
 from datajoint_utilities.dj_worker import (
     DataJointWorker,
-    WorkerLog,
     ErrorLog,
+    WorkerLog,
     is_djtable,
 )
 
@@ -12,11 +12,10 @@ from aeon.dj_pipeline import (
     db_prefix,
     qc,
     report,
-    tracking,
     streams,
+    tracking,
 )
 from aeon.dj_pipeline.utils import load_metadata
-
 
 __all__ = [
     "high_priority",
@@ -31,6 +30,7 @@ __all__ = [
 logger = dj.logger
 _current_experiment = "exp0.2-r0"
 worker_schema_name = db_prefix + "workerlog"
+load_metadata.insert_stream_types()
 
 
 # ---- Define worker(s) ----
@@ -42,7 +42,6 @@ high_priority = DataJointWorker(
     run_duration=-1,
     sleep_duration=600,
 )
-
 high_priority(load_metadata.ingest_subject)
 high_priority(acquisition.Epoch.ingest_epochs, experiment_name=_current_experiment)
 high_priority(acquisition.Chunk.ingest_chunks, experiment_name=_current_experiment)
@@ -101,4 +100,3 @@ streams_worker = DataJointWorker(
 for attr in vars(streams).values():
     if is_djtable(attr) and hasattr(attr, "populate"):
         streams_worker(attr)
-

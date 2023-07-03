@@ -12,11 +12,10 @@ from aeon.schema import dataset as aeon_schema
 
 from . import get_schema_name, lab, subject
 from .utils import paths
-from .utils.load_metadata import extract_epoch_metadata, ingest_epoch_metadata
 
 logger = dj.logger
 schema = dj.schema(get_schema_name("acquisition"))
-
+# streams = dj.VirtualModule("streams", get_schema_name("streams"))
 
 # ------------------- Some Constants --------------------------
 
@@ -25,6 +24,9 @@ _ref_device_mapping = {
     "social0-r1": "FrameTop",
     "exp0.2-r0": "CameraTop",
     "oct1.0-r0": "CameraTop",
+    "presocial0.1-a2": "CameraTop",
+    "presocial0.1-a3": "CameraTop",
+    "presocial0.1-a4": "CameraTop",
 }
 
 _device_schema_mapping = {
@@ -32,6 +34,9 @@ _device_schema_mapping = {
     "social0-r1": aeon_schema.exp01,
     "exp0.2-r0": aeon_schema.exp02,
     "oct1.0-r0": aeon_schema.octagon01,
+    "presocial0.1-a2": aeon_schema.presocial,
+    "presocial0.1-a3": aeon_schema.presocial,
+    "presocial0.1-a4": aeon_schema.presocial,
 }
 
 
@@ -119,14 +124,17 @@ class Experiment(dj.Manual):
 
     @classmethod
     def get_data_directory(cls, experiment_key, directory_type="raw", as_posix=False):
-        repo_name, dir_path = (
-            cls.Directory & experiment_key & {"directory_type": directory_type}
-        ).fetch1("repository_name", "directory_path")
-        data_directory = paths.get_repository_path(repo_name) / dir_path
-        if not data_directory.exists():
-            return None
-        return data_directory.as_posix() if as_posix else data_directory
-
+        
+        try:
+            repo_name, dir_path = (
+                cls.Directory & experiment_key & {"directory_type": directory_type}
+            ).fetch1("repository_name", "directory_path")
+            data_directory = paths.get_repository_path(repo_name) / dir_path
+            if not data_directory.exists():
+                return None
+            return data_directory.as_posix() if as_posix else data_directory
+        except dj.errors.DataJointError:
+            return
     @classmethod
     def get_data_directories(
         cls, experiment_key, directory_types=["raw"], as_posix=False
@@ -269,6 +277,14 @@ class Epoch(dj.Manual):
          - if not specified, ingest all epochs
         Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S"
         """
+        from aeon.dj_pipeline import streams
+
+        from .utils.load_metadata import (
+            extract_epoch_config,
+            ingest_epoch_metadata,
+            insert_device_types,
+        )
+        
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
@@ -301,7 +317,7 @@ class Epoch(dj.Manual):
             if experiment_name != "exp0.1-r0":
                 metadata_yml_filepath = epoch_dir / "Metadata.yml"
                 if metadata_yml_filepath.exists():
-                    epoch_config = extract_epoch_metadata(
+                    epoch_config = extract_epoch_config(
                         experiment_name, metadata_yml_filepath
                     )
 
@@ -346,8 +362,25 @@ class Epoch(dj.Manual):
                     cls.insert1(epoch_key)
                     if epoch_config:
                         cls.Config.insert1(epoch_config)
-                        ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
-                    epoch_list.append(epoch_key)
+                if metadata_yml_filepath and metadata_yml_filepath.exists():
+                    
+                    try:
+                        # Ingest streams.DeviceType, streams.Device and create device tables.
+                        insert_device_types(
+                            _device_schema_mapping[epoch_key["experiment_name"]],
+                            metadata_yml_filepath,
+                        )
+                        streams.main(context=streams.__dict__)  # create device tables under streams schema
+                        with cls.connection.transaction:
+                            ingest_epoch_metadata(
+                                experiment_name, metadata_yml_filepath
+                            )
+                        epoch_list.append(epoch_key)
+                    except Exception as e:
+                        (cls.Config & epoch_key).delete_quick()
+                        (cls & epoch_key).delete_quick()
+                        raise e
+
             # update previous epoch
             if (
                 previous_epoch_key

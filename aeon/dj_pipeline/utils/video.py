@@ -1,13 +1,14 @@
-import numpy as np
 import base64
-import pandas as pd
-import pathlib
 import datetime
-import cv2
+import pathlib
 
+import cv2
+import numpy as np
+import pandas as pd
+
+import aeon.io.reader as io_reader
 from aeon.io import api as io_api
 from aeon.io import video as io_video
-import aeon.io.reader as io_reader
 
 
 def retrieve_video_frames(
