@@ -3,6 +3,7 @@
 
 import datajoint as dj
 import pandas as pd
+from uuid import UUID
 
 import aeon
 from aeon.dj_pipeline import acquisition, get_schema_name
@@ -58,5 +59,812 @@ class Device(dj.Lookup):
     ---
     -> DeviceType
     """
+
+
+@schema 
+class Patch(dj.Manual):
+        definition = f"""
+        # patch placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
+        -> acquisition.Experiment
+        -> Device
+        patch_install_time  : datetime(6)   # time of the patch placed and started operation at this position
+        ---
+        patch_name          : varchar(36)
+        """
+
+        class Attribute(dj.Part):
+            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
+            -> master
+            attribute_name          : varchar(32)
+            ---
+            attribute_value=null    : longblob
+            """
+
+        class RemovalTime(dj.Part):
+            definition = f"""
+            -> master
+            ---
+            patch_removal_time: datetime(6)  # time of the patch being removed
+            """
+
+
+@schema 
+class UndergroundFeeder(dj.Manual):
+        definition = f"""
+        # underground_feeder placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
+        -> acquisition.Experiment
+        -> Device
+        underground_feeder_install_time  : datetime(6)   # time of the underground_feeder placed and started operation at this position
+        ---
+        underground_feeder_name          : varchar(36)
+        """
+
+        class Attribute(dj.Part):
+            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
+            -> master
+            attribute_name          : varchar(32)
+            ---
+            attribute_value=null    : longblob
+            """
+
+        class RemovalTime(dj.Part):
+            definition = f"""
+            -> master
+            ---
+            underground_feeder_removal_time: datetime(6)  # time of the underground_feeder being removed
+            """
+
+
+@schema 
+class VideoSource(dj.Manual):
+        definition = f"""
+        # video_source placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
+        -> acquisition.Experiment
+        -> Device
+        video_source_install_time  : datetime(6)   # time of the video_source placed and started operation at this position
+        ---
+        video_source_name          : varchar(36)
+        """
+
+        class Attribute(dj.Part):
+            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
+            -> master
+            attribute_name          : varchar(32)
+            ---
+            attribute_value=null    : longblob
+            """
+
+        class RemovalTime(dj.Part):
+            definition = f"""
+            -> master
+            ---
+            video_source_removal_time: datetime(6)  # time of the video_source being removed
+            """
+
+
+@schema 
+class PatchBeamBreak(dj.Imported):
+        definition = """# Raw per-chunk BeamBreak data stream from Patch (auto-generated with aeon_mecha-unknown)
+            -> Patch
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of BeamBreak data
+            """
+        _stream_reader = aeon.io.reader.BitmaskEvent
+        _stream_detail = {'stream_type': 'BeamBreak', 'stream_reader': 'aeon.io.reader.BitmaskEvent', 'stream_reader_kwargs': {'pattern': '{pattern}_32', 'value': 34, 'tag': 'BeamBroken'}, 'stream_description': '', 'stream_hash': UUID('b14171e6-d27d-117a-ae73-a16c4b5fc8a2')}
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and Patch with overlapping time
+            +  Chunk(s) that started after Patch install time and ended before Patch remove time
+            +  Chunk(s) that started after Patch install time for Patch that are not yet removed
+            """
+            return (
+                acquisition.Chunk
+                * Patch.join(Patch.RemovalTime, left=True)
+                & 'chunk_start >= patch_install_time'
+                & 'chunk_start < IFNULL(patch_removal_time, "2200-01-01")'
+            )
+
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(
+                key, directory_type=dir_type
+            )
+
+            device_name = (Patch & key).fetch1(
+                'patch_name'
+            )
+
+            stream = self._stream_reader(
+                **{
+                    k: v.format(**{k: device_name}) if k == "pattern" else v
+                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
+                }
+            )
+
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        c: stream_data[c].values
+                        for c in stream.columns
+                        if not c.startswith("_")
+                    },
+                }
+            )
+
+
+@schema 
+class PatchDeliverPellet(dj.Imported):
+        definition = """# Raw per-chunk DeliverPellet data stream from Patch (auto-generated with aeon_mecha-unknown)
+            -> Patch
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of DeliverPellet data
+            """
+        _stream_reader = aeon.io.reader.BitmaskEvent
+        _stream_detail = {'stream_type': 'DeliverPellet', 'stream_reader': 'aeon.io.reader.BitmaskEvent', 'stream_reader_kwargs': {'pattern': '{pattern}_35', 'value': 1, 'tag': 'TriggeredPellet'}, 'stream_description': '', 'stream_hash': UUID('c49dda51-2e38-8b49-d1d8-2e54ea928e9c')}
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and Patch with overlapping time
+            +  Chunk(s) that started after Patch install time and ended before Patch remove time
+            +  Chunk(s) that started after Patch install time for Patch that are not yet removed
+            """
+            return (
+                acquisition.Chunk
+                * Patch.join(Patch.RemovalTime, left=True)
+                & 'chunk_start >= patch_install_time'
+                & 'chunk_start < IFNULL(patch_removal_time, "2200-01-01")'
+            )
+
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(
+                key, directory_type=dir_type
+            )
+
+            device_name = (Patch & key).fetch1(
+                'patch_name'
+            )
+
+            stream = self._stream_reader(
+                **{
+                    k: v.format(**{k: device_name}) if k == "pattern" else v
+                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
+                }
+            )
+
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        c: stream_data[c].values
+                        for c in stream.columns
+                        if not c.startswith("_")
+                    },
+                }
+            )
+
+
+@schema 
+class PatchDepletionState(dj.Imported):
+        definition = """# Raw per-chunk DepletionState data stream from Patch (auto-generated with aeon_mecha-unknown)
+            -> Patch
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of DepletionState data
+            """
+        _stream_reader = aeon.schema.foraging._PatchState
+        _stream_detail = {'stream_type': 'DepletionState', 'stream_reader': 'aeon.schema.foraging._PatchState', 'stream_reader_kwargs': {'pattern': '{pattern}_State'}, 'stream_description': '', 'stream_hash': UUID('73025490-348c-18fd-d565-8e682b5b4bcd')}
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and Patch with overlapping time
+            +  Chunk(s) that started after Patch install time and ended before Patch remove time
+            +  Chunk(s) that started after Patch install time for Patch that are not yet removed
+            """
+            return (
+                acquisition.Chunk
+                * Patch.join(Patch.RemovalTime, left=True)
+                & 'chunk_start >= patch_install_time'
+                & 'chunk_start < IFNULL(patch_removal_time, "2200-01-01")'
+            )
+
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(
+                key, directory_type=dir_type
+            )
+
+            device_name = (Patch & key).fetch1(
+                'patch_name'
+            )
+
+            stream = self._stream_reader(
+                **{
+                    k: v.format(**{k: device_name}) if k == "pattern" else v
+                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
+                }
+            )
+
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        c: stream_data[c].values
+                        for c in stream.columns
+                        if not c.startswith("_")
+                    },
+                }
+            )
+
+
+@schema 
+class PatchEncoder(dj.Imported):
+        definition = """# Raw per-chunk Encoder data stream from Patch (auto-generated with aeon_mecha-unknown)
+            -> Patch
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of Encoder data
+            """
+        _stream_reader = aeon.io.reader.Encoder
+        _stream_detail = {'stream_type': 'Encoder', 'stream_reader': 'aeon.io.reader.Encoder', 'stream_reader_kwargs': {'pattern': '{pattern}_90'}, 'stream_description': '', 'stream_hash': UUID('45002714-c31d-b2b8-a6e6-6ae624385cc1')}
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and Patch with overlapping time
+            +  Chunk(s) that started after Patch install time and ended before Patch remove time
+            +  Chunk(s) that started after Patch install time for Patch that are not yet removed
+            """
+            return (
+                acquisition.Chunk
+                * Patch.join(Patch.RemovalTime, left=True)
+                & 'chunk_start >= patch_install_time'
+                & 'chunk_start < IFNULL(patch_removal_time, "2200-01-01")'
+            )
+
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(
+                key, directory_type=dir_type
+            )
+
+            device_name = (Patch & key).fetch1(
+                'patch_name'
+            )
+
+            stream = self._stream_reader(
+                **{
+                    k: v.format(**{k: device_name}) if k == "pattern" else v
+                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
+                }
+            )
+
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        c: stream_data[c].values
+                        for c in stream.columns
+                        if not c.startswith("_")
+                    },
+                }
+            )
+
+
+@schema 
+class UndergroundFeederBeamBreak(dj.Imported):
+        definition = """# Raw per-chunk BeamBreak data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+            -> UndergroundFeeder
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of BeamBreak data
+            """
+        _stream_reader = aeon.io.reader.BitmaskEvent
+        _stream_detail = {'stream_type': 'BeamBreak', 'stream_reader': 'aeon.io.reader.BitmaskEvent', 'stream_reader_kwargs': {'pattern': '{pattern}_32', 'value': 34, 'tag': 'BeamBroken'}, 'stream_description': '', 'stream_hash': UUID('b14171e6-d27d-117a-ae73-a16c4b5fc8a2')}
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and UndergroundFeeder with overlapping time
+            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
+            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+            """
+            return (
+                acquisition.Chunk
+                * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
+                & 'chunk_start >= underground_feeder_install_time'
+                & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
+            )
+
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(
+                key, directory_type=dir_type
+            )
+
+            device_name = (UndergroundFeeder & key).fetch1(
+                'underground_feeder_name'
+            )
+
+            stream = self._stream_reader(
+                **{
+                    k: v.format(**{k: device_name}) if k == "pattern" else v
+                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
+                }
+            )
+
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        c: stream_data[c].values
+                        for c in stream.columns
+                        if not c.startswith("_")
+                    },
+                }
+            )
+
+
+@schema 
+class UndergroundFeederDeliverPellet(dj.Imported):
+        definition = """# Raw per-chunk DeliverPellet data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+            -> UndergroundFeeder
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of DeliverPellet data
+            """
+        _stream_reader = aeon.io.reader.BitmaskEvent
+        _stream_detail = {'stream_type': 'DeliverPellet', 'stream_reader': 'aeon.io.reader.BitmaskEvent', 'stream_reader_kwargs': {'pattern': '{pattern}_35', 'value': 1, 'tag': 'TriggeredPellet'}, 'stream_description': '', 'stream_hash': UUID('c49dda51-2e38-8b49-d1d8-2e54ea928e9c')}
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and UndergroundFeeder with overlapping time
+            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
+            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+            """
+            return (
+                acquisition.Chunk
+                * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
+                & 'chunk_start >= underground_feeder_install_time'
+                & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
+            )
+
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(
+                key, directory_type=dir_type
+            )
+
+            device_name = (UndergroundFeeder & key).fetch1(
+                'underground_feeder_name'
+            )
+
+            stream = self._stream_reader(
+                **{
+                    k: v.format(**{k: device_name}) if k == "pattern" else v
+                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
+                }
+            )
+
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        c: stream_data[c].values
+                        for c in stream.columns
+                        if not c.startswith("_")
+                    },
+                }
+            )
+
+
+@schema 
+class UndergroundFeederDepletionState(dj.Imported):
+        definition = """# Raw per-chunk DepletionState data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+            -> UndergroundFeeder
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of DepletionState data
+            """
+        _stream_reader = aeon.schema.foraging._PatchState
+        _stream_detail = {'stream_type': 'DepletionState', 'stream_reader': 'aeon.schema.foraging._PatchState', 'stream_reader_kwargs': {'pattern': '{pattern}_State'}, 'stream_description': '', 'stream_hash': UUID('73025490-348c-18fd-d565-8e682b5b4bcd')}
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and UndergroundFeeder with overlapping time
+            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
+            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+            """
+            return (
+                acquisition.Chunk
+                * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
+                & 'chunk_start >= underground_feeder_install_time'
+                & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
+            )
+
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(
+                key, directory_type=dir_type
+            )
+
+            device_name = (UndergroundFeeder & key).fetch1(
+                'underground_feeder_name'
+            )
+
+            stream = self._stream_reader(
+                **{
+                    k: v.format(**{k: device_name}) if k == "pattern" else v
+                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
+                }
+            )
+
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        c: stream_data[c].values
+                        for c in stream.columns
+                        if not c.startswith("_")
+                    },
+                }
+            )
+
+
+@schema 
+class UndergroundFeederEncoder(dj.Imported):
+        definition = """# Raw per-chunk Encoder data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+            -> UndergroundFeeder
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of Encoder data
+            """
+        _stream_reader = aeon.io.reader.Encoder
+        _stream_detail = {'stream_type': 'Encoder', 'stream_reader': 'aeon.io.reader.Encoder', 'stream_reader_kwargs': {'pattern': '{pattern}_90'}, 'stream_description': '', 'stream_hash': UUID('45002714-c31d-b2b8-a6e6-6ae624385cc1')}
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and UndergroundFeeder with overlapping time
+            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
+            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+            """
+            return (
+                acquisition.Chunk
+                * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
+                & 'chunk_start >= underground_feeder_install_time'
+                & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
+            )
+
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(
+                key, directory_type=dir_type
+            )
+
+            device_name = (UndergroundFeeder & key).fetch1(
+                'underground_feeder_name'
+            )
+
+            stream = self._stream_reader(
+                **{
+                    k: v.format(**{k: device_name}) if k == "pattern" else v
+                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
+                }
+            )
+
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        c: stream_data[c].values
+                        for c in stream.columns
+                        if not c.startswith("_")
+                    },
+                }
+            )
+
+
+@schema 
+class VideoSourcePosition(dj.Imported):
+        definition = """# Raw per-chunk Position data stream from VideoSource (auto-generated with aeon_mecha-unknown)
+            -> VideoSource
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of Position data
+            """
+        _stream_reader = aeon.io.reader.Position
+        _stream_detail = {'stream_type': 'Position', 'stream_reader': 'aeon.io.reader.Position', 'stream_reader_kwargs': {'pattern': '{pattern}_200'}, 'stream_description': '', 'stream_hash': UUID('75f9f365-037a-1e9b-ad38-8b2b3783315d')}
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and VideoSource with overlapping time
+            +  Chunk(s) that started after VideoSource install time and ended before VideoSource remove time
+            +  Chunk(s) that started after VideoSource install time for VideoSource that are not yet removed
+            """
+            return (
+                acquisition.Chunk
+                * VideoSource.join(VideoSource.RemovalTime, left=True)
+                & 'chunk_start >= video_source_install_time'
+                & 'chunk_start < IFNULL(video_source_removal_time, "2200-01-01")'
+            )
+
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(
+                key, directory_type=dir_type
+            )
+
+            device_name = (VideoSource & key).fetch1(
+                'video_source_name'
+            )
+
+            stream = self._stream_reader(
+                **{
+                    k: v.format(**{k: device_name}) if k == "pattern" else v
+                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
+                }
+            )
+
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        c: stream_data[c].values
+                        for c in stream.columns
+                        if not c.startswith("_")
+                    },
+                }
+            )
+
+
+@schema 
+class VideoSourceRegion(dj.Imported):
+        definition = """# Raw per-chunk Region data stream from VideoSource (auto-generated with aeon_mecha-unknown)
+            -> VideoSource
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of Region data
+            """
+        _stream_reader = aeon.schema.foraging._RegionReader
+        _stream_detail = {'stream_type': 'Region', 'stream_reader': 'aeon.schema.foraging._RegionReader', 'stream_reader_kwargs': {'pattern': '{pattern}_201'}, 'stream_description': '', 'stream_hash': UUID('6234a429-8ae5-d7dc-41c8-602ac76da029')}
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and VideoSource with overlapping time
+            +  Chunk(s) that started after VideoSource install time and ended before VideoSource remove time
+            +  Chunk(s) that started after VideoSource install time for VideoSource that are not yet removed
+            """
+            return (
+                acquisition.Chunk
+                * VideoSource.join(VideoSource.RemovalTime, left=True)
+                & 'chunk_start >= video_source_install_time'
+                & 'chunk_start < IFNULL(video_source_removal_time, "2200-01-01")'
+            )
+
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(
+                key, directory_type=dir_type
+            )
+
+            device_name = (VideoSource & key).fetch1(
+                'video_source_name'
+            )
+
+            stream = self._stream_reader(
+                **{
+                    k: v.format(**{k: device_name}) if k == "pattern" else v
+                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
+                }
+            )
+
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        c: stream_data[c].values
+                        for c in stream.columns
+                        if not c.startswith("_")
+                    },
+                }
+            )
+
+
+@schema 
+class VideoSourceVideo(dj.Imported):
+        definition = """# Raw per-chunk Video data stream from VideoSource (auto-generated with aeon_mecha-unknown)
+            -> VideoSource
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of Video data
+            """
+        _stream_reader = aeon.io.reader.Video
+        _stream_detail = {'stream_type': 'Video', 'stream_reader': 'aeon.io.reader.Video', 'stream_reader_kwargs': {'pattern': '{pattern}'}, 'stream_description': '', 'stream_hash': UUID('4246295b-789f-206d-b413-7af25b7548b2')}
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and VideoSource with overlapping time
+            +  Chunk(s) that started after VideoSource install time and ended before VideoSource remove time
+            +  Chunk(s) that started after VideoSource install time for VideoSource that are not yet removed
+            """
+            return (
+                acquisition.Chunk
+                * VideoSource.join(VideoSource.RemovalTime, left=True)
+                & 'chunk_start >= video_source_install_time'
+                & 'chunk_start < IFNULL(video_source_removal_time, "2200-01-01")'
+            )
+
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(
+                key, directory_type=dir_type
+            )
+
+            device_name = (VideoSource & key).fetch1(
+                'video_source_name'
+            )
+
+            stream = self._stream_reader(
+                **{
+                    k: v.format(**{k: device_name}) if k == "pattern" else v
+                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
+                }
+            )
+
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        c: stream_data[c].values
+                        for c in stream.columns
+                        if not c.startswith("_")
+                    },
+                }
+            )
 
 
