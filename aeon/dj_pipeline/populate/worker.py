@@ -12,10 +12,12 @@ from aeon.dj_pipeline import (
     db_prefix,
     qc,
     report,
-    streams,
+    streams_maker,
     tracking,
 )
 from aeon.dj_pipeline.utils import load_metadata
+
+streams = streams_maker.main()
 
 __all__ = [
     "high_priority",
@@ -98,5 +100,5 @@ streams_worker = DataJointWorker(
 )
 
 for attr in vars(streams).values():
-    if is_djtable(attr) and hasattr(attr, "populate"):
+    if is_djtable(attr, dj.user_tables.AutoPopulate):
         streams_worker(attr)
