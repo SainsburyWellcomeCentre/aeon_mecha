@@ -20,7 +20,7 @@ from aeon.dj_pipeline.utils import load_metadata
 streams = streams_maker.main()
 
 __all__ = [
-    "high_priority",
+    "acquisition_worker",
     "mid_priority",
     "streams_worker",
     "WorkerLog",
@@ -30,34 +30,61 @@ __all__ = [
 
 # ---- Some constants ----
 logger = dj.logger
-_current_experiment = "exp0.2-r0"
-worker_schema_name = db_prefix + "workerlog"
+worker_schema_name = db_prefix + "worker"
 load_metadata.insert_stream_types()
 
 
+# ---- Manage experiments for automated ingestion ----
+
+schema = dj.Schema(worker_schema_name)
+
+
+@schema
+class AutomatedExperimentIngestion(dj.Manual):
+    definition = """  # experiments to undergo automated ingestion
+    -> acquisition.Experiment
+    """
+
+
+def ingest_colony_epochs_chunks():
+    """
+    Load and insert subjects from colony.csv
+    Ingest epochs and chunks
+     for experiments specified in AutomatedExperimentIngestion
+    """
+    load_metadata.ingest_subject()
+    experiment_names = AutomatedExperimentIngestion.fetch("experiment_name")
+    for experiment_name in experiment_names:
+        acquisition.Epoch.ingest_epochs(experiment_name)
+        acquisition.Chunk.ingest_chunks(experiment_name)
+
+
+def ingest_environment_visits():
+    """
+    Extract and insert complete visits
+     for experiments specified in AutomatedExperimentIngestion
+    """
+    experiment_names = AutomatedExperimentIngestion.fetch("experiment_name")
+    analysis.ingest_environment_visits(experiment_names)
+
+
 # ---- Define worker(s) ----
-# configure a worker to process high-priority tasks
-high_priority = DataJointWorker(
-    "high_priority",
+# configure a worker to process `acquisition`-related tasks
+acquisition_worker = DataJointWorker(
+    "acquisition_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
     run_duration=-1,
     sleep_duration=600,
 )
-high_priority(load_metadata.ingest_subject)
-high_priority(acquisition.Epoch.ingest_epochs, experiment_name=_current_experiment)
-high_priority(acquisition.Chunk.ingest_chunks, experiment_name=_current_experiment)
-high_priority(acquisition.ExperimentLog)
-high_priority(acquisition.SubjectEnterExit)
-high_priority(acquisition.SubjectWeight)
-high_priority(acquisition.FoodPatchEvent)
-high_priority(acquisition.WheelState)
-high_priority(acquisition.WeightMeasurement)
-high_priority(acquisition.WeightMeasurementFiltered)
+acquisition_worker(ingest_colony_epochs_chunks)
+acquisition_worker(acquisition.ExperimentLog)
+acquisition_worker(acquisition.SubjectEnterExit)
+acquisition_worker(acquisition.SubjectWeight)
+acquisition_worker(acquisition.FoodPatchEvent)
+acquisition_worker(acquisition.WheelState)
 
-high_priority(
-    analysis.ingest_environment_visits, experiment_names=[_current_experiment]
-)
+acquisition_worker(ingest_environment_visits)
 
 # configure a worker to process mid-priority tasks
 mid_priority = DataJointWorker(
@@ -71,10 +98,9 @@ mid_priority = DataJointWorker(
 mid_priority(qc.CameraQC)
 mid_priority(tracking.CameraTracking)
 mid_priority(acquisition.FoodPatchWheel)
+mid_priority(acquisition.WeightMeasurement)
+mid_priority(acquisition.WeightMeasurementFiltered)
 
-mid_priority(
-    analysis.visit.ingest_environment_visits, experiment_names=[_current_experiment]
-)
 mid_priority(analysis.OverlapVisit)
 
 mid_priority(analysis.VisitSubjectPosition)
