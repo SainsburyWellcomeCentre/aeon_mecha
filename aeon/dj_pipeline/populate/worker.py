@@ -12,10 +12,10 @@ from aeon.dj_pipeline import (
     db_prefix,
     qc,
     report,
-    streams_maker,
     tracking,
 )
-from aeon.dj_pipeline.utils import load_metadata
+from aeon.dj_pipeline.utils import load_metadata, streams_maker
+
 
 streams = streams_maker.main()
 
@@ -75,7 +75,7 @@ acquisition_worker = DataJointWorker(
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
     run_duration=-1,
-    sleep_duration=600,
+    sleep_duration=1200,
 )
 acquisition_worker(ingest_colony_epochs_chunks)
 acquisition_worker(acquisition.ExperimentLog)
@@ -92,7 +92,7 @@ mid_priority = DataJointWorker(
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
     run_duration=-1,
-    sleep_duration=120,
+    sleep_duration=3600,
 )
 
 mid_priority(qc.CameraQC)
@@ -121,10 +121,10 @@ streams_worker = DataJointWorker(
     "streams_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    run_duration=1,
-    sleep_duration=600,
+    run_duration=-1,
+    sleep_duration=1200,
 )
 
 for attr in vars(streams).values():
     if is_djtable(attr, dj.user_tables.AutoPopulate):
-        streams_worker(attr)
+        streams_worker(attr, max_calls=10)

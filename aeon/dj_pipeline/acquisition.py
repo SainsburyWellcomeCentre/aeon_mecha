@@ -10,7 +10,7 @@ from aeon.io import api as io_api
 from aeon.io import reader as io_reader
 from aeon.schema import dataset as aeon_schema
 
-from . import get_schema_name, lab, subject
+from . import get_schema_name
 from .utils import paths
 
 logger = dj.logger
@@ -277,8 +277,7 @@ class Epoch(dj.Manual):
          - if not specified, ingest all epochs
         Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S"
         """
-        from aeon.dj_pipeline import streams_maker
-
+        from .utils import streams_maker
         from .utils.load_metadata import (
             extract_epoch_config,
             ingest_epoch_metadata,

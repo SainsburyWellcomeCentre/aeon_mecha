@@ -10,7 +10,8 @@ import numpy as np
 import pandas as pd
 from dotmap import DotMap
 
-from aeon.dj_pipeline import acquisition, dict_to_uuid, subject, streams_maker
+from aeon.dj_pipeline import acquisition, dict_to_uuid, subject
+from aeon.dj_pipeline.utils import streams_maker
 from aeon.io import api as io_api
 
 
