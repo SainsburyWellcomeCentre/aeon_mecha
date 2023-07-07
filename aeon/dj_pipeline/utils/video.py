@@ -1,13 +1,14 @@
-import numpy as np
 import base64
-import pandas as pd
-import pathlib
 import datetime
-import cv2
+from pathlib import Path
 
+import cv2
+import numpy as np
+import pandas as pd
+
+import aeon.io.reader as io_reader
 from aeon.io import api as io_api
 from aeon.io import video as io_video
-import aeon.io.reader as io_reader
 
 
 def retrieve_video_frames(
@@ -15,16 +16,14 @@ def retrieve_video_frames(
     camera_name,
     start_time,
     end_time,
+    raw_data_dir,
     desired_fps=50,
     start_frame=0,
     chunk_size=50,
     **kwargs,
 ):
-    from aeon.dj_pipeline import acquisition
-
-    raw_data_dir = acquisition.Experiment.get_data_directory(
-        {"experiment_name": experiment_name}
-    )
+    raw_data_dir = Path(raw_data_dir)
+    assert raw_data_dir.exists()
 
     # do some data loading
     videodata = io_api.load(
