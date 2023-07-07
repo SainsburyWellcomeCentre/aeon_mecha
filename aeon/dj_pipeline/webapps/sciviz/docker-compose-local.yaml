@@ -22,7 +22,7 @@ services:
       - -c
       - |
         apk add --update git g++ &&
-        git clone -b datajoint_pipeline https://github.com/ttngu207/aeon_mecha.git &&
+        git clone -b datajoint_pipeline https://github.com/SainsburyWellcomeCentre/aeon_mecha.git &&
         pip install -e ./aeon_mecha &&
         pharus_update() {
             [ -z "$$GUNICORN_PID" ] || kill $$GUNICORN_PID
