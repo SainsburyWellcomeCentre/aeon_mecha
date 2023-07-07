@@ -30,7 +30,7 @@ services:
   sci-viz:
     cpus: 2.0
     mem_limit: 16g
-    image: jverswijver/sci-viz:2.3.3-hotfix2
+    image: jverswijver/sci-viz:2.3.3-hotfix3
     environment:
       - CHOKIDAR_USEPOLLING=true
       - REACT_APP_DJSCIVIZ_BACKEND_PREFIX=/api
