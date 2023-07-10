@@ -16,7 +16,7 @@ logger = dj.logger
 schema_name = get_schema_name("streams")
 
 STREAMS_MODULE_NAME = "streams"
-_STREAMS_MODULE_FILE = Path(__file__).parent / f"{STREAMS_MODULE_NAME}.py"
+_STREAMS_MODULE_FILE = Path(__file__).parent.parent / f"{STREAMS_MODULE_NAME}.py"
 
 
 class StreamType(dj.Lookup):
