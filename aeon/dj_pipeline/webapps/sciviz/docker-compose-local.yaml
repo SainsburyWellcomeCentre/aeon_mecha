@@ -52,7 +52,7 @@ services:
   sci-viz:
     cpus: 2.0
     mem_limit: 16g
-    image: datajoint/sci-viz:2.3.2
+    image: jverswijver/sci-viz:2.3.3-hotfix3
     environment:
       - CHOKIDAR_USEPOLLING=true
       - REACT_APP_DJSCIVIZ_BACKEND_PREFIX=/api
@@ -72,7 +72,7 @@ services:
     networks:
       - main
   fakeservices.datajoint.io:
-    image: datajoint/nginx:v0.2.4
+    image: datajoint/nginx:v0.2.5
     environment:
       - ADD_pharus_TYPE=REST
       - ADD_pharus_ENDPOINT=pharus:5000

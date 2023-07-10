@@ -438,8 +438,8 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_acquisition):
                     acquisition = aeon_acquisition
-                    q = dj.U('camera_description', 'raw_data_dir') & (acquisition.ExperimentCamera * acquisition.Experiment.Directory & 'directory_type = "raw"').proj('camera_description', raw_data_dir="CONCAT('/ceph/aeon/', directory_path)")
-                    return {'query': q, 'fetch_args': []}
+                    q = dj.U('camera_description') & acquisition.ExperimentCamera
+                    return {'query': q, 'fetch_args': ['camera_description']}
             time_range_selector:
               x: 0
               y: 2
@@ -465,11 +465,12 @@ SciViz:
                   stream_time_selector,
                 ]
               restriction: >
-                def restriction(**kwargs):
+                def restriction(**kwargs):  
                     return dict(**kwargs)
               dj_query: >
                 def dj_query(aeon_acquisition):
-                    q = aeon_acquisition.ExperimentCamera
+                    acquisition = aeon_acquisition
+                    q = dj.U('camera_description', 'raw_data_dir') & (acquisition.ExperimentCamera * acquisition.Experiment.Directory & 'directory_type = "raw"').proj('camera_description', raw_data_dir="CONCAT('/ceph/aeon/', directory_path)")
                     return {'query': q, 'fetch_args': []}
     PipelineMonitor:
       route: /pipeline_monitor
