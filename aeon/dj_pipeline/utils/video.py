@@ -10,10 +10,9 @@ import aeon.io.reader as io_reader
 from aeon.io import api as io_api
 from aeon.io import video as io_video
 
-raw_data_dir = pathlib.Path("/ceph/aeon/aeon/data/raw/AEON2/experiment0.2")
-
 
 def retrieve_video_frames(
+    experiment_name,
     camera_name,
     start_time,
     end_time,
@@ -22,6 +21,12 @@ def retrieve_video_frames(
     chunk_size=50,
     **kwargs,
 ):
+    from aeon.dj_pipeline import acquisition
+
+    raw_data_dir = acquisition.Experiment.get_data_directory(
+        {"experiment_name": experiment_name}
+    )
+
     # do some data loading
     videodata = io_api.load(
         root=raw_data_dir.as_posix(),

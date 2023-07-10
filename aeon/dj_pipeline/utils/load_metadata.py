@@ -2,7 +2,6 @@ import datetime
 import inspect
 import json
 import pathlib
-import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -11,15 +10,10 @@ import numpy as np
 import pandas as pd
 from dotmap import DotMap
 
-from aeon.dj_pipeline import (
-    acquisition,
-    dict_to_uuid,
-    get_schema_name,
-    lab,
-    streams,
-    subject,
-)
+from aeon.dj_pipeline import acquisition, dict_to_uuid, subject
+from aeon.dj_pipeline.utils import streams_maker
 from aeon.io import api as io_api
+
 
 _weight_scale_rate = 100
 _weight_scale_nest = 1
@@ -43,6 +37,8 @@ def insert_stream_types():
     """Insert into streams.streamType table all streams in the dataset schema."""
     from aeon.schema import dataset
 
+    streams = dj.VirtualModule("streams", streams_maker.STREAMS_MODULE_NAME)
+
     schemas = [v for v in dataset.__dict__.values() if isinstance(v, DotMap)]
     for schema in schemas:
 
@@ -64,6 +60,8 @@ def insert_stream_types():
 
 def insert_device_types(schema: DotMap, metadata_yml_filepath: Path):
     """Use dataset.schema and metadata.yml to insert into streams.DeviceType and streams.Device. Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml. It then creates new device tables under streams schema."""
+    streams = dj.VirtualModule("streams", streams_maker.STREAMS_MODULE_NAME)
+
     device_info: dict[dict] = get_device_info(schema)
     device_type_mapper, device_sn = get_device_mapper(schema, metadata_yml_filepath)
 
@@ -137,7 +135,7 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
     Returns:
         dict: epoch_config [dict]
     """
-    
+
     metadata_yml_filepath = pathlib.Path(metadata_yml_filepath)
     epoch_start = datetime.datetime.strptime(
         metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
@@ -163,7 +161,9 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
         )
     )
 
-    if isinstance(devices, list):  # In exp02, it is a list of dict. In presocial. It's a dict of dict.
+    if isinstance(
+        devices, list
+    ):  # In exp02, it is a list of dict. In presocial. It's a dict of dict.
         devices: dict = {
             d.pop("Name"): d for d in devices
         }  # {deivce_name: device_config}
@@ -182,7 +182,8 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     """
     Make entries into device tables
     """
-    
+    streams = dj.VirtualModule("streams", streams_maker.STREAMS_MODULE_NAME)
+
     if experiment_name.startswith("oct"):
         ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath)
         return
@@ -209,14 +210,14 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
 
     schema = acquisition._device_schema_mapping[experiment_name]
     device_type_mapper, _ = get_device_mapper(schema, metadata_yml_filepath)
-    
+
     # Insert into each device table
     device_list = []
     device_removal_list = []
-    
+
     for device_name, device_config in epoch_config["metadata"].items():
         if table := getattr(streams, device_type_mapper.get(device_name) or "", None):
-            
+
             device_sn = device_config.get("SerialNumber", device_config.get("PortName"))
             device_key = {"device_serial_number": device_sn}
 
@@ -263,38 +264,50 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                     for entry in table_attribute_entry
                 ]
 
-                if dict_to_uuid({config["attribute_name"]: config["attribute_value"] for config in current_device_config}) == dict_to_uuid(
-                    {config["attribute_name"]: config["attribute_value"] for config in new_device_config}
+                if dict_to_uuid(
+                    {
+                        config["attribute_name"]: config["attribute_value"]
+                        for config in current_device_config
+                    }
+                ) == dict_to_uuid(
+                    {
+                        config["attribute_name"]: config["attribute_value"]
+                        for config in new_device_config
+                    }
                 ):  # Skip if none of the configuration has changed.
                     continue
 
                 # Remove old device
-                device_removal_list.append({
-                    **current_device_query.fetch1("KEY"),
-                    f"{dj.utils.from_camel_case(table.__name__)}_removal_time": epoch_config[
-                        "epoch_start"
-                    ],
-                })
+                device_removal_list.append(
+                    {
+                        **current_device_query.fetch1("KEY"),
+                        f"{dj.utils.from_camel_case(table.__name__)}_removal_time": epoch_config[
+                            "epoch_start"
+                        ],
+                    }
+                )
 
             # Insert into table.
             table.insert1(table_entry, skip_duplicates=True)
             table.Attribute.insert(table_attribute_entry, ignore_extra_fields=True)
 
     # Remove the currently installed devices that are absent in this config
-    device_removal = lambda device_type, device_entry: any(dj.utils.      from_camel_case(device_type) in k for k in device_entry)  # returns True if the device type is found in the attribute name
-    
+    device_removal = lambda device_type, device_entry: any(
+        dj.utils.from_camel_case(device_type) in k for k in device_entry
+    )  # returns True if the device type is found in the attribute name
+
     for device_type in streams.DeviceType.fetch("device_type"):
         table = getattr(streams, device_type)
 
         device_removal_list.extend(
-            (table - table.RemovalTime - device_list & experiment_key
-        ).fetch("KEY"))  # could be VideoSource or Patch
-        
+            (table - table.RemovalTime - device_list & experiment_key).fetch("KEY")
+        )  # could be VideoSource or Patch
+
         for device_entry in device_removal_list:
             if device_removal(device_type, device_entry):
                 table.RemovalTime.insert1(device_entry)
-            
-        
+
+
 # region Get stream & device information
 def get_stream_entries(schema: DotMap) -> list[dict]:
     """Returns a list of dictionaries containing the stream entries for a given device,
@@ -474,10 +487,14 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
                 device_sn[item.Name] = (
                     item.SerialNumber or item.PortName or None
                 )  # assign either the serial number (if it exists) or port name. If neither exists, assign None
-            elif isinstance(item, str): # presocial
+            elif isinstance(item, str):  # presocial
                 if meta_data.Devices[item].get("Type"):
                     device_type_mapper[item] = meta_data.Devices[item].get("Type")
-                device_sn[item] = meta_data.Devices[item].get("SerialNumber") or meta_data.Devices[item].get("PortName") or None
+                device_sn[item] = (
+                    meta_data.Devices[item].get("SerialNumber")
+                    or meta_data.Devices[item].get("PortName")
+                    or None
+                )
 
         with filename.open("w") as f:
             json.dump(device_type_mapper, f)
@@ -491,7 +508,7 @@ def ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath):
     """
     Temporary ingestion routine to load devices' meta information for Octagon arena experiments
     """
-    from aeon.dj_pipeline import streams
+    streams = dj.VirtualModule("streams", streams_maker.STREAMS_MODULE_NAME)
 
     oct01_devices = [
         ("Metadata", "Metadata"),
