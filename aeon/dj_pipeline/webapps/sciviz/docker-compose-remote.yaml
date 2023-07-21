@@ -10,7 +10,7 @@ services:
     environment:
       # - FLASK_ENV=development # enables logging to console from Flask
       - PHARUS_SPEC_PATH=/main/specsheet.yaml # for dynamic utils spec
-
+    env_file: ./.env
     user: root
     volumes:
       - ./specsheet.yaml:/main/specsheet.yaml #copy the spec over to /main/specs/YOUR_SPEC_NAME
