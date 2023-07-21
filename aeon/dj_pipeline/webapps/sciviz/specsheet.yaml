@@ -454,8 +454,8 @@ SciViz:
               width: 2
               type: slideshow:aeon
               route: /videostream_video_streamer
-              batch_size: 3
-              chunk_size: 50
+              batch_size: 6
+              chunk_size: 30
               buffer_size: 30
               max_FPS: 50
               channels:
