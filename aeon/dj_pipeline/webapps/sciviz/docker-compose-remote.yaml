@@ -23,7 +23,8 @@ services:
         apk add --update git g++ &&
         git clone -b datajoint_pipeline https://github.com/SainsburyWellcomeCentre/aeon_mecha.git &&
         pip install -e ./aeon_mecha &&
-        gunicorn --bind 0.0.0.0:$${PHARUS_PORT} pharus.server:app
+        gunicorn --bind 0.0.0.0:$${PHARUS_PORT} --workers=3 pharus.server:app
+
     # ports:
     # - "5000:5000"
     networks:
