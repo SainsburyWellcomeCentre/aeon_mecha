@@ -25,10 +25,10 @@ def retrieve_video_frames(
     raw_data_dir = Path(raw_data_dir)
     assert raw_data_dir.exists()
 
-    # do some data loading
+    # Load video data
     videodata = io_api.load(
         root=raw_data_dir.as_posix(),
-        reader=io_reader.Video(camera_name),
+        reader=io_reader.Video(f"{camera_name}_*"),
         start=pd.Timestamp(start_time),
         end=pd.Timestamp(end_time),
     )
