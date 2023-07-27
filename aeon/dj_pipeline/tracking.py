@@ -3,7 +3,9 @@ import matplotlib.path
 import numpy as np
 import pandas as pd
 
+from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, qc
 from aeon.io import api as io_api
+from aeon.io import reader
 
 from . import acquisition, dict_to_uuid, get_schema_name, lab, qc
 
@@ -229,6 +231,77 @@ class CameraTracking(dj.Imported):
             attrs_to_scale=["position_x", "position_y"],
             scale_factor=pixel_scale if in_meter else 1,
         )
+
+
+# ---------- VideoSource  ------------------
+
+
+@schema
+class VideoSourceTracking(dj.Imported):
+    definition = """  # Tracked objects position data from a particular VideoSource for multi-animal experiment using the SLEAP tracking method per chunk
+    -> acquisition.Chunk
+    -> streams.VideoSource
+    -> TrackingParamSet
+    """
+
+    class Object(dj.Part):
+        definition = """  # Position data of object tracked by a particular camera tracking
+        -> master
+        object_name:            varchar(16)   
+        ---
+        timestamps:             longblob  # (datetime) timestamps of the position data
+        class:                  smallint   
+        class_confidence:       longblob   
+        centroid_x:             longblob  
+        centroid_y:             longblob  
+        centroid_confidence:    longblob  
+        """
+
+    @property
+    def key_source(self):
+        ks = acquisition.Chunk * streams.VideoSource * TrackingParamSet
+        return ks * (streams.VideoSource  & f"video_source_name in {tuple(set(acquisition._ref_device_mapping.values()))}").proj() & "tracking_paramset_id = 1"  # SLEAP method
+
+    def make(self, key):
+        chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end", "directory_type"
+        )
+        camera = (streams.VideoSource & key).fetch1("video_source_name")
+
+        raw_data_dir = acquisition.Experiment.get_data_directory(
+            key, directory_type=dir_type
+        )
+
+        device = getattr(
+            acquisition._device_schema_mapping[key["experiment_name"]], camera
+        )
+
+        sleap_reader = reader.Harp(pattern="", columns=["class", "class_confidence", "centroid_x", "centroid_y", "centroid_confidence"])
+        tracking_file_path = "/ceph/aeon/aeon/code/scratchpad/ex_ma_tracking/ex_ma_tracking.bin"  # temporary
+        tracking_df = sleap_reader.read(tracking_file_path)
+
+        object_positions = []
+        for obj_name in ["body"]:
+            
+            for class_id in tracking_df["class"].unique():
+                
+                temp_df = tracking_df[tracking_df["class"] == class_id]
+
+                object_positions.append(
+                    {
+                        **key,
+                        "object_name": obj_name,
+                        "timestamps": temp_df.index.values,
+                        "class": class_id,
+                        "class_confidence": temp_df.class_confidence.values,
+                        "centroid_x": temp_df.centroid_x.values,
+                        "centroid_y": temp_df.centroid_y.values,
+                        "centroid_confidence": temp_df.centroid_confidence.values,
+                    }
+                )
+
+        self.insert1(key)
+        self.Object.insert(object_positions)
 
 
 # ---------- HELPER ------------------
