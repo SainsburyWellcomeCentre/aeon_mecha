@@ -16,7 +16,7 @@ class Colony(dj.Lookup):
     ---
     reference_weight=null   : float  
     sex='U'                 : enum('M', 'F', 'U')
-    subject_birth_date=null                : date  # date of birth
+    subject_birth_date=null : date  # date of birth
     note=''                 : varchar(1024)
     """
 

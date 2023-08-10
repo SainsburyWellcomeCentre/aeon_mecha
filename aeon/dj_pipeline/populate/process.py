@@ -36,7 +36,7 @@ import datajoint as dj
 from datajoint_utilities.dj_worker import parse_args
 
 from aeon.dj_pipeline.populate.worker import (
-    high_priority,
+    acquisition_worker,
     mid_priority,
     streams_worker,
     logger,
@@ -46,7 +46,7 @@ from aeon.dj_pipeline.populate.worker import (
 # ---- some wrappers to support execution as script or CLI
 
 configured_workers = {
-    "high_priority": high_priority,
+    "high_priority": acquisition_worker,
     "mid_priority": mid_priority,
     "streams_worker": streams_worker,
 }
