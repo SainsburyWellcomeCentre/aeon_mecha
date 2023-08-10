@@ -437,6 +437,7 @@ SciViz:
                     return dict(**kwargs)
               dj_query: >
                 def dj_query(aeon_acquisition):
+                    acquisition = aeon_acquisition
                     q = dj.U('camera_description') & acquisition.ExperimentCamera
                     return {'query': q, 'fetch_args': ['camera_description']}
             time_range_selector:
@@ -453,8 +454,8 @@ SciViz:
               width: 2
               type: slideshow:aeon
               route: /videostream_video_streamer
-              batch_size: 3
-              chunk_size: 50
+              batch_size: 6
+              chunk_size: 30
               buffer_size: 30
               max_FPS: 50
               channels:
@@ -464,11 +465,12 @@ SciViz:
                   stream_time_selector,
                 ]
               restriction: >
-                def restriction(**kwargs):
+                def restriction(**kwargs):  
                     return dict(**kwargs)
               dj_query: >
                 def dj_query(aeon_acquisition):
-                    q = aeon_acquisition.ExperimentCamera
+                    acquisition = aeon_acquisition
+                    q = dj.U('camera_description', 'raw_data_dir') & (acquisition.ExperimentCamera * acquisition.Experiment.Directory & 'directory_type = "raw"').proj('camera_description', raw_data_dir="CONCAT('/ceph/aeon/', directory_path)")
                     return {'query': q, 'fetch_args': []}
     PipelineMonitor:
       route: /pipeline_monitor
@@ -684,14 +686,14 @@ SciViz:
                 - aeon_acquisition.Experiment.Directory
               map:
                 - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.Experiment
+                - type: table
                   input: Directory Type
                   destination: aeon_acquisition.DirectoryType
                 - type: table
                   input: Pipeline Repository
                   destination: aeon_acquisition.PipelineRepository
-                - type: table
-                  input: Experiment Name
-                  destination: aeon_acquisition.Experiment
                 - type: attribute
                   input: Path to Experiment Directory
                   destination: directory_path
