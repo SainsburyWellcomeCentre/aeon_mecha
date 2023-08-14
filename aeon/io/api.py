@@ -2,6 +2,7 @@ import bisect
 import datetime
 import pandas as pd
 from pathlib import Path
+from os import PathLike
 
 """The duration of each acquisition chunk, in whole hours."""
 CHUNK_DURATION = 1
@@ -59,7 +60,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
     reader. A subset of the data can be loaded by specifying an optional time range, or a list
     of timestamps used to index the data on file. Returned data will be sorted chronologically.
 
-    :param str root: The root path, or prioritised sequence of paths, where epoch data is stored.
+    :param str or PathLike root: The root path, or prioritised sequence of paths, where epoch data is stored.
     :param Reader reader: A data stream reader object used to read chunk data from the dataset.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
@@ -70,13 +71,15 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
     :return: A pandas data frame containing epoch event metadata, sorted by time.
     '''
     if isinstance(root, str):
+        root = Path(root)
+    if isinstance(root, PathLike):
         root = [root]
 
     epoch_pattern = "**" if epoch is None else epoch
     fileset = {
         chunk_key(fname):fname
         for path in root
-        for fname in Path(path).glob(f"{epoch_pattern}/**/{reader.pattern}.{reader.extension}")}
+        for fname in path.glob(f"{epoch_pattern}/**/{reader.pattern}.{reader.extension}")}
     files = sorted(fileset.items())
 
     if time is not None:

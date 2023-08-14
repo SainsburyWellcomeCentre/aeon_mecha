@@ -64,7 +64,7 @@ class Harp(Reader):
             buffer=data, offset=11,
             strides=(stride, elementsize))
 
-        if payloadshape[1] < len(self.columns):
+        if self.columns is not None and payloadshape[1] < len(self.columns):
             data = pd.DataFrame(payload, index=seconds, columns=self.columns[:payloadshape[1]])
             data[self.columns[payloadshape[1]:]] = math.nan
             return data
@@ -145,6 +145,16 @@ class Log(Csv):
     """
     def __init__(self, pattern):
         super().__init__(pattern, columns=['priority', 'type', 'message'])
+
+class Heartbeat(Harp):
+    """
+    Extract periodic heartbeat event data.
+    
+    Columns:
+        second (int): The whole second corresponding to the heartbeat, in seconds.
+    """
+    def __init__(self, pattern):
+        super().__init__(pattern, columns=['second'])
 
 class Encoder(Harp):
     """

@@ -1,6 +1,10 @@
 import aeon.io.reader as _reader
 import aeon.io.device as _device
 
+def heartbeat(pattern):
+    """Heartbeat event for Harp devices."""
+    return { "Heartbeat": _reader.Heartbeat(f"{pattern}_8_*") }
+
 def video(pattern):
     """Video frame metadata."""
     return { "Video": _reader.Video(f"{pattern}_*") }
