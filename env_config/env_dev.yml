@@ -1,7 +1,8 @@
 # Contains only the dev package requirements.
-# Run e.g. w/mamba: `mamba env create -q -f env.yml -f env_dev.yml`
+# Create fresh env e.g. w/mamba: `mamba env create -q -f env.yml -f env_dev.yml`
+# Update exisiting env e.g. w/mamba: `mamba env update -f env.yml -f env_dev.yml --prune`
 
-name: aeon
+name: aeon_dev
 channels:
   - conda-forge
   - defaults
@@ -9,9 +10,13 @@ dependencies:
   - bandit
   - black
   - flake8
+  - flake8-bugbear
+  - flake8-docstrings
+  - flake8-pyproject
   - gh
   - ipdb
   - isort
+  - mypy
   - pre-commit 
   - pydantic 
   - pytest 
@@ -20,3 +25,4 @@ dependencies:
   - tox
   - pip:
       - git+https://github.com/Technologicat/pyan.git
+

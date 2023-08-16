@@ -230,7 +230,7 @@ class DigitalBitmask(Harp):
 class Video(Csv):
     """
     Extracts video frame metadata.
-    
+
     Columns:
         hw_counter (int): Hardware frame counter value for the current frame.
         hw_timestamp (int): Internal camera timestamp for the current frame.

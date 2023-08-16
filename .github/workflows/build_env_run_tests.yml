@@ -1,6 +1,5 @@
-# Builds the aeon environment, flakes via flake8, tests via pytest, reports
-# test coverage via pytest-cov and codecov, and reports security
-# vulnerabilities via bandit.
+# Builds the aeon environment, flakes via flake8, checks type annotations via mypy, tests via pytest, 
+# reports test coverage via pytest-cov and codecov, and reports security vulnerabilities via bandit.
 
 name: build_env_run_tests
 on:
@@ -34,6 +33,8 @@ jobs:
         run: mamba env update -f ./env_config/env_dev.yml
       - name: flake
         run: python -m flake8 .
+      - name: mypy
+        run: python -m mypy .
       - name: bandit
         run: python -m bandit . -r -ll
       - name: pytest

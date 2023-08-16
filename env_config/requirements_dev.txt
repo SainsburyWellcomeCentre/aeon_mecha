@@ -1,12 +1,16 @@
-# Run with `pip install -r requirements_dev.txt`
+# Install packages `pip install -r requirements_dev.txt`
 
 -r requirements.txt
 bandit
 black
 flake8
+flake8-bugbear
+flake8-docstrings
+flake8-pyproject
 gh
 ipdb
 isort
+mypy
 pre-commit
 git+https://github.com/Technologicat/pyan.git
 pydantic

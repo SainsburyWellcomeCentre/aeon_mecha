@@ -1,7 +1,7 @@
 default_language_version:
-  python: python3.9
+  python: python3.11
 
-default_stages: [commit, push]
+#default_stages: [commit, push]
 files: "^(docker|aeon\/dj_pipeline)\/.*$"
 repos:
   - repo: meta
@@ -33,3 +33,48 @@ repos:
         args:
           - "--settings-file"
           - "./pyproject.toml"
+  
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.1.0
+    hooks:
+      - id: pyupgrade
+
+  - repo: https://github.com/pycqa/flake8
+      rev: 3.9.2
+      hooks:
+        - id: flake8
+          entry: pflake8
+          additional_dependencies: [pyproject-flake8]
+  
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v0.982
+    hooks:
+      - id: mypy
+        args:
+          - "--config-file"
+          - "./pyproject.toml"
+
+  # Bandit and Pytest are expensive, so we show their set-up but leave them commented out.
+  # - repo: https://github.com/PyCQA/bandit
+  #   rev: 1.7.4
+  #   hooks:
+  #     - id: bandit
+  #       args:
+  #         - "--configfile"
+  #         - "./pyproject.toml"
+  #         - "--recursive"
+  #         - "-ll"
+  #       additional_dependencies:
+  #         - "bandit[toml]"
+
+  # - repo: local
+  #   hooks:
+  #     - id: pytest-py
+  #       name: pytest-py
+  #       entry: pytest
+  #       language: system
+  #       pass_filenames: false
+  #       args:
+  #         - "-v"
+  #         - "-n"
+  #         - "auto"

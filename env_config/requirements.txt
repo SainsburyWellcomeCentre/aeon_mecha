@@ -1,4 +1,4 @@
-# Run with `pip install -r requirements.txt`
+# Install packages via `pip install -r requirements.txt`
 
 python>=3.9, <3.12
 pip

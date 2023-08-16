@@ -50,8 +50,12 @@ dev = [
   "black",
   "isort",
   "flake8",
+  "flake8-bugbear",
+  "flake8-docstrings",
+  "flake8-pyproject",
   "gh",
   "ipdb",
+  "mypy",
   "pre",
   "pyan3 @ git+https://github.com/Technologicat/pyan.git",
   "pytest",
@@ -73,7 +77,7 @@ DataJoint = "https://docs.datajoint.org/"
 packages = ["aeon"]
 
 [tool.black]
-line-length = 88
+line-length = 108
 color = false
 exclude = '''
 /(
@@ -92,6 +96,25 @@ exclude = '''
 [tool.isort]
 profile = "black"
 color_output = false
+
+# Ignore the following errors and warnings:
+#     - whitespace after '(' (E201)
+#     - whitespace before ')' (E202)
+#     - whitespace before ':' (E203)
+#     - whitespace after ',' or ':' (E231)
+#     - assigning to a lambda expression (E371)
+#     - linebreaking before a binary operator (W503)
+#     - multiple statments on one line separated by ';' (E702)
+[tool.flake8]
+max-line-length = 108
+extend-ignore = ["E201", "E202", "E203", "E231", "E731", "W503", "E702"]
+extend-exclude = [".git", ".github", ".idea", ".vscode"]
+docstring-convention = "google"
+
+[tool.mypy]
+ignore_missing_imports = true
+
+[tool.bandit]
 
 [tool.pytest.ini_options]
 markers = [
