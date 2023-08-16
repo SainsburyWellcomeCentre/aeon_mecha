@@ -14,12 +14,11 @@ class Pose(_reader.Harp):
         self.pattern = pattern
         self.extension = "bin"
 
-    def read(self, file):
+    def read(self, file, ceph_proc_dir="/ceph/aeon/aeon/data/processed"):
         """
         Reads data from the Harp-binarized tracking file
         """
         # Get config file from `file`, then bodyparts from config file.
-        ceph_proc_dir = "/ceph/aeon/aeon/data/processed"
         model_dir = file.stem.replace("_", "/")
         config_file_dir = Path(ceph_proc_dir + "/" + model_dir)
         assert config_file_dir.exists(), f"Cannot find model dir {config_file_dir}"
