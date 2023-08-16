@@ -1,0 +1,10 @@
+# Contains only the gpu package requirements.
+# Run e.g. w/mamba: `mamba env create -q -f env.yml -f env_gpu.yml`
+
+name: aeon_gpu
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - cupy
+  - dask

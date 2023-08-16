@@ -1,0 +1,22 @@
+# Contains only the dev package requirements.
+# Run e.g. w/mamba: `mamba env create -q -f env.yml -f env_dev.yml`
+
+name: aeon
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - bandit
+  - black
+  - flake8
+  - gh
+  - ipdb
+  - isort
+  - pre-commit 
+  - pydantic 
+  - pytest 
+  - pytest-cov 
+  - sphinx 
+  - tox
+  - pip:
+      - git+https://github.com/Technologicat/pyan.git
