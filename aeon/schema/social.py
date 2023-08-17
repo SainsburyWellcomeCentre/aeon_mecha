@@ -8,10 +8,10 @@ import pandas as pd
 from aeon import util
 import aeon.io.reader as _reader
 
-import ipdb
 
 class Pose(_reader.Harp):
     """Reader for Harp-binarized tracking data given a model that outputs id, parts, and likelihoods."""
+
     def __init__(self, pattern):
         self.pattern = pattern
         self.extension = "bin"
@@ -36,7 +36,13 @@ class Pose(_reader.Harp):
         part_data_list = [None] * len(parts)
         for i, part in enumerate(parts):
             part_data_list[i] = data[
-                ["class", "class_likelihood", f"{part}_likelihood", f"{part}_x", f"{part}_y"]
+                [
+                    "class",
+                    "class_likelihood",
+                    f"{part}_likelihood",
+                    f"{part}_x",
+                    f"{part}_y",
+                ]
             ]
             part_data_list[i].insert(2, "part", part)
             part_data_list[i].columns = new_columns
@@ -47,7 +53,7 @@ class Pose(_reader.Harp):
         """Returns a list of bodyparts from a model's config file."""
         parts = None
         with open(file) as f:
-                config = json.load(f)
+            config = json.load(f)
         if file.stem == "confmap_config":  # SLEAP
             try:
                 heads = config["model"]["heads"]
@@ -61,7 +67,7 @@ def get_config_file(
     config_file_dir,
     config_file_names=[
         "confmap_config.json",  # SLEAP (add others for other trackers to this list)
-    ]
+    ],
 ):
     """Returns the config file from a model's config directory."""
     config_file = None
@@ -85,5 +91,5 @@ def class_int2str(tracking_df, config_file_dir):
         except KeyError as err:
             raise KeyError(f"Cannot find classes in {config_file}.") from err
         for i, subj in enumerate(classes):
-                tracking_df.loc[tracking_df["class"] == i, "class"] = subj
+            tracking_df.loc[tracking_df["class"] == i, "class"] = subj
     return tracking_df

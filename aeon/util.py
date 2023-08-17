@@ -2,6 +2,7 @@
 
 from typing import Union
 
+
 def find_nested_key(obj: Union[dict, list], key: str):
     """Returns the value of the first found nested key."""
     if isinstance(obj, dict):
