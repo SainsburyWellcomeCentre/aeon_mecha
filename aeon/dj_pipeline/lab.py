@@ -57,6 +57,10 @@ class Location(dj.Lookup):
         ("SWC", "room-0", "room for experiment 0"),
         ("SWC", "room-1", "room for social experiment"),
         ("SWC", "464", "room for social experiment using octagon arena"),
+        ("SWC", "AEON1", "acquisition machine AEON1"),
+        ("SWC", "AEON2", "acquisition machine AEON2"),
+        ("SWC", "AEON3", "acquisition machine AEON3"),
+        ("SWC", "AEON4", "acquisition machine AEON4"),
     ]
 
 
