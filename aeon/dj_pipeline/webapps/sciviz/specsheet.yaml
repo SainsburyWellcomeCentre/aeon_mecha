@@ -54,6 +54,7 @@ SciViz:
               type: form
               tables:
                 - aeon_lab.Colony
+                - aeon_subject.Subject
               map:
                 - type: attribute
                   input: Subject
@@ -70,9 +71,12 @@ SciViz:
                 - type: attribute
                   input: Note
                   destination: note
+                - type: attribute
+                  input: Subject Description
+                  destination: subject_description
             Colony:
               route: /colony_page_table
-              x: 1
+              x: 0.5
               y: 0
               height: 1
               width: 1
@@ -655,7 +659,7 @@ SciViz:
                   destination: aeon_lab.Location
                 - type: attribute
                   input: Experiment Type
-                  destination: experiment_type
+                  destination: aeon_acquisition.ExperimentType
 
             Experiment Subject Entry:
               route: /exp_subject_form
@@ -695,5 +699,5 @@ SciViz:
                   input: Pipeline Repository
                   destination: aeon_acquisition.PipelineRepository
                 - type: attribute
-                  input: Path to Experiment Directory
+                  input: Full Path to Experiment Data Directory
                   destination: directory_path
