@@ -122,9 +122,15 @@ class Experiment(dj.Manual):
         repo_name, dir_path = (
             cls.Directory & experiment_key & {"directory_type": directory_type}
         ).fetch1("repository_name", "directory_path")
-        data_directory = paths.get_repository_path(repo_name) / dir_path
-        if not data_directory.exists():
-            return None
+        
+        dir_path = pathlib.Path(dir_path)
+        if dir_path.exists():
+            assert dir_path.is_relative_to(paths.get_repository_path(repo_name))
+            data_directory = dir_path
+        else:
+            data_directory = paths.get_repository_path(repo_name) / dir_path
+            if not data_directory.exists():
+                return None
         return data_directory.as_posix() if as_posix else data_directory
 
     @classmethod
