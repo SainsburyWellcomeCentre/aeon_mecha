@@ -21,10 +21,10 @@ _payloadtypes = {
 }
 
 class Reader:
-    """Extracts data from raw chunk files in an Aeon dataset.
+    """Extracts data from raw files in an Aeon dataset.
     
     Attributes:
-        pattern (str): Pattern used to find raw chunk files,
+        pattern (str): Pattern used to find raw files,
             usually in the format `<Device>_<DataStream>`.
         columns (str or array-like): Column labels to use for the data.
         extension (str): Extension of data file pathnames.
@@ -35,7 +35,7 @@ class Reader:
         self.extension = extension
 
     def read(self, _):
-        """Reads data from the specified chunk file."""
+        """Reads data from the specified file."""
         return pd.DataFrame(columns=self.columns, index=pd.DatetimeIndex([]))
 
 class Harp(Reader):

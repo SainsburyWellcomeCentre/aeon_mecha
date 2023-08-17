@@ -1,0 +1,11 @@
+{
+  "Workflow": "Experiment0.2.bonsai",
+  "Commit": "249cdc654af63e6959e64f7ff2c21f219cc912ea",
+  "Devices": {
+    "VideoController": {
+      "PortName": "COM3",
+      "GlobalTriggerFrequency": "50",
+      "LocalTriggerFrequency": "125"
+    }
+  }
+}

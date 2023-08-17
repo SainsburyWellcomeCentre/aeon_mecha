@@ -45,22 +45,26 @@ x-aeon-ingest-common: &aeon-ingest-common
       max-file: "5"
 
 services:
-  ingest_high:
+  acquisition_worker:
     <<: *aeon-ingest-common
-    command: ["aeon_ingest", "high_priority", "--duration=-1", "--sleep=1200"]
+    command: ["aeon_ingest", "acquisition_worker"]
+
+  streams_worker:
+    <<: *aeon-ingest-common
+    depends_on:
+      acquisition_worker:
+        condition: service_started
+    deploy:
+      mode: replicated
+      replicas: 3
+    command: ["aeon_ingest", "streams_worker"]
 
   ingest_mid:
     <<: *aeon-ingest-common
     depends_on:
-      ingest_high:
+      acquisition_worker:
         condition: service_started
     deploy:
       mode: replicated
       replicas: 2
-    command: ["aeon_ingest", "mid_priority", "--duration=-1", "--sleep=3600"]
-
-  dev:
-    <<: *aeon-ingest-common
-    deploy:
-      mode: replicated
-      replicas: 0
+    command: ["aeon_ingest", "mid_priority"]
