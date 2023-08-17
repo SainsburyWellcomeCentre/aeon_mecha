@@ -35,15 +35,8 @@ class Pose(_reader.Harp):
         new_data = pd.DataFrame(columns=new_columns)
         part_data_list = [None] * len(parts)
         for i, part in enumerate(parts):
-            part_data_list[i] = data[
-                [
-                    "class",
-                    "class_likelihood",
-                    f"{part}_likelihood",
-                    f"{part}_x",
-                    f"{part}_y",
-                ]
-            ]
+            part_columns = ["class", "class_likelihood", f"{part}_x", f"{part}_y", f"{part}_likelihood"]
+            part_data_list[i] = data[part_columns]
             part_data_list[i].insert(2, "part", part)
             part_data_list[i].columns = new_columns
         new_data = pd.concat(part_data_list)
