@@ -1127,7 +1127,7 @@ def _get_all_chunks(experiment_name, device_name):
 
     chunkdata = io_api.load(
         root=raw_data_dirs.values(),
-        reader=io_reader.Chunk(pattern=device_name, extension="csv"),
+        reader=io_reader.Chunk(pattern=device_name + "*", extension="csv"),
     )
 
     return chunkdata, raw_data_dirs
