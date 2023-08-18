@@ -76,9 +76,9 @@ SciViz:
                   destination: subject_description
             Colony:
               route: /colony_page_table
-              x: 0.5
-              y: 0
-              height: 1
+              x: 0
+              y: 0.5
+              height: 0.6
               width: 1
               type: antd-table
               restriction: >
@@ -87,6 +87,134 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_lab):
                     return {'query': aeon_lab.Colony(), 'fetch_args': []}
+    ExperimentEntry:
+      route: /experiment_entry
+      grids:
+        grid5:
+          type: fixed
+          columns: 1
+          row_height: 1000
+          components:
+            Experiment Entry:
+              route: /exp_form
+              x: 0
+              y: 0
+              height: 0.5
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment
+              map:
+                - type: attribute
+                  input: Experiment Name
+                  destination: experiment_name
+                - type: attribute
+                  input: Start Time
+                  destination: experiment_start_time
+                - type: attribute
+                  input: Description
+                  destination: experiment_description
+                - type: table
+                  input: Lab Arena
+                  destination: aeon_lab.Arena
+                - type: table
+                  input: Lab Location
+                  destination: aeon_lab.Location
+                - type: attribute
+                  input: Experiment Type
+                  destination: aeon_acquisition.ExperimentType
+
+            Experiment Subject Entry:
+              route: /exp_subject_form
+              x: 0
+              y: 0.5
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment.Subject
+              map:
+                - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.Experiment
+                - type: table
+                  input: Subject in the experiment
+                  destination: aeon_subject.Subject
+
+            Experiment Directory Entry:
+              route: /exp_subject_dir_form
+              x: 0
+              y: 0.8
+              height: 0.5
+
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment.Directory
+              map:
+                - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.Experiment
+                - type: table
+                  input: Directory Type
+                  destination: aeon_acquisition.DirectoryType
+                - type: table
+                  input: Pipeline Repository
+                  destination: aeon_acquisition.PipelineRepository
+                - type: attribute
+                  input: Full Path to Experiment Data Directory
+                  destination: directory_path
+
+    LookupEntry:
+      route: /lab_entry
+      grids:
+        grid5:
+          type: fixed
+          columns: 1
+          row_height: 1000
+          components:
+            Lab Entry:
+              route: /lab_form
+              x: 0
+              y: 0
+              height: 0.5
+              width: 1
+              type: form
+              tables:
+                - aeon_lab.Arena
+              map:
+                - type: attribute
+                  input: Arena Name
+                  destination: arena_name
+                - type: table
+                  input: Arena Shape
+                  destination: aeon_lab.ArenaShape
+                - type: attribute
+                  input: X Dimension
+                  destination: arena_x_dim
+                - type: attribute
+                  input: Y Dimension
+                  destination: arena_y_dim
+                - type: attribute
+                  input: Z Dimension
+                  destination: arena_z_dim
+                - type: attribute
+                  input: Arena Description
+                  destination: arena_description
+
+            Experiment Type Entry:
+              route: /exp_type_form
+              x: 0
+              y: 0.5
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.ExperimentType
+              map:
+                - type: attribute
+                  input: Experiment Type
+                  destination: experiment_type
 
     Subjects:
       route: /subjects
@@ -458,9 +586,9 @@ SciViz:
               width: 2
               type: slideshow:aeon
               route: /videostream_video_streamer
-              batch_size: 6
-              chunk_size: 30
-              buffer_size: 30
+              batch_size: 9
+              chunk_size: 60
+              buffer_size: 60
               max_FPS: 50
               channels:
                 [
@@ -476,228 +604,3 @@ SciViz:
                     acquisition = aeon_acquisition
                     q = dj.U('camera_description', 'raw_data_dir') & (acquisition.ExperimentCamera * acquisition.Experiment.Directory & 'directory_type = "raw"').proj('camera_description', raw_data_dir="CONCAT('/ceph/aeon/', directory_path)")
                     return {'query': q, 'fetch_args': []}
-    PipelineMonitor:
-      route: /pipeline_monitor
-      grids:
-        grid1:
-          type: fixed
-          columns: 1
-          row_height: 680
-          components:
-            Worker Status:
-              route: /pipeline_monitor_workerstatus
-              x: 0
-              y: 0
-              height: 1
-              width: 1
-              type: antd-table
-              restriction: >
-                def restriction(**kwargs):
-                    return dict(**kwargs)
-              dj_query: >
-                def dj_query(aeon_workerlog):
-                    cls = aeon_workerlog.WorkerLog
-                    backtrack_minutes = 60
-                    recent = (
-                        cls.proj(
-                            minute_elapsed="TIMESTAMPDIFF(MINUTE, process_timestamp, UTC_TIMESTAMP())"
-                        )
-                        & f"minute_elapsed < {backtrack_minutes}"
-                    )
-                    recent_jobs = dj.U("process").aggr(
-                        cls & recent,
-                        worker_count="count(DISTINCT pid)",
-                        minutes_since_oldest="TIMESTAMPDIFF(MINUTE, MIN(process_timestamp), UTC_TIMESTAMP())",
-                        minutes_since_newest="TIMESTAMPDIFF(MINUTE, MAX(process_timestamp), UTC_TIMESTAMP())",
-                    )
-                    
-                    return {'query': recent_jobs, 'fetch_args': {'order_by': 'minutes_since_newest ASC'}}
-            Error Log:
-              route: /pipeline_monitor_errorlog
-              x: 0
-              y: 1
-              height: 1
-              width: 1
-              type: antd-table
-              restriction: >
-                def restriction(**kwargs):
-                    return dict(**kwargs)
-              dj_query: >
-                def dj_query(aeon_workerlog):
-                    cls = aeon_workerlog.ErrorLog.proj(..., '-error_timestamp', minutes_elapsed='TIMESTAMPDIFF(MINUTE, error_timestamp, UTC_TIMESTAMP())')
-                    return {'query': cls, 'fetch_args': {'order_by': 'minutes_elapsed ASC'}}
-            Jobs Log:
-              route: /pipeline_monitor_jobslog
-              x: 0
-              y: 2
-              height: 1
-              width: 1
-              type: antd-table
-              restriction: >
-                def restriction(**kwargs):
-                    return dict(**kwargs)
-              dj_query: >
-                def dj_query(aeon_workerlog):
-                    workerlog_vm = aeon_workerlog
-                    db_prefix = workerlog_vm.schema.database.replace('workerlog', '')
-                    connection = dj.conn(
-                        host=workerlog_vm.schema.connection.conn_info['host'],
-                        user=workerlog_vm.schema.connection.conn_info['user'],
-                        password=workerlog_vm.schema.connection.conn_info['passwd'],
-                        reset=True)
-                    schema_names = [s for s in dj.list_schemas(connection=connection) if s.startswith(db_prefix)]
-                    jobs_table = None
-                    print(schema_names, flush=True)
-                    for schema_name in schema_names:
-                        vm = dj.VirtualModule(schema_name, schema_name, connection=connection)
-                        jobs_query = dj.U(*vm.schema.jobs.heading.names) & vm.schema.jobs
-                        if jobs_table is None:
-                            jobs_table = jobs_query
-                        else:
-                            jobs_table += jobs_query
-                    jobs_table = jobs_table.proj(..., minutes_elapsed='TIMESTAMPDIFF(MINUTE, timestamp, UTC_TIMESTAMP())')
-                    return {'query': jobs_table, 'fetch_args': {'order_by': 'status DESC, minutes_elapsed ASC'}}
-            Worker Log:
-              route: /pipeline_monitor_workerlog
-              x: 0
-              y: 3
-              height: 1
-              width: 1
-              type: antd-table
-              restriction: >
-                def restriction(**kwargs):
-                    return dict(**kwargs)
-              dj_query: >
-                def dj_query(aeon_workerlog):
-                      cls = aeon_workerlog.WorkerLog.proj(..., minutes_elapsed='TIMESTAMPDIFF(MINUTE, process_timestamp, UTC_TIMESTAMP())')
-                      return {'query': cls, 'fetch_args': {'order_by': 'minutes_elapsed ASC'}}
-
-    DataEntry:
-      route: /data_entry
-      grids:
-        grid5:
-          type: fixed
-          columns: 1
-          row_height: 1000
-          components:
-            Lab Entry:
-              route: /lab_form
-              x: 0
-              y: 0
-              height: 0.5
-              width: 1
-              type: form
-              tables:
-                - aeon_lab.Arena
-              map:
-                - type: attribute
-                  input: Arena Name
-                  destination: arena_name
-                - type: table
-                  input: Arena Shape
-                  destination: aeon_lab.ArenaShape
-                - type: attribute
-                  input: X Dimension
-                  destination: arena_x_dim
-                - type: attribute
-                  input: Y Dimension
-                  destination: arena_y_dim
-                - type: attribute
-                  input: Z Dimension
-                  destination: arena_z_dim
-                - type: attribute
-                  input: Arena Description
-                  destination: arena_description
-
-            Subject Entry:
-              route: /subject_form
-              x: 0
-              y: 0.5
-              height: 0.3
-              width: 1
-              type: form
-              tables:
-                - aeon_subject.Subject
-              map:
-                - type: attribute
-                  input: Subject ID
-                  destination: subject
-                - type: attribute
-                  input: Sex
-                  destination: sex
-                - type: attribute
-                  input: Date of Birth
-                  destination: subject_birth_date
-                - type: attribute
-                  input: Subject Description
-                  destination: subject_description
-
-            Experiment Entry:
-              route: /exp_form
-              x: 0
-              y: 0.8
-              height: 0.5
-              width: 1
-              type: form
-              tables:
-                - aeon_acquisition.Experiment
-              map:
-                - type: attribute
-                  input: Experiment Name
-                  destination: experiment_name
-                - type: attribute
-                  input: Start Time
-                  destination: experiment_start_time
-                - type: attribute
-                  input: Description
-                  destination: experiment_description
-                - type: table
-                  input: Lab Arena
-                  destination: aeon_lab.Arena
-                - type: table
-                  input: Lab Location
-                  destination: aeon_lab.Location
-                - type: attribute
-                  input: Experiment Type
-                  destination: aeon_acquisition.ExperimentType
-
-            Experiment Subject Entry:
-              route: /exp_subject_form
-              x: 0
-              y: 1.3
-              height: 0.3
-              width: 1
-              type: form
-              tables:
-                - aeon_acquisition.Experiment.Subject
-              map:
-                - type: table
-                  input: Experiment Name
-                  destination: aeon_acquisition.Experiment
-                - type: table
-                  input: Subject in the experiment
-                  destination: aeon_subject.Subject
-
-            Experiment Directory Entry:
-              route: /exp_subject_dir_form
-              x: 0
-              y: 1.6
-              height: 0.3
-
-              width: 1
-              type: form
-              tables:
-                - aeon_acquisition.Experiment.Directory
-              map:
-                - type: table
-                  input: Experiment Name
-                  destination: aeon_acquisition.Experiment
-                - type: table
-                  input: Directory Type
-                  destination: aeon_acquisition.DirectoryType
-                - type: table
-                  input: Pipeline Repository
-                  destination: aeon_acquisition.PipelineRepository
-                - type: attribute
-                  input: Full Path to Experiment Data Directory
-                  destination: directory_path
