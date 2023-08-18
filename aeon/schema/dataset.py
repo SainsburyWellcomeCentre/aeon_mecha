@@ -6,7 +6,7 @@ import aeon.schema.octagon as octagon
 from aeon.io import reader
 from aeon.io.device import Device
 
-__all__ = ["exp02", "exp01", "octagon01", "presocial"]
+__all__ = ["exp02", "exp01", "octagon01", "multianimal"]
 
 exp02 = DotMap(
     [
@@ -63,16 +63,16 @@ octagon01 = DotMap(
     ]
 )
 
-presocial = exp02
-presocial.Patch1.BeamBreak = reader.BitmaskEvent(
+multianimal = exp02
+multianimal.Patch1.BeamBreak = reader.BitmaskEvent(
     pattern="Patch1_32", value=0x22, tag="BeamBroken"
 )
-presocial.Patch2.BeamBreak = reader.BitmaskEvent(
+multianimal.Patch2.BeamBreak = reader.BitmaskEvent(
     pattern="Patch2_32", value=0x22, tag="BeamBroken"
 )
-presocial.Patch1.DeliverPellet = reader.BitmaskEvent(
+multianimal.Patch1.DeliverPellet = reader.BitmaskEvent(
     pattern="Patch1_35", value=0x1, tag="TriggeredPellet"
 )
-presocial.Patch2.DeliverPellet = reader.BitmaskEvent(
+multianimal.Patch2.DeliverPellet = reader.BitmaskEvent(
     pattern="Patch2_35", value=0x1, tag="TriggeredPellet"
 )
