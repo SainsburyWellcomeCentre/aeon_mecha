@@ -1,6 +1,6 @@
 # Contains only the gpu package requirements.
 # Create env e.g. w/mamba: `mamba env create -q -f env.yml`
-# Update exisiting env e.g. w/mamba: `mamba env update -f env_gpu.yml --prune`
+# Update exisiting env e.g. w/mamba: `mamba env update -f env_gpu.yml`
 
 name: aeon
 channels:
