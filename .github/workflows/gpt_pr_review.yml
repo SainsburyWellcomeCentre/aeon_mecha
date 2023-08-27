@@ -1,3 +1,5 @@
+# Reviews pull requests with OpenAI's GPT API.
+
 name: gpt_pr_review
 permissions:
   contents: read

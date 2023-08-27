@@ -1,10 +1,15 @@
+# Squashe merges commits from PRs to 'main' into 'prod'. 'prod' thus serves as a  more 
+# readable history of the project, while 'main' retains the full commit history.
+
 name: squash_merge_to_prod
 on:
-  push:
+  pull_request:
     branches: [ main ]
+    types: [ closed ]
 jobs:
   squash_merge_to_prod:
     runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true  # only run if PR merged (subset of 'closed')
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
@@ -17,8 +22,7 @@ jobs:
     - name: Merge and squash to prod
       run: |
         git checkout prod
-        # Get the latest commit message from the 'main' branch
-        COMMIT_MSG=$(git log main -1 --pretty=format:%s)
-        git merge --squash main
+        COMMIT_MSG=$(git log main -1 --pretty=format:%s)  # latest commit message from 'main'
+        git merge --squash -X theirs main
         git commit -m "$COMMIT_MSG"
         git push origin prod
