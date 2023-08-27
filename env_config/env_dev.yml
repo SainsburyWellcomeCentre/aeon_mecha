@@ -7,20 +7,15 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - bandit
   - black
-  - flake8
-  - flake8-bugbear
-  - flake8-docstrings
-  - flake8-pyproject
   - gh
   - ipdb
-  - isort
-  - mypy
   - pre-commit 
-  - pydantic 
+  - pydantic
+  - pyright 
   - pytest 
   - pytest-cov 
+  - ruff
   - sphinx 
   - tox
   - pip:
