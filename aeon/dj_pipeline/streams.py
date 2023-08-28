@@ -9,8 +9,7 @@ import aeon
 from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.io import api as io_api
 
-schema_name = get_schema_name('streams')
-schema = dj.Schema()
+schema = dj.Schema(get_schema_name("streams"))
 
 
 @schema 
@@ -59,33 +58,6 @@ class Device(dj.Lookup):
     ---
     -> DeviceType
     """
-
-
-@schema 
-class Patch(dj.Manual):
-        definition = f"""
-        # patch placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
-        -> acquisition.Experiment
-        -> Device
-        patch_install_time  : datetime(6)   # time of the patch placed and started operation at this position
-        ---
-        patch_name          : varchar(36)
-        """
-
-        class Attribute(dj.Part):
-            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
-            -> master
-            attribute_name          : varchar(32)
-            ---
-            attribute_value=null    : longblob
-            """
-
-        class RemovalTime(dj.Part):
-            definition = f"""
-            -> master
-            ---
-            patch_removal_time: datetime(6)  # time of the patch being removed
-            """
 
 
 @schema 
@@ -140,270 +112,6 @@ class VideoSource(dj.Manual):
             ---
             video_source_removal_time: datetime(6)  # time of the video_source being removed
             """
-
-
-@schema 
-class PatchBeamBreak(dj.Imported):
-        definition = """# Raw per-chunk BeamBreak data stream from Patch (auto-generated with aeon_mecha-unknown)
-            -> Patch
-            -> acquisition.Chunk
-            ---
-            sample_count: int      # number of data points acquired from this stream for a given chunk
-            timestamps: longblob   # (datetime) timestamps of BeamBreak data
-            """
-        _stream_reader = aeon.io.reader.BitmaskEvent
-        _stream_detail = {'stream_type': 'BeamBreak', 'stream_reader': 'aeon.io.reader.BitmaskEvent', 'stream_reader_kwargs': {'pattern': '{pattern}_32', 'value': 34, 'tag': 'BeamBroken'}, 'stream_description': '', 'stream_hash': UUID('b14171e6-d27d-117a-ae73-a16c4b5fc8a2')}
-
-        @property
-        def key_source(self):
-            f"""
-            Only the combination of Chunk and Patch with overlapping time
-            +  Chunk(s) that started after Patch install time and ended before Patch remove time
-            +  Chunk(s) that started after Patch install time for Patch that are not yet removed
-            """
-            return (
-                acquisition.Chunk
-                * Patch.join(Patch.RemovalTime, left=True)
-                & 'chunk_start >= patch_install_time'
-                & 'chunk_start < IFNULL(patch_removal_time, "2200-01-01")'
-            )
-
-        def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(
-                key, directory_type=dir_type
-            )
-
-            device_name = (Patch & key).fetch1(
-                'patch_name'
-            )
-
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
-            )
-
-            stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
-                reader=stream,
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
-
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        c: stream_data[c].values
-                        for c in stream.columns
-                        if not c.startswith("_")
-                    },
-                }
-            )
-
-
-@schema 
-class PatchDeliverPellet(dj.Imported):
-        definition = """# Raw per-chunk DeliverPellet data stream from Patch (auto-generated with aeon_mecha-unknown)
-            -> Patch
-            -> acquisition.Chunk
-            ---
-            sample_count: int      # number of data points acquired from this stream for a given chunk
-            timestamps: longblob   # (datetime) timestamps of DeliverPellet data
-            """
-        _stream_reader = aeon.io.reader.BitmaskEvent
-        _stream_detail = {'stream_type': 'DeliverPellet', 'stream_reader': 'aeon.io.reader.BitmaskEvent', 'stream_reader_kwargs': {'pattern': '{pattern}_35', 'value': 1, 'tag': 'TriggeredPellet'}, 'stream_description': '', 'stream_hash': UUID('c49dda51-2e38-8b49-d1d8-2e54ea928e9c')}
-
-        @property
-        def key_source(self):
-            f"""
-            Only the combination of Chunk and Patch with overlapping time
-            +  Chunk(s) that started after Patch install time and ended before Patch remove time
-            +  Chunk(s) that started after Patch install time for Patch that are not yet removed
-            """
-            return (
-                acquisition.Chunk
-                * Patch.join(Patch.RemovalTime, left=True)
-                & 'chunk_start >= patch_install_time'
-                & 'chunk_start < IFNULL(patch_removal_time, "2200-01-01")'
-            )
-
-        def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(
-                key, directory_type=dir_type
-            )
-
-            device_name = (Patch & key).fetch1(
-                'patch_name'
-            )
-
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
-            )
-
-            stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
-                reader=stream,
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
-
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        c: stream_data[c].values
-                        for c in stream.columns
-                        if not c.startswith("_")
-                    },
-                }
-            )
-
-
-@schema 
-class PatchDepletionState(dj.Imported):
-        definition = """# Raw per-chunk DepletionState data stream from Patch (auto-generated with aeon_mecha-unknown)
-            -> Patch
-            -> acquisition.Chunk
-            ---
-            sample_count: int      # number of data points acquired from this stream for a given chunk
-            timestamps: longblob   # (datetime) timestamps of DepletionState data
-            """
-        _stream_reader = aeon.schema.foraging._PatchState
-        _stream_detail = {'stream_type': 'DepletionState', 'stream_reader': 'aeon.schema.foraging._PatchState', 'stream_reader_kwargs': {'pattern': '{pattern}_State'}, 'stream_description': '', 'stream_hash': UUID('73025490-348c-18fd-d565-8e682b5b4bcd')}
-
-        @property
-        def key_source(self):
-            f"""
-            Only the combination of Chunk and Patch with overlapping time
-            +  Chunk(s) that started after Patch install time and ended before Patch remove time
-            +  Chunk(s) that started after Patch install time for Patch that are not yet removed
-            """
-            return (
-                acquisition.Chunk
-                * Patch.join(Patch.RemovalTime, left=True)
-                & 'chunk_start >= patch_install_time'
-                & 'chunk_start < IFNULL(patch_removal_time, "2200-01-01")'
-            )
-
-        def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(
-                key, directory_type=dir_type
-            )
-
-            device_name = (Patch & key).fetch1(
-                'patch_name'
-            )
-
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
-            )
-
-            stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
-                reader=stream,
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
-
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        c: stream_data[c].values
-                        for c in stream.columns
-                        if not c.startswith("_")
-                    },
-                }
-            )
-
-
-@schema 
-class PatchEncoder(dj.Imported):
-        definition = """# Raw per-chunk Encoder data stream from Patch (auto-generated with aeon_mecha-unknown)
-            -> Patch
-            -> acquisition.Chunk
-            ---
-            sample_count: int      # number of data points acquired from this stream for a given chunk
-            timestamps: longblob   # (datetime) timestamps of Encoder data
-            """
-        _stream_reader = aeon.io.reader.Encoder
-        _stream_detail = {'stream_type': 'Encoder', 'stream_reader': 'aeon.io.reader.Encoder', 'stream_reader_kwargs': {'pattern': '{pattern}_90'}, 'stream_description': '', 'stream_hash': UUID('45002714-c31d-b2b8-a6e6-6ae624385cc1')}
-
-        @property
-        def key_source(self):
-            f"""
-            Only the combination of Chunk and Patch with overlapping time
-            +  Chunk(s) that started after Patch install time and ended before Patch remove time
-            +  Chunk(s) that started after Patch install time for Patch that are not yet removed
-            """
-            return (
-                acquisition.Chunk
-                * Patch.join(Patch.RemovalTime, left=True)
-                & 'chunk_start >= patch_install_time'
-                & 'chunk_start < IFNULL(patch_removal_time, "2200-01-01")'
-            )
-
-        def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(
-                key, directory_type=dir_type
-            )
-
-            device_name = (Patch & key).fetch1(
-                'patch_name'
-            )
-
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
-            )
-
-            stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
-                reader=stream,
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
-
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        c: stream_data[c].values
-                        for c in stream.columns
-                        if not c.startswith("_")
-                    },
-                }
-            )
 
 
 @schema 
@@ -468,7 +176,7 @@ class UndergroundFeederBeamBreak(dj.Imported):
                         for c in stream.columns
                         if not c.startswith("_")
                     },
-                }
+                }, ignore_extra_fields=True
             )
 
 
@@ -534,7 +242,7 @@ class UndergroundFeederDeliverPellet(dj.Imported):
                         for c in stream.columns
                         if not c.startswith("_")
                     },
-                }
+                }, ignore_extra_fields=True
             )
 
 
@@ -548,7 +256,7 @@ class UndergroundFeederDepletionState(dj.Imported):
             timestamps: longblob   # (datetime) timestamps of DepletionState data
             """
         _stream_reader = aeon.schema.foraging._PatchState
-        _stream_detail = {'stream_type': 'DepletionState', 'stream_reader': 'aeon.schema.foraging._PatchState', 'stream_reader_kwargs': {'pattern': '{pattern}_State'}, 'stream_description': '', 'stream_hash': UUID('73025490-348c-18fd-d565-8e682b5b4bcd')}
+        _stream_detail = {'stream_type': 'DepletionState', 'stream_reader': 'aeon.schema.foraging._PatchState', 'stream_reader_kwargs': {'pattern': '{pattern}_State_*'}, 'stream_description': '', 'stream_hash': UUID('17c3e36f-3f2e-2494-bbd3-5cb9a23d3039')}
 
         @property
         def key_source(self):
@@ -600,7 +308,7 @@ class UndergroundFeederDepletionState(dj.Imported):
                         for c in stream.columns
                         if not c.startswith("_")
                     },
-                }
+                }, ignore_extra_fields=True
             )
 
 
@@ -614,7 +322,7 @@ class UndergroundFeederEncoder(dj.Imported):
             timestamps: longblob   # (datetime) timestamps of Encoder data
             """
         _stream_reader = aeon.io.reader.Encoder
-        _stream_detail = {'stream_type': 'Encoder', 'stream_reader': 'aeon.io.reader.Encoder', 'stream_reader_kwargs': {'pattern': '{pattern}_90'}, 'stream_description': '', 'stream_hash': UUID('45002714-c31d-b2b8-a6e6-6ae624385cc1')}
+        _stream_detail = {'stream_type': 'Encoder', 'stream_reader': 'aeon.io.reader.Encoder', 'stream_reader_kwargs': {'pattern': '{pattern}_90_*'}, 'stream_description': '', 'stream_hash': UUID('f96b0b26-26f6-5ff6-b3c7-5aa5adc00c1a')}
 
         @property
         def key_source(self):
@@ -666,7 +374,7 @@ class UndergroundFeederEncoder(dj.Imported):
                         for c in stream.columns
                         if not c.startswith("_")
                     },
-                }
+                }, ignore_extra_fields=True
             )
 
 
@@ -680,7 +388,7 @@ class VideoSourcePosition(dj.Imported):
             timestamps: longblob   # (datetime) timestamps of Position data
             """
         _stream_reader = aeon.io.reader.Position
-        _stream_detail = {'stream_type': 'Position', 'stream_reader': 'aeon.io.reader.Position', 'stream_reader_kwargs': {'pattern': '{pattern}_200'}, 'stream_description': '', 'stream_hash': UUID('75f9f365-037a-1e9b-ad38-8b2b3783315d')}
+        _stream_detail = {'stream_type': 'Position', 'stream_reader': 'aeon.io.reader.Position', 'stream_reader_kwargs': {'pattern': '{pattern}_200_*'}, 'stream_description': '', 'stream_hash': UUID('d7727726-1f52-78e1-1355-b863350b6d03')}
 
         @property
         def key_source(self):
@@ -732,7 +440,7 @@ class VideoSourcePosition(dj.Imported):
                         for c in stream.columns
                         if not c.startswith("_")
                     },
-                }
+                }, ignore_extra_fields=True
             )
 
 
@@ -746,7 +454,7 @@ class VideoSourceRegion(dj.Imported):
             timestamps: longblob   # (datetime) timestamps of Region data
             """
         _stream_reader = aeon.schema.foraging._RegionReader
-        _stream_detail = {'stream_type': 'Region', 'stream_reader': 'aeon.schema.foraging._RegionReader', 'stream_reader_kwargs': {'pattern': '{pattern}_201'}, 'stream_description': '', 'stream_hash': UUID('6234a429-8ae5-d7dc-41c8-602ac76da029')}
+        _stream_detail = {'stream_type': 'Region', 'stream_reader': 'aeon.schema.foraging._RegionReader', 'stream_reader_kwargs': {'pattern': '{pattern}_201_*'}, 'stream_description': '', 'stream_hash': UUID('6c78b3ac-ffff-e2ab-c446-03e3adf4d80a')}
 
         @property
         def key_source(self):
@@ -798,7 +506,7 @@ class VideoSourceRegion(dj.Imported):
                         for c in stream.columns
                         if not c.startswith("_")
                     },
-                }
+                }, ignore_extra_fields=True
             )
 
 
@@ -812,7 +520,7 @@ class VideoSourceVideo(dj.Imported):
             timestamps: longblob   # (datetime) timestamps of Video data
             """
         _stream_reader = aeon.io.reader.Video
-        _stream_detail = {'stream_type': 'Video', 'stream_reader': 'aeon.io.reader.Video', 'stream_reader_kwargs': {'pattern': '{pattern}'}, 'stream_description': '', 'stream_hash': UUID('4246295b-789f-206d-b413-7af25b7548b2')}
+        _stream_detail = {'stream_type': 'Video', 'stream_reader': 'aeon.io.reader.Video', 'stream_reader_kwargs': {'pattern': '{pattern}_*'}, 'stream_description': '', 'stream_hash': UUID('f51c6174-e0c4-a888-3a9d-6f97fb6a019b')}
 
         @property
         def key_source(self):
@@ -864,7 +572,7 @@ class VideoSourceVideo(dj.Imported):
                         for c in stream.columns
                         if not c.startswith("_")
                     },
-                }
+                }, ignore_extra_fields=True
             )
 
 
