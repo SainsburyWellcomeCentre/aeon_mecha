@@ -27,6 +27,7 @@ dependencies = [
   "dotmap",
   "fastparquet",
   "graphviz",
+  "importlib_metadata",
   "ipykernel",
   "jupyter",
   "jupyterlab",

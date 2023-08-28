@@ -34,7 +34,8 @@ jobs:
           python -m venv .venv
           source .venv/bin/activate
           pip install -e .[dev]
-          python -c "import aeon"
+          pip list
+          .venv/bin/python -c "import aeon"
   
   build_env_run_tests:  # checks for building env using mamba and runs codebase checks and tests
     name: Build env and run tests on ${{ matrix.os }}
