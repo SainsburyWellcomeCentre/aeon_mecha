@@ -6,10 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "aeon_mecha"
 version = "0.1.0"
 requires-python = ">=3.9.4"
-description = \"\"\"
+description = '''
     Code for managing acquired data from Project Aeon experiments. Includes general file IO,
     data QC, querying, and analysis modules.
-\"\"\"
+'''
 authors = [
   { name = "Jai Bhagat", email = "jkbhagatio@gmail.com" },
   { name = "Goncalo Lopes", email = "goncaloclopes@gmail.com" },
@@ -108,7 +108,7 @@ ignore = [
     "S101", 
     "PT013",
     "PLR0912", "PLR0913", "PLR0915"
-]"
+]
 extend-exclude = [".git", ".github", ".idea", ".vscode"]
 
 [tool.ruff.pydocstyle]
