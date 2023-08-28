@@ -1,20 +1,48 @@
-# Builds the aeon environment, flakes via flake8, checks type annotations via mypy, tests via pytest, 
-# reports test coverage via pytest-cov and codecov, and reports security vulnerabilities via bandit.
+# Builds the aeon environment; lints formatting and smells via ruff; checks type annotations via pyright;
+# tests via pytest; reports test coverage via pytest-cov and codecov.
 
 name: build_env_run_tests
 on:
-  push:
-    branches: [ main, reorg, jai_dev, config ]
   pull_request:
     branches: [ main ]
-  workflow_dispatch:  # Allows running manually from Github's 'Actions' tab
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:  # allows running manually from Github's 'Actions' tab
 jobs:
-  build_env_run_tests:
+  build_env_pip_pyproject:  # checks only for building env using pip and pyproject.toml
+    name: Build env using pip and pyproject.toml
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: [3.11]
+        #include:  # test other python versions only on ubuntu
+          #- os: ubuntu-latest
+          #  python-version: [3.9, 3.10]
+      fail-fast: false
+    defaults:
+      run:
+        shell: bash -l {0}  # reset shell for each step
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Create venv and install dependencies
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -e .[dev]
+          python -c "import aeon"
+  
+  build_env_run_tests:  # checks for building env using mamba and runs codebase checks and tests
     name: Build env and run tests on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: [3.11]
       fail-fast: false
     defaults:
       run:
@@ -23,30 +51,34 @@ jobs:
       - name: checkout repo
         uses: actions/checkout@v2
       - name: set up conda env
-        uses: conda-incubator/setup-miniconda@v2  # from github marketplace
+        uses: conda-incubator/setup-miniconda@v2
         with:
-          activate-environment: aeon
-          environment-file: ./env_config/env.yml
           use-mamba: true
           miniforge-variant: Mambaforge
+          python-version: ${{ matrix.python-version }}
+          environment-file: ./env_config/env.yml
+          activate-environment: aeon
       - name: Update conda env with dev reqs
         run: mamba env update -f ./env_config/env_dev.yml
-      - name: flake
-        run: python -m flake8 .
-      - name: mypy
-        run: python -m mypy .
-      - name: bandit
-        run: python -m bandit . -r -ll
+
+      # Only run codebase checks and tests for ubuntu.
+      - name: ruff
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: python -m ruff check --config ./pyproject.toml .
+      - name: pyright
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        run: python -m pyright --level error --project ./pyproject.toml . 
       - name: pytest
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         run: python -m pytest tests/
-      # Only run coverage report job and upload for ubuntu.
+
       - name: generate test coverage report
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         run: |
           python -m pytest --cov=aeon ./tests/ --cov-report=xml:./tests/test_coverage/test_coverage_report.xml
-          python -m pytest --cov=aeon ./tests/ --cov-report=html:./tests/test_coverage/test_coverage_report_html
+          #python -m pytest --cov=aeon ./tests/ --cov-report=html:./tests/test_coverage/test_coverage_report_html
       - name: upload test coverage report to codecov
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
         uses: codecov/codecov-action@v2
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

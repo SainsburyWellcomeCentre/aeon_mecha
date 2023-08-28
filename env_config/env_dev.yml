@@ -10,6 +10,7 @@ dependencies:
   - black
   - gh
   - ipdb
+  - jellyfish
   - pre-commit 
   - pydantic
   - pyright 

@@ -1,4 +1,4 @@
-# Squashe merges commits from PRs to 'main' into 'prod'. 'prod' thus serves as a  more 
+# Squash merges commits from PRs to 'main' into 'prod'. 'prod' thus serves as a  more 
 # readable history of the project, while 'main' retains the full commit history.
 
 name: squash_merge_to_prod

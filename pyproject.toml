@@ -6,7 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "aeon_mecha"
 version = "0.1.0"
 requires-python = ">=3.9.4"
-description = "Code for managing acquired data from Project Aeon experiments. Includes general file IO, data QC, querying, and analysis modules."
+description = \"\"\"
+    Code for managing acquired data from Project Aeon experiments. Includes general file IO,
+    data QC, querying, and analysis modules.
+\"\"\"
 authors = [
   { name = "Jai Bhagat", email = "jkbhagatio@gmail.com" },
   { name = "Goncalo Lopes", email = "goncaloclopes@gmail.com" },
@@ -97,28 +100,43 @@ exclude = '''
 )/
 '''
 
-[tool.isort]
-profile = "black"
-color_output = false
-
-# Ignore the following errors and warnings:
-#     - whitespace after '(' (E201)
-#     - whitespace before ')' (E202)
-#     - whitespace before ':' (E203)
-#     - whitespace after ',' or ':' (E231)
-#     - assigning to a lambda expression (E371)
-#     - linebreaking before a binary operator (W503)
-#     - multiple statments on one line separated by ';' (E702)
-[tool.flake8]
-max-line-length = 108
-extend-ignore = ["E201", "E202", "E203", "E231", "E731", "W503", "E702"]
+[tool.ruff]
+select = ["E", "W", "F", "I", "D", "UP", "S", "B", "A", "C4", "ICN", "PIE", "PT", "SIM", "PL"]
+line-length = 108
+ignore = [
+    "E201", "E202", "E203", "E231", "E731", "E702", 
+    "S101", 
+    "PT013",
+    "PLR0912", "PLR0913", "PLR0915"
+]"
 extend-exclude = [".git", ".github", ".idea", ".vscode"]
-docstring-convention = "google"
 
-[tool.mypy]
-ignore_missing_imports = true
+[tool.ruff.pydocstyle]
+convention = "google"
 
-[tool.bandit]
+[tool.pyright]
+reportImportCycles = "error"
+reportUnusedImport = "error"
+reportUnusedClass = "error"
+reportUnusedfunction = "error"
+reportUnusedVariable = "error"
+reportDuplicateImport = "error"
+reportWildcardImportFromLibrary = "error"
+reportPrivateUsage = "error"
+reportCallInDefaultInitializer = "error"
+reportUnnecessaryIsInstance = "error"
+reportUnnecesaryCast = "error"
+reportUnnecesarryComparison = "error"
+reportUnnecessaryContains = "error"
+reportAssertAlwaysTrue = "error"
+reportSelfClsParameterName = "error"
+reportUnusedExpression = "error"
+reportMatchNotExhaustive = "error"
+reportImplicitOverride = "error"
+reportShadowedImports = "error"
+# *Note*: we may want to set all 'ReportOptional*' rules to "none", but leaving 'em default for now
+venvPath = "."
+venv = ".venv"
 
 [tool.pytest.ini_options]
 markers = [

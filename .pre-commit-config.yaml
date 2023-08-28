@@ -9,7 +9,7 @@ repos:
       - id: identity
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.1.0
+    rev: v4.4.0
     hooks:
       - id: check-yaml
       - id: detect-private-key
@@ -18,55 +18,27 @@ repos:
       - id: no-commit-to-branch
 
   - repo: https://github.com/psf/black
-    rev: 22.1.0
+    rev: 23.7.0
     hooks:
       - id: black
         args:
           - "--config"
           - "./pyproject.toml"
-
-  - repo: https://github.com/pycqa/isort
-    rev: 5.10.1
-    hooks:
-      - id: isort
-        name: isort (python)
-        args:
-          - "--settings-file"
-          - "./pyproject.toml"
   
-  - repo: https://github.com/asottile/pyupgrade
-    rev: v3.1.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.0.286
     hooks:
-      - id: pyupgrade
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix, --config, ./pyproject.toml]
 
-  - repo: https://github.com/pycqa/flake8
-      rev: 3.9.2
-      hooks:
-        - id: flake8
-          entry: pflake8
-          additional_dependencies: [pyproject-flake8]
-  
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v0.982
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.324
     hooks:
-      - id: mypy
-        args:
-          - "--config-file"
-          - "./pyproject.toml"
+    - id: pyright
+      args: [--level, error, --project, ./pyproject.toml]
 
-  # Bandit and Pytest are expensive, so we show their set-up but leave them commented out.
-  # - repo: https://github.com/PyCQA/bandit
-  #   rev: 1.7.4
-  #   hooks:
-  #     - id: bandit
-  #       args:
-  #         - "--configfile"
-  #         - "./pyproject.toml"
-  #         - "--recursive"
-  #         - "-ll"
-  #       additional_dependencies:
-  #         - "bandit[toml]"
 
+  # Pytest is expensive, so we show its set-up but leave it commented out.
   # - repo: local
   #   hooks:
   #     - id: pytest-py
