@@ -1,6 +1,6 @@
 # Local set-up using miniconda and conda
 
-1) Install [miniconda](https://docs.conda.io/en/latest/miniconda.html)
+1. Install [miniconda](https://docs.conda.io/en/latest/miniconda.html)
 	- If prompted with an "Install for", select "Just Me" (instead of "All Users")
 	- Ensure installation is in your home directory:
 		- On Windows: `C:\Users\<your_username>\anaconda3`
@@ -10,15 +10,21 @@
 	- Ensure you do *not* register anaconda as the default version of Python.
 	- _Note_: These installation settings can always be changed posthoc.
 
-2) Create conda environment and install the code dependencies from the `env.yml` file:
+2. Create conda environment and install the code dependencies from the `env.yml` file:
 ```
 conda update conda
 conda init
-conda env create --file env.yml
+conda env create --file env_config/env.yml
 ```
 
-3) Using the virtual environment:
+3. Optionally install development dependencies:
+```
+conda activate aeon
+conda env update --file env_config/env_dev.yml
+```
 
-`conda activate aeon`: activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
+4. Using the virtual environment:
 
-`conda deactivate aeon`: deactivates the virtual environment.
+	- `conda activate aeon`: activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
+
+	- `conda deactivate aeon`: deactivates the virtual environment.
