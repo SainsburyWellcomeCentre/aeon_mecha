@@ -1,14 +1,14 @@
 """Utility functions."""
 
-from typing import Union
+from typing import Union, Any
 
 
-def find_nested_key(obj: Union[dict, list], key: str):
+def find_nested_key(obj: Union[dict, list], key: str) -> Any:
     """Returns the value of the first found nested key."""
     if isinstance(obj, dict):
-        for k, v in obj.items():
-            if k == key:  # Found it!
-                return v
+        if v := obj.get(key):  # found it!
+            return v
+        for v in obj.values():
             found = find_nested_key(v, key)
             if found:
                 return found
