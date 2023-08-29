@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import List, Union
 import json
 
-import numpy as np
 import pandas as pd
 
 from aeon import util
