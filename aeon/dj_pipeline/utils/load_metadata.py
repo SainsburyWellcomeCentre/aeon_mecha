@@ -14,7 +14,6 @@ from aeon.dj_pipeline import acquisition, dict_to_uuid, subject
 from aeon.dj_pipeline.utils import streams_maker
 from aeon.io import api as io_api
 
-
 _weight_scale_rate = 100
 _weight_scale_nest = 1
 _colony_csv_path = pathlib.Path("/ceph/aeon/aeon/colony/colony.csv")
@@ -119,8 +118,12 @@ def insert_device_types(schema: DotMap, metadata_yml_filepath: Path):
         streams.DeviceType.insert(new_device_types)
 
     if new_device_stream_types:
-        streams.DeviceType.Stream.insert(new_device_stream_types)
-
+        try:
+            streams.DeviceType.Stream.insert(new_device_stream_types)
+        except dj.DataJointError:
+            insert_stream_types()
+            streams.DeviceType.Stream.insert(new_device_stream_types)
+            
     if new_devices:
         streams.Device.insert(new_devices)
 

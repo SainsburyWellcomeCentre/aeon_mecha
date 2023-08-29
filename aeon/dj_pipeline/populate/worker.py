@@ -6,16 +6,8 @@ from datajoint_utilities.dj_worker import (
     is_djtable,
 )
 
-from aeon.dj_pipeline import (
-    acquisition,
-    analysis,
-    db_prefix,
-    qc,
-    report,
-    tracking,
-)
+from aeon.dj_pipeline import acquisition, analysis, db_prefix, qc, report, tracking
 from aeon.dj_pipeline.utils import load_metadata, streams_maker
-
 
 streams = streams_maker.main()
 
@@ -31,7 +23,6 @@ __all__ = [
 # ---- Some constants ----
 logger = dj.logger
 worker_schema_name = db_prefix + "worker"
-load_metadata.insert_stream_types()
 
 
 # ---- Manage experiments for automated ingestion ----
