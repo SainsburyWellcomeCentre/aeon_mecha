@@ -242,21 +242,39 @@ class VideoSourceTracking(dj.Imported):
     -> acquisition.Chunk
     -> streams.VideoSource
     -> TrackingParamSet
+    ---
+    tracking_timestamps:             longblob  # (datetime) timestamps of the position data
     """
 
-    class Object(dj.Part):
-        definition = """  # Position data of object tracked by a particular camera tracking
+    class Point(dj.Part):
+        definition = """
         -> master
-        object_name:            varchar(16)   
+        point_name: varchar(16)   
         ---
-        timestamps:             longblob  # (datetime) timestamps of the position data
+        point_x:          longblob
+        point_y:          longblob
+        point_confidence: longblob
+        """
+    
+    class Pose(dj.Part):
+        definition = """
+        -> master
+        pose_name: varchar(16)   
+        ---
         class:                  smallint   
         class_confidence:       longblob   
         centroid_x:             longblob  
         centroid_y:             longblob  
         centroid_confidence:    longblob  
+        point_collection:       varchar(1000)  # List of point names  
         """
-
+        
+    class PointCollection(dj.Part):
+        definition = """
+        -> master.Pose
+        -> master.Point
+        """
+    
     @property
     def key_source(self):
         ks = acquisition.Chunk * streams.VideoSource * TrackingParamSet
