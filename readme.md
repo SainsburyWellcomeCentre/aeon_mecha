@@ -13,7 +13,6 @@ The various set-up tools mentioned below do some combination of python version, 
 #### Prereqs
 
 1. Ssh into the HPC and clone this repository to your home directory.
-
 ```
 ssh <your_SWC_username>@ssh.swc.ucl.ac.uk
 mkdir ~/ProjectAeon
@@ -27,6 +26,8 @@ Ensure you stay in the `~/ProjectAeon/aeon_mecha` directory for the rest of the 
 
 [Option 1](./docs/env_setup/remote/miniconda_conda_remote_setup.md): **miniconda** (python distribution) and **conda** (python version manager, environment manager, package manager, and package dependency manager)
 
+- *Note*: [mamba](https://mamba.readthedocs.io/en/latest/), a faster alternative to conda, is now installed as a module on the HPC, so the above instructions can be followed using 'mamba' instead of 'conda' if you prefer.
+
 [Option 2](./docs/env_setup/remote/pip_venv_remote_setup.md): **pip** (python package manager) and **venv** (python environment manager)
 
 ### Local set-up
@@ -39,7 +40,7 @@ All commands below should be run in a bash shell (Windows users can use the 'min
 ```
 mkdir ~/ProjectAeon
 cd ~/ProjectAeon
-https://github.com/SainsburyWellcomeCentre/aeon_mecha
+git clone https://github.com/SainsburyWellcomeCentre/aeon_mecha
 cd aeon_mecha
 ```
 
@@ -48,6 +49,8 @@ cd aeon_mecha
 Ensure you stay in the `~/ProjectAeon/aeon_mecha` directory for the rest of the set-up instructions, regardless of which set-up procedure you follow below.
 
 [Option 1](./docs/env_setup/local/miniconda_conda_local_setup.md): **miniconda** (python distribution) and **conda** (python version manager, environment manager, package manager, and package dependency manager)
+
+- *Note*: **mambaforge** and **mamba** can be used as faster, drop-in replacements for 'miniconda' and 'conda', respectively. You can set up the Aeon environment using them, following roughly the same instructions as above. See [here](https://biapol.github.io/blog/mara_lampert/getting_started_with_mambaforge_and_python/readme.html) for more info.
 
 [Option 2](./docs/env_setup/local/pip_venv_local_setup.md): **pip** (python package manager) and **venv** (python environment manager)
 
@@ -65,5 +68,8 @@ Ensure you stay in the `~/ProjectAeon/aeon_mecha` directory for the rest of the 
     - `docs/devs/` : Documentation for developers
     - `docs/env_setup/` : Documentation for setting up the Aeon Python environment
     - `docs/examples/` : Aeon usecase examples
-- `env_config/` : Configuration files that get used when setting up the Aeon Python environment
+    - `docs/using_hpc_jupyterhub.md` : Instructions for using Jupyter notebooks to access Aeon data via SWC's HPC
+    - `docs/using_online_dashboard.md` : Instructions for connecting to Aeon's online dashboard
+- `env_config/` : Configuration files for the Aeon Python environment
 - `tests/` : Unit and integration tests
+    - `tests/data` : Data used by tests

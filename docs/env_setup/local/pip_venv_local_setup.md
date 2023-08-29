@@ -5,25 +5,18 @@
 python -V          # should return >=3.9
 python -m pip -V
 ```
-
 2. Install virtualenv: `python -m pip install virtualenv`
-
 3. Create virtual environment: `python -m venv aeon`
-
 4. Activate the virtual environment and install the code dependencies:
 ```
 source aeon/bin/activate
 python -m pip install -e .
 ```
-
 5. Optionally install the development dependencies:
 ```
 source aeon/bin/activate
 python -m pip install -e .[dev]
 ```
-
 6. Using the virtual environment:
-
-`source aeon/bin/activate` activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
-
-`deactivate` deactivates the virtual environment.
+    - `source aeon/bin/activate` activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
+    - `deactivate` deactivates the virtual environment.
