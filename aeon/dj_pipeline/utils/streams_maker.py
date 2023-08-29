@@ -16,8 +16,8 @@ logger = dj.logger
 # schema_name = f'u_{dj.config["database.user"]}_streams'  # for testing
 schema_name = get_schema_name("streams")
 
-STREAMS_MODULE_NAME = "streams"
-_STREAMS_MODULE_FILE = Path(__file__).parent.parent / f"{STREAMS_MODULE_NAME}.py"
+STREAMS_MODULE_NAME = "aeon_streams"
+_STREAMS_MODULE_FILE = Path(__file__).parent.parent / "streams.py"
 
 
 class StreamType(dj.Lookup):
@@ -136,7 +136,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
     for col in stream.columns:
         if col.startswith("_"):
             continue
-        table_definition += f"{col}: longblob\n\t\t\t"
+        table_definition += f"{col}: longblob\n    "
 
     class DeviceDataStream(dj.Imported):
         definition = table_definition
@@ -198,7 +198,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
     DeviceDataStream.__name__ = f"{device_type}{stream_type}"
 
-    return DeviceDataStream
+    return DeviceDataStream, table_definition
 
 
 # endregion
@@ -225,7 +225,7 @@ def main(create_tables=True):
                 full_def = "@schema \n" + device_table_def + "\n\n"
                 f.write(full_def)
 
-    streams = importlib.import_module(f"aeon.dj_pipeline.{STREAMS_MODULE_NAME}")
+    streams = importlib.import_module(f"aeon.dj_pipeline.streams")
     streams.schema.activate(schema_name)
 
     if create_tables:
@@ -266,7 +266,7 @@ def main(create_tables=True):
             if hasattr(streams, table_name):
                 continue
 
-            table_class = get_device_stream_template(
+            table_class, table_definition = get_device_stream_template(
                 device_type, stream_type, streams_module=streams
             )
 
@@ -276,14 +276,7 @@ def main(create_tables=True):
 
             device_stream_table_def = inspect.getsource(table_class).lstrip()
 
-            old_definition = f"""# Raw per-chunk {stream_type} data stream from {device_type} (auto-generated with aeon_mecha-{aeon.__version__})
-            -> {device_type}
-            -> acquisition.Chunk
-            ---
-            sample_count: int      # number of data points acquired from this stream for a given chunk
-            timestamps: longblob   # (datetime) timestamps of {stream_type} data
-            """
-
+            # Replace the definition
             replacements = {
                 "DeviceDataStream": f"{device_type}{stream_type}",
                 "ExperimentDevice": device_type,
@@ -294,10 +287,8 @@ def main(create_tables=True):
                 "{stream_type}": stream_type,
                 "{aeon.__version__}": aeon.__version__,
             }
-            for old, new in replacements.items():
-                new_definition = old_definition.replace(old, new)
 
-            replacements["table_definition"] = '"""' + new_definition + '"""'
+            replacements["table_definition"] = '"""' + table_definition + '"""'
 
             for old, new in replacements.items():
                 device_stream_table_def = device_stream_table_def.replace(old, new)
