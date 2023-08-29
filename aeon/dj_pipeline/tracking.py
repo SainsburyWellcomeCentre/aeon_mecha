@@ -3,7 +3,14 @@ import matplotlib.path
 import numpy as np
 import pandas as pd
 
-from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, qc
+from aeon.dj_pipeline import (
+    acquisition,
+    dict_to_uuid,
+    get_schema_name,
+    lab,
+    qc,
+    streams,
+)
 from aeon.io import api as io_api
 from aeon.io import reader
 
@@ -240,7 +247,7 @@ class CameraTracking(dj.Imported):
 class VideoSourceTracking(dj.Imported):
     definition = """  # Tracked objects position data from a particular VideoSource for multi-animal experiment using the SLEAP tracking method per chunk
     -> acquisition.Chunk
-    -> streams.VideoSource
+    -> streams.VideoSourcePosition
     -> TrackingParamSet
     ---
     tracking_timestamps:             longblob  # (datetime) timestamps of the position data
@@ -277,8 +284,8 @@ class VideoSourceTracking(dj.Imported):
     
     @property
     def key_source(self):
-        ks = acquisition.Chunk * streams.VideoSource * TrackingParamSet
-        return ks * (streams.VideoSource  & f"video_source_name in {tuple(set(acquisition._ref_device_mapping.values()))}").proj() & "tracking_paramset_id = 1"  # SLEAP method
+        ks = acquisition.Chunk  * streams.VideoSource * TrackingParamSet
+        return ks & "experiment_name='multianimal'" & "video_source_name='CameraTop'" & "tracking_paramset_id = 1" # SLEAP & CameraTop
 
     def make(self, key):
         chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
