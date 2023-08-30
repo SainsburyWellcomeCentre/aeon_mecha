@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aeon_mecha"
 version = "0.1.0"
-requires-python = ">=3.9.4"
+requires-python = ">=3.11"
 description = '''
     Code for managing acquired data from Project Aeon experiments. Includes general file IO,
     data QC, querying, and analysis modules.
