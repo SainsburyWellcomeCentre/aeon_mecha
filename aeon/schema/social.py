@@ -11,16 +11,24 @@ import aeon.io.reader as _reader
 
 
 class Pose(_reader.Harp):
-    """Reader for Harp-binarized tracking data given a model that outputs id, parts, and likelihoods."""
+    """Reader for Harp-binarized tracking data given a model that outputs id, parts, and likelihoods.
 
-    pattern: str
-    columns: List[str] = []
-    extension: str = "bin"
+    Columns:
+        class (int): Int ID of a subject in the environment.
+        class_likelihood (float): Likelihood of the subject's identity.
+        part (str): Bodypart on the subject.
+        part_likelihood (float): Likelihood of the specified bodypart.
+        x (float): X-coordinate of the bodypart.
+        y (float): Y-coordinate of the bodypart.
+    """
+    def __init__(self, pattern: str, extension: str="bin"):
+        # `pattern` for this reader should typically be '<hpcnode>_<jobid>*'
+        super().__init__(pattern, columns=None, extension=extension)
 
     def read(self, file: Path, ceph_proc_dir: Path=Path("/ceph/aeon/aeon/data/processed")) -> pd.DataFrame:
         """Reads data from the Harp-binarized tracking file."""
         # Get config file from `file`, then bodyparts from config file.
-        model_dir = Path(file.stem.replace("_", "/"))
+        model_dir = Path(file.stem.replace("_", "/")).parent
         config_file_dir = ceph_proc_dir / model_dir
         assert config_file_dir.exists(), f"Cannot find model dir {config_file_dir}"
         config_file = get_config_file(config_file_dir)
@@ -36,7 +44,7 @@ class Pose(_reader.Harp):
         # Set new columns, and reformat `data`.
         n_parts = len(parts)
         part_data_list = [None] * n_parts
-        new_columns = ["class", "class_likelihood", "part", "part_likelihood", "x", "y"]
+        new_columns = ["class", "class_likelihood", "part", "x", "y", "part_likelihood"]
         new_data = pd.DataFrame(columns=new_columns)
         for i, part in enumerate(parts):
             part_columns = ["class", "class_likelihood", f"{part}_x", f"{part}_y", f"{part}_likelihood"]
