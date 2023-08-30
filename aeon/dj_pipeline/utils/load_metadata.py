@@ -36,7 +36,7 @@ def insert_stream_types():
     """Insert into streams.streamType table all streams in the dataset schema."""
     from aeon.schema import dataset
 
-    streams = dj.VirtualModule("streams", streams_maker.STREAMS_MODULE_NAME)
+    streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
     schemas = [v for v in dataset.__dict__.values() if isinstance(v, DotMap)]
     for schema in schemas:
@@ -59,7 +59,7 @@ def insert_stream_types():
 
 def insert_device_types(schema: DotMap, metadata_yml_filepath: Path):
     """Use dataset.schema and metadata.yml to insert into streams.DeviceType and streams.Device. Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml. It then creates new device tables under streams schema."""
-    streams = dj.VirtualModule("streams", streams_maker.STREAMS_MODULE_NAME)
+    streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
     device_info: dict[dict] = get_device_info(schema)
     device_type_mapper, device_sn = get_device_mapper(schema, metadata_yml_filepath)
@@ -185,7 +185,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     """
     Make entries into device tables
     """
-    streams = dj.VirtualModule("streams", streams_maker.STREAMS_MODULE_NAME)
+    streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
     if experiment_name.startswith("oct"):
         ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath)
@@ -511,7 +511,7 @@ def ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath):
     """
     Temporary ingestion routine to load devices' meta information for Octagon arena experiments
     """
-    streams = dj.VirtualModule("streams", streams_maker.STREAMS_MODULE_NAME)
+    streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
     oct01_devices = [
         ("Metadata", "Metadata"),
