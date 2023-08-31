@@ -7,8 +7,7 @@ on:
     branches: [ main ]
     types: [opened, reopened, synchronize]
   workflow_dispatch:  # allows running manually from Github's 'Actions' tab
-env:
-  PY_VER: 3.11  
+
 jobs:
   build_env_pip_pyproject:  # checks only for building env using pip and pyproject.toml
     name: Build env using pip and pyproject.toml
@@ -16,10 +15,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: [$PY_VER]
-        #include:  # test other python versions only on ubuntu
-          #- os: ubuntu-latest
-          #  python-version: [3.9, 3.10]
+        python-version: 3.11
       fail-fast: false
     defaults:
       run:
@@ -45,7 +41,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: [$PY_VER]
+        python-version: 3.11
       fail-fast: false
     defaults:
       run:
