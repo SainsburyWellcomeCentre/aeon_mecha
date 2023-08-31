@@ -12,7 +12,7 @@ description = '''
 '''
 authors = [
   { name = "Jai Bhagat", email = "jkbhagatio@gmail.com" },
-  { name = "Goncalo Lopes", email = "goncaloclopes@gmail.com" },
+  { name = "Goncalo Lopes", email = "g.lopes@neurogears.org" },
   { name = "Thinh Nguyen", email = "thinh@datajoint.com" },
   { name = "Joseph Burling", email = "joseph@datajoint.com" },
   { name = "Chang Huan Lo", email = "changhuan.lo@ucl.ac.uk" },
@@ -51,7 +51,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "bandit",
-  "black",
+  "black[jupyter]",
   "isort",
   "flake8",
   "flake8-bugbear",
