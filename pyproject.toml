@@ -52,19 +52,15 @@ dependencies = [
 dev = [
   "bandit",
   "black[jupyter]",
-  "isort",
-  "flake8",
-  "flake8-bugbear",
-  "flake8-docstrings",
-  "flake8-pyproject",
   "gh",
   "ipdb",
-  "mypy",
-  "pre",
+  "pre-commit",
   "pyan3 @ git+https://github.com/Technologicat/pyan.git",
+  "pydantic",
   "pytest",
   "pytest-cov",
-  "setuptools",
+  "sphinx",
+  "ruff",
   "tox",
 ]
 gpu = [
