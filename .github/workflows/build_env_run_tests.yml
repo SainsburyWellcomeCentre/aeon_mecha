@@ -62,22 +62,22 @@ jobs:
 
       # Only run codebase checks and tests for ubuntu.
       - name: ruff
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        if: matrix.os == 'ubuntu-latest'
         run: python -m ruff check --config ./pyproject.toml .
       - name: pyright
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        if: matrix.os == 'ubuntu-latest'
         run: python -m pyright --level error --project ./pyproject.toml . 
       - name: pytest
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        if: matrix.os == 'ubuntu-latest'
         run: python -m pytest tests/
 
       - name: generate test coverage report
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        if: matrix.os == 'ubuntu-latest'
         run: |
           python -m pytest --cov=aeon ./tests/ --cov-report=xml:./tests/test_coverage/test_coverage_report.xml
           #python -m pytest --cov=aeon ./tests/ --cov-report=html:./tests/test_coverage/test_coverage_report_html
       - name: upload test coverage report to codecov
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+        if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v2
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
