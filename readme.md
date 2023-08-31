@@ -18,6 +18,7 @@ ssh <your_SWC_username>@ssh.swc.ucl.ac.uk
 mkdir ~/ProjectAeon
 cd ~/ProjectAeon
 git clone https://github.com/SainsburyWellcomeCentre/aeon_mecha
+cd aeon_mecha
 ```
 
 #### Set-up
