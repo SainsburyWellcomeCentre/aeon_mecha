@@ -57,6 +57,7 @@ dev = [
   "pre-commit",
   "pyan3 @ git+https://github.com/Technologicat/pyan.git",
   "pydantic",
+  "pyright",
   "pytest",
   "pytest-cov",
   "sphinx",
