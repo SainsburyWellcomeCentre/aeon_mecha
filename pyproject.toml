@@ -5,11 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aeon_mecha"
 version = "0.1.0"
-requires-python = ">=3.9.4"
-description = "Code for managing acquired data from Project Aeon experiments. Includes general file IO, data QC, querying, and analysis modules."
+requires-python = ">=3.11"
+description = '''
+    Code for managing acquired data from Project Aeon experiments. Includes general file IO,
+    data QC, querying, and analysis modules.
+'''
 authors = [
   { name = "Jai Bhagat", email = "jkbhagatio@gmail.com" },
-  { name = "Goncalo Lopes", email = "goncaloclopes@gmail.com" },
+  { name = "Goncalo Lopes", email = "g.lopes@neurogears.org" },
   { name = "Thinh Nguyen", email = "thinh@datajoint.com" },
   { name = "Joseph Burling", email = "joseph@datajoint.com" },
   { name = "Chang Huan Lo", email = "changhuan.lo@ucl.ac.uk" },
@@ -24,6 +27,7 @@ dependencies = [
   "dotmap",
   "fastparquet",
   "graphviz",
+  "importlib_metadata",
   "ipykernel",
   "jupyter",
   "jupyterlab",
@@ -47,17 +51,22 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "bandit",
-  "black",
-  "isort",
-  "flake8",
+  "black[jupyter]",
   "gh",
   "ipdb",
-  "pre",
+  "pre-commit",
   "pyan3 @ git+https://github.com/Technologicat/pyan.git",
+  "pydantic",
+  "pyright",
   "pytest",
   "pytest-cov",
-  "setuptools",
+  "sphinx",
+  "ruff",
   "tox",
+]
+gpu = [
+  "cupy",
+  "dask"
 ]
 
 [project.scripts]
@@ -73,7 +82,7 @@ DataJoint = "https://docs.datajoint.org/"
 packages = ["aeon"]
 
 [tool.black]
-line-length = 88
+line-length = 108
 color = false
 exclude = '''
 /(
@@ -89,9 +98,43 @@ exclude = '''
 )/
 '''
 
-[tool.isort]
-profile = "black"
-color_output = false
+[tool.ruff]
+select = ["E", "W", "F", "I", "D", "UP", "S", "B", "A", "C4", "ICN", "PIE", "PT", "SIM", "PL"]
+line-length = 108
+ignore = [
+    "E201", "E202", "E203", "E231", "E731", "E702", 
+    "S101", 
+    "PT013",
+    "PLR0912", "PLR0913", "PLR0915"
+]
+extend-exclude = [".git", ".github", ".idea", ".vscode"]
+
+[tool.ruff.pydocstyle]
+convention = "google"
+
+[tool.pyright]
+reportImportCycles = "error"
+reportUnusedImport = "error"
+reportUnusedClass = "error"
+reportUnusedfunction = "error"
+reportUnusedVariable = "error"
+reportDuplicateImport = "error"
+reportWildcardImportFromLibrary = "error"
+reportPrivateUsage = "error"
+reportCallInDefaultInitializer = "error"
+reportUnnecessaryIsInstance = "error"
+reportUnnecesaryCast = "error"
+reportUnnecesarryComparison = "error"
+reportUnnecessaryContains = "error"
+reportAssertAlwaysTrue = "error"
+reportSelfClsParameterName = "error"
+reportUnusedExpression = "error"
+reportMatchNotExhaustive = "error"
+reportImplicitOverride = "error"
+reportShadowedImports = "error"
+# *Note*: we may want to set all 'ReportOptional*' rules to "none", but leaving 'em default for now
+venvPath = "."
+venv = ".venv"
 
 [tool.pytest.ini_options]
 markers = [
