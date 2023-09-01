@@ -14,7 +14,6 @@ from aeon.dj_pipeline import (
     streams,
 )
 from aeon.io import api as io_api
-from aeon.schema.social import Pose
 
 from . import acquisition, dict_to_uuid, get_schema_name, lab, qc
 
@@ -288,6 +287,9 @@ class VideoSourceTracking(dj.Imported):
         return (acquisition.Chunk & "experiment_name='multianimal'" )  * (streams.VideoSourcePosition & (streams.VideoSource & "video_source_name='CameraTop'")) * (TrackingParamSet & "tracking_paramset_id = 1") # SLEAP & CameraTop
 
     def make(self, key):
+        
+        from aeon.schema.social import Pose
+        
         chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end", "directory_type"
         )
