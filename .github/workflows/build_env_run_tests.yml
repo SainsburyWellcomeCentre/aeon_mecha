@@ -12,6 +12,7 @@ jobs:
   build_env_pip_pyproject:  # checks only for building env using pip and pyproject.toml
     name: Build env using pip and pyproject.toml
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -38,6 +39,7 @@ jobs:
   build_env_run_tests:  # checks for building env using mamba and runs codebase checks and tests
     name: Build env and run tests on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    if: github.event.pull_request.draft == false
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]

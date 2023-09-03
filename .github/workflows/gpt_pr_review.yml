@@ -19,6 +19,7 @@ concurrency:
 jobs:
   gpt_pr_review:
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
     steps:
       - uses: coderabbitai/ai-pr-reviewer@latest
         env:
