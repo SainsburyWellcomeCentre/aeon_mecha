@@ -35,7 +35,7 @@ repos:
     rev: v0.0.286
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix, --config, ./pyproject.toml]
+        args: [--config, ./pyproject.toml]
 
   - repo: https://github.com/RobertCraigie/pyright-python
     rev: v1.1.324
