@@ -3,7 +3,8 @@
 default_language_version:
   python: python3.11
 
-files: "^(docker|aeon\/dj_pipeline)\/.*$"
+files: "^(test|aeon(?!\/dj_pipeline\/).*)$"
+exclude: ".*\/__pycache__\/.*"
 repos:
   - repo: meta
     hooks:
