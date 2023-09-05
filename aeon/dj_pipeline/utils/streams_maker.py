@@ -225,7 +225,6 @@ def main(create_tables=True):
                 f.write(full_def)
 
     streams = importlib.import_module(f"aeon.dj_pipeline.streams")
-    streams.schema.activate(schema_name)
 
     if create_tables:
         # Create DeviceType tables.
@@ -315,7 +314,6 @@ def main(create_tables=True):
                 f.write(full_def)
 
         importlib.reload(streams)
-        streams.schema.activate(schema_name)
 
     return streams
 
