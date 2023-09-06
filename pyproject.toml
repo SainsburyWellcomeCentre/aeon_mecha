@@ -95,6 +95,8 @@ exclude = '''
     | dist
     | env
     | venv
+    | dj_pipeline
+    | __pycache__
 )/
 '''
 
@@ -107,7 +109,7 @@ ignore = [
     "PT013",
     "PLR0912", "PLR0913", "PLR0915"
 ]
-extend-exclude = [".git", ".github", ".idea", ".vscode"]
+extend-exclude = [".git", ".github", ".idea", ".vscode", "dj_pipeline", "__pycache__"]
 
 [tool.ruff.pydocstyle]
 convention = "google"
