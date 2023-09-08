@@ -1,10 +1,6 @@
 import datajoint as dj
-from datajoint_utilities.dj_worker import (
-    DataJointWorker,
-    ErrorLog,
-    WorkerLog,
-    is_djtable,
-)
+from datajoint_utilities.dj_worker import DataJointWorker, ErrorLog, WorkerLog
+from datajoint_utilities.dj_worker.worker_schema import is_djtable
 
 from aeon.dj_pipeline import acquisition, analysis, db_prefix, qc, report, tracking
 from aeon.dj_pipeline.utils import load_metadata, streams_maker
