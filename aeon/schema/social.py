@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import List, Union
 import json
 
+import numpy as np
 import pandas as pd
 
 from aeon import util
@@ -40,6 +41,14 @@ class Pose(_reader.Harp):
             columns.extend([f"{part}_x", f"{part}_y", f"{part}_likelihood"])
         self.columns = columns
         data = super().read(file)
+
+        # Drop any repeat parts.
+        parts, unique_idxs = np.unique(parts, return_index=True)
+        repeat_idxs = np.where(np.logical_not(np.isin(np.arange(len(parts)), unique_idxs)))[0]
+        if repeat_idxs:  # drop x, y, and likelihood cols for repeat parts (skip first 5 cols)
+            init_part_col_idx = (repeat_idxs - 1) * 3 + 5
+            part_col_idxs = np.concatenate([np.arange(val, val+3) for val in init_part_col_idx])
+            data = data.drop(data.columns[part_col_idxs])
         
         # Set new columns, and reformat `data`.
         n_parts = len(parts)
@@ -63,9 +72,11 @@ class Pose(_reader.Harp):
         if file.stem == "confmap_config":  # SLEAP
             try:
                 heads = config["model"]["heads"]
-                parts = util.find_nested_key(heads, "part_names")
+                parts = [util.find_nested_key(heads, "anchor_part")]
+                parts += util.find_nested_key(heads, "part_names")
             except KeyError as err:
-                raise KeyError(f"Cannot find bodyparts in {file}.") from err
+                if parts is None:
+                    raise KeyError(f"Cannot find bodyparts in {file}.") from err
         return parts
 
 
