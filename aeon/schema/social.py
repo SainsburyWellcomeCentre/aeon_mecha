@@ -43,12 +43,14 @@ class Pose(_reader.Harp):
         data = super().read(file)
 
         # Drop any repeat parts.
-        parts, unique_idxs = np.unique(parts, return_index=True)
-        repeat_idxs = np.where(np.logical_not(np.isin(np.arange(len(parts)), unique_idxs)))[0]
+        unique_parts, unique_idxs = np.unique(parts, return_index=True)
+        repeat_idxs = np.setdiff1d(np.arange(len(parts)), unique_idxs)
         if repeat_idxs:  # drop x, y, and likelihood cols for repeat parts (skip first 5 cols)
-            init_part_col_idx = (repeat_idxs - 1) * 3 + 5
-            part_col_idxs = np.concatenate([np.arange(val, val+3) for val in init_part_col_idx])
-            data = data.drop(data.columns[part_col_idxs])
+            init_rep_part_col_idx = (repeat_idxs - 1) * 3 + 5
+            rep_part_col_idxs = np.concatenate([np.arange(i, i + 3) for i in init_rep_part_col_idx])
+            keep_part_col_idxs = np.setdiff1d(np.arange(len(data.columns)), rep_part_col_idxs)
+            data = data.iloc[:, keep_part_col_idxs]
+            parts = unique_parts
         
         # Set new columns, and reformat `data`.
         n_parts = len(parts)
