@@ -32,7 +32,8 @@ class Pose(_reader.Harp):
         # Get config file from `file`, then bodyparts from config file.
         model_dir = Path(file.stem.replace("_", "/")).parent
         config_file_dir = ceph_proc_dir / model_dir
-        assert config_file_dir.exists(), f"Cannot find model dir {config_file_dir}"
+        if not config_file_dir.exists():
+            raise FileNotFoundError(f"Cannot find model dir {config_file_dir}")
         config_file = get_config_file(config_file_dir)
         parts = self.get_bodyparts(config_file)
 
@@ -78,7 +79,7 @@ class Pose(_reader.Harp):
                 parts = [util.find_nested_key(heads, "anchor_part")]
                 parts += util.find_nested_key(heads, "part_names")
             except KeyError as err:
-                if parts is None:
+                if not parts:
                     raise KeyError(f"Cannot find bodyparts in {file}.") from err
         return parts
 
@@ -95,7 +96,8 @@ def get_config_file(
         if (config_file_dir / f).exists():
             config_file = config_file_dir / f
             break
-    assert config_file is not None, f"Cannot find config file in {config_file_dir}"
+    if config_file is None:
+         raise FileNotFoundError(f"Cannot find config file in {config_file_dir}")
     return config_file
 
 
