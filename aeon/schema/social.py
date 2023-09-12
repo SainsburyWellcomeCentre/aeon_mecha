@@ -89,7 +89,7 @@ def get_config_file(
 ) -> Path:
     """Returns the config file from a model's config directory."""
     if config_file_names is None:
-        config_file_names = ["confmap_config.json"]
+        config_file_names = ["confmap_config.json"]  # SLEAP (add for other trackers to this list)
     config_file = None
     for f in config_file_names:
         if (config_file_dir / f).exists():
