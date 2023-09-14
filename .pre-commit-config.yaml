@@ -3,7 +3,7 @@
 default_language_version:
   python: python3.11
 
-files: "^(docker|aeon\/dj_pipeline)\/.*$"
+files: "^(test|aeon(?!\/dj_pipeline\/).*)$"
 repos:
   - repo: meta
     hooks:
@@ -30,7 +30,7 @@ repos:
     hooks:
       - id: black
         args: [--check, --config, ./pyproject.toml]
-  
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.0.286
     hooks:

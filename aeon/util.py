@@ -1,9 +1,9 @@
 """Utility functions."""
 
-from typing import Union, Any
+from typing import Any
 
 
-def find_nested_key(obj: Union[dict, list], key: str) -> Any:
+def find_nested_key(obj: dict | list, key: str) -> Any:
     """Returns the value of the first found nested key."""
     if isinstance(obj, dict):
         if v := obj.get(key):  # found it!
