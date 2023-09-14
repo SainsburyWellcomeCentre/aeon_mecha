@@ -14,5 +14,5 @@ conda env update -f env_config/env_dev.yml
     - `conda activate aeon`: activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
     - `conda deactivate aeon`: deactivates the virtual environment.
 4. (Optional) Add commands to the `.profile` file to add miniconda as an environment module and Bonsai and its dependencies to your system path on startup (this will be initialized each time you SSH into the HPC).    
-    - Copy the commands in the `.profile_example` file in this folder to your HPC home directory `.profile` file.
+    - Copy the commands in the `.profile_example` file in this folder to your HPC home directory `.profile` file (you will have to create this file if it doesn't already exist).
 5. For instructions on developing within the `aeon` environment, see [`developing_on_hpc.md`](./developing_on_hpc.md)
