@@ -21,7 +21,9 @@ class Pose(_reader.Harp):
         x (float): X-coordinate of the bodypart.
         y (float): Y-coordinate of the bodypart.
     """
-    def __init__(self, pattern: str, extension: str="bin"):
+
+    def __init__(self, pattern: str, extension: str = "bin"):
+        """Pose reader constructor."""
         # `pattern` for this reader should typically be '<hpcnode>_<jobid>*'
         super().__init__(pattern, columns=None, extension=extension)
 
@@ -31,9 +33,15 @@ class Pose(_reader.Harp):
         """Reads data from the Harp-binarized tracking file."""
         # Get config file from `file`, then bodyparts from config file.
         model_dir = Path(file.stem.replace("_", "/")).parent
+<<<<<<< HEAD
         config_file_dir = ceph_proc_dir / model_dir
         if not config_file_dir.exists():
             raise FileNotFoundError(f"Cannot find model dir {config_file_dir}")
+=======
+        # `ceph_proc_dir` typically
+        config_file_dir = Path(ceph_proc_dir) / model_dir
+        assert config_file_dir.exists(), f"Cannot find model dir {config_file_dir}"
+>>>>>>> b9a1e3f... Blackened and ruffed
         config_file = get_config_file(config_file_dir)
         parts = self.get_bodyparts(config_file)
 
@@ -44,6 +52,7 @@ class Pose(_reader.Harp):
         self.columns = columns
         data = super().read(file)
 
+<<<<<<< HEAD
         # Drop any repeat parts.
         unique_parts, unique_idxs = np.unique(parts, return_index=True)
         repeat_idxs = np.setdiff1d(np.arange(len(parts)), unique_idxs)
@@ -54,6 +63,8 @@ class Pose(_reader.Harp):
             data = data.iloc[:, keep_part_col_idxs]
             parts = unique_parts
 
+=======
+>>>>>>> b9a1e3f... Blackened and ruffed
         # Set new columns, and reformat `data`.
         n_parts = len(parts)
         part_data_list = [pd.DataFrame()] * n_parts
@@ -91,13 +102,21 @@ def get_config_file(
     """Returns the config file from a model's config directory."""
     if config_file_names is None:
         config_file_names = ["confmap_config.json"]  # SLEAP (add for other trackers to this list)
+<<<<<<< HEAD
     config_file = None
+=======
+    config_file = Path()
+>>>>>>> b9a1e3f... Blackened and ruffed
     for f in config_file_names:
         if (config_file_dir / f).exists():
             config_file = config_file_dir / f
             break
+<<<<<<< HEAD
     if config_file is None:
          raise FileNotFoundError(f"Cannot find config file in {config_file_dir}")
+=======
+    assert config_file.is_file(), f"Cannot find config file in {config_file_dir}"
+>>>>>>> b9a1e3f... Blackened and ruffed
     return config_file
 
 
