@@ -130,7 +130,6 @@ reportAssertAlwaysTrue = "error"
 reportSelfClsParameterName = "error"
 reportUnusedExpression = "error"
 reportMatchNotExhaustive = "error"
-reportImplicitOverride = "error"
 reportShadowedImports = "error"
 # *Note*: we may want to set all 'ReportOptional*' rules to "none", but leaving 'em default for now
 venvPath = "."
