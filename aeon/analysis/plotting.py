@@ -1,17 +1,16 @@
 import math
 
-import matplotlib.colors as colors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib import colors
 from matplotlib.collections import LineCollection
 
 from aeon.analysis.utils import *
 
 
 def heatmap(position, frequency, ax=None, **kwargs):
-    """
-    Draw a heatmap of time spent in each location from specified position data and sampling frequency.
+    """Draw a heatmap of time spent in each location from specified position data and sampling frequency.
 
     :param Series position: A series of position data containing x and y coordinates.
     :param number frequency: The sampling frequency for the position data.
@@ -33,8 +32,7 @@ def heatmap(position, frequency, ax=None, **kwargs):
 
 
 def circle(x, y, radius, fmt=None, ax=None, **kwargs):
-    """
-    Plot a circle centered at the given x, y position with the specified radius.
+    """Plot a circle centered at the given x, y position with the specified radius.
 
     :param number x: The x-component of the circle center.
     :param number y: The y-component of the circle center.
@@ -62,8 +60,7 @@ def rateplot(
     ax=None,
     **kwargs,
 ):
-    """
-    Plot the continuous event rate and raster of a discrete event sequence, given the specified
+    """Plot the continuous event rate and raster of a discrete event sequence, given the specified
     window size and sampling frequency.
 
     :param Series events: The discrete sequence of events.
@@ -79,9 +76,7 @@ def rateplot(
     :param Axes, optional ax: The Axes on which to draw the rate plot and raster.
     """
     label = kwargs.pop("label", None)
-    eventrate = rate(
-        events, window, frequency, weight, start, end, smooth=smooth, center=center
-    )
+    eventrate = rate(events, window, frequency, weight, start, end, smooth=smooth, center=center)
     if ax is None:
         ax = plt.gca()
     ax.plot(
@@ -90,14 +85,11 @@ def rateplot(
         label=label,
         **kwargs,
     )
-    ax.vlines(
-        sessiontime(events.index, eventrate.index[0]), -0.5, -0.1, linewidth=1, **kwargs
-    )
+    ax.vlines(sessiontime(events.index, eventrate.index[0]), -0.2, -0.1, linewidth=1, **kwargs)
 
 
 def set_ymargin(ax, bottom, top):
-    """
-    Set the vertical margins of the specified Axes.
+    """Set the vertical margins of the specified Axes.
 
     :param Axes ax: The Axes for which to specify the vertical margin.
     :param number bottom: The size of the bottom margin.
@@ -121,8 +113,7 @@ def colorline(
     ax=None,
     **kwargs,
 ):
-    """
-    Plot a dynamically colored line on the specified Axes.
+    """Plot a dynamically colored line on the specified Axes.
 
     :param array-like x, y: The horizontal / vertical coordinates of the data points.
     :param array-like, optional z:
