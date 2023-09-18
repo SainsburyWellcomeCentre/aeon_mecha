@@ -1,35 +1,58 @@
-default_language_version:
-  python: python3.9
+# For info on running pre-commit manually, see `pre-commit run --help`
 
-default_stages: [commit, push]
-files: "^(docker|aeon\/dj_pipeline)\/.*$"
+default_language_version:
+  python: python3.11
+
+files: "^(test|aeon(?!\/dj_pipeline\/).*)$"
 repos:
   - repo: meta
     hooks:
       - id: identity
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.1.0
+    rev: v4.4.0
     hooks:
+      - id: check-json
       - id: check-yaml
+      - id: check-toml
+      - id: check-xml
+      - id: check-merge-conflict
       - id: detect-private-key
       - id: end-of-file-fixer
         exclude: LICENSE
       - id: no-commit-to-branch
+      - id: mixed-line-ending
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
 
   - repo: https://github.com/psf/black
-    rev: 22.1.0
+    rev: 23.7.0
     hooks:
       - id: black
-        args:
-          - "--config"
-          - "./pyproject.toml"
+        args: [--check, --config, ./pyproject.toml]
 
-  - repo: https://github.com/pycqa/isort
-    rev: 5.10.1
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.0.286
     hooks:
-      - id: isort
-        name: isort (python)
-        args:
-          - "--settings-file"
-          - "./pyproject.toml"
+      - id: ruff
+        args: [--config, ./pyproject.toml]
+
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.324
+    hooks:
+    - id: pyright
+      args: [--level, error, --project, ./pyproject.toml]
+
+
+  # Pytest is expensive, so we show its set-up but leave it commented out.
+  # - repo: local
+  #   hooks:
+  #     - id: pytest-py
+  #       name: pytest-py
+  #       entry: pytest
+  #       language: system
+  #       pass_filenames: false
+  #       args:
+  #         - "-v"
+  #         - "-n"
+  #         - "auto"
