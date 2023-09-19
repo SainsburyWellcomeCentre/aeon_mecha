@@ -13,12 +13,13 @@ from aeon.io import api as io_api
 schema = dj.Schema(get_schema_name("streams"))
 
 
-@schema
+@schema 
 class StreamType(dj.Lookup):
-    """Catalog of all steam types for the different device types used across Project Aeon
+    """
+    Catalog of all steam types for the different device types used across Project Aeon
     One StreamType corresponds to one reader class in `aeon.io.reader`
     The combination of `stream_reader` and `stream_reader_kwargs` should fully specify
-    the data loading routine for a particular device, using the `aeon.io.utils`.
+    the data loading routine for a particular device, using the `aeon.io.utils`
     """
 
     definition = """  # Catalog of all stream types used across Project Aeon
@@ -32,9 +33,11 @@ class StreamType(dj.Lookup):
     """
 
 
-@schema
+@schema 
 class DeviceType(dj.Lookup):
-    """Catalog of all device types used across Project Aeon."""
+    """
+    Catalog of all device types used across Project Aeon
+    """
 
     definition = """  # Catalog of all device types used across Project Aeon
     device_type:             varchar(36)
@@ -49,7 +52,7 @@ class DeviceType(dj.Lookup):
         """
 
 
-@schema
+@schema 
 class Device(dj.Lookup):
     definition = """  # Physical devices, of a particular type, identified by unique serial number
     device_serial_number: varchar(12)
@@ -58,9 +61,9 @@ class Device(dj.Lookup):
     """
 
 
-@schema
+@schema 
 class UndergroundFeeder(dj.Manual):
-        definition = """
+        definition = f"""
         # underground_feeder placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
         -> acquisition.Experiment
         -> Device
@@ -78,16 +81,16 @@ class UndergroundFeeder(dj.Manual):
             """
 
         class RemovalTime(dj.Part):
-            definition = """
+            definition = f"""
             -> master
             ---
             underground_feeder_removal_time: datetime(6)  # time of the underground_feeder being removed
             """
 
 
-@schema
+@schema 
 class VideoSource(dj.Manual):
-        definition = """
+        definition = f"""
         # video_source placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
         -> acquisition.Experiment
         -> Device
@@ -105,31 +108,31 @@ class VideoSource(dj.Manual):
             """
 
         class RemovalTime(dj.Part):
-            definition = """
+            definition = f"""
             -> master
             ---
             video_source_removal_time: datetime(6)  # time of the video_source being removed
             """
 
 
-@schema
+@schema 
 class UndergroundFeederBeamBreak(dj.Imported):
-        definition = """  # Raw per-chunk BeamBreak data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
-    -> UndergroundFeeder
-    -> acquisition.Chunk
-    ---
-    sample_count: int      # number of data points acquired from this stream for a given chunk
-    timestamps: longblob   # (datetime) timestamps of BeamBreak data
-    event: longblob
-    """
+        definition = """# Raw per-chunk BeamBreak data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+            -> UndergroundFeeder
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of BeamBreak data
+            """
         _stream_reader = aeon.io.reader.BitmaskEvent
         _stream_detail = {'stream_type': 'BeamBreak', 'stream_reader': 'aeon.io.reader.BitmaskEvent', 'stream_reader_kwargs': {'pattern': '{pattern}_32', 'value': 34, 'tag': 'BeamBroken'}, 'stream_description': '', 'stream_hash': UUID('b14171e6-d27d-117a-ae73-a16c4b5fc8a2')}
 
         @property
         def key_source(self):
-            """Only the combination of Chunk and UndergroundFeeder with overlapping time
+            f"""
+            Only the combination of Chunk and UndergroundFeeder with overlapping time
             +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed.
+            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
             """
             return (
                 acquisition.Chunk
@@ -178,24 +181,24 @@ class UndergroundFeederBeamBreak(dj.Imported):
             )
 
 
-@schema
+@schema 
 class UndergroundFeederDeliverPellet(dj.Imported):
-        definition = """  # Raw per-chunk DeliverPellet data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
-    -> UndergroundFeeder
-    -> acquisition.Chunk
-    ---
-    sample_count: int      # number of data points acquired from this stream for a given chunk
-    timestamps: longblob   # (datetime) timestamps of DeliverPellet data
-    event: longblob
-    """
+        definition = """# Raw per-chunk DeliverPellet data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+            -> UndergroundFeeder
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of DeliverPellet data
+            """
         _stream_reader = aeon.io.reader.BitmaskEvent
         _stream_detail = {'stream_type': 'DeliverPellet', 'stream_reader': 'aeon.io.reader.BitmaskEvent', 'stream_reader_kwargs': {'pattern': '{pattern}_35', 'value': 1, 'tag': 'TriggeredPellet'}, 'stream_description': '', 'stream_hash': UUID('c49dda51-2e38-8b49-d1d8-2e54ea928e9c')}
 
         @property
         def key_source(self):
-            """Only the combination of Chunk and UndergroundFeeder with overlapping time
+            f"""
+            Only the combination of Chunk and UndergroundFeeder with overlapping time
             +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed.
+            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
             """
             return (
                 acquisition.Chunk
@@ -244,26 +247,24 @@ class UndergroundFeederDeliverPellet(dj.Imported):
             )
 
 
-@schema
+@schema 
 class UndergroundFeederDepletionState(dj.Imported):
-        definition = """  # Raw per-chunk DepletionState data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
-    -> UndergroundFeeder
-    -> acquisition.Chunk
-    ---
-    sample_count: int      # number of data points acquired from this stream for a given chunk
-    timestamps: longblob   # (datetime) timestamps of DepletionState data
-    threshold: longblob
-    d1: longblob
-    delta: longblob
-    """
+        definition = """# Raw per-chunk DepletionState data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+            -> UndergroundFeeder
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of DepletionState data
+            """
         _stream_reader = aeon.schema.foraging._PatchState
         _stream_detail = {'stream_type': 'DepletionState', 'stream_reader': 'aeon.schema.foraging._PatchState', 'stream_reader_kwargs': {'pattern': '{pattern}_State_*'}, 'stream_description': '', 'stream_hash': UUID('17c3e36f-3f2e-2494-bbd3-5cb9a23d3039')}
 
         @property
         def key_source(self):
-            """Only the combination of Chunk and UndergroundFeeder with overlapping time
+            f"""
+            Only the combination of Chunk and UndergroundFeeder with overlapping time
             +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed.
+            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
             """
             return (
                 acquisition.Chunk
@@ -312,25 +313,24 @@ class UndergroundFeederDepletionState(dj.Imported):
             )
 
 
-@schema
+@schema 
 class UndergroundFeederEncoder(dj.Imported):
-        definition = """  # Raw per-chunk Encoder data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
-    -> UndergroundFeeder
-    -> acquisition.Chunk
-    ---
-    sample_count: int      # number of data points acquired from this stream for a given chunk
-    timestamps: longblob   # (datetime) timestamps of Encoder data
-    angle: longblob
-    intensity: longblob
-    """
+        definition = """# Raw per-chunk Encoder data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+            -> UndergroundFeeder
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of Encoder data
+            """
         _stream_reader = aeon.io.reader.Encoder
         _stream_detail = {'stream_type': 'Encoder', 'stream_reader': 'aeon.io.reader.Encoder', 'stream_reader_kwargs': {'pattern': '{pattern}_90_*'}, 'stream_description': '', 'stream_hash': UUID('f96b0b26-26f6-5ff6-b3c7-5aa5adc00c1a')}
 
         @property
         def key_source(self):
-            """Only the combination of Chunk and UndergroundFeeder with overlapping time
+            f"""
+            Only the combination of Chunk and UndergroundFeeder with overlapping time
             +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed.
+            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
             """
             return (
                 acquisition.Chunk
@@ -379,30 +379,24 @@ class UndergroundFeederEncoder(dj.Imported):
             )
 
 
-@schema
+@schema 
 class VideoSourcePosition(dj.Imported):
-        definition = """  # Raw per-chunk Position data stream from VideoSource (auto-generated with aeon_mecha-unknown)
-    -> VideoSource
-    -> acquisition.Chunk
-    ---
-    sample_count: int      # number of data points acquired from this stream for a given chunk
-    timestamps: longblob   # (datetime) timestamps of Position data
-    x: longblob
-    y: longblob
-    angle: longblob
-    major: longblob
-    minor: longblob
-    area: longblob
-    id: longblob
-    """
+        definition = """# Raw per-chunk Position data stream from VideoSource (auto-generated with aeon_mecha-unknown)
+            -> VideoSource
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of Position data
+            """
         _stream_reader = aeon.io.reader.Position
         _stream_detail = {'stream_type': 'Position', 'stream_reader': 'aeon.io.reader.Position', 'stream_reader_kwargs': {'pattern': '{pattern}_200_*'}, 'stream_description': '', 'stream_hash': UUID('d7727726-1f52-78e1-1355-b863350b6d03')}
 
         @property
         def key_source(self):
-            """Only the combination of Chunk and VideoSource with overlapping time
+            f"""
+            Only the combination of Chunk and VideoSource with overlapping time
             +  Chunk(s) that started after VideoSource install time and ended before VideoSource remove time
-            +  Chunk(s) that started after VideoSource install time for VideoSource that are not yet removed.
+            +  Chunk(s) that started after VideoSource install time for VideoSource that are not yet removed
             """
             return (
                 acquisition.Chunk
@@ -451,24 +445,24 @@ class VideoSourcePosition(dj.Imported):
             )
 
 
-@schema
+@schema 
 class VideoSourceRegion(dj.Imported):
-        definition = """  # Raw per-chunk Region data stream from VideoSource (auto-generated with aeon_mecha-unknown)
-    -> VideoSource
-    -> acquisition.Chunk
-    ---
-    sample_count: int      # number of data points acquired from this stream for a given chunk
-    timestamps: longblob   # (datetime) timestamps of Region data
-    region: longblob
-    """
+        definition = """# Raw per-chunk Region data stream from VideoSource (auto-generated with aeon_mecha-unknown)
+            -> VideoSource
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of Region data
+            """
         _stream_reader = aeon.schema.foraging._RegionReader
         _stream_detail = {'stream_type': 'Region', 'stream_reader': 'aeon.schema.foraging._RegionReader', 'stream_reader_kwargs': {'pattern': '{pattern}_201_*'}, 'stream_description': '', 'stream_hash': UUID('6c78b3ac-ffff-e2ab-c446-03e3adf4d80a')}
 
         @property
         def key_source(self):
-            """Only the combination of Chunk and VideoSource with overlapping time
+            f"""
+            Only the combination of Chunk and VideoSource with overlapping time
             +  Chunk(s) that started after VideoSource install time and ended before VideoSource remove time
-            +  Chunk(s) that started after VideoSource install time for VideoSource that are not yet removed.
+            +  Chunk(s) that started after VideoSource install time for VideoSource that are not yet removed
             """
             return (
                 acquisition.Chunk
@@ -517,25 +511,24 @@ class VideoSourceRegion(dj.Imported):
             )
 
 
-@schema
+@schema 
 class VideoSourceVideo(dj.Imported):
-        definition = """  # Raw per-chunk Video data stream from VideoSource (auto-generated with aeon_mecha-unknown)
-    -> VideoSource
-    -> acquisition.Chunk
-    ---
-    sample_count: int      # number of data points acquired from this stream for a given chunk
-    timestamps: longblob   # (datetime) timestamps of Video data
-    hw_counter: longblob
-    hw_timestamp: longblob
-    """
+        definition = """# Raw per-chunk Video data stream from VideoSource (auto-generated with aeon_mecha-unknown)
+            -> VideoSource
+            -> acquisition.Chunk
+            ---
+            sample_count: int      # number of data points acquired from this stream for a given chunk
+            timestamps: longblob   # (datetime) timestamps of Video data
+            """
         _stream_reader = aeon.io.reader.Video
         _stream_detail = {'stream_type': 'Video', 'stream_reader': 'aeon.io.reader.Video', 'stream_reader_kwargs': {'pattern': '{pattern}_*'}, 'stream_description': '', 'stream_hash': UUID('f51c6174-e0c4-a888-3a9d-6f97fb6a019b')}
 
         @property
         def key_source(self):
-            """Only the combination of Chunk and VideoSource with overlapping time
+            f"""
+            Only the combination of Chunk and VideoSource with overlapping time
             +  Chunk(s) that started after VideoSource install time and ended before VideoSource remove time
-            +  Chunk(s) that started after VideoSource install time for VideoSource that are not yet removed.
+            +  Chunk(s) that started after VideoSource install time for VideoSource that are not yet removed
             """
             return (
                 acquisition.Chunk
