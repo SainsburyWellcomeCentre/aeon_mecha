@@ -82,18 +82,17 @@ packages = ["aeon"]
 line-length = 108
 color = false
 exclude = '''
-(
-    \.git/
-    | \.mypy_cache/
-    | \.tox/
-    | \.venv/
-    | _build/
-    | build/
-    | dist/
-    | env/
-    | venv/
-    | aeon/dj_pipeline/streams.py
-)
+/(
+    \.git
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | build
+    | dist
+    | env
+    | venv
+)/
 '''
 
 [tool.ruff]
@@ -114,6 +113,7 @@ select = [
   "SIM",
   "PL",
 ]
+line-length = 108
 ignore = [
   "E201",
   "E202",
@@ -129,23 +129,6 @@ ignore = [
   "PLR0915",
 ]
 extend-exclude = [".git", ".github", ".idea", ".vscode"]
-line-length = 108
-
-[tool.ruff.per-file-ignores]
-"aeon/dj_pipeline/*" = [
-  "B006",
-  "B021",
-  "D100", # skip adding docstrings for module
-  "D101", # skip adding docstrings for table class since it is added inside definition
-  "D102", # skip adding docstrings for make function
-  "D103", # skip adding docstrings for public functions
-  "D104", # ignore missing docstring in public package
-  "D106", # skip adding docstrings for Part tables
-  "F401", # ignore unused import errors
-  "B905", # ignore unused import errors
-  "E999",
-]
-
 
 [tool.ruff.pydocstyle]
 convention = "google"
