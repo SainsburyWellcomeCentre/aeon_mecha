@@ -125,7 +125,7 @@ class Experiment(dj.Manual):
             ).fetch1("repository_name", "directory_path")
         except dj.errors.DataJointError:
             return
-        
+
         dir_path = pathlib.Path(dir_path)
         if dir_path.exists():
             assert dir_path.is_relative_to(paths.get_repository_path(repo_name))
@@ -419,7 +419,7 @@ class Epoch(dj.Manual):
 
 @schema
 class EpochEnd(dj.Manual):
-    definition = """ 
+    definition = """
     -> Epoch
     ---
     epoch_end: datetime(6)
@@ -1042,7 +1042,7 @@ class WeightMeasurementFiltered(dj.Imported):
     ---
     weight_filtered:       longblob     # measured weights filtered
     weight_subject_timestamps: longblob # (datetime) timestamps of weight_subject data
-    weight_subject:        longblob     # 
+    weight_subject:        longblob     #
     """
 
     def make(self, key):

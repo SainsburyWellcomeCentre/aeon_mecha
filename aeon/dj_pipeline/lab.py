@@ -14,7 +14,7 @@ class Colony(dj.Lookup):
     definition = """
     subject                 : varchar(32)
     ---
-    reference_weight=null   : float  
+    reference_weight=null   : float
     sex='U'                 : enum('M', 'F', 'U')
     subject_birth_date=null : date  # date of birth
     note=''                 : varchar(1024)
@@ -24,7 +24,7 @@ class Colony(dj.Lookup):
 @schema
 class Lab(dj.Lookup):
     definition = """
-    lab             : varchar(24)  #  Abbreviated lab name 
+    lab             : varchar(24)  #  Abbreviated lab name
     ---
     lab_name        : varchar(255)   # full lab name
     institution     : varchar(255)

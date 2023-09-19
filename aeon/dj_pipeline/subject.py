@@ -141,5 +141,5 @@ class FoodDeprivationWeight(dj.Manual):
     -> Subject
     weight_time: datetime
     ---
-    weight: float  
+    weight: float
     """

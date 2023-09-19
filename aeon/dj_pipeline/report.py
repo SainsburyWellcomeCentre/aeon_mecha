@@ -451,9 +451,9 @@ class VisitDailySummaryPlot(dj.Computed):
     ---
     pellet_count_plotly:             longblob  # Dictionary storing the plotly object (from fig.to_plotly_json())
     wheel_distance_travelled_plotly: longblob
-    total_distance_travelled_plotly: longblob  
+    total_distance_travelled_plotly: longblob
     weight_patch_plotly:                longblob
-    foraging_bouts_plotly:              longblob  
+    foraging_bouts_plotly:              longblob
     foraging_bouts_pellet_count_plotly: longblob
     foraging_bouts_duration_plotly:     longblob
     region_time_fraction_daily_plotly:  longblob

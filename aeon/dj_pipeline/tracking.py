@@ -31,7 +31,7 @@ arena_outer_radius = 0.97  # outer
 @schema
 class TrackingMethod(dj.Lookup):
     definition = """
-    tracking_method: varchar(16)  
+    tracking_method: varchar(16)
     ---
     tracking_method_description: varchar(256)
     """
@@ -47,7 +47,7 @@ class TrackingParamSet(dj.Lookup):
     definition = """  # Parameter set used in a particular TrackingMethod
     tracking_paramset_id:  smallint
     ---
-    -> TrackingMethod    
+    -> TrackingMethod
     paramset_description: varchar(128)
     param_set_hash: uuid
     unique index (param_set_hash)
@@ -255,41 +255,41 @@ class VideoSourceTracking(dj.Imported):
     class Point(dj.Part):
         definition = """
         -> master
-        point_name: varchar(16)   
+        point_name: varchar(16)
         ---
         point_x:          longblob
         point_y:          longblob
         point_likelihood: longblob
         """
-    
+
     class Pose(dj.Part):
         definition = """
         -> master
-        pose_name: varchar(16)   
-        class:                  smallint   
+        pose_name: varchar(16)
+        class:                  smallint
         ---
-        class_likelihood:       longblob   
-        centroid_x:             longblob  
-        centroid_y:             longblob  
-        centroid_likelihood:    longblob  
-        pose_timestamps:        longblob 
-        point_collection=null:  varchar(1000)  # List of point names  
+        class_likelihood:       longblob
+        centroid_x:             longblob
+        centroid_y:             longblob
+        centroid_likelihood:    longblob
+        pose_timestamps:        longblob
+        point_collection=null:  varchar(1000)  # List of point names
         """
-        
+
     class PointCollection(dj.Part):
         definition = """
         -> master.Pose
         -> master.Point
         """
-    
+
     @property
     def key_source(self):
         return (acquisition.Chunk & "experiment_name='multianimal'" )  * (streams.VideoSourcePosition & (streams.VideoSource & "video_source_name='CameraTop'")) * (TrackingParamSet & "tracking_paramset_id = 1") # SLEAP & CameraTop
 
     def make(self, key):
-        
+
         from aeon.schema.social import Pose
-        
+
         chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end", "directory_type"
         )
@@ -305,9 +305,9 @@ class VideoSourceTracking(dj.Imported):
 
         pose_list = []
         for part_name in ["body"]:
-            
+
             for class_id in tracking_df["class"].unique():
-                
+
                 class_df = tracking_df[tracking_df["class"] == class_id]
 
                 pose_list.append(
