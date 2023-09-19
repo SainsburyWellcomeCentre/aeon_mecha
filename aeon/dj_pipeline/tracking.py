@@ -5,14 +5,8 @@ import matplotlib.path
 import numpy as np
 import pandas as pd
 
-from aeon.dj_pipeline import (
-    acquisition,
-    dict_to_uuid,
-    get_schema_name,
-    lab,
-    qc,
-    streams,
-)
+from aeon.dj_pipeline import (acquisition, dict_to_uuid, get_schema_name, lab,
+                              qc, streams)
 from aeon.io import api as io_api
 
 from . import acquisition, dict_to_uuid, get_schema_name, lab, qc
@@ -350,9 +344,8 @@ def is_position_in_patch(
 
 
 def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y") -> pd.Series:
-    """
-    Given the session key and the position data - arrays of x and y
-    return an array of boolean indicating whether or not a position is inside the nest
+    """Given the session key and the position data - arrays of x and y
+    return an array of boolean indicating whether or not a position is inside the nest.
     """
     nest_vertices = list(
         zip(*(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y"))

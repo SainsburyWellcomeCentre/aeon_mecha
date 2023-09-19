@@ -90,7 +90,7 @@ Some meta information about the experiment is entered - e.g. experiment name, pa
 animals, cameras, food patches setup, etc.
 + These information are either entered by hand, or parsed and inserted from configuration
     yaml files.
-+ For experiments these info can be inserted by running  
++ For experiments these info can be inserted by running
   + [create_experiment_01](create_experiments/create_experiment_01.py)
   + [create_socialexperiment_0](create_experiments/create_socialexperiment_0.py)
   + [create_experiment_02](create_experiments/create_experiment_02.py)

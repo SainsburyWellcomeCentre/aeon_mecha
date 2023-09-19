@@ -77,7 +77,7 @@ class InArenaEnd(dj.Computed):
             acquisition.SubjectEnterExit.Time * acquisition.EventType
             & {"subject": key["subject"]}
             & f'enter_exit_time > "{in_arena_start}"'
-            & f'event_type != "SubjectRemainedInArena"'
+            & 'event_type != "SubjectRemainedInArena"'
         ).fetch(as_dict=True, limit=1, order_by="enter_exit_time ASC")[0]
 
         if subject_exit["event_type"] != "SubjectExitedArena":
@@ -109,12 +109,11 @@ class InArenaTimeSlice(dj.Computed):
 
     @property
     def key_source(self):
-        """
-        Chunk for all sessions:
+        """Chunk for all sessions:
         + are not "NeverExitedSession"
         + in_arena_start during this Chunk - i.e. first chunk of the session
         + in_arena_end during this Chunk - i.e. last chunk of the session
-        + chunk starts after in_arena_start and ends before in_arena_end (or NOW() - i.e. session still on going)
+        + chunk starts after in_arena_start and ends before in_arena_end (or NOW() - i.e. session still on going).
         """
         return (
             InArena.join(InArenaEnd, left=True).proj(
@@ -207,11 +206,10 @@ class InArenaSubjectPosition(dj.Imported):
     )
 
     def make(self, key):
-        """
-        The populate logic here relies on the assumption that there is only one subject in the arena at a time
+        """The populate logic here relies on the assumption that there is only one subject in the arena at a time
         The positiondata is associated with that one subject currently in the arena at any timepoints
         For multi-animal experiments, a mapping of object_id-to-subject is needed to populate the right position data
-        associated with a particular animal
+        associated with a particular animal.
         """
         time_slice_start, time_slice_end = (InArenaTimeSlice & key).fetch1(
             "time_slice_start", "time_slice_end"
@@ -260,9 +258,8 @@ class InArenaSubjectPosition(dj.Imported):
 
     @classmethod
     def get_position(cls, in_arena_key):
-        """
-        Given a key to a single InArena, return a Pandas DataFrame for the position data
-        of the subject for the specified InArena time period
+        """Given a key to a single InArena, return a Pandas DataFrame for the position data
+        of the subject for the specified InArena time period.
         """
         assert len(InArena & in_arena_key) == 1
 
@@ -299,7 +296,7 @@ class InArenaQC(dj.Computed):
         -> qc.QCRoutine
         ---
         -> qc.QCCode
-        qc_comment: varchar(255)  
+        qc_comment: varchar(255)
         """
 
     class BadPeriod(dj.Part):

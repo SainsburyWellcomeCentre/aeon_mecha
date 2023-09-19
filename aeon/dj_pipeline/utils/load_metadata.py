@@ -20,7 +20,7 @@ _colony_csv_path = pathlib.Path("/ceph/aeon/aeon/colony/colony.csv")
 
 
 def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
-    """Ingest subject information from the colony.csv file"""
+    """Ingest subject information from the colony.csv file."""
     colony_df = pd.read_csv(colony_csv_path, skiprows=[1, 2])
     colony_df.rename(columns={"Id": "subject"}, inplace=True)
     colony_df["sex"] = "U"
@@ -91,7 +91,7 @@ def insert_device_types(schema: DotMap, metadata_yml_filepath: Path):
     # List only new device & stream types that need to be inserted & created.
     new_device_types = [
         {"device_type": device_type}
-        for device_type in device_stream_map.keys()
+        for device_type in device_stream_map
         if not streams.DeviceType & {"device_type": device_type}
     ]
 
@@ -123,7 +123,7 @@ def insert_device_types(schema: DotMap, metadata_yml_filepath: Path):
         except dj.DataJointError:
             insert_stream_types()
             streams.DeviceType.Stream.insert(new_device_stream_types)
-            
+
     if new_devices:
         streams.Device.insert(new_devices)
 
@@ -138,7 +138,6 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
     Returns:
         dict: epoch_config [dict]
     """
-
     metadata_yml_filepath = pathlib.Path(metadata_yml_filepath)
     epoch_start = datetime.datetime.strptime(
         metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
@@ -182,9 +181,7 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
 
 
 def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
-    """
-    Make entries into device tables
-    """
+    """Make entries into device tables."""
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
     if experiment_name.startswith("oct"):
@@ -313,7 +310,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
 
 # region Get stream & device information
 def get_stream_entries(schema: DotMap) -> list[dict]:
-    """Returns a list of dictionaries containing the stream entries for a given device,
+    """Returns a list of dictionaries containing the stream entries for a given device.
 
     Args:
         schema (DotMap): DotMap object (e.g., exp02, octagon01)
@@ -347,8 +344,7 @@ def get_stream_entries(schema: DotMap) -> list[dict]:
 
 
 def get_device_info(schema: DotMap) -> dict[dict]:
-    """
-    Read from the above DotMap object and returns a device dictionary as the following.
+    """Read from the above DotMap object and returns a device dictionary as the following.
 
     Args:
         schema (DotMap): DotMap object (e.g., exp02, octagon01)
@@ -508,9 +504,7 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
 
 
 def ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath):
-    """
-    Temporary ingestion routine to load devices' meta information for Octagon arena experiments
-    """
+    """Temporary ingestion routine to load devices' meta information for Octagon arena experiments."""
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
     oct01_devices = [

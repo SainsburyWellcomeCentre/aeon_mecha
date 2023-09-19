@@ -17,14 +17,13 @@ repository_config = dj.config['custom'].get('repository_config',
                                             _default_repository_config)
 
 
-def get_schema_name(name):
+def get_schema_name(name) -> str:
+    """Return a schema name."""
     return db_prefix + name
 
 
-def dict_to_uuid(key):
-    """
-    Given a dictionary `key`, returns a hash string as UUID
-    """
+def dict_to_uuid(key) -> uuid.UUID:
+    """Given a dictionary `key`, returns a hash string as UUID."""
     hashed = hashlib.md5()
     for k, v in sorted(key.items()):
         hashed.update(str(k).encode())

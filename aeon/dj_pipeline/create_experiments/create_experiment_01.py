@@ -1,13 +1,15 @@
-import yaml
-from aeon.dj_pipeline import acquisition, lab, subject
 import pathlib
+
+import yaml
+
+from aeon.dj_pipeline import acquisition, lab, subject
 
 _wheel_sampling_rate = 500
 _weight_scale_rate = 100
 
 
 def ingest_exp01_metadata(metadata_yml_filepath, experiment_name):
-    with open(metadata_yml_filepath, "r") as f:
+    with open(metadata_yml_filepath) as f:
         arena_setup = yaml.full_load(f)
 
     device_frequency_mapper = {

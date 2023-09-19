@@ -138,8 +138,10 @@ class Experiment(dj.Manual):
 
     @classmethod
     def get_data_directories(
-        cls, experiment_key, directory_types=["raw"], as_posix=False
+        cls, experiment_key, directory_types=None, as_posix=False
     ):
+        if directory_types is None:
+            directory_types = ["raw"]
         return [
             cls.get_data_directory(experiment_key, dir_type, as_posix=as_posix)
             for dir_type in directory_types
@@ -272,18 +274,15 @@ class Epoch(dj.Manual):
 
     @classmethod
     def ingest_epochs(cls, experiment_name, start=None, end=None):
-        """
-        Ingest epochs for the specified "experiment_name"
+        """Ingest epochs for the specified "experiment_name"
         Ingest only epochs that start in between the specified (start, end) time
          - if not specified, ingest all epochs
-        Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S"
+        Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S".
         """
         from .utils import streams_maker
-        from .utils.load_metadata import (
-            extract_epoch_config,
-            ingest_epoch_metadata,
-            insert_device_types,
-        )
+        from .utils.load_metadata import (extract_epoch_config,
+                                          ingest_epoch_metadata,
+                                          insert_device_types)
 
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
@@ -556,9 +555,7 @@ class SubjectEnterExit(dj.Imported):
                 pd.Timestamp(chunk_end),
             )
         else:
-            device = getattr(
-                _device_schema_mapping[key["experiment_name"]], "ExperimentalMetadata"
-            )
+            device = _device_schema_mapping[key["experiment_name"]].ExperimentalMetadata
             subject_data = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.SubjectState,
@@ -609,9 +606,7 @@ class SubjectWeight(dj.Imported):
                 pd.Timestamp(chunk_end),
             )
         else:
-            device = getattr(
-                _device_schema_mapping[key["experiment_name"]], "ExperimentalMetadata"
-            )
+            device = _device_schema_mapping[key["experiment_name"]].ExperimentalMetadata
             subject_data = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.SubjectState,
@@ -650,9 +645,7 @@ class ExperimentLog(dj.Imported):
 
         # Populate the part table
         raw_data_dir = Experiment.get_data_directory(key)
-        device = getattr(
-            _device_schema_mapping[key["experiment_name"]], "ExperimentalMetadata"
-        )
+        device = _device_schema_mapping[key["experiment_name"]].ExperimentalMetadata
 
         try:
             # handles corrupted files - issue: https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/153
@@ -714,10 +707,9 @@ class FoodPatchEvent(dj.Imported):
 
     @property
     def key_source(self):
-        """
-        Only the combination of Chunk and ExperimentFoodPatch with overlapping time
+        """Only the combination of Chunk and ExperimentFoodPatch with overlapping time
         +  Chunk(s) that started after FoodPatch install time and ended before FoodPatch remove time
-        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed
+        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed.
         """
         return (
             Chunk * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
@@ -797,10 +789,9 @@ class FoodPatchWheel(dj.Imported):
 
     @property
     def key_source(self):
-        """
-        Only the combination of Chunk and ExperimentFoodPatch with overlapping time
+        """Only the combination of Chunk and ExperimentFoodPatch with overlapping time
         +  Chunk(s) that started after FoodPatch install time and ended before FoodPatch remove time
-        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed
+        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed.
         """
         return (
             Chunk * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
@@ -922,10 +913,9 @@ class WheelState(dj.Imported):
 
     @property
     def key_source(self):
-        """
-        Only the combination of Chunk and ExperimentFoodPatch with overlapping time
+        """Only the combination of Chunk and ExperimentFoodPatch with overlapping time
         +  Chunk(s) that started after FoodPatch install time and ended before FoodPatch remove time
-        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed
+        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed.
         """
         return (
             Chunk * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
@@ -984,10 +974,9 @@ class WeightMeasurement(dj.Imported):
 
     @property
     def key_source(self):
-        """
-        Only the combination of Chunk and ExperimentWeightScale with overlapping time
+        """Only the combination of Chunk and ExperimentWeightScale with overlapping time
         +  Chunk(s) that started after WeightScale install time and ended before WeightScale remove time
-        +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed
+        +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed.
         """
         return (
             Chunk
@@ -1165,7 +1154,8 @@ def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
         return subject_data
 
     if experiment_name == "social0-r1":
-        from aeon.dj_pipeline.create_experiments.create_socialexperiment_0 import fixID
+        from aeon.dj_pipeline.create_experiments.create_socialexperiment_0 import \
+            fixID
 
         sessdf = subject_data.copy()
         sessdf = sessdf[~sessdf.id.str.contains("test")]

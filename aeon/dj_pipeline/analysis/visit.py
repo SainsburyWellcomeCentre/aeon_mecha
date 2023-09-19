@@ -1,12 +1,11 @@
+import datetime
+
 import datajoint as dj
 import pandas as pd
-import numpy as np
-import datetime
 
 from aeon.analysis import utils as analysis_utils
 
-from .. import lab, acquisition, tracking, qc
-from .. import get_schema_name
+from .. import acquisition, get_schema_name, lab, qc, tracking
 
 schema = dj.schema(get_schema_name("analysis"))
 
@@ -107,7 +106,7 @@ class OverlapVisit(dj.Computed):
                         visit_end - key["overlap_start"]
                     ).total_seconds()
                     / 3600,
-                    "subject_count": len(set(v["subject"] for v in overlap_visits)),
+                    "subject_count": len({v["subject"] for v in overlap_visits}),
                 }
             )
             self.Visit.insert(overlap_visits, skip_duplicates=True)
@@ -116,14 +115,15 @@ class OverlapVisit(dj.Computed):
 # ---- HELPERS ----
 
 
-def ingest_environment_visits(experiment_names=["exp0.2-r0"]):
-    """
-    Function to populate into `Visit` and `VisitEnd` for specified experiments (default: 'exp0.2-r0')
+def ingest_environment_visits(experiment_names=None):
+    """Function to populate into `Visit` and `VisitEnd` for specified experiments (default: 'exp0.2-r0')
     This ingestion routine handles only those "complete" visits, not ingesting any "on-going" visits
-    Using "analyze" method: `aeon.analyze.utils.visits()`
+    Using "analyze" method: `aeon.analyze.utils.visits()`.
 
     :param list experiment_names: list of names of the experiment to populate into the Visit table
     """
+    if experiment_names is None:
+        experiment_names = ["exp0.2-r0"]
     place_key = {"place": "environment"}
     for experiment_name in experiment_names:
         exp_key = {"experiment_name": experiment_name}

@@ -1,9 +1,9 @@
+"""July 2022
+Upgrade all timestamps longblob fields with datajoint 0.13.7.
 """
-July 2022
-Upgrade all timestamps longblob fields with datajoint 0.13.7
-"""
-import datajoint as dj
 from datetime import datetime
+
+import datajoint as dj
 import numpy as np
 from tqdm import tqdm
 
@@ -17,7 +17,7 @@ schema = dj.schema("u_thinh_aeonfix")
 class TimestampFix(dj.Manual):
     definition = """
     full_table_name: varchar(64)
-    key_hash: uuid  # dj.hash.key_hash(key)    
+    key_hash: uuid  # dj.hash.key_hash(key)
     """
 
 

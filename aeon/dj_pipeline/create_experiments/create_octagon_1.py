@@ -1,5 +1,4 @@
-from aeon.dj_pipeline import acquisition, lab, subject
-
+from aeon.dj_pipeline import acquisition, subject
 
 # ============ Manual and automatic steps to for experiment 0.2 populate ============
 experiment_name = "oct1.0-r0"

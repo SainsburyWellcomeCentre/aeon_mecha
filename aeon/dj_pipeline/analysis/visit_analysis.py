@@ -6,7 +6,7 @@ import datajoint as dj
 import numpy as np
 import pandas as pd
 
-from .. import acquisition, dict_to_uuid, get_schema_name, lab, qc, tracking
+from .. import acquisition, get_schema_name, lab, tracking
 from .visit import Visit, VisitEnd
 
 logger = dj.logger
@@ -19,7 +19,7 @@ schema = dj.schema(get_schema_name("analysis"))
 @schema
 class PositionFilteringMethod(dj.Lookup):
     definition = """
-    pos_filter_method: varchar(16)  
+    pos_filter_method: varchar(16)
     ---
     pos_filter_method_description: varchar(256)
     """
@@ -32,7 +32,7 @@ class PositionFilteringParamSet(dj.Lookup):
     definition = """  # Parameter set used in a particular PositionFilteringMethod
     pos_filter_paramset_id:  smallint
     ---
-    -> PositionFilteringMethod    
+    -> PositionFilteringMethod
     paramset_description: varchar(128)
     param_set_hash: uuid
     unique index (param_set_hash)
@@ -77,11 +77,10 @@ class VisitSubjectPosition(dj.Computed):
 
     @property
     def key_source(self):
-        """
-        Chunk for all visits:
+        """Chunk for all visits:
         + visit_start during this Chunk - i.e. first chunk of the visit
         + visit_end during this Chunk - i.e. last chunk of the visit
-        + chunk starts after visit_start and ends before visit_end (or NOW() - i.e. ongoing visits)
+        + chunk starts after visit_start and ends before visit_end (or NOW() - i.e. ongoing visits).
         """
         return (
             Visit.join(VisitEnd, left=True).proj(visit_end="IFNULL(visit_end, NOW())")
@@ -127,7 +126,7 @@ class VisitSubjectPosition(dj.Computed):
                     as_dict=True, order_by="enter_exit_time DESC", limit=1
                 )[0]
                 if next_event["event_type"] == "SubjectEnteredArena":
-                    raise ValueError(f"Bad Visit - never exited visit")
+                    raise ValueError("Bad Visit - never exited visit")
                 end_time = next_event["enter_exit_time"]
 
         # -- Retrieve position data
@@ -192,9 +191,8 @@ class VisitSubjectPosition(dj.Computed):
 
     @classmethod
     def get_position(cls, visit_key=None, subject=None, start=None, end=None):
-        """
-        Given a key to a single Visit, return a Pandas DataFrame for the position data
-        of the subject for the specified Visit time period
+        """Given a key to a single Visit, return a Pandas DataFrame for the position data
+        of the subject for the specified Visit time period.
         """
         if visit_key is not None:
             assert len(Visit & visit_key) == 1
@@ -211,7 +209,7 @@ class VisitSubjectPosition(dj.Computed):
             subject = subject
         else:
             raise ValueError(
-                f'Either "visit_key" or all three "subject", "start" and "end" has to be specified'
+                'Either "visit_key" or all three "subject", "start" and "end" has to be specified'
             )
 
         return tracking._get_position(
@@ -239,9 +237,9 @@ class VisitTimeDistribution(dj.Computed):
     ---
     day_duration: float               # total duration (in hours)
     time_fraction_in_corridor: float  # fraction of time the animal spent in the corridor in this visit
-    in_corridor: longblob             # array of timestamps for when the animal is in the corridor 
+    in_corridor: longblob             # array of timestamps for when the animal is in the corridor
     time_fraction_in_arena: float     # fraction of time the animal spent in the arena in this visit
-    in_arena: longblob                # array of timestamps for when the animal is in the arena 
+    in_arena: longblob                # array of timestamps for when the animal is in the arena
     """
 
     class Nest(dj.Part):
@@ -259,7 +257,7 @@ class VisitTimeDistribution(dj.Computed):
         -> acquisition.ExperimentFoodPatch
         ---
         time_fraction_in_patch: float  # fraction of time the animal spent on this patch in this visit
-        in_patch: longblob             # array of timestamps for when the animal is in this patch 
+        in_patch: longblob             # array of timestamps for when the animal is in this patch
         """
 
     # Work on finished visits
@@ -551,7 +549,7 @@ class VisitForagingBout(dj.Computed):
     -> Visit
     -> acquisition.ExperimentFoodPatch
     bout_start: datetime(6)                    # start time of bout
-    --- 
+    ---
     bout_end: datetime(6)                      # end time of bout
     bout_duration: float                       # (seconds)
     wheel_distance_travelled: float            # (cm)
@@ -562,8 +560,8 @@ class VisitForagingBout(dj.Computed):
     key_source = (
         Visit
         & VisitSummary
-        & (VisitEnd & f"visit_duration > 24")
-        & f"experiment_name= 'exp0.2-r0'"
+        & (VisitEnd & "visit_duration > 24")
+        & "experiment_name= 'exp0.2-r0'"
     ) * acquisition.ExperimentFoodPatch
 
     def make(self, key):

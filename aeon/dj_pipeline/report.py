@@ -2,7 +2,6 @@ import datetime
 import json
 import os
 import pathlib
-import re
 
 import datajoint as dj
 import matplotlib.pyplot as plt
@@ -138,7 +137,7 @@ class InArenaSummaryPlot(dj.Computed):
 
             wheel_time = np.append(wheel_time, position_minutes_elapsed[-1])
 
-            for i in range(0, len(wheel_time) - 1):
+            for i in range(len(wheel_time) - 1):
                 threshold_ax.hlines(
                     y=wheel_threshold[i],
                     xmin=wheel_time[i],
@@ -184,7 +183,7 @@ class InArenaSummaryPlot(dj.Computed):
             color=self.color_code["arena"],
             markersize=0.5,
             alpha=0.6,
-            label=f"arena",
+            label="arena",
         )
         ethogram_ax.plot(
             position_minutes_elapsed[in_corridor],
@@ -193,7 +192,7 @@ class InArenaSummaryPlot(dj.Computed):
             color=self.color_code["corridor"],
             markersize=0.5,
             alpha=0.6,
-            label=f"corridor",
+            label="corridor",
         )
         for in_nest in in_nests:
             ethogram_ax.plot(
@@ -203,7 +202,7 @@ class InArenaSummaryPlot(dj.Computed):
                 color=self.color_code["nest"],
                 markersize=0.5,
                 alpha=0.6,
-                label=f"nest",
+                label="nest",
             )
         for patch_idx, (patch_name, in_patch) in enumerate(
             zip(patch_names, in_patches)
@@ -317,11 +316,10 @@ class SubjectRewardRateDifference(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """
-        Each entry in this table correspond to one subject. However, the plot is capturing
+        """Each entry in this table correspond to one subject. However, the plot is capturing
             data for all sessions.
         Hence a dynamic update routine is needed to recompute the plot as new sessions
-            become available
+            become available.
         """
         outdated_entries = (
             cls
@@ -367,11 +365,10 @@ class SubjectWheelTravelledDistance(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """
-        Each entry in this table correspond to one subject. However the plot is capturing
+        """Each entry in this table correspond to one subject. However the plot is capturing
             data for all sessions.
         Hence a dynamic update routine is needed to recompute the plot as new sessions
-            become available
+            become available.
         """
         outdated_entries = (
             cls
@@ -415,11 +412,10 @@ class ExperimentTimeDistribution(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """
-        Each entry in this table correspond to one subject. However the plot is capturing
+        """Each entry in this table correspond to one subject. However the plot is capturing
             data for all sessions.
         Hence a dynamic update routine is needed to recompute the plot as new sessions
-            become available
+            become available.
         """
         outdated_entries = (
             cls
@@ -463,8 +459,8 @@ class VisitDailySummaryPlot(dj.Computed):
     key_source = (
         Visit
         & analysis.VisitSummary
-        & (VisitEnd & f"visit_duration > 24")
-        & f"experiment_name= 'exp0.2-r0'"
+        & (VisitEnd & "visit_duration > 24")
+        & "experiment_name= 'exp0.2-r0'"
     )
 
     def make(self, key):

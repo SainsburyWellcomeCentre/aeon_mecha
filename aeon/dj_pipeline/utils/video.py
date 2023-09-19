@@ -1,8 +1,7 @@
 import base64
-import datetime
 from pathlib import Path
+
 import cv2
-import numpy as np
 import pandas as pd
 
 import aeon.io.reader as io_reader

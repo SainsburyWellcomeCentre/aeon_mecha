@@ -116,9 +116,8 @@ def main():
 
 
 def fixID(subjid, valid_ids=None, valid_id_file=None):
-    """
-    Legacy helper function for socialexperiment0 - originaly developed by ErlichLab
-    https://github.com/SainsburyWellcomeCentre/aeon_mecha/blob/ee1fa536b58e82fad01130d7689a70e68f94ec0e/aeon/util/helpers.py#L19
+    """Legacy helper function for socialexperiment0 - originaly developed by ErlichLab
+    https://github.com/SainsburyWellcomeCentre/aeon_mecha/blob/ee1fa536b58e82fad01130d7689a70e68f94ec0e/aeon/util/helpers.py#L19.
 
     Attempt to correct the id entered by the technician
     Attempt to correct the subjid entered by the technician
@@ -131,9 +130,10 @@ def fixID(subjid, valid_ids=None, valid_id_file=None):
     )
     """
     from os import path
+
     import jellyfish as jl
-    import pandas as pd
     import numpy as np
+    import pandas as pd
 
     if not valid_ids:
         if not valid_id_file:

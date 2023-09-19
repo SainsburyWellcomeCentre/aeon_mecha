@@ -4,9 +4,8 @@ from aeon.dj_pipeline import repository_config
 
 
 def get_repository_path(repository_name):
-    """
-    Find the directory's full-path corresponding to a given repository_name,
-    as configured in dj.config['custom']['repository_config']
+    """Find the directory's full-path corresponding to a given repository_name,
+    as configured in dj.config['custom']['repository_config'].
     """
     repo_path = repository_config.get(repository_name)
     if repo_path is None:
@@ -21,12 +20,11 @@ def get_repository_path(repository_name):
 
 
 def find_root_directory(root_directories, full_path):
-    """
-    Given multiple potential root directories and a full-path,
+    """Given multiple potential root directories and a full-path,
     search and return one directory that is the parent of the given path
         :param root_directories: potential root directories
         :param full_path: the relative path to search the root directory
-        :return: full-path (pathlib.Path object)
+        :return: full-path (pathlib.Path object).
     """
     full_path = pathlib.Path(full_path)
 
@@ -46,6 +44,6 @@ def find_root_directory(root_directories, full_path):
 
     except StopIteration:
         raise FileNotFoundError(
-            "No valid root directory found (from {})"
-            " for {}".format(root_directories, full_path)
+            f"No valid root directory found (from {root_directories})"
+            f" for {full_path}"
         )

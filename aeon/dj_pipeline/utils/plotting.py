@@ -3,19 +3,14 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import plotly.io as pio
-
-from aeon.dj_pipeline import acquisition, analysis, lab
-from aeon.dj_pipeline.analysis.visit import Visit, VisitEnd
-from aeon.dj_pipeline.analysis.visit_analysis import (
-    VisitSummary,
-    VisitTimeDistribution,
-    VisitForagingBout,
-    get_maintenance_periods,
-    filter_out_maintenance_periods,
-)
 from plotly.subplots import make_subplots
 from scipy.signal import savgol_filter
+
+from aeon.dj_pipeline import acquisition, analysis, lab
+from aeon.dj_pipeline.analysis.visit import VisitEnd
+from aeon.dj_pipeline.analysis.visit_analysis import (
+    VisitForagingBout, VisitSummary, VisitTimeDistribution,
+    filter_out_maintenance_periods, get_maintenance_periods)
 
 # pio.renderers.default = 'png'
 # pio.orca.config.executable = '~/.conda/envs/aeon_env/bin/orca'
@@ -24,12 +19,11 @@ from scipy.signal import savgol_filter
 
 
 def plot_reward_rate_differences(subject_keys):
-    """
-    Plotting the reward rate differences between food patches (Patch 2 - Patch 1)
+    """Plotting the reward rate differences between food patches (Patch 2 - Patch 1)
     for all sessions from all subjects specified in "subject_keys"
     Example usage:
     ```
-    subject_keys = (acquisition.Experiment.Subject & 'experiment_name = "exp0.1-r0"').fetch('KEY')
+    subject_keys = (acquisition.Experiment.Subject & 'experiment_name = "exp0.1-r0"').fetch('KEY').
 
     fig = plot_reward_rate_differences(subject_keys)
     ```
@@ -68,7 +62,7 @@ def plot_reward_rate_differences(subject_keys):
         zmax=absZmax,
         aspect="auto",
         color_continuous_scale="RdBu_r",
-        labels=dict(color="Reward Rate<br>Patch2-Patch1"),
+        labels={"color": "Reward Rate<br>Patch2-Patch1"},
     )
     fig.update_layout(
         xaxis_title="Time (min)",
@@ -80,18 +74,16 @@ def plot_reward_rate_differences(subject_keys):
 
 
 def plot_wheel_travelled_distance(session_keys):
-    """
-    Plotting the wheel travelled distance for different patches
+    """Plotting the wheel travelled distance for different patches
         for all sessions specified in "session_keys"
     Example usage:
     ```
     session_keys = (acquisition.Session & acquisition.SessionEnd
-     & {'experiment_name': 'exp0.1-r0', 'subject': 'BAA-1099794'}).fetch('KEY')
+     & {'experiment_name': 'exp0.1-r0', 'subject': 'BAA-1099794'}).fetch('KEY').
 
     fig = plot_wheel_travelled_distance(session_keys)
     ```
     """
-
     distance_travelled_query = (
         analysis.InArenaSummary.FoodPatch
         * acquisition.ExperimentFoodPatch.proj("food_patch_description")
@@ -213,7 +205,7 @@ def plot_visit_daily_summary(
     attr,
     per_food_patch=False,
 ):
-    """plot results from VisitSummary per visit
+    """Plot results from VisitSummary per visit.
 
     Args:
         visit_key (dict) : Key from the VisitSummary table
@@ -228,7 +220,6 @@ def plot_visit_daily_summary(
         >>> fig = plot_visit_daily_summary(visit_key, attr='wheel_distance_travelled', per_food_patch=True)
         >>> fig = plot_visit_daily_summary(visit_key, attr='total_distance_travelled')
     """
-
     per_food_patch = not attr.startswith("total")
     color = "food_patch_description" if per_food_patch else None
 
@@ -243,7 +234,7 @@ def plot_visit_daily_summary(
         )
     else:
         visit_per_day_df = (
-            ((VisitSummary & visit_key)).fetch(format="frame").reset_index()
+            (VisitSummary & visit_key).fetch(format="frame").reset_index()
         )
         if not attr.startswith("total"):
             attr = "total_" + attr
@@ -271,9 +262,9 @@ def plot_visit_daily_summary(
     )
 
     fig.update_layout(
-        legend=dict(
-            title="", orientation="h", yanchor="bottom", y=0.98, xanchor="right", x=1
-        ),
+        legend={
+            "title": "", "orientation": "h", "yanchor": "bottom", "y": 0.98, "xanchor": "right", "x": 1
+        },
         hovermode="x",
         yaxis_tickformat="digits",
         yaxis_range=[0, None],
@@ -290,7 +281,7 @@ def plot_foraging_bouts_count(
     min_pellet_count=0,
     min_wheel_dist=0,
 ):
-    """plot the number of foraging bouts per visit
+    """Plot the number of foraging bouts per visit.
 
     Args:
         visit_key (dict): Key from the Visit table
@@ -306,7 +297,6 @@ def plot_foraging_bouts_count(
     Examples:
         >>> fig = plot_foraging_bouts_count(visit_key, freq="D", per_food_patch=True, min_bout_duration=1, min_wheel_dist=1)
     """
-
     # Get all foraging bouts for the visit
     foraging_bouts = (
         (
@@ -365,9 +355,9 @@ def plot_foraging_bouts_count(
     )
 
     fig.update_layout(
-        legend=dict(
-            title="", orientation="h", yanchor="bottom", y=0.98, xanchor="right", x=1
-        ),
+        legend={
+            "title": "", "orientation": "h", "yanchor": "bottom", "y": 0.98, "xanchor": "right", "x": 1
+        },
         hovermode="x",
         yaxis_tickformat="digits",
         yaxis_range=[0, None],
@@ -384,7 +374,7 @@ def plot_foraging_bouts_distribution(
     min_pellet_count=0,
     min_wheel_dist=0,
 ):
-    """plot distribution of foraging bout attributes
+    """Plot distribution of foraging bout attributes.
 
     Args:
         visit_key (dict): Key from the Visit table
@@ -402,7 +392,6 @@ def plot_foraging_bouts_distribution(
         >>> fig = plot_foraging_bouts_distribution(visit_key, "wheel_distance_travelled")
         >>> fig = plot_foraging_bouts_distribution(visit_key, "bout_duration")
     """
-
     # Get all foraging bouts for the visit
     foraging_bouts = (
         (
@@ -469,14 +458,14 @@ def plot_foraging_bouts_distribution(
         width=700,
         height=400,
         template="simple_white",
-        legend=dict(orientation="h", yanchor="bottom", y=1, xanchor="right", x=1),
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1, "xanchor": "right", "x": 1},
     )
 
     return fig
 
 
 def plot_visit_time_distribution(visit_key, freq="D"):
-    """plot fraction of time spent in each region per visit
+    """Plot fraction of time spent in each region per visit.
 
     Args:
         visit_key (dict): Key from the Visit table
@@ -489,7 +478,6 @@ def plot_visit_time_distribution(visit_key, freq="D"):
         >>> fig = plot_visit_time_distribution(visit_key, freq="D")
         >>> fig = plot_visit_time_distribution(visit_key, freq="H")
     """
-
     region = _get_region_data(visit_key)
 
     # Compute time spent per region
@@ -528,9 +516,9 @@ def plot_visit_time_distribution(visit_key, freq="D"):
         hovermode="x",
         yaxis_tickformat="digits",
         yaxis_range=[0, None],
-        legend=dict(
-            title="", orientation="h", yanchor="bottom", y=0.98, xanchor="right", x=1
-        ),
+        legend={
+            "title": "", "orientation": "h", "yanchor": "bottom", "y": 0.98, "xanchor": "right", "x": 1
+        },
     )
 
     return fig
@@ -627,7 +615,7 @@ def _get_region_data(
 def plot_weight_patch_data(
     visit_key, freq="H", smooth_weight=True, min_weight=0, max_weight=35
 ):
-    """plot subject weight and patch data (pellet trigger count) per visit
+    """Plot subject weight and patch data (pellet trigger count) per visit.
 
     Args:
         visit_key (dict): Key from the Visit table
@@ -643,7 +631,6 @@ def plot_weight_patch_data(
         >>> fig = plot_weight_patch_data(visit_key, freq="H", smooth_weight=True)
         >>> fig = plot_weight_patch_data(visit_key, freq="D")
     """
-
     subject_weight = _get_filtered_subject_weight(
         visit_key, smooth_weight, min_weight, max_weight
     )
@@ -693,9 +680,9 @@ def plot_weight_patch_data(
             mode="lines+markers",
             opacity=0.5,
             name="subject weight",
-            marker=dict(
-                size=3,
-            ),
+            marker={
+                "size": 3,
+            },
             legendrank=1,
         ),
         secondary_y=True,
@@ -709,20 +696,20 @@ def plot_weight_patch_data(
         + freq
         + "')",
         xaxis_title="date" if freq == "D" else "time",
-        yaxis=dict(title="pellet count"),
-        yaxis2=dict(title="weight"),
+        yaxis={"title": "pellet count"},
+        yaxis2={"title": "weight"},
         width=700,
         height=400,
         template="simple_white",
-        legend=dict(
-            title="",
-            orientation="h",
-            yanchor="bottom",
-            y=0.98,
-            xanchor="right",
-            x=1,
-            traceorder="normal",
-        ),
+        legend={
+            "title": "",
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 0.98,
+            "xanchor": "right",
+            "x": 1,
+            "traceorder": "normal",
+        },
     )
 
     return fig
@@ -742,7 +729,6 @@ def _get_filtered_subject_weight(
     Returns:
         subject_weight (pd.DataFrame): Timestamped weight data
     """
-
     visit_start, visit_end = (VisitEnd & visit_key).fetch1("visit_start", "visit_end")
 
     chunk_keys = (
@@ -805,7 +791,6 @@ def _get_patch_data(visit_key):
     Returns:
         patch (pd.DataFrame): Timestamped pellet trigger events
     """
-
     visit_start, visit_end = (VisitEnd & visit_key).fetch1("visit_start", "visit_end")
 
     # Get pellet trigger dataframe for all patches

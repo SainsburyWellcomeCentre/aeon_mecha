@@ -1,4 +1,4 @@
-"""Start an Aeon ingestion process
+"""Start an Aeon ingestion process.
 
 This script defines auto-processing routines to operate the DataJoint pipeline for the
 Aeon project. Three separate "process" functions are defined to call `populate()` for
@@ -53,8 +53,7 @@ configured_workers = {
 
 
 def run(**kwargs):
-    """
-    Run ingestion routine depending on the configured worker
+    """Run ingestion routine depending on the configured worker.
 
     :param worker_name: Select the worker
     :type worker_name: str
@@ -88,8 +87,7 @@ def run(**kwargs):
 
 
 def cli():
-    """
-    Calls :func:`run` passing the CLI arguments extracted from `sys.argv`
+    """Calls :func:`run` passing the CLI arguments extracted from `sys.argv`.
 
     This function can be used as entry point to create console scripts with setuptools.
     """

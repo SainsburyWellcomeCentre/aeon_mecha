@@ -1,8 +1,6 @@
 import datajoint as dj
 
-from . import lab
 from . import get_schema_name
-
 
 schema = dj.schema(get_schema_name('subject'))
 

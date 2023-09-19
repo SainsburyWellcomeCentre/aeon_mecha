@@ -1,12 +1,10 @@
 import datajoint as dj
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from aeon.io import api as io_api
 
-from . import acquisition
-from . import get_schema_name
-
+from . import acquisition, get_schema_name
 
 schema = dj.schema(get_schema_name("qc"))
 

@@ -1,8 +1,8 @@
-"""
-March 2022
-Cloning and archiving schemas and data for experiment 0.1
+"""March 2022
+Cloning and archiving schemas and data for experiment 0.1.
 """
 import os
+
 import datajoint as dj
 from datajoint_utilities.dj_data_copy import db_migration
 from datajoint_utilities.dj_data_copy.pipeline_cloning import ClonedPipeline
