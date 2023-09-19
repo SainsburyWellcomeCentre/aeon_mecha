@@ -196,11 +196,7 @@ class InArenaSubjectPosition(dj.Imported):
     )
 
     def make(self, key):
-        """The populate logic here relies on the assumption that there is only one subject in the arena at a time
-        The positiondata is associated with that one subject currently in the arena at any timepoints
-        For multi-animal experiments, a mapping of object_id-to-subject is needed to populate the right position data
-        associated with a particular animal.
-        """
+        """The populate logic here relies on the assumption that there is only one subject in the arena at a time. The positiondata is associated with that one subject currently in the arena at any timepoints. For multi-animal experiments, a mapping of object_id-to-subject is needed to populate the right position data associated with a particular animal."""
         time_slice_start, time_slice_end = (InArenaTimeSlice & key).fetch1(
             "time_slice_start", "time_slice_end"
         )
@@ -244,9 +240,7 @@ class InArenaSubjectPosition(dj.Imported):
 
     @classmethod
     def get_position(cls, in_arena_key):
-        """Given a key to a single InArena, return a Pandas DataFrame for the position data
-        of the subject for the specified InArena time period.
-        """
+        """Given a key to a single InArena, return a Pandas DataFrame for the position data of the subject for the specified InArena time period."""
         assert len(InArena & in_arena_key) == 1
 
         start, end = (InArena * InArenaEnd & in_arena_key).fetch1("in_arena_start", "in_arena_end")

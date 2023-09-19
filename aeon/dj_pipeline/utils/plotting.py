@@ -23,11 +23,11 @@ from aeon.dj_pipeline.analysis.visit_analysis import (
 
 
 def plot_reward_rate_differences(subject_keys):
-    """Plotting the reward rate differences between food patches (Patch 2 - Patch 1)
-    for all sessions from all subjects specified in "subject_keys"
-    Example usage:
+    """Plotting the reward rate differences between food patches (Patch 2 - Patch 1) for all sessions from all subjects specified in "subject_keys".
+
+    Examples:
     ```
-    subject_keys = (acquisition.Experiment.Subject & 'experiment_name = "exp0.1-r0"').fetch('KEY').
+    subject_keys = (acquisition.Experiment.Subject & 'experiment_name = "exp0.1-r0"').fetch('KEY')
 
     fig = plot_reward_rate_differences(subject_keys)
     ```
@@ -74,12 +74,12 @@ def plot_reward_rate_differences(subject_keys):
 
 
 def plot_wheel_travelled_distance(session_keys):
-    """Plotting the wheel travelled distance for different patches
-        for all sessions specified in "session_keys"
-    Example usage:
+    """Plotting the wheel travelled distance for different patches for all sessions specified in "session_keys".
+
+    Examples:
     ```
     session_keys = (acquisition.Session & acquisition.SessionEnd
-     & {'experiment_name': 'exp0.1-r0', 'subject': 'BAA-1099794'}).fetch('KEY').
+     & {'experiment_name': 'exp0.1-r0', 'subject': 'BAA-1099794'}).fetch('KEY')
 
     fig = plot_wheel_travelled_distance(session_keys)
     ```
@@ -521,7 +521,6 @@ def _get_region_data(visit_key, attrs=["in_nest", "in_arena", "in_corridor", "in
     Returns:
         region (pd.DataFrame): Timestamped region info
     """
-
     visit_start, visit_end = (VisitEnd & visit_key).fetch1("visit_start", "visit_end")
     region = pd.DataFrame()
 

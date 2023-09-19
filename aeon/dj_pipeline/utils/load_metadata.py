@@ -127,8 +127,8 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
     """Parse experiment metadata YAML file and extract epoch configuration.
 
     Args:
-        experiment_name (str)
-        metadata_yml_filepath (str)
+        experiment_name (str): Name of the experiment.
+        metadata_yml_filepath (str): path to the metadata YAML file.
 
     Returns:
         dict: epoch_config [dict]
@@ -188,12 +188,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
     ).fetch1("commit"):
         # if identical commit -> no changes
         return
-
-    device_frequency_mapper = {
-        name: float(value)
-        for name, value in epoch_config["metadata"]["VideoController"].items()
-        if name.endswith("Frequency")
-    }  # May not be needed?
 
     schema = acquisition._device_schema_mapping[experiment_name]
     device_type_mapper, _ = get_device_mapper(schema, metadata_yml_filepath)

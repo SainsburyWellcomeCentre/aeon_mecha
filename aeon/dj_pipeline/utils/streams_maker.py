@@ -20,11 +20,7 @@ _STREAMS_MODULE_FILE = Path(__file__).parent.parent / "streams.py"
 
 
 class StreamType(dj.Lookup):
-    """Catalog of all steam types for the different device types used across Project Aeon
-    One StreamType corresponds to one reader class in `aeon.io.reader`
-    The combination of `stream_reader` and `stream_reader_kwargs` should fully specify
-    the data loading routine for a particular device, using the `aeon.io.utils`.
-    """
+    """Catalog of all steam types for the different device types used across Project Aeon. One StreamType corresponds to one reader class in `aeon.io.reader`. The combination of `stream_reader` and `stream_reader_kwargs` should fully specify the data loading routine for a particular device, using the `aeon.io.utils`."""
 
     definition = """  # Catalog of all stream types used across Project Aeon
     stream_type          : varchar(20)

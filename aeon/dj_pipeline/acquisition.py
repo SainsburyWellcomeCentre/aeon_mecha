@@ -253,7 +253,7 @@ class ExperimentWeightScale(dj.Manual):
 
 @schema
 class Epoch(dj.Manual):
-    definition = """  # A recording period reflecting on/off of the hardware acquisition system
+    definition = """  # A recording period reflecting on/off of the hardware acquisition system.
     -> Experiment
     epoch_start: datetime(6)
     """
@@ -272,9 +272,7 @@ class Epoch(dj.Manual):
 
     @classmethod
     def ingest_epochs(cls, experiment_name, start=None, end=None):
-        """Ingest epochs for the specified "experiment_name"
-        Ingest only epochs that start in between the specified (start, end) time
-         - if not specified, ingest all epochs
+        """Ingest epochs for the specified "experiment_name". Ingest only epochs that start in between the specified (start, end) time. If not specified, ingest all epochs.
         Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S".
         """
         from .utils import streams_maker

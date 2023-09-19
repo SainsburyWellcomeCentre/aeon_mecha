@@ -297,11 +297,7 @@ class SubjectRewardRateDifference(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """Each entry in this table correspond to one subject. However, the plot is capturing
-            data for all sessions.
-        Hence a dynamic update routine is needed to recompute the plot as new sessions
-            become available.
-        """
+        """Each entry in this table correspond to one subject. However, the plot is capturing data for all sessions.Hence a dynamic update routine is needed to recompute the plot as new sessions become available."""
         outdated_entries = (
             cls
             * (
@@ -346,11 +342,7 @@ class SubjectWheelTravelledDistance(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """Each entry in this table correspond to one subject. However the plot is capturing
-            data for all sessions.
-        Hence a dynamic update routine is needed to recompute the plot as new sessions
-            become available.
-        """
+        """Each entry in this table correspond to one subject. However the plot is capturing data for all sessions. Hence a dynamic update routine is needed to recompute the plot as new sessions become available."""
         outdated_entries = (
             cls
             * (
@@ -393,11 +385,7 @@ class ExperimentTimeDistribution(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """Each entry in this table correspond to one subject. However the plot is capturing
-            data for all sessions.
-        Hence a dynamic update routine is needed to recompute the plot as new sessions
-            become available.
-        """
+        """Each entry in this table correspond to one subject. However the plot is capturing data for all sessions. Hence a dynamic update routine is needed to recompute the plot as new sessions become available."""
         outdated_entries = (
             cls
             * (

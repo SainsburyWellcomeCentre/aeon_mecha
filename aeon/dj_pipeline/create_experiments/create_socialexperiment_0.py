@@ -1,9 +1,7 @@
 import pathlib
 
 from aeon.dj_pipeline import acquisition, lab, subject
-from aeon.dj_pipeline.create_experiments.create_experiment_01 import (
-    ingest_exp01_metadata,
-)
+from aeon.dj_pipeline.create_experiments.create_experiment_01 import ingest_exp01_metadata
 
 # ============ Manual and automatic steps to for experiment 0.1 populate ============
 experiment_name = "social0-r1"
@@ -109,8 +107,7 @@ def main():
 
 
 def fixID(subjid, valid_ids=None, valid_id_file=None):
-    """Legacy helper function for socialexperiment0 - originaly developed by ErlichLab
-    https://github.com/SainsburyWellcomeCentre/aeon_mecha/blob/ee1fa536b58e82fad01130d7689a70e68f94ec0e/aeon/util/helpers.py#L19.
+    """Legacy helper function for socialexperiment0 - originaly developed by ErlichLab (https://github.com/SainsburyWellcomeCentre/aeon_mecha/blob/ee1fa536b58e82fad01130d7689a70e68f94ec0e/aeon/util/helpers.py#L19).
 
     Attempt to correct the id entered by the technician
     Attempt to correct the subjid entered by the technician

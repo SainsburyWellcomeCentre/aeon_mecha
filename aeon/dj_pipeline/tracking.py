@@ -8,8 +8,6 @@ import pandas as pd
 from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, qc, streams
 from aeon.io import api as io_api
 
-from . import acquisition, dict_to_uuid, get_schema_name, lab, qc
-
 schema = dj.schema(get_schema_name("tracking"))
 
 pixel_scale = 0.00192  # 1 px = 1.92 mm
