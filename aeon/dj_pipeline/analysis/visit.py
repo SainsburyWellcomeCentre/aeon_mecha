@@ -65,14 +65,14 @@ class OverlapVisit(dj.Computed):
 
     @property
     def key_source(self):
-        return dj.U("experiment_name", "place", "overlap_start") & (
-            Visit & VisitEnd
-        ).proj(overlap_start="visit_start")
+        return dj.U("experiment_name", "place", "overlap_start") & (Visit & VisitEnd).proj(
+            overlap_start="visit_start"
+        )
 
     def make(self, key):
-        visit_starts, visit_ends = (
-            Visit * VisitEnd & key & {"visit_start": key["overlap_start"]}
-        ).fetch("visit_start", "visit_end")
+        visit_starts, visit_ends = (Visit * VisitEnd & key & {"visit_start": key["overlap_start"]}).fetch(
+            "visit_start", "visit_end"
+        )
         visit_start = min(visit_starts)
         visit_end = max(visit_ends)
 
@@ -86,9 +86,7 @@ class OverlapVisit(dj.Computed):
             if len(overlap_query) <= 1:
                 break
             overlap_visits.extend(
-                overlap_query.proj(overlap_start=f'"{key["overlap_start"]}"').fetch(
-                    as_dict=True
-                )
+                overlap_query.proj(overlap_start=f'"{key["overlap_start"]}"').fetch(as_dict=True)
             )
             visit_starts, visit_ends = overlap_query.fetch("visit_start", "visit_end")
             if visit_start == max(visit_starts) and visit_end == max(visit_ends):
@@ -102,10 +100,7 @@ class OverlapVisit(dj.Computed):
                 {
                     **key,
                     "overlap_end": visit_end,
-                    "overlap_duration": (
-                        visit_end - key["overlap_start"]
-                    ).total_seconds()
-                    / 3600,
+                    "overlap_duration": (visit_end - key["overlap_start"]).total_seconds() / 3600,
                     "subject_count": len({v["subject"] for v in overlap_visits}),
                 }
             )

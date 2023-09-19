@@ -40,7 +40,6 @@ def insert_stream_types():
 
     schemas = [v for v in dataset.__dict__.values() if isinstance(v, DotMap)]
     for schema in schemas:
-
         stream_entries = get_stream_entries(schema)
 
         for entry in stream_entries:
@@ -50,9 +49,7 @@ def insert_stream_types():
                 if pname != entry["stream_type"]:
                     # If the existed stream type does not have the same name:
                     # human error, trying to add the same content with different name
-                    raise dj.DataJointError(
-                        f"The specified stream type already exists - name: {pname}"
-                    )
+                    raise dj.DataJointError(f"The specified stream type already exists - name: {pname}")
 
         streams.StreamType.insert(stream_entries, skip_duplicates=True)
 
@@ -99,8 +96,7 @@ def insert_device_types(schema: DotMap, metadata_yml_filepath: Path):
         {"device_type": device_type, "stream_type": stream_type}
         for device_type, stream_list in device_stream_map.items()
         for stream_type in stream_list
-        if not streams.DeviceType.Stream
-        & {"device_type": device_type, "stream_type": stream_type}
+        if not streams.DeviceType.Stream & {"device_type": device_type, "stream_type": stream_type}
     ]
 
     new_devices = [
@@ -109,8 +105,7 @@ def insert_device_types(schema: DotMap, metadata_yml_filepath: Path):
             "device_type": device_config["device_type"],
         }
         for device_name, device_config in device_info.items()
-        if device_sn[device_name]
-        and not streams.Device & {"device_serial_number": device_sn[device_name]}
+        if device_sn[device_name] and not streams.Device & {"device_serial_number": device_sn[device_name]}
     ]
 
     # Insert new entries.
@@ -139,9 +134,7 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
         dict: epoch_config [dict]
     """
     metadata_yml_filepath = pathlib.Path(metadata_yml_filepath)
-    epoch_start = datetime.datetime.strptime(
-        metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
-    )
+    epoch_start = datetime.datetime.strptime(metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S")
     epoch_config: dict = (
         io_api.load(
             str(metadata_yml_filepath.parent),
@@ -158,17 +151,11 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
     assert commit, f'Neither "Commit" nor "Revision" found in {metadata_yml_filepath}'
 
     devices: list[dict] = json.loads(
-        json.dumps(
-            epoch_config["metadata"]["Devices"], default=lambda x: x.__dict__, indent=4
-        )
+        json.dumps(epoch_config["metadata"]["Devices"], default=lambda x: x.__dict__, indent=4)
     )
 
-    if isinstance(
-        devices, list
-    ):  # In exp02, it is a list of dict. In presocial. It's a dict of dict.
-        devices: dict = {
-            d.pop("Name"): d for d in devices
-        }  # {deivce_name: device_config}
+    if isinstance(devices, list):  # In exp02, it is a list of dict. In presocial. It's a dict of dict.
+        devices: dict = {d.pop("Name"): d for d in devices}  # {deivce_name: device_config}
 
     return {
         "experiment_name": experiment_name,
@@ -217,7 +204,6 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
 
     for device_name, device_config in epoch_config["metadata"].items():
         if table := getattr(streams, device_type_mapper.get(device_name) or "", None):
-
             device_sn = device_config.get("SerialNumber", device_config.get("PortName"))
             device_key = {"device_serial_number": device_sn}
 
@@ -225,9 +211,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             table_entry = {
                 "experiment_name": experiment_name,
                 **device_key,
-                f"{dj.utils.from_camel_case(table.__name__)}_install_time": epoch_config[
-                    "epoch_start"
-                ],
+                f"{dj.utils.from_camel_case(table.__name__)}_install_time": epoch_config["epoch_start"],
                 f"{dj.utils.from_camel_case(table.__name__)}_name": device_name,
             }
 
@@ -241,14 +225,10 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             ]
 
             """Check if this camera is currently installed. If the same camera serial number is currently installed check for any changes in configuration. If not, skip this"""
-            current_device_query = (
-                table - table.RemovalTime & experiment_key & device_key
-            )
+            current_device_query = table - table.RemovalTime & experiment_key & device_key
 
             if current_device_query:
-                current_device_config: list[dict] = (
-                    table.Attribute & current_device_query
-                ).fetch(
+                current_device_config: list[dict] = (table.Attribute & current_device_query).fetch(
                     "experiment_name",
                     "device_serial_number",
                     "attribute_name",
@@ -256,11 +236,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                     as_dict=True,
                 )
                 new_device_config: list[dict] = [
-                    {
-                        k: v
-                        for k, v in entry.items()
-                        if dj.utils.from_camel_case(table.__name__) not in k
-                    }
+                    {k: v for k, v in entry.items() if dj.utils.from_camel_case(table.__name__) not in k}
                     for entry in table_attribute_entry
                 ]
 
@@ -270,10 +246,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                         for config in current_device_config
                     }
                 ) == dict_to_uuid(
-                    {
-                        config["attribute_name"]: config["attribute_value"]
-                        for config in new_device_config
-                    }
+                    {config["attribute_name"]: config["attribute_value"] for config in new_device_config}
                 ):  # Skip if none of the configuration has changed.
                     continue
 
@@ -339,6 +312,7 @@ def get_stream_entries(schema: DotMap) -> list[dict]:
             stream_info["stream_reader"],
             stream_info["stream_reader_kwargs"],
             stream_info["stream_hash"],
+            strict=True,
         )
     ]
 
@@ -385,14 +359,10 @@ def get_device_info(schema: DotMap) -> dict[dict]:
                     "aeon.schema.octagon",
                 ]:
                     device_info[device_name]["stream_type"].append(stream_type)
-                    device_info[device_name]["stream_reader"].append(
-                        _get_class_path(stream_obj)
-                    )
+                    device_info[device_name]["stream_reader"].append(_get_class_path(stream_obj))
 
                     required_args = [
-                        k
-                        for k in inspect.signature(stream_obj.__init__).parameters
-                        if k != "self"
+                        k for k in inspect.signature(stream_obj.__init__).parameters if k != "self"
                     ]
                     pattern = schema_dict[device_name][stream_type].get("pattern")
                     schema_dict[device_name][stream_type]["pattern"] = pattern.replace(
@@ -400,35 +370,23 @@ def get_device_info(schema: DotMap) -> dict[dict]:
                     )
 
                     kwargs = {
-                        k: v
-                        for k, v in schema_dict[device_name][stream_type].items()
-                        if k in required_args
+                        k: v for k, v in schema_dict[device_name][stream_type].items() if k in required_args
                     }
                     device_info[device_name]["stream_reader_kwargs"].append(kwargs)
                     # Add hash
                     device_info[device_name]["stream_hash"].append(
-                        dict_to_uuid(
-                            {**kwargs, "stream_reader": _get_class_path(stream_obj)}
-                        )
+                        dict_to_uuid({**kwargs, "stream_reader": _get_class_path(stream_obj)})
                     )
         else:
             stream_type = device.__class__.__name__
             device_info[device_name]["stream_type"].append(stream_type)
             device_info[device_name]["stream_reader"].append(_get_class_path(device))
 
-            required_args = {
-                k: None
-                for k in inspect.signature(device.__init__).parameters
-                if k != "self"
-            }
+            required_args = {k: None for k in inspect.signature(device.__init__).parameters if k != "self"}
             pattern = schema_dict[device_name].get("pattern")
-            schema_dict[device_name]["pattern"] = pattern.replace(
-                device_name, "{pattern}"
-            )
+            schema_dict[device_name]["pattern"] = pattern.replace(device_name, "{pattern}")
 
-            kwargs = {
-                k: v for k, v in schema_dict[device_name].items() if k in required_args
-            }
+            kwargs = {k: v for k, v in schema_dict[device_name].items() if k in required_args}
             device_info[device_name]["stream_reader_kwargs"].append(kwargs)
             # Add hash
             device_info[device_name]["stream_hash"].append(
@@ -465,12 +423,8 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
     )
 
     # Store the mapper dictionary here
-    repository_root = (
-        os.popen("git rev-parse --show-toplevel").read().strip()
-    )  # repo root path
-    filename = Path(
-        repository_root + "/aeon/dj_pipeline/create_experiments/device_type_mapper.json"
-    )
+    repository_root = os.popen("git rev-parse --show-toplevel").read().strip()  # repo root path
+    filename = Path(repository_root + "/aeon/dj_pipeline/create_experiments/device_type_mapper.json")
 
     device_type_mapper = {}  # {device_name: device_type}
     device_sn = {}  # {device_name: device_sn}
@@ -525,9 +479,7 @@ def ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath):
         ("Wall8", "Wall"),
     ]
 
-    epoch_start = datetime.datetime.strptime(
-        metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S"
-    )
+    epoch_start = datetime.datetime.strptime(metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S")
 
     for device_idx, (device_name, device_type) in enumerate(oct01_devices):
         device_sn = f"oct01_{device_idx}"
@@ -536,13 +488,8 @@ def ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath):
             skip_duplicates=True,
         )
         experiment_table = getattr(streams, f"Experiment{device_type}")
-        if not (
-            experiment_table
-            & {"experiment_name": experiment_name, "device_serial_number": device_sn}
-        ):
-            experiment_table.insert1(
-                (experiment_name, device_sn, epoch_start, device_name)
-            )
+        if not (experiment_table & {"experiment_name": experiment_name, "device_serial_number": device_sn}):
+            experiment_table.insert1((experiment_name, device_sn, epoch_start, device_name))
 
 
 # endregion

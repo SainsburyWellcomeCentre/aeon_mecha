@@ -13,8 +13,7 @@ if "custom" not in dj.config:
 
 db_prefix = dj.config["custom"].get("database.prefix", _default_database_prefix)
 
-repository_config = dj.config['custom'].get('repository_config',
-                                            _default_repository_config)
+repository_config = dj.config["custom"].get("repository_config", _default_repository_config)
 
 
 def get_schema_name(name) -> str:
@@ -36,6 +35,7 @@ try:
 except ImportError:
     try:
         from .utils import streams_maker
+
         streams = dj.VirtualModule("streams", streams_maker.schema_name)
     except:
         pass

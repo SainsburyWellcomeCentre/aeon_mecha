@@ -20,6 +20,7 @@ def retrieve_video_frames(
     chunk_size=50,
     **kwargs,
 ):
+    """Retrive video trames from the raw data directory."""
     raw_data_dir = Path(raw_data_dir)
     assert raw_data_dir.exists()
 
