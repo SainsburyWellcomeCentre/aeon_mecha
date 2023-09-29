@@ -3,7 +3,7 @@
 default_language_version:
   python: python3.11
 
-files: "^(test|aeon(?!\/dj_pipeline\/).*)$"
+files: "^(test|aeon)\/.*$"
 repos:
   - repo: meta
     hooks:
