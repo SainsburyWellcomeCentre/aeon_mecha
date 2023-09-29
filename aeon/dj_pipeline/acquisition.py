@@ -23,7 +23,6 @@ _ref_device_mapping = {
     "social0-r1": "FrameTop",
     "exp0.2-r0": "CameraTop",
     "oct1.0-r0": "CameraTop",
-    "multianimal": "CameraTop",
 }
 
 _device_schema_mapping = {
@@ -31,7 +30,6 @@ _device_schema_mapping = {
     "social0-r1": aeon_schema.exp01,
     "exp0.2-r0": aeon_schema.exp02,
     "oct1.0-r0": aeon_schema.octagon01,
-    "multianimal": aeon_schema.multianimal,
 }
 
 
@@ -275,6 +273,7 @@ class Epoch(dj.Manual):
         """Ingest epochs for the specified "experiment_name". Ingest only epochs that start in between the specified (start, end) time. If not specified, ingest all epochs.
         Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S".
         """
+
         from .utils import streams_maker
         from .utils.load_metadata import extract_epoch_config, ingest_epoch_metadata, insert_device_types
 
@@ -678,6 +677,7 @@ class FoodPatchEvent(dj.Imported):
         +  Chunk(s) that started after FoodPatch install time and ended before FoodPatch remove time
         +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed.
         """
+
         return (
             Chunk * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
             & "chunk_start >= food_patch_install_time"
