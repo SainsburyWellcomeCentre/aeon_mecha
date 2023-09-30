@@ -274,11 +274,10 @@ class VideoSourceTracking(dj.Imported):
     def make(self, key):
         from aeon.schema.social import Pose
 
-        chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-            "chunk_start", "chunk_end", "directory_type"
-        )
-        raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
-
+        # chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+        #     "chunk_start", "chunk_end", "directory_type"
+        # )
+        # raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
         # This needs to be modified later
         sleap_reader = Pose(
             pattern="",
