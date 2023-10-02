@@ -6,7 +6,7 @@ import datajoint as dj
 import numpy as np
 import pandas as pd
 
-from .. import acquisition, dict_to_uuid, get_schema_name, lab, qc, tracking
+from .. import acquisition, get_schema_name, lab, tracking
 from .visit import Visit, VisitEnd
 
 logger = dj.logger
@@ -19,7 +19,7 @@ schema = dj.schema(get_schema_name("analysis"))
 @schema
 class PositionFilteringMethod(dj.Lookup):
     definition = """
-    pos_filter_method: varchar(16)  
+    pos_filter_method: varchar(16)
     ---
     pos_filter_method_description: varchar(256)
     """
@@ -32,7 +32,7 @@ class PositionFilteringParamSet(dj.Lookup):
     definition = """  # Parameter set used in a particular PositionFilteringMethod
     pos_filter_paramset_id:  smallint
     ---
-    -> PositionFilteringMethod    
+    -> PositionFilteringMethod
     paramset_description: varchar(128)
     param_set_hash: uuid
     unique index (param_set_hash)
@@ -77,15 +77,13 @@ class VisitSubjectPosition(dj.Computed):
 
     @property
     def key_source(self):
-        """
-        Chunk for all visits:
+        """Chunk for all visits:
         + visit_start during this Chunk - i.e. first chunk of the visit
         + visit_end during this Chunk - i.e. last chunk of the visit
-        + chunk starts after visit_start and ends before visit_end (or NOW() - i.e. ongoing visits)
+        + chunk starts after visit_start and ends before visit_end (or NOW() - i.e. ongoing visits).
         """
         return (
-            Visit.join(VisitEnd, left=True).proj(visit_end="IFNULL(visit_end, NOW())")
-            * acquisition.Chunk
+            Visit.join(VisitEnd, left=True).proj(visit_end="IFNULL(visit_end, NOW())") * acquisition.Chunk
             & acquisition.SubjectEnterExit
             & [
                 "visit_start BETWEEN chunk_start AND chunk_end",
@@ -96,9 +94,7 @@ class VisitSubjectPosition(dj.Computed):
         )
 
     def make(self, key):
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
-            "chunk_start", "chunk_end"
-        )
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
 
         # -- Determine the time to start time_slicing in this chunk
         if chunk_start < key["visit_start"] < chunk_end:
@@ -127,7 +123,7 @@ class VisitSubjectPosition(dj.Computed):
                     as_dict=True, order_by="enter_exit_time DESC", limit=1
                 )[0]
                 if next_event["event_type"] == "SubjectEnteredArena":
-                    raise ValueError(f"Bad Visit - never exited visit")
+                    raise ValueError("Bad Visit - never exited visit")
                 end_time = next_event["enter_exit_time"]
 
         # -- Retrieve position data
@@ -167,12 +163,8 @@ class VisitSubjectPosition(dj.Computed):
         end_time = np.array(end_time, dtype="datetime64[ns]")
 
         while time_slice_start < end_time:
-            time_slice_end = time_slice_start + min(
-                self._time_slice_duration, end_time - time_slice_start
-            )
-            in_time_slice = np.logical_and(
-                timestamps >= time_slice_start, timestamps < time_slice_end
-            )
+            time_slice_end = time_slice_start + min(self._time_slice_duration, end_time - time_slice_start)
+            in_time_slice = np.logical_and(timestamps >= time_slice_start, timestamps < time_slice_end)
             chunk_time_slices.append(
                 {
                     **key,
@@ -192,17 +184,11 @@ class VisitSubjectPosition(dj.Computed):
 
     @classmethod
     def get_position(cls, visit_key=None, subject=None, start=None, end=None):
-        """
-        Given a key to a single Visit, return a Pandas DataFrame for the position data
-        of the subject for the specified Visit time period
-        """
+        """Given a key to a single Visit, return a Pandas DataFrame for the position data of the subject for the specified Visit time period."""
         if visit_key is not None:
             assert len(Visit & visit_key) == 1
             start, end = (
-                Visit.join(VisitEnd, left=True).proj(
-                    visit_end="IFNULL(visit_end, NOW())"
-                )
-                & visit_key
+                Visit.join(VisitEnd, left=True).proj(visit_end="IFNULL(visit_end, NOW())") & visit_key
             ).fetch1("visit_start", "visit_end")
             subject = visit_key["subject"]
         elif all((subject, start, end)):
@@ -211,7 +197,7 @@ class VisitSubjectPosition(dj.Computed):
             subject = subject
         else:
             raise ValueError(
-                f'Either "visit_key" or all three "subject", "start" and "end" has to be specified'
+                'Either "visit_key" or all three "subject", "start" and "end" has to be specified'
             )
 
         return tracking._get_position(
@@ -239,9 +225,9 @@ class VisitTimeDistribution(dj.Computed):
     ---
     day_duration: float               # total duration (in hours)
     time_fraction_in_corridor: float  # fraction of time the animal spent in the corridor in this visit
-    in_corridor: longblob             # array of timestamps for when the animal is in the corridor 
+    in_corridor: longblob             # array of timestamps for when the animal is in the corridor
     time_fraction_in_arena: float     # fraction of time the animal spent in the arena in this visit
-    in_arena: longblob                # array of timestamps for when the animal is in the arena 
+    in_arena: longblob                # array of timestamps for when the animal is in the arena
     """
 
     class Nest(dj.Part):
@@ -259,22 +245,18 @@ class VisitTimeDistribution(dj.Computed):
         -> acquisition.ExperimentFoodPatch
         ---
         time_fraction_in_patch: float  # fraction of time the animal spent on this patch in this visit
-        in_patch: longblob             # array of timestamps for when the animal is in this patch 
+        in_patch: longblob             # array of timestamps for when the animal is in this patch
         """
 
     # Work on finished visits
-    key_source = Visit & (
-        VisitEnd * VisitSubjectPosition.TimeSlice & "time_slice_end = visit_end"
-    )
+    key_source = Visit & (VisitEnd * VisitSubjectPosition.TimeSlice & "time_slice_end = visit_end")
 
     def make(self, key):
         visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
         visit_dates = pd.date_range(
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
         )
-        maintenance_period = get_maintenance_periods(
-            key["experiment_name"], visit_start, visit_end
-        )
+        maintenance_period = get_maintenance_periods(key["experiment_name"], visit_start, visit_end)
 
         for visit_date in visit_dates:
             day_start = datetime.datetime.combine(visit_date.date(), time.min)
@@ -294,16 +276,12 @@ class VisitTimeDistribution(dj.Computed):
                 subject=key["subject"], start=day_start, end=day_end
             )
             # filter out maintenance period based on logs
-            position = filter_out_maintenance_periods(
-                position, maintenance_period, day_end
-            )
+            position = filter_out_maintenance_periods(position, maintenance_period, day_end)
 
             # filter for objects of the correct size
             valid_position = (position.area > 0) & (position.area < 1000)
             position[~valid_position] = np.nan
-            position.rename(
-                columns={"position_x": "x", "position_y": "y"}, inplace=True
-            )
+            position.rename(columns={"position_x": "x", "position_y": "y"}, inplace=True)
             # in corridor
             distance_from_center = tracking.compute_distance(
                 position[["x", "y"]],
@@ -347,9 +325,9 @@ class VisitTimeDistribution(dj.Computed):
             in_food_patch_times = []
             for food_patch_key in food_patch_keys:
                 # wheel data
-                food_patch_description = (
-                    acquisition.ExperimentFoodPatch & food_patch_key
-                ).fetch1("food_patch_description")
+                food_patch_description = (acquisition.ExperimentFoodPatch & food_patch_key).fetch1(
+                    "food_patch_description"
+                )
                 wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
                     experiment_name=key["experiment_name"],
                     start=pd.Timestamp(day_start),
@@ -358,12 +336,10 @@ class VisitTimeDistribution(dj.Computed):
                     using_aeon_io=True,
                 )
                 # filter out maintenance period based on logs
-                wheel_data = filter_out_maintenance_periods(
-                    wheel_data, maintenance_period, day_end
+                wheel_data = filter_out_maintenance_periods(wheel_data, maintenance_period, day_end)
+                patch_position = (acquisition.ExperimentFoodPatch.Position & food_patch_key).fetch1(
+                    "food_patch_position_x", "food_patch_position_y"
                 )
-                patch_position = (
-                    acquisition.ExperimentFoodPatch.Position & food_patch_key
-                ).fetch1("food_patch_position_x", "food_patch_position_y")
                 in_patch = tracking.is_position_in_patch(
                     position,
                     patch_position,
@@ -418,18 +394,14 @@ class VisitSummary(dj.Computed):
         """
 
     # Work on finished visits
-    key_source = Visit & (
-        VisitEnd * VisitSubjectPosition.TimeSlice & "time_slice_end = visit_end"
-    )
+    key_source = Visit & (VisitEnd * VisitSubjectPosition.TimeSlice & "time_slice_end = visit_end")
 
     def make(self, key):
         visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
         visit_dates = pd.date_range(
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
         )
-        maintenance_period = get_maintenance_periods(
-            key["experiment_name"], visit_start, visit_end
-        )
+        maintenance_period = get_maintenance_periods(key["experiment_name"], visit_start, visit_end)
 
         for visit_date in visit_dates:
             day_start = datetime.datetime.combine(visit_date.date(), time.min)
@@ -450,18 +422,12 @@ class VisitSummary(dj.Computed):
                 subject=key["subject"], start=day_start, end=day_end
             )
             # filter out maintenance period based on logs
-            position = filter_out_maintenance_periods(
-                position, maintenance_period, day_end
-            )
+            position = filter_out_maintenance_periods(position, maintenance_period, day_end)
             # filter for objects of the correct size
             valid_position = (position.area > 0) & (position.area < 1000)
             position[~valid_position] = np.nan
-            position.rename(
-                columns={"position_x": "x", "position_y": "y"}, inplace=True
-            )
-            position_diff = np.sqrt(
-                np.square(np.diff(position.x)) + np.square(np.diff(position.y))
-            )
+            position.rename(columns={"position_x": "x", "position_y": "y"}, inplace=True)
+            position_diff = np.sqrt(np.square(np.diff(position.x)) + np.square(np.diff(position.y)))
             total_distance_travelled = np.nansum(position_diff)
 
             # in food patches - loop through all in-use patches during this visit
@@ -497,9 +463,9 @@ class VisitSummary(dj.Computed):
                     dropna=True,
                 ).index.values
                 # wheel data
-                food_patch_description = (
-                    acquisition.ExperimentFoodPatch & food_patch_key
-                ).fetch1("food_patch_description")
+                food_patch_description = (acquisition.ExperimentFoodPatch & food_patch_key).fetch1(
+                    "food_patch_description"
+                )
                 wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
                     experiment_name=key["experiment_name"],
                     start=pd.Timestamp(day_start),
@@ -508,9 +474,7 @@ class VisitSummary(dj.Computed):
                     using_aeon_io=True,
                 )
                 # filter out maintenance period based on logs
-                wheel_data = filter_out_maintenance_periods(
-                    wheel_data, maintenance_period, day_end
-                )
+                wheel_data = filter_out_maintenance_periods(wheel_data, maintenance_period, day_end)
 
                 food_patch_statistics.append(
                     {
@@ -518,15 +482,11 @@ class VisitSummary(dj.Computed):
                         **food_patch_key,
                         "visit_date": visit_date.date(),
                         "pellet_count": len(pellet_events),
-                        "wheel_distance_travelled": wheel_data.distance_travelled.values[
-                            -1
-                        ],
+                        "wheel_distance_travelled": wheel_data.distance_travelled.values[-1],
                     }
                 )
 
-            total_pellet_count = np.sum(
-                [p["pellet_count"] for p in food_patch_statistics]
-            )
+            total_pellet_count = np.sum([p["pellet_count"] for p in food_patch_statistics])
             total_wheel_distance_travelled = np.sum(
                 [p["wheel_distance_travelled"] for p in food_patch_statistics]
             )
@@ -551,7 +511,7 @@ class VisitForagingBout(dj.Computed):
     -> Visit
     -> acquisition.ExperimentFoodPatch
     bout_start: datetime(6)                    # start time of bout
-    --- 
+    ---
     bout_end: datetime(6)                      # end time of bout
     bout_duration: float                       # (seconds)
     wheel_distance_travelled: float            # (cm)
@@ -560,27 +520,20 @@ class VisitForagingBout(dj.Computed):
 
     # Work on 24/7 experiments
     key_source = (
-        Visit
-        & VisitSummary
-        & (VisitEnd & f"visit_duration > 24")
-        & f"experiment_name= 'exp0.2-r0'"
+        Visit & VisitSummary & (VisitEnd & "visit_duration > 24") & "experiment_name= 'exp0.2-r0'"
     ) * acquisition.ExperimentFoodPatch
 
     def make(self, key):
         visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
 
         # get in_patch timestamps
-        food_patch_description = (acquisition.ExperimentFoodPatch & key).fetch1(
-            "food_patch_description"
-        )
+        food_patch_description = (acquisition.ExperimentFoodPatch & key).fetch1("food_patch_description")
         in_patch_times = np.concatenate(
-            (
-                VisitTimeDistribution.FoodPatch * acquisition.ExperimentFoodPatch & key
-            ).fetch("in_patch", order_by="visit_date")
+            (VisitTimeDistribution.FoodPatch * acquisition.ExperimentFoodPatch & key).fetch(
+                "in_patch", order_by="visit_date"
+            )
         )
-        maintenance_period = get_maintenance_periods(
-            key["experiment_name"], visit_start, visit_end
-        )
+        maintenance_period = get_maintenance_periods(key["experiment_name"], visit_start, visit_end)
         in_patch_times = filter_out_maintenance_periods(
             pd.DataFrame(
                 [[food_patch_description]] * len(in_patch_times),
@@ -608,12 +561,8 @@ class VisitForagingBout(dj.Computed):
             .set_index("event_time")
         )
         # TODO: handle multiple retries of pellet delivery
-        maintenance_period = get_maintenance_periods(
-            key["experiment_name"], visit_start, visit_end
-        )
-        patch = filter_out_maintenance_periods(
-            patch, maintenance_period, visit_end, True
-        )
+        maintenance_period = get_maintenance_periods(key["experiment_name"], visit_start, visit_end)
+        patch = filter_out_maintenance_periods(patch, maintenance_period, visit_end, True)
 
         if len(in_patch_times):
             change_ind = (
@@ -629,9 +578,7 @@ class VisitForagingBout(dj.Computed):
                     ts_array = in_patch_times[change_ind[i - 1] : change_ind[i]]
 
                 wheel_start, wheel_end = ts_array[0], ts_array[-1]
-                if (
-                    wheel_start >= wheel_end
-                ):  # skip if timestamps were misaligned or a single timestamp
+                if wheel_start >= wheel_end:  # skip if timestamps were misaligned or a single timestamp
                     continue
 
                 wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
@@ -641,19 +588,14 @@ class VisitForagingBout(dj.Computed):
                     patch_name=food_patch_description,
                     using_aeon_io=True,
                 )
-                maintenance_period = get_maintenance_periods(
-                    key["experiment_name"], visit_start, visit_end
-                )
-                wheel_data = filter_out_maintenance_periods(
-                    wheel_data, maintenance_period, visit_end, True
-                )
+                maintenance_period = get_maintenance_periods(key["experiment_name"], visit_start, visit_end)
+                wheel_data = filter_out_maintenance_periods(wheel_data, maintenance_period, visit_end, True)
                 self.insert1(
                     {
                         **key,
                         "bout_start": ts_array[0],
                         "bout_end": ts_array[-1],
-                        "bout_duration": (ts_array[-1] - ts_array[0])
-                        / np.timedelta64(1, "s"),
+                        "bout_duration": (ts_array[-1] - ts_array[0]) / np.timedelta64(1, "s"),
                         "wheel_distance_travelled": wheel_data.distance_travelled[-1],
                         "pellet_count": len(patch.loc[wheel_start:wheel_end]),
                     }
@@ -692,18 +634,11 @@ def get_maintenance_periods(experiment_name, start, end):
         log_df = pd.concat([log_df, log_df_end])
         log_df.reset_index(drop=True, inplace=True)
 
-    start_timestamps = log_df.loc[
-        log_df["message"] == "Maintenance", "message_time"
-    ].values
-    end_timestamps = log_df.loc[
-        log_df["message"] != "Maintenance", "message_time"
-    ].values
+    start_timestamps = log_df.loc[log_df["message"] == "Maintenance", "message_time"].values
+    end_timestamps = log_df.loc[log_df["message"] != "Maintenance", "message_time"].values
 
     return deque(
-        [
-            (pd.Timestamp(start), pd.Timestamp(end))
-            for start, end in zip(start_timestamps, end_timestamps)
-        ]
+        [(pd.Timestamp(start), pd.Timestamp(end)) for start, end in zip(start_timestamps, end_timestamps)]
     )  # queue object. pop out from left after use
 
 
@@ -712,9 +647,7 @@ def filter_out_maintenance_periods(data_df, maintenance_period, end_time, dropna
         (maintenance_start, maintenance_end) = maintenance_period[0]
         if end_time < maintenance_start:  # no more maintenance for this date
             break
-        maintenance_filter = (data_df.index >= maintenance_start) & (
-            data_df.index <= maintenance_end
-        )
+        maintenance_filter = (data_df.index >= maintenance_start) & (data_df.index <= maintenance_end)
         data_df[maintenance_filter] = np.nan
         if end_time >= maintenance_end:  # remove this range
             maintenance_period.popleft()

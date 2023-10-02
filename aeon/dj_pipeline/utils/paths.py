@@ -3,10 +3,17 @@ import pathlib
 from aeon.dj_pipeline import repository_config
 
 
-def get_repository_path(repository_name):
-    """
-    Find the directory's full-path corresponding to a given repository_name,
-    as configured in dj.config['custom']['repository_config']
+def get_repository_path(repository_name: str) -> pathlib.Path:
+    """Find the directory's full-path corresponding to a given repository_name.
+
+    This function looks up the repository path based on the provided repository_name
+    using the configuration stored in dj.config['custom']['repository_config'].
+
+    Args:
+        repository_name (str): The name of the repository to find.
+
+    Returns:
+        pathlib.Path: The full path to the directory corresponding to the repository_name.
     """
     repo_path = repository_config.get(repository_name)
     if repo_path is None:
@@ -20,13 +27,21 @@ def get_repository_path(repository_name):
     return repo_path
 
 
-def find_root_directory(root_directories, full_path):
-    """
-    Given multiple potential root directories and a full-path,
-    search and return one directory that is the parent of the given path
-        :param root_directories: potential root directories
-        :param full_path: the relative path to search the root directory
-        :return: full-path (pathlib.Path object)
+def find_root_directory(
+    root_directories: str | pathlib.Path, full_path: str | pathlib.Path
+) -> pathlib.Path:
+    """Given multiple potential root directories and a full-path, search and return one directory that is the parent of the given path.
+
+    Args:
+        root_directories (str | pathlib.Path): A list of potential root directories.
+        full_path (str | pathlib.Path): The full path to search for the root directory.
+
+    Raises:
+        FileNotFoundError: If the specified `full_path` does not exist.
+        FileNotFoundError: If no valid root directory is found among the provided options.
+
+    Returns:
+        pathlib.Path: The full path to the discovered root directory.
     """
     full_path = pathlib.Path(full_path)
 
@@ -46,6 +61,5 @@ def find_root_directory(root_directories, full_path):
 
     except StopIteration:
         raise FileNotFoundError(
-            "No valid root directory found (from {})"
-            " for {}".format(root_directories, full_path)
+            f"No valid root directory found (from {root_directories})" f" for {full_path}"
         )

@@ -1,12 +1,10 @@
 import datajoint as dj
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from aeon.io import api as io_api
 
-from . import acquisition
-from . import get_schema_name
-
+from . import acquisition, get_schema_name
 
 schema = dj.schema(get_schema_name("qc"))
 
@@ -58,9 +56,7 @@ class CameraQC(dj.Imported):
     def key_source(self):
         return (
             acquisition.Chunk
-            * acquisition.ExperimentCamera.join(
-                acquisition.ExperimentCamera.RemovalTime, left=True
-            )
+            * acquisition.ExperimentCamera.join(acquisition.ExperimentCamera.RemovalTime, left=True)
             & "chunk_start >= camera_install_time"
             & 'chunk_start < IFNULL(camera_remove_time, "2200-01-01")'
         )
@@ -70,13 +66,9 @@ class CameraQC(dj.Imported):
             "chunk_start", "chunk_end", "directory_type"
         )
         camera = (acquisition.ExperimentCamera & key).fetch1("camera_description")
-        raw_data_dir = acquisition.Experiment.get_data_directory(
-            key, directory_type=dir_type
-        )
+        raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
 
-        device = getattr(
-            acquisition._device_schema_mapping[key["experiment_name"]], camera
-        )
+        device = getattr(acquisition._device_schema_mapping[key["experiment_name"]], camera)
 
         videodata = io_api.load(
             root=raw_data_dir.as_posix(),
@@ -101,11 +93,9 @@ class CameraQC(dj.Imported):
                 **key,
                 "drop_count": deltas.frame_offset.iloc[-1],
                 "max_harp_delta": deltas.time_delta.max().total_seconds(),
-                "max_camera_delta": deltas.hw_timestamp_delta.max()
-                / 1e9,  # convert to seconds
+                "max_camera_delta": deltas.hw_timestamp_delta.max() / 1e9,  # convert to seconds
                 "timestamps": videodata.index.values,
-                "time_delta": deltas.time_delta.values
-                / np.timedelta64(1, "s"),  # convert to seconds
+                "time_delta": deltas.time_delta.values / np.timedelta64(1, "s"),  # convert to seconds
                 "frame_delta": deltas.frame_delta.values,
                 "hw_counter_delta": deltas.hw_counter_delta.values,
                 "hw_timestamp_delta": deltas.hw_timestamp_delta.values,

@@ -23,7 +23,6 @@ _ref_device_mapping = {
     "social0-r1": "FrameTop",
     "exp0.2-r0": "CameraTop",
     "oct1.0-r0": "CameraTop",
-    "multianimal": "CameraTop",
 }
 
 _device_schema_mapping = {
@@ -31,7 +30,6 @@ _device_schema_mapping = {
     "social0-r1": aeon_schema.exp01,
     "exp0.2-r0": aeon_schema.exp02,
     "oct1.0-r0": aeon_schema.octagon01,
-    "multianimal": aeon_schema.multianimal
 }
 
 
@@ -125,7 +123,7 @@ class Experiment(dj.Manual):
             ).fetch1("repository_name", "directory_path")
         except dj.errors.DataJointError:
             return
-        
+
         dir_path = pathlib.Path(dir_path)
         if dir_path.exists():
             assert dir_path.is_relative_to(paths.get_repository_path(repo_name))
@@ -137,9 +135,9 @@ class Experiment(dj.Manual):
         return data_directory.as_posix() if as_posix else data_directory
 
     @classmethod
-    def get_data_directories(
-        cls, experiment_key, directory_types=["raw"], as_posix=False
-    ):
+    def get_data_directories(cls, experiment_key, directory_types=None, as_posix=False):
+        if directory_types is None:
+            directory_types = ["raw"]
         return [
             cls.get_data_directory(experiment_key, dir_type, as_posix=as_posix)
             for dir_type in directory_types
@@ -253,7 +251,7 @@ class ExperimentWeightScale(dj.Manual):
 
 @schema
 class Epoch(dj.Manual):
-    definition = """  # A recording period reflecting on/off of the hardware acquisition system
+    definition = """  # A recording period reflecting on/off of the hardware acquisition system.
     -> Experiment
     epoch_start: datetime(6)
     """
@@ -272,18 +270,12 @@ class Epoch(dj.Manual):
 
     @classmethod
     def ingest_epochs(cls, experiment_name, start=None, end=None):
+        """Ingest epochs for the specified "experiment_name". Ingest only epochs that start in between the specified (start, end) time. If not specified, ingest all epochs.
+        Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S".
         """
-        Ingest epochs for the specified "experiment_name"
-        Ingest only epochs that start in between the specified (start, end) time
-         - if not specified, ingest all epochs
-        Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S"
-        """
+
         from .utils import streams_maker
-        from .utils.load_metadata import (
-            extract_epoch_config,
-            ingest_epoch_metadata,
-            insert_device_types,
-        )
+        from .utils.load_metadata import extract_epoch_config, ingest_epoch_metadata, insert_device_types
 
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
@@ -293,21 +285,15 @@ class Epoch(dj.Manual):
         for i, (_, chunk) in enumerate(all_chunks.iterrows()):
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(
-                epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
-            )
+            epoch_start = datetime.datetime.strptime(epoch_dir.name, "%Y-%m-%dT%H-%M-%S")
 
             # --- insert to Epoch ---
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
 
             # skip over epochs out of the (start, end) range
             is_out_of_start_end_range = (
-                start
-                and epoch_start < datetime.datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
-            ) or (
-                end
-                and epoch_start > datetime.datetime.strptime(end, "%Y-%m-%d %H:%M:%S")
-            )
+                start and epoch_start < datetime.datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
+            ) or (end and epoch_start > datetime.datetime.strptime(end, "%Y-%m-%d %H:%M:%S"))
 
             # skip over those already ingested
             if cls & epoch_key or epoch_key in epoch_list:
@@ -317,9 +303,7 @@ class Epoch(dj.Manual):
             if experiment_name != "exp0.1-r0":
                 metadata_yml_filepath = epoch_dir / "Metadata.yml"
                 if metadata_yml_filepath.exists():
-                    epoch_config = extract_epoch_config(
-                        experiment_name, metadata_yml_filepath
-                    )
+                    epoch_config = extract_epoch_config(experiment_name, metadata_yml_filepath)
 
                     metadata_yml_filepath = epoch_config["metadata_file_path"]
 
@@ -341,15 +325,11 @@ class Epoch(dj.Manual):
             if i > 0:
                 previous_chunk = all_chunks.iloc[i - 1]
                 previous_chunk_path = pathlib.Path(previous_chunk.path)
-                previous_epoch_dir = pathlib.Path(
-                    previous_chunk_path.as_posix().split(device_name)[0]
-                )
+                previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
                 previous_epoch_start = datetime.datetime.strptime(
                     previous_epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
                 )
-                previous_chunk_end = previous_chunk.name + datetime.timedelta(
-                    hours=io_api.CHUNK_DURATION
-                )
+                previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=io_api.CHUNK_DURATION)
                 previous_epoch_end = min(previous_chunk_end, epoch_start)
                 previous_epoch_key = {
                     "experiment_name": experiment_name,
@@ -363,7 +343,6 @@ class Epoch(dj.Manual):
                     if epoch_config:
                         cls.Config.insert1(epoch_config)
                 if metadata_yml_filepath and metadata_yml_filepath.exists():
-
                     try:
                         # Insert new entries for streams.DeviceType, streams.Device.
                         insert_device_types(
@@ -374,9 +353,7 @@ class Epoch(dj.Manual):
                         streams_maker.main()
                         with cls.connection.transaction:
                             # Insert devices' installation/removal/settings
-                            ingest_epoch_metadata(
-                                experiment_name, metadata_yml_filepath
-                            )
+                            ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
                         epoch_list.append(epoch_key)
                     except Exception as e:
                         (cls.Config & epoch_key).delete_quick()
@@ -384,20 +361,14 @@ class Epoch(dj.Manual):
                         raise e
 
             # update previous epoch
-            if (
-                previous_epoch_key
-                and (cls & previous_epoch_key)
-                and not (EpochEnd & previous_epoch_key)
-            ):
+            if previous_epoch_key and (cls & previous_epoch_key) and not (EpochEnd & previous_epoch_key):
                 with cls.connection.transaction:
                     # insert end-time for previous epoch
                     EpochEnd.insert1(
                         {
                             **previous_epoch_key,
                             "epoch_end": previous_epoch_end,
-                            "epoch_duration": (
-                                previous_epoch_end - previous_epoch_start
-                            ).total_seconds()
+                            "epoch_duration": (previous_epoch_end - previous_epoch_start).total_seconds()
                             / 3600,
                         }
                     )
@@ -419,7 +390,7 @@ class Epoch(dj.Manual):
 
 @schema
 class EpochEnd(dj.Manual):
-    definition = """ 
+    definition = """
     -> Epoch
     ---
     epoch_end: datetime(6)
@@ -461,9 +432,7 @@ class Chunk(dj.Manual):
         for _, chunk in all_chunks.iterrows():
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(
-                epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
-            )
+            epoch_start = datetime.datetime.strptime(epoch_dir.name, "%Y-%m-%dT%H-%M-%S")
 
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
             if not (Epoch & epoch_key):
@@ -496,12 +465,8 @@ class Chunk(dj.Manual):
             )
 
             chunk_starts.append(chunk_key["chunk_start"])
-            chunk_list.append(
-                {**chunk_key, **directory, "chunk_end": chunk_end, **epoch_key}
-            )
-            file_name_list.append(
-                chunk_rep_file.name
-            )  # handle duplicated files in different folders
+            chunk_list.append({**chunk_key, **directory, "chunk_end": chunk_end, **epoch_key})
+            file_name_list.append(chunk_rep_file.name)  # handle duplicated files in different folders
 
             # -- files --
             file_datetime_str = chunk_rep_file.stem.replace(f"{device_name}_", "")
@@ -556,9 +521,7 @@ class SubjectEnterExit(dj.Imported):
                 pd.Timestamp(chunk_end),
             )
         else:
-            device = getattr(
-                _device_schema_mapping[key["experiment_name"]], "ExperimentalMetadata"
-            )
+            device = _device_schema_mapping[key["experiment_name"]].ExperimentalMetadata
             subject_data = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.SubjectState,
@@ -609,9 +572,7 @@ class SubjectWeight(dj.Imported):
                 pd.Timestamp(chunk_end),
             )
         else:
-            device = getattr(
-                _device_schema_mapping[key["experiment_name"]], "ExperimentalMetadata"
-            )
+            device = _device_schema_mapping[key["experiment_name"]].ExperimentalMetadata
             subject_data = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.SubjectState,
@@ -650,9 +611,7 @@ class ExperimentLog(dj.Imported):
 
         # Populate the part table
         raw_data_dir = Experiment.get_data_directory(key)
-        device = getattr(
-            _device_schema_mapping[key["experiment_name"]], "ExperimentalMetadata"
-        )
+        device = _device_schema_mapping[key["experiment_name"]].ExperimentalMetadata
 
         try:
             # handles corrupted files - issue: https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/153
@@ -714,11 +673,11 @@ class FoodPatchEvent(dj.Imported):
 
     @property
     def key_source(self):
-        """
-        Only the combination of Chunk and ExperimentFoodPatch with overlapping time
+        """Only the combination of Chunk and ExperimentFoodPatch with overlapping time
         +  Chunk(s) that started after FoodPatch install time and ended before FoodPatch remove time
-        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed
+        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed.
         """
+
         return (
             Chunk * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
             & "chunk_start >= food_patch_install_time"
@@ -729,15 +688,11 @@ class FoodPatchEvent(dj.Imported):
         chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
             "chunk_start", "chunk_end", "directory_type"
         )
-        food_patch_description = (ExperimentFoodPatch & key).fetch1(
-            "food_patch_description"
-        )
+        food_patch_description = (ExperimentFoodPatch & key).fetch1("food_patch_description")
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
-        device = getattr(
-            _device_schema_mapping[key["experiment_name"]], food_patch_description
-        )
+        device = getattr(_device_schema_mapping[key["experiment_name"]], food_patch_description)
 
         pellet_data = pd.concat(
             [
@@ -768,8 +723,7 @@ class FoodPatchEvent(dj.Imported):
             ]
         else:
             event_code_mapper = {
-                name: code
-                for code, name in zip(*EventType.fetch("event_code", "event_type"))
+                name: code for code, name in zip(*EventType.fetch("event_code", "event_type"))
             }
             event_list = [
                 {
@@ -797,10 +751,9 @@ class FoodPatchWheel(dj.Imported):
 
     @property
     def key_source(self):
-        """
-        Only the combination of Chunk and ExperimentFoodPatch with overlapping time
+        """Only the combination of Chunk and ExperimentFoodPatch with overlapping time
         +  Chunk(s) that started after FoodPatch install time and ended before FoodPatch remove time
-        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed
+        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed.
         """
         return (
             Chunk * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
@@ -812,15 +765,11 @@ class FoodPatchWheel(dj.Imported):
         chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
             "chunk_start", "chunk_end", "directory_type"
         )
-        food_patch_description = (ExperimentFoodPatch & key).fetch1(
-            "food_patch_description"
-        )
+        food_patch_description = (ExperimentFoodPatch & key).fetch1("food_patch_description")
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
-        device = getattr(
-            _device_schema_mapping[key["experiment_name"]], food_patch_description
-        )
+        device = getattr(_device_schema_mapping[key["experiment_name"]], food_patch_description)
 
         wheel_data = io_api.load(
             root=raw_data_dir.as_posix(),
@@ -839,9 +788,7 @@ class FoodPatchWheel(dj.Imported):
         )
 
     @classmethod
-    def get_wheel_data(
-        cls, experiment_name, start, end, patch_name="Patch1", using_aeon_io=False
-    ):
+    def get_wheel_data(cls, experiment_name, start, end, patch_name="Patch1", using_aeon_io=False):
         if using_aeon_io:
             key = {"experiment_name": experiment_name}
             raw_data_dir = Experiment.get_data_directory(key)
@@ -886,20 +833,14 @@ class FoodPatchWheel(dj.Imported):
             timestamp_attr = next(attr for attr in fetch_attrs if "timestamps" in attr)
 
             # stack and structure in pandas DataFrame
-            wheel_data = pd.DataFrame(
-                {k: np.hstack(v) for k, v in zip(fetch_attrs, fetched_data)}
-            )
+            wheel_data = pd.DataFrame({k: np.hstack(v) for k, v in zip(fetch_attrs, fetched_data)})
             wheel_data.set_index(timestamp_attr, inplace=True)
 
-            time_mask = np.logical_and(
-                wheel_data.index >= start, wheel_data.index < end
-            )
+            time_mask = np.logical_and(wheel_data.index >= start, wheel_data.index < end)
 
             wheel_data = wheel_data[time_mask]
 
-        wheel_data["distance_travelled"] = analysis_utils.distancetravelled(
-            wheel_data["angle"]
-        )
+        wheel_data["distance_travelled"] = analysis_utils.distancetravelled(wheel_data["angle"])
         return wheel_data
 
 
@@ -922,10 +863,9 @@ class WheelState(dj.Imported):
 
     @property
     def key_source(self):
-        """
-        Only the combination of Chunk and ExperimentFoodPatch with overlapping time
+        """Only the combination of Chunk and ExperimentFoodPatch with overlapping time
         +  Chunk(s) that started after FoodPatch install time and ended before FoodPatch remove time
-        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed
+        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed.
         """
         return (
             Chunk * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
@@ -937,14 +877,10 @@ class WheelState(dj.Imported):
         chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
             "chunk_start", "chunk_end", "directory_type"
         )
-        food_patch_description = (ExperimentFoodPatch & key).fetch1(
-            "food_patch_description"
-        )
+        food_patch_description = (ExperimentFoodPatch & key).fetch1("food_patch_description")
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
-        device = getattr(
-            _device_schema_mapping[key["experiment_name"]], food_patch_description
-        )
+        device = getattr(_device_schema_mapping[key["experiment_name"]], food_patch_description)
 
         wheel_state = io_api.load(
             root=raw_data_dir.as_posix(),
@@ -984,35 +920,28 @@ class WeightMeasurement(dj.Imported):
 
     @property
     def key_source(self):
-        """
-        Only the combination of Chunk and ExperimentWeightScale with overlapping time
+        """Only the combination of Chunk and ExperimentWeightScale with overlapping time
         +  Chunk(s) that started after WeightScale install time and ended before WeightScale remove time
-        +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed
+        +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed.
         """
         return (
-            Chunk
-            * ExperimentWeightScale.join(ExperimentWeightScale.RemovalTime, left=True)
+            Chunk * ExperimentWeightScale.join(ExperimentWeightScale.RemovalTime, left=True)
             & "chunk_start >= weight_scale_install_time"
             & 'chunk_start < IFNULL(weight_scale_remove_time, "2200-01-01")'
         )
 
     def make(self, key):
-
         chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
             "chunk_start", "chunk_end", "directory_type"
         )
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
-        weight_scale_description = (ExperimentWeightScale & key).fetch1(
-            "weight_scale_description"
-        )
+        weight_scale_description = (ExperimentWeightScale & key).fetch1("weight_scale_description")
 
         # in some epochs/chunks, the food patch device was mapped to "Nest"
         for device_name in (weight_scale_description, "Nest"):
-            device = getattr(
-                _device_schema_mapping[key["experiment_name"]], device_name
-            )
+            device = getattr(_device_schema_mapping[key["experiment_name"]], device_name)
             weight_data = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.WeightRaw,
@@ -1042,7 +971,7 @@ class WeightMeasurementFiltered(dj.Imported):
     ---
     weight_filtered:       longblob     # measured weights filtered
     weight_subject_timestamps: longblob # (datetime) timestamps of weight_subject data
-    weight_subject:        longblob     # 
+    weight_subject:        longblob     #
     """
 
     def make(self, key):
@@ -1050,15 +979,11 @@ class WeightMeasurementFiltered(dj.Imported):
             "chunk_start", "chunk_end", "directory_type"
         )
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-        weight_scale_description = (ExperimentWeightScale & key).fetch1(
-            "weight_scale_description"
-        )
+        weight_scale_description = (ExperimentWeightScale & key).fetch1("weight_scale_description")
 
         # in some epochs/chunks, the food patch device was mapped to "Nest"
         for device_name in (weight_scale_description, "Nest"):
-            device = getattr(
-                _device_schema_mapping[key["experiment_name"]], device_name
-            )
+            device = getattr(_device_schema_mapping[key["experiment_name"]], device_name)
             weight_filtered = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.WeightFiltered,
@@ -1140,9 +1065,7 @@ def _match_experiment_directory(experiment_name, path, directories):
             repo_path = paths.get_repository_path(directory.pop("repository_name"))
             break
     else:
-        raise FileNotFoundError(
-            f"Unable to identify the directory" f" where this chunk is from: {path}"
-        )
+        raise FileNotFoundError(f"Unable to identify the directory" f" where this chunk is from: {path}")
 
     return raw_data_dir, directory, repo_path
 
@@ -1175,9 +1098,7 @@ def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
         sessdf = sessdf[~sessdf.id.str.contains("Animal")]
         sessdf = sessdf[~sessdf.id.str.contains("white")]
 
-        valid_ids = (Experiment.Subject & {"experiment_name": experiment_name}).fetch(
-            "subject"
-        )
+        valid_ids = (Experiment.Subject & {"experiment_name": experiment_name}).fetch("subject")
 
         fix = lambda x: fixID(x, valid_ids=list(valid_ids))
         sessdf.id = sessdf.id.apply(fix)
@@ -1186,9 +1107,7 @@ def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
         multi_ids_rows = []
         for _, r in multi_ids.iterrows():
             for i in r.id.split(";"):
-                multi_ids_rows.append(
-                    {"time": r.name, "id": i, "weight": r.weight, "event": r.event}
-                )
+                multi_ids_rows.append({"time": r.name, "id": i, "weight": r.weight, "event": r.event})
         multi_ids_rows = pd.DataFrame(multi_ids_rows)
         if len(multi_ids_rows):
             multi_ids_rows.set_index("time", inplace=True)

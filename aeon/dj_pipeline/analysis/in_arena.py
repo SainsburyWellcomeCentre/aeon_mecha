@@ -77,7 +77,7 @@ class InArenaEnd(dj.Computed):
             acquisition.SubjectEnterExit.Time * acquisition.EventType
             & {"subject": key["subject"]}
             & f'enter_exit_time > "{in_arena_start}"'
-            & f'event_type != "SubjectRemainedInArena"'
+            & 'event_type != "SubjectRemainedInArena"'
         ).fetch(as_dict=True, limit=1, order_by="enter_exit_time ASC")[0]
 
         if subject_exit["event_type"] != "SubjectExitedArena":
@@ -88,9 +88,7 @@ class InArenaEnd(dj.Computed):
         duration = (in_arena_end - in_arena_start).total_seconds() / 3600
 
         # insert
-        self.insert1(
-            {**key, "in_arena_end": in_arena_end, "in_arena_duration": duration}
-        )
+        self.insert1({**key, "in_arena_end": in_arena_end, "in_arena_duration": duration})
 
 
 # ------------------- TIMESLICE --------------------
@@ -109,17 +107,14 @@ class InArenaTimeSlice(dj.Computed):
 
     @property
     def key_source(self):
-        """
-        Chunk for all sessions:
+        """Chunk for all sessions:
         + are not "NeverExitedSession"
         + in_arena_start during this Chunk - i.e. first chunk of the session
         + in_arena_end during this Chunk - i.e. last chunk of the session
-        + chunk starts after in_arena_start and ends before in_arena_end (or NOW() - i.e. session still on going)
+        + chunk starts after in_arena_start and ends before in_arena_end (or NOW() - i.e. session still on going).
         """
         return (
-            InArena.join(InArenaEnd, left=True).proj(
-                in_arena_end="IFNULL(in_arena_end, NOW())"
-            )
+            InArena.join(InArenaEnd, left=True).proj(in_arena_end="IFNULL(in_arena_end, NOW())")
             * acquisition.Chunk
             - NeverExitedArena
             & acquisition.SubjectEnterExit
@@ -133,9 +128,7 @@ class InArenaTimeSlice(dj.Computed):
     _time_slice_duration = datetime.timedelta(hours=0, minutes=10, seconds=0)
 
     def make(self, key):
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
-            "chunk_start", "chunk_end"
-        )
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
 
         # -- Determine the time to start time_slicing in this chunk
         if chunk_start < key["in_arena_start"] < chunk_end:
@@ -160,18 +153,14 @@ class InArenaTimeSlice(dj.Computed):
                 as_dict=True, order_by="enter_exit_time DESC", limit=1
             )[0]
             if next_event["event_type"] == "SubjectEnteredArena":
-                NeverExitedArena.insert1(
-                    key, ignore_extra_fields=True, skip_duplicates=True
-                )
+                NeverExitedArena.insert1(key, ignore_extra_fields=True, skip_duplicates=True)
                 return
             end_time = next_event["enter_exit_time"]
 
         chunk_time_slices = []
         time_slice_start = start_time
         while time_slice_start < end_time:
-            time_slice_end = time_slice_start + min(
-                self._time_slice_duration, end_time - time_slice_start
-            )
+            time_slice_end = time_slice_start + min(self._time_slice_duration, end_time - time_slice_start)
             chunk_time_slices.append(
                 {
                     **key,
@@ -207,12 +196,7 @@ class InArenaSubjectPosition(dj.Imported):
     )
 
     def make(self, key):
-        """
-        The populate logic here relies on the assumption that there is only one subject in the arena at a time
-        The positiondata is associated with that one subject currently in the arena at any timepoints
-        For multi-animal experiments, a mapping of object_id-to-subject is needed to populate the right position data
-        associated with a particular animal
-        """
+        """The populate logic here relies on the assumption that there is only one subject in the arena at a time. The positiondata is associated with that one subject currently in the arena at any timepoints. For multi-animal experiments, a mapping of object_id-to-subject is needed to populate the right position data associated with a particular animal."""
         time_slice_start, time_slice_end = (InArenaTimeSlice & key).fetch1(
             "time_slice_start", "time_slice_end"
         )
@@ -228,9 +212,7 @@ class InArenaSubjectPosition(dj.Imported):
         )
 
         if not len(positiondata):
-            raise ValueError(
-                f"No position data between {time_slice_start} and {time_slice_end}"
-            )
+            raise ValueError(f"No position data between {time_slice_start} and {time_slice_end}")
 
         timestamps = positiondata.index.values
         x = positiondata.position_x.values
@@ -239,9 +221,7 @@ class InArenaSubjectPosition(dj.Imported):
         area = positiondata.area.values
 
         # speed - TODO: confirm with aeon team if this calculation is sufficient (any smoothing needed?)
-        position_diff = np.sqrt(
-            np.square(np.diff(x)) + np.square(np.diff(y)) + np.square(np.diff(z))
-        )
+        position_diff = np.sqrt(np.square(np.diff(x)) + np.square(np.diff(y)) + np.square(np.diff(z)))
         time_diff = np.diff(timestamps) / np.timedelta64(1, "s")
         speed = position_diff / time_diff
         speed = np.hstack((speed[0], speed))
@@ -260,15 +240,10 @@ class InArenaSubjectPosition(dj.Imported):
 
     @classmethod
     def get_position(cls, in_arena_key):
-        """
-        Given a key to a single InArena, return a Pandas DataFrame for the position data
-        of the subject for the specified InArena time period
-        """
+        """Given a key to a single InArena, return a Pandas DataFrame for the position data of the subject for the specified InArena time period."""
         assert len(InArena & in_arena_key) == 1
 
-        start, end = (InArena * InArenaEnd & in_arena_key).fetch1(
-            "in_arena_start", "in_arena_end"
-        )
+        start, end = (InArena * InArenaEnd & in_arena_key).fetch1("in_arena_start", "in_arena_end")
 
         return tracking._get_position(
             cls * InArenaTimeSlice.proj("time_slice_end"),
@@ -299,7 +274,7 @@ class InArenaQC(dj.Computed):
         -> qc.QCRoutine
         ---
         -> qc.QCCode
-        qc_comment: varchar(255)  
+        qc_comment: varchar(255)
         """
 
     class BadPeriod(dj.Part):
@@ -386,22 +361,16 @@ class InArenaTimeDistribution(dj.Computed):
     # Work on finished Session with TimeSlice and SubjectPosition fully populated only
     key_source = (
         InArena
-        & (
-            InArena * InArenaEnd * InArenaTimeSlice & "time_slice_end = in_arena_end"
-        ).proj()
+        & (InArena * InArenaEnd * InArenaTimeSlice & "time_slice_end = in_arena_end").proj()
         & (
             InArena.aggr(InArenaTimeSlice, time_slice_count="count(time_slice_start)")
-            * InArena.aggr(
-                InArenaSubjectPosition, tracking_count="count(time_slice_start)"
-            )
+            * InArena.aggr(InArenaSubjectPosition, tracking_count="count(time_slice_start)")
             & "time_slice_count = tracking_count"
         )
     )
 
     def make(self, key):
-        in_arena_start, in_arena_end = (InArena * InArenaEnd & key).fetch1(
-            "in_arena_start", "in_arena_end"
-        )
+        in_arena_start, in_arena_end = (InArena * InArenaEnd & key).fetch1("in_arena_start", "in_arena_end")
 
         # subject's position data in the time_slices
         position = InArenaSubjectPosition.get_position(key)
@@ -440,9 +409,7 @@ class InArenaTimeDistribution(dj.Computed):
         food_patch_keys = (
             InArena
             * InArenaEnd
-            * acquisition.ExperimentFoodPatch.join(
-                acquisition.ExperimentFoodPatch.RemovalTime, left=True
-            )
+            * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
             & key
             & "in_arena_start >= food_patch_install_time"
             & 'in_arena_end < IFNULL(food_patch_remove_time, "2200-01-01")'
@@ -451,9 +418,9 @@ class InArenaTimeDistribution(dj.Computed):
         in_food_patch_times = []
         for food_patch_key in food_patch_keys:
             # wheel data
-            food_patch_description = (
-                acquisition.ExperimentFoodPatch & food_patch_key
-            ).fetch1("food_patch_description")
+            food_patch_description = (acquisition.ExperimentFoodPatch & food_patch_key).fetch1(
+                "food_patch_description"
+            )
             wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
                 experiment_name=key["experiment_name"],
                 start=pd.Timestamp(in_arena_start),
@@ -462,9 +429,9 @@ class InArenaTimeDistribution(dj.Computed):
                 using_aeon_io=True,
             )
 
-            patch_position = (
-                acquisition.ExperimentFoodPatch.Position & food_patch_key
-            ).fetch1("food_patch_position_x", "food_patch_position_y")
+            patch_position = (acquisition.ExperimentFoodPatch.Position & food_patch_key).fetch1(
+                "food_patch_position_x", "food_patch_position_y"
+            )
 
             in_patch = tracking.is_position_in_patch(
                 position,
@@ -520,30 +487,24 @@ class InArenaSummary(dj.Computed):
     # Work on finished Session with TimeSlice and SubjectPosition fully populated only
     key_source = (
         InArena
-        & (
-            InArena * InArenaEnd * InArenaTimeSlice & "time_slice_end = in_arena_end"
-        ).proj()
+        & (InArena * InArenaEnd * InArenaTimeSlice & "time_slice_end = in_arena_end").proj()
         & (
             InArena.aggr(InArenaTimeSlice, time_slice_count="count(time_slice_start)")
-            * InArena.aggr(
-                InArenaSubjectPosition, tracking_count="count(time_slice_start)"
-            )
+            * InArena.aggr(InArenaSubjectPosition, tracking_count="count(time_slice_start)")
             & "time_slice_count = tracking_count"
         )
     )
 
     def make(self, key):
-        in_arena_start, in_arena_end = (InArena * InArenaEnd & key).fetch1(
-            "in_arena_start", "in_arena_end"
-        )
+        in_arena_start, in_arena_end = (InArena * InArenaEnd & key).fetch1("in_arena_start", "in_arena_end")
 
         # subject weights
-        weight_start = (
-            acquisition.SubjectWeight.WeightTime & f'weight_time = "{in_arena_start}"'
-        ).fetch1("weight")
-        weight_end = (
-            acquisition.SubjectWeight.WeightTime & f'weight_time = "{in_arena_end}"'
-        ).fetch1("weight")
+        weight_start = (acquisition.SubjectWeight.WeightTime & f'weight_time = "{in_arena_start}"').fetch1(
+            "weight"
+        )
+        weight_end = (acquisition.SubjectWeight.WeightTime & f'weight_time = "{in_arena_end}"').fetch1(
+            "weight"
+        )
 
         # subject's position data in this session
         position = InArenaSubjectPosition.get_position(key)
@@ -554,18 +515,14 @@ class InArenaSummary(dj.Computed):
         )  # filter for objects of the correct size
         position = position[valid_position]
 
-        position_diff = np.sqrt(
-            np.square(np.diff(position.x)) + np.square(np.diff(position.y))
-        )
+        position_diff = np.sqrt(np.square(np.diff(position.x)) + np.square(np.diff(position.y)))
         total_distance_travelled = np.nansum(position_diff)
 
         # food patch data
         food_patch_keys = (
             InArena
             * InArenaEnd
-            * acquisition.ExperimentFoodPatch.join(
-                acquisition.ExperimentFoodPatch.RemovalTime, left=True
-            )
+            * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
             & key
             & "in_arena_start >= food_patch_install_time"
             & 'in_arena_end < IFNULL(food_patch_remove_time, "2200-01-01")'
@@ -580,9 +537,9 @@ class InArenaSummary(dj.Computed):
                 & f'event_time BETWEEN "{in_arena_start}" AND "{in_arena_end}"'
             ).fetch("event_time")
             # wheel data
-            food_patch_description = (
-                acquisition.ExperimentFoodPatch & food_patch_key
-            ).fetch1("food_patch_description")
+            food_patch_description = (acquisition.ExperimentFoodPatch & food_patch_key).fetch1(
+                "food_patch_description"
+            )
             wheel_data = acquisition.FoodPatchWheel.get_wheel_data(
                 experiment_name=key["experiment_name"],
                 start=pd.Timestamp(in_arena_start),
@@ -596,9 +553,7 @@ class InArenaSummary(dj.Computed):
                     **key,
                     **food_patch_key,
                     "pellet_count": len(pellet_events),
-                    "wheel_distance_travelled": wheel_data.distance_travelled.values[
-                        -1
-                    ],
+                    "wheel_distance_travelled": wheel_data.distance_travelled.values[-1],
                 }
             )
 
@@ -639,9 +594,7 @@ class InArenaRewardRate(dj.Computed):
     key_source = InArenaSummary()
 
     def make(self, key):
-        in_arena_start, in_arena_end = (InArena * InArenaEnd & key).fetch1(
-            "in_arena_start", "in_arena_end"
-        )
+        in_arena_start, in_arena_end = (InArena * InArenaEnd & key).fetch1("in_arena_start", "in_arena_end")
 
         # food patch data
         food_patch_keys = (
@@ -676,9 +629,7 @@ class InArenaRewardRate(dj.Computed):
                 no_pellets = True
 
             pellet_rate = analysis_utils.get_events_rates(
-                events=pd.DataFrame({"event_time": pellet_events}).set_index(
-                    "event_time"
-                ),
+                events=pd.DataFrame({"event_time": pellet_events}).set_index("event_time"),
                 window_len_sec=600,
                 start=pd.Timestamp(in_arena_start),
                 end=pd.Timestamp(in_arena_end),
@@ -688,18 +639,14 @@ class InArenaRewardRate(dj.Computed):
             )
 
             if no_pellets:
-                pellet_rate = pd.Series(
-                    index=pellet_rate.index, data=np.full(len(pellet_rate), 0)
-                )
+                pellet_rate = pd.Series(index=pellet_rate.index, data=np.full(len(pellet_rate), 0))
 
             if pellet_rate_timestamps is None:
                 pellet_rate_timestamps = pellet_rate.index.values
 
             rates[food_patch_key.pop("food_patch_description")] = pellet_rate.values
 
-            food_patch_reward_rates.append(
-                {**key, **food_patch_key, "pellet_rate": pellet_rate.values}
-            )
+            food_patch_reward_rates.append({**key, **food_patch_key, "pellet_rate": pellet_rate.values})
 
         self.insert1(
             {

@@ -1,12 +1,8 @@
 from dotmap import DotMap
 
 import aeon.schema.core as stream
-import aeon.schema.foraging as foraging
-import aeon.schema.octagon as octagon
-from aeon.io import reader
 from aeon.io.device import Device
-
-__all__ = ["exp02", "exp01", "octagon01", "multianimal"]
+from aeon.schema import foraging, octagon
 
 exp02 = DotMap(
     [
@@ -21,7 +17,6 @@ exp02 = DotMap(
         Device("CameraSouth", stream.video),
         Device("CameraWest", stream.video),
         Device("Nest", foraging.weight),
-        Device("WeightNest", foraging.weight),
         Device("Patch1", foraging.patch),
         Device("Patch2", foraging.patch),
     ]
@@ -61,18 +56,4 @@ octagon01 = DotMap(
         Device("Wall7", octagon.Wall),
         Device("Wall8", octagon.Wall),
     ]
-)
-
-multianimal = exp02
-multianimal.Patch1.BeamBreak = reader.BitmaskEvent(
-    pattern="Patch1_32", value=0x22, tag="BeamBroken"
-)
-multianimal.Patch2.BeamBreak = reader.BitmaskEvent(
-    pattern="Patch2_32", value=0x22, tag="BeamBroken"
-)
-multianimal.Patch1.DeliverPellet = reader.BitmaskEvent(
-    pattern="Patch1_35", value=0x1, tag="TriggeredPellet"
-)
-multianimal.Patch2.DeliverPellet = reader.BitmaskEvent(
-    pattern="Patch2_35", value=0x1, tag="TriggeredPellet"
 )
