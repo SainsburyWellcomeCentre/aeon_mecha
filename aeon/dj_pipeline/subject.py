@@ -1,10 +1,12 @@
 import os
 import requests
+import json
 import datajoint as dj
 from datetime import datetime, timedelta
 
 from . import get_schema_name, lab
 
+logger = dj.logger
 schema = dj.schema(get_schema_name("subject"))
 
 
@@ -44,7 +46,7 @@ class SubjectDetail(dj.Imported):
     -> Subject
     ---
     -> lab.User.proj(responsible_user="user")
-    -> GeneticBackground
+    -> [nullable] GeneticBackground
     -> Strain
     cage_number: varchar(32)
     """
@@ -60,9 +62,7 @@ class SubjectDetail(dj.Imported):
             "eartag": eartag_or_id,
         }
         animal_resp = get_pyrat_data(endpoint=f"animals", params=params)
-        assert (
-            len(animal_resp) == 1
-        ), f"Found {len(animal_resp)} with eartag {eartag_or_id}, expect only one"
+        assert len(animal_resp) == 1, f"Found {len(animal_resp)} with eartag {eartag_or_id}, expect one"
         animal_resp = animal_resp[0]
         # Insert new subject
         subj_key = {"subject": eartag_or_id}
@@ -78,20 +78,66 @@ class SubjectDetail(dj.Imported):
             {"strain_id": animal_resp["strain_id"], "strain_name": animal_resp["strain_id"]},
             skip_duplicates=True,
         )
+        entry = {
+            **key,
+            "responsible_user": user,
+            "strain_id": animal_resp["strain_id"],
+            "cage_number": animal_resp["cagenumber"],
+        }
         if animal_resp["gen_bg_id"] is not None:
             GeneticBackground.insert1(
                 {"gen_bg_id": animal_resp["gen_bg_id"], "gen_bg": animal_resp["gen_bg"]},
                 skip_duplicates=True,
             )
-        self.insert1(
-            {
-                **key,
-                "responsible_user": user,
-                "strain_id": animal_resp["strain_id"],
-                "cage_number": animal_resp["cagenumber"],
-                "gen_bg_id": animal_resp["gen_bg_id"],
-            }
-        )
+            entry["gen_bg_id"] = animal_resp["gen_bg_id"]
+
+        self.insert1(entry)
+
+
+@schema
+class SubjectWeight(dj.Imported):
+    definition = """
+    -> Subject
+    weight_id: int
+    ---
+    weight: float
+    weight_time: datetime
+    actor_name: varchar(200)
+    """
+
+
+@schema
+class SubjectProcedure(dj.Imported):
+    definition = """
+    -> Subject
+    assign_id: int
+    ---
+    procedure_id: int
+    procedure_name: varchar(200)
+    procedure_date: date
+    license_id: int
+    license_number: varchar(200)
+    classification_id: int
+    classification_name: varchar(200)
+    actor_fullname: varchar(200)
+    comment=null: varchar(1000)
+    """
+
+
+@schema
+class SubjectComment(dj.Imported):
+    definition = """
+    -> Subject
+    comment_id: int
+    ---
+    created: datetime
+    creator_id: int
+    creator_username: varchar(200)
+    creator_fullname: varchar(200)
+    origin: varchar(200)
+    content=null: varchar(1000)
+    attributes: varchar(1000)
+    """
 
 
 # ------------------- PYRAT SYNCHRONIZATION --------------------
@@ -126,7 +172,7 @@ class PyratIngestion(dj.Imported):
     )
 
     auto_schedule = True
-    schedule_interval = 2  # schedule interval in number of days
+    schedule_interval = 1  # schedule interval in number of days
 
     def _auto_schedule(self):
         utc_now = datetime.utcnow()
@@ -173,6 +219,7 @@ class PyratIngestion(dj.Imported):
             )
             new_entry_count += 1
 
+        logger.info(f"Inserting {new_entry_count} new subject(s) from Pyrat")
         completion_time = datetime.utcnow()
         self.insert1(
             {
@@ -183,9 +230,63 @@ class PyratIngestion(dj.Imported):
             }
         )
 
+        logger.info(f"Extracting weights/comments/procedures")
+        comment_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/comments")
+        weight_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/weights")
+        procedure_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/procedures")
+
         # auto schedule next task
         if self.auto_schedule:
             self._auto_schedule()
+
+
+@schema
+class PyratCommentWeightProcedure(dj.Imported):
+    """Ingestion of new animals from PyRAT"""
+
+    definition = """
+    -> PyratIngestion
+    ---
+    execution_time: datetime  # (UTC) time of task execution
+    execution_duration: float  # (s) duration of task execution
+    """
+
+    def make(self, key):
+        execution_time = datetime.utcnow()
+        logger.info(f"Extracting weights/comments/procedures")
+
+        for eartag_or_id in Subject.fetch("subject"):
+            comment_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/comments")
+            if comment_resp == {"reponse code": 404}:
+                logger.warning(f"{eartag_or_id} could not be found in Pyrat")
+                continue
+            for cmt in comment_resp:
+                cmt["subject"] = eartag_or_id
+                cmt["attributes"] = json.dumps(cmt["attributes"], default=str)
+            SubjectComment.insert(comment_resp, skip_duplicates=True, allow_direct_insert=True)
+
+            weight_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/weights")
+            SubjectWeight.insert(
+                [{**v, "subject": eartag_or_id} for v in weight_resp],
+                skip_duplicates=True,
+                allow_direct_insert=True,
+            )
+
+            procedure_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/procedures")
+            SubjectProcedure.insert(
+                [{**v, "subject": eartag_or_id} for v in procedure_resp],
+                skip_duplicates=True,
+                allow_direct_insert=True,
+            )
+
+        completion_time = datetime.utcnow()
+        self.insert1(
+            {
+                **key,
+                "execution_time": execution_time,
+                "execution_duration": (completion_time - execution_time).total_seconds(),
+            }
+        )
 
 
 @schema
