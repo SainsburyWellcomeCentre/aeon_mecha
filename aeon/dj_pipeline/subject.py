@@ -300,6 +300,7 @@ class CreatePyratIngestionTask(dj.Computed):
         Create one new PyratIngestionTask for every newly added user
         """
         PyratIngestionTask.insert1({"pyrat_task_scheduled_time": datetime.utcnow()})
+        self.insert1(key)
 
 
 _pyrat_animal_attributes = [
