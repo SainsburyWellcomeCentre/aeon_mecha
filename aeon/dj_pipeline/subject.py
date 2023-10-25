@@ -1,4 +1,6 @@
 import os
+import time
+
 import requests
 import json
 import datajoint as dj
@@ -230,11 +232,6 @@ class PyratIngestion(dj.Imported):
             }
         )
 
-        logger.info(f"Extracting weights/comments/procedures")
-        comment_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/comments")
-        weight_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/weights")
-        procedure_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/procedures")
-
         # auto schedule next task
         if self.auto_schedule:
             self._auto_schedule()
@@ -300,6 +297,7 @@ class CreatePyratIngestionTask(dj.Computed):
         Create one new PyratIngestionTask for every newly added user
         """
         PyratIngestionTask.insert1({"pyrat_task_scheduled_time": datetime.utcnow()})
+        time.sleep(1)
         self.insert1(key)
 
 
