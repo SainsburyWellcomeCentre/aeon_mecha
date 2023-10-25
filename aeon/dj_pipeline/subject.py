@@ -243,6 +243,7 @@ class PyratCommentWeightProcedure(dj.Imported):
 
     definition = """
     -> PyratIngestion
+    -> SubjectDetail
     ---
     execution_time: datetime  # (UTC) time of task execution
     execution_duration: float  # (s) duration of task execution
@@ -252,29 +253,29 @@ class PyratCommentWeightProcedure(dj.Imported):
         execution_time = datetime.utcnow()
         logger.info(f"Extracting weights/comments/procedures")
 
-        for eartag_or_id in Subject.fetch("subject"):
-            comment_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/comments")
-            if comment_resp == {"reponse code": 404}:
-                logger.warning(f"{eartag_or_id} could not be found in Pyrat")
-                continue
-            for cmt in comment_resp:
-                cmt["subject"] = eartag_or_id
-                cmt["attributes"] = json.dumps(cmt["attributes"], default=str)
-            SubjectComment.insert(comment_resp, skip_duplicates=True, allow_direct_insert=True)
+        eartag_or_id = key["subject"]
+        comment_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/comments")
+        if comment_resp == {"reponse code": 404}:
+            raise ValueError(f"{eartag_or_id} could not be found in Pyrat")
 
-            weight_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/weights")
-            SubjectWeight.insert(
-                [{**v, "subject": eartag_or_id} for v in weight_resp],
-                skip_duplicates=True,
-                allow_direct_insert=True,
-            )
+        for cmt in comment_resp:
+            cmt["subject"] = eartag_or_id
+            cmt["attributes"] = json.dumps(cmt["attributes"], default=str)
+        SubjectComment.insert(comment_resp, skip_duplicates=True, allow_direct_insert=True)
 
-            procedure_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/procedures")
-            SubjectProcedure.insert(
-                [{**v, "subject": eartag_or_id} for v in procedure_resp],
-                skip_duplicates=True,
-                allow_direct_insert=True,
-            )
+        weight_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/weights")
+        SubjectWeight.insert(
+            [{**v, "subject": eartag_or_id} for v in weight_resp],
+            skip_duplicates=True,
+            allow_direct_insert=True,
+        )
+
+        procedure_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/procedures")
+        SubjectProcedure.insert(
+            [{**v, "subject": eartag_or_id} for v in procedure_resp],
+            skip_duplicates=True,
+            allow_direct_insert=True,
+        )
 
         completion_time = datetime.utcnow()
         self.insert1(
