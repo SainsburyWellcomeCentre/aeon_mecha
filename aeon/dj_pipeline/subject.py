@@ -117,10 +117,10 @@ class SubjectProcedure(dj.Imported):
     procedure_id: int
     procedure_name: varchar(200)
     procedure_date: date
-    license_id: int
-    license_number: varchar(200)
-    classification_id: int
-    classification_name: varchar(200)
+    license_id=null: int
+    license_number=null: varchar(200)
+    classification_id=null: int
+    classification_name=null: varchar(200)
     actor_fullname: varchar(200)
     comment=null: varchar(1000)
     """
