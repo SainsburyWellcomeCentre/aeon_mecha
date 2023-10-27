@@ -74,10 +74,10 @@ class UserRole(dj.Lookup):
 @schema
 class User(dj.Lookup):
     definition = """
-    user                : varchar(32)
+    user                    : varchar(32)  # swc username
     ---
-    user_email=''       : varchar(128)
-    user_cellphone=''   : varchar(32)
+    responsible_owner=''    : varchar(32)  # pyrat username
+    responsible_id=''       : varchar(32)  # pyrat `responsible_id`
     """
 
 
