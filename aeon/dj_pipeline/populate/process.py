@@ -31,7 +31,7 @@ import sys
 import datajoint as dj
 from datajoint_utilities.dj_worker import parse_args
 
-from aeon.dj_pipeline.populate.worker import acquisition_worker, logger, mid_priority, streams_worker
+from aeon.dj_pipeline.populate.worker import acquisition_worker, logger, mid_priority, streams_worker, pyrat_worker
 
 # ---- some wrappers to support execution as script or CLI
 
@@ -39,6 +39,7 @@ configured_workers = {
     "acquisition_worker": acquisition_worker,
     "mid_priority": mid_priority,
     "streams_worker": streams_worker,
+    "pyrat_worker": pyrat_worker,
 }
 
 
