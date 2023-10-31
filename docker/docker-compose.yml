@@ -47,7 +47,11 @@ x-aeon-ingest-common: &aeon-ingest-common
 services:
   acquisition_worker:
     <<: *aeon-ingest-common
-    command: ["aeon_ingest", "acquisition_worker"]
+    command: [ "aeon_ingest", "acquisition_worker" ]
+
+  pyrat_worker:
+    <<: *aeon-ingest-common
+    command: [ "aeon_ingest", "pyrat_worker" ]
 
   streams_worker:
     <<: *aeon-ingest-common
@@ -57,7 +61,7 @@ services:
     deploy:
       mode: replicated
       replicas: 3
-    command: ["aeon_ingest", "streams_worker"]
+    command: [ "aeon_ingest", "streams_worker" ]
 
   ingest_mid:
     <<: *aeon-ingest-common
@@ -67,4 +71,4 @@ services:
     deploy:
       mode: replicated
       replicas: 2
-    command: ["aeon_ingest", "mid_priority"]
+    command: [ "aeon_ingest", "mid_priority" ]
