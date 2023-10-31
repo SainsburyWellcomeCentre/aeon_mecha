@@ -8,3 +8,6 @@ except PackageNotFoundError:
     __version__ = "unknown"
 finally:
     del version, PackageNotFoundError
+
+# Set functions avaialable directly under the 'aeon' top-level namespace
+from aeon.io.api import load

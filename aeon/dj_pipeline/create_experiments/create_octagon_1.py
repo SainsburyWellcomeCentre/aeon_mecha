@@ -1,5 +1,4 @@
-from aeon.dj_pipeline import acquisition, lab, subject
-
+from aeon.dj_pipeline import acquisition, subject
 
 # ============ Manual and automatic steps to for experiment 0.2 populate ============
 experiment_name = "oct1.0-r0"
@@ -34,10 +33,7 @@ def create_new_experiment():
         skip_duplicates=True,
     )
     acquisition.Experiment.Subject.insert(
-        [
-            {"experiment_name": experiment_name, "subject": s["subject"]}
-            for s in subject_list
-        ],
+        [{"experiment_name": experiment_name, "subject": s["subject"]} for s in subject_list],
         skip_duplicates=True,
     )
 

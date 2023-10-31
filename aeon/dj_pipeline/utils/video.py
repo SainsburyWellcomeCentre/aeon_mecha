@@ -1,8 +1,7 @@
 import base64
-import datetime
 from pathlib import Path
+
 import cv2
-import numpy as np
 import pandas as pd
 
 import aeon.io.reader as io_reader
@@ -21,6 +20,7 @@ def retrieve_video_frames(
     chunk_size=50,
     **kwargs,
 ):
+    """Retrive video trames from the raw data directory."""
     raw_data_dir = Path(raw_data_dir)
     assert raw_data_dir.exists()
 

@@ -14,7 +14,7 @@ class Colony(dj.Lookup):
     definition = """
     subject                 : varchar(32)
     ---
-    reference_weight=null   : float  
+    reference_weight=null   : float
     sex='U'                 : enum('M', 'F', 'U')
     subject_birth_date=null : date  # date of birth
     note=''                 : varchar(1024)
@@ -24,7 +24,7 @@ class Colony(dj.Lookup):
 @schema
 class Lab(dj.Lookup):
     definition = """
-    lab             : varchar(24)  #  Abbreviated lab name 
+    lab             : varchar(24)  #  Abbreviated lab name
     ---
     lab_name        : varchar(255)   # full lab name
     institution     : varchar(255)
@@ -74,10 +74,10 @@ class UserRole(dj.Lookup):
 @schema
 class User(dj.Lookup):
     definition = """
-    user                : varchar(32)
+    user                    : varchar(32)  # swc username
     ---
-    user_email=''       : varchar(128)
-    user_cellphone=''   : varchar(32)
+    responsible_owner=''    : varchar(32)  # pyrat username
+    responsible_id=''       : varchar(32)  # pyrat `responsible_id`
     """
 
 
@@ -151,12 +151,11 @@ class ArenaShape(dj.Lookup):
 
 @schema
 class Arena(dj.Lookup):
-    """
-    Coordinate frame convention:
+    """Coordinate frame convention:
     + x-dimension: x=0 is the left most point of the bounding box of the arena
     + y-dimension: y=0 is the top most point of the bounding box of the arena
     + z-dimension: z=0 is the lowest point of the arena (e.g. the ground)
-    TODO: confirm/update this
+    TODO: confirm/update this.
     """
 
     definition = """

@@ -20,12 +20,7 @@ _STREAMS_MODULE_FILE = Path(__file__).parent.parent / "streams.py"
 
 
 class StreamType(dj.Lookup):
-    """
-    Catalog of all steam types for the different device types used across Project Aeon
-    One StreamType corresponds to one reader class in `aeon.io.reader`
-    The combination of `stream_reader` and `stream_reader_kwargs` should fully specify
-    the data loading routine for a particular device, using the `aeon.io.utils`
-    """
+    """Catalog of all steam types for the different device types used across Project Aeon. One StreamType corresponds to one reader class in `aeon.io.reader`. The combination of `stream_reader` and `stream_reader_kwargs` should fully specify the data loading routine for a particular device, using the `aeon.io.utils`."""
 
     definition = """  # Catalog of all stream types used across Project Aeon
     stream_type          : varchar(20)
@@ -39,9 +34,7 @@ class StreamType(dj.Lookup):
 
 
 class DeviceType(dj.Lookup):
-    """
-    Catalog of all device types used across Project Aeon
-    """
+    """Catalog of all device types used across Project Aeon."""
 
     definition = """  # Catalog of all device types used across Project Aeon
     device_type:             varchar(36)
@@ -68,7 +61,7 @@ class Device(dj.Lookup):
 
 
 def get_device_template(device_type: str):
-    """Returns table class template for ExperimentDevice"""
+    """Returns table class template for ExperimentDevice."""
     device_title = device_type
     device_type = dj.utils.from_camel_case(device_type)
 
@@ -103,24 +96,17 @@ def get_device_template(device_type: str):
 
 
 def get_device_stream_template(device_type: str, stream_type: str, streams_module):
-    """Returns table class template for DeviceDataStream"""
-
+    """Returns table class template for DeviceDataStream."""
     ExperimentDevice = getattr(streams_module, device_type)
 
     # DeviceDataStream table(s)
     stream_detail = (
         streams_module.StreamType
-        & (
-            streams_module.DeviceType.Stream
-            & {"device_type": device_type, "stream_type": stream_type}
-        )
+        & (streams_module.DeviceType.Stream & {"device_type": device_type, "stream_type": stream_type})
     ).fetch1()
 
     for i, n in enumerate(stream_detail["stream_reader"].split(".")):
-        if i == 0:
-            reader = aeon
-        else:
-            reader = getattr(reader, n)
+        reader = aeon if i == 0 else getattr(reader, n)
 
     stream = reader(**stream_detail["stream_reader_kwargs"])
 
@@ -150,8 +136,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             +  Chunk(s) that started after {device_type} install time for {device_type} that are not yet removed
             """
             return (
-                acquisition.Chunk
-                * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
+                acquisition.Chunk * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
                 & f"chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time"
                 & f'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, "2200-01-01")'
             )
@@ -160,13 +145,9 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "directory_type"
             )
-            raw_data_dir = acquisition.Experiment.get_data_directory(
-                key, directory_type=dir_type
-            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
 
-            device_name = (ExperimentDevice & key).fetch1(
-                f"{dj.utils.from_camel_case(device_type)}_name"
-            )
+            device_name = (ExperimentDevice & key).fetch1(f"{dj.utils.from_camel_case(device_type)}_name")
 
             stream = self._stream_reader(
                 **{
@@ -187,12 +168,9 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
                     **key,
                     "sample_count": len(stream_data),
                     "timestamps": stream_data.index.values,
-                    **{
-                        c: stream_data[c].values
-                        for c in stream.columns
-                        if not c.startswith("_")
-                    },
-                }, ignore_extra_fields=True
+                    **{c: stream_data[c].values for c in stream.columns if not c.startswith("_")},
+                },
+                ignore_extra_fields=True,
             )
 
     DeviceDataStream.__name__ = f"{device_type}{stream_type}"
@@ -204,18 +182,17 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
 
 def main(create_tables=True):
-
     if not _STREAMS_MODULE_FILE.exists():
         with open(_STREAMS_MODULE_FILE, "w") as f:
             imports_str = (
-                '#----                     DO NOT MODIFY                ----\n'
-                '#---- THIS FILE IS AUTO-GENERATED BY `streams_maker.py` ----\n\n'
-                'import datajoint as dj\n'
-                'import pandas as pd\n'
-                'from uuid import UUID\n\n'
-                'import aeon\n'
-                'from aeon.dj_pipeline import acquisition, get_schema_name\n'
-                'from aeon.io import api as io_api\n\n'
+                "#----                     DO NOT MODIFY                ----\n"
+                "#---- THIS FILE IS AUTO-GENERATED BY `streams_maker.py` ----\n\n"
+                "import datajoint as dj\n"
+                "import pandas as pd\n"
+                "from uuid import UUID\n\n"
+                "import aeon\n"
+                "from aeon.dj_pipeline import acquisition, get_schema_name\n"
+                "from aeon.io import api as io_api\n\n"
                 'schema = dj.Schema(get_schema_name("streams"))\n\n\n'
             )
             f.write(imports_str)
@@ -224,7 +201,7 @@ def main(create_tables=True):
                 full_def = "@schema \n" + device_table_def + "\n\n"
                 f.write(full_def)
 
-    streams = importlib.import_module(f"aeon.dj_pipeline.streams")
+    streams = importlib.import_module("aeon.dj_pipeline.streams")
 
     if create_tables:
         # Create DeviceType tables.
@@ -245,7 +222,7 @@ def main(create_tables=True):
             for old, new in replacements.items():
                 device_table_def = device_table_def.replace(old, new)
             full_def = "@schema \n" + device_table_def + "\n\n"
-            with open(_STREAMS_MODULE_FILE, "r") as f:
+            with open(_STREAMS_MODULE_FILE) as f:
                 existing_content = f.read()
 
             if full_def in existing_content:
@@ -256,7 +233,6 @@ def main(create_tables=True):
 
         # Create DeviceDataStream tables.
         for device_info in streams.DeviceType.Stream.fetch(as_dict=True):
-
             device_type = device_info["device_type"]
             stream_type = device_info["stream_type"]
             table_name = f"{device_type}{stream_type}"
@@ -304,7 +280,7 @@ def main(create_tables=True):
 
             full_def = "@schema \n" + device_stream_table_def + "\n\n"
 
-            with open(_STREAMS_MODULE_FILE, "r") as f:
+            with open(_STREAMS_MODULE_FILE) as f:
                 existing_content = f.read()
 
             if full_def in existing_content:

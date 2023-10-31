@@ -2,7 +2,7 @@ import datajoint as dj
 from datajoint_utilities.dj_worker import DataJointWorker, ErrorLog, WorkerLog
 from datajoint_utilities.dj_worker.worker_schema import is_djtable
 
-from aeon.dj_pipeline import acquisition, analysis, db_prefix, qc, report, tracking
+from aeon.dj_pipeline import subject, acquisition, analysis, db_prefix, qc, report, tracking
 from aeon.dj_pipeline.utils import load_metadata, streams_maker
 
 streams = streams_maker.main()
@@ -34,11 +34,7 @@ class AutomatedExperimentIngestion(dj.Manual):
 
 
 def ingest_colony_epochs_chunks():
-    """
-    Load and insert subjects from colony.csv
-    Ingest epochs and chunks
-     for experiments specified in AutomatedExperimentIngestion
-    """
+    """Load and insert subjects from colony.csv. Ingest epochs and chunks for experiments specified in AutomatedExperimentIngestion."""
     load_metadata.ingest_subject()
     experiment_names = AutomatedExperimentIngestion.fetch("experiment_name")
     for experiment_name in experiment_names:
@@ -47,10 +43,7 @@ def ingest_colony_epochs_chunks():
 
 
 def ingest_environment_visits():
-    """
-    Extract and insert complete visits
-     for experiments specified in AutomatedExperimentIngestion
-    """
+    """Extract and insert complete visits for experiments specified in AutomatedExperimentIngestion."""
     experiment_names = AutomatedExperimentIngestion.fetch("experiment_name")
     analysis.ingest_environment_visits(experiment_names)
 
@@ -102,7 +95,20 @@ mid_priority(report.SubjectWheelTravelledDistance)
 mid_priority(report.ExperimentTimeDistribution)
 mid_priority(report.VisitDailySummaryPlot)
 
-# ---- Define worker(s) ----
+# configure a worker to handle pyrat sync
+pyrat_worker = DataJointWorker(
+    "pyrat_worker",
+    worker_schema_name=worker_schema_name,
+    db_prefix=db_prefix,
+    run_duration=-1,
+    sleep_duration=1200,
+)
+
+pyrat_worker(subject.CreatePyratIngestionTask)
+pyrat_worker(subject.PyratIngestion)
+pyrat_worker(subject.SubjectDetail)
+pyrat_worker(subject.PyratCommentWeightProcedure)
+
 # configure a worker to ingest all data streams
 streams_worker = DataJointWorker(
     "streams_worker",

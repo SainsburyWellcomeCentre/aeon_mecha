@@ -55,7 +55,7 @@ RUN mkdir -p ${CEPH_ROOT} ${DJ_EXT_STORE} && \
 
 # copy apt-get dependencies, conda environment yml, datajoint config template
 RUN cp -f ${AEON_PKG}/docker/image/apt_requirements.txt /srv/conda/apt_requirements.txt && \
-    cp -f ${AEON_PKG}/env.yml /srv/conda/environment.yml && \
+    cp -f ${AEON_PKG}/env_config/env.yml /srv/conda/environment.yml && \
     cp -f ${AEON_PKG}/docker/image/.datajoint_config.json /tmp/.datajoint_config.json
 
 # create the local and global datajoint config files, hard-coding the data paths

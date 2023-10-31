@@ -5,11 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aeon_mecha"
 version = "0.1.0"
-requires-python = ">=3.9.4"
-description = "Code for managing acquired data from Project Aeon experiments. Includes general file IO, data QC, querying, and analysis modules."
+requires-python = ">=3.11"
+description = '''
+    Code for managing acquired data from Project Aeon experiments. Includes general file IO,
+    data QC, querying, and analysis modules.
+'''
 authors = [
   { name = "Jai Bhagat", email = "jkbhagatio@gmail.com" },
-  { name = "Goncalo Lopes", email = "goncaloclopes@gmail.com" },
+  { name = "Goncalo Lopes", email = "g.lopes@neurogears.org" },
   { name = "Thinh Nguyen", email = "thinh@datajoint.com" },
   { name = "Joseph Burling", email = "joseph@datajoint.com" },
   { name = "Chang Huan Lo", email = "changhuan.lo@ucl.ac.uk" },
@@ -24,6 +27,7 @@ dependencies = [
   "dotmap",
   "fastparquet",
   "graphviz",
+  "importlib_metadata",
   "ipykernel",
   "jupyter",
   "jupyterlab",
@@ -47,18 +51,20 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "bandit",
-  "black",
-  "isort",
-  "flake8",
+  "black[jupyter]",
   "gh",
   "ipdb",
-  "pre",
+  "pre-commit",
   "pyan3 @ git+https://github.com/Technologicat/pyan.git",
+  "pydantic",
+  "pyright",
   "pytest",
   "pytest-cov",
-  "setuptools",
+  "sphinx",
+  "ruff",
   "tox",
 ]
+gpu = ["cupy", "dask"]
 
 [project.scripts]
 aeon_ingest = "aeon.dj_pipeline.populate.process:cli"
@@ -73,7 +79,7 @@ DataJoint = "https://docs.datajoint.org/"
 packages = ["aeon"]
 
 [tool.black]
-line-length = 88
+line-length = 108
 color = false
 exclude = '''
 /(
@@ -88,12 +94,89 @@ exclude = '''
     | venv
 )/
 '''
+extend-exclude = "aeon/dj_pipeline/streams.py"
 
-[tool.isort]
-profile = "black"
-color_output = false
-
-[tool.pytest.ini_options]
-markers = [
-    "api",
+[tool.ruff]
+select = [
+  "E",
+  "W",
+  "F",
+  "I",
+  "D",
+  "UP",
+  "S",
+  "B",
+  "A",
+  "C4",
+  "ICN",
+  "PIE",
+  "PT",
+  "SIM",
+  "PL",
 ]
+line-length = 108
+ignore = [
+  "E201",
+  "E202",
+  "E203",
+  "E231",
+  "E731",
+  "E702",
+  "S101",
+  "PT013",
+  "PLR0912",
+  "PLR0913",
+  "PLR0915",
+]
+extend-exclude = [
+  ".git",
+  ".github",
+  ".idea",
+  ".vscode",
+  "aeon/dj_pipeline/streams.py",
+]
+[tool.ruff.per-file-ignores]
+"aeon/dj_pipeline/*" = [
+  "B006",
+  "B021",
+  "D100", # skip adding docstrings for module
+  "D101", # skip adding docstrings for table class since it is added inside definition
+  "D102", # skip adding docstrings for make function
+  "D103", # skip adding docstrings for public functions
+  "D104", # ignore missing docstring in public package
+  "D106", # skip adding docstrings for Part tables
+  "E501",
+  "F401", # ignore unused import errors
+  "B905", # ignore unused import errors
+  "E999", "S324", "E722", "S110", "F821", "B904", "UP038", "S607", "S605", "D205", "D202", "F403", "PLR2004", "SIM108", "PLW0127", "PLR2004", "I001"
+]
+
+[tool.ruff.pydocstyle]
+convention = "google"
+
+[tool.pyright]
+reportMissingImports = "none"
+reportImportCycles = "error"
+reportUnusedImport = "error"
+reportUnusedClass = "error"
+reportUnusedfunction = "error"
+reportUnusedVariable = "error"
+reportDuplicateImport = "error"
+reportWildcardImportFromLibrary = "error"
+reportPrivateUsage = "error"
+reportCallInDefaultInitializer = "error"
+reportUnnecessaryIsInstance = "error"
+reportUnnecesaryCast = "error"
+reportUnnecesarryComparison = "error"
+reportUnnecessaryContains = "error"
+reportAssertAlwaysTrue = "error"
+reportSelfClsParameterName = "error"
+reportUnusedExpression = "error"
+reportMatchNotExhaustive = "error"
+reportShadowedImports = "error"
+# *Note*: we may want to set all 'ReportOptional*' rules to "none", but leaving 'em default for now
+venvPath = "."
+venv = ".venv"
+exclude= ["aeon/dj_pipeline/*"]
+[tool.pytest.ini_options]
+markers = ["api"]
