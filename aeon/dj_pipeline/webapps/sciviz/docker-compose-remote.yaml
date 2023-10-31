@@ -1,5 +1,6 @@
 # cd aeon/dj_pipeline/webapps/sciviz/ 
 # HOST_UID=$(id -u) docker-compose -f docker-compose-remote.yaml up -d
+# Access https://www.swc.ucl.ac.uk/aeon/
 
 version: '2.4'
 services:

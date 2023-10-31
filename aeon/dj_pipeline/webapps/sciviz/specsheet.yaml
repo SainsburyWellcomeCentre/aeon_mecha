@@ -4,6 +4,7 @@ SciViz:
   route: /aeon
   auth:
     mode: "database"
+  hostname: aeon-db2
   component_interface:
     override: |
       from datetime import datetime
