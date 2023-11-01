@@ -57,7 +57,7 @@ class SubjectDetail(dj.Imported):
 
     def make(self, key):
         eartag_or_id = key["subject"]
-        # cage id, sex, line/strain, genetic background, dob, weight history
+        # cage id, sex, line/strain, genetic background, dob, lab id
         params = {
             "k": _pyrat_animal_attributes,
             "s": "eartag_or_id:asc",
@@ -75,8 +75,9 @@ class SubjectDetail(dj.Imported):
             )
         elif len(animal_resp) > 1:
             raise ValueError(f"Found {len(animal_resp)} with eartag {eartag_or_id}, expect one")
+        else:
+            animal_resp = animal_resp[0]
 
-        animal_resp = animal_resp[0]
         # Insert new subject
         Subject.update1(
             {
@@ -150,6 +151,14 @@ class SubjectComment(dj.Imported):
     origin: varchar(200)
     content=null: varchar(1000)
     attributes: varchar(1000)
+    """
+
+
+@schema
+class ExperimentSubject(dj.Manual):
+    definition = """
+    -> Subject
+    experiment_name: varchar(32)  # e.g. social-AEON3
     """
 
 
