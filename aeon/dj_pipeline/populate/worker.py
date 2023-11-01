@@ -10,6 +10,7 @@ streams = streams_maker.main()
 __all__ = [
     "acquisition_worker",
     "mid_priority",
+    "pyrat_worker",
     "streams_worker",
     "WorkerLog",
     "ErrorLog",
