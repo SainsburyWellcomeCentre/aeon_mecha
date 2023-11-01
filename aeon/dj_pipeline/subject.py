@@ -50,7 +50,9 @@ class SubjectDetail(dj.Imported):
     -> lab.User.proj(responsible_user="user")
     -> [nullable] GeneticBackground
     -> Strain
-    cage_number: varchar(32)
+    cage_number='': varchar(32)
+    lab_id='': varchar(128)  # pyrat 'labid'
+    available=1: bool  # is this animal available on pyrat
     """
 
     def make(self, key):
@@ -64,13 +66,21 @@ class SubjectDetail(dj.Imported):
             "eartag": eartag_or_id,
         }
         animal_resp = get_pyrat_data(endpoint=f"animals", params=params)
-        assert len(animal_resp) == 1, f"Found {len(animal_resp)} with eartag {eartag_or_id}, expect one"
+        if not animal_resp:
+            self.update1(
+                {
+                    **key,
+                    "available": False,
+                }
+            )
+        elif len(animal_resp) > 1:
+            raise ValueError(f"Found {len(animal_resp)} with eartag {eartag_or_id}, expect one")
+
         animal_resp = animal_resp[0]
         # Insert new subject
-        subj_key = {"subject": eartag_or_id}
         Subject.update1(
             {
-                **subj_key,
+                **key,
                 "sex": {"f": "F", "m": "M", "?": "U"}[animal_resp["sex"]],
                 "subject_birth_date": animal_resp["dateborn"],
             }
@@ -85,6 +95,7 @@ class SubjectDetail(dj.Imported):
             "responsible_user": user,
             "strain_id": animal_resp["strain_id"],
             "cage_number": animal_resp["cagenumber"],
+            "lab_id": animal_resp["labid"],
         }
         if animal_resp["gen_bg_id"] is not None:
             GeneticBackground.insert1(
