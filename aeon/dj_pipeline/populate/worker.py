@@ -35,8 +35,7 @@ class AutomatedExperimentIngestion(dj.Manual):
 
 
 def ingest_colony_epochs_chunks():
-    """Load and insert subjects from colony.csv. Ingest epochs and chunks for experiments specified in AutomatedExperimentIngestion."""
-    load_metadata.ingest_subject()
+    """Ingest epochs and chunks for experiments specified in AutomatedExperimentIngestion."""
     experiment_names = AutomatedExperimentIngestion.fetch("experiment_name")
     for experiment_name in experiment_names:
         acquisition.Epoch.ingest_epochs(experiment_name)
