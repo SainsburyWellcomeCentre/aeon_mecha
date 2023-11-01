@@ -277,6 +277,8 @@ class PyratCommentWeightProcedure(dj.Imported):
     execution_duration: float  # (s) duration of task execution
     """
 
+    key_source = SubjectDetail & "available = 1"
+
     def make(self, key):
         execution_time = datetime.utcnow()
         logger.info(f"Extracting weights/comments/procedures")
@@ -284,7 +286,13 @@ class PyratCommentWeightProcedure(dj.Imported):
         eartag_or_id = key["subject"]
         comment_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/comments")
         if comment_resp == {"reponse code": 404}:
-            raise ValueError(f"{eartag_or_id} could not be found in Pyrat")
+            SubjectDetail.update1(
+                {
+                    **key,
+                    "available": False,
+                }
+            )
+            return
 
         for cmt in comment_resp:
             cmt["subject"] = eartag_or_id
