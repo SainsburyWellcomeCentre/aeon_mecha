@@ -47,11 +47,11 @@ class SubjectDetail(dj.Imported):
     definition = """
     -> Subject
     ---
-    -> lab.User.proj(responsible_user="user")
-    -> [nullable] GeneticBackground
-    -> Strain
-    cage_number='': varchar(32)
     lab_id='': varchar(128)  # pyrat 'labid'
+    responsible_fullname='': varchar(128)
+    -> [nullable] GeneticBackground
+    -> [nullable] Strain
+    cage_number='': varchar(32)
     available=1: bool  # is this animal available on pyrat
     """
 
@@ -67,12 +67,21 @@ class SubjectDetail(dj.Imported):
         }
         animal_resp = get_pyrat_data(endpoint=f"animals", params=params)
         if not animal_resp:
-            self.update1(
-                {
-                    **key,
-                    "available": False,
-                }
-            )
+            if self & key:
+                self.update1(
+                    {
+                        **key,
+                        "available": False,
+                    }
+                )
+            else:
+                self.insert1(
+                    {
+                        **key,
+                        "available": False,
+                    }
+                )
+            return
         elif len(animal_resp) > 1:
             raise ValueError(f"Found {len(animal_resp)} with eartag {eartag_or_id}, expect one")
         else:
@@ -86,14 +95,13 @@ class SubjectDetail(dj.Imported):
                 "subject_birth_date": animal_resp["dateborn"],
             }
         )
-        user = (lab.User & {"responsible_id": animal_resp["responsible_id"]}).fetch1("user")
         Strain.insert1(
             {"strain_id": animal_resp["strain_id"], "strain_name": animal_resp["strain_id"]},
             skip_duplicates=True,
         )
         entry = {
             **key,
-            "responsible_user": user,
+            "responsible_fullname": animal_resp["responsible_fullname"],
             "strain_id": animal_resp["strain_id"],
             "cage_number": animal_resp["cagenumber"],
             "lab_id": animal_resp["labid"],
