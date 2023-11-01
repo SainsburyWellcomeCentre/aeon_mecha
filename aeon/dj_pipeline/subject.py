@@ -277,7 +277,7 @@ class PyratCommentWeightProcedure(dj.Imported):
     execution_duration: float  # (s) duration of task execution
     """
 
-    key_source = SubjectDetail & "available = 1"
+    key_source = (PyratIngestion * SubjectDetail) & "available = 1"
 
     def make(self, key):
         execution_time = datetime.utcnow()
