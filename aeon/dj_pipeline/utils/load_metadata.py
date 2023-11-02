@@ -14,6 +14,7 @@ from aeon.dj_pipeline import acquisition, dict_to_uuid, subject
 from aeon.dj_pipeline.utils import streams_maker
 from aeon.io import api as io_api
 
+logger = dj.logger
 _weight_scale_rate = 100
 _weight_scale_nest = 1
 _colony_csv_path = pathlib.Path("/ceph/aeon/aeon/colony/colony.csv")
@@ -21,6 +22,8 @@ _colony_csv_path = pathlib.Path("/ceph/aeon/aeon/colony/colony.csv")
 
 def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
     """Ingest subject information from the colony.csv file."""
+    logger.warning("The use of 'colony.csv' is deprecated starting Nov 2023", DeprecationWarning)
+
     colony_df = pd.read_csv(colony_csv_path, skiprows=[1, 2])
     colony_df.rename(columns={"Id": "subject"}, inplace=True)
     colony_df["sex"] = "U"

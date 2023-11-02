@@ -1046,6 +1046,9 @@ def _get_all_chunks(experiment_name, device_name):
         if data_dir
     }
 
+    if not raw_data_dirs:
+        raise ValueError(f"No raw data directory found for experiment: {experiment_name}")
+
     chunkdata = io_api.load(
         root=raw_data_dirs.values(),
         reader=io_reader.Chunk(pattern=device_name + "*", extension="csv"),

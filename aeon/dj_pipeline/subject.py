@@ -47,15 +47,17 @@ class SubjectDetail(dj.Imported):
     definition = """
     -> Subject
     ---
-    -> lab.User.proj(responsible_user="user")
+    lab_id='': varchar(128)  # pyrat 'labid'
+    responsible_fullname='': varchar(128)
     -> [nullable] GeneticBackground
-    -> Strain
-    cage_number: varchar(32)
+    -> [nullable] Strain
+    cage_number='': varchar(32)
+    available=1: bool  # is this animal available on pyrat
     """
 
     def make(self, key):
         eartag_or_id = key["subject"]
-        # cage id, sex, line/strain, genetic background, dob, weight history
+        # cage id, sex, line/strain, genetic background, dob, lab id
         params = {
             "k": _pyrat_animal_attributes,
             "s": "eartag_or_id:asc",
@@ -64,27 +66,45 @@ class SubjectDetail(dj.Imported):
             "eartag": eartag_or_id,
         }
         animal_resp = get_pyrat_data(endpoint=f"animals", params=params)
-        assert len(animal_resp) == 1, f"Found {len(animal_resp)} with eartag {eartag_or_id}, expect one"
-        animal_resp = animal_resp[0]
+        if len(animal_resp) == 0:
+            if self & key:
+                self.update1(
+                    {
+                        **key,
+                        "available": False,
+                    }
+                )
+            else:
+                self.insert1(
+                    {
+                        **key,
+                        "available": False,
+                    }
+                )
+            return
+        elif len(animal_resp) > 1:
+            raise ValueError(f"Found {len(animal_resp)} with eartag {eartag_or_id}, expect one")
+        else:
+            animal_resp = animal_resp[0]
+
         # Insert new subject
-        subj_key = {"subject": eartag_or_id}
         Subject.update1(
             {
-                **subj_key,
+                **key,
                 "sex": {"f": "F", "m": "M", "?": "U"}[animal_resp["sex"]],
                 "subject_birth_date": animal_resp["dateborn"],
             }
         )
-        user = (lab.User & {"responsible_id": animal_resp["responsible_id"]}).fetch1("user")
         Strain.insert1(
             {"strain_id": animal_resp["strain_id"], "strain_name": animal_resp["strain_id"]},
             skip_duplicates=True,
         )
         entry = {
             **key,
-            "responsible_user": user,
+            "responsible_fullname": animal_resp["responsible_fullname"],
             "strain_id": animal_resp["strain_id"],
             "cage_number": animal_resp["cagenumber"],
+            "lab_id": animal_resp["labid"],
         }
         if animal_resp["gen_bg_id"] is not None:
             GeneticBackground.insert1(
@@ -249,6 +269,8 @@ class PyratCommentWeightProcedure(dj.Imported):
     execution_duration: float  # (s) duration of task execution
     """
 
+    key_source = (PyratIngestion * SubjectDetail) & "available = 1"
+
     def make(self, key):
         execution_time = datetime.utcnow()
         logger.info(f"Extracting weights/comments/procedures")
@@ -256,7 +278,13 @@ class PyratCommentWeightProcedure(dj.Imported):
         eartag_or_id = key["subject"]
         comment_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/comments")
         if comment_resp == {"reponse code": 404}:
-            raise ValueError(f"{eartag_or_id} could not be found in Pyrat")
+            SubjectDetail.update1(
+                {
+                    **key,
+                    "available": False,
+                }
+            )
+            return
 
         for cmt in comment_resp:
             cmt["subject"] = eartag_or_id
