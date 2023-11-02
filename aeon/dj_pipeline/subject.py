@@ -66,7 +66,7 @@ class SubjectDetail(dj.Imported):
             "eartag": eartag_or_id,
         }
         animal_resp = get_pyrat_data(endpoint=f"animals", params=params)
-        if not animal_resp:
+        if len(animal_resp) == 0:
             if self & key:
                 self.update1(
                     {
