@@ -3,7 +3,7 @@ from datajoint_utilities.dj_worker import DataJointWorker, ErrorLog, WorkerLog
 from datajoint_utilities.dj_worker.worker_schema import is_djtable
 
 from aeon.dj_pipeline import subject, acquisition, analysis, db_prefix, qc, report, tracking
-from aeon.dj_pipeline.utils import load_metadata, streams_maker
+from aeon.dj_pipeline.utils import streams_maker
 
 streams = streams_maker.main()
 
@@ -34,7 +34,7 @@ class AutomatedExperimentIngestion(dj.Manual):
     """
 
 
-def ingest_colony_epochs_chunks():
+def ingest_epochs_chunks():
     """Ingest epochs and chunks for experiments specified in AutomatedExperimentIngestion."""
     experiment_names = AutomatedExperimentIngestion.fetch("experiment_name")
     for experiment_name in experiment_names:
@@ -57,7 +57,7 @@ acquisition_worker = DataJointWorker(
     run_duration=-1,
     sleep_duration=1200,
 )
-acquisition_worker(ingest_colony_epochs_chunks)
+acquisition_worker(ingest_epochs_chunks)
 acquisition_worker(acquisition.ExperimentLog)
 acquisition_worker(acquisition.SubjectEnterExit)
 acquisition_worker(acquisition.SubjectWeight)

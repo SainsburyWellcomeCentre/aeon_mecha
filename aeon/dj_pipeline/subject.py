@@ -162,14 +162,6 @@ class SubjectComment(dj.Imported):
     """
 
 
-@schema
-class ExperimentSubject(dj.Manual):
-    definition = """
-    -> Subject
-    experiment_name: varchar(32)  # e.g. social-AEON3
-    """
-
-
 # ------------------- PYRAT SYNCHRONIZATION --------------------
 
 
