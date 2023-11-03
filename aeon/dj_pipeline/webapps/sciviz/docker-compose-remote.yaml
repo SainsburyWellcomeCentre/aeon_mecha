@@ -1,4 +1,4 @@
-# cd aeon/dj_pipeline/webapps/sciviz/ 
+# cd aeon/dj_pipeline/webapps/sciviz/
 # HOST_UID=$(id -u) docker-compose -f docker-compose-remote.yaml up -d
 # Access https://www.swc.ucl.ac.uk/aeon/
 
@@ -23,7 +23,7 @@ services:
       - |
         apk add --update git g++ &&
         git clone -b datajoint_pipeline https://github.com/SainsburyWellcomeCentre/aeon_mecha.git &&
-        pip install -e ./aeon_mecha &&
+        pip install -e ./aeon_mecha --ignore-requires-python &&
         gunicorn --bind 0.0.0.0:$${PHARUS_PORT} --workers=4 pharus.server:app
 
     # ports:
