@@ -220,7 +220,7 @@ class PyratIngestion(dj.Imported):
                 eartag_or_id = animal_entry["eartag_or_id"]
                 comment_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/comments")
                 for comment in comment_resp:
-                    if comment["content"] is None:
+                    if comment["attributes"]:
                         first_attr = comment["attributes"][0]
                         if (
                             first_attr["label"].lower() == "project"
