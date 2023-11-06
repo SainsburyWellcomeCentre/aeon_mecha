@@ -162,6 +162,42 @@ class SubjectComment(dj.Imported):
     """
 
 
+@schema
+class SubjectReferenceWeight(dj.Manual):
+    definition = """
+    -> SubjectDetail
+    ---
+    reference_weight=null: float  # animal's reference weight for use in experiment
+    last_updated_time: datetime   # last time (in UTC) when the reference weight was updated
+    """
+
+    @classmethod
+    def get_reference_weight(cls, subject_name):
+        subj_key = {"subject": subject_name}
+
+        food_restrict_query = SubjectProcedure & subj_key & "procedure_name = 'A99 - food restriction'"
+        if food_restrict_query:
+            ref_date = food_restrict_query.fetch("procedure_date", order_by="procedure_date DESC", limit=1)[
+                0
+            ]
+        else:
+            ref_date = datetime.now().date()
+
+        weight_query = SubjectWeight & subj_key & f"weight_time < '{ref_date}'"
+        ref_weight = (
+            weight_query.fetch("weight", order_by="weight_time DESC", limit=1)[0] if weight_query else None
+        )
+
+        entry = {
+            "subject": subject_name,
+            "reference_weight": ref_weight,
+            "last_updated_time": datetime.utcnow(),
+        }
+        cls.update1(entry) if cls & {"subject": subject_name} else cls.insert1(entry)
+
+        return ref_weight
+
+
 # ------------------- PYRAT SYNCHRONIZATION --------------------
 
 
@@ -304,6 +340,9 @@ class PyratCommentWeightProcedure(dj.Imported):
             skip_duplicates=True,
             allow_direct_insert=True,
         )
+
+        # compute/update reference weight
+        SubjectReferenceWeight.get_reference_weight(eartag_or_id)
 
         completion_time = datetime.utcnow()
         self.insert1(
