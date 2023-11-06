@@ -162,6 +162,42 @@ class SubjectComment(dj.Imported):
     """
 
 
+@schema
+class SubjectReferenceWeight(dj.Manual):
+    definition = """
+    -> SubjectDetail
+    ---
+    reference_weight=null: float  # animal's reference weight for use in experiment
+    last_updated_time: datetime   # last time (in UTC) when the reference weight was updated
+    """
+
+    @classmethod
+    def get_reference_weight(cls, subject_name):
+        subj_key = {"subject": subject_name}
+
+        food_restrict_query = SubjectProcedure & subj_key & "procedure_name = 'A99 - food restriction'"
+        if food_restrict_query:
+            ref_date = food_restrict_query.fetch("procedure_date", order_by="procedure_date DESC", limit=1)[
+                0
+            ]
+        else:
+            ref_date = datetime.now().date()
+
+        weight_query = SubjectWeight & subj_key & f"weight_time < '{ref_date}'"
+        ref_weight = (
+            weight_query.fetch("weight", order_by="weight_time DESC", limit=1)[0] if weight_query else None
+        )
+
+        entry = {
+            "subject": subject_name,
+            "reference_weight": ref_weight,
+            "last_updated_time": datetime.utcnow(),
+        }
+        cls.update1(entry) if cls & {"subject": subject_name} else cls.insert1(entry)
+
+        return ref_weight
+
+
 # ------------------- PYRAT SYNCHRONIZATION --------------------
 
 
@@ -194,12 +230,12 @@ class PyratIngestion(dj.Imported):
     )
 
     auto_schedule = True
-    schedule_interval = 1  # schedule interval in number of days
+    schedule_interval = 12  # schedule interval in number of hours
 
     def _auto_schedule(self):
         utc_now = datetime.utcnow()
 
-        next_task_schedule_time = utc_now + timedelta(days=self.schedule_interval)
+        next_task_schedule_time = utc_now + timedelta(hours=self.schedule_interval)
         if (
             PyratIngestionTask
             & f"pyrat_task_scheduled_time BETWEEN '{utc_now}' AND '{next_task_schedule_time}'"
@@ -220,7 +256,7 @@ class PyratIngestion(dj.Imported):
                 eartag_or_id = animal_entry["eartag_or_id"]
                 comment_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/comments")
                 for comment in comment_resp:
-                    if comment["content"] is None:
+                    if comment["attributes"]:
                         first_attr = comment["attributes"][0]
                         if (
                             first_attr["label"].lower() == "project"
@@ -304,6 +340,9 @@ class PyratCommentWeightProcedure(dj.Imported):
             skip_duplicates=True,
             allow_direct_insert=True,
         )
+
+        # compute/update reference weight
+        SubjectReferenceWeight.get_reference_weight(eartag_or_id)
 
         completion_time = datetime.utcnow()
         self.insert1(
