@@ -46,10 +46,25 @@ SciViz:
           columns: 1
           row_height: 1000
           components:
+            Pyrat Subjects:
+              route: /colony_page_pyrat_subjects
+              x: 0
+              y: 0
+              height: 0.6
+              width: 1
+              type: antd-table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_subject):
+                    query = aeon_subject.Subject * aeon_subject.SubjectDetail * aeon_subject.SubjectReferenceWeight.proj('reference_weight', min_since_last_update='TIMESTAMPDIFF(MINUTE, last_updated_time, UTC_TIMESTAMP())') & 'available = 1'
+                    return {'query': query.proj(..., '-available'), 'fetch_args': []}
+
             Pyrat User Entry:
               route: /colony_page_pyrat_user_entry
               x: 0
-              y: 0
+              y: 0.6
               height: 0.3
               width: 1
               type: form
@@ -65,20 +80,20 @@ SciViz:
                 - type: attribute
                   input: Pyrat Responsible ID
                   destination: responsible_id
-            Pyrat Subjects:
-              route: /colony_page_pyrat_subjects
-              x: 0
-              y: 0.3
-              height: 0.6
-              width: 1
-              type: antd-table
-              restriction: >
-                def restriction(**kwargs):
-                    return dict(**kwargs)
-              dj_query: >
-                def dj_query(aeon_subject):
-                    query = aeon_subject.Subject * aeon_subject.SubjectDetail * aeon_subject.SubjectReferenceWeight.proj('reference_weight', min_since_last_update='TIMESTAMPDIFF(MINUTE, last_updated_time, UTC_TIMESTAMP())') & 'available = 1'
-                    return {'query': query, 'fetch_args': []}
+
+              Pyrat Sync Task:
+                route: /colony_page_pyrat_sync_task
+                x: 0
+                y: 0.9
+                height: 0.3
+                width: 1
+                type: form
+                tables:
+                  - aeon_subject.PyratIngestionTask
+                map:
+                  - type: attribute
+                    input: Task Scheduled Time
+                    destination: pyrat_task_scheduled_time
 
     ExperimentEntry:
       route: /experiment_entry

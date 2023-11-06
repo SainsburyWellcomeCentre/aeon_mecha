@@ -433,6 +433,7 @@ _pyrat_animal_attributes = [
     "import_order_request_id",
 ]
 
+
 def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
     base_url = "https://swc.pyrat.cloud/api/v3/"
     pyrat_system_token = os.getenv("PYRAT_SYSTEM_TOKEN")
@@ -461,6 +462,8 @@ def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
     response = session.get(base_url + endpoint + params_str, **kwargs)
 
     if response.status_code != 200:
-        raise requests.exceptions.HTTPError(f'PyRat API errored out with response code: {response.status_code}')
+        raise requests.exceptions.HTTPError(
+            f"PyRat API errored out with response code: {response.status_code}"
+        )
 
     return response.json()
