@@ -312,46 +312,49 @@ class PyratCommentWeightProcedure(dj.Imported):
         logger.info("Extracting weights/comments/procedures")
 
         eartag_or_id = key["subject"]
-        comment_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/comments")
-        if comment_resp == {"reponse code": 404}:
-            SubjectDetail.update1(
+        try:
+            comment_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/comments")
+        except requests.exceptions.HTTPError as e:
+            if e.args[0].endswith("response code: 404"):
+                SubjectDetail.update1(
+                    {
+                        **key,
+                        "available": False,
+                    }
+                )
+            else:
+                raise e
+        else:
+            for cmt in comment_resp:
+                cmt["subject"] = eartag_or_id
+                cmt["attributes"] = json.dumps(cmt["attributes"], default=str)
+            SubjectComment.insert(comment_resp, skip_duplicates=True, allow_direct_insert=True)
+
+            weight_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/weights")
+            SubjectWeight.insert(
+                [{**v, "subject": eartag_or_id} for v in weight_resp],
+                skip_duplicates=True,
+                allow_direct_insert=True,
+            )
+
+            procedure_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/procedures")
+            SubjectProcedure.insert(
+                [{**v, "subject": eartag_or_id} for v in procedure_resp],
+                skip_duplicates=True,
+                allow_direct_insert=True,
+            )
+
+            # compute/update reference weight
+            SubjectReferenceWeight.get_reference_weight(eartag_or_id)
+        finally:
+            completion_time = datetime.utcnow()
+            self.insert1(
                 {
                     **key,
-                    "available": False,
+                    "execution_time": execution_time,
+                    "execution_duration": (completion_time - execution_time).total_seconds(),
                 }
             )
-            return
-
-        for cmt in comment_resp:
-            cmt["subject"] = eartag_or_id
-            cmt["attributes"] = json.dumps(cmt["attributes"], default=str)
-        SubjectComment.insert(comment_resp, skip_duplicates=True, allow_direct_insert=True)
-
-        weight_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/weights")
-        SubjectWeight.insert(
-            [{**v, "subject": eartag_or_id} for v in weight_resp],
-            skip_duplicates=True,
-            allow_direct_insert=True,
-        )
-
-        procedure_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/procedures")
-        SubjectProcedure.insert(
-            [{**v, "subject": eartag_or_id} for v in procedure_resp],
-            skip_duplicates=True,
-            allow_direct_insert=True,
-        )
-
-        # compute/update reference weight
-        SubjectReferenceWeight.get_reference_weight(eartag_or_id)
-
-        completion_time = datetime.utcnow()
-        self.insert1(
-            {
-                **key,
-                "execution_time": execution_time,
-                "execution_duration": (completion_time - execution_time).total_seconds(),
-            }
-        )
 
 
 @schema
