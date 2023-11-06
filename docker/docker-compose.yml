@@ -52,7 +52,8 @@ services:
   pyrat_worker:
     <<: *aeon-ingest-common
     command: [ "aeon_ingest", "pyrat_worker" ]
-
+    env_file: ./.env
+    
   streams_worker:
     <<: *aeon-ingest-common
     depends_on:

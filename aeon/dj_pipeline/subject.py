@@ -1,10 +1,10 @@
+import json
 import os
 import time
-
-import requests
-import json
-import datajoint as dj
 from datetime import datetime, timedelta
+
+import datajoint as dj
+import requests
 
 from . import get_schema_name, lab
 
@@ -65,7 +65,7 @@ class SubjectDetail(dj.Imported):
             "l": 10,
             "eartag": eartag_or_id,
         }
-        animal_resp = get_pyrat_data(endpoint=f"animals", params=params)
+        animal_resp = get_pyrat_data(endpoint="animals", params=params)
         if len(animal_resp) == 0:
             if self & key:
                 self.update1(
@@ -203,7 +203,7 @@ class SubjectReferenceWeight(dj.Manual):
 
 @schema
 class PyratIngestionTask(dj.Manual):
-    """Task to sync new animals from PyRAT"""
+    """Task to sync new animals from PyRAT."""
 
     definition = """
     pyrat_task_scheduled_time: datetime  # (UTC) scheduled time for task execution
@@ -212,14 +212,14 @@ class PyratIngestionTask(dj.Manual):
 
 @schema
 class PyratIngestion(dj.Imported):
-    """Ingestion of new animals from PyRAT"""
+    """Ingestion of new animals from PyRAT."""
 
     definition = """
     -> PyratIngestionTask
     ---
     execution_time: datetime  # (UTC) time of task execution
     execution_duration: float  # (s) duration of task execution
-    new_pyrat_entry_count: int  # number of new PyRAT subject ingested in this round of ingestion 
+    new_pyrat_entry_count: int  # number of new PyRAT subject ingested in this round of ingestion
     """
 
     key_source = (
@@ -250,7 +250,7 @@ class PyratIngestion(dj.Imported):
         new_eartags = []
         for responsible_id in lab.User.fetch("responsible_id"):
             # 1 - retrieve all animals from this user
-            animal_resp = get_pyrat_data(endpoint="animals", params=dict(responsible_id=responsible_id))
+            animal_resp = get_pyrat_data(endpoint="animals", params={"responsible_id": responsible_id})
             for animal_entry in animal_resp:
                 # 2 - find animal with comment - Project Aeon
                 eartag_or_id = animal_entry["eartag_or_id"]
@@ -295,7 +295,7 @@ class PyratIngestion(dj.Imported):
 
 @schema
 class PyratCommentWeightProcedure(dj.Imported):
-    """Ingestion of new animals from PyRAT"""
+    """Ingestion of new animals from PyRAT."""
 
     definition = """
     -> PyratIngestion
@@ -309,7 +309,7 @@ class PyratCommentWeightProcedure(dj.Imported):
 
     def make(self, key):
         execution_time = datetime.utcnow()
-        logger.info(f"Extracting weights/comments/procedures")
+        logger.info("Extracting weights/comments/procedures")
 
         eartag_or_id = key["subject"]
         comment_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/comments")
@@ -356,14 +356,12 @@ class PyratCommentWeightProcedure(dj.Imported):
 
 @schema
 class CreatePyratIngestionTask(dj.Computed):
-    definition = """ 
+    definition = """
     -> lab.User
     """
 
     def make(self, key):
-        """
-        Create one new PyratIngestionTask for every newly added user
-        """
+        """Create one new PyratIngestionTask for every newly added users."""
         PyratIngestionTask.insert1({"pyrat_task_scheduled_time": datetime.utcnow()})
         time.sleep(1)
         self.insert1(key)
@@ -432,7 +430,6 @@ _pyrat_animal_attributes = [
     "import_order_request_id",
 ]
 
-
 def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
     base_url = "https://swc.pyrat.cloud/api/v3/"
     pyrat_system_token = os.getenv("PYRAT_SYSTEM_TOKEN")
@@ -440,7 +437,7 @@ def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
 
     if pyrat_system_token is None or pyrat_user_token is None:
         raise ValueError(
-            f"The PYRAT tokens must be defined as an environment variable named 'PYRAT_SYSTEM_TOKEN' and 'PYRAT_USER_TOKEN'"
+            "The PYRAT tokens must be defined as an environment variable named 'PYRAT_SYSTEM_TOKEN' and 'PYRAT_USER_TOKEN'"
         )
 
     session = requests.Session()
@@ -460,4 +457,7 @@ def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
 
     response = session.get(base_url + endpoint + params_str, **kwargs)
 
-    return response.json() if response.status_code == 200 else {"reponse code": response.status_code}
+    if response.status_code != 200:
+        raise requests.exceptions.HTTPError(f'PyRat API errored out with response code: {response.status_code}')
+
+    return response.json()
