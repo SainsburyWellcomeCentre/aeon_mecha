@@ -230,12 +230,12 @@ class PyratIngestion(dj.Imported):
     )
 
     auto_schedule = True
-    schedule_interval = 1  # schedule interval in number of days
+    schedule_interval = 12  # schedule interval in number of hours
 
     def _auto_schedule(self):
         utc_now = datetime.utcnow()
 
-        next_task_schedule_time = utc_now + timedelta(days=self.schedule_interval)
+        next_task_schedule_time = utc_now + timedelta(hours=self.schedule_interval)
         if (
             PyratIngestionTask
             & f"pyrat_task_scheduled_time BETWEEN '{utc_now}' AND '{next_task_schedule_time}'"
