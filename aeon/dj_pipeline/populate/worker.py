@@ -101,7 +101,7 @@ pyrat_worker = DataJointWorker(
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
     run_duration=-1,
-    sleep_duration=1200,
+    sleep_duration=10,
 )
 
 pyrat_worker(subject.CreatePyratIngestionTask)
