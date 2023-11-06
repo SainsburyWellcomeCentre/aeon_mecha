@@ -26,7 +26,7 @@ SciViz:
               kwargs['end_time'] = datetime.utcfromtimestamp(int(kwargs.pop('endTime')))
               kwargs['start_frame'] = int(kwargs.pop('start_frame'))
               kwargs['chunk_size'] = int(kwargs.pop('chunk_size'))
-                
+
               return (
                   NumpyEncoder.dumps(
                       retrieve_video_frames(**kwargs)
@@ -46,39 +46,29 @@ SciViz:
           columns: 1
           row_height: 1000
           components:
-            Colony Entry:
-              route: /colony_form
+            Pyrat User Entry:
+              route: /colony_page_pyrat_user_entry
               x: 0
               y: 0
-              height: 0.5
+              height: 0.3
               width: 1
               type: form
               tables:
-                - aeon_lab.Colony
-                - aeon_subject.Subject
+                - aeon_lab.User
               map:
                 - type: attribute
-                  input: Subject
-                  destination: subject
+                  input: SWC Username
+                  destination: user
                 - type: attribute
-                  input: Reference Weight
-                  destination: reference_weight
+                  input: Pyrat Responsible Owner
+                  destination: responsible_owner
                 - type: attribute
-                  input: Sex
-                  destination: sex
-                - type: attribute
-                  input: Date of Birth
-                  destination: subject_birth_date
-                - type: attribute
-                  input: Note
-                  destination: note
-                - type: attribute
-                  input: Subject Description
-                  destination: subject_description
-            Colony:
-              route: /colony_page_table
+                  input: Pyrat Responsible ID
+                  destination: responsible_id
+            Pyrat Subjects:
+              route: /colony_page_pyrat_subjects
               x: 0
-              y: 0.5
+              y: 0.3
               height: 0.6
               width: 1
               type: antd-table
@@ -86,8 +76,10 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_lab):
-                    return {'query': aeon_lab.Colony(), 'fetch_args': []}
+                def dj_query(aeon_subject):
+                    query = aeon_subject.Subject * aeon_subject.SubjectDetail & 'available = 1'
+                    return {'query': query, 'fetch_args': []}
+
     ExperimentEntry:
       route: /experiment_entry
       grids:
@@ -96,7 +88,7 @@ SciViz:
           columns: 1
           row_height: 1000
           components:
-            Experiment Entry:
+            New Experiment:
               route: /exp_form
               x: 0
               y: 0
@@ -125,7 +117,7 @@ SciViz:
                   input: Experiment Type
                   destination: aeon_acquisition.ExperimentType
 
-            Experiment Subject Entry:
+            New Experiment Subject:
               route: /exp_subject_form
               x: 0
               y: 0.5
@@ -141,30 +133,6 @@ SciViz:
                 - type: table
                   input: Subject in the experiment
                   destination: aeon_subject.Subject
-
-            Experiment Directory Entry:
-              route: /exp_subject_dir_form
-              x: 0
-              y: 0.8
-              height: 0.5
-
-              width: 1
-              type: form
-              tables:
-                - aeon_acquisition.Experiment.Directory
-              map:
-                - type: table
-                  input: Experiment Name
-                  destination: aeon_acquisition.Experiment
-                - type: table
-                  input: Directory Type
-                  destination: aeon_acquisition.DirectoryType
-                - type: table
-                  input: Pipeline Repository
-                  destination: aeon_acquisition.PipelineRepository
-                - type: attribute
-                  input: Full Path to Experiment Data Directory
-                  destination: directory_path
 
     LookupEntry:
       route: /lab_entry
@@ -598,7 +566,7 @@ SciViz:
                   stream_time_selector,
                 ]
               restriction: >
-                def restriction(**kwargs):  
+                def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
                 def dj_query(aeon_acquisition):

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pathlib
 
 from aeon.dj_pipeline import repository_config
