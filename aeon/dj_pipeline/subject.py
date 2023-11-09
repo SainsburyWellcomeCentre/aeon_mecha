@@ -175,7 +175,7 @@ class SubjectReferenceWeight(dj.Manual):
     def get_reference_weight(cls, subject_name):
         subj_key = {"subject": subject_name}
 
-        food_restrict_query = SubjectProcedure & subj_key & "procedure_name = 'A99 - food restriction'"
+        food_restrict_query = SubjectProcedure & subj_key & "procedure_name = 'R02 - food restriction'"
         if food_restrict_query:
             ref_date = food_restrict_query.fetch("procedure_date", order_by="procedure_date DESC", limit=1)[
                 0
