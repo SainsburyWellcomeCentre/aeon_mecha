@@ -275,7 +275,9 @@ class Epoch(dj.Manual):
         """
 
         from .utils import streams_maker
-        from .utils.load_metadata import extract_epoch_config, ingest_epoch_metadata, insert_device_types
+        from .utils.load_metadata import (extract_epoch_config,
+                                          ingest_epoch_metadata,
+                                          insert_device_types)
 
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
@@ -1041,7 +1043,7 @@ def _get_all_chunks(experiment_name, device_name):
         as_posix=True,
     )
     raw_data_dirs = {
-        dir_type: data_dir
+        dir_type: pathlib.Path(data_dir)
         for dir_type, data_dir in zip(["quality-control", "raw"], raw_data_dirs)
         if data_dir
     }
@@ -1050,7 +1052,7 @@ def _get_all_chunks(experiment_name, device_name):
         raise ValueError(f"No raw data directory found for experiment: {experiment_name}")
 
     chunkdata = io_api.load(
-        root=raw_data_dirs.values(),
+        root=list(raw_data_dirs.values()),
         reader=io_reader.Chunk(pattern=device_name + "*", extension="csv"),
     )
 
@@ -1091,7 +1093,8 @@ def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
         return subject_data
 
     if experiment_name == "social0-r1":
-        from aeon.dj_pipeline.create_experiments.create_socialexperiment_0 import fixID
+        from aeon.dj_pipeline.create_experiments.create_socialexperiment_0 import \
+            fixID
 
         sessdf = subject_data.copy()
         sessdf = sessdf[~sessdf.id.str.contains("test")]
