@@ -36,6 +36,7 @@ dependencies = [
   "numpy>=1.21.0, <2",
   "opencv-python",
   "pandas>=1.3",
+  "pillow",
   "plotly",
   "pyarrow",
   "pydotplus",
@@ -138,16 +139,32 @@ extend-exclude = [
 "aeon/dj_pipeline/*" = [
   "B006",
   "B021",
-  "D100", # skip adding docstrings for module
-  "D101", # skip adding docstrings for table class since it is added inside definition
-  "D102", # skip adding docstrings for make function
-  "D103", # skip adding docstrings for public functions
-  "D104", # ignore missing docstring in public package
-  "D106", # skip adding docstrings for Part tables
+  "D100",    # skip adding docstrings for module
+  "D101",    # skip adding docstrings for table class since it is added inside definition
+  "D102",    # skip adding docstrings for make function
+  "D103",    # skip adding docstrings for public functions
+  "D104",    # ignore missing docstring in public package
+  "D106",    # skip adding docstrings for Part tables
   "E501",
-  "F401", # ignore unused import errors
-  "B905", # ignore unused import errors
-  "E999", "S324", "E722", "S110", "F821", "B904", "UP038", "S607", "S605", "D205", "D202", "F403", "PLR2004", "SIM108", "PLW0127", "PLR2004", "I001"
+  "F401",    # ignore unused import errors
+  "B905",    # ignore unused import errors
+  "E999",
+  "S324",
+  "E722",
+  "S110",
+  "F821",
+  "B904",
+  "UP038",
+  "S607",
+  "S605",
+  "D205",
+  "D202",
+  "F403",
+  "PLR2004",
+  "SIM108",
+  "PLW0127",
+  "PLR2004",
+  "I001",
 ]
 
 [tool.ruff.pydocstyle]
@@ -176,6 +193,6 @@ reportShadowedImports = "error"
 # *Note*: we may want to set all 'ReportOptional*' rules to "none", but leaving 'em default for now
 venvPath = "."
 venv = ".venv"
-exclude= ["aeon/dj_pipeline/*"]
+exclude = ["aeon/dj_pipeline/*"]
 [tool.pytest.ini_options]
 markers = ["api"]
