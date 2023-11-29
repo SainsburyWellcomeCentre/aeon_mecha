@@ -405,8 +405,6 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
         device_sn (dict): {"device_name", "serial_number"}
          e.g. {'CameraTop': '21053810'}
     """
-    import os
-
     from aeon.io import api
 
     metadata_yml_filepath = Path(metadata_yml_filepath)
@@ -420,8 +418,7 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
     )
 
     # Store the mapper dictionary here
-    repository_root = os.popen("git rev-parse --show-toplevel").read().strip()  # repo root path
-    filename = Path(repository_root + "/aeon/dj_pipeline/create_experiments/device_type_mapper.json")
+    filename = Path(__file__).parent.parent / "create_experiments/device_type_mapper.json"
 
     device_type_mapper = {}  # {device_name: device_type}
     device_sn = {}  # {device_name: device_sn}
