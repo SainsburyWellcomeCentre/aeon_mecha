@@ -1,6 +1,7 @@
 from dotmap import DotMap
 
 import aeon.schema.core as stream
+from aeon.io import reader
 from aeon.io.device import Device
 from aeon.schema import foraging, octagon
 
@@ -56,4 +57,18 @@ octagon01 = DotMap(
         Device("Wall7", octagon.Wall),
         Device("Wall8", octagon.Wall),
     ]
+)
+
+social01 = exp02
+social01.Patch1.BeamBreak = reader.BitmaskEvent(
+    pattern="Patch1_32", value=0x22, tag="BeamBroken"
+)
+social01.Patch2.BeamBreak = reader.BitmaskEvent(
+    pattern="Patch2_32", value=0x22, tag="BeamBroken"
+)
+social01.Patch1.DeliverPellet = reader.BitmaskEvent(
+    pattern="Patch1_35", value=0x1, tag="TriggeredPellet"
+)
+social01.Patch2.DeliverPellet = reader.BitmaskEvent(
+    pattern="Patch2_35", value=0x1, tag="TriggeredPellet"
 )
