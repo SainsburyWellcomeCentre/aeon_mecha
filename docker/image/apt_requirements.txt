@@ -7,3 +7,4 @@ nvi
 openssh-client
 procps
 tmux
+libtiff5
