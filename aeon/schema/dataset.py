@@ -60,15 +60,7 @@ octagon01 = DotMap(
 )
 
 social01 = exp02
-social01.Patch1.BeamBreak = reader.BitmaskEvent(
-    pattern="Patch1_32", value=0x22, tag="BeamBroken"
-)
-social01.Patch2.BeamBreak = reader.BitmaskEvent(
-    pattern="Patch2_32", value=0x22, tag="BeamBroken"
-)
-social01.Patch1.DeliverPellet = reader.BitmaskEvent(
-    pattern="Patch1_35", value=0x1, tag="TriggeredPellet"
-)
-social01.Patch2.DeliverPellet = reader.BitmaskEvent(
-    pattern="Patch2_35", value=0x1, tag="TriggeredPellet"
-)
+social01.Patch1.BeamBreak = reader.BitmaskEvent(pattern="Patch1_32", value=0x22, tag="BeamBroken")
+social01.Patch2.BeamBreak = reader.BitmaskEvent(pattern="Patch2_32", value=0x22, tag="BeamBroken")
+social01.Patch1.DeliverPellet = reader.BitmaskEvent(pattern="Patch1_35", value=0x1, tag="TriggeredPellet")
+social01.Patch2.DeliverPellet = reader.BitmaskEvent(pattern="Patch2_35", value=0x1, tag="TriggeredPellet")

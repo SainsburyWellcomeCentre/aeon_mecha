@@ -23,8 +23,6 @@ _ref_device_mapping = {
     "social0-r1": "FrameTop",
     "exp0.2-r0": "CameraTop",
     "oct1.0-r0": "CameraTop",
-    "social0.1-a3": "CameraTop",
-    "social0.1-a4": "CameraTop"
 }
 
 _device_schema_mapping = {
@@ -33,7 +31,7 @@ _device_schema_mapping = {
     "exp0.2-r0": aeon_schema.exp02,
     "oct1.0-r0": aeon_schema.octagon01,
     "social0.1-a3": aeon_schema.social01,
-    "social0.1-a4": aeon_schema.social01
+    "social0.1-a4": aeon_schema.social01,
 }
 
 
@@ -95,7 +93,7 @@ class DirectoryType(dj.Lookup):
 @schema
 class Experiment(dj.Manual):
     definition = """
-    experiment_name: varchar(32)  # e.g exp0-r0
+    experiment_name: varchar(32)  # e.g exp0-aeon3
     ---
     experiment_start_time: datetime(6)  # datetime of the start of this experiment
     experiment_description: varchar(1000)
@@ -272,6 +270,12 @@ class Epoch(dj.Manual):
         metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
         """
 
+    class DeviceType(dj.Part):
+        definition = """  # Device type(s) used in a particular acquisition epoch
+        -> master
+        device_type: varchar(36)
+        """
+
     @classmethod
     def ingest_epochs(cls, experiment_name, start=None, end=None):
         """Ingest epochs for the specified "experiment_name". Ingest only epochs that start in between the specified (start, end) time. If not specified, ingest all epochs.
@@ -279,9 +283,7 @@ class Epoch(dj.Manual):
         """
 
         from .utils import streams_maker
-        from .utils.load_metadata import (extract_epoch_config,
-                                          ingest_epoch_metadata,
-                                          insert_device_types)
+        from .utils.load_metadata import extract_epoch_config, ingest_epoch_metadata, insert_device_types
 
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
@@ -359,10 +361,17 @@ class Epoch(dj.Manual):
                         streams_maker.main()
                         with cls.connection.transaction:
                             # Insert devices' installation/removal/settings
-                            ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
+                            epoch_device_types = ingest_epoch_metadata(
+                                experiment_name, metadata_yml_filepath
+                            )
+                            if epoch_device_types is not None:
+                                cls.DeviceType.insert(
+                                    epoch_key | {"device_type": n} for n in epoch_device_types
+                                )
                         epoch_list.append(epoch_key)
                     except Exception as e:
                         (cls.Config & epoch_key).delete_quick()
+                        (cls.DeviceType & epoch_key).delete_quick()
                         (cls & epoch_key).delete_quick()
                         raise e
 
@@ -452,18 +461,18 @@ class Chunk(dj.Manual):
                 epoch_end = (EpochEnd & epoch_key).fetch1("epoch_end")
                 chunk_end = min(chunk_end, epoch_end)
 
+            if chunk_start in chunk_starts:
+                # handle cases where two chunks with identical start_time
+                # (starts in the same hour) but from 2 consecutive epochs
+                # using epoch_start as chunk_start in this case
+                chunk_start = epoch_start
+
             # --- insert to Chunk ---
             chunk_key = {"experiment_name": experiment_name, "chunk_start": chunk_start}
 
             if cls.proj() & chunk_key:
                 # skip over those already ingested
                 continue
-
-            if chunk_start in chunk_starts:
-                # handle cases where two chunks with identical start_time
-                # (starts in the same hour) but from 2 consecutive epochs
-                # using epoch_start as chunk_start in this case
-                chunk_key["chunk_start"] = epoch_start
 
             # chunk file and directory
             raw_data_dir, directory, repo_path = _match_experiment_directory(
@@ -1097,8 +1106,7 @@ def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
         return subject_data
 
     if experiment_name == "social0-r1":
-        from aeon.dj_pipeline.create_experiments.create_socialexperiment_0 import \
-            fixID
+        from aeon.dj_pipeline.create_experiments.create_socialexperiment_0 import fixID
 
         sessdf = subject_data.copy()
         sessdf = sessdf[~sessdf.id.str.contains("test")]

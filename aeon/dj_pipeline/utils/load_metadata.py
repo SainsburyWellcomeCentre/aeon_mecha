@@ -57,12 +57,12 @@ def insert_stream_types():
         streams.StreamType.insert(stream_entries, skip_duplicates=True)
 
 
-def insert_device_types(schema: DotMap, metadata_yml_filepath: Path):
+def insert_device_types(device_schema: DotMap, metadata_yml_filepath: Path):
     """Use dataset.schema and metadata.yml to insert into streams.DeviceType and streams.Device. Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml. It then creates new device tables under streams schema."""
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
-    device_info: dict[dict] = get_device_info(schema)
-    device_type_mapper, device_sn = get_device_mapper(schema, metadata_yml_filepath)
+    device_info: dict[dict] = get_device_info(device_schema)
+    device_type_mapper, device_sn = get_device_mapper(device_schema, metadata_yml_filepath)
 
     # Add device type to device_info. Only add if device types that are defined in Metadata.yml
     device_info = {
@@ -192,10 +192,11 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
         # if identical commit -> no changes
         return
 
-    schema = acquisition._device_schema_mapping[experiment_name]
-    device_type_mapper, _ = get_device_mapper(schema, metadata_yml_filepath)
+    device_schema = acquisition._device_schema_mapping[experiment_name]
+    device_type_mapper, _ = get_device_mapper(device_schema, metadata_yml_filepath)
 
     # Insert into each device table
+    epoch_device_types = []
     device_list = []
     device_removal_list = []
 
@@ -204,7 +205,16 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             device_sn = device_config.get("SerialNumber", device_config.get("PortName"))
             device_key = {"device_serial_number": device_sn}
 
+            if not (streams.Device & device_key):
+                logger.warning(
+                    f"Device {device_name} (serial number: {device_sn}) is not yet registered in streams.Device. Skipping..."
+                )
+                # skip if this device (with a serial number) is not yet inserted in streams.Device
+                continue
+
             device_list.append(device_key)
+            epoch_device_types.append(table.__name__)
+
             table_entry = {
                 "experiment_name": experiment_name,
                 **device_key,
@@ -221,7 +231,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                 for attribute_name, attribute_value in device_config.items()
             ]
 
-            """Check if this camera is currently installed. If the same camera serial number is currently installed check for any changes in configuration. If not, skip this"""
+            """Check if this device is currently installed. If the same device serial number is currently installed check for any changes in configuration. If not, skip this"""
             current_device_query = table - table.RemovalTime & experiment_key & device_key
 
             if current_device_query:
@@ -256,6 +266,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                         ],
                     }
                 )
+                epoch_device_types.remove(table.__name__)
 
             # Insert into table.
             table.insert1(table_entry, skip_duplicates=True)
@@ -276,6 +287,8 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
         for device_entry in device_removal_list:
             if device_removal(device_type, device_entry):
                 table.RemovalTime.insert1(device_entry)
+
+    return set(epoch_device_types)
 
 
 # region Get stream & device information
