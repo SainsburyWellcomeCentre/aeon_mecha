@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from aeon.io import api as io_api
-from aeon.schema import schemas as aeon_schema
+from aeon.io.binder import schemas as aeon_schema
 from aeon.io import reader as io_reader
 from aeon.analysis import utils as analysis_utils
 

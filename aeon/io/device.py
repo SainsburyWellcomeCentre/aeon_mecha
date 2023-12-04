@@ -3,16 +3,16 @@ import inspect
 
 def compositeStream(pattern, *args):
     """Merges multiple data streams into a single composite stream."""
-    composite = {}
+    registry = {}
     if args:
         for stream in args:
             if inspect.isclass(stream):
                 for method in vars(stream).values():
                     if isinstance(method, staticmethod):
-                        composite.update(method.__func__(pattern))
+                        registry.update(method.__func__(pattern))
             else:
-                composite.update(stream(pattern))
-    return composite
+                registry.update(stream(pattern))
+    return registry
 
 
 class Device:
@@ -31,11 +31,11 @@ class Device:
 
     def __init__(self, name, *args, pattern=None):
         self.name = name
-        self.stream = compositeStream(name if pattern is None else pattern, *args)
+        self.registry = compositeStream(name if pattern is None else pattern, *args)
 
     def __iter__(self):
-        if len(self.stream) == 1:
-            singleton = self.stream.get(self.name, None)
+        if len(self.registry) == 1:
+            singleton = self.registry.get(self.name, None)
             if singleton:
                 return iter((self.name, singleton))
-        return iter((self.name, self.stream))
+        return iter((self.name, self.registry))
