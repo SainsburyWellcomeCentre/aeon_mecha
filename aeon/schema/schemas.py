@@ -1,21 +1,19 @@
 from dotmap import DotMap
-
-import aeon.io.binder.core as stream
 from aeon.io.device import Device
-from aeon.io.binder import foraging, octagon
+from aeon.schema import core, foraging, octagon
 
 exp02 = DotMap(
     [
-        Device("Metadata", stream.metadata),
-        Device("ExperimentalMetadata", stream.environment, stream.messageLog),
-        Device("CameraTop", stream.video, stream.position, foraging.region),
-        Device("CameraEast", stream.video),
-        Device("CameraNest", stream.video),
-        Device("CameraNorth", stream.video),
-        Device("CameraPatch1", stream.video),
-        Device("CameraPatch2", stream.video),
-        Device("CameraSouth", stream.video),
-        Device("CameraWest", stream.video),
+        Device("Metadata", core.metadata),
+        Device("ExperimentalMetadata", core.environment, core.messageLog),
+        Device("CameraTop", core.video, core.position, foraging.region),
+        Device("CameraEast", core.video),
+        Device("CameraNest", core.video),
+        Device("CameraNorth", core.video),
+        Device("CameraPatch1", core.video),
+        Device("CameraPatch2", core.video),
+        Device("CameraSouth", core.video),
+        Device("CameraWest", core.video),
         Device("Nest", foraging.weight),
         Device("Patch1", foraging.patch),
         Device("Patch2", foraging.patch),
@@ -25,25 +23,25 @@ exp02 = DotMap(
 exp01 = DotMap(
     [
         Device("SessionData", foraging.session),
-        Device("FrameTop", stream.video, stream.position),
-        Device("FrameEast", stream.video),
-        Device("FrameGate", stream.video),
-        Device("FrameNorth", stream.video),
-        Device("FramePatch1", stream.video),
-        Device("FramePatch2", stream.video),
-        Device("FrameSouth", stream.video),
-        Device("FrameWest", stream.video),
-        Device("Patch1", foraging.depletionFunction, stream.encoder, foraging.feeder),
-        Device("Patch2", foraging.depletionFunction, stream.encoder, foraging.feeder),
+        Device("FrameTop", core.video, core.position),
+        Device("FrameEast", core.video),
+        Device("FrameGate", core.video),
+        Device("FrameNorth", core.video),
+        Device("FramePatch1", core.video),
+        Device("FramePatch2", core.video),
+        Device("FrameSouth", core.video),
+        Device("FrameWest", core.video),
+        Device("Patch1", foraging.depletionFunction, core.encoder, foraging.feeder),
+        Device("Patch2", foraging.depletionFunction, core.encoder, foraging.feeder),
     ]
 )
 
 octagon01 = DotMap(
     [
-        Device("Metadata", stream.metadata),
-        Device("CameraTop", stream.video, stream.position),
-        Device("CameraColorTop", stream.video),
-        Device("ExperimentalMetadata", stream.subject_state),
+        Device("Metadata", core.metadata),
+        Device("CameraTop", core.video, core.position),
+        Device("CameraColorTop", core.video),
+        Device("ExperimentalMetadata", core.subject_state),
         Device("Photodiode", octagon.photodiode),
         Device("OSC", octagon.OSC),
         Device("TaskLogic", octagon.TaskLogic),

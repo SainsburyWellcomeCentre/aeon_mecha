@@ -4,7 +4,7 @@ import pandas as pd
 
 import aeon.io.device as _device
 import aeon.io.reader as _reader
-import aeon.io.binder.core as _stream
+import aeon.schema.core as _stream
 
 
 class Area(_Enum):
