@@ -24,7 +24,7 @@ def encoder(pattern):
 
 def environment(pattern):
     """Metadata for environment mode and subjects."""
-    return _device.compositeStream(pattern, environment_state, subject_state)
+    return _device.register(pattern, environment_state, subject_state)
 
 
 def environment_state(pattern):
