@@ -5,7 +5,7 @@ from aeon.schema import core, foraging, octagon
 exp02 = DotMap(
     [
         Device("Metadata", core.metadata),
-        Device("ExperimentalMetadata", core.environment, core.messageLog),
+        Device("ExperimentalMetadata", core.environment, core.message_log),
         Device("CameraTop", core.video, core.position, foraging.region),
         Device("CameraEast", core.video),
         Device("CameraNest", core.video),
@@ -31,8 +31,8 @@ exp01 = DotMap(
         Device("FramePatch2", core.video),
         Device("FrameSouth", core.video),
         Device("FrameWest", core.video),
-        Device("Patch1", foraging.depletionFunction, core.encoder, foraging.feeder),
-        Device("Patch2", foraging.depletionFunction, core.encoder, foraging.feeder),
+        Device("Patch1", foraging.depletion_function, core.encoder, foraging.feeder),
+        Device("Patch2", foraging.depletion_function, core.encoder, foraging.feeder),
     ]
 )
 

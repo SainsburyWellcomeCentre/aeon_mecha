@@ -37,7 +37,7 @@ def subject_state(pattern):
     return {"SubjectState": _reader.Subject(f"{pattern}_SubjectState_*")}
 
 
-def messageLog(pattern):
+def message_log(pattern):
     """Message log data."""
     return {"MessageLog": _reader.Log(f"{pattern}_MessageLog_*")}
 

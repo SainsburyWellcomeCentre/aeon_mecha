@@ -58,7 +58,7 @@ def region(pattern):
     return {"Region": _RegionReader(f"{pattern}_201_*")}
 
 
-def depletionFunction(pattern):
+def depletion_function(pattern):
     """State of the linear depletion function for foraging patches."""
     return {"DepletionState": _PatchState(f"{pattern}_State_*")}
 
@@ -80,7 +80,7 @@ def deliver_pellet(pattern):
 
 def patch(pattern):
     """Data streams for a patch."""
-    return _device.register(pattern, depletionFunction, _stream.encoder, feeder)
+    return _device.register(pattern, depletion_function, _stream.encoder, feeder)
 
 
 def weight(pattern):
