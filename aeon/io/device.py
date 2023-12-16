@@ -23,7 +23,7 @@ class Device:
 
     Attributes:
         name (str): Name of the device.
-        args (Any): Data streams collected from the device.
+        args (any): A binder function or class that returns a dictionary of Readers.
         pattern (str, optional): Pattern used to find raw chunk files,
             usually in the format `<Device>_<DataStream>`.
     """
