@@ -37,11 +37,11 @@ def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
 
 def insert_stream_types():
     """Insert into streams.streamType table all streams in the dataset schema."""
-    from aeon.schema import dataset
+    from aeon.io import schemas as aeon_schema
 
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
-    schemas = [v for v in dataset.__dict__.values() if isinstance(v, DotMap)]
+    schemas = [v for v in aeon_schema.__dict__.values() if isinstance(v, DotMap)]
     for schema in schemas:
         stream_entries = get_stream_entries(schema)
 
