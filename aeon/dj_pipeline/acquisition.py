@@ -5,10 +5,10 @@ import datajoint as dj
 import numpy as np
 import pandas as pd
 
-from aeon.analysis import utils as analysis_utils
 from aeon.io import api as io_api
+from aeon.io import schemas as aeon_schema
 from aeon.io import reader as io_reader
-from aeon.schema import dataset as aeon_schema
+from aeon.analysis import utils as analysis_utils
 
 from . import get_schema_name
 from .utils import paths
