@@ -7,7 +7,7 @@ services:
   pharus:
     # cpus: 2.0
     mem_limit: 16g
-    image: jverswijver/pharus:0.8.5-PY_VER-3.9
+    image: datajoint/pharus:0.8.10-py3.9
     environment:
       # - FLASK_ENV=development # enables logging to console from Flask
       - PHARUS_SPEC_PATH=/main/specsheet.yaml # for dynamic utils spec
@@ -33,7 +33,7 @@ services:
   sci-viz:
     cpus: 2.0
     mem_limit: 4g
-    image: jverswijver/sci-viz:2.3.3-hotfix3
+    image: jverswijver/sci-viz:2.3.4
     environment:
       - CHOKIDAR_USEPOLLING=true
       - REACT_APP_DJSCIVIZ_BACKEND_PREFIX=/api
