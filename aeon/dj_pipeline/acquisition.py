@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from aeon.io import api as io_api
-from aeon.io import schemas as aeon_schema
+from aeon.schema import schemas as aeon_schemas
 from aeon.io import reader as io_reader
 from aeon.analysis import utils as analysis_utils
 
@@ -22,16 +22,15 @@ _ref_device_mapping = {
     "exp0.1-r0": "FrameTop",
     "social0-r1": "FrameTop",
     "exp0.2-r0": "CameraTop",
-    "oct1.0-r0": "CameraTop",
 }
 
 _device_schema_mapping = {
-    "exp0.1-r0": aeon_schema.exp01,
-    "social0-r1": aeon_schema.exp01,
-    "exp0.2-r0": aeon_schema.exp02,
-    "oct1.0-r0": aeon_schema.octagon01,
-    "social0.1-a3": aeon_schema.social01,
-    "social0.1-a4": aeon_schema.social01,
+    "exp0.1-r0": aeon_schemas.exp01,
+    "social0-r1": aeon_schemas.exp01,
+    "exp0.2-r0": aeon_schemas.exp02,
+    "oct1.0-r0": aeon_schemas.octagon01,
+    "social0.1-a3": aeon_schemas.social01,
+    "social0.1-a4": aeon_schemas.social01,
 }
 
 

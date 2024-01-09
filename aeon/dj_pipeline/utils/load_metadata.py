@@ -18,6 +18,7 @@ logger = dj.logger
 _weight_scale_rate = 100
 _weight_scale_nest = 1
 _colony_csv_path = pathlib.Path("/ceph/aeon/aeon/colony/colony.csv")
+_aeon_schemas = ["social01"]
 
 
 def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
@@ -36,12 +37,12 @@ def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
 
 
 def insert_stream_types():
-    """Insert into streams.streamType table all streams in the dataset schema."""
-    from aeon.io import schemas as aeon_schema
+    """Insert into streams.streamType table all streams in the aeon schemas."""
+    from aeon.schema import schemas as aeon_schemas
 
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
-    schemas = [v for v in aeon_schema.__dict__.values() if isinstance(v, DotMap)]
+    schemas = [getattr(aeon_schemas, aeon_schema) for aeon_schema in _aeon_schemas]
     for schema in schemas:
         stream_entries = get_stream_entries(schema)
 
@@ -58,7 +59,11 @@ def insert_stream_types():
 
 
 def insert_device_types(device_schema: DotMap, metadata_yml_filepath: Path):
-    """Use dataset.schema and metadata.yml to insert into streams.DeviceType and streams.Device. Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml. It then creates new device tables under streams schema."""
+    """
+    Use aeon.schema.schemas and metadata.yml to insert into streams.DeviceType and streams.Device.
+    Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml.
+    It then creates new device tables under streams schema.
+    """
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
     device_info: dict[dict] = get_device_info(device_schema)
@@ -431,7 +436,7 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
     )
 
     # Store the mapper dictionary here
-    filename = Path(__file__).parent.parent / "create_experiments/device_type_mapper.json"
+    filename = Path(__file__).parent.parent / "utils/device_type_mapper.json"
 
     device_type_mapper = {}  # {device_name: device_type}
     device_sn = {}  # {device_name: device_sn}
