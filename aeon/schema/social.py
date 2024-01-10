@@ -32,7 +32,7 @@ class Pose(_reader.Harp):
     ) -> pd.DataFrame:
         """Reads data from the Harp-binarized tracking file."""
         # Get config file from `file`, then bodyparts from config file.
-        model_dir = Path(file.stem.replace("_", "/")).parent
+        model_dir = Path(*Path(file.stem.replace("_", "/")).parent.parts[1:])
         config_file_dir = ceph_proc_dir / model_dir
         if not config_file_dir.exists():
             raise FileNotFoundError(f"Cannot find model dir {config_file_dir}")
