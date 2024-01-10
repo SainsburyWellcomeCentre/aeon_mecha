@@ -1,6 +1,6 @@
 from dotmap import DotMap
 from aeon.io.device import Device
-from aeon.schema import core, foraging, octagon
+from aeon.schema import core, foraging, octagon, social
 
 exp02 = DotMap(
     [
@@ -56,57 +56,31 @@ octagon01 = DotMap(
     ]
 )
 
-# All recorded social01 streams:
 
-# *Note* regiser 8 is always the harp heartbeat for any device that has this stream.
-
-# - Metadata.yml
-# - Environment_BlockState
-# - Environment_EnvironmentState
-# - Environment_LightEvents
-# - Environment_MessageLog
-# - Environment_SubjectState
-# - Environment_SubjectVisits
-# - Environment_SubjectWeight
-# - CameraTop (200, 201, avi, csv, <model_path>,)
-#     - 200: position
-#     - 201: region
-# - CameraNorth (avi, csv)
-# - CameraEast (avi, csv)
-# - CameraSouth (avi, csv)
-# - CameraWest (avi, csv)
-# - CameraPatch1 (avi, csv)
-# - CameraPatch2 (avi, csv)
-# - CameraPatch3 (avi, csv)
-# - CameraNest (avi, csv)
-# - ClockSynchronizer (8, 36)
-#     - 36: 
-# - Nest (200, 201, 202, 203)
-#     - 200: weight_raw
-#     - 201: weight_tare
-#     - 202: weight_filtered
-#     - 203: weight_baseline
-#     - 204: weight_subject
-# - Patch1 (8, 32, 35, 36, 87, 90, 91, 200, 201, 202, 203, State)
-#     - 32: beam_break
-#     - 35: delivery_set
-#     - 36: delivery_clear
-#     - 87: expansion_board
-#     - 90: enocder_read
-#     - 91: encoder_mode
-#     - 200: dispenser_state
-#     - 201: delivery_manual
-#     - 202: missed_pellet
-#     - 203: delivery_retry
-# - Patch2 (8, 32, 35, 36, 87, 90, 91, State)
-# - Patch3 (8, 32, 35, 36, 87, 90, 91, 200, 203, State)
-# - RfidEventsGate (8, 32, 35)
-#     - 32: entry_id
-#     - 35: hardware_notifications
-# - RfidEventsNest1 (8, 32, 35)
-# - RfidEventsNest2 (8, 32, 35)
-# - RfidEventsPatch1 (8, 32, 35)
-# - RfidEventsPatch2 (8, 32, 35)
-# - RfidEventsPatch3 (8, 32, 35)
-# - VideoController (8, 32, 33, 34, 35, 36, 45, 52)
-#     - 32: frame_number
+social01 = DotMap(
+    [
+        Device("Metadata", core.metadata),
+        Device("Environment", social.env_block_state_b, social.light_events_b, core.message_log),
+        Device("Subject", social.subject_state_b, social.subject_visits_b, social.subject_weight_b),
+        Device("CameraTop", core.video, social.camera_top_pos_b),
+        Device("CameraTop", core.video),
+        Device("CameraNorth", core.video),
+        Device("CameraSouth", core.video),
+        Device("CameraEast", core.video),
+        Device("CameraWest", core.video),
+        Device("CameraPatch1", core.video),
+        Device("CameraPatch2", core.video),
+        Device("CameraPatch3", core.video),
+        Device("CameraNest", core.video),
+        Device("Nest", social.weight_raw_b, social.weight_filtered_b),
+        Device("Patch1", social.patch_streams_b),
+        Device("Patch2", social.patch_streams_b),
+        Device("Patch3", social.patch_streams_b),
+        Device("EventsGate", social.rfid_b),
+        Device("EventsNest1", social.rfid_b),
+        Device("EventsNest2", social.rfid_b),
+        Device("EventsPatch1", social.rfid_b),
+        Device("EventsPatch2", social.rfid_b),
+        Device("EventsPatch3", social.rfid_b),
+    ]
+)

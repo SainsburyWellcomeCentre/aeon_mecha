@@ -1,119 +1,104 @@
-"""Readers for data relevant to Social experiments."""
-
-import json
-from pathlib import Path
-
-import numpy as np
-import pandas as pd
-
-import aeon.io.reader as _reader
-from aeon import util
+from aeon.io import reader
+from aeon.io.device import Device, register
+from aeon.schema import core, foraging
 
 
-class Pose(_reader.Harp):
-    """Reader for Harp-binarized tracking data given a model that outputs id, parts, and likelihoods.
+"""Creating the Social 0.1 schema"""
 
-    Columns:
-        class (int): Int ID of a subject in the environment.
-        class_likelihood (float): Likelihood of the subject's identity.
-        part (str): Bodypart on the subject.
-        part_likelihood (float): Likelihood of the specified bodypart.
-        x (float): X-coordinate of the bodypart.
-        y (float): Y-coordinate of the bodypart.
-    """
+# Above we've listed out all the streams we recorded from during Social0.1, but we won't care to analyze all
+# of them. Instead, we'll create a DotMap schema from Device objects that only contains Readers for the
+# streams we want to analyze.
 
-    def __init__(self, pattern: str, extension: str = "bin"):
-        """Pose reader constructor."""
-        # `pattern` for this reader should typically be '<hpcnode>_<jobid>*'
-        super().__init__(pattern, columns=None, extension=extension)
+# We'll see both examples of binder functions we saw previously: 1. "empty pattern", and
+# 2. "device-name passed".
 
-    def read(
-        self, file: Path, ceph_proc_dir: str | Path = "/ceph/aeon/aeon/data/processed"
-    ) -> pd.DataFrame:
-        """Reads data from the Harp-binarized tracking file."""
-        # Get config file from `file`, then bodyparts from config file.
-        model_dir = Path(*Path(file.stem.replace("_", "/")).parent.parts[1:])
-        config_file_dir = ceph_proc_dir / model_dir
-        if not config_file_dir.exists():
-            raise FileNotFoundError(f"Cannot find model dir {config_file_dir}")
-        config_file = get_config_file(config_file_dir)
-        parts = self.get_bodyparts(config_file)
+# And we'll see both examples of instantiating Device objects we saw previously: 1. from singleton binder
+# functions; 2. from multiple and/or nested binder functions.
 
-        # Using bodyparts, assign column names to Harp register values, and read data in default format.
-        columns = ["class", "class_likelihood"]
-        for part in parts:
-            columns.extend([f"{part}_x", f"{part}_y", f"{part}_likelihood"])
-        self.columns = columns
-        data = super().read(file)
+# (Note, in the simplest case, a schema can always be created from / reduced to  "empty pattern" binder
+# functions as singletons in Device objects.)
 
-        # Drop any repeat parts.
-        unique_parts, unique_idxs = np.unique(parts, return_index=True)
-        repeat_idxs = np.setdiff1d(np.arange(len(parts)), unique_idxs)
-        if repeat_idxs:  # drop x, y, and likelihood cols for repeat parts (skip first 5 cols)
-            init_rep_part_col_idx = (repeat_idxs - 1) * 3 + 5
-            rep_part_col_idxs = np.concatenate([np.arange(i, i + 3) for i in init_rep_part_col_idx])
-            keep_part_col_idxs = np.setdiff1d(np.arange(len(data.columns)), rep_part_col_idxs)
-            data = data.iloc[:, keep_part_col_idxs]
-            parts = unique_parts
+# Metadata.yml (will be a singleton binder function Device object)
+# ---
 
-        # Set new columns, and reformat `data`.
-        n_parts = len(parts)
-        part_data_list = [pd.DataFrame()] * n_parts
-        new_columns = ["class", "class_likelihood", "part", "x", "y", "part_likelihood"]
-        new_data = pd.DataFrame(columns=new_columns)
-        for i, part in enumerate(parts):
-            part_columns = ["class", "class_likelihood", f"{part}_x", f"{part}_y", f"{part}_likelihood"]
-            part_data = pd.DataFrame(data[part_columns])
-            part_data.insert(2, "part", part)
-            part_data.columns = new_columns
-            part_data_list[i] = part_data
-        new_data = pd.concat(part_data_list)
-        return new_data.sort_index()
+metadata = Device("Metadata", core.metadata)
 
-    def get_bodyparts(self, file: Path) -> list[str]:
-        """Returns a list of bodyparts from a model's config file."""
-        parts = []
-        with open(file) as f:
-            config = json.load(f)
-        if file.stem == "confmap_config":  # SLEAP
-            try:
-                heads = config["model"]["heads"]
-                parts = [util.find_nested_key(heads, "anchor_part")]
-                parts += util.find_nested_key(heads, "part_names")
-            except KeyError as err:
-                if not parts:
-                    raise KeyError(f"Cannot find bodyparts in {file}.") from err
-        return parts
+# ---
 
+# Environment (will be a nested, multiple binder function Device object)
+# ---
 
-def get_config_file(
-    config_file_dir: Path,
-    config_file_names: None | list[str] = None,
-) -> Path:
-    """Returns the config file from a model's config directory."""
-    if config_file_names is None:
-        config_file_names = ["confmap_config.json"]  # SLEAP (add for other trackers to this list)
-    config_file = None
-    for f in config_file_names:
-        if (config_file_dir / f).exists():
-            config_file = config_file_dir / f
-            break
-    if config_file is None:
-        raise FileNotFoundError(f"Cannot find config file in {config_file_dir}")
-    return config_file
+# BlockState
+# binder function: "device-name passed"; `pattern` will be set by `Device` object name: "Environment"
+block_state_b = lambda pattern: {
+    "BlockState": reader.Csv(f"{pattern}_BlockState*", ["pellet_ct", "pellet_ct_thresh", "due_time"])
+}
 
+# EnvironmentState
 
-def class_int2str(data: pd.DataFrame, config_file_dir: Path) -> pd.DataFrame:
-    """Converts a class integer in a tracking data dataframe to its associated string (subject id)."""
-    config_file = get_config_file(config_file_dir)
-    if config_file.stem == "confmap_config":  # SLEAP
-        with open(config_file) as f:
-            config = json.load(f)
-        try:
-            heads = config["model"]["heads"]
-            classes = util.find_nested_key(heads, "classes")
-        except KeyError as err:
-            raise KeyError(f"Cannot find classes in {config_file}.") from err
-        for i, subj in enumerate(classes):
-            data.loc[data["class"] == i, "class"] = subj
-    return data
+# Combine EnvironmentState and BlockState
+env_block_state_b = lambda pattern: register(pattern, core.environment_state, block_state_b)
+
+# LightEvents
+cols = ["channel", "value"]
+light_events_r = reader.Csv("Environment_LightEvents*", cols)
+light_events_b = lambda pattern: {"LightEvents": light_events_r}  # binder function: "empty pattern"
+
+# SubjectState
+cols = ["id", "weight", "type"]
+subject_state_r = reader.Csv("Environment_SubjectState*", cols)
+subject_state_b = lambda pattern: {"SubjectState": subject_state_r}  # binder function: "empty pattern"
+
+# SubjectVisits
+cols = ["id", "type", "region"]
+subject_visits_r = reader.Csv("Environment_SubjectVisits*", cols)
+subject_visits_b = lambda pattern: {"SubjectVisits": subject_visits_r}  # binder function: "empty pattern"
+
+# SubjectWeight
+cols = ["weight", "confidence", "subject_id", "int_id"]
+subject_weight_r = reader.Csv("Environment_SubjectWeight*", cols)
+subject_weight_b = lambda pattern: {"SubjectWeight": subject_weight_r}  # binder function: "empty pattern"
+
+# Nested binder fn Device object.
+environment = Device("Environment", env_block_state_b, light_events_b, core.message_log)  # device name
+
+# Separate Device object for subject-specific streams.
+subject = Device("Subject", subject_state_b, subject_visits_b, subject_weight_b)
+
+# ---
+
+# Camera
+# ---
+
+camera_top_pos_b = lambda pattern: {"Pose": reader.Pose(f"{pattern}_test-node1*")}
+
+# ---
+
+# Nest
+# ---
+
+weight_raw_b = lambda pattern: {"WeightRaw": reader.Harp("Nest_200*", ["weight(g)", "stability"])}
+weight_filtered_b = lambda pattern: {"WeightFiltered": reader.Harp("Nest_202*", ["weight(g)", "stability"])}
+
+# ---
+
+# Patch
+# ---
+
+# Combine streams for Patch device
+patch_streams_b = lambda pattern: register(
+    pattern,
+    foraging.pellet_depletion_state,
+    core.encoder,
+    foraging.feeder,
+    foraging.pellet_manual_delivery,
+    foraging.missed_pellet,
+    foraging.pellet_retried_delivery,
+)
+# ---
+
+# Rfid
+# ---
+
+rfid_names = ["EventsGate", "EventsNest1", "EventsNest2", "EventsPatch1", "EventsPatch2", "EventsPatch3"]
+rfid_b = lambda pattern: {"RFID": reader.Harp(f"{pattern}_*", ["rfid"])}
