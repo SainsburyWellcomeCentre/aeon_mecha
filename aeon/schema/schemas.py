@@ -56,7 +56,6 @@ octagon01 = DotMap(
     ]
 )
 
-
 social01 = DotMap(
     [
         Device("Metadata", core.metadata),
