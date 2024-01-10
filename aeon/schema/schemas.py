@@ -1,6 +1,6 @@
 from dotmap import DotMap
 from aeon.io.device import Device
-from aeon.schema import core, foraging, octagon, social01
+from aeon.schema import core, foraging, octagon, social
 
 exp02 = DotMap(
     [
@@ -56,14 +56,31 @@ octagon01 = DotMap(
     ]
 )
 
+
 social01 = DotMap(
     [
         Device("Metadata", core.metadata),
-        Device("Environment", social01.env_block_state_b, social01.light_events_b, core.message_log),
-        Device("Subject", social01.subject_state_b, social01.subject_visits_b, social01.subject_weight_b),
-        *social01.camera_devices,
-        Device("Nest", social01.weight_raw_b, social01.weight_filtered_b),
-        *social01.patch_devices,
-        *social01.rfid_devices,
+        Device("Environment", social.env_block_state_b, social.light_events_b, core.message_log),
+        Device("Subject", social.subject_state_b, social.subject_visits_b, social.subject_weight_b),
+        Device("CameraTop", core.video, social.camera_top_pos_b),
+        Device("CameraTop", core.video),
+        Device("CameraNorth", core.video),
+        Device("CameraSouth", core.video),
+        Device("CameraEast", core.video),
+        Device("CameraWest", core.video),
+        Device("CameraPatch1", core.video),
+        Device("CameraPatch2", core.video),
+        Device("CameraPatch3", core.video),
+        Device("CameraNest", core.video),
+        Device("Nest", social.weight_raw_b, social.weight_filtered_b),
+        Device("Patch1", social.patch_streams_b),
+        Device("Patch2", social.patch_streams_b),
+        Device("Patch3", social.patch_streams_b),
+        Device("EventsGate", social.rfid_b),
+        Device("EventsNest1", social.rfid_b),
+        Device("EventsNest2", social.rfid_b),
+        Device("EventsPatch1", social.rfid_b),
+        Device("EventsPatch2", social.rfid_b),
+        Device("EventsPatch3", social.rfid_b),
     ]
 )
