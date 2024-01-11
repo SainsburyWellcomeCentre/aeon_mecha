@@ -17,23 +17,7 @@ from aeon.io import api as io_api
 logger = dj.logger
 _weight_scale_rate = 100
 _weight_scale_nest = 1
-_colony_csv_path = pathlib.Path("/ceph/aeon/aeon/colony/colony.csv")
 _aeon_schemas = ["social01"]
-
-
-def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
-    """Ingest subject information from the colony.csv file."""
-    logger.warning("The use of 'colony.csv' is deprecated starting Nov 2023", DeprecationWarning)
-
-    colony_df = pd.read_csv(colony_csv_path, skiprows=[1, 2])
-    colony_df.rename(columns={"Id": "subject"}, inplace=True)
-    colony_df["sex"] = "U"
-    colony_df["subject_birth_date"] = "2021-01-01"
-    colony_df["subject_description"] = ""
-    subject.Subject.insert(colony_df, skip_duplicates=True, ignore_extra_fields=True)
-    acquisition.Experiment.Subject.insert(
-        (subject.Subject * acquisition.Experiment).proj(), skip_duplicates=True
-    )
 
 
 def insert_stream_types():
@@ -162,7 +146,8 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
         json.dumps(epoch_config["metadata"]["Devices"], default=lambda x: x.__dict__, indent=4)
     )
 
-    if isinstance(devices, list):  # In exp02, it is a list of dict. In presocial. It's a dict of dict.
+    # Maintain backward compatibility - In exp02, it is a list of dict. From presocial onward, it's a dict of dict.
+    if isinstance(devices, list):
         devices: dict = {d.pop("Name"): d for d in devices}  # {deivce_name: device_config}
 
     return {
