@@ -81,11 +81,11 @@ social01 = DotMap(
         Device("Patch1", social.patch_streams_b),
         Device("Patch2", social.patch_streams_b),
         Device("Patch3", social.patch_streams_b),
-        Device("EventsGate", social.rfid_b),
-        Device("EventsNest1", social.rfid_b),
-        Device("EventsNest2", social.rfid_b),
-        Device("EventsPatch1", social.rfid_b),
-        Device("EventsPatch2", social.rfid_b),
-        Device("EventsPatch3", social.rfid_b),
+        Device("RfidGate", social.rfid_events_b),
+        Device("RfidNest1", social.rfid_events_b),
+        Device("RfidNest2", social.rfid_events_b),
+        Device("RfidPatch1", social.rfid_events_b),
+        Device("RfidPatch2", social.rfid_events_b),
+        Device("RfidPatch3", social.rfid_events_b),
     ]
 )
