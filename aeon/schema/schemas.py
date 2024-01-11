@@ -88,3 +88,6 @@ social01 = DotMap(
         Device("EventsPatch3", social.rfid_b),
     ]
 )
+
+
+__all__ = ["exp01", "exp02", "octagon01", "social01"]
