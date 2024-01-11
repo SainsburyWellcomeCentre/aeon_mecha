@@ -10,7 +10,7 @@ from aeon.schema import schemas as aeon_schemas
 from aeon.io import reader as io_reader
 from aeon.analysis import utils as analysis_utils
 
-from . import get_schema_name
+from . import get_schema_name, lab, subject
 from .utils import paths
 
 logger = dj.logger
