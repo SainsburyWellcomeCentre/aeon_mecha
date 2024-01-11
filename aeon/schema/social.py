@@ -29,42 +29,39 @@ metadata = Device("Metadata", core.metadata)
 # ---
 
 # BlockState
-# binder function: "device-name passed"; `pattern` will be set by `Device` object name: "Environment"
 block_state_b = lambda pattern: {
-    "BlockState": reader.Csv(f"{pattern}_BlockState*", ["pellet_ct", "pellet_ct_thresh", "due_time"])
+    "BlockState": reader.Csv(f"{pattern}_BlockState_*", ["pellet_ct", "pellet_ct_thresh", "due_time"])
 }
 
-# EnvironmentState
-
-# Combine EnvironmentState and BlockState
-env_block_state_b = lambda pattern: register(pattern, core.environment_state, block_state_b)
-
 # LightEvents
-cols = ["channel", "value"]
-light_events_r = reader.Csv("Environment_LightEvents*", cols)
-light_events_b = lambda pattern: {"LightEvents": light_events_r}  # binder function: "empty pattern"
+light_events_b = lambda pattern: {
+    "LightEvents": reader.Csv("Environment_LightEvents_*", ["channel", "value"])
+}
+
+# Combine EnvironmentState, BlockState, LightEvents
+environment_b = lambda pattern: register(
+    pattern, core.environment_state, block_state_b, light_events_b, core.message_log
+)
 
 # SubjectState
-cols = ["id", "weight", "type"]
-subject_state_r = reader.Csv("Environment_SubjectState*", cols)
-subject_state_b = lambda pattern: {"SubjectState": subject_state_r}  # binder function: "empty pattern"
+subject_state_b = lambda pattern: {
+    "SubjectState": reader.Csv("Environment_SubjectState_*", ["id", "weight", "type"])
+}
 
 # SubjectVisits
-cols = ["id", "type", "region"]
-subject_visits_r = reader.Csv("Environment_SubjectVisits*", cols)
-subject_visits_b = lambda pattern: {"SubjectVisits": subject_visits_r}  # binder function: "empty pattern"
+subject_visits_b = lambda pattern: {
+    "SubjectVisits": reader.Csv("Environment_SubjectVisit_s*", ["id", "type", "region"])
+}
 
 # SubjectWeight
-cols = ["weight", "confidence", "subject_id", "int_id"]
-subject_weight_r = reader.Csv("Environment_SubjectWeight*", cols)
-subject_weight_b = lambda pattern: {"SubjectWeight": subject_weight_r}  # binder function: "empty pattern"
-
-# Nested binder fn Device object.
-environment = Device("Environment", env_block_state_b, light_events_b, core.message_log)  # device name
+subject_weight_b = lambda pattern: {
+    "SubjectWeight": reader.Csv(
+        "Environment_SubjectWeight_*", ["weight", "confidence", "subject_id", "int_id"]
+    )
+}
 
 # Separate Device object for subject-specific streams.
-subject = Device("Subject", subject_state_b, subject_visits_b, subject_weight_b)
-
+subject_b = lambda pattern: register(pattern, subject_state_b, subject_visits_b, subject_weight_b)
 # ---
 
 # Camera
@@ -77,8 +74,10 @@ camera_top_pos_b = lambda pattern: {"Pose": reader.Pose(f"{pattern}_test-node1*"
 # Nest
 # ---
 
-weight_raw_b = lambda pattern: {"WeightRaw": reader.Harp("Nest_200*", ["weight(g)", "stability"])}
-weight_filtered_b = lambda pattern: {"WeightFiltered": reader.Harp("Nest_202*", ["weight(g)", "stability"])}
+weight_raw_b = lambda pattern: {"WeightRaw": reader.Harp(f"{pattern}_200_*", ["weight(g)", "stability"])}
+weight_filtered_b = lambda pattern: {
+    "WeightFiltered": reader.Harp(f"{pattern}_202_*", ["weight(g)", "stability"])
+}
 
 # ---
 
