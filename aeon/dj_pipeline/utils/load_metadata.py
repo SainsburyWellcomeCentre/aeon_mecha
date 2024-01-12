@@ -34,12 +34,14 @@ def insert_stream_types():
             q_param = streams.StreamType & {"stream_hash": entry["stream_hash"]}
             if q_param:  # If the specified stream type already exists
                 pname = q_param.fetch1("stream_type")
-                if pname != entry["stream_type"]:
+                if pname == entry["stream_type"]:
+                    continue
+                else:
                     # If the existed stream type does not have the same name:
                     # human error, trying to add the same content with different name
                     raise dj.DataJointError(f"The specified stream type already exists - name: {pname}")
-
-        streams.StreamType.insert(stream_entries, skip_duplicates=True)
+            else:
+                streams.StreamType.insert1(entry)
 
 
 def insert_device_types(device_schema: DotMap, metadata_yml_filepath: Path):
@@ -356,6 +358,7 @@ def get_device_info(schema: DotMap) -> dict[dict]:
                     "aeon.io.reader",
                     "aeon.schema.foraging",
                     "aeon.schema.octagon",
+                    "aeon.schema.social",
                 ]:
                     device_info[device_name]["stream_type"].append(stream_type)
                     device_info[device_name]["stream_reader"].append(_get_class_path(stream_obj))

@@ -9,6 +9,7 @@ import pandas as pd
 import aeon
 from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.io import api as io_api
+from aeon.schema import schemas as aeon_schemas
 
 logger = dj.logger
 
@@ -130,8 +131,6 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
     class DeviceDataStream(dj.Imported):
         definition = table_definition
-        _stream_reader = reader
-        _stream_detail = stream_detail
 
         @property
         def key_source(self):
@@ -154,16 +153,17 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
             device_name = (ExperimentDevice & key).fetch1(f"{dj.utils.from_camel_case(device_type)}_name")
 
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
+            devices_schema = getattr(
+                aeon_schemas,
+                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
             )
+            stream_reader = getattr(getattr(devices_schema, device_name), "{stream_type}")
 
             stream_data = io_api.load(
                 root=raw_data_dir.as_posix(),
-                reader=stream,
+                reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
@@ -175,7 +175,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
                     "timestamps": stream_data.index.values,
                     **{
                         re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream.columns
+                        for c in stream_reader.columns
                         if not c.startswith("_")
                     },
                 },
@@ -202,7 +202,8 @@ def main(create_tables=True):
                 "from uuid import UUID\n\n"
                 "import aeon\n"
                 "from aeon.dj_pipeline import acquisition, get_schema_name\n"
-                "from aeon.io import api as io_api\n\n"
+                "from aeon.io import api as io_api\n"
+                "from aeon.schema import schemas as aeon_schemas\n\n"
                 'schema = dj.Schema(get_schema_name("streams"))\n\n\n'
             )
             f.write(imports_str)
@@ -257,10 +258,6 @@ def main(create_tables=True):
             if table_class is None:
                 continue
 
-            stream_obj = table_class.__dict__["_stream_reader"]
-            reader = stream_obj.__module__ + "." + stream_obj.__name__
-            stream_detail = table_class.__dict__["_stream_detail"]
-
             device_stream_table_def = inspect.getsource(table_class).lstrip()
 
             # Replace the definition
@@ -279,17 +276,6 @@ def main(create_tables=True):
 
             for old, new in replacements.items():
                 device_stream_table_def = device_stream_table_def.replace(old, new)
-
-            device_stream_table_def = re.sub(
-                r"_stream_reader\s*=\s*reader",
-                f"_stream_reader = {reader}",
-                device_stream_table_def,
-            )  # insert reader
-            device_stream_table_def = re.sub(
-                r"_stream_detail\s*=\s*stream_detail",
-                f"_stream_detail = {stream_detail}",
-                device_stream_table_def,
-            )  # insert stream details
 
             full_def = "@schema \n" + device_stream_table_def + "\n\n"
 
