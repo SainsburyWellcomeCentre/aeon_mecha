@@ -59,14 +59,7 @@ octagon01 = DotMap(
 social01 = DotMap(
     [
         Device("Metadata", core.metadata),
-        Device(
-            "ExperimentalMetadata",
-            core.environment,
-            social.block_state_b,
-            social.light_events_b,
-            core.message_log,
-        ),
-        Device("Environment", social.environment_b, social.subject_b),
+        Device("ExperimentalMetadata", social.environment_b, social.subject_b),
         Device("CameraTop", core.video, social.camera_top_pos_b),
         Device("CameraNorth", core.video),
         Device("CameraSouth", core.video),
