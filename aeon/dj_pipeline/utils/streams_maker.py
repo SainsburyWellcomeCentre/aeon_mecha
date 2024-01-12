@@ -108,6 +108,10 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
     for i, n in enumerate(stream_detail["stream_reader"].split(".")):
         reader = aeon if i == 0 else getattr(reader, n)
 
+    if reader is aeon.io.reader.Pose:
+        logger.warning("Automatic generation of stream table for Pose reader is not supported. Skipping...")
+        return None, None
+
     stream = reader(**stream_detail["stream_reader_kwargs"])
 
     table_definition = f"""  # Raw per-chunk {stream_type} data stream from {device_type} (auto-generated with aeon_mecha-{aeon.__version__})
@@ -249,6 +253,9 @@ def main(create_tables=True):
             table_class, table_definition = get_device_stream_template(
                 device_type, stream_type, streams_module=streams
             )
+
+            if table_class is None:
+                continue
 
             stream_obj = table_class.__dict__["_stream_reader"]
             reader = stream_obj.__module__ + "." + stream_obj.__name__

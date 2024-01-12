@@ -115,7 +115,7 @@ def insert_device_types(device_schema: DotMap, metadata_yml_filepath: Path):
         streams.Device.insert(new_devices)
 
 
-def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> dict:
+def extract_epoch_config(experiment_name: str, devices_schema, metadata_yml_filepath: str) -> dict:
     """Parse experiment metadata YAML file and extract epoch configuration.
 
     Args:
@@ -130,7 +130,7 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
     epoch_config: dict = (
         io_api.load(
             str(metadata_yml_filepath.parent),
-            acquisition._device_schema_mapping[experiment_name].Metadata,
+            devices_schema.Metadata,
         )
         .reset_index()
         .to_dict("records")[0]
@@ -160,7 +160,7 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
     }
 
 
-def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
+def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath):
     """Make entries into device tables."""
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
@@ -170,7 +170,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
 
     experiment_key = {"experiment_name": experiment_name}
     metadata_yml_filepath = pathlib.Path(metadata_yml_filepath)
-    epoch_config = extract_epoch_config(experiment_name, metadata_yml_filepath)
+    epoch_config = extract_epoch_config(experiment_name, devices_schema, metadata_yml_filepath)
 
     previous_epoch = (acquisition.Experiment & experiment_key).aggr(
         acquisition.Epoch & f'epoch_start < "{epoch_config["epoch_start"]}"',
@@ -182,8 +182,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
         # if identical commit -> no changes
         return
 
-    device_schema = acquisition._device_schema_mapping[experiment_name]
-    device_type_mapper, _ = get_device_mapper(device_schema, metadata_yml_filepath)
+    device_type_mapper, _ = get_device_mapper(devices_schema, metadata_yml_filepath)
 
     # Insert into each device table
     epoch_device_types = []

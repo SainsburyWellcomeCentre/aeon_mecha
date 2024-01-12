@@ -304,6 +304,11 @@ class Epoch(dj.Manual):
             insert_device_types,
         )
 
+        devices_schema = getattr(
+            aeon_schemas,
+            (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1("devices_schema_name"),
+        )
+
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
@@ -330,7 +335,9 @@ class Epoch(dj.Manual):
             if experiment_name != "exp0.1-r0":
                 metadata_yml_filepath = epoch_dir / "Metadata.yml"
                 if metadata_yml_filepath.exists():
-                    epoch_config = extract_epoch_config(experiment_name, metadata_yml_filepath)
+                    epoch_config = extract_epoch_config(
+                        experiment_name, devices_schema, metadata_yml_filepath
+                    )
 
                     metadata_yml_filepath = epoch_config["metadata_file_path"]
 
@@ -372,12 +379,6 @@ class Epoch(dj.Manual):
                 if metadata_yml_filepath and metadata_yml_filepath.exists():
                     try:
                         # Insert new entries for streams.DeviceType, streams.Device.
-                        devices_schema = getattr(
-                            aeon_schemas,
-                            (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1(
-                                "devices_schema_name"
-                            ),
-                        )
                         insert_device_types(
                             devices_schema,
                             metadata_yml_filepath,
@@ -387,7 +388,7 @@ class Epoch(dj.Manual):
                         with cls.connection.transaction:
                             # Insert devices' installation/removal/settings
                             epoch_device_types = ingest_epoch_metadata(
-                                experiment_name, metadata_yml_filepath
+                                experiment_name, devices_schema, metadata_yml_filepath
                             )
                             if epoch_device_types is not None:
                                 cls.DeviceType.insert(
