@@ -105,4 +105,4 @@ def rfid_events_b(pattern):
     pattern = pattern.replace("Rfid", "")
     if pattern.startswith("Events"):
         pattern = pattern.replace("Events", "")
-    return {"RfidEvents": reader.Harp(f"Rfid{pattern}Events_*", ["rfid"])}
+    return {"RfidEvents": reader.Harp(f"RfidEvents{pattern}_*", ["rfid"])}
