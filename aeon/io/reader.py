@@ -273,18 +273,17 @@ class Pose(Harp):
         y (float): Y-coordinate of the bodypart.
     """
 
-    def __init__(self, pattern: str, extension: str = "bin"):
+    def __init__(self, pattern: str, model_root: str = "/ceph/aeon/aeon/data/processed"):
         """Pose reader constructor."""
         # `pattern` for this reader should typically be '<hpcnode>_<jobid>*'
-        super().__init__(pattern, columns=None, extension=extension)
+        super().__init__(pattern, columns=None)
+        self._model_root = Path(model_root)
 
-    def read(
-        self, file: Path, ceph_proc_dir: str | Path = "/ceph/aeon/aeon/data/processed"
-    ) -> pd.DataFrame:
+    def read(self, file: Path) -> pd.DataFrame:
         """Reads data from the Harp-binarized tracking file."""
         # Get config file from `file`, then bodyparts from config file.
         model_dir = Path(*Path(file.stem.replace("_", "/")).parent.parts[1:])
-        config_file_dir = ceph_proc_dir / model_dir
+        config_file_dir = self._model_root / model_dir
         if not config_file_dir.exists():
             raise FileNotFoundError(f"Cannot find model dir {config_file_dir}")
         config_file = self.get_config_file(config_file_dir)
@@ -320,6 +319,20 @@ class Pose(Harp):
             part_data_list[i] = part_data
         new_data = pd.concat(part_data_list)
         return new_data.sort_index()
+
+    def get_class_names(self, file: Path) -> list[str]:
+        """Returns a list of classes from a model's config file."""
+        classes = None
+        with open(file) as f:
+            config = json.load(f)
+        if file.stem == "confmap_config":  # SLEAP
+            try:
+                heads = config["model"]["heads"]
+                classes = util.find_nested_key(heads, "class_vectors")["classes"]
+            except KeyError as err:
+                if not classes:
+                    raise KeyError(f"Cannot find class_vectors in {file}.") from err
+        return classes
 
     def get_bodyparts(self, file: Path) -> list[str]:
         """Returns a list of bodyparts from a model's config file."""
