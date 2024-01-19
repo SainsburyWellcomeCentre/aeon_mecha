@@ -58,14 +58,14 @@ def region(pattern):
     return {"Region": _RegionReader(f"{pattern}_201_*")}
 
 
-def depletionFunction(pattern):
+def depletion_function(pattern):
     """State of the linear depletion function for foraging patches."""
     return {"DepletionState": _PatchState(f"{pattern}_State_*")}
 
 
 def feeder(pattern):
     """Feeder commands and events."""
-    return _device.compositeStream(pattern, beam_break, deliver_pellet)
+    return _device.register(pattern, beam_break, deliver_pellet)
 
 
 def beam_break(pattern):
@@ -78,14 +78,34 @@ def deliver_pellet(pattern):
     return {"DeliverPellet": _reader.BitmaskEvent(f"{pattern}_35_*", 0x80, "TriggerPellet")}
 
 
+def pellet_manual_delivery(pattern):
+    """Manual pellet delivery."""
+    return {"ManualDelivery": _reader.Harp(f"{pattern}_*", ["manual_delivery"])}
+
+
+def missed_pellet(pattern):
+    """Missed pellet delivery."""
+    return {"MissedPellet": _reader.Harp(f"{pattern}_*", ["missed_pellet"])}
+
+
+def pellet_retried_delivery(pattern):
+    """Retry pellet delivery."""
+    return {"RetriedDelivery": _reader.Harp(f"{pattern}_*", ["retried_delivery"])}
+
+
+def pellet_depletion_state(pattern):
+    """Pellet delivery state."""
+    return {"DepletionState": _reader.Csv(f"{pattern}_*", ["threshold", "offset", "rate"])}
+
+
 def patch(pattern):
     """Data streams for a patch."""
-    return _device.compositeStream(pattern, depletionFunction, _stream.encoder, feeder)
+    return _device.register(pattern, depletion_function, _stream.encoder, feeder)
 
 
 def weight(pattern):
     """Weight measurement data streams for a specific nest."""
-    return _device.compositeStream(pattern, weight_raw, weight_filtered, weight_subject)
+    return _device.register(pattern, weight_raw, weight_filtered, weight_subject)
 
 
 def weight_raw(pattern):

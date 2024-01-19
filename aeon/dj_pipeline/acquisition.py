@@ -5,13 +5,13 @@ import datajoint as dj
 import numpy as np
 import pandas as pd
 
-from aeon.analysis import utils as analysis_utils
 from aeon.io import api as io_api
+from aeon.schema import schemas as aeon_schemas
 from aeon.io import reader as io_reader
-from aeon.schema import dataset as aeon_schema
+from aeon.analysis import utils as analysis_utils
 
-from . import get_schema_name
-from .utils import paths
+from aeon.dj_pipeline import get_schema_name, lab, subject
+from aeon.dj_pipeline.utils import paths
 
 logger = dj.logger
 schema = dj.schema(get_schema_name("acquisition"))
@@ -22,19 +22,16 @@ _ref_device_mapping = {
     "exp0.1-r0": "FrameTop",
     "social0-r1": "FrameTop",
     "exp0.2-r0": "CameraTop",
-    "oct1.0-r0": "CameraTop",
-    "social0.1-a3": "CameraTop",
-    "social0.1-a4": "CameraTop"
 }
 
-_device_schema_mapping = {
-    "exp0.1-r0": aeon_schema.exp01,
-    "social0-r1": aeon_schema.exp01,
-    "exp0.2-r0": aeon_schema.exp02,
-    "oct1.0-r0": aeon_schema.octagon01,
-    "social0.1-a3": aeon_schema.social01,
-    "social0.1-a4": aeon_schema.social01
-}
+# _device_schema_mapping = {
+#     "exp0.1-r0": aeon_schemas.exp01,
+#     "social0-r1": aeon_schemas.exp01,
+#     "exp0.2-r0": aeon_schemas.exp02,
+#     "oct1.0-r0": aeon_schemas.octagon01,
+#     "social0.1-a3": aeon_schemas.social01,
+#     "social0.1-a4": aeon_schemas.social01,
+# }
 
 
 # ------------------- Type Lookup ------------------------
@@ -68,6 +65,15 @@ class EventType(dj.Lookup):
     ]
 
 
+@schema
+class DevicesSchema(dj.Lookup):
+    definition = """
+    devices_schema_name: varchar(32)
+    """
+
+    contents = zip(aeon_schemas.__all__)
+
+
 # ------------------- Data repository/directory ------------------------
 
 
@@ -95,7 +101,7 @@ class DirectoryType(dj.Lookup):
 @schema
 class Experiment(dj.Manual):
     definition = """
-    experiment_name: varchar(32)  # e.g exp0-r0
+    experiment_name: varchar(32)  # e.g exp0-aeon3
     ---
     experiment_start_time: datetime(6)  # datetime of the start of this experiment
     experiment_description: varchar(1000)
@@ -117,6 +123,13 @@ class Experiment(dj.Manual):
         ---
         -> PipelineRepository
         directory_path: varchar(255)
+        """
+
+    class DevicesSchema(dj.Part):
+        definition = """
+        -> master
+        ---
+        -> DevicesSchema
         """
 
     @classmethod
@@ -272,16 +285,29 @@ class Epoch(dj.Manual):
         metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
         """
 
+    class DeviceType(dj.Part):
+        definition = """  # Device type(s) used in a particular acquisition epoch
+        -> master
+        device_type: varchar(36)
+        """
+
     @classmethod
     def ingest_epochs(cls, experiment_name, start=None, end=None):
         """Ingest epochs for the specified "experiment_name". Ingest only epochs that start in between the specified (start, end) time. If not specified, ingest all epochs.
         Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S".
         """
 
-        from .utils import streams_maker
-        from .utils.load_metadata import (extract_epoch_config,
-                                          ingest_epoch_metadata,
-                                          insert_device_types)
+        from aeon.dj_pipeline.utils import streams_maker
+        from aeon.dj_pipeline.utils.load_metadata import (
+            extract_epoch_config,
+            ingest_epoch_metadata,
+            insert_device_types,
+        )
+
+        devices_schema = getattr(
+            aeon_schemas,
+            (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1("devices_schema_name"),
+        )
 
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
@@ -309,7 +335,9 @@ class Epoch(dj.Manual):
             if experiment_name != "exp0.1-r0":
                 metadata_yml_filepath = epoch_dir / "Metadata.yml"
                 if metadata_yml_filepath.exists():
-                    epoch_config = extract_epoch_config(experiment_name, metadata_yml_filepath)
+                    epoch_config = extract_epoch_config(
+                        experiment_name, devices_schema, metadata_yml_filepath
+                    )
 
                     metadata_yml_filepath = epoch_config["metadata_file_path"]
 
@@ -352,17 +380,24 @@ class Epoch(dj.Manual):
                     try:
                         # Insert new entries for streams.DeviceType, streams.Device.
                         insert_device_types(
-                            _device_schema_mapping[epoch_key["experiment_name"]],
+                            devices_schema,
                             metadata_yml_filepath,
                         )
                         # Define and instantiate new devices/stream tables under `streams` schema
                         streams_maker.main()
                         with cls.connection.transaction:
                             # Insert devices' installation/removal/settings
-                            ingest_epoch_metadata(experiment_name, metadata_yml_filepath)
+                            epoch_device_types = ingest_epoch_metadata(
+                                experiment_name, devices_schema, metadata_yml_filepath
+                            )
+                            if epoch_device_types is not None:
+                                cls.DeviceType.insert(
+                                    epoch_key | {"device_type": n} for n in epoch_device_types
+                                )
                         epoch_list.append(epoch_key)
                     except Exception as e:
                         (cls.Config & epoch_key).delete_quick()
+                        (cls.DeviceType & epoch_key).delete_quick()
                         (cls & epoch_key).delete_quick()
                         raise e
 
@@ -452,18 +487,18 @@ class Chunk(dj.Manual):
                 epoch_end = (EpochEnd & epoch_key).fetch1("epoch_end")
                 chunk_end = min(chunk_end, epoch_end)
 
+            if chunk_start in chunk_starts:
+                # handle cases where two chunks with identical start_time
+                # (starts in the same hour) but from 2 consecutive epochs
+                # using epoch_start as chunk_start in this case
+                chunk_start = epoch_start
+
             # --- insert to Chunk ---
             chunk_key = {"experiment_name": experiment_name, "chunk_start": chunk_start}
 
             if cls.proj() & chunk_key:
                 # skip over those already ingested
                 continue
-
-            if chunk_start in chunk_starts:
-                # handle cases where two chunks with identical start_time
-                # (starts in the same hour) but from 2 consecutive epochs
-                # using epoch_start as chunk_start in this case
-                chunk_key["chunk_start"] = epoch_start
 
             # chunk file and directory
             raw_data_dir, directory, repo_path = _match_experiment_directory(
@@ -527,7 +562,13 @@ class SubjectEnterExit(dj.Imported):
                 pd.Timestamp(chunk_end),
             )
         else:
-            device = _device_schema_mapping[key["experiment_name"]].ExperimentalMetadata
+            devices_schema = getattr(
+                aeon_schemas,
+                (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
+            )
+            device = devices_schema.ExperimentalMetadata
             subject_data = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.SubjectState,
@@ -578,7 +619,13 @@ class SubjectWeight(dj.Imported):
                 pd.Timestamp(chunk_end),
             )
         else:
-            device = _device_schema_mapping[key["experiment_name"]].ExperimentalMetadata
+            devices_schema = getattr(
+                aeon_schemas,
+                (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
+            )
+            device = devices_schema.ExperimentalMetadata
             subject_data = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.SubjectState,
@@ -617,7 +664,13 @@ class ExperimentLog(dj.Imported):
 
         # Populate the part table
         raw_data_dir = Experiment.get_data_directory(key)
-        device = _device_schema_mapping[key["experiment_name"]].ExperimentalMetadata
+        devices_schema = getattr(
+            aeon_schemas,
+            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
+        )
+        device = devices_schema.ExperimentalMetadata
 
         try:
             # handles corrupted files - issue: https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/153
@@ -698,7 +751,14 @@ class FoodPatchEvent(dj.Imported):
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
-        device = getattr(_device_schema_mapping[key["experiment_name"]], food_patch_description)
+        devices_schema = getattr(
+            aeon_schemas,
+            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
+        )
+
+        device = getattr(devices_schema, food_patch_description)
 
         pellet_data = pd.concat(
             [
@@ -775,7 +835,14 @@ class FoodPatchWheel(dj.Imported):
 
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
-        device = getattr(_device_schema_mapping[key["experiment_name"]], food_patch_description)
+        devices_schema = getattr(
+            aeon_schemas,
+            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
+        )
+
+        device = getattr(devices_schema, food_patch_description)
 
         wheel_data = io_api.load(
             root=raw_data_dir.as_posix(),
@@ -799,7 +866,14 @@ class FoodPatchWheel(dj.Imported):
             key = {"experiment_name": experiment_name}
             raw_data_dir = Experiment.get_data_directory(key)
 
-            device = getattr(_device_schema_mapping[key["experiment_name"]], patch_name)
+            devices_schema = getattr(
+                aeon_schemas,
+                (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
+            )
+
+            device = getattr(devices_schema, patch_name)
 
             wheel_data = io_api.load(
                 root=raw_data_dir.as_posix(),
@@ -886,7 +960,14 @@ class WheelState(dj.Imported):
         food_patch_description = (ExperimentFoodPatch & key).fetch1("food_patch_description")
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
 
-        device = getattr(_device_schema_mapping[key["experiment_name"]], food_patch_description)
+        devices_schema = getattr(
+            aeon_schemas,
+            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
+        )
+
+        device = getattr(devices_schema, food_patch_description)
 
         wheel_state = io_api.load(
             root=raw_data_dir.as_posix(),
@@ -945,9 +1026,16 @@ class WeightMeasurement(dj.Imported):
 
         weight_scale_description = (ExperimentWeightScale & key).fetch1("weight_scale_description")
 
+        devices_schema = getattr(
+            aeon_schemas,
+            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
+        )
+
         # in some epochs/chunks, the food patch device was mapped to "Nest"
         for device_name in (weight_scale_description, "Nest"):
-            device = getattr(_device_schema_mapping[key["experiment_name"]], device_name)
+            device = getattr(devices_schema, device_name)
             weight_data = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.WeightRaw,
@@ -987,9 +1075,16 @@ class WeightMeasurementFiltered(dj.Imported):
         raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
         weight_scale_description = (ExperimentWeightScale & key).fetch1("weight_scale_description")
 
+        devices_schema = getattr(
+            aeon_schemas,
+            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
+        )
+
         # in some epochs/chunks, the food patch device was mapped to "Nest"
         for device_name in (weight_scale_description, "Nest"):
-            device = getattr(_device_schema_mapping[key["experiment_name"]], device_name)
+            device = getattr(devices_schema, device_name)
             weight_filtered = io_api.load(
                 root=raw_data_dir.as_posix(),
                 reader=device.WeightFiltered,
@@ -1097,8 +1192,7 @@ def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
         return subject_data
 
     if experiment_name == "social0-r1":
-        from aeon.dj_pipeline.create_experiments.create_socialexperiment_0 import \
-            fixID
+        from aeon.dj_pipeline.create_experiments.create_socialexperiment_0 import fixID
 
         sessdf = subject_data.copy()
         sessdf = sessdf[~sessdf.id.str.contains("test")]

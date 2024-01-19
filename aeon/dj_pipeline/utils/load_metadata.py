@@ -17,31 +17,16 @@ from aeon.io import api as io_api
 logger = dj.logger
 _weight_scale_rate = 100
 _weight_scale_nest = 1
-_colony_csv_path = pathlib.Path("/ceph/aeon/aeon/colony/colony.csv")
-
-
-def ingest_subject(colony_csv_path: pathlib.Path = _colony_csv_path) -> None:
-    """Ingest subject information from the colony.csv file."""
-    logger.warning("The use of 'colony.csv' is deprecated starting Nov 2023", DeprecationWarning)
-
-    colony_df = pd.read_csv(colony_csv_path, skiprows=[1, 2])
-    colony_df.rename(columns={"Id": "subject"}, inplace=True)
-    colony_df["sex"] = "U"
-    colony_df["subject_birth_date"] = "2021-01-01"
-    colony_df["subject_description"] = ""
-    subject.Subject.insert(colony_df, skip_duplicates=True, ignore_extra_fields=True)
-    acquisition.Experiment.Subject.insert(
-        (subject.Subject * acquisition.Experiment).proj(), skip_duplicates=True
-    )
+_aeon_schemas = ["social01"]
 
 
 def insert_stream_types():
-    """Insert into streams.streamType table all streams in the dataset schema."""
-    from aeon.schema import dataset
+    """Insert into streams.streamType table all streams in the aeon schemas."""
+    from aeon.schema import schemas as aeon_schemas
 
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
-    schemas = [v for v in dataset.__dict__.values() if isinstance(v, DotMap)]
+    schemas = [getattr(aeon_schemas, aeon_schema) for aeon_schema in _aeon_schemas]
     for schema in schemas:
         stream_entries = get_stream_entries(schema)
 
@@ -49,20 +34,26 @@ def insert_stream_types():
             q_param = streams.StreamType & {"stream_hash": entry["stream_hash"]}
             if q_param:  # If the specified stream type already exists
                 pname = q_param.fetch1("stream_type")
-                if pname != entry["stream_type"]:
+                if pname == entry["stream_type"]:
+                    continue
+                else:
                     # If the existed stream type does not have the same name:
                     # human error, trying to add the same content with different name
                     raise dj.DataJointError(f"The specified stream type already exists - name: {pname}")
+            else:
+                streams.StreamType.insert1(entry)
 
-        streams.StreamType.insert(stream_entries, skip_duplicates=True)
 
-
-def insert_device_types(schema: DotMap, metadata_yml_filepath: Path):
-    """Use dataset.schema and metadata.yml to insert into streams.DeviceType and streams.Device. Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml. It then creates new device tables under streams schema."""
+def insert_device_types(device_schema: DotMap, metadata_yml_filepath: Path):
+    """
+    Use aeon.schema.schemas and metadata.yml to insert into streams.DeviceType and streams.Device.
+    Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml.
+    It then creates new device tables under streams schema.
+    """
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
-    device_info: dict[dict] = get_device_info(schema)
-    device_type_mapper, device_sn = get_device_mapper(schema, metadata_yml_filepath)
+    device_info: dict[dict] = get_device_info(device_schema)
+    device_type_mapper, device_sn = get_device_mapper(device_schema, metadata_yml_filepath)
 
     # Add device type to device_info. Only add if device types that are defined in Metadata.yml
     device_info = {
@@ -126,7 +117,7 @@ def insert_device_types(schema: DotMap, metadata_yml_filepath: Path):
         streams.Device.insert(new_devices)
 
 
-def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> dict:
+def extract_epoch_config(experiment_name: str, devices_schema, metadata_yml_filepath: str) -> dict:
     """Parse experiment metadata YAML file and extract epoch configuration.
 
     Args:
@@ -141,7 +132,7 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
     epoch_config: dict = (
         io_api.load(
             str(metadata_yml_filepath.parent),
-            acquisition._device_schema_mapping[experiment_name].Metadata,
+            devices_schema.Metadata,
         )
         .reset_index()
         .to_dict("records")[0]
@@ -157,7 +148,8 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
         json.dumps(epoch_config["metadata"]["Devices"], default=lambda x: x.__dict__, indent=4)
     )
 
-    if isinstance(devices, list):  # In exp02, it is a list of dict. In presocial. It's a dict of dict.
+    # Maintain backward compatibility - In exp02, it is a list of dict. From presocial onward, it's a dict of dict.
+    if isinstance(devices, list):
         devices: dict = {d.pop("Name"): d for d in devices}  # {deivce_name: device_config}
 
     return {
@@ -170,7 +162,7 @@ def extract_epoch_config(experiment_name: str, metadata_yml_filepath: str) -> di
     }
 
 
-def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
+def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath):
     """Make entries into device tables."""
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
@@ -180,7 +172,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
 
     experiment_key = {"experiment_name": experiment_name}
     metadata_yml_filepath = pathlib.Path(metadata_yml_filepath)
-    epoch_config = extract_epoch_config(experiment_name, metadata_yml_filepath)
+    epoch_config = extract_epoch_config(experiment_name, devices_schema, metadata_yml_filepath)
 
     previous_epoch = (acquisition.Experiment & experiment_key).aggr(
         acquisition.Epoch & f'epoch_start < "{epoch_config["epoch_start"]}"',
@@ -192,10 +184,10 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
         # if identical commit -> no changes
         return
 
-    schema = acquisition._device_schema_mapping[experiment_name]
-    device_type_mapper, _ = get_device_mapper(schema, metadata_yml_filepath)
+    device_type_mapper, _ = get_device_mapper(devices_schema, metadata_yml_filepath)
 
     # Insert into each device table
+    epoch_device_types = []
     device_list = []
     device_removal_list = []
 
@@ -204,7 +196,16 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
             device_sn = device_config.get("SerialNumber", device_config.get("PortName"))
             device_key = {"device_serial_number": device_sn}
 
+            if not (streams.Device & device_key):
+                logger.warning(
+                    f"Device {device_name} (serial number: {device_sn}) is not yet registered in streams.Device. Skipping..."
+                )
+                # skip if this device (with a serial number) is not yet inserted in streams.Device
+                continue
+
             device_list.append(device_key)
+            epoch_device_types.append(table.__name__)
+
             table_entry = {
                 "experiment_name": experiment_name,
                 **device_key,
@@ -221,7 +222,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                 for attribute_name, attribute_value in device_config.items()
             ]
 
-            """Check if this camera is currently installed. If the same camera serial number is currently installed check for any changes in configuration. If not, skip this"""
+            """Check if this device is currently installed. If the same device serial number is currently installed check for any changes in configuration. If not, skip this"""
             current_device_query = table - table.RemovalTime & experiment_key & device_key
 
             if current_device_query:
@@ -256,6 +257,7 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
                         ],
                     }
                 )
+                epoch_device_types.remove(table.__name__)
 
             # Insert into table.
             table.insert1(table_entry, skip_duplicates=True)
@@ -276,6 +278,8 @@ def ingest_epoch_metadata(experiment_name, metadata_yml_filepath):
         for device_entry in device_removal_list:
             if device_removal(device_type, device_entry):
                 table.RemovalTime.insert1(device_entry)
+
+    return set(epoch_device_types)
 
 
 # region Get stream & device information
@@ -354,6 +358,7 @@ def get_device_info(schema: DotMap) -> dict[dict]:
                     "aeon.io.reader",
                     "aeon.schema.foraging",
                     "aeon.schema.octagon",
+                    "aeon.schema.social",
                 ]:
                     device_info[device_name]["stream_type"].append(stream_type)
                     device_info[device_name]["stream_reader"].append(_get_class_path(stream_obj))
@@ -418,7 +423,7 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
     )
 
     # Store the mapper dictionary here
-    filename = Path(__file__).parent.parent / "create_experiments/device_type_mapper.json"
+    filename = Path(__file__).parent.parent / "utils/device_type_mapper.json"
 
     device_type_mapper = {}  # {device_name: device_type}
     device_sn = {}  # {device_name: device_sn}

@@ -115,7 +115,8 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
                 # to fill missing values
                 previous = reader.read(files[i - 1])
                 data = pd.concat([previous, frame])
-                data = data.reindex(values, method="pad", tolerance=tolerance)
+                data = data.reindex(values, tolerance=tolerance)
+                data.dropna(inplace=True)
             else:
                 data.drop(columns="time", inplace=True)
             dataframes.append(data)
