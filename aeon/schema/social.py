@@ -35,7 +35,7 @@ block_state_b = lambda pattern: {
 
 # LightEvents
 light_events_b = lambda pattern: {
-    "LightEvents": reader.Csv("Environment_LightEvents_*", ["channel", "value"])
+    "LightEvents": reader.Csv(f"{pattern}_LightEvents_*", ["channel", "value"])
 }
 
 # Combine EnvironmentState, BlockState, LightEvents
@@ -45,18 +45,18 @@ environment_b = lambda pattern: register(
 
 # SubjectState
 subject_state_b = lambda pattern: {
-    "SubjectState": reader.Csv("Environment_SubjectState_*", ["id", "weight", "type"])
+    "SubjectState": reader.Csv(f"{pattern}_SubjectState_*", ["id", "weight", "type"])
 }
 
 # SubjectVisits
 subject_visits_b = lambda pattern: {
-    "SubjectVisits": reader.Csv("Environment_SubjectVisit_*", ["id", "type", "region"])
+    "SubjectVisits": reader.Csv(f"{pattern}_SubjectVisit_*", ["id", "type", "region"])
 }
 
 # SubjectWeight
 subject_weight_b = lambda pattern: {
     "SubjectWeight": reader.Csv(
-        "Environment_SubjectWeight_*", ["weight", "confidence", "subject_id", "int_id"]
+        f"{pattern}_SubjectWeight_*", ["weight", "confidence", "subject_id", "int_id"]
     )
 }
 
