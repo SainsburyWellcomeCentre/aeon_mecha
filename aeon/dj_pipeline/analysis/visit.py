@@ -1,11 +1,13 @@
 import datetime
-
 import datajoint as dj
 import pandas as pd
+import numpy as np
+from collections import deque
 
 from aeon.analysis import utils as analysis_utils
 
-from .. import acquisition, get_schema_name, lab, qc, tracking
+from aeon.dj_pipeline import get_schema_name, fetch_stream
+from aeon.dj_pipeline import acquisition, lab, qc, tracking
 
 schema = dj.schema(get_schema_name("analysis"))
 
@@ -182,3 +184,70 @@ def ingest_environment_visits(experiment_names: list | None = None):
                     },
                     skip_duplicates=True,
                 )
+
+
+def get_maintenance_periods(experiment_name, start, end):
+    # get states from acquisition.Environment.EnvironmentState
+    start_restriction = f'"{start}" BETWEEN chunk_start AND chunk_end'
+    end_restriction = f'"{end}" BETWEEN chunk_start AND chunk_end'
+
+    start_query = acquisition.Chunk & start_restriction
+    end_query = acquisition.Chunk & end_restriction
+    if not (start_query and end_query):
+        raise ValueError(f"No Chunk found between {start} and {end}")
+
+    time_restriction = (
+        f'chunk_start >= "{min(start_query.fetch("chunk_start"))}"'
+        f' AND chunk_start < "{max(end_query.fetch("chunk_end"))}"'
+    )
+
+    state_query = (
+        acquisition.Environment.EnvironmentState & {"experiment_name": experiment_name} & time_restriction
+    )
+    if len(state_query) == 0:
+        return None
+
+    env_state_df = fetch_stream(state_query)[start:end]
+    env_state_df.reset_index(inplace=True)
+    env_state_df = env_state_df[env_state_df["state"].shift() != env_state_df["state"]].reset_index(
+        drop=True
+    )  # remove duplicates and keep the first one
+    # An experiment starts with visit start (anything before the first maintenance is experiment)
+    # Delete the row if it starts with "Experiment"
+    if env_state_df.iloc[0]["state"] == "Experiment":
+        env_state_df.drop(index=0, inplace=True)  # look for the first maintenance
+        if env_state_df.empty:
+            return deque([])
+
+    # Last entry is the visit end
+    if env_state_df.iloc[-1]["state"] == "Maintenance":
+        log_df_end = pd.DataFrame({"time": [pd.Timestamp(end)], "state": ["VisitEnd"]})
+        env_state_df = pd.concat([env_state_df, log_df_end])
+        env_state_df.reset_index(drop=True, inplace=True)
+
+    maintenance_starts = env_state_df.loc[env_state_df["state"] == "Maintenance", "time"].values
+    maintenance_ends = env_state_df.loc[env_state_df["state"] != "Maintenance", "time"].values
+
+    return deque(
+        [
+            (pd.Timestamp(start), pd.Timestamp(end))
+            for start, end in zip(maintenance_starts, maintenance_ends)
+        ]
+    )  # queue object. pop out from left after use
+
+
+def filter_out_maintenance_periods(data_df, maintenance_period, end_time, dropna=False):
+    maint_period = maintenance_period.copy()
+    while maint_period:
+        (maintenance_start, maintenance_end) = maint_period[0]
+        if end_time < maintenance_start:  # no more maintenance for this date
+            break
+        maintenance_filter = (data_df.index >= maintenance_start) & (data_df.index <= maintenance_end)
+        data_df[maintenance_filter] = np.nan
+        if end_time >= maintenance_end:  # remove this range
+            maint_period.popleft()
+        else:
+            break
+    if dropna:
+        data_df.dropna(inplace=True)
+    return data_df

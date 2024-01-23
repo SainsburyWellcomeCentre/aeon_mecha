@@ -1,13 +1,18 @@
 import datetime
-from collections import deque
 from datetime import time
 
 import datajoint as dj
 import numpy as np
 import pandas as pd
 
-from .. import acquisition, get_schema_name, lab, tracking
-from .visit import Visit, VisitEnd
+from aeon.dj_pipeline import get_schema_name
+from aeon.dj_pipeline import acquisition, lab, tracking
+from aeon.dj_pipeline.analysis.visit import (
+    Visit,
+    VisitEnd,
+    get_maintenance_periods,
+    filter_out_maintenance_periods,
+)
 
 logger = dj.logger
 schema = dj.schema(get_schema_name("analysis"))
@@ -600,59 +605,3 @@ class VisitForagingBout(dj.Computed):
                         "pellet_count": len(patch.loc[wheel_start:wheel_end]),
                     }
                 )
-
-
-def get_maintenance_periods(experiment_name, start, end):
-    # get logs from acquisition.ExperimentLog
-    query = (
-        acquisition.ExperimentLog.Message.proj("message")
-        & {"experiment_name": experiment_name}
-        & 'message IN ("Maintenance", "Experiment")'
-        & f'message_time BETWEEN "{start}" AND "{end}"'
-    )
-
-    if len(query) == 0:
-        return None
-
-    log_df = query.fetch(format="frame", order_by="message_time").reset_index()
-    log_df = log_df[log_df["message"].shift() != log_df["message"]].reset_index(
-        drop=True
-    )  # remove duplicates and keep the first one
-
-    # An experiment starts with visit start (anything before the first maintenance is experiment)
-    # Delete the row if it starts with "Experiment"
-    if log_df.iloc[0]["message"] == "Experiment":
-        log_df.drop(index=0, inplace=True)  # look for the first maintenance
-
-    # Last entry is the visit end
-    if log_df.iloc[-1]["message"] == "Maintenance":
-        log_df_end = log_df.tail(1)
-        log_df_end["message_time"], log_df_end["message"] = (
-            pd.Timestamp(end),
-            "VisitEnd",
-        )
-        log_df = pd.concat([log_df, log_df_end])
-        log_df.reset_index(drop=True, inplace=True)
-
-    start_timestamps = log_df.loc[log_df["message"] == "Maintenance", "message_time"].values
-    end_timestamps = log_df.loc[log_df["message"] != "Maintenance", "message_time"].values
-
-    return deque(
-        [(pd.Timestamp(start), pd.Timestamp(end)) for start, end in zip(start_timestamps, end_timestamps)]
-    )  # queue object. pop out from left after use
-
-
-def filter_out_maintenance_periods(data_df, maintenance_period, end_time, dropna=False):
-    while maintenance_period:
-        (maintenance_start, maintenance_end) = maintenance_period[0]
-        if end_time < maintenance_start:  # no more maintenance for this date
-            break
-        maintenance_filter = (data_df.index >= maintenance_start) & (data_df.index <= maintenance_end)
-        data_df[maintenance_filter] = np.nan
-        if end_time >= maintenance_end:  # remove this range
-            maintenance_period.popleft()
-        else:
-            break
-    if dropna:
-        data_df.dropna(inplace=True)
-    return data_df
