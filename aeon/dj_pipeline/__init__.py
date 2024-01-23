@@ -30,6 +30,23 @@ def dict_to_uuid(key) -> uuid.UUID:
     return uuid.UUID(hex=hashed.hexdigest())
 
 
+def fetch_stream(query, drop_pk=True):
+    """
+    Provided a query containing data from a Stream table,
+     fetch and aggregate the data into one DataFrame indexed by "time"
+    """
+    df = (query & "sample_count > 0").fetch(format="frame").reset_index()
+    cols2explode = [
+        c for c in query.heading.secondary_attributes if query.heading.attributes[c].type == "longblob"
+    ]
+    df = df.explode(column=cols2explode)
+    cols2drop = ["sample_count"] + (query.primary_key if drop_pk else [])
+    df.drop(columns=cols2drop, inplace=True, errors="ignore")
+    df.rename(columns={"timestamps": "time"}, inplace=True)
+    df.set_index("time", inplace=True)
+    return df
+
+
 try:
     from . import streams
 except ImportError:
