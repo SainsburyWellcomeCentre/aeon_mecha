@@ -5,7 +5,7 @@ import pytest
 from pytest import mark
 
 import aeon
-from aeon.schema.dataset import exp02
+from aeon.schema.schemas import exp02
 
 nonmonotonic_path = Path(__file__).parent.parent / "data" / "nonmonotonic"
 monotonic_path = Path(__file__).parent.parent / "data" / "monotonic"

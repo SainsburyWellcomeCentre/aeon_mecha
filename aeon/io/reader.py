@@ -212,7 +212,7 @@ class BitmaskEvent(Harp):
         specified unique identifier.
         """
         data = super().read(file)
-        data = data[data.event & self.value > 0]
+        data = data[(data.event & self.value) == self.value]
         data["event"] = self.tag
         return data
 
