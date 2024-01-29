@@ -188,26 +188,14 @@ def ingest_environment_visits(experiment_names: list | None = None):
 
 def get_maintenance_periods(experiment_name, start, end):
     # get states from acquisition.Environment.EnvironmentState
-    start_restriction = f'"{start}" BETWEEN chunk_start AND chunk_end'
-    end_restriction = f'"{end}" BETWEEN chunk_start AND chunk_end'
-
-    start_query = acquisition.Chunk & start_restriction
-    end_query = acquisition.Chunk & end_restriction
-    if not (start_query and end_query):
-        raise ValueError(f"No Chunk found between {start} and {end}")
-
-    time_restriction = (
-        f'chunk_start >= "{min(start_query.fetch("chunk_start"))}"'
-        f' AND chunk_start < "{max(end_query.fetch("chunk_end"))}"'
-    )
-
+    chunk_restriction = acquisition.create_chunk_restriction(experiment_name, start, end)
     state_query = (
-        acquisition.Environment.EnvironmentState & {"experiment_name": experiment_name} & time_restriction
+        acquisition.Environment.EnvironmentState & {"experiment_name": experiment_name} & chunk_restriction
     )
-    if len(state_query) == 0:
-        return None
-
     env_state_df = fetch_stream(state_query)[start:end]
+    if env_state_df.empty:
+        return deque([])
+
     env_state_df.reset_index(inplace=True)
     env_state_df = env_state_df[env_state_df["state"].shift() != env_state_df["state"]].reset_index(
         drop=True
