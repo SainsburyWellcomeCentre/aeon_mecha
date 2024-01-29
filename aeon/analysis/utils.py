@@ -10,7 +10,6 @@ def distancetravelled(angle, radius=4.0):
     :param float radius: The radius of the wheel, in metric units.
     :return: The total distance travelled on the wheel, in metric units.
     """
-    angle.dropna(inplace=True)
     maxvalue = int(np.iinfo(np.uint16).max >> 2)
     jumpthreshold = maxvalue // 2
     turns = angle.astype(int).diff()

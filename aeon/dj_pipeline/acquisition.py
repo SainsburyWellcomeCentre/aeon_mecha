@@ -1360,3 +1360,20 @@ def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
         subject_data.sort_index(inplace=True)
 
     return subject_data
+
+
+def create_chunk_restriction(experiment_name, start_time, end_time):
+    """
+    Create a time restriction string for the chunks between the specified "start" and "end" times
+    """
+    start_restriction = f'"{start_time}" BETWEEN chunk_start AND chunk_end'
+    end_restriction = f'"{end_time}" BETWEEN chunk_start AND chunk_end'
+    start_query = Chunk & {"experiment_name": experiment_name} & start_restriction
+    end_query = Chunk & {"experiment_name": experiment_name} & end_restriction
+    if not (start_query and end_query):
+        raise ValueError(f"No Chunk found between {start_time} and {end_time}")
+    time_restriction = (
+        f'chunk_start >= "{min(start_query.fetch("chunk_start"))}"'
+        f' AND chunk_start < "{max(end_query.fetch("chunk_end"))}"'
+    )
+    return time_restriction
