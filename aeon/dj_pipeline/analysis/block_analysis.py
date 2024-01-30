@@ -30,6 +30,8 @@ class Block(dj.Manual):
 class BlockAnalysis(dj.Computed):
     definition = """
     -> Block
+    ---
+    block_duration: float  # (hour)
     """
 
     key_source = Block & "block_end IS NOT NULL"
@@ -77,7 +79,7 @@ class BlockAnalysis(dj.Computed):
             key["experiment_name"], block_start, block_end
         )
 
-        self.insert1(key)
+        self.insert1({**key, "block_duration": (block_end - block_start).total_seconds() / 3600})
 
         # Patch data - TriggerPellet, DepletionState, Encoder (distancetravelled)
         # For wheel data, downsample by 50x - 10Hz
