@@ -280,7 +280,7 @@ class BlockPlots(dj.Computed):
 @schema
 class BlockDetection(dj.Computed):
     definition = """
-    -> acquisition.Chunk
+    -> acquisition.Environment
     """
 
     def make(self, key):
