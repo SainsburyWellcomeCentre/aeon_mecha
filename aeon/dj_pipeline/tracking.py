@@ -232,8 +232,6 @@ class SLEAPTracking(dj.Imported):
     -> acquisition.Chunk
     -> streams.SpinnakerVideoSource
     -> TrackingParamSet
-    ---
-    sample_count: int      # number of data points acquired from this stream for a given chunk
     """
 
     class PoseIdentity(dj.Part):
@@ -251,6 +249,7 @@ class SLEAPTracking(dj.Imported):
         -> master.PoseIdentity
         part_name: varchar(16)
         ---
+        sample_count: int      # number of data points acquired from this stream for a given chunk
         x:          longblob
         y:          longblob
         likelihood: longblob
@@ -294,7 +293,7 @@ class SLEAPTracking(dj.Imported):
         )
 
         if not len(pose_data):
-            self.insert1({**key, "sample_count": 0})
+            self.insert1(key)
             return
 
         # Find the config file for the SLEAP model
@@ -317,8 +316,7 @@ class SLEAPTracking(dj.Imported):
         class_names = stream_reader.get_class_names(config_file)
 
         # ingest parts and classes
-        sample_count = 0
-        class_entries, part_entries = [], []
+        pose_identity_entries, part_entries = [], []
         for class_idx in set(pose_data["class"].values.astype(int)):
             class_position = pose_data[pose_data["class"] == class_idx]
             for part in set(class_position.part.values):
@@ -332,12 +330,12 @@ class SLEAPTracking(dj.Imported):
                         "x": part_position.x.values,
                         "y": part_position.y.values,
                         "likelihood": part_position.part_likelihood.values,
+                        "sample_count": len(part_position.index.values),
                     }
                 )
                 if part == anchor_part:
                     class_likelihood = part_position.class_likelihood.values
-                    sample_count = len(part_position.index.values)
-            class_entries.append(
+            pose_identity_entries.append(
                 {
                     **key,
                     "identity_idx": class_idx,
@@ -347,40 +345,9 @@ class SLEAPTracking(dj.Imported):
                 }
             )
 
-        self.insert1({**key, "sample_count": sample_count})
-        self.Class.insert(class_entries)
+        self.insert1(key)
+        self.PoseIdentity.insert(pose_identity_entries)
         self.Part.insert(part_entries)
-
-    @classmethod
-    def get_object_position(
-        cls,
-        experiment_name,
-        subject_name,
-        start,
-        end,
-        camera_name="CameraTop",
-        tracking_paramset_id=1,
-        in_meter=False,
-    ):
-        table = (
-            cls.Class.proj(part_name="anchor_part") * cls.Part * acquisition.Chunk.proj("chunk_end")
-            & {"experiment_name": experiment_name}
-            & {"tracking_paramset_id": tracking_paramset_id}
-            & (streams.SpinnakerVideoSource & {"spinnaker_video_source_name": camera_name})
-        )
-
-        return _get_position(
-            table,
-            object_attr="class_name",
-            object_name=subject_name,
-            start_attr="chunk_start",
-            end_attr="chunk_end",
-            start=start,
-            end=end,
-            fetch_attrs=["timestamps", "x", "y", "likelihood"],
-            attrs_to_scale=["position_x", "position_y"],
-            scale_factor=pixel_scale if in_meter else 1,
-        )
 
 
 # ---------- HELPER ------------------
