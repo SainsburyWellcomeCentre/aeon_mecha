@@ -195,8 +195,9 @@ class BlockSubjectAnalysis(dj.Computed):
 
     class Patch(dj.Part):
         definition = """
-        -> master.Patch
-        -> master.Subject
+        -> master
+        -> BlockAnalysis.Patch
+        -> BlockAnalysis.Subject
         ---
         in_patch_timestamps: longblob  # timestamps in which a particular subject is spending time at a particular patch
         in_patch_time: float  # total seconds spent in this patch for this block
