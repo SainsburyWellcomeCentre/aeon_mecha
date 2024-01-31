@@ -70,12 +70,32 @@ def feeder(pattern):
 
 def beam_break(pattern):
     """Beam break events for pellet detection."""
-    return {"BeamBreak": _reader.BitmaskEvent(f"{pattern}_32_*", 0x22, "PelletDetected")}
+    return {"BeamBreak": _reader.BitmaskEvent(f"{pattern}_32_*", 34, "PelletDetected")}
 
 
 def deliver_pellet(pattern):
     """Pellet delivery commands."""
-    return {"DeliverPellet": _reader.BitmaskEvent(f"{pattern}_35_*", 0x80, "TriggerPellet")}
+    return {"DeliverPellet": _reader.BitmaskEvent(f"{pattern}_35_*", 1, "TriggerPellet")}
+
+
+def pellet_manual_delivery(pattern):
+    """Manual pellet delivery."""
+    return {"ManualDelivery": _reader.Harp(f"{pattern}_201_*", ["manual_delivery"])}
+
+
+def missed_pellet(pattern):
+    """Missed pellet delivery."""
+    return {"MissedPellet": _reader.Harp(f"{pattern}_202_*", ["missed_pellet"])}
+
+
+def pellet_retried_delivery(pattern):
+    """Retry pellet delivery."""
+    return {"RetriedDelivery": _reader.Harp(f"{pattern}_203_*", ["retried_delivery"])}
+
+
+def pellet_depletion_state(pattern):
+    """Pellet delivery state."""
+    return {"DepletionState": _reader.Csv(f"{pattern}_State_*", ["threshold", "offset", "rate"])}
 
 
 def patch(pattern):
