@@ -1,15 +1,17 @@
+from __future__ import annotations
+
 import datetime
 import json
 import math
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from dotmap import DotMap
-from pathlib import Path
 
-from aeon.io.api import chunk_key
 from aeon import util
+from aeon.io.api import chunk_key
 
 _SECONDS_PER_TICK = 32e-6
 _payloadtypes = {
