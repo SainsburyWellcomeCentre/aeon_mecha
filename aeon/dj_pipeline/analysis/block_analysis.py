@@ -10,7 +10,7 @@ from aeon.analysis import utils as analysis_utils
 from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, tracking
 from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
 
-schema = dj.schema(get_schema_name("analysis"))
+schema = dj.schema(get_schema_name("block_analysis"))
 
 
 @schema
