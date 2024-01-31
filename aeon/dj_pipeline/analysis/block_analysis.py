@@ -1,17 +1,15 @@
 import datetime
-import datajoint as dj
-import pandas as pd
 import json
+
+import datajoint as dj
 import numpy as np
+import pandas as pd
 
 from aeon.analysis import utils as analysis_utils
-
-from aeon.dj_pipeline import get_schema_name, fetch_stream
-from aeon.dj_pipeline import acquisition, tracking, streams
-from aeon.dj_pipeline.analysis.visit import (
-    get_maintenance_periods,
-    filter_out_maintenance_periods,
-)
+from aeon.dj_pipeline import (acquisition, fetch_stream, get_schema_name,
+                              streams, tracking)
+from aeon.dj_pipeline.analysis.visit import (filter_out_maintenance_periods,
+                                             get_maintenance_periods)
 
 schema = dj.schema(get_schema_name("analysis"))
 
@@ -47,7 +45,7 @@ class BlockAnalysis(dj.Computed):
         wheel_timestamps: longblob
         patch_threshold: longblob
         patch_threshold_timestamps: longblob
-        patch_rate: float   
+        patch_rate: float
         """
 
     class Subject(dj.Part):
@@ -207,7 +205,7 @@ class BlockSubjectAnalysis(dj.Computed):
         pellet_timestamps: longblob
         wheel_distance_travelled: longblob  # wheel's cumulative distance travelled
         wheel_timestamps: longblob
-        cumulative_sum_preference: longblob  
+        cumulative_sum_preference: longblob
         windowed_sum_preference: longblob
         """
 
@@ -235,7 +233,10 @@ class BlockPlots(dj.Computed):
         # Make plotly plots
         weight_fig = go.Figure()
         pos_fig = go.Figure()
-        for subject_data in (BlockAnalysis.Subject & key).fetch(as_dict=True):
+        wheel_fig = go.Figure()
+
+        for subject_data in (BlockAnalysis.Subject & key):
+            # Subject weight over time
             weight_fig.add_trace(
                 go.Scatter(
                     x=subject_data["weight_timestamps"],
@@ -244,6 +245,7 @@ class BlockPlots(dj.Computed):
                     name=subject_data["subject_name"],
                 )
             )
+            # Subject position over time
             mask = subject_data["position_likelihood"] > conf_thresh
             pos_fig.add_trace(
                 go.Scatter3d(
@@ -255,12 +257,12 @@ class BlockPlots(dj.Computed):
                 )
             )
 
-        wheel_fig = go.Figure()
-        for patch_data in (BlockAnalysis.Patch & key).fetch(as_dict=True):
+        # Cumulative wheel distance travelled over time
+        for patch_data in (BlockAnalysis.Patch & key):
             wheel_fig.add_trace(
                 go.Scatter(
                     x=patch_data["wheel_timestamps"][::2],
-                    y=patch_data["cumulative_distance_travelled"][::2],
+                    y=patch_data["wheel_cumsum_distance_travelled"][::2],
                     mode="lines",
                     name=patch_data["patch_name"],
                 )
