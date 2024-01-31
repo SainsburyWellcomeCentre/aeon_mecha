@@ -230,27 +230,25 @@ class Epoch(dj.Manual):
                 continue
 
             epoch_config, metadata_yml_filepath = None, None
-            if experiment_name != "exp0.1-r0":
-                metadata_yml_filepath = epoch_dir / "Metadata.yml"
-                if metadata_yml_filepath.exists():
-                    epoch_config = extract_epoch_config(
-                        experiment_name, devices_schema, metadata_yml_filepath
-                    )
 
-                    metadata_yml_filepath = epoch_config["metadata_file_path"]
+            metadata_yml_filepath = epoch_dir / "Metadata.yml"
+            if metadata_yml_filepath.exists():
+                epoch_config = extract_epoch_config(experiment_name, devices_schema, metadata_yml_filepath)
 
-                    _, directory, repo_path = _match_experiment_directory(
-                        experiment_name,
-                        epoch_config["metadata_file_path"],
-                        raw_data_dirs,
-                    )
-                    epoch_config = {
-                        **epoch_config,
-                        **directory,
-                        "metadata_file_path": epoch_config["metadata_file_path"]
-                        .relative_to(repo_path)
-                        .as_posix(),
-                    }
+                metadata_yml_filepath = epoch_config["metadata_file_path"]
+
+                _, directory, repo_path = _match_experiment_directory(
+                    experiment_name,
+                    epoch_config["metadata_file_path"],
+                    raw_data_dirs,
+                )
+                epoch_config = {
+                    **epoch_config,
+                    **directory,
+                    "metadata_file_path": epoch_config["metadata_file_path"]
+                    .relative_to(repo_path)
+                    .as_posix(),
+                }
 
             # find previous epoch end-time
             previous_epoch_key = None
@@ -602,54 +600,6 @@ def _match_experiment_directory(experiment_name, path, directories):
         raise FileNotFoundError(f"Unable to identify the directory" f" where this chunk is from: {path}")
 
     return raw_data_dir, directory, repo_path
-
-
-def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
-    assert experiment_name in ("exp0.1-r0", "social0-r1")
-
-    reader = io_reader.Subject("SessionData_2")
-    subject_data = io_api.load(
-        data_dir,
-        reader=reader,
-        start=start,
-        end=end,
-    )
-
-    subject_data.replace("Start", "Enter", inplace=True)
-    subject_data.replace("End", "Exit", inplace=True)
-
-    if not len(subject_data):
-        return subject_data
-
-    if experiment_name == "social0-r1":
-        from aeon.dj_pipeline.create_experiments.create_socialexperiment_0 import fixID
-
-        sessdf = subject_data.copy()
-        sessdf = sessdf[~sessdf.id.str.contains("test")]
-        sessdf = sessdf[~sessdf.id.str.contains("jeff")]
-        sessdf = sessdf[~sessdf.id.str.contains("OAA")]
-        sessdf = sessdf[~sessdf.id.str.contains("rew")]
-        sessdf = sessdf[~sessdf.id.str.contains("Animal")]
-        sessdf = sessdf[~sessdf.id.str.contains("white")]
-
-        valid_ids = (Experiment.Subject & {"experiment_name": experiment_name}).fetch("subject")
-
-        fix = lambda x: fixID(x, valid_ids=list(valid_ids))
-        sessdf.id = sessdf.id.apply(fix)
-
-        multi_ids = sessdf[sessdf.id.str.contains(";")]
-        multi_ids_rows = []
-        for _, r in multi_ids.iterrows():
-            for i in r.id.split(";"):
-                multi_ids_rows.append({"time": r.name, "id": i, "weight": r.weight, "event": r.event})
-        multi_ids_rows = pd.DataFrame(multi_ids_rows)
-        if len(multi_ids_rows):
-            multi_ids_rows.set_index("time", inplace=True)
-
-        subject_data = pd.concat([sessdf[~sessdf.id.str.contains(";")], multi_ids_rows])
-        subject_data.sort_index(inplace=True)
-
-    return subject_data
 
 
 def create_chunk_restriction(experiment_name, start_time, end_time):
