@@ -74,11 +74,40 @@ social01 = DotMap(
         Device("Patch1", social.patch_streams_b),
         Device("Patch2", social.patch_streams_b),
         Device("Patch3", social.patch_streams_b),
-        Device("RfidGate", social.rfid_events_b),
-        Device("RfidNest1", social.rfid_events_b),
-        Device("RfidNest2", social.rfid_events_b),
-        Device("RfidPatch1", social.rfid_events_b),
-        Device("RfidPatch2", social.rfid_events_b),
-        Device("RfidPatch3", social.rfid_events_b),
+        Device("RfidGate", social.rfid_events_social01_b),
+        Device("RfidNest1", social.rfid_events_social01_b),
+        Device("RfidNest2", social.rfid_events_social01_b),
+        Device("RfidPatch1", social.rfid_events_social01_b),
+        Device("RfidPatch2", social.rfid_events_social01_b),
+        Device("RfidPatch3", social.rfid_events_social01_b),
     ]
 )
+
+
+social02 = DotMap(
+    [
+        Device("Metadata", core.metadata),
+        Device("Environment", social.environment_b, social.subject_b),
+        Device("CameraTop", core.video, social.camera_top_pos_b),
+        Device("CameraNorth", core.video),
+        Device("CameraSouth", core.video),
+        Device("CameraEast", core.video),
+        Device("CameraWest", core.video),
+        Device("CameraPatch1", core.video),
+        Device("CameraPatch2", core.video),
+        Device("CameraPatch3", core.video),
+        Device("CameraNest", core.video),
+        Device("Nest", social.weight_raw_b, social.weight_filtered_b),
+        Device("Patch1", social.patch_streams_b),
+        Device("Patch2", social.patch_streams_b),
+        Device("Patch3", social.patch_streams_b),
+        Device("Patch1Rfid", social.rfid_events_b),
+        Device("Patch2Rfid", social.rfid_events_b),
+        Device("Patch3Rfid", social.rfid_events_b),
+        Device("NestRfid1", social.rfid_events_b),
+        Device("NestRfid2", social.rfid_events_b),
+        Device("GateRfid", social.rfid_events_b),
+    ]
+)
+
+__all__ = ["exp01", "exp02", "octagon01", "social01", "social02"]
