@@ -4,6 +4,7 @@ import re
 import datajoint as dj
 import numpy as np
 import pandas as pd
+import json
 
 from aeon.io import api as io_api
 from aeon.schema import schemas as aeon_schemas
@@ -130,6 +131,15 @@ class Experiment(dj.Manual):
         -> master
         ---
         -> DevicesSchema
+        """
+
+    class Note(dj.Part):
+        definition = """
+        -> master
+        note_timestamp: datetime
+        ---
+        note_type: varchar(64)
+        note: varchar(1000)
         """
 
     @classmethod
@@ -333,6 +343,31 @@ class EpochEnd(dj.Manual):
     epoch_end: datetime(6)
     epoch_duration: float  # (hour)
     """
+
+
+@schema
+class EpochActiveRegion(dj.Imported):
+    definition = """
+    -> Epoch
+    """
+
+    class Region(dj.Part):
+        definition = """
+        -> master
+        region_name: varchar(36)
+        ---
+        region_data: longblob
+        """
+
+    def make(self, key):
+        metadata_file_path = (Epoch.Config & key).fetch1("metadata_file_path")
+        metadata_file_path = paths.get_repository_path("ceph_aeon") / metadata_file_path
+        with metadata_file_path.open("r") as f:
+            metadata = json.load(f)
+        self.insert1(key)
+        self.Region.insert(
+            {**key, "region_name": k, "region_data": v} for k, v in metadata["ActiveRegion"].items()
+        )
 
 
 # ------------------- ACQUISITION CHUNK --------------------

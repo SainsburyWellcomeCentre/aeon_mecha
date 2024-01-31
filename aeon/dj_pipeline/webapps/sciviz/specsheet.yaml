@@ -153,6 +153,29 @@ SciViz:
                   input: Subject in the experiment
                   destination: aeon_subject.Subject
 
+            New Experiment Note:
+              route: /exp_subject_form
+              x: 0
+              y: 0.5
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment.Note
+              map:
+                - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.Experiment
+                - type: attribute
+                  input: Note Time
+                  destination: note_timestamp
+                - type: attribute
+                  input: Note Type
+                  destination: note_type
+                - type: attribute
+                  input: Note
+                  destination: note
+
             New Experiment Type:
               route: /exp_type_form
               x: 0
