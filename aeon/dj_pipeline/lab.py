@@ -65,76 +65,12 @@ class Location(dj.Lookup):
 
 
 @schema
-class UserRole(dj.Lookup):
-    definition = """
-    user_role       : varchar(16)
-    """
-
-
-@schema
 class User(dj.Lookup):
     definition = """
     user                    : varchar(32)  # swc username
     ---
     responsible_owner=''    : varchar(32)  # pyrat username
     responsible_id=''       : varchar(32)  # pyrat `responsible_id`
-    """
-
-
-@schema
-class LabMembership(dj.Lookup):
-    definition = """
-    -> Lab
-    -> User
-    ---
-    -> [nullable] UserRole
-    """
-
-
-@schema
-class ProtocolType(dj.Lookup):
-    definition = """
-    protocol_type           : varchar(32)
-    """
-
-
-@schema
-class Protocol(dj.Lookup):
-    definition = """
-    # protocol approved by some institutions like IACUC, IRB
-    protocol                : varchar(16)
-    ---
-    -> ProtocolType
-    protocol_description=''        : varchar(255)
-    """
-
-
-@schema
-class Project(dj.Lookup):
-    definition = """
-    project                 : varchar(32)
-    ---
-    project_description=''         : varchar(1024)
-    """
-
-
-@schema
-class ProjectUser(dj.Manual):
-    definition = """
-    -> Project
-    -> User
-    """
-
-
-@schema
-class Source(dj.Lookup):
-    definition = """
-    # source or supplier of animals
-    source             : varchar(32)    # abbreviated source name
-    ---
-    source_name        : varchar(255)
-    contact_details='' : varchar(255)
-    source_description=''     : varchar(255)
     """
 
 
@@ -208,27 +144,3 @@ class ArenaTile(dj.Manual):
         vertex_y: float    # (m) y-coordinate of the vertex, in the arena's coordinate frame
         vertex_z=0: float  # (m) z-coordinate of the vertex, in the arena's coordinate frame
         """
-
-
-# ------------------- EQUIPMENTS --------------------
-
-
-@schema
-class Camera(dj.Lookup):
-    definition = """  # Physical cameras, identified by unique serial number
-    camera_serial_number: varchar(12)
-    """
-
-
-@schema
-class FoodPatch(dj.Lookup):
-    definition = """  # Physical food patch devices, identified by unique serial number
-    food_patch_serial_number: varchar(12)
-    """
-
-
-@schema
-class WeightScale(dj.Lookup):
-    definition = """  # Physical weight scale devices, identified by unique serial number
-    weight_scale_serial_number: varchar(12)
-    """

@@ -279,13 +279,13 @@ class Pose(Harp):
         """Pose reader constructor."""
         # `pattern` for this reader should typically be '<hpcnode>_<jobid>*'
         super().__init__(pattern, columns=None)
-        self._model_root = Path(model_root)
+        self._model_root = model_root
 
     def read(self, file: Path) -> pd.DataFrame:
         """Reads data from the Harp-binarized tracking file."""
         # Get config file from `file`, then bodyparts from config file.
         model_dir = Path(*Path(file.stem.replace("_", "/")).parent.parts[1:])
-        config_file_dir = self._model_root / model_dir
+        config_file_dir = Path(self._model_root) / model_dir
         if not config_file_dir.exists():
             raise FileNotFoundError(f"Cannot find model dir {config_file_dir}")
         config_file = self.get_config_file(config_file_dir)

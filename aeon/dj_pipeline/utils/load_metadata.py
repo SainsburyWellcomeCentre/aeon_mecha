@@ -44,7 +44,7 @@ def insert_stream_types():
                 streams.StreamType.insert1(entry)
 
 
-def insert_device_types(device_schema: DotMap, metadata_yml_filepath: Path):
+def insert_device_types(devices_schema: DotMap, metadata_yml_filepath: Path):
     """
     Use aeon.schema.schemas and metadata.yml to insert into streams.DeviceType and streams.Device.
     Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml.
@@ -52,8 +52,8 @@ def insert_device_types(device_schema: DotMap, metadata_yml_filepath: Path):
     """
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
-    device_info: dict[dict] = get_device_info(device_schema)
-    device_type_mapper, device_sn = get_device_mapper(device_schema, metadata_yml_filepath)
+    device_info: dict[dict] = get_device_info(devices_schema)
+    device_type_mapper, device_sn = get_device_mapper(devices_schema, metadata_yml_filepath)
 
     # Add device type to device_info. Only add if device types that are defined in Metadata.yml
     device_info = {
