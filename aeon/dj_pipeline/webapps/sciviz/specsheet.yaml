@@ -50,7 +50,7 @@ SciViz:
               route: /colony_page_pyrat_subjects
               x: 0
               y: 0
-              height: 0.6
+              height: 1
               width: 1
               type: antd-table
               restriction: >
@@ -64,7 +64,7 @@ SciViz:
             Pyrat User Entry:
               route: /colony_page_pyrat_user_entry
               x: 0
-              y: 0.6
+              y: 1
               height: 0.3
               width: 1
               type: form
@@ -81,19 +81,19 @@ SciViz:
                   input: Pyrat Responsible ID
                   destination: responsible_id
 
-              Pyrat Sync Task:
-                route: /colony_page_pyrat_sync_task
-                x: 0
-                y: 0.9
-                height: 0.3
-                width: 1
-                type: form
-                tables:
-                  - aeon_subject.PyratIngestionTask
-                map:
-                  - type: attribute
-                    input: Task Scheduled Time
-                    destination: pyrat_task_scheduled_time
+            Pyrat Sync Task:
+              route: /colony_page_pyrat_sync_task
+              x: 0
+              y: 1.3
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_subject.PyratIngestionTask
+              map:
+                - type: attribute
+                  input: Task Scheduled Time
+                  destination: pyrat_task_scheduled_time
 
     ExperimentEntry:
       route: /experiment_entry
@@ -490,6 +490,129 @@ SciViz:
                 def dj_query(aeon_archived_exp02_report):
                     aeon_report = aeon_archived_exp02_report
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['region_time_fraction_hourly_plotly'])
+
+    BlockAnalysis:
+      route: /block_analysis
+      grids:
+        grid3:
+          type: fixed
+          columns: 1
+          row_height: 700
+          components:
+            BlockAnalysis:
+              route: /block_analysis_grid
+              link: /per_block_report
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: antd-table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_test_analysis):
+                    aeon_analysis = aeon_test_analysis
+                    return {'query': aeon_analysis.Block * aeon_analysis.BlockAnalysis, 'fetch_args': {'order_by': 'block_end DESC'}}
+
+    PerBlockReport:
+      hidden: true
+      route: /per_block_report
+      grids:
+        per_block_report:
+          type: fixed
+          route: /per_block_report
+          columns: 1
+          row_height: 1500
+          components:
+            comp1:
+              route: /per_block_meta
+              x: 0
+              y: 0
+              height: 0.2
+              width: 0.8
+              type: metadata
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_test_analysis):
+                    aeon_analysis = aeon_test_analysis
+                    query = aeon_analysis.Block * aeon_analysis.BlockAnalysis
+                    return dict(query=query, fetch_args=[])
+            comp2:
+              route: /subject_positions_plot
+              x: 0
+              y: 0.2
+              height: 0.5
+              width: 0.8
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_test_analysis):
+                    aeon_analysis = aeon_test_analysis
+                    return {'query': aeon_test_analysis.BlockPlots(), 'fetch_args': ['subject_positions_plot']}
+            comp3:
+              route: /subject_weights_plot
+              x: 0
+              y: 0.7
+              height: 0.5
+              width: 0.8
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_test_analysis):
+                    aeon_analysis = aeon_test_analysis
+                    return {'query': aeon_test_analysis.BlockPlots(), 'fetch_args': ['subject_weights_plot']}
+
+            comp4:
+              route: /patch_distance_travelled_plot
+              x: 0
+              y: 1.2
+              height: 0.5
+              width: 0.8
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_test_analysis):
+                    aeon_analysis = aeon_test_analysis
+                    return {'query': aeon_test_analysis.BlockPlots(), 'fetch_args': ['patch_distance_travelled_plot']}
+
+            comp5:
+              route: /patch_rate_plot
+              x: 0
+              y: 1.7
+              height: 0.4
+              width: 0.6
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_test_analysis):
+                    aeon_analysis = aeon_test_analysis
+                    return {'query': aeon_test_analysis.BlockPlots(), 'fetch_args': ['patch_rate_plot']}
+
+            comp6:
+              route: /cumulative_pellet_plot
+              x: 0
+              y: 2.1
+              height: 0.4
+              width: 0.6
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_test_analysis):
+                    aeon_analysis = aeon_test_analysis
+                    return {'query': aeon_test_analysis.BlockPlots(), 'fetch_args': ['cumulative_pellet_plot']}
 
     VideoStream:
       route: /videostream
