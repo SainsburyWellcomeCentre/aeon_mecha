@@ -100,9 +100,14 @@ patch_streams_b = lambda pattern: register(
 # ---
 
 
-def rfid_events_b(pattern):
-    """RFID events reader"""
+def rfid_events_social01_b(pattern):
+    """RFID events reader (with social0.1 specific logic)"""
     pattern = pattern.replace("Rfid", "")
     if pattern.startswith("Events"):
         pattern = pattern.replace("Events", "")
     return {"RfidEvents": reader.Harp(f"RfidEvents{pattern}_*", ["rfid"])}
+
+
+def rfid_events_b(pattern):
+    """RFID events reader"""
+    return {"RfidEvents": reader.Harp(f"{pattern}Events_*", ["rfid"])}
