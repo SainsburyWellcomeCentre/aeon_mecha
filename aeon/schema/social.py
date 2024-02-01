@@ -99,7 +99,6 @@ patch_streams_b = lambda pattern: register(
 # Rfid
 # ---
 
-
 def rfid_events_b(pattern):
     """RFID events reader"""
     return {pattern: reader.Harp(f"{pattern}_32*", ["rfid"])}
