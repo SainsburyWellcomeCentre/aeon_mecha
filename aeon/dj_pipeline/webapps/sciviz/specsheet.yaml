@@ -183,9 +183,9 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_acquisition, aeon_analysis):
-                    acquisition = aeon_acquisition
-                    visit_analysis = aeon_analysis
+                def dj_query(aeon_archived_exp02_acquisition, aeon_archived_exp02_analysis):
+                    acquisition = aeon_archived_exp02_acquisition
+                    visit_analysis = aeon_archived_exp02_analysis
                     query = acquisition.Experiment.Subject.aggr(visit_analysis.VisitEnd.join(visit_analysis.Visit, left=True), first_visit_start='MIN(visit_start)', last_visit_end='MAX(visit_end)', total_visit_count='COUNT(visit_start)', total_visit_duration='SUM(visit_duration)')
                     query = query.proj("first_visit_start", "last_visit_end", "total_visit_count", total_visit_duration="CAST(total_visit_duration AS DOUBLE(10, 3))")
                     return {'query': query, 'fetch_args': {'order_by': 'last_visit_end DESC'}}
@@ -210,7 +210,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_analysis):
+                def dj_query(aeon_archived_exp02_analysis):
+                    aeon_analysis = aeon_archived_exp02_analysis
                     query = aeon_analysis.Visit.aggr(aeon_analysis.VisitSummary, ..., duration="SUM(day_duration)", total_distance_travelled="SUM(total_distance_travelled)", total_pellet_count="SUM(total_pellet_count)", total_wheel_distance_travelled="SUM(total_wheel_distance_travelled)", keep_all_rows=True)
                     query = query.join(aeon_analysis.VisitEnd, left=True)
                     query = query.proj("visit_end", total_pellet_count="CAST(total_pellet_count AS DOUBLE)", duration="CAST(duration AS DOUBLE(10, 3))", total_distance_travelled="CAST(total_distance_travelled AS DOUBLE(10, 3))", total_wheel_distance_travelled="CAST(total_wheel_distance_travelled AS DOUBLE(10, 3))")
@@ -228,9 +229,9 @@ SciViz:
             def restriction(**kwargs):
                 return dict(**kwargs)
           dj_query: >
-            def dj_query(aeon_acquisition):
-                acquisition = aeon_acquisition
-                return {'query': aeon_acquisition.Experiment(), 'fetch_args': []}
+            def dj_query(aeon_archived_exp01_acquisition):
+                acquisition = aeon_archived_exp01_acquisition
+                return {'query': acquisition.Experiment(), 'fetch_args': []}
           component_templates:
             comp3:
               route: /avg_time_distribution
@@ -239,8 +240,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
-                    report = aeon_report
+                def dj_query(aeon_archived_exp01_report):
+                    report = aeon_archived_exp01_report
                     return {'query': report.ExperimentTimeDistribution(), 'fetch_args': ['time_distribution_plotly']}
 
     SubjectReport:
@@ -255,9 +256,9 @@ SciViz:
             def restriction(**kwargs):
                 return dict(**kwargs)
           dj_query: >
-            def dj_query(aeon_acquisition):
-                acquisition = aeon_acquisition
-                return {'query': aeon_acquisition.Experiment.Subject & {'experiment_name': 'exp0.1-r0'}, 'fetch_args': []}
+            def dj_query(aeon_archived_exp01_acquisition):
+                acquisition = aeon_archived_exp01_acquisition
+                return {'query': acquisition.Experiment.Subject & {'experiment_name': 'exp0.1-r0'}, 'fetch_args': []}
           component_templates:
             comp1:
               route: /subject_meta
@@ -266,8 +267,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_acquisition):
-                    return dict(query=aeon_acquisition.Experiment.Subject(), fetch_args=[])
+                def dj_query(aeon_archived_exp01_acquisition):
+                    return dict(query=aeon_archived_exp01_acquisition.Experiment.Subject(), fetch_args=[])
             comp2:
               route: /reward_diff_plot
               type: plot:plotly:stored_json
@@ -275,8 +276,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
-                    report = aeon_report
+                def dj_query(aeon_archived_exp01_report):
+                    report = aeon_archived_exp01_report
                     return {'query': report.SubjectRewardRateDifference(), 'fetch_args': ['reward_rate_difference_plotly']}
             comp3:
               route: /wheel_distance_travelled
@@ -285,8 +286,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
-                    report = aeon_report
+                def dj_query(aeon_archived_exp01_report):
+                    report = aeon_archived_exp01_report
                     return {'query': report.SubjectWheelTravelledDistance(), 'fetch_args': ['wheel_travelled_distance_plotly']}
 
     PerSubjectReport:
@@ -310,8 +311,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_acquisition):
-                    return dict(query=aeon_acquisition.Experiment.Subject(), fetch_args=[])
+                def dj_query(aeon_archived_exp01_acquisition):
+                    return dict(query=aeon_archived_exp01_acquisition.Experiment.Subject(), fetch_args=[])
             comp2:
               route: /per_subject_reward_diff_plot
               x: 0
@@ -323,8 +324,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
-                    report = aeon_report
+                def dj_query(aeon_archived_exp01_report):
+                    report = aeon_archived_exp01_report
                     return {'query': report.SubjectRewardRateDifference(), 'fetch_args': ['reward_rate_difference_plotly']}
             comp3:
               route: /per_subject_wheel_distance_travelled
@@ -337,8 +338,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
-                    report = aeon_report
+                def dj_query(aeon_archived_exp01_report):
+                    report = aeon_archived_exp01_report
                     return {'query': report.SubjectWheelTravelledDistance(), 'fetch_args': ['wheel_travelled_distance_plotly']}
 
     PerVisitReport:
@@ -362,7 +363,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_analysis):
+                def dj_query(aeon_archived_exp02_analysis):
+                    aeon_analysis = aeon_archived_exp02_analysis
                     query = aeon_analysis.Visit.aggr(aeon_analysis.VisitSummary, ..., duration="SUM(day_duration)", total_distance_travelled="SUM(total_distance_travelled)", total_pellet_count="SUM(total_pellet_count)", total_wheel_distance_travelled="SUM(total_wheel_distance_travelled)", keep_all_rows=True)
                     query = query.join(aeon_analysis.VisitEnd, left=True)
                     query = query.proj("visit_end", total_pellet_count="CAST(total_pellet_count AS DOUBLE)", duration="CAST(duration AS DOUBLE(10, 3))", total_distance_travelled="CAST(total_distance_travelled AS DOUBLE(10, 3))", total_wheel_distance_travelled="CAST(total_wheel_distance_travelled AS DOUBLE(10, 3))")
@@ -378,8 +380,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
-                    report = aeon_report
+                def dj_query(aeon_archived_exp02_report):
+                    report = aeon_archived_exp02_report
                     return {'query': report.VisitDailySummaryPlot(), 'fetch_args': ['summary_plot_png']}
 
     Visits247:
@@ -394,7 +396,8 @@ SciViz:
             def restriction(**kwargs):
                 return dict(**kwargs)
           dj_query: >
-            def dj_query(aeon_report):
+            def dj_query(aeon_archived_exp02_report):
+                aeon_report = aeon_archived_exp02_report
                 return {'query': aeon_report.VisitDailySummaryPlot.proj(), 'fetch_args': []}
           component_templates:
             comp1:
@@ -404,7 +407,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['pellet_count_plotly'])
             comp2:
               route: /visit_daily_summary_wheel_distance_travelled
@@ -413,7 +417,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['wheel_distance_travelled_plotly'])
             comp3:
               route: /visit_daily_summary_total_distance_travelled
@@ -422,7 +427,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['total_distance_travelled_plotly'])
             comp4:
               route: /visit_daily_summary_weight_patch
@@ -431,7 +437,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['weight_patch_plotly'])
             comp5:
               route: /visit_daily_summary_foraging_bouts
@@ -440,7 +447,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['foraging_bouts_plotly'])
             comp6:
               route: /visit_daily_summary_foraging_bouts_pellet_count
@@ -449,7 +457,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['foraging_bouts_pellet_count_plotly'])
             comp7:
               route: /visit_daily_summary_foraging_bouts_duration
@@ -458,7 +467,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['foraging_bouts_duration_plotly'])
             comp8:
               route: /visit_daily_summary_region_time_fraction_daily
@@ -467,7 +477,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['region_time_fraction_daily_plotly'])
             comp9:
               route: /visit_daily_summary_region_time_fraction_hourly
@@ -476,7 +487,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['region_time_fraction_hourly_plotly'])
 
     VideoStream:
@@ -499,8 +511,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_acquisition):
-                    acquisition = aeon_acquisition
+                def dj_query(aeon_archived_exp02_acquisition):
+                    acquisition = aeon_archived_exp02_acquisition
                     return {'query': aeon_acquisition.Experiment(), 'fetch_args': ['experiment_name']}
             camera_dropdown:
               x: 0
@@ -515,8 +527,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_acquisition):
-                    acquisition = aeon_acquisition
+                def dj_query(aeon_archived_exp02_acquisition):
+                    acquisition = aeon_archived_exp02_acquisition
                     q = dj.U('camera_description') & acquisition.ExperimentCamera
                     return {'query': q, 'fetch_args': ['camera_description']}
             time_range_selector:
@@ -547,7 +559,7 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_acquisition):
-                    acquisition = aeon_acquisition
+                def dj_query(aeon_archived_exp02_acquisition):
+                    acquisition = aeon_archived_exp02_acquisition
                     q = dj.U('camera_description', 'raw_data_dir') & (acquisition.ExperimentCamera * acquisition.Experiment.Directory & 'directory_type = "raw"').proj('camera_description', raw_data_dir="CONCAT('/ceph/aeon/', directory_path)")
                     return {'query': q, 'fetch_args': []}
