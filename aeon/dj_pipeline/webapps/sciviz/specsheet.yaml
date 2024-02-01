@@ -154,9 +154,9 @@ SciViz:
                   destination: aeon_subject.Subject
 
             New Experiment Note:
-              route: /exp_subject_form
+              route: /exp_note_form
               x: 0
-              y: 0.5
+              y: 0.8
               height: 0.3
               width: 1
               type: form
@@ -179,7 +179,7 @@ SciViz:
             New Experiment Type:
               route: /exp_type_form
               x: 0
-              y: 0.8
+              y: 1.1
               height: 0.3
               width: 1
               type: form
