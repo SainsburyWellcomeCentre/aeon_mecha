@@ -20,7 +20,7 @@ __all__ = [
 # ---- Some constants ----
 logger = dj.logger
 worker_schema_name = db_prefix + "worker"
-
+WORKER_MAX_IDLED_CYCLE = 1
 
 # ---- Manage experiments for automated ingestion ----
 
@@ -55,15 +55,12 @@ acquisition_worker = DataJointWorker(
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
     run_duration=-1,
+    max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
     sleep_duration=1200,
 )
 acquisition_worker(ingest_epochs_chunks)
-acquisition_worker(acquisition.ExperimentLog)
-acquisition_worker(acquisition.SubjectEnterExit)
-acquisition_worker(acquisition.SubjectWeight)
-acquisition_worker(acquisition.FoodPatchEvent)
-acquisition_worker(acquisition.WheelState)
-
+acquisition_worker(acquisition.Environment)
+acquisition_worker(acquisition.EpochActiveRegion)
 acquisition_worker(ingest_environment_visits)
 
 # configure a worker to process mid-priority tasks
@@ -101,6 +98,7 @@ pyrat_worker = DataJointWorker(
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
     run_duration=-1,
+    max_idled_cycle=1000,
     sleep_duration=10,
 )
 
@@ -115,9 +113,25 @@ streams_worker = DataJointWorker(
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
     run_duration=-1,
+    max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
     sleep_duration=1200,
 )
 
 for attr in vars(streams).values():
     if is_djtable(attr, dj.user_tables.AutoPopulate):
         streams_worker(attr, max_calls=10)
+
+streams_worker(qc.CameraQC, max_calls=10)
+streams_worker(tracking.SLEAPTracking, max_calls=10)
+
+# configure a worker to run the analysis tables
+analysis_worker = DataJointWorker(
+    "analysis_worker",
+    worker_schema_name=worker_schema_name,
+    db_prefix=db_prefix,
+    run_duration=-1,
+    max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
+    sleep_duration=3600,
+)
+
+analysis_worker(block_analysis.BlockAnalysis)
