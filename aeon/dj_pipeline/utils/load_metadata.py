@@ -17,7 +17,7 @@ from aeon.io import api as io_api
 logger = dj.logger
 _weight_scale_rate = 100
 _weight_scale_nest = 1
-_aeon_schemas = ["social01"]
+_aeon_schemas = ["social01", "social02"]
 
 
 def insert_stream_types():
