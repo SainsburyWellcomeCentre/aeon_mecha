@@ -17,12 +17,13 @@ __all__ = [
     "WorkerLog",
     "ErrorLog",
     "logger",
+    "AutomatedExperimentIngestion",
 ]
 
 # ---- Some constants ----
 logger = dj.logger
 worker_schema_name = db_prefix + "worker"
-WORKER_MAX_IDLED_CYCLE = 1
+WORKER_MAX_IDLED_CYCLE = 3
 
 # ---- Manage experiments for automated ingestion ----
 
@@ -59,12 +60,12 @@ acquisition_worker = DataJointWorker(
     db_prefix=db_prefix,
     run_duration=-1,
     max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
-    sleep_duration=1200,
+    sleep_duration=120,
 )
 acquisition_worker(ingest_epochs_chunks)
 acquisition_worker(acquisition.Environment)
 acquisition_worker(acquisition.EpochActiveRegion)
-acquisition_worker(ingest_environment_visits)
+# acquisition_worker(ingest_environment_visits)
 acquisition_worker(block_analysis.BlockDetection)
 
 # configure a worker to handle pyrat sync
@@ -73,8 +74,8 @@ pyrat_worker = DataJointWorker(
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
     run_duration=-1,
-    max_idled_cycle=1000,
-    sleep_duration=10,
+    max_idled_cycle=500,
+    sleep_duration=30,
 )
 
 pyrat_worker(subject.CreatePyratIngestionTask)
@@ -89,7 +90,7 @@ streams_worker = DataJointWorker(
     db_prefix=db_prefix,
     run_duration=-1,
     max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
-    sleep_duration=1200,
+    sleep_duration=60,
 )
 
 for attr in vars(streams).values():
@@ -106,7 +107,7 @@ analysis_worker = DataJointWorker(
     db_prefix=db_prefix,
     run_duration=-1,
     max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
-    sleep_duration=3600,
+    sleep_duration=60,
 )
 
 analysis_worker(block_analysis.BlockAnalysis)
