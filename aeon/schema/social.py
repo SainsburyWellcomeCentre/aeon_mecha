@@ -110,4 +110,4 @@ def rfid_events_social01_b(pattern):
 
 def rfid_events_b(pattern):
     """RFID events reader"""
-    return {"RfidEvents": reader.Harp(f"{pattern}Events_*", ["rfid"])}
+    return {"RfidEvents": reader.Harp(f"{pattern}_32*", ["rfid"])}
