@@ -140,10 +140,9 @@ class BlockAnalysis(dj.Computed):
             )
 
         # Subject data
-        subject_events_query = acquisition.Environment.SubjectState & key & chunk_restriction
-        subject_events_df = fetch_stream(subject_events_query)
-
-        subject_names = set(subject_events_df.id)
+        subject_names = set(
+            (tracking.SLEAPTracking.PoseIdentity & key & chunk_restriction).fetch("identity_name")
+        )
         for subject_name in subject_names:
             # positions - query for CameraTop, identity_name matches subject_name,
             pos_query = (
