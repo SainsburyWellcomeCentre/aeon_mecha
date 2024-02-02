@@ -9,6 +9,7 @@ from uuid import UUID
 import aeon
 from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.io import api as io_api
+from aeon.schema import schemas as aeon_schemas
 
 schema = dj.Schema(get_schema_name("streams"))
 
@@ -52,6 +53,33 @@ class Device(dj.Lookup):
     ---
     -> DeviceType
     """
+
+
+@schema 
+class RfidReader(dj.Manual):
+        definition = f"""
+        # rfid_reader placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
+        -> acquisition.Experiment
+        -> Device
+        rfid_reader_install_time  : datetime(6)   # time of the rfid_reader placed and started operation at this position
+        ---
+        rfid_reader_name          : varchar(36)
+        """
+
+        class Attribute(dj.Part):
+            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
+            -> master
+            attribute_name          : varchar(32)
+            ---
+            attribute_value=null    : longblob
+            """
+
+        class RemovalTime(dj.Part):
+            definition = f"""
+            -> master
+            ---
+            rfid_reader_removal_time: datetime(6)  # time of the rfid_reader being removed
+            """
 
 
 @schema 
@@ -136,6 +164,68 @@ class WeightScale(dj.Manual):
 
 
 @schema 
+class RfidReaderRfidEvents(dj.Imported):
+        definition = """  # Raw per-chunk RfidEvents data stream from RfidReader (auto-generated with aeon_mecha-unknown)
+    -> RfidReader
+    -> acquisition.Chunk
+    ---
+    sample_count: int      # number of data points acquired from this stream for a given chunk
+    timestamps: longblob   # (datetime) timestamps of RfidEvents data
+    rfid: longblob
+    """
+
+        @property
+        def key_source(self):
+            f"""
+            Only the combination of Chunk and RfidReader with overlapping time
+            +  Chunk(s) that started after RfidReader install time and ended before RfidReader remove time
+            +  Chunk(s) that started after RfidReader install time for RfidReader that are not yet removed
+            """
+            return (
+                acquisition.Chunk * RfidReader.join(RfidReader.RemovalTime, left=True)
+                & 'chunk_start >= rfid_reader_install_time'
+                & 'chunk_start < IFNULL(rfid_reader_removal_time, "2200-01-01")'
+            )
+
+        def make(self, key):
+            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "directory_type"
+            )
+            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+
+            device_name = (RfidReader & key).fetch1('rfid_reader_name')
+
+            devices_schema = getattr(
+                aeon_schemas,
+                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
+            )
+            stream_reader = getattr(getattr(devices_schema, device_name), "RfidEvents")
+
+            stream_data = io_api.load(
+                root=raw_data_dir.as_posix(),
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
+                        for c in stream_reader.columns
+                        if not c.startswith("_")
+                    },
+                },
+                ignore_extra_fields=True,
+            )
+
+
+@schema 
 class SpinnakerVideoSourceVideo(dj.Imported):
         definition = """  # Raw per-chunk Video data stream from SpinnakerVideoSource (auto-generated with aeon_mecha-unknown)
     -> SpinnakerVideoSource
@@ -146,8 +236,6 @@ class SpinnakerVideoSourceVideo(dj.Imported):
     hw_counter: longblob
     hw_timestamp: longblob
     """
-        _stream_reader = aeon.io.reader.Video
-        _stream_detail = {'stream_type': 'Video', 'stream_reader': 'aeon.io.reader.Video', 'stream_reader_kwargs': {'pattern': '{pattern}_*'}, 'stream_description': '', 'stream_hash': UUID('f51c6174-e0c4-a888-3a9d-6f97fb6a019b')}
 
         @property
         def key_source(self):
@@ -170,16 +258,17 @@ class SpinnakerVideoSourceVideo(dj.Imported):
 
             device_name = (SpinnakerVideoSource & key).fetch1('spinnaker_video_source_name')
 
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
+            devices_schema = getattr(
+                aeon_schemas,
+                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
             )
+            stream_reader = getattr(getattr(devices_schema, device_name), "Video")
 
             stream_data = io_api.load(
                 root=raw_data_dir.as_posix(),
-                reader=stream,
+                reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
@@ -191,7 +280,7 @@ class SpinnakerVideoSourceVideo(dj.Imported):
                     "timestamps": stream_data.index.values,
                     **{
                         re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream.columns
+                        for c in stream_reader.columns
                         if not c.startswith("_")
                     },
                 },
@@ -209,8 +298,6 @@ class UndergroundFeederBeamBreak(dj.Imported):
     timestamps: longblob   # (datetime) timestamps of BeamBreak data
     event: longblob
     """
-        _stream_reader = aeon.io.reader.BitmaskEvent
-        _stream_detail = {'stream_type': 'BeamBreak', 'stream_reader': 'aeon.io.reader.BitmaskEvent', 'stream_reader_kwargs': {'pattern': '{pattern}_32_*', 'value': 34, 'tag': 'PelletDetected'}, 'stream_description': '', 'stream_hash': UUID('ab975afc-c88d-2b66-d22b-65649b0ea5f0')}
 
         @property
         def key_source(self):
@@ -233,16 +320,17 @@ class UndergroundFeederBeamBreak(dj.Imported):
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
+            devices_schema = getattr(
+                aeon_schemas,
+                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
             )
+            stream_reader = getattr(getattr(devices_schema, device_name), "BeamBreak")
 
             stream_data = io_api.load(
                 root=raw_data_dir.as_posix(),
-                reader=stream,
+                reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
@@ -254,7 +342,7 @@ class UndergroundFeederBeamBreak(dj.Imported):
                     "timestamps": stream_data.index.values,
                     **{
                         re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream.columns
+                        for c in stream_reader.columns
                         if not c.startswith("_")
                     },
                 },
@@ -272,8 +360,6 @@ class UndergroundFeederDeliverPellet(dj.Imported):
     timestamps: longblob   # (datetime) timestamps of DeliverPellet data
     event: longblob
     """
-        _stream_reader = aeon.io.reader.BitmaskEvent
-        _stream_detail = {'stream_type': 'DeliverPellet', 'stream_reader': 'aeon.io.reader.BitmaskEvent', 'stream_reader_kwargs': {'pattern': '{pattern}_35_*', 'value': 128, 'tag': 'TriggerPellet'}, 'stream_description': '', 'stream_hash': UUID('09099227-ab3c-1f71-239e-4c6f017de1fd')}
 
         @property
         def key_source(self):
@@ -296,16 +382,17 @@ class UndergroundFeederDeliverPellet(dj.Imported):
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
+            devices_schema = getattr(
+                aeon_schemas,
+                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
             )
+            stream_reader = getattr(getattr(devices_schema, device_name), "DeliverPellet")
 
             stream_data = io_api.load(
                 root=raw_data_dir.as_posix(),
-                reader=stream,
+                reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
@@ -317,7 +404,7 @@ class UndergroundFeederDeliverPellet(dj.Imported):
                     "timestamps": stream_data.index.values,
                     **{
                         re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream.columns
+                        for c in stream_reader.columns
                         if not c.startswith("_")
                     },
                 },
@@ -337,8 +424,6 @@ class UndergroundFeederDepletionState(dj.Imported):
     offset: longblob
     rate: longblob
     """
-        _stream_reader = aeon.io.reader.Csv
-        _stream_detail = {'stream_type': 'DepletionState', 'stream_reader': 'aeon.io.reader.Csv', 'stream_reader_kwargs': {'pattern': '{pattern}_*', 'columns': ['threshold', 'offset', 'rate'], 'extension': 'csv', 'dtype': None}, 'stream_description': '', 'stream_hash': UUID('a944b719-c723-08f8-b695-7be616e57bd5')}
 
         @property
         def key_source(self):
@@ -361,16 +446,17 @@ class UndergroundFeederDepletionState(dj.Imported):
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
+            devices_schema = getattr(
+                aeon_schemas,
+                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
             )
+            stream_reader = getattr(getattr(devices_schema, device_name), "DepletionState")
 
             stream_data = io_api.load(
                 root=raw_data_dir.as_posix(),
-                reader=stream,
+                reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
@@ -382,7 +468,7 @@ class UndergroundFeederDepletionState(dj.Imported):
                     "timestamps": stream_data.index.values,
                     **{
                         re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream.columns
+                        for c in stream_reader.columns
                         if not c.startswith("_")
                     },
                 },
@@ -401,8 +487,6 @@ class UndergroundFeederEncoder(dj.Imported):
     angle: longblob
     intensity: longblob
     """
-        _stream_reader = aeon.io.reader.Encoder
-        _stream_detail = {'stream_type': 'Encoder', 'stream_reader': 'aeon.io.reader.Encoder', 'stream_reader_kwargs': {'pattern': '{pattern}_90_*'}, 'stream_description': '', 'stream_hash': UUID('f96b0b26-26f6-5ff6-b3c7-5aa5adc00c1a')}
 
         @property
         def key_source(self):
@@ -425,16 +509,17 @@ class UndergroundFeederEncoder(dj.Imported):
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
+            devices_schema = getattr(
+                aeon_schemas,
+                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
             )
+            stream_reader = getattr(getattr(devices_schema, device_name), "Encoder")
 
             stream_data = io_api.load(
                 root=raw_data_dir.as_posix(),
-                reader=stream,
+                reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
@@ -446,7 +531,7 @@ class UndergroundFeederEncoder(dj.Imported):
                     "timestamps": stream_data.index.values,
                     **{
                         re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream.columns
+                        for c in stream_reader.columns
                         if not c.startswith("_")
                     },
                 },
@@ -464,8 +549,6 @@ class UndergroundFeederManualDelivery(dj.Imported):
     timestamps: longblob   # (datetime) timestamps of ManualDelivery data
     manual_delivery: longblob
     """
-        _stream_reader = aeon.io.reader.Harp
-        _stream_detail = {'stream_type': 'ManualDelivery', 'stream_reader': 'aeon.io.reader.Harp', 'stream_reader_kwargs': {'pattern': '{pattern}_*', 'columns': ['manual_delivery'], 'extension': 'bin'}, 'stream_description': '', 'stream_hash': UUID('98ce23d4-01c5-a848-dd6b-8b284c323fb0')}
 
         @property
         def key_source(self):
@@ -488,16 +571,17 @@ class UndergroundFeederManualDelivery(dj.Imported):
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
+            devices_schema = getattr(
+                aeon_schemas,
+                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
             )
+            stream_reader = getattr(getattr(devices_schema, device_name), "ManualDelivery")
 
             stream_data = io_api.load(
                 root=raw_data_dir.as_posix(),
-                reader=stream,
+                reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
@@ -509,7 +593,7 @@ class UndergroundFeederManualDelivery(dj.Imported):
                     "timestamps": stream_data.index.values,
                     **{
                         re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream.columns
+                        for c in stream_reader.columns
                         if not c.startswith("_")
                     },
                 },
@@ -527,8 +611,6 @@ class UndergroundFeederMissedPellet(dj.Imported):
     timestamps: longblob   # (datetime) timestamps of MissedPellet data
     missed_pellet: longblob
     """
-        _stream_reader = aeon.io.reader.Harp
-        _stream_detail = {'stream_type': 'MissedPellet', 'stream_reader': 'aeon.io.reader.Harp', 'stream_reader_kwargs': {'pattern': '{pattern}_*', 'columns': ['missed_pellet'], 'extension': 'bin'}, 'stream_description': '', 'stream_hash': UUID('2fa12bbc-3207-dddc-f6ee-b79c55b6d9a2')}
 
         @property
         def key_source(self):
@@ -551,16 +633,17 @@ class UndergroundFeederMissedPellet(dj.Imported):
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
+            devices_schema = getattr(
+                aeon_schemas,
+                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
             )
+            stream_reader = getattr(getattr(devices_schema, device_name), "MissedPellet")
 
             stream_data = io_api.load(
                 root=raw_data_dir.as_posix(),
-                reader=stream,
+                reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
@@ -572,7 +655,7 @@ class UndergroundFeederMissedPellet(dj.Imported):
                     "timestamps": stream_data.index.values,
                     **{
                         re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream.columns
+                        for c in stream_reader.columns
                         if not c.startswith("_")
                     },
                 },
@@ -590,8 +673,6 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
     timestamps: longblob   # (datetime) timestamps of RetriedDelivery data
     retried_delivery: longblob
     """
-        _stream_reader = aeon.io.reader.Harp
-        _stream_detail = {'stream_type': 'RetriedDelivery', 'stream_reader': 'aeon.io.reader.Harp', 'stream_reader_kwargs': {'pattern': '{pattern}_*', 'columns': ['retried_delivery'], 'extension': 'bin'}, 'stream_description': '', 'stream_hash': UUID('62f23eab-4469-5740-dfa0-6f1aa754de8e')}
 
         @property
         def key_source(self):
@@ -614,16 +695,17 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
+            devices_schema = getattr(
+                aeon_schemas,
+                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
             )
+            stream_reader = getattr(getattr(devices_schema, device_name), "RetriedDelivery")
 
             stream_data = io_api.load(
                 root=raw_data_dir.as_posix(),
-                reader=stream,
+                reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
@@ -635,7 +717,7 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
                     "timestamps": stream_data.index.values,
                     **{
                         re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream.columns
+                        for c in stream_reader.columns
                         if not c.startswith("_")
                     },
                 },
@@ -654,8 +736,6 @@ class WeightScaleWeightFiltered(dj.Imported):
     weight: longblob
     stability: longblob
     """
-        _stream_reader = aeon.io.reader.Harp
-        _stream_detail = {'stream_type': 'WeightFiltered', 'stream_reader': 'aeon.io.reader.Harp', 'stream_reader_kwargs': {'pattern': '{pattern}_202*', 'columns': ['weight(g)', 'stability'], 'extension': 'bin'}, 'stream_description': '', 'stream_hash': UUID('bd135a97-1161-3dd3-5ca3-e5d342485728')}
 
         @property
         def key_source(self):
@@ -678,16 +758,17 @@ class WeightScaleWeightFiltered(dj.Imported):
 
             device_name = (WeightScale & key).fetch1('weight_scale_name')
 
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
+            devices_schema = getattr(
+                aeon_schemas,
+                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
             )
+            stream_reader = getattr(getattr(devices_schema, device_name), "WeightFiltered")
 
             stream_data = io_api.load(
                 root=raw_data_dir.as_posix(),
-                reader=stream,
+                reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
@@ -699,7 +780,7 @@ class WeightScaleWeightFiltered(dj.Imported):
                     "timestamps": stream_data.index.values,
                     **{
                         re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream.columns
+                        for c in stream_reader.columns
                         if not c.startswith("_")
                     },
                 },
@@ -718,8 +799,6 @@ class WeightScaleWeightRaw(dj.Imported):
     weight: longblob
     stability: longblob
     """
-        _stream_reader = aeon.io.reader.Harp
-        _stream_detail = {'stream_type': 'WeightRaw', 'stream_reader': 'aeon.io.reader.Harp', 'stream_reader_kwargs': {'pattern': '{pattern}_200*', 'columns': ['weight(g)', 'stability'], 'extension': 'bin'}, 'stream_description': '', 'stream_hash': UUID('0d27b1af-e78b-d889-62c0-41a20df6a015')}
 
         @property
         def key_source(self):
@@ -742,16 +821,17 @@ class WeightScaleWeightRaw(dj.Imported):
 
             device_name = (WeightScale & key).fetch1('weight_scale_name')
 
-            stream = self._stream_reader(
-                **{
-                    k: v.format(**{k: device_name}) if k == "pattern" else v
-                    for k, v in self._stream_detail["stream_reader_kwargs"].items()
-                }
+            devices_schema = getattr(
+                aeon_schemas,
+                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
             )
+            stream_reader = getattr(getattr(devices_schema, device_name), "WeightRaw")
 
             stream_data = io_api.load(
                 root=raw_data_dir.as_posix(),
-                reader=stream,
+                reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
@@ -763,7 +843,7 @@ class WeightScaleWeightRaw(dj.Imported):
                     "timestamps": stream_data.index.values,
                     **{
                         re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream.columns
+                        for c in stream_reader.columns
                         if not c.startswith("_")
                     },
                 },

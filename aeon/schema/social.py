@@ -35,7 +35,7 @@ block_state_b = lambda pattern: {
 
 # LightEvents
 light_events_b = lambda pattern: {
-    "LightEvents": reader.Csv("Environment_LightEvents_*", ["channel", "value"])
+    "LightEvents": reader.Csv(f"{pattern}_LightEvents_*", ["channel", "value"])
 }
 
 # Combine EnvironmentState, BlockState, LightEvents
@@ -45,18 +45,18 @@ environment_b = lambda pattern: register(
 
 # SubjectState
 subject_state_b = lambda pattern: {
-    "SubjectState": reader.Csv("Environment_SubjectState_*", ["id", "weight", "type"])
+    "SubjectState": reader.Csv(f"{pattern}_SubjectState_*", ["id", "weight", "type"])
 }
 
 # SubjectVisits
 subject_visits_b = lambda pattern: {
-    "SubjectVisits": reader.Csv("Environment_SubjectVisit_s*", ["id", "type", "region"])
+    "SubjectVisits": reader.Csv(f"{pattern}_SubjectVisit_*", ["id", "type", "region"])
 }
 
 # SubjectWeight
 subject_weight_b = lambda pattern: {
     "SubjectWeight": reader.Csv(
-        "Environment_SubjectWeight_*", ["weight", "confidence", "subject_id", "int_id"]
+        f"{pattern}_SubjectWeight_*", ["weight", "confidence", "subject_id", "int_id"]
     )
 }
 
@@ -99,5 +99,15 @@ patch_streams_b = lambda pattern: register(
 # Rfid
 # ---
 
-rfid_names = ["EventsGate", "EventsNest1", "EventsNest2", "EventsPatch1", "EventsPatch2", "EventsPatch3"]
-rfid_b = lambda pattern: {"RFID": reader.Harp(f"{pattern}_*", ["rfid"])}
+
+def rfid_events_social01_b(pattern):
+    """RFID events reader (with social0.1 specific logic)"""
+    pattern = pattern.replace("Rfid", "")
+    if pattern.startswith("Events"):
+        pattern = pattern.replace("Events", "")
+    return {"RfidEvents": reader.Harp(f"RfidEvents{pattern}_*", ["rfid"])}
+
+
+def rfid_events_b(pattern):
+    """RFID events reader"""
+    return {"RfidEvents": reader.Harp(f"{pattern}_32*", ["rfid"])}

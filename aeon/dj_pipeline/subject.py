@@ -185,7 +185,7 @@ class SubjectReferenceWeight(dj.Manual):
 
         weight_query = SubjectWeight & subj_key & f"weight_time < '{ref_date}'"
         ref_weight = (
-            weight_query.fetch("weight", order_by="weight_time DESC", limit=1)[0] if weight_query else None
+            weight_query.fetch("weight", order_by="weight_time DESC", limit=1)[0] if weight_query else -1
         )
 
         entry = {

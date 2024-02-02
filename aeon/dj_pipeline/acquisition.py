@@ -1,17 +1,18 @@
 import datetime
 import pathlib
-
+import re
 import datajoint as dj
 import numpy as np
 import pandas as pd
+import json
 
 from aeon.io import api as io_api
 from aeon.schema import schemas as aeon_schemas
 from aeon.io import reader as io_reader
 from aeon.analysis import utils as analysis_utils
 
-from . import get_schema_name, lab, subject
-from .utils import paths
+from aeon.dj_pipeline import get_schema_name, lab, subject
+from aeon.dj_pipeline.utils import paths
 
 logger = dj.logger
 schema = dj.schema(get_schema_name("acquisition"))
@@ -24,14 +25,14 @@ _ref_device_mapping = {
     "exp0.2-r0": "CameraTop",
 }
 
-_device_schema_mapping = {
-    "exp0.1-r0": aeon_schemas.exp01,
-    "social0-r1": aeon_schemas.exp01,
-    "exp0.2-r0": aeon_schemas.exp02,
-    "oct1.0-r0": aeon_schemas.octagon01,
-    "social0.1-a3": aeon_schemas.social01,
-    "social0.1-a4": aeon_schemas.social01,
-}
+# _device_schema_mapping = {
+#     "exp0.1-r0": aeon_schemas.exp01,
+#     "social0-r1": aeon_schemas.exp01,
+#     "exp0.2-r0": aeon_schemas.exp02,
+#     "oct1.0-r0": aeon_schemas.octagon01,
+#     "social0.1-a3": aeon_schemas.social01,
+#     "social0.1-a4": aeon_schemas.social01,
+# }
 
 
 # ------------------- Type Lookup ------------------------
@@ -63,6 +64,15 @@ class EventType(dj.Lookup):
         (32, "PelletDetected"),
         (1000, "No Events"),
     ]
+
+
+@schema
+class DevicesSchema(dj.Lookup):
+    definition = """
+    devices_schema_name: varchar(32)
+    """
+
+    contents = zip(aeon_schemas.__all__)
 
 
 # ------------------- Data repository/directory ------------------------
@@ -116,6 +126,22 @@ class Experiment(dj.Manual):
         directory_path: varchar(255)
         """
 
+    class DevicesSchema(dj.Part):
+        definition = """
+        -> master
+        ---
+        -> DevicesSchema
+        """
+
+    class Note(dj.Part):
+        definition = """
+        -> master
+        note_timestamp: datetime
+        ---
+        note_type: varchar(64)
+        note: varchar(1000)
+        """
+
     @classmethod
     def get_data_directory(cls, experiment_key, directory_type="raw", as_posix=False):
         try:
@@ -143,108 +169,6 @@ class Experiment(dj.Manual):
             cls.get_data_directory(experiment_key, dir_type, as_posix=as_posix)
             for dir_type in directory_types
         ]
-
-
-@schema
-class ExperimentCamera(dj.Manual):
-    definition = """
-    # Camera placement and operation for a particular time period, at a certain location, for a given experiment
-    -> Experiment
-    -> lab.Camera
-    camera_install_time: datetime(6)   # time of the camera placed and started operation at this position
-    ---
-    camera_description: varchar(36)
-    camera_sampling_rate: float  # (Hz) camera frame rate
-    camera_gain=null: float      # gain value applied to the acquired video
-    camera_bin=null: int         # bin-size applied to the acquired video
-    """
-
-    class Position(dj.Part):
-        definition = """
-        -> master
-        ---
-        camera_position_x: float    # (m) x-position, in the arena's coordinate frame
-        camera_position_y: float    # (m) y-position, in the arena's coordinate frame
-        camera_position_z=0: float  # (m) z-position, in the arena's coordinate frame
-        camera_rotation_x=null: float    #
-        camera_rotation_y=null: float    #
-        camera_rotation_z=null: float    #
-        """
-
-    # class OpticalConfiguration(dj.Part):
-    #     definition = """
-    #     -> master
-    #     ---
-    #     calibration_factor: float  # px to mm
-    #     """
-
-    class RemovalTime(dj.Part):
-        definition = """
-        -> master
-        ---
-        camera_remove_time: datetime(6)  # time of the camera being removed from this position
-        """
-
-
-@schema
-class ExperimentFoodPatch(dj.Manual):
-    definition = """
-    # Food patch placement and operation for a particular time period, at a certain location, for a given experiment
-    -> Experiment
-    -> lab.FoodPatch
-    food_patch_install_time: datetime(6)   # time of the food_patch placed and started operation at this position
-    ---
-    food_patch_description: varchar(36)
-    wheel_sampling_rate: float  # (Hz) wheel's sampling rate
-    wheel_radius=null: float    # (cm)
-    """
-
-    class RemovalTime(dj.Part):
-        definition = """
-        -> master
-        ---
-        food_patch_remove_time: datetime(6)  # time of the food_patch being removed from this position
-        """
-
-    class Position(dj.Part):
-        definition = """
-        -> master
-        ---
-        food_patch_position_x: float    # (m) x-position, in the arena's coordinate frame
-        food_patch_position_y: float    # (m) y-position, in the arena's coordinate frame
-        food_patch_position_z=0: float  # (m) z-position, in the arena's coordinate frame
-        """
-
-    class Vertex(dj.Part):
-        definition = """
-        -> master
-        vertex: int
-        ---
-        vertex_x: float    # (m) x-coordinate of the vertex, in the arena's coordinate frame
-        vertex_y: float    # (m) y-coordinate of the vertex, in the arena's coordinate frame
-        vertex_z=0: float  # (m) z-coordinate of the vertex, in the arena's coordinate frame
-        """
-
-
-@schema
-class ExperimentWeightScale(dj.Manual):
-    definition = """
-    # Scale for measuring animal weights
-    -> Experiment
-    -> lab.WeightScale
-    weight_scale_install_time: datetime(6)   # time of the weight_scale placed and started operation at this position
-    ---
-    -> lab.ArenaNest
-    weight_scale_description: varchar(36)
-    weight_scale_sampling_rate=null: float  # (Hz) weight scale sampling rate
-    """
-
-    class RemovalTime(dj.Part):
-        definition = """
-        -> master
-        ---
-        weight_scale_remove_time: datetime(6)  # time of the weight_scale being removed from this position
-        """
 
 
 # ------------------- ACQUISITION EPOCH --------------------
@@ -281,8 +205,17 @@ class Epoch(dj.Manual):
         Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S".
         """
 
-        from .utils import streams_maker
-        from .utils.load_metadata import extract_epoch_config, ingest_epoch_metadata, insert_device_types
+        from aeon.dj_pipeline.utils import streams_maker
+        from aeon.dj_pipeline.utils.load_metadata import (
+            extract_epoch_config,
+            ingest_epoch_metadata,
+            insert_device_types,
+        )
+
+        devices_schema = getattr(
+            aeon_schemas,
+            (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1("devices_schema_name"),
+        )
 
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
@@ -307,25 +240,25 @@ class Epoch(dj.Manual):
                 continue
 
             epoch_config, metadata_yml_filepath = None, None
-            if experiment_name != "exp0.1-r0":
-                metadata_yml_filepath = epoch_dir / "Metadata.yml"
-                if metadata_yml_filepath.exists():
-                    epoch_config = extract_epoch_config(experiment_name, metadata_yml_filepath)
 
-                    metadata_yml_filepath = epoch_config["metadata_file_path"]
+            metadata_yml_filepath = epoch_dir / "Metadata.yml"
+            if metadata_yml_filepath.exists():
+                epoch_config = extract_epoch_config(experiment_name, devices_schema, metadata_yml_filepath)
 
-                    _, directory, repo_path = _match_experiment_directory(
-                        experiment_name,
-                        epoch_config["metadata_file_path"],
-                        raw_data_dirs,
-                    )
-                    epoch_config = {
-                        **epoch_config,
-                        **directory,
-                        "metadata_file_path": epoch_config["metadata_file_path"]
-                        .relative_to(repo_path)
-                        .as_posix(),
-                    }
+                metadata_yml_filepath = epoch_config["metadata_file_path"]
+
+                _, directory, repo_path = _match_experiment_directory(
+                    experiment_name,
+                    epoch_config["metadata_file_path"],
+                    raw_data_dirs,
+                )
+                epoch_config = {
+                    **epoch_config,
+                    **directory,
+                    "metadata_file_path": epoch_config["metadata_file_path"]
+                    .relative_to(repo_path)
+                    .as_posix(),
+                }
 
             # find previous epoch end-time
             previous_epoch_key = None
@@ -353,7 +286,7 @@ class Epoch(dj.Manual):
                     try:
                         # Insert new entries for streams.DeviceType, streams.Device.
                         insert_device_types(
-                            _device_schema_mapping[epoch_key["experiment_name"]],
+                            devices_schema,
                             metadata_yml_filepath,
                         )
                         # Define and instantiate new devices/stream tables under `streams` schema
@@ -361,7 +294,7 @@ class Epoch(dj.Manual):
                         with cls.connection.transaction:
                             # Insert devices' installation/removal/settings
                             epoch_device_types = ingest_epoch_metadata(
-                                experiment_name, metadata_yml_filepath
+                                experiment_name, devices_schema, metadata_yml_filepath
                             )
                             if epoch_device_types is not None:
                                 cls.DeviceType.insert(
@@ -410,6 +343,31 @@ class EpochEnd(dj.Manual):
     epoch_end: datetime(6)
     epoch_duration: float  # (hour)
     """
+
+
+@schema
+class EpochActiveRegion(dj.Imported):
+    definition = """
+    -> Epoch
+    """
+
+    class Region(dj.Part):
+        definition = """
+        -> master
+        region_name: varchar(36)
+        ---
+        region_data: longblob
+        """
+
+    def make(self, key):
+        metadata_file_path = (Epoch.Config & key).fetch1("metadata_file_path")
+        metadata_file_path = paths.get_repository_path("ceph_aeon") / metadata_file_path
+        with metadata_file_path.open("r") as f:
+            metadata = json.load(f)
+        self.insert1(key)
+        self.Region.insert(
+            {**key, "region_name": k, "region_data": v} for k, v in metadata["ActiveRegion"].items()
+        )
 
 
 # ------------------- ACQUISITION CHUNK --------------------
@@ -505,119 +463,88 @@ class Chunk(dj.Manual):
             cls.File.insert(file_list)
 
 
-@schema
-class SubjectEnterExit(dj.Imported):
-    definition = """  # Records of subjects entering/exiting the arena
-    -> Chunk
-    """
-
-    _enter_exit_event_mapper = {"Enter": 220, "Exit": 221, "Remain": 223}
-
-    class Time(dj.Part):
-        definition = """  # Timestamps of each entering/exiting events
-        -> master
-        -> Experiment.Subject
-        enter_exit_time: datetime(6)  # datetime of subject entering/exiting the arena
-        ---
-        -> EventType
-        """
-
-    def make(self, key):
-        subject_list = (Experiment.Subject & key).fetch("subject")
-        chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
-        raw_data_dir = Experiment.get_data_directory(key)
-
-        if key["experiment_name"] in ("exp0.1-r0", "social0-r1"):
-            subject_data = _load_legacy_subjectdata(
-                key["experiment_name"],
-                raw_data_dir.as_posix(),
-                pd.Timestamp(chunk_start),
-                pd.Timestamp(chunk_end),
-            )
-        else:
-            device = _device_schema_mapping[key["experiment_name"]].ExperimentalMetadata
-            subject_data = io_api.load(
-                root=raw_data_dir.as_posix(),
-                reader=device.SubjectState,
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
-
-        self.insert1(key)
-        self.Time.insert(
-            (
-                {
-                    **key,
-                    "subject": r.id,
-                    "event_code": self._enter_exit_event_mapper[r.event],
-                    "enter_exit_time": r.name,
-                }
-                for _, r in subject_data.iterrows()
-                if r.id in subject_list
-            ),
-            skip_duplicates=True,
-        )
+# ------------------- ENVIRONMENT --------------------
 
 
 @schema
-class SubjectWeight(dj.Imported):
-    definition = """  # Records of subjects weights
+class Environment(dj.Imported):
+    definition = """  # Experiment environments
     -> Chunk
     """
 
-    class WeightTime(dj.Part):
-        definition = """  # # Timestamps of each subject weight measurements
-        -> master
-        -> Experiment.Subject
-        weight_time: datetime(6)  # datetime of subject weighting
-        ---
-        weight: float  #
-        """
-
-    def make(self, key):
-        subject_list = (Experiment.Subject & key).fetch("subject")
-        chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
-        raw_data_dir = Experiment.get_data_directory(key)
-        if key["experiment_name"] in ("exp0.1-r0", "social0-r1"):
-            subject_data = _load_legacy_subjectdata(
-                key["experiment_name"],
-                raw_data_dir.as_posix(),
-                pd.Timestamp(chunk_start),
-                pd.Timestamp(chunk_end),
-            )
-        else:
-            device = _device_schema_mapping[key["experiment_name"]].ExperimentalMetadata
-            subject_data = io_api.load(
-                root=raw_data_dir.as_posix(),
-                reader=device.SubjectState,
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
-
-        self.insert1(key)
-        self.WeightTime.insert(
-            (
-                {**key, "subject": r.id, "weight": r.weight, "weight_time": r.name}
-                for _, r in subject_data.iterrows()
-                if r.id in subject_list
-            ),
-            skip_duplicates=True,
-        )
-
-
-@schema
-class ExperimentLog(dj.Imported):
-    definition = """  # Experimenter's annotations
-    -> Chunk
-    """
-
-    class Message(dj.Part):
+    class EnvironmentState(dj.Part):
         definition = """
         -> master
-        message_time: datetime(6)  # datetime of the annotation
         ---
-        message_type: varchar(32)
-        message: varchar(1000)
+        sample_count: int      # number of data points acquired from this stream for a given chunk
+        timestamps: longblob   # (datetime) timestamps
+        state: longblob
+        """
+
+    class BlockState(dj.Part):
+        definition = """
+        -> master
+        ---
+        sample_count: int      # number of data points acquired from this stream for a given chunk
+        timestamps: longblob   # (datetime) timestamps
+        pellet_ct: longblob
+        pellet_ct_thresh: longblob
+        due_time: longblob
+        """
+
+    class LightEvents(dj.Part):
+        definition = """
+        -> master
+        ---
+        sample_count: int      # number of data points acquired from this stream for a given chunk
+        timestamps: longblob   # (datetime) timestamps
+        channel: longblob
+        value: longblob
+        """
+
+    class MessageLog(dj.Part):
+        definition = """
+        -> master
+        ---
+        sample_count: int      # number of data points acquired from this stream for a given chunk
+        timestamps: longblob   # (datetime) 
+        priority: longblob
+        type: longblob
+        message: longblob
+        """
+
+    class SubjectState(dj.Part):
+        definition = """
+        -> master
+        ---
+        sample_count: int      # number of data points acquired from this stream for a given chunk
+        timestamps: longblob   # (datetime) timestamps
+        id: longblob
+        weight: longblob
+        type: longblob
+        """
+
+    class SubjectVisits(dj.Part):
+        definition = """
+        -> master
+        ---
+        sample_count: int      # number of data points acquired from this stream for a given chunk
+        timestamps: longblob   # (datetime) timestamps
+        id: longblob
+        type: longblob
+        region: longblob
+        """
+
+    class SubjectWeight(dj.Part):
+        definition = """
+        -> master
+        ---
+        sample_count: int      # number of data points acquired from this stream for a given chunk
+        timestamps: longblob   # (datetime) timestamps
+        weight: longblob
+        confidence: longblob
+        subject_id: longblob
+        int_id: longblob
         """
 
     def make(self, key):
@@ -625,424 +552,47 @@ class ExperimentLog(dj.Imported):
 
         # Populate the part table
         raw_data_dir = Experiment.get_data_directory(key)
-        device = _device_schema_mapping[key["experiment_name"]].ExperimentalMetadata
-
-        try:
-            # handles corrupted files - issue: https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/153
-            log_messages = io_api.load(
-                root=raw_data_dir.as_posix(),
-                reader=device.MessageLog,
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
-        except IndexError:
-            logger.warning("Can't read from device.MessageLog")
-            log_messages = pd.DataFrame()
-
-        state_messages = io_api.load(
-            root=raw_data_dir.as_posix(),
-            reader=device.EnvironmentState,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
+        devices_schema = getattr(
+            aeon_schemas,
+            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
         )
+        device = devices_schema.Environment
 
         self.insert1(key)
-        self.Message.insert(
-            (
-                {
-                    **key,
-                    "message_time": r.name,
-                    "message": r.message,
-                    "message_type": r.type,
-                }
-                for _, r in log_messages.iterrows()
-            ),
-            skip_duplicates=True,
-        )
-        self.Message.insert(
-            (
-                {
-                    **key,
-                    "message_time": r.name,
-                    "message": r.state,
-                    "message_type": "EnvironmentState",
-                }
-                for _, r in state_messages.iterrows()
-            ),
-            skip_duplicates=True,
-        )
 
+        for stream_type, part_table in [
+            ("EnvironmentState", self.EnvironmentState),
+            ("BlockState", self.BlockState),
+            ("LightEvents", self.LightEvents),
+            ("MessageLog", self.MessageLog),
+            ("SubjectState", self.SubjectState),
+            ("SubjectVisits", self.SubjectVisits),
+            ("SubjectWeight", self.SubjectWeight),
+        ]:
+            stream_reader = getattr(device, stream_type)
 
-# ------------------- EVENTS --------------------
-@schema
-class FoodPatchEvent(dj.Imported):
-    definition = """  # events associated with a given ExperimentFoodPatch
-    -> Chunk
-    -> ExperimentFoodPatch
-    event_number: smallint
-    ---
-    event_time: datetime(6)  # event time
-    -> EventType
-    """
-
-    @property
-    def key_source(self):
-        """Only the combination of Chunk and ExperimentFoodPatch with overlapping time
-        +  Chunk(s) that started after FoodPatch install time and ended before FoodPatch remove time
-        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed.
-        """
-
-        return (
-            Chunk * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
-            & "chunk_start >= food_patch_install_time"
-            & 'chunk_start < IFNULL(food_patch_remove_time, "2200-01-01")'
-        )
-
-    def make(self, key):
-        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
-            "chunk_start", "chunk_end", "directory_type"
-        )
-        food_patch_description = (ExperimentFoodPatch & key).fetch1("food_patch_description")
-
-        raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-
-        device = getattr(_device_schema_mapping[key["experiment_name"]], food_patch_description)
-
-        pellet_data = pd.concat(
-            [
-                io_api.load(
-                    root=raw_data_dir.as_posix(),
-                    reader=device.DeliverPellet,
-                    start=pd.Timestamp(chunk_start),
-                    end=pd.Timestamp(chunk_end),
-                ),
-                io_api.load(
-                    root=raw_data_dir.as_posix(),
-                    reader=device.BeamBreak,
-                    start=pd.Timestamp(chunk_start),
-                    end=pd.Timestamp(chunk_end),
-                ),
-            ]
-        )
-        pellet_data.sort_index(inplace=True)
-
-        if not len(pellet_data):
-            event_list = [
-                {
-                    **key,
-                    "event_number": 0,
-                    "event_time": chunk_start,
-                    "event_code": 1000,
-                }
-            ]
-        else:
-            event_code_mapper = {
-                name: code for code, name in zip(*EventType.fetch("event_code", "event_type"))
-            }
-            event_list = [
-                {
-                    **key,
-                    "event_number": r_idx,
-                    "event_time": r_time,
-                    "event_code": event_code_mapper[r.event],
-                }
-                for r_idx, (r_time, r) in enumerate(pellet_data.iterrows())
-            ]
-
-        self.insert(event_list)
-
-
-@schema
-class FoodPatchWheel(dj.Imported):
-    definition = """  # Wheel data associated with a given ExperimentFoodPatch
-    -> Chunk
-    -> ExperimentFoodPatch
-    ---
-    timestamps:        longblob   # (datetime) timestamps of wheel encoder data
-    angle:             longblob   # measured angles of the wheel
-    intensity:         longblob
-    """
-
-    @property
-    def key_source(self):
-        """Only the combination of Chunk and ExperimentFoodPatch with overlapping time
-        +  Chunk(s) that started after FoodPatch install time and ended before FoodPatch remove time
-        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed.
-        """
-        return (
-            Chunk * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
-            & "chunk_start >= food_patch_install_time"
-            & 'chunk_start < IFNULL(food_patch_remove_time, "2200-01-01")'
-        )
-
-    def make(self, key):
-        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
-            "chunk_start", "chunk_end", "directory_type"
-        )
-        food_patch_description = (ExperimentFoodPatch & key).fetch1("food_patch_description")
-
-        raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-
-        device = getattr(_device_schema_mapping[key["experiment_name"]], food_patch_description)
-
-        wheel_data = io_api.load(
-            root=raw_data_dir.as_posix(),
-            reader=device.Encoder,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
-
-        self.insert1(
-            {
-                **key,
-                "timestamps": wheel_data.index.values,
-                "angle": wheel_data.angle.values,
-                "intensity": wheel_data.intensity.values,
-            }
-        )
-
-    @classmethod
-    def get_wheel_data(cls, experiment_name, start, end, patch_name="Patch1", using_aeon_io=False):
-        if using_aeon_io:
-            key = {"experiment_name": experiment_name}
-            raw_data_dir = Experiment.get_data_directory(key)
-
-            device = getattr(_device_schema_mapping[key["experiment_name"]], patch_name)
-
-            wheel_data = io_api.load(
+            stream_data = io_api.load(
                 root=raw_data_dir.as_posix(),
-                reader=device.Encoder,
-                start=pd.Timestamp(start),
-                end=pd.Timestamp(end),
-            )
-        else:
-            table = cls * Chunk * ExperimentFoodPatch
-            obj_restriction = {
-                "experiment_name": experiment_name,
-                "food_patch_description": patch_name,
-            }
-            start_attr, end_attr = "chunk_start", "chunk_end"
-            fetch_attrs = ["timestamps", "angle"]
-
-            start_restriction = f'"{start}" BETWEEN {start_attr} AND {end_attr}'
-            end_restriction = f'"{end}" BETWEEN {start_attr} AND {end_attr}'
-
-            start_query = table & obj_restriction & start_restriction
-            end_query = table & obj_restriction & end_restriction
-            if not (start_query and end_query):
-                raise ValueError(f"No wheel data found between {start} and {end}")
-
-            time_restriction = (
-                f'{start_attr} >= "{start_query.fetch1(start_attr)}"'
-                f' AND {start_attr} < "{end_query.fetch1(end_attr)}"'
-            )
-
-            fetched_data = (table & obj_restriction & time_restriction).fetch(
-                *fetch_attrs, order_by=start_attr
-            )
-
-            if not len(fetched_data[0]):
-                raise ValueError(f"No wheel data found between {start} and {end}")
-
-            timestamp_attr = next(attr for attr in fetch_attrs if "timestamps" in attr)
-
-            # stack and structure in pandas DataFrame
-            wheel_data = pd.DataFrame({k: np.hstack(v) for k, v in zip(fetch_attrs, fetched_data)})
-            wheel_data.set_index(timestamp_attr, inplace=True)
-
-            time_mask = np.logical_and(wheel_data.index >= start, wheel_data.index < end)
-
-            wheel_data = wheel_data[time_mask]
-
-        wheel_data["distance_travelled"] = analysis_utils.distancetravelled(wheel_data["angle"])
-        return wheel_data
-
-
-@schema
-class WheelState(dj.Imported):
-    definition = """  # Wheel states associated with a given ExperimentFoodPatch
-    -> Chunk
-    -> ExperimentFoodPatch
-    """
-
-    class Time(dj.Part):
-        definition = """  # Threshold, d1, delta state of the wheel
-        -> master
-        state_timestamp: datetime(6)
-        ---
-        threshold: float
-        d1: float
-        delta: float
-        """
-
-    @property
-    def key_source(self):
-        """Only the combination of Chunk and ExperimentFoodPatch with overlapping time
-        +  Chunk(s) that started after FoodPatch install time and ended before FoodPatch remove time
-        +  Chunk(s) that started after FoodPatch install time for FoodPatch that are not yet removed.
-        """
-        return (
-            Chunk * ExperimentFoodPatch.join(ExperimentFoodPatch.RemovalTime, left=True)
-            & "chunk_start >= food_patch_install_time"
-            & 'chunk_start < IFNULL(food_patch_remove_time, "2200-01-01")'
-        )
-
-    def make(self, key):
-        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
-            "chunk_start", "chunk_end", "directory_type"
-        )
-        food_patch_description = (ExperimentFoodPatch & key).fetch1("food_patch_description")
-        raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-
-        device = getattr(_device_schema_mapping[key["experiment_name"]], food_patch_description)
-
-        wheel_state = io_api.load(
-            root=raw_data_dir.as_posix(),
-            reader=device.DepletionState,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
-
-        # handles rare cases of duplicated state-timestamp
-        wheel_state = wheel_state[~wheel_state.index.duplicated(keep="first")]
-
-        self.insert1(key)
-        self.Time.insert(
-            [
-                {
-                    **key,
-                    "state_timestamp": r.name,
-                    "threshold": r.threshold,
-                    "d1": r.d1,
-                    "delta": r.delta,
-                }
-                for _, r in wheel_state.iterrows()
-            ]
-        )
-
-
-@schema
-class WeightMeasurement(dj.Imported):
-    definition = """  # Raw scale measurement associated with a given ExperimentScale
-    -> Chunk
-    -> ExperimentWeightScale
-    ---
-    timestamps:        longblob   # (datetime) timestamps of scale data
-    weight:            longblob   # measured weights
-    confidence:        longblob   # confidence level of the measured weights [0-1]
-    """
-
-    @property
-    def key_source(self):
-        """Only the combination of Chunk and ExperimentWeightScale with overlapping time
-        +  Chunk(s) that started after WeightScale install time and ended before WeightScale remove time
-        +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed.
-        """
-        return (
-            Chunk * ExperimentWeightScale.join(ExperimentWeightScale.RemovalTime, left=True)
-            & "chunk_start >= weight_scale_install_time"
-            & 'chunk_start < IFNULL(weight_scale_remove_time, "2200-01-01")'
-        )
-
-    def make(self, key):
-        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
-            "chunk_start", "chunk_end", "directory_type"
-        )
-
-        raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-
-        weight_scale_description = (ExperimentWeightScale & key).fetch1("weight_scale_description")
-
-        # in some epochs/chunks, the food patch device was mapped to "Nest"
-        for device_name in (weight_scale_description, "Nest"):
-            device = getattr(_device_schema_mapping[key["experiment_name"]], device_name)
-            weight_data = io_api.load(
-                root=raw_data_dir.as_posix(),
-                reader=device.WeightRaw,
+                reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
             )
-            if len(weight_data):
-                break
-        else:
-            raise ValueError(f"No weight measurement found for {key}")
 
-        weight_data.sort_index(inplace=True)
-        self.insert1(
-            {
-                **key,
-                "timestamps": weight_data.index.values,
-                "weight": weight_data.value.values,
-                "confidence": weight_data.stable.values.astype(float),
-            }
-        )
-
-
-@schema
-class WeightMeasurementFiltered(dj.Imported):
-    definition = """  # Raw scale measurement associated with a given ExperimentScale
-    -> WeightMeasurement
-    ---
-    weight_filtered:       longblob     # measured weights filtered
-    weight_subject_timestamps: longblob # (datetime) timestamps of weight_subject data
-    weight_subject:        longblob     #
-    """
-
-    def make(self, key):
-        chunk_start, chunk_end, dir_type = (Chunk & key).fetch1(
-            "chunk_start", "chunk_end", "directory_type"
-        )
-        raw_data_dir = Experiment.get_data_directory(key, directory_type=dir_type)
-        weight_scale_description = (ExperimentWeightScale & key).fetch1("weight_scale_description")
-
-        # in some epochs/chunks, the food patch device was mapped to "Nest"
-        for device_name in (weight_scale_description, "Nest"):
-            device = getattr(_device_schema_mapping[key["experiment_name"]], device_name)
-            weight_filtered = io_api.load(
-                root=raw_data_dir.as_posix(),
-                reader=device.WeightFiltered,
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
+            part_table.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
+                        for c in stream_reader.columns
+                        if not c.startswith("_")
+                    },
+                },
+                ignore_extra_fields=True,
             )
-            if len(weight_filtered):
-                break
-        else:
-            raise ValueError(
-                f"No filtered weight measurement found for {key} - this is truly unexpected - a bug?"
-            )
-
-        weight_subject = io_api.load(
-            root=raw_data_dir.as_posix(),
-            reader=device.WeightSubject,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
-
-        assert len(weight_filtered)
-
-        weight_filtered.sort_index(inplace=True)
-        weight_subject.sort_index(inplace=True)
-        self.insert1(
-            {
-                **key,
-                "weight_filtered": weight_filtered.value.values,
-                "weight_subject_timestamps": weight_subject.index.values,
-                "weight_subject": weight_subject.value.values,
-            }
-        )
-
-
-# ---- Task Protocol categorization ----
-
-
-@schema
-class TaskProtocol(dj.Lookup):
-    definition = """
-    task_protocol: int
-    ---
-    protocol_params: longblob
-    protocol_description: varchar(255)
-    """
 
 
 # ---- HELPERS ----
@@ -1087,49 +637,18 @@ def _match_experiment_directory(experiment_name, path, directories):
     return raw_data_dir, directory, repo_path
 
 
-def _load_legacy_subjectdata(experiment_name, data_dir, start, end):
-    assert experiment_name in ("exp0.1-r0", "social0-r1")
-
-    reader = io_reader.Subject("SessionData_2")
-    subject_data = io_api.load(
-        data_dir,
-        reader=reader,
-        start=start,
-        end=end,
+def create_chunk_restriction(experiment_name, start_time, end_time):
+    """
+    Create a time restriction string for the chunks between the specified "start" and "end" times
+    """
+    start_restriction = f'"{start_time}" BETWEEN chunk_start AND chunk_end'
+    end_restriction = f'"{end_time}" BETWEEN chunk_start AND chunk_end'
+    start_query = Chunk & {"experiment_name": experiment_name} & start_restriction
+    end_query = Chunk & {"experiment_name": experiment_name} & end_restriction
+    if not (start_query and end_query):
+        raise ValueError(f"No Chunk found between {start_time} and {end_time}")
+    time_restriction = (
+        f'chunk_start >= "{min(start_query.fetch("chunk_start"))}"'
+        f' AND chunk_start < "{max(end_query.fetch("chunk_end"))}"'
     )
-
-    subject_data.replace("Start", "Enter", inplace=True)
-    subject_data.replace("End", "Exit", inplace=True)
-
-    if not len(subject_data):
-        return subject_data
-
-    if experiment_name == "social0-r1":
-        from aeon.dj_pipeline.create_experiments.create_socialexperiment_0 import fixID
-
-        sessdf = subject_data.copy()
-        sessdf = sessdf[~sessdf.id.str.contains("test")]
-        sessdf = sessdf[~sessdf.id.str.contains("jeff")]
-        sessdf = sessdf[~sessdf.id.str.contains("OAA")]
-        sessdf = sessdf[~sessdf.id.str.contains("rew")]
-        sessdf = sessdf[~sessdf.id.str.contains("Animal")]
-        sessdf = sessdf[~sessdf.id.str.contains("white")]
-
-        valid_ids = (Experiment.Subject & {"experiment_name": experiment_name}).fetch("subject")
-
-        fix = lambda x: fixID(x, valid_ids=list(valid_ids))
-        sessdf.id = sessdf.id.apply(fix)
-
-        multi_ids = sessdf[sessdf.id.str.contains(";")]
-        multi_ids_rows = []
-        for _, r in multi_ids.iterrows():
-            for i in r.id.split(";"):
-                multi_ids_rows.append({"time": r.name, "id": i, "weight": r.weight, "event": r.event})
-        multi_ids_rows = pd.DataFrame(multi_ids_rows)
-        if len(multi_ids_rows):
-            multi_ids_rows.set_index("time", inplace=True)
-
-        subject_data = pd.concat([sessdf[~sessdf.id.str.contains(";")], multi_ids_rows])
-        subject_data.sort_index(inplace=True)
-
-    return subject_data
+    return time_restriction

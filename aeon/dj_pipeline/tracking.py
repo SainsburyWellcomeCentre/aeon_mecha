@@ -7,6 +7,7 @@ import pandas as pd
 
 from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, qc, streams
 from aeon.io import api as io_api
+from aeon.schema import schemas as aeon_schemas
 
 schema = dj.schema(get_schema_name("tracking"))
 
@@ -102,212 +103,131 @@ class TrackingParamSet(dj.Lookup):
             cls.insert1(param_dict)
 
 
-# ---------- Video Tracking ------------------
+# ---------- VideoSource  ------------------
 
 
 @schema
-class CameraTracking(dj.Imported):
-    definition = """  # Tracked objects position data from a particular camera, using a particular tracking method, for a particular chunk
+class SLEAPTracking(dj.Imported):
+    definition = """  # Tracked objects position data from a particular VideoSource for multi-animal experiment using the SLEAP tracking method per chunk
     -> acquisition.Chunk
-    -> acquisition.ExperimentCamera
+    -> streams.SpinnakerVideoSource
     -> TrackingParamSet
     """
 
-    class Object(dj.Part):
-        definition = """  # Position data of object tracked by a particular camera tracking
+    class PoseIdentity(dj.Part):
+        definition = """
         -> master
-        object_id: int    # object with id = -1 means "unknown/not sure", could potentially be the same object as those with other id value
+        identity_idx:           smallint
         ---
-        timestamps:        longblob  # (datetime) timestamps of the position data
-        position_x:        longblob  # (px) object's x-position, in the arena's coordinate frame
-        position_y:        longblob  # (px) object's y-position, in the arena's coordinate frame
-        area=null:         longblob  # (px^2) object's size detected in the camera
+        identity_name:          varchar(16)
+        identity_likelihood:    longblob
+        anchor_part:         varchar(16)  # the name of the point used as anchor node for this class
+        """
+
+    class Part(dj.Part):
+        definition = """
+        -> master.PoseIdentity
+        part_name: varchar(16)
+        ---
+        sample_count: int      # number of data points acquired from this stream for a given chunk
+        x:          longblob
+        y:          longblob
+        likelihood: longblob
+        timestamps: longblob
         """
 
     @property
     def key_source(self):
-        ks = acquisition.Chunk * acquisition.ExperimentCamera * TrackingParamSet
         return (
-            ks
+            acquisition.Chunk
             * (
-                qc.CameraQC * acquisition.ExperimentCamera
-                & f"camera_description in {tuple(set(acquisition._ref_device_mapping.values()))}"
-            ).proj()
-            & "tracking_paramset_id = 0"
-        )
+                streams.SpinnakerVideoSource.join(streams.SpinnakerVideoSource.RemovalTime, left=True)
+                & "spinnaker_video_source_name='CameraTop'"
+            )
+            * (TrackingParamSet & "tracking_paramset_id = 1")
+            & "chunk_start >= spinnaker_video_source_install_time"
+            & 'chunk_start < IFNULL(spinnaker_video_source_removal_time, "2200-01-01")'
+        )  # SLEAP & CameraTop
 
     def make(self, key):
         chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end", "directory_type"
         )
-        camera = (acquisition.ExperimentCamera & key).fetch1("camera_description")
-
         raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
 
-        device = getattr(acquisition._device_schema_mapping[key["experiment_name"]], camera)
+        device_name = (streams.SpinnakerVideoSource & key).fetch1("spinnaker_video_source_name")
 
-        positiondata = io_api.load(
+        devices_schema = getattr(
+            aeon_schemas,
+            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
+        )
+        stream_reader = getattr(getattr(devices_schema, device_name), "Pose")
+
+        pose_data = io_api.load(
             root=raw_data_dir.as_posix(),
-            reader=device.Position,
+            reader=stream_reader,
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),
         )
 
-        # replace id=NaN with -1
-        positiondata.fillna({"id": -1}, inplace=True)
+        if not len(pose_data):
+            self.insert1(key)
+            return
 
-        # Retrieve frame offsets from Camera QC
-        qc_timestamps, qc_frame_offsets, camera_fs = (
-            qc.CameraQC * acquisition.ExperimentCamera & key
-        ).fetch1("timestamps", "frame_offset", "camera_sampling_rate")
+        # Find the config file for the SLEAP model
+        try:
+            f = next(
+                raw_data_dir.glob(
+                    f"**/**/{stream_reader.pattern}{io_api.chunk(chunk_start).strftime('%Y-%m-%dT%H-%M-%S')}*.{stream_reader.extension}"
+                )
+            )
+        except StopIteration:
+            raise FileNotFoundError(f"Unable to find HARP bin file for {key}")
+        else:
+            config_file = stream_reader.get_config_file(
+                stream_reader._model_root / Path(*Path(f.stem.replace("_", "/")).parent.parts[1:])
+            )
 
-        # For cases where position data is shorter than video data (from QC) - truncate video data
-        # - fix for issue: https://github.com/SainsburyWellcomeCentre/aeon_mecha/issues/130
-        max_frame_count = min(len(positiondata), len(qc_timestamps))
-        qc_frame_offsets = qc_frame_offsets[:max_frame_count]
-        positiondata = positiondata[:max_frame_count]
+        # get bodyparts and classes
+        bodyparts = stream_reader.get_bodyparts(config_file)
+        anchor_part = bodyparts[0]  # anchor_part is always the first one
+        class_names = stream_reader.get_class_names(config_file)
 
-        # Correct for frame offsets from Camera QC
-        qc_time_offsets = qc_frame_offsets / camera_fs
-        qc_time_offsets = np.where(np.isnan(qc_time_offsets), 0, qc_time_offsets)  # set NaNs to 0
-        positiondata.index += pd.to_timedelta(qc_time_offsets, "s")
-
-        object_positions = []
-        for obj_id in set(positiondata.id.values):
-            obj_position = positiondata[positiondata.id == obj_id]
-
-            object_positions.append(
+        # ingest parts and classes
+        pose_identity_entries, part_entries = [], []
+        for class_idx in set(pose_data["class"].values.astype(int)):
+            class_position = pose_data[pose_data["class"] == class_idx]
+            for part in set(class_position.part.values):
+                part_position = class_position[class_position.part == part]
+                part_entries.append(
+                    {
+                        **key,
+                        "identity_idx": class_idx,
+                        "part_name": part,
+                        "timestamps": part_position.index.values,
+                        "x": part_position.x.values,
+                        "y": part_position.y.values,
+                        "likelihood": part_position.part_likelihood.values,
+                        "sample_count": len(part_position.index.values),
+                    }
+                )
+                if part == anchor_part:
+                    class_likelihood = part_position.class_likelihood.values
+            pose_identity_entries.append(
                 {
                     **key,
-                    "object_id": obj_id,
-                    "timestamps": obj_position.index.values,
-                    "position_x": obj_position.x.values,
-                    "position_y": obj_position.y.values,
-                    "area": obj_position.area.values,
+                    "identity_idx": class_idx,
+                    "identity_name": class_names[class_idx],
+                    "anchor_part": anchor_part,
+                    "identity_likelihood": class_likelihood,
                 }
             )
 
         self.insert1(key)
-        self.Object.insert(object_positions)
-
-    @classmethod
-    def get_object_position(
-        cls,
-        experiment_name,
-        object_id,
-        start,
-        end,
-        camera_name="FrameTop",
-        tracking_paramset_id=0,
-        in_meter=False,
-    ):
-        table = (
-            cls.Object * acquisition.Chunk.proj("chunk_end")
-            & {"experiment_name": experiment_name}
-            & {"tracking_paramset_id": tracking_paramset_id}
-            & (acquisition.ExperimentCamera & {"camera_description": camera_name})
-        )
-
-        return _get_position(
-            table,
-            object_attr="object_id",
-            object_name=object_id,
-            start_attr="chunk_start",
-            end_attr="chunk_end",
-            start=start,
-            end=end,
-            fetch_attrs=["timestamps", "position_x", "position_y", "area"],
-            attrs_to_scale=["position_x", "position_y"],
-            scale_factor=pixel_scale if in_meter else 1,
-        )
-
-
-# ---------- VideoSource  ------------------
-
-
-@schema
-class VideoSourceTracking(dj.Imported):
-    definition = """  # Tracked objects position data from a particular VideoSource for multi-animal experiment using the SLEAP tracking method per chunk
-    -> acquisition.Chunk
-    -> streams.VideoSource
-    -> TrackingParamSet
-    """
-
-    class Point(dj.Part):
-        definition = """
-        -> master
-        point_name: varchar(16)
-        ---
-        point_x:          longblob
-        point_y:          longblob
-        point_likelihood: longblob
-        """
-
-    class Pose(dj.Part):
-        definition = """
-        -> master
-        pose_name: varchar(16)
-        class:                  smallint
-        ---
-        class_likelihood:       longblob
-        centroid_x:             longblob
-        centroid_y:             longblob
-        centroid_likelihood:    longblob
-        pose_timestamps:        longblob
-        point_collection=null:  varchar(1000)  # List of point names
-        """
-
-    class PointCollection(dj.Part):
-        definition = """
-        -> master.Pose
-        -> master.Point
-        """
-
-    @property
-    def key_source(self):
-        return (
-            (acquisition.Chunk & "experiment_name='multianimal'")
-            * (streams.VideoSourcePosition & (streams.VideoSource & "video_source_name='CameraTop'"))
-            * (TrackingParamSet & "tracking_paramset_id = 1")
-        )  # SLEAP & CameraTop
-
-    def make(self, key):
-        from aeon.schema.social import Pose
-
-        # chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-        #     "chunk_start", "chunk_end", "directory_type"
-        # )
-        # raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
-        # This needs to be modified later
-        sleap_reader = Pose(
-            pattern="",
-            columns=["class", "class_confidence", "centroid_x", "centroid_y", "centroid_confidence"],
-        )
-        tracking_file_path = "/ceph/aeon/aeon/data/processed/test-node1/1234567/2023-08-10T18-31-00/macentroid/test-node1_1234567_2023-08-10T18-31-00_macentroid.bin"  # temp file path for testing
-
-        tracking_df = sleap_reader.read(Path(tracking_file_path))
-
-        pose_list = []
-        for part_name in ["body"]:
-            for class_id in tracking_df["class"].unique():
-                class_df = tracking_df[tracking_df["class"] == class_id]
-
-                pose_list.append(
-                    {
-                        **key,
-                        "pose_name": part_name,
-                        "class": class_id,
-                        "class_likelihood": class_df["class_likelihood"].values,
-                        "centroid_x": class_df["x"].values,
-                        "centroid_y": class_df["y"].values,
-                        "centroid_likelihood": class_df["part_likelihood"].values,
-                        "pose_timestamps": class_df.index.values,
-                        "point_collection": "",
-                    }
-                )
-
-        self.insert1(key)
-        self.Pose.insert(pose_list)
+        self.PoseIdentity.insert(pose_identity_entries)
+        self.Part.insert(part_entries)
 
 
 # ---------- HELPER ------------------
