@@ -11,6 +11,7 @@ from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams
 from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
 
 schema = dj.schema(get_schema_name("block_analysis"))
+logger = dj.logger
 
 
 @schema
@@ -74,6 +75,21 @@ class BlockAnalysis(dj.Computed):
             key["experiment_name"], block_start, block_end
         )
 
+        # Ensure the relevant streams ingestion are caught up to this block
+        chunk_keys = (acquisition.Chunk & key & chunk_restriction).fetch("KEY")
+        streams_tables = (
+            streams.UndergroundFeederDepletionState,
+            streams.UndergroundFeederBeamBreak,
+            streams.UndergroundFeederEncoder,
+            tracking.SLEAPTracking,
+        )
+        for streams_table in streams_tables:
+            if len(streams_table & chunk_keys) < len(streams_table.key_source & chunk_keys):
+                logger.info(
+                    f"{streams_table.__name__} not yet fully ingested for block: {key}. Skip BlockAnalysis (to retry later)..."
+                )
+                return
+
         self.insert1({**key, "block_duration": (block_end - block_start).total_seconds() / 3600})
 
         # Patch data - TriggerPellet, DepletionState, Encoder (distancetravelled)
@@ -117,7 +133,7 @@ class BlockAnalysis(dj.Computed):
                 encoder_df, maintenance_period, block_end, dropna=True
             )
 
-            encoder_df["distance_travelled"] = analysis_utils.distancetravelled(encoder_df.angle)
+            encoder_df["distance_travelled"] = -1 * analysis_utils.distancetravelled(encoder_df.angle)
 
             patch_rate = depletion_state_df.rate.unique()
             assert len(patch_rate) == 1  # expects a single rate for this block
