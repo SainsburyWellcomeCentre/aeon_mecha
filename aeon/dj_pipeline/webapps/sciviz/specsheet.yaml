@@ -107,7 +107,7 @@ SciViz:
               route: /exp_form
               x: 0
               y: 0
-              height: 0.5
+              height: 0.4
               width: 1
               type: form
               tables:
@@ -139,7 +139,7 @@ SciViz:
             New Experiment Subject:
               route: /exp_subject_form
               x: 0
-              y: 0.5
+              y: 0.4
               height: 0.3
               width: 1
               type: form
@@ -156,7 +156,7 @@ SciViz:
             New Experiment Note:
               route: /exp_note_form
               x: 0
-              y: 0.8
+              y: 0.7
               height: 0.3
               width: 1
               type: form
@@ -176,10 +176,33 @@ SciViz:
                   input: Note
                   destination: note
 
+            New Experiment Directory:
+              route: /exp_note_form
+              x: 0
+              y: 1.0
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment.Directory
+              map:
+                - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.Experiment
+                - type: table
+                  input: Directory Type
+                  destination: aeon_acquisition.DirectoryType
+                - type: table
+                  input: Pipeline Repository
+                  destination: aeon_acquisition.PipelineRepository
+                - type: attribute
+                  input: Directory Path
+                  destination: directory_path
+
             New Experiment Type:
               route: /exp_type_form
               x: 0
-              y: 1.1
+              y: 1.3
               height: 0.3
               width: 1
               type: form
@@ -538,8 +561,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_test_analysis):
-                    aeon_analysis = aeon_test_analysis
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
                     return {'query': aeon_analysis.Block * aeon_analysis.BlockAnalysis, 'fetch_args': {'order_by': 'block_end DESC'}}
 
     PerBlockReport:
@@ -563,8 +586,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_test_analysis):
-                    aeon_analysis = aeon_test_analysis
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
                     query = aeon_analysis.Block * aeon_analysis.BlockAnalysis
                     return dict(query=query, fetch_args=[])
             comp2:
@@ -578,9 +601,9 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_test_analysis):
-                    aeon_analysis = aeon_test_analysis
-                    return {'query': aeon_test_analysis.BlockPlots(), 'fetch_args': ['subject_positions_plot']}
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['subject_positions_plot']}
             comp3:
               route: /subject_weights_plot
               x: 0
@@ -592,9 +615,9 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_test_analysis):
-                    aeon_analysis = aeon_test_analysis
-                    return {'query': aeon_test_analysis.BlockPlots(), 'fetch_args': ['subject_weights_plot']}
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['subject_weights_plot']}
 
             comp4:
               route: /patch_distance_travelled_plot
@@ -607,9 +630,9 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_test_analysis):
-                    aeon_analysis = aeon_test_analysis
-                    return {'query': aeon_test_analysis.BlockPlots(), 'fetch_args': ['patch_distance_travelled_plot']}
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['patch_distance_travelled_plot']}
 
             comp5:
               route: /patch_rate_plot
@@ -622,9 +645,9 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_test_analysis):
-                    aeon_analysis = aeon_test_analysis
-                    return {'query': aeon_test_analysis.BlockPlots(), 'fetch_args': ['patch_rate_plot']}
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['patch_rate_plot']}
 
             comp6:
               route: /cumulative_pellet_plot
@@ -637,9 +660,9 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_test_analysis):
-                    aeon_analysis = aeon_test_analysis
-                    return {'query': aeon_test_analysis.BlockPlots(), 'fetch_args': ['cumulative_pellet_plot']}
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['cumulative_pellet_plot']}
 
     VideoStream:
       route: /videostream
