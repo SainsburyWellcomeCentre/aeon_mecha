@@ -127,6 +127,10 @@ class TaskLogic:
     def gratings_slice_onset(pattern):
         return {"GratingsSliceOnset": _reader.Harp(f"{pattern}_12_*", columns=["wall_id"])}
 
+    @staticmethod
+    def checkerboard_slice_onset(pattern):
+        return {"CheckerboardSliceOnset": _reader.Harp(f"{pattern}_14_*", columns=["wall_id"])}
+
 
 class Wall:
     @staticmethod
