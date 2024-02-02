@@ -90,7 +90,7 @@ streams_worker = DataJointWorker(
     db_prefix=db_prefix,
     run_duration=-1,
     max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
-    sleep_duration=60,
+    sleep_duration=10,
 )
 
 for attr in vars(streams).values():
@@ -110,4 +110,5 @@ analysis_worker = DataJointWorker(
     sleep_duration=60,
 )
 
-analysis_worker(block_analysis.BlockAnalysis)
+analysis_worker(block_analysis.BlockAnalysis, max_calls=4)
+analysis_worker(block_analysis.BlockPlots, max_calls=4)
