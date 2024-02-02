@@ -57,7 +57,6 @@ acquisition_worker = DataJointWorker(
     "acquisition_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    run_duration=-1,
     max_idled_cycle=6,
     sleep_duration=1200,
 )
@@ -72,7 +71,6 @@ pyrat_worker = DataJointWorker(
     "pyrat_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    run_duration=-1,
     max_idled_cycle=400,
     sleep_duration=30,
 )
@@ -87,9 +85,8 @@ streams_worker = DataJointWorker(
     "streams_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    run_duration=-1,
-    max_idled_cycle=3,
-    sleep_duration=10,
+    max_idled_cycle=50,
+    sleep_duration=60,
 )
 
 for attr in vars(streams).values():
@@ -104,7 +101,6 @@ analysis_worker = DataJointWorker(
     "analysis_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    run_duration=-1,
     max_idled_cycle=6,
     sleep_duration=1200,
 )
