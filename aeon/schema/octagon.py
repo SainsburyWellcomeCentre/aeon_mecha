@@ -2,7 +2,7 @@ import aeon.io.reader as _reader
 
 
 def photodiode(pattern):
-    return {"Photodiode": _reader.Harp(f"{pattern}_44_*", columns=["adc", "encoder"])}
+    return {"Photodiode": _reader.Harp(f"{pattern}_44_*", columns=["adc", "encoder", "dont-know"])}
 
 
 class OSC:
@@ -30,7 +30,7 @@ class OSC:
     def slice(pattern):
         return {
             "Slice": _reader.Csv(
-                f"{pattern}_octagonslice_*", columns=["typetag", "wall_id", "r", "g", "b", "a", "delay"]
+                f"{pattern}_octagonslice_*", columns=["typetag", "wall_id", "r", "g", "b", "a", "delay", "aperture_angle"]
             )
         }
 
@@ -47,6 +47,26 @@ class OSC:
                     "spatial_frequency",
                     "temporal_frequency",
                     "angle",
+                    'aperture_angle',
+                    "delay",
+                ],
+            )
+        }
+    
+    @staticmethod
+    def gratings_slice(pattern):
+        return {
+            "GratingsSlice": _reader.Csv(
+                f"{pattern}_octagongratingsslice_*",
+                columns=[
+                    "typetag",
+                    "wall_id",
+                    "rows",
+                    "columns",
+                    "contrast",
+                    "temporal_frequency",
+                    "angle",
+                    "aperture_angle",
                     "delay",
                 ],
             )
@@ -96,6 +116,26 @@ class OSC:
     @staticmethod
     def start_new_session(pattern):
         return {"StartNewSession": _reader.Csv(f"{pattern}_startnewsession_*", columns=["typetag", "path"])}
+    
+    @staticmethod
+    def tracking_response(pattern):
+        return { "TrackingResponse": _reader.Csv(f"{pattern}_return_tracking_response_*", columns=[
+            'typetag',
+            'id',
+            'response_position_x_1',
+            'response_position_y_1',
+            'response_theta_1',
+            'response_area_1'])}
+
+    @staticmethod
+    def tracking_slice_onset(pattern):
+        return { "TrackingSliceOnset": _reader.Csv(f"{pattern}_return_tracking_slice_onset_*", columns=[
+            'typetag',
+            'id',
+            'slice_onset_position_x_1',
+            'slice_onset_position_y_1',
+            'slice_onset_theta_1',
+            'slice_onset_area_1'])}
 
 
 class TaskLogic:
