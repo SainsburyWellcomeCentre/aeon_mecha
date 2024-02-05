@@ -61,15 +61,15 @@ services:
         condition: service_started
     deploy:
       mode: replicated
-      replicas: 3
+      replicas: 2
     command: [ "aeon_ingest", "streams_worker" ]
 
-  ingest_mid:
+  analysis_worker:
     <<: *aeon-ingest-common
     depends_on:
       acquisition_worker:
         condition: service_started
     deploy:
       mode: replicated
-      replicas: 2
-    command: [ "aeon_ingest", "mid_priority" ]
+      replicas: 1
+    command: [ "aeon_ingest", "analysis_worker" ]
