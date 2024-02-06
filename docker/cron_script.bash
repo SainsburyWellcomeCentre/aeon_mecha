@@ -21,8 +21,9 @@ done
 # Verbose option for debugging
 print_verbose() {
     if [ "$verbose" -eq 1 ]; then
-        echo "[DEBUG] $1 - $(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG_FILE"
+        echo "[DEBUG] $1 - $(date '+%Y-%m-%d %H:%M:%S')"
     fi
+    echo "[DEBUG] $1 - $(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG_FILE"
 }
 
 print_verbose "Starting Ingestion..."
