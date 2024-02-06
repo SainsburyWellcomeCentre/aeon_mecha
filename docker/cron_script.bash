@@ -4,7 +4,6 @@
 # Open up a crontab ('crontab -e') and add the following:
 # 0 */4 * * * /path/to/cron_script.bash
 # For debugging, run ./cron_script.bash -v
-
 # Create a log file whenever the job gets run.
 ROOT_LOG_DIR="/ceph/aeon/aeon/dj_store/logs"
 mkdir -p "${ROOT_LOG_DIR}"
@@ -22,7 +21,7 @@ done
 # Verbose option for debugging
 print_verbose() {
     if [ "$verbose" -eq 1 ]; then
-        echo "[DEBUG] $1 - $(date '+%Y-%m-%d %H:%M:%S')" >>"$LOG_FILE"
+        echo "[DEBUG] $1 - $(date '+%Y-%m-%d %H:%M:%S')" >> "$LOG_FILE"
     fi
 }
 
@@ -30,20 +29,20 @@ print_verbose "Starting Ingestion..."
 cd /nfs/nhome/live/aeon_db/aeon_mecha/docker/
 
 print_verbose "Terminate running workers..."
-docker-compose down >>"$LOG_FILE" 2>&1
+/usr/local/bin/docker-compose down >> "$LOG_FILE" 2>&1
 if [ $? -eq 0 ]; then
     print_verbose "Workers terminated successfully."
 else
     print_verbose "Failed to terminate workers."
 fi
 
-if docker image inspect ghcr.io/sainsburywellcomecentre/aeon_mecha >/dev/null 2>&1; then
+if /usr/bin/docker image inspect ghcr.io/sainsburywellcomecentre/aeon_mecha >/dev/null 2>&1; then
     print_verbose "Removing existing aeon_mecha image..."
-    docker image rm ghcr.io/sainsburywellcomecentre/aeon_mecha >>"$LOG_FILE" 2>&1
+    /usr/bin/docker image rm ghcr.io/sainsburywellcomecentre/aeon_mecha >> "$LOG_FILE" 2>&1
 fi
 
 print_verbose "Restart workers..."
-docker-compose up --detach >>"$LOG_FILE" 2>&1
+/usr/local/bin/docker-compose up --detach >> "$LOG_FILE" 2>&1
 if [ $? -eq 0 ]; then
     print_verbose "Workers restarted successfully."
 else
