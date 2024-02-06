@@ -2,7 +2,9 @@ import bisect
 import datetime
 from os import PathLike
 from pathlib import Path
+import warnings
 
+import numpy as np
 import pandas as pd
 
 """The duration of each acquisition chunk, in whole hours."""
@@ -138,15 +140,11 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
     _set_index(data)
     if start is not None or end is not None:
         try:
-            return data.loc[start:end]
+            start_idx, end_idx = np.where(data.index >= start)[0][0], np.where(data.index <= end)[0][-1]
+            return data.iloc[start_idx:end_idx]
         except KeyError:
-            import warnings
-
             if not data.index.has_duplicates:
                 warnings.warn(f"data index for {reader.pattern} contains out-of-order timestamps!")
                 data = data.sort_index()
-            else:
-                warnings.warn(f"data index for {reader.pattern} contains duplicate keys!")
-                data = data[~data.index.duplicated(keep="first")]
-            return data.loc[start:end]
+                return data.iloc[start_idx:end_idx]
     return data
