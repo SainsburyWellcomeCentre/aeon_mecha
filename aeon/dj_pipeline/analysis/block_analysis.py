@@ -156,9 +156,20 @@ class BlockAnalysis(dj.Computed):
             )
 
         # Subject data
-        subject_names = set(
-            (tracking.SLEAPTracking.PoseIdentity & key & chunk_restriction).fetch("identity_name")
-        )
+        # Get all unique subjects that visited the environment over the entire exp;
+        # For each subject, see 'type' of visit most recent to start of block
+        # If "Exit", this animal was not in the block.
+        subject_visits_df = fetch_stream(
+            acquisition.Environment.SubjectVisits
+            & key
+            & f'chunk_start <= "{chunk_keys[-1]["chunk_start"]}"'
+        )[:block_start]
+        subject_visits_df = subject_visits_df[subject_visits_df.region == "Environment"]
+        subject_names = []
+        for subject_name in set(subject_visits_df.id):
+            _df = subject_visits_df[subject_visits_df.id == subject_name]
+            if _df.type[-1] != "Exit":
+                subject_names.append(subject_name)
         for subject_name in subject_names:
             # positions - query for CameraTop, identity_name matches subject_name,
             pos_query = (
