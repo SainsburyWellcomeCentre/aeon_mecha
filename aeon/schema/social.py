@@ -50,7 +50,7 @@ subject_state_b = lambda pattern: {
 
 # SubjectVisits
 subject_visits_b = lambda pattern: {
-    "SubjectVisits": reader.Csv(f"{pattern}_SubjectVisit_*", ["id", "type", "region"])
+    "SubjectVisits": reader.Csv(f"{pattern}_SubjectVisits_*", ["id", "type", "region"])
 }
 
 # SubjectWeight
