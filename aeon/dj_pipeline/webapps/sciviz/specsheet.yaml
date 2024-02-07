@@ -686,7 +686,7 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_archived_exp02_acquisition):
                     acquisition = aeon_archived_exp02_acquisition
-                    return {'query': aeon_acquisition.Experiment(), 'fetch_args': ['experiment_name']}
+                    return {'query': acquisition.Experiment(), 'fetch_args': ['experiment_name']}
             camera_dropdown:
               x: 0
               y: 1
