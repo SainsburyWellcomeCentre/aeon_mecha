@@ -268,6 +268,16 @@ class BlockSubjectAnalysis(dj.Computed):
             ]
         )
         subjects_positions_df.set_index("position_timestamps", inplace=True)
+        # Get frame rate of CameraTop
+        camera_fps = int(
+            (
+                streams.SpinnakerVideoSource * streams.SpinnakerVideoSource.Attribute
+                & key
+                & 'attribute_name = "SamplingFrequency"'
+                & 'spinnaker_video_source_name = "CameraTop"'
+                & f'spinnaker_video_source_install_time < "{key["block_start"]}"'
+            ).fetch("attribute_value", order_by="spinnaker_video_source_install_time DESC", limit=1)[0]
+        )
 
         self.insert1(key)
         for i, patch in enumerate(block_patches):
@@ -304,27 +314,31 @@ class BlockSubjectAnalysis(dj.Computed):
                 )
                 for subject_name in subject_names:
                     # Find closest match between pose_df indices and wheel indices
-                    dist_to_patch_wheel_ts_subj = pd.merge_asof(
-                        left=dist_to_patch_wheel_ts_id_df[subject_name],
-                        right=dist_to_patch_df[dist_to_patch_df["subject_name"] == subject_name],
-                        left_index=True,
-                        right_index=True,
-                        direction="forward",
-                        tolerance=pd.Timedelta("100ms"),
-                    )
-                    dist_to_patch_wheel_ts_id_df[subject_name] = dist_to_patch_wheel_ts_subj[
-                        "dist_to_patch"
-                    ]
+                    if not dist_to_patch_wheel_ts_id_df.empty:
+                        dist_to_patch_wheel_ts_subj = pd.merge_asof(
+                            left=dist_to_patch_wheel_ts_id_df[subject_name],
+                            right=dist_to_patch_df[dist_to_patch_df["subject_name"] == subject_name],
+                            left_index=True,
+                            right_index=True,
+                            direction="forward",
+                            tolerance=pd.Timedelta("100ms"),
+                        )
+                        dist_to_patch_wheel_ts_id_df[subject_name] = dist_to_patch_wheel_ts_subj[
+                            "dist_to_patch"
+                        ]
                     # Find closest match between pose_df indices and pel indices
-                    dist_to_patch_pel_ts_subj = pd.merge_asof(
-                        left=dist_to_patch_pel_ts_id_df[subject_name],
-                        right=dist_to_patch_df[dist_to_patch_df["subject_name"] == subject_name],
-                        left_index=True,
-                        right_index=True,
-                        direction="forward",
-                        tolerance=pd.Timedelta("200ms"),
-                    )
-                    dist_to_patch_pel_ts_id_df[subject_name] = dist_to_patch_pel_ts_subj["dist_to_patch"]
+                    if not dist_to_patch_pel_ts_id_df.empty:
+                        dist_to_patch_pel_ts_subj = pd.merge_asof(
+                            left=dist_to_patch_pel_ts_id_df[subject_name],
+                            right=dist_to_patch_df[dist_to_patch_df["subject_name"] == subject_name],
+                            left_index=True,
+                            right_index=True,
+                            direction="forward",
+                            tolerance=pd.Timedelta("200ms"),
+                        )
+                        dist_to_patch_pel_ts_id_df[subject_name] = dist_to_patch_pel_ts_subj[
+                            "dist_to_patch"
+                        ]
                 # Get closest subject to patch at each pel del timestep
                 patch_df_for_pellets_df = pd.DataFrame(
                     index=patch["pellet_timestamps"],
@@ -360,7 +374,7 @@ class BlockSubjectAnalysis(dj.Computed):
                         patch_name=patch["patch_name"],
                         subject_name=subject_name,
                         in_patch_timestamps=subject_in_patch.index.values,
-                        in_patch_time=len(subject_in_patch),
+                        in_patch_time=len(subject_in_patch) / camera_fps,
                         pellet_count=len(pellets),
                         pellet_timestamps=pellets.index.values,
                         wheel_cumsum_distance_travelled=cum_wheel_dist_dm[subject_name].values,
