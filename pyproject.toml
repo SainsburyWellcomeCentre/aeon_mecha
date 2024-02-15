@@ -45,6 +45,7 @@ dependencies = [
   "scikit-learn",
   "scipy",
   "seaborn",
+  "tqdm",
   "xarray>=0.12.3",
 ]
 
