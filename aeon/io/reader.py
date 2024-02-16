@@ -126,7 +126,13 @@ class Csv(Reader):
 
     def read(self, file):
         """Reads data from the specified CSV text file."""
-        return pd.read_csv(file, header=0, names=self.columns, dtype=self.dtype, index_col=0)
+        return pd.read_csv(
+            file,
+            header=0,
+            names=self.columns,
+            dtype=self.dtype,
+            index_col=0 if file.stat().st_size else None,
+        )
 
 
 class Subject(Csv):

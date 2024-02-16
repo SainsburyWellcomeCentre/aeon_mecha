@@ -186,6 +186,9 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
 
     device_type_mapper, _ = get_device_mapper(devices_schema, metadata_yml_filepath)
 
+    # Retrieve video controller
+    video_controller = epoch_config["metadata"].pop("VideoController", {})
+
     # Insert into each device table
     epoch_device_types = []
     device_list = []
@@ -221,6 +224,14 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
                 }
                 for attribute_name, attribute_value in device_config.items()
             ]
+            if "TriggerFrequency" in device_config:
+                table_attribute_entry.append(
+                    {
+                        **table_entry,
+                        "attribute_name": "SamplingFrequency",
+                        "attribute_value": video_controller[device_config["TriggerFrequency"]],
+                    }
+                )
 
             """Check if this device is currently installed. If the same device serial number is currently installed check for any changes in configuration. If not, skip this"""
             current_device_query = table - table.RemovalTime & experiment_key & device_key
