@@ -541,6 +541,50 @@ SciViz:
                     aeon_report = aeon_archived_exp02_report
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['region_time_fraction_hourly_plotly'])
 
+    SocialExperiment:
+      route: /social_experiment
+      grids:
+        grid3:
+          type: fixed
+          columns: 1
+          row_height: 700
+          components:
+            SocialExperiment:
+              route: /social_experiment_grid
+              link: /per_social_experiment
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: antd-table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_acquisition, aeon_block_analysis, aeon_tracking):
+
+                    import pandas as pd
+                    acquisition = aeon_acquisition
+                    block_analysis = aeon_block_analysis
+                    tracking = aeon_tracking
+
+                    query = acquisition.Experiment.aggr(block_analysis.Block, block_count="COUNT(experiment_name)") + acquisition.Experiment.aggr(acquisition.Chunk, chunk_count="COUNT(experiment_name)", latest_chunk_start="MAX(chunk_start)")
+
+                    df = tracking.SLEAPTracking.PoseIdentity.proj("identity_name").fetch(format="frame")
+                    df = df.groupby('experiment_name')['identity_name'].unique().reset_index()
+
+                    subject_query = None
+
+                    for exp in query.fetch("experiment_name"):
+                        # get identity names for each experiment
+                        identities = df[df['experiment_name'] == exp]['identity_name'].values[0]
+                        if not subject_query:
+                            subject_query = dj.U("experiment_name", "subject") & (query & f"experiment_name = '{exp}'").proj(subject=f"CONCAT('{', '.join(identities)}')")
+                        else:
+                            subject_query += dj.U("experiment_name", "subject") & (query & f"experiment_name = '{exp}'").proj(subject=f"CONCAT('{', '.join(identities)}')")
+
+                    query.join(subject_query, left=True).proj(..., participants="subject")
+
     BlockAnalysis:
       route: /block_analysis
       grids:
