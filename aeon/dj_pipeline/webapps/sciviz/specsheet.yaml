@@ -544,7 +544,7 @@ SciViz:
     SocialExperiment:
       route: /social_experiment
       grids:
-        grid3:
+        grid1:
           type: fixed
           columns: 1
           row_height: 700
@@ -583,7 +583,7 @@ SciViz:
                         else:
                             subject_query += dj.U("experiment_name", "subject") & (query & f"experiment_name = '{exp}'").proj(subject=f"CONCAT('{', '.join(identities)}')")
 
-                    query.join(subject_query, left=True).proj(..., participants="subject")
+                    return {'query': query.join(subject_query, left=True).proj(..., participants="subject"), 'fetch_args': []}
 
     BlockAnalysis:
       route: /block_analysis
