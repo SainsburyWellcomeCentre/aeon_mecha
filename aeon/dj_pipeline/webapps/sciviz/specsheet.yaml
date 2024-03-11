@@ -541,6 +541,41 @@ SciViz:
                     aeon_report = aeon_archived_exp02_report
                     return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['region_time_fraction_hourly_plotly'])
 
+    SocialExperiment:
+      route: /social_experiment
+      grids:
+        grid1:
+          type: fixed
+          columns: 1
+          row_height: 700
+          components:
+            SocialExperiment:
+              route: /social_experiment_grid
+              link: /per_social_experiment
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: antd-table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_acquisition, aeon_block_analysis, aeon_tracking):
+
+                    acquisition = aeon_acquisition
+                    block_analysis = aeon_block_analysis
+                    tracking = aeon_tracking
+
+                    query = acquisition.Experiment.aggr(block_analysis.Block, block_count="COUNT(experiment_name)") + acquisition.Experiment.aggr(acquisition.Chunk, chunk_count="COUNT(experiment_name)", latest_chunk_start="MAX(chunk_start)")
+
+                    query = query.join(acquisition.Experiment.aggr(
+                        tracking.SLEAPTracking.PoseIdentity,
+                        participants="GROUP_CONCAT(DISTINCT identity_name SEPARATOR ', ')"
+                    ), left=True)
+
+                    return {'query': query, 'fetch_args': []}
+
     BlockAnalysis:
       route: /block_analysis
       grids:
