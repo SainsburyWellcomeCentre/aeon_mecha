@@ -2,7 +2,7 @@ import inspect
 from typing_extensions import deprecated
 
 
-@deprecated("Please use the streams module instead.")
+@deprecated("Please use the StreamGroup class from the streams module instead.")
 def compositeStream(pattern, *args):
     """Merges multiple data streams into a single composite stream."""
     composite = {}
@@ -17,7 +17,7 @@ def compositeStream(pattern, *args):
     return composite
 
 
-@deprecated("Please use the Device class in the streams module instead.")
+@deprecated("The Device class has been moved to the streams module.")
 class Device:
     """Groups multiple data streams into a logical device.
 
