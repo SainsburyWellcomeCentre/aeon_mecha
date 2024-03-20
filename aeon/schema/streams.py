@@ -58,7 +58,7 @@ class Device:
     def _createStreams(path, args):
         streams = {}
         for factory in args:
-            if inspect.isclass(factory) and factory.__init__.__code__.co_argcount == 1:
+            if inspect.isclass(factory) and not hasattr(factory.__init__, "__code__"):
                 warn(
                     f"Stream group classes with default constructors are deprecated. {factory}",
                     category=DeprecationWarning,
