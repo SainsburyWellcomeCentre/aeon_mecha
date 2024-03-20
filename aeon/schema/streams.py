@@ -1,4 +1,5 @@
 import inspect
+from itertools import chain
 from warnings import warn
 
 
@@ -27,9 +28,14 @@ class StreamGroup:
     def __init__(self, path, *args):
         self.path = path
         self._args = args
+        self._nested = (
+            member
+            for member in vars(self.__class__).values()
+            if inspect.isclass(member) and issubclass(member, (Stream, StreamGroup))
+        )
 
     def __iter__(self):
-        for factory in self._args:
+        for factory in chain(self._nested, self._args):
             for stream in iter(factory(self.path)):
                 yield stream
 
