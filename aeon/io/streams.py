@@ -1,5 +1,6 @@
 import inspect
 from itertools import chain
+from warnings import warn
 
 
 class Stream:
@@ -42,7 +43,17 @@ def compositeStream(pattern, *args):
     composite = {}
     if args:
         for stream in args:
-            composite.update(stream(pattern))
+            try:
+                composite.update(stream(pattern))
+            except TypeError:
+                warn(
+                    f"Stream groups with no constructors are deprecated. {stream}",
+                    category=DeprecationWarning,
+                )
+                if inspect.isclass(stream):
+                    for method in vars(stream).values():
+                        if isinstance(method, staticmethod):
+                            composite.update(method.__func__(pattern))
     return composite
 
 
