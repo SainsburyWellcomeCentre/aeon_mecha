@@ -48,6 +48,9 @@ class Device:
     """
 
     def __init__(self, name, *args, path=None):
+        if name is None:
+            raise ValueError("name cannot be None.")
+
         self.name = name
         self._streams = Device._createStreams(name if path is None else path, *args)
 
