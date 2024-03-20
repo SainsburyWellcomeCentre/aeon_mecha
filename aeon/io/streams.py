@@ -58,19 +58,16 @@ class Device:
     def _createStreams(path, args):
         streams = {}
         for callable in args:
-            try:
+            if inspect.isclass(callable) and callable.__init__.__code__.co_argcount == 1:
+                warn(
+                    f"Stream group classes with default constructors are deprecated. {callable}",
+                    category=DeprecationWarning,
+                )
+                for method in vars(callable).values():
+                    if isinstance(method, staticmethod):
+                        streams.update(method.__func__(path))
+            else:
                 streams.update(callable(path))
-            except TypeError:
-                if inspect.isclass(callable):
-                    warn(
-                        f"Stream group classes with no constructors are deprecated. {callable}",
-                        category=DeprecationWarning,
-                    )
-                    for method in vars(callable).values():
-                        if isinstance(method, staticmethod):
-                            streams.update(method.__func__(path))
-                else:
-                    raise
         return streams
 
     def __iter__(self):
