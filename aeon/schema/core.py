@@ -1,47 +1,65 @@
-import aeon.io.device as _device
+from aeon.schema.streams import Stream, StreamGroup
 import aeon.io.reader as _reader
 
 
-def heartbeat(pattern):
+class Heartbeat(Stream):
     """Heartbeat event for Harp devices."""
-    return {"Heartbeat": _reader.Heartbeat(f"{pattern}_8_*")}
+
+    def __init__(self, pattern):
+        super().__init__(_reader.Heartbeat(f"{pattern}_8_*"))
 
 
-def video(pattern):
+class Video(Stream):
     """Video frame metadata."""
-    return {"Video": _reader.Video(f"{pattern}_*")}
+
+    def __init__(self, pattern):
+        super().__init__(_reader.Video(f"{pattern}_*"))
 
 
-def position(pattern):
+class Position(Stream):
     """Position tracking data for the specified camera."""
-    return {"Position": _reader.Position(f"{pattern}_200_*")}
+
+    def __init__(self, pattern):
+        super().__init__(_reader.Position(f"{pattern}_200_*"))
 
 
-def encoder(pattern):
+class Encoder(Stream):
     """Wheel magnetic encoder data."""
-    return {"Encoder": _reader.Encoder(f"{pattern}_90_*")}
+
+    def __init__(self, pattern):
+        super().__init__(_reader.Encoder(f"{pattern}_90_*"))
 
 
-def environment(pattern):
+class Environment(StreamGroup):
     """Metadata for environment mode and subjects."""
-    return _device.compositeStream(pattern, environment_state, subject_state)
+
+    def __init__(self, pattern):
+        super().__init__(pattern, EnvironmentState, SubjectState)
 
 
-def environment_state(pattern):
+class EnvironmentState(Stream):
     """Environment state log."""
-    return {"EnvironmentState": _reader.Csv(f"{pattern}_EnvironmentState_*", ["state"])}
+
+    def __init__(self, pattern):
+        super().__init__(_reader.Csv(f"{pattern}_EnvironmentState_*", ["state"]))
 
 
-def subject_state(pattern):
+class SubjectState(Stream):
     """Subject state log."""
-    return {"SubjectState": _reader.Subject(f"{pattern}_SubjectState_*")}
+
+    def __init__(self, pattern):
+        super().__init__(_reader.Subject(f"{pattern}_SubjectState_*"))
 
 
-def messageLog(pattern):
+class MessageLog(Stream):
     """Message log data."""
-    return {"MessageLog": _reader.Log(f"{pattern}_MessageLog_*")}
+
+    def __init__(self, pattern):
+        super().__init__(_reader.Log(f"{pattern}_MessageLog_*"))
 
 
-def metadata(pattern):
+class Metadata(Stream):
     """Metadata for acquisition epochs."""
-    return {pattern: _reader.Metadata(pattern)}
+
+    def __init__(self, pattern):
+        super().__init__(_reader.Metadata(pattern))
