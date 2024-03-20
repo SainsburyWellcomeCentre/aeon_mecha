@@ -52,26 +52,25 @@ class Device:
             raise ValueError("name cannot be None.")
 
         self.name = name
-        self._streams = Device._createStreams(name if path is None else path, *args)
+        self._streams = Device._createStreams(name if path is None else path, args)
 
     @staticmethod
-    def _createStreams(path, *args):
+    def _createStreams(path, args):
         streams = {}
-        if args:
-            for callable in args:
-                try:
-                    streams.update(callable(path))
-                except TypeError:
-                    if inspect.isclass(callable):
-                        warn(
-                            f"Stream group classes with no constructors are deprecated. {callable}",
-                            category=DeprecationWarning,
-                        )
-                        for method in vars(callable).values():
-                            if isinstance(method, staticmethod):
-                                streams.update(method.__func__(path))
-                    else:
-                        raise
+        for callable in args:
+            try:
+                streams.update(callable(path))
+            except TypeError:
+                if inspect.isclass(callable):
+                    warn(
+                        f"Stream group classes with no constructors are deprecated. {callable}",
+                        category=DeprecationWarning,
+                    )
+                    for method in vars(callable).values():
+                        if isinstance(method, staticmethod):
+                            streams.update(method.__func__(path))
+                else:
+                    raise
         return streams
 
     def __iter__(self):
