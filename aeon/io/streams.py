@@ -29,8 +29,8 @@ class StreamGroup:
         self._args = args
 
     def __iter__(self):
-        for callable in self._args:
-            for stream in iter(callable(self.path)):
+        for factory in self._args:
+            for stream in iter(factory(self.path)):
                 yield stream
 
 
@@ -57,17 +57,17 @@ class Device:
     @staticmethod
     def _createStreams(path, args):
         streams = {}
-        for callable in args:
-            if inspect.isclass(callable) and callable.__init__.__code__.co_argcount == 1:
+        for factory in args:
+            if inspect.isclass(factory) and factory.__init__.__code__.co_argcount == 1:
                 warn(
-                    f"Stream group classes with default constructors are deprecated. {callable}",
+                    f"Stream group classes with default constructors are deprecated. {factory}",
                     category=DeprecationWarning,
                 )
-                for method in vars(callable).values():
+                for method in vars(factory).values():
                     if isinstance(method, staticmethod):
                         streams.update(method.__func__(path))
             else:
-                streams.update(callable(path))
+                streams.update(factory(path))
         return streams
 
     def __iter__(self):
