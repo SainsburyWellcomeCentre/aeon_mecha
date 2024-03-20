@@ -518,8 +518,7 @@ class BlockDetection(dj.Computed):
         )
 
         block_query = acquisition.Environment.BlockState & chunk_restriction
-        block_df = fetch_stream(block_query)
-        block_df = block_df[block_df.index.to_series().between(previous_block_start, chunk_end)]
+        block_df = fetch_stream(block_query).sort_index()[previous_block_start:chunk_end]
 
         block_ends = block_df[block_df.pellet_ct.diff() < 0]
 
