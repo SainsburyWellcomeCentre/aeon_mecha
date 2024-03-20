@@ -8,8 +8,10 @@ import plotly.graph_objs as go
 from matplotlib import path as mpl_path
 
 from aeon.analysis import utils as analysis_utils
-from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, tracking
-from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
+from aeon.dj_pipeline import (acquisition, fetch_stream, get_schema_name,
+                              streams, tracking)
+from aeon.dj_pipeline.analysis.visit import (filter_out_maintenance_periods,
+                                             get_maintenance_periods)
 
 schema = dj.schema(get_schema_name("block_analysis"))
 logger = dj.logger
@@ -516,7 +518,7 @@ class BlockDetection(dj.Computed):
         )
 
         block_query = acquisition.Environment.BlockState & chunk_restriction
-        block_df = fetch_stream(block_query)[previous_block_start:chunk_end]
+        block_df = fetch_stream(block_query).sort_index()[previous_block_start:chunk_end]
 
         block_ends = block_df[block_df.pellet_ct.diff() < 0]
 
