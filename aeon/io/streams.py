@@ -1,5 +1,4 @@
 import inspect
-from itertools import chain
 from warnings import warn
 
 
@@ -21,40 +20,18 @@ class StreamGroup:
     """Represents a logical group of multiple data streams.
 
     Attributes:
-        name (str): Name of the logical group used to find raw files.
+        path (str): Path to the folder where stream chunks are located.
+        args (Any): Data streams or data stream groups to be included in this stream group.
     """
 
-    def __init__(self, name, *args):
-        self.name = name
+    def __init__(self, path, *args):
+        self.path = path
         self._args = args
 
     def __iter__(self):
-        for member in chain(vars(self.__class__).values(), self._args):
-            if inspect.isclass(member):
-                for stream in iter(member(self.name)):
-                    yield stream
-            elif isinstance(member, staticmethod):
-                for stream in iter(member.__func__(self.name)):
-                    yield stream
-
-
-def compositeStream(pattern, *args):
-    """Merges multiple data streams into a single composite stream."""
-    composite = {}
-    if args:
-        for stream in args:
-            try:
-                composite.update(stream(pattern))
-            except TypeError:
-                warn(
-                    f"Stream groups with no constructors are deprecated. {stream}",
-                    category=DeprecationWarning,
-                )
-                if inspect.isclass(stream):
-                    for method in vars(stream).values():
-                        if isinstance(method, staticmethod):
-                            composite.update(method.__func__(pattern))
-    return composite
+        for callable in self._args:
+            for stream in iter(callable(self.path)):
+                yield stream
 
 
 class Device:
@@ -67,17 +44,36 @@ class Device:
     Attributes:
         name (str): Name of the device.
         args (Any): Data streams collected from the device.
-        pattern (str, optional): Pattern used to find raw chunk files,
-            usually in the format `<Device>_<DataStream>`.
+        path (str, optional): Path to the folder where stream chunks are located.
     """
 
-    def __init__(self, name, *args, pattern=None):
+    def __init__(self, name, *args, path=None):
         self.name = name
-        self.provider = compositeStream(name if pattern is None else pattern, *args)
+        self._streams = Device._createStreams(name if path is None else path, *args)
+
+    @staticmethod
+    def _createStreams(path, *args):
+        streams = {}
+        if args:
+            for callable in args:
+                try:
+                    streams.update(callable(path))
+                except TypeError:
+                    if inspect.isclass(callable):
+                        warn(
+                            f"Stream group classes with no constructors are deprecated. {callable}",
+                            category=DeprecationWarning,
+                        )
+                        for method in vars(callable).values():
+                            if isinstance(method, staticmethod):
+                                streams.update(method.__func__(path))
+                    else:
+                        raise
+        return streams
 
     def __iter__(self):
-        if len(self.provider) == 1:
-            singleton = self.provider.get(self.name, None)
+        if len(self._streams) == 1:
+            singleton = self._streams.get(self.name, None)
             if singleton:
                 return iter((self.name, singleton))
-        return iter((self.name, self.provider))
+        return iter((self.name, self._streams))
