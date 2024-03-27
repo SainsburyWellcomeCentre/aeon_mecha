@@ -7,14 +7,14 @@ services:
   pharus:
     cpus: 2.0
     mem_limit: 4g
-    image: jverswijver/pharus:0.8.5-PY_VER-3.9
+    image: datajoint/pharus:0.8.10-py3.9
     environment:
       # - FLASK_ENV=development # enables logging to console from Flask
-      - PHARUS_SPEC_PATH=/main/specsheet.yaml # for dynamic utils spec
+      - PHARUS_SPEC_PATH=/main/specsheet-local.yaml # for dynamic utils spec
       - PHARUS_MODE=DEV
     user: root
     volumes:
-      - ./specsheet.yaml:/main/specsheet.yaml #copy the spec over to /main/specs/YOUR_SPEC_NAME
+      - ./specsheet-local.yaml:/main/specsheet-local.yaml #copy the spec over to /main/specs/YOUR_SPEC_NAME
       - ./apk_requirements.txt:/tmp/apk_requirements.txt
       - /ceph/aeon/aeon:/ceph/aeon/aeon
     command:
@@ -23,12 +23,12 @@ services:
       - |
         apk add --update git g++ &&
         git clone -b datajoint_pipeline https://github.com/SainsburyWellcomeCentre/aeon_mecha.git &&
-        pip install -e ./aeon_mecha &&
+        pip install -e ./aeon_mecha --ignore-requires-python &&
         pharus_update() {
             [ -z "$$GUNICORN_PID" ] || kill $$GUNICORN_PID
             gunicorn --bind 0.0.0.0:$${PHARUS_PORT} pharus.server:app &
             GUNICORN_PID=$$!
-        }
+        } &&
         pharus_update
         echo "[$$(date -u '+%Y-%m-%d %H:%M:%S')][DataJoint]: Monitoring Pharus updates..."
         INIT_TIME=$$(date +%s)
@@ -52,16 +52,16 @@ services:
   sci-viz:
     cpus: 2.0
     mem_limit: 16g
-    image: jverswijver/sci-viz:2.3.3-hotfix3
+    image: jverswijver/sci-viz:2.3.5-beta
     environment:
       - CHOKIDAR_USEPOLLING=true
       - REACT_APP_DJSCIVIZ_BACKEND_PREFIX=/api
-      - DJSCIVIZ_SPEC_PATH=/main/specsheet.yaml
+      - DJSCIVIZ_SPEC_PATH=/main/specsheet-local.yaml
       - DJSCIVIZ_MODE=DEV
       - NODE_OPTIONS="--max-old-space-size=12000"
     user: root
     volumes:
-      - ./specsheet.yaml:/main/specsheet.yaml
+      - ./specsheet-local.yaml:/main/specsheet-local.yaml
     # ports:
     #   - "3000:3000"
     command:
