@@ -26,7 +26,7 @@ HOST_UID=$(id -u) docker-compose -f docker-compose-local.yaml up
 ```
 
 #### Verify the deployment
-- In your web browser, navigate to: [https://localhost/login](https://localhost/login)
+- In your web browser, navigate to: [https://localhost/](https://localhost/)
 - Set `Username` and `Password` to your own database user account (if you need one, please contact Project Aeon admin team).
 - Click `Connect`.
 - To stop the application, docker compose down with the following:
@@ -52,7 +52,8 @@ HOST_UID=$(id -u) docker-compose -f docker-compose-remote.yaml up -d
 
 ---
 ## Dynamic spec sheet
-Sci-Viz is used to build visualization dashboards, this is done through a single spec sheet. The one for this deployment is called `specsheet.yaml`
+Sci-Viz is used to build visualization dashboards, this is done through a single spec sheet. The one used in production is called `specsheet.yaml`,
+and the one used locally is called `specsheet-local.yaml`.
 
 Some notes about the spec sheet if you plan to tweak the website yourself:
 - Page names under pages must have a unique name without spaces
