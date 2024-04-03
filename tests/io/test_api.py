@@ -19,17 +19,13 @@ def test_load_start_only():
 
 @mark.api
 def test_load_end_only():
-    data = aeon.load(
-        nonmonotonic_path, exp02.Patch2.Encoder, end=pd.Timestamp("2022-06-06T13:00:49")
-    )
+    data = aeon.load(nonmonotonic_path, exp02.Patch2.Encoder, end=pd.Timestamp("2022-06-06T13:00:49"))
     assert len(data) > 0
 
 
 @mark.api
 def test_load_filter_nonchunked():
-    data = aeon.load(
-        nonmonotonic_path, exp02.Metadata, start=pd.Timestamp("2022-06-06T09:00:00")
-    )
+    data = aeon.load(nonmonotonic_path, exp02.Metadata, start=pd.Timestamp("2022-06-06T09:00:00"))
     assert len(data) > 0
 
 
