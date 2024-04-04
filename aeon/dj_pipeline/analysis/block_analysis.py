@@ -253,6 +253,7 @@ class BlockSubjectAnalysis(dj.Computed):
         subject_names = [s["subject_name"] for s in block_subjects]
         # Construct subject position dataframe
         subjects_positions_df = pd.concat(
+
             [
                 pd.DataFrame(
                     {"subject_name": [s["subject_name"]] * len(s["position_timestamps"])}

@@ -66,11 +66,10 @@ class CameraQC(dj.Imported):
         )  # CameraTop
 
     def make(self, key):
-        chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-            "chunk_start", "chunk_end", "directory_type"
-        )
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
         device_name = (streams.SpinnakerVideoSource & key).fetch1("spinnaker_video_source_name")
-        raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+        data_dirs = acquisition.Experiment.get_data_directories(key)
 
         devices_schema = getattr(
             acquisition.aeon_schemas,
@@ -81,7 +80,7 @@ class CameraQC(dj.Imported):
         stream_reader = getattr(getattr(devices_schema, device_name), "Video")
 
         videodata = io_api.load(
-            root=raw_data_dir.as_posix(),
+            root=data_dirs,
             reader=stream_reader,
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),

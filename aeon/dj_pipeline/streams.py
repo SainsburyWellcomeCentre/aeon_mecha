@@ -188,10 +188,9 @@ class RfidReaderRfidEvents(dj.Imported):
             )
 
         def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+            data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (RfidReader & key).fetch1('rfid_reader_name')
 
@@ -204,7 +203,7 @@ class RfidReaderRfidEvents(dj.Imported):
             stream_reader = getattr(getattr(devices_schema, device_name), "RfidEvents")
 
             stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
+                root=data_dirs,
                 reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
@@ -225,7 +224,7 @@ class RfidReaderRfidEvents(dj.Imported):
             )
 
 
-@schema 
+@schema
 class SpinnakerVideoSourceVideo(dj.Imported):
         definition = """  # Raw per-chunk Video data stream from SpinnakerVideoSource (auto-generated with aeon_mecha-unknown)
     -> SpinnakerVideoSource
@@ -251,10 +250,9 @@ class SpinnakerVideoSourceVideo(dj.Imported):
             )
 
         def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+            data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (SpinnakerVideoSource & key).fetch1('spinnaker_video_source_name')
 
@@ -267,7 +265,7 @@ class SpinnakerVideoSourceVideo(dj.Imported):
             stream_reader = getattr(getattr(devices_schema, device_name), "Video")
 
             stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
+                root=data_dirs,
                 reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
@@ -288,7 +286,7 @@ class SpinnakerVideoSourceVideo(dj.Imported):
             )
 
 
-@schema 
+@schema
 class UndergroundFeederBeamBreak(dj.Imported):
         definition = """  # Raw per-chunk BeamBreak data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -313,10 +311,9 @@ class UndergroundFeederBeamBreak(dj.Imported):
             )
 
         def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+            data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
@@ -329,7 +326,7 @@ class UndergroundFeederBeamBreak(dj.Imported):
             stream_reader = getattr(getattr(devices_schema, device_name), "BeamBreak")
 
             stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
+                root=data_dirs,
                 reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
@@ -350,7 +347,7 @@ class UndergroundFeederBeamBreak(dj.Imported):
             )
 
 
-@schema 
+@schema
 class UndergroundFeederDeliverPellet(dj.Imported):
         definition = """  # Raw per-chunk DeliverPellet data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -375,10 +372,9 @@ class UndergroundFeederDeliverPellet(dj.Imported):
             )
 
         def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+            data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
@@ -391,7 +387,7 @@ class UndergroundFeederDeliverPellet(dj.Imported):
             stream_reader = getattr(getattr(devices_schema, device_name), "DeliverPellet")
 
             stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
+                root=data_dirs,
                 reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
@@ -412,7 +408,7 @@ class UndergroundFeederDeliverPellet(dj.Imported):
             )
 
 
-@schema 
+@schema
 class UndergroundFeederDepletionState(dj.Imported):
         definition = """  # Raw per-chunk DepletionState data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -439,10 +435,9 @@ class UndergroundFeederDepletionState(dj.Imported):
             )
 
         def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+            data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
@@ -455,7 +450,7 @@ class UndergroundFeederDepletionState(dj.Imported):
             stream_reader = getattr(getattr(devices_schema, device_name), "DepletionState")
 
             stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
+                root=data_dirs,
                 reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
@@ -476,7 +471,7 @@ class UndergroundFeederDepletionState(dj.Imported):
             )
 
 
-@schema 
+@schema
 class UndergroundFeederEncoder(dj.Imported):
         definition = """  # Raw per-chunk Encoder data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -502,10 +497,9 @@ class UndergroundFeederEncoder(dj.Imported):
             )
 
         def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+            data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
@@ -518,7 +512,7 @@ class UndergroundFeederEncoder(dj.Imported):
             stream_reader = getattr(getattr(devices_schema, device_name), "Encoder")
 
             stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
+                root=data_dirs,
                 reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
@@ -539,7 +533,7 @@ class UndergroundFeederEncoder(dj.Imported):
             )
 
 
-@schema 
+@schema
 class UndergroundFeederManualDelivery(dj.Imported):
         definition = """  # Raw per-chunk ManualDelivery data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -564,10 +558,9 @@ class UndergroundFeederManualDelivery(dj.Imported):
             )
 
         def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+            data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
@@ -580,7 +573,7 @@ class UndergroundFeederManualDelivery(dj.Imported):
             stream_reader = getattr(getattr(devices_schema, device_name), "ManualDelivery")
 
             stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
+                root=data_dirs,
                 reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
@@ -601,7 +594,7 @@ class UndergroundFeederManualDelivery(dj.Imported):
             )
 
 
-@schema 
+@schema
 class UndergroundFeederMissedPellet(dj.Imported):
         definition = """  # Raw per-chunk MissedPellet data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -626,10 +619,9 @@ class UndergroundFeederMissedPellet(dj.Imported):
             )
 
         def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+            data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
@@ -642,7 +634,7 @@ class UndergroundFeederMissedPellet(dj.Imported):
             stream_reader = getattr(getattr(devices_schema, device_name), "MissedPellet")
 
             stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
+                root=data_dirs,
                 reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
@@ -663,7 +655,7 @@ class UndergroundFeederMissedPellet(dj.Imported):
             )
 
 
-@schema 
+@schema
 class UndergroundFeederRetriedDelivery(dj.Imported):
         definition = """  # Raw per-chunk RetriedDelivery data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -688,10 +680,9 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
             )
 
         def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+            data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
 
@@ -704,7 +695,7 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
             stream_reader = getattr(getattr(devices_schema, device_name), "RetriedDelivery")
 
             stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
+                root=data_dirs,
                 reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
@@ -725,7 +716,7 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
             )
 
 
-@schema 
+@schema
 class WeightScaleWeightFiltered(dj.Imported):
         definition = """  # Raw per-chunk WeightFiltered data stream from WeightScale (auto-generated with aeon_mecha-unknown)
     -> WeightScale
@@ -751,10 +742,9 @@ class WeightScaleWeightFiltered(dj.Imported):
             )
 
         def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+            data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (WeightScale & key).fetch1('weight_scale_name')
 
@@ -767,7 +757,7 @@ class WeightScaleWeightFiltered(dj.Imported):
             stream_reader = getattr(getattr(devices_schema, device_name), "WeightFiltered")
 
             stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
+                root=data_dirs,
                 reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
@@ -788,7 +778,7 @@ class WeightScaleWeightFiltered(dj.Imported):
             )
 
 
-@schema 
+@schema
 class WeightScaleWeightRaw(dj.Imported):
         definition = """  # Raw per-chunk WeightRaw data stream from WeightScale (auto-generated with aeon_mecha-unknown)
     -> WeightScale
@@ -814,10 +804,9 @@ class WeightScaleWeightRaw(dj.Imported):
             )
 
         def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+            data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (WeightScale & key).fetch1('weight_scale_name')
 
@@ -830,7 +819,7 @@ class WeightScaleWeightRaw(dj.Imported):
             stream_reader = getattr(getattr(devices_schema, device_name), "WeightRaw")
 
             stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
+                root=data_dirs,
                 reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),

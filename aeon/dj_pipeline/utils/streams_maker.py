@@ -146,10 +146,8 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             )
 
         def make(self, key):
-            chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end", "directory_type"
-            )
-            raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+            data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (ExperimentDevice & key).fetch1(f"{dj.utils.from_camel_case(device_type)}_name")
 
@@ -162,7 +160,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             stream_reader = getattr(getattr(devices_schema, device_name), "{stream_type}")
 
             stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
+                root=data_dirs,
                 reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),
