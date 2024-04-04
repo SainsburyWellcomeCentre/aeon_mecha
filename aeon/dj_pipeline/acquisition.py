@@ -25,15 +25,6 @@ _ref_device_mapping = {
     "exp0.2-r0": "CameraTop",
 }
 
-# _device_schema_mapping = {
-#     "exp0.1-r0": aeon_schemas.exp01,
-#     "social0-r1": aeon_schemas.exp01,
-#     "exp0.2-r0": aeon_schemas.exp02,
-#     "oct1.0-r0": aeon_schemas.octagon01,
-#     "social0.1-a3": aeon_schemas.social01,
-#     "social0.1-a4": aeon_schemas.social01,
-# }
-
 
 # ------------------- Type Lookup ------------------------
 
