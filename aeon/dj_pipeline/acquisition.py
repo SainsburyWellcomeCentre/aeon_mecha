@@ -84,7 +84,7 @@ class DirectoryType(dj.Lookup):
     directory_type: varchar(16)
     """
 
-    contents = zip(["raw", "preprocessing", "analysis", "quality-control"])
+    contents = zip(["raw", "processed", "qc"])
 
 
 # ------------------- GENERAL INFORMATION ABOUT AN EXPERIMENT --------------------
@@ -115,6 +115,7 @@ class Experiment(dj.Manual):
         ---
         -> PipelineRepository
         directory_path: varchar(255)
+        load_order=1: int  # order of priority to load the directory
         """
 
     class DevicesSchema(dj.Part):
@@ -155,10 +156,13 @@ class Experiment(dj.Manual):
     @classmethod
     def get_data_directories(cls, experiment_key, directory_types=None, as_posix=False):
         if directory_types is None:
-            directory_types = ["raw"]
+            directory_types = (cls.Directory & experiment_key).fetch(
+                "directory_type", order_by="load_order"
+            )
         return [
-            cls.get_data_directory(experiment_key, dir_type, as_posix=as_posix)
+            d
             for dir_type in directory_types
+            if (d := cls.get_data_directory(experiment_key, dir_type, as_posix=as_posix)) is not None
         ]
 
 
@@ -542,7 +546,7 @@ class Environment(dj.Imported):
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
 
         # Populate the part table
-        raw_data_dir = Experiment.get_data_directory(key)
+        data_dirs = Experiment.get_data_directories(key)
         devices_schema = getattr(
             aeon_schemas,
             (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
@@ -565,7 +569,7 @@ class Environment(dj.Imported):
             stream_reader = getattr(device, stream_type)
 
             stream_data = io_api.load(
-                root=raw_data_dir.as_posix(),
+                root=data_dirs,
                 reader=stream_reader,
                 start=pd.Timestamp(chunk_start),
                 end=pd.Timestamp(chunk_end),

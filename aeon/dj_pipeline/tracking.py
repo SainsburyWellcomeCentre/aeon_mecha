@@ -150,10 +150,9 @@ class SLEAPTracking(dj.Imported):
         )  # SLEAP & CameraTop
 
     def make(self, key):
-        chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-            "chunk_start", "chunk_end", "directory_type"
-        )
-        raw_data_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+        data_dirs = acquisition.Experiment.get_data_directories(key)
 
         device_name = (streams.SpinnakerVideoSource & key).fetch1("spinnaker_video_source_name")
 
@@ -166,7 +165,7 @@ class SLEAPTracking(dj.Imported):
         stream_reader = getattr(getattr(devices_schema, device_name), "Pose")
 
         pose_data = io_api.load(
-            root=raw_data_dir.as_posix(),
+            root=data_dirs,
             reader=stream_reader,
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),
@@ -179,7 +178,7 @@ class SLEAPTracking(dj.Imported):
         # Find the config file for the SLEAP model
         try:
             f = next(
-                raw_data_dir.glob(
+                data_dirs.glob(
                     f"**/**/{stream_reader.pattern}{io_api.chunk(chunk_start).strftime('%Y-%m-%dT%H-%M-%S')}*.{stream_reader.extension}"
                 )
             )
