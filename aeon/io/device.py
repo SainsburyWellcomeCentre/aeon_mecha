@@ -1,9 +1,11 @@
 import inspect
+from typing_extensions import deprecated
 
 
-def register(pattern, *args):
-    """Merges multiple Readers into a single registry."""
-    registry = {}
+@deprecated("Please use the StreamGroup class from the streams module instead.")
+def compositeStream(pattern, *args):
+    """Merges multiple data streams into a single composite stream."""
+    composite = {}
     if args:
         for binder_fn in args:
             if inspect.isclass(binder_fn):
@@ -15,6 +17,7 @@ def register(pattern, *args):
     return registry
 
 
+@deprecated("The Device class has been moved to the streams module.")
 class Device:
     """Groups multiple Readers into a logical device.
 
