@@ -1,42 +1,9 @@
 version: "v0.1.0"
 LabBook: null
 SciViz:
-  route: /aeon
   auth:
     mode: "database"
-  hostname: aeon-db2
-  component_interface:
-    override: |
-      from datetime import datetime
-      from pharus.component_interface import SlideshowComponent, NumpyEncoder, type_map
-      from flask import request
-      from aeon.dj_pipeline.utils.video import retrieve_video_frames
-
-      class AeonSlideshowComponent(SlideshowComponent):
-          def dj_query_route(self):
-              fetch_metadata = self.fetch_metadata
-
-              # Dj query provided should return only a video location
-              fetched_args = (fetch_metadata["query"] & self.restriction).fetch1(
-                  *fetch_metadata["fetch_args"]
-              )
-              kwargs = {**fetched_args, **request.args}
-              kwargs['camera_name'] = kwargs.pop('camera_description')
-              kwargs['start_time'] = datetime.utcfromtimestamp(int(kwargs.pop('startTime')))
-              kwargs['end_time'] = datetime.utcfromtimestamp(int(kwargs.pop('endTime')))
-              kwargs['start_frame'] = int(kwargs.pop('start_frame'))
-              kwargs['chunk_size'] = int(kwargs.pop('chunk_size'))
-
-              return (
-                  NumpyEncoder.dumps(
-                      retrieve_video_frames(**kwargs)
-                  ),
-                  200,
-                  {"Content-Type": "application/json"},
-              )
-
-      type_map = dict({"slideshow:aeon": AeonSlideshowComponent}, **type_map)
-
+  hostname: host.docker.internal
   pages:
     Colony:
       route: /colony_page
@@ -698,76 +665,3 @@ SciViz:
                 def dj_query(aeon_block_analysis):
                     aeon_analysis = aeon_block_analysis
                     return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['cumulative_pellet_plot']}
-
-    VideoStream:
-      route: /videostream
-      grids:
-        grid1:
-          type: fixed
-          columns: 3
-          row_height: 100
-          components:
-            experiment_dropdown:
-              x: 0
-              y: 0
-              height: 1
-              width: 1
-              type: dropdown-query
-              channel: stream_experiment_selector
-              route: /videostream_experiment_dropdown
-              restriction: >
-                def restriction(**kwargs):
-                    return dict(**kwargs)
-              dj_query: >
-                def dj_query(aeon_archived_exp02_acquisition):
-                    acquisition = aeon_archived_exp02_acquisition
-                    return {'query': acquisition.Experiment(), 'fetch_args': ['experiment_name']}
-            camera_dropdown:
-              x: 0
-              y: 1
-              height: 1
-              width: 1
-              route: /videostream_camera_dropdown
-              type: dropdown-query
-              channel: stream_camera_selector
-              channels: [stream_experiment_selector]
-              restriction: >
-                def restriction(**kwargs):
-                    return dict(**kwargs)
-              dj_query: >
-                def dj_query(aeon_archived_exp02_acquisition):
-                    acquisition = aeon_archived_exp02_acquisition
-                    q = dj.U('camera_description') & acquisition.ExperimentCamera
-                    return {'query': q, 'fetch_args': ['camera_description']}
-            time_range_selector:
-              x: 0
-              y: 2
-              height: 1
-              width: 1
-              type: daterangepicker
-              channel: stream_time_selector
-            video_streamer:
-              x: 1
-              y: 0
-              height: 5
-              width: 2
-              type: slideshow:aeon
-              route: /videostream_video_streamer
-              batch_size: 9
-              chunk_size: 60
-              buffer_size: 60
-              max_FPS: 50
-              channels:
-                [
-                  stream_experiment_selector,
-                  stream_camera_selector,
-                  stream_time_selector,
-                ]
-              restriction: >
-                def restriction(**kwargs):
-                    return dict(**kwargs)
-              dj_query: >
-                def dj_query(aeon_archived_exp02_acquisition):
-                    acquisition = aeon_archived_exp02_acquisition
-                    q = dj.U('camera_description', 'raw_data_dir') & (acquisition.ExperimentCamera * acquisition.Experiment.Directory & 'directory_type = "raw"').proj('camera_description', raw_data_dir="CONCAT('/ceph/aeon/', directory_path)")
-                    return {'query': q, 'fetch_args': []}
