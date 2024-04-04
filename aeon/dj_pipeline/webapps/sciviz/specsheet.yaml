@@ -198,6 +198,9 @@ SciViz:
                 - type: attribute
                   input: Directory Path
                   destination: directory_path
+                - type: attribute
+                  input: Loading Order
+                  destination: load_order
 
             New Experiment Type:
               route: /exp_type_form
