@@ -103,12 +103,12 @@ social02 = DotMap(
         Device("Patch1", social_02.Patch),
         Device("Patch2", social_02.Patch),
         Device("Patch3", social_02.Patch),
-        Device("RfidGate", social_02.RfidEvents),
-        Device("RfidNest1", social_02.RfidEvents),
-        Device("RfidNest2", social_02.RfidEvents),
-        Device("RfidPatch1", social_02.RfidEvents),
-        Device("RfidPatch2", social_02.RfidEvents),
-        Device("RfidPatch3", social_02.RfidEvents),
+        Device("GateRfid", social_02.RfidEvents),
+        Device("NestRfid1", social_02.RfidEvents),
+        Device("NestRfid2", social_02.RfidEvents),
+        Device("Patch1Rfid", social_02.RfidEvents),
+        Device("Patch2Rfid", social_02.RfidEvents),
+        Device("Patch3Rfid", social_02.RfidEvents),
     ]
 )
 
