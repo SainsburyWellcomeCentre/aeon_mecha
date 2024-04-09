@@ -174,44 +174,14 @@ class Epoch(dj.Manual):
     definition = """  # A recording period reflecting on/off of the hardware acquisition system.
     -> Experiment
     epoch_start: datetime(6)
+    ---
+    -> [nullable] Experiment.Directory
+    epoch_dir='': varchar(255)  # path of the directory storing the acquired data for a given epoch
     """
 
-    class Config(dj.Part):
-        definition = """ # Metadata for the configuration of a given epoch
-        -> master
-        ---
-        bonsai_workflow: varchar(36)
-        commit: varchar(64)   # e.g. git commit hash of aeon_experiment used to generated this particular epoch
-        source='': varchar(16)  # e.g. aeon_experiment or aeon_acquisition (or others)
-        metadata: longblob
-        -> Experiment.Directory
-        metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
-        """
-
-    class DeviceType(dj.Part):
-        definition = """  # Device type(s) used in a particular acquisition epoch
-        -> master
-        device_type: varchar(36)
-        """
-
     @classmethod
-    def ingest_epochs(cls, experiment_name, start=None, end=None):
-        """Ingest epochs for the specified "experiment_name". Ingest only epochs that start in between the specified (start, end) time. If not specified, ingest all epochs.
-        Note: "start" and "end" are datetime specified a string in the format: "%Y-%m-%d %H:%M:%S".
-        """
-
-        from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_metadata import (
-            extract_epoch_config,
-            ingest_epoch_metadata,
-            insert_device_types,
-        )
-
-        devices_schema = getattr(
-            aeon_schemas,
-            (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1("devices_schema_name"),
-        )
-
+    def ingest_epochs(cls, experiment_name):
+        """Ingest epochs for the specified "experiment_name" """
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
@@ -221,39 +191,21 @@ class Epoch(dj.Manual):
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
             epoch_start = datetime.datetime.strptime(epoch_dir.name, "%Y-%m-%dT%H-%M-%S")
-
             # --- insert to Epoch ---
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
 
-            # skip over epochs out of the (start, end) range
-            is_out_of_start_end_range = (
-                start and epoch_start < datetime.datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
-            ) or (end and epoch_start > datetime.datetime.strptime(end, "%Y-%m-%d %H:%M:%S"))
+            if epoch_start == "2023-12-13 15:20:48":
+                break
 
             # skip over those already ingested
             if cls & epoch_key or epoch_key in epoch_list:
                 continue
 
-            epoch_config, metadata_yml_filepath = None, None
-
-            metadata_yml_filepath = epoch_dir / "Metadata.yml"
-            if metadata_yml_filepath.exists():
-                epoch_config = extract_epoch_config(experiment_name, devices_schema, metadata_yml_filepath)
-
-                metadata_yml_filepath = epoch_config["metadata_file_path"]
-
-                _, directory, repo_path = _match_experiment_directory(
-                    experiment_name,
-                    epoch_config["metadata_file_path"],
-                    raw_data_dirs,
-                )
-                epoch_config = {
-                    **epoch_config,
-                    **directory,
-                    "metadata_file_path": epoch_config["metadata_file_path"]
-                    .relative_to(repo_path)
-                    .as_posix(),
-                }
+            raw_data_dir, directory, _ = _match_experiment_directory(
+                experiment_name,
+                epoch_dir,
+                raw_data_dirs,
+            )
 
             # find previous epoch end-time
             previous_epoch_key = None
@@ -271,40 +223,19 @@ class Epoch(dj.Manual):
                     "epoch_start": previous_epoch_start,
                 }
 
-            # insert new epoch
-            if not is_out_of_start_end_range:
-                with cls.connection.transaction:
-                    cls.insert1(epoch_key)
-                    if epoch_config:
-                        cls.Config.insert1(epoch_config)
-                if metadata_yml_filepath and metadata_yml_filepath.exists():
-                    try:
-                        # Insert new entries for streams.DeviceType, streams.Device.
-                        insert_device_types(
-                            devices_schema,
-                            metadata_yml_filepath,
-                        )
-                        # Define and instantiate new devices/stream tables under `streams` schema
-                        streams_maker.main()
-                        with cls.connection.transaction:
-                            # Insert devices' installation/removal/settings
-                            epoch_device_types = ingest_epoch_metadata(
-                                experiment_name, devices_schema, metadata_yml_filepath
-                            )
-                            if epoch_device_types is not None:
-                                cls.DeviceType.insert(
-                                    epoch_key | {"device_type": n} for n in epoch_device_types
-                                )
-                        epoch_list.append(epoch_key)
-                    except Exception as e:
-                        (cls.Config & epoch_key).delete_quick()
-                        (cls.DeviceType & epoch_key).delete_quick()
-                        (cls & epoch_key).delete_quick()
-                        raise e
+            with cls.connection.transaction:
+                # insert new epoch
+                cls.insert1(
+                    {**epoch_key, **directory, "epoch_dir": epoch_dir.relative_to(raw_data_dir).as_posix()}
+                )
+                epoch_list.append(epoch_key)
 
-            # update previous epoch
-            if previous_epoch_key and (cls & previous_epoch_key) and not (EpochEnd & previous_epoch_key):
-                with cls.connection.transaction:
+                # update previous epoch
+                if (
+                    previous_epoch_key
+                    and (cls & previous_epoch_key)
+                    and not (EpochEnd & previous_epoch_key)
+                ):
                     # insert end-time for previous epoch
                     EpochEnd.insert1(
                         {
@@ -327,7 +258,7 @@ class Epoch(dj.Manual):
                             }
                         )
 
-        print(f"Insert {len(epoch_list)} new Epoch(s)")
+        logger.info(f"Insert {len(epoch_list)} new Epoch(s)")
 
 
 @schema
@@ -341,12 +272,29 @@ class EpochEnd(dj.Manual):
 
 
 @schema
-class EpochActiveRegion(dj.Imported):
+class EpochConfig(dj.Imported):
     definition = """
     -> Epoch
     """
 
-    class Region(dj.Part):
+    class Meta(dj.Part):
+        definition = """ # Metadata for the configuration of a given epoch
+        -> master
+        ---
+        bonsai_workflow: varchar(36)
+        commit: varchar(64)   # e.g. git commit hash of aeon_experiment used to generated this particular epoch
+        source='': varchar(16)  # e.g. aeon_experiment or aeon_acquisition (or others)
+        metadata: longblob
+        metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
+        """
+
+    class DeviceType(dj.Part):
+        definition = """  # Device type(s) used in a particular acquisition epoch
+        -> master
+        device_type: varchar(36)
+        """
+
+    class ActiveRegion(dj.Part):
         definition = """
         -> master
         region_name: varchar(36)
@@ -355,12 +303,45 @@ class EpochActiveRegion(dj.Imported):
         """
 
     def make(self, key):
-        metadata_file_path = (Epoch.Config & key).fetch1("metadata_file_path")
-        metadata_file_path = paths.get_repository_path("ceph_aeon") / metadata_file_path
-        with metadata_file_path.open("r") as f:
-            metadata = json.load(f)
+        from aeon.dj_pipeline.utils import streams_maker
+        from aeon.dj_pipeline.utils.load_metadata import (
+            extract_epoch_config,
+            ingest_epoch_metadata,
+            insert_device_types,
+        )
+
+        experiment_name = key["experiment_name"]
+        devices_schema = getattr(
+            aeon_schemas,
+            (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1("devices_schema_name"),
+        )
+
+        dir_type, epoch_dir = (Epoch & key).fetch1("directory_type", "epoch_dir")
+        data_dir = Experiment.get_data_directory(key, dir_type)
+        metadata_yml_filepath = data_dir / epoch_dir / "Metadata.yml"
+
+        epoch_config = extract_epoch_config(experiment_name, devices_schema, metadata_yml_filepath)
+        epoch_config = {
+            **epoch_config,
+            "metadata_file_path": metadata_yml_filepath.relative_to(data_dir).as_posix(),
+        }
+
+        # Insert new entries for streams.DeviceType, streams.Device.
+        insert_device_types(
+            devices_schema,
+            metadata_yml_filepath,
+        )
+        # Define and instantiate new devices/stream tables under `streams` schema
+        streams_maker.main()
+        # Insert devices' installation/removal/settings
+        epoch_device_types = ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath)
+
         self.insert1(key)
-        self.Region.insert(
+        self.Meta.insert1(epoch_config)
+        self.DeviceType.insert(key | {"device_type": n} for n in epoch_device_types or {})
+        with metadata_yml_filepath.open("r") as f:
+            metadata = json.load(f)
+        self.ActiveRegion.insert(
             {**key, "region_name": k, "region_data": v} for k, v in metadata["ActiveRegion"].items()
         )
 
@@ -451,7 +432,7 @@ class Chunk(dj.Manual):
             )
 
         # insert
-        print(f"Insert {len(chunk_list)} new Chunk(s)")
+        logger.info(f"Insert {len(chunk_list)} new Chunk(s)")
 
         with cls.connection.transaction:
             cls.insert(chunk_list)
@@ -594,16 +575,14 @@ class Environment(dj.Imported):
 
 
 def _get_all_chunks(experiment_name, device_name):
-    raw_data_dirs = Experiment.get_data_directories(
-        {"experiment_name": experiment_name},
-        directory_types=["quality-control", "raw"],
-        as_posix=True,
-    )
+    directory_types = ["quality-control", "raw"]
     raw_data_dirs = {
-        dir_type: pathlib.Path(data_dir)
-        for dir_type, data_dir in zip(["quality-control", "raw"], raw_data_dirs)
-        if data_dir
+        dir_type: Experiment.get_data_directory(
+            experiment_key={"experiment_name": experiment_name}, directory_type=dir_type, as_posix=False
+        )
+        for dir_type in directory_types
     }
+    raw_data_dirs = {k: v for k, v in raw_data_dirs.items() if v}
 
     if not raw_data_dirs:
         raise ValueError(f"No raw data directory found for experiment: {experiment_name}")

@@ -61,8 +61,8 @@ acquisition_worker = DataJointWorker(
     sleep_duration=1200,
 )
 acquisition_worker(ingest_epochs_chunks)
+acquisition_worker(acquisition.EpochConfig)
 acquisition_worker(acquisition.Environment)
-acquisition_worker(acquisition.EpochActiveRegion)
 # acquisition_worker(ingest_environment_visits)
 acquisition_worker(block_analysis.BlockDetection)
 
@@ -107,3 +107,8 @@ analysis_worker = DataJointWorker(
 
 analysis_worker(block_analysis.BlockAnalysis, max_calls=6)
 analysis_worker(block_analysis.BlockPlots, max_calls=6)
+
+
+def get_workflow_operation_overview():
+    from datajoint_utilities.dj_worker.utils import get_workflow_operation_overview
+    return get_workflow_operation_overview(worker_schema_name=worker_schema_name, db_prefixes=[db_prefix])

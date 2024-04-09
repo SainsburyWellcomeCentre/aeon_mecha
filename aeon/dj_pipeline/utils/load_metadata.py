@@ -7,10 +7,9 @@ from pathlib import Path
 
 import datajoint as dj
 import numpy as np
-import pandas as pd
 from dotmap import DotMap
 
-from aeon.dj_pipeline import acquisition, dict_to_uuid, subject
+from aeon.dj_pipeline import dict_to_uuid
 from aeon.dj_pipeline.utils import streams_maker
 from aeon.io import api as io_api
 
@@ -131,7 +130,7 @@ def extract_epoch_config(experiment_name: str, devices_schema, metadata_yml_file
     epoch_start = datetime.datetime.strptime(metadata_yml_filepath.parent.name, "%Y-%m-%dT%H-%M-%S")
     epoch_config: dict = (
         io_api.load(
-            str(metadata_yml_filepath.parent),
+            metadata_yml_filepath.parent.as_posix(),
             devices_schema.Metadata,
         )
         .reset_index()
@@ -164,6 +163,7 @@ def extract_epoch_config(experiment_name: str, devices_schema, metadata_yml_file
 
 def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath):
     """Make entries into device tables."""
+    from aeon.dj_pipeline import acquisition
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
     if experiment_name.startswith("oct"):
@@ -178,8 +178,8 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
         acquisition.Epoch & f'epoch_start < "{epoch_config["epoch_start"]}"',
         epoch_start="MAX(epoch_start)",
     )
-    if len(acquisition.Epoch.Config & previous_epoch) and epoch_config["commit"] == (
-        acquisition.Epoch.Config & previous_epoch
+    if len(acquisition.EpochConfig.Meta & previous_epoch) and epoch_config["commit"] == (
+            acquisition.EpochConfig.Meta & previous_epoch
     ).fetch1("commit"):
         # if identical commit -> no changes
         return
@@ -204,6 +204,7 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
                     f"Device {device_name} (serial number: {device_sn}) is not yet registered in streams.Device. Skipping..."
                 )
                 # skip if this device (with a serial number) is not yet inserted in streams.Device
+                # this should not happen - check if metadata.yml and schemas dotmap are consistent
                 continue
 
             device_list.append(device_key)
@@ -294,11 +295,11 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
 
 
 # region Get stream & device information
-def get_stream_entries(schema: DotMap) -> list[dict]:
+def get_stream_entries(devices_schema: DotMap) -> list[dict]:
     """Returns a list of dictionaries containing the stream entries for a given device.
 
     Args:
-        schema (DotMap): DotMap object (e.g., exp02, octagon01)
+        devices_schema (DotMap): DotMap object (e.g., exp02, octagon01)
 
     Returns:
     stream_info (list[dict]): list of dictionaries containing the stream entries for a given device,
@@ -310,7 +311,7 @@ def get_stream_entries(schema: DotMap) -> list[dict]:
         'extension': 'csv',
         'dtype': None}
     """
-    device_info = get_device_info(schema)
+    device_info = get_device_info(devices_schema)
     return [
         {
             "stream_type": stream_type,
@@ -329,11 +330,11 @@ def get_stream_entries(schema: DotMap) -> list[dict]:
     ]
 
 
-def get_device_info(schema: DotMap) -> dict[dict]:
+def get_device_info(devices_schema: DotMap) -> dict[dict]:
     """Read from the above DotMap object and returns a device dictionary as the following.
 
     Args:
-        schema (DotMap): DotMap object (e.g., exp02, octagon01)
+        devices_schema (DotMap): DotMap object (e.g., exp02, octagon01)
 
     Returns:
         device_info (dict[dict]): A dictionary of device information
@@ -353,11 +354,11 @@ def get_device_info(schema: DotMap) -> dict[dict]:
     def _get_class_path(obj):
         return f"{obj.__class__.__module__}.{obj.__class__.__name__}"
 
-    schema_json = json.dumps(schema, default=lambda x: x.__dict__, indent=4)
+    schema_json = json.dumps(devices_schema, default=lambda x: x.__dict__, indent=4)
     schema_dict = json.loads(schema_json)
     device_info = {}
 
-    for device_name, device in schema.items():
+    for device_name, device in devices_schema.items():
         if device_name.startswith("_"):
             continue
 
@@ -408,11 +409,11 @@ def get_device_info(schema: DotMap) -> dict[dict]:
     return device_info
 
 
-def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
+def get_device_mapper(devices_schema: DotMap, metadata_yml_filepath: Path):
     """Returns a mapping dictionary between device name and device type based on the dataset schema and metadata.yml from the experiment. Store the mapper dictionary and read from it if the type info doesn't exist in Metadata.yml.
 
     Args:
-        schema (DotMap): DotMap object (e.g., exp02)
+        devices_schema (DotMap): DotMap object (e.g., exp02)
         metadata_yml_filepath (Path): Path to metadata.yml.
 
     Returns:
@@ -421,13 +422,13 @@ def get_device_mapper(schema: DotMap, metadata_yml_filepath: Path):
         device_sn (dict): {"device_name", "serial_number"}
          e.g. {'CameraTop': '21053810'}
     """
-    from aeon.io import api
+    from aeon.io import api as io_api
 
     metadata_yml_filepath = Path(metadata_yml_filepath)
     meta_data = (
-        api.load(
+        io_api.load(
             str(metadata_yml_filepath.parent),
-            schema.Metadata,
+            devices_schema.Metadata,
         )
         .reset_index()
         .to_dict("records")[0]["metadata"]

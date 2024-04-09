@@ -289,7 +289,7 @@ class BlockSubjectAnalysis(dj.Computed):
             )
             # Get distance-to-patch at each pose data timestep
             patch_region = (
-                acquisition.EpochActiveRegion.Region
+                acquisition.EpochConfig.ActiveRegion
                 & key
                 & {"region_name": f"{patch['patch_name']}Region"}
                 & f'epoch_start < "{key["block_start"]}"'
