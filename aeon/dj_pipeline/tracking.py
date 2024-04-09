@@ -176,18 +176,22 @@ class SLEAPTracking(dj.Imported):
             return
 
         # Find the config file for the SLEAP model
-        try:
-            f = next(
-                data_dirs.glob(
-                    f"**/**/{stream_reader.pattern}{io_api.chunk(chunk_start).strftime('%Y-%m-%dT%H-%M-%S')}*.{stream_reader.extension}"
+        for data_dir in data_dirs:
+            try:
+                f = next(
+                    data_dir.glob(
+                        f"**/**/{stream_reader.pattern}{io_api.chunk(chunk_start).strftime('%Y-%m-%dT%H-%M-%S')}*.{stream_reader.extension}"
+                    )
                 )
-            )
-        except StopIteration:
-            raise FileNotFoundError(f"Unable to find HARP bin file for {key}")
+            except StopIteration:
+                continue
+            else:
+                config_file = stream_reader.get_config_file(
+                    stream_reader._model_root / Path(*Path(f.stem.replace("_", "/")).parent.parts[1:])
+                )
+                break
         else:
-            config_file = stream_reader.get_config_file(
-                stream_reader._model_root / Path(*Path(f.stem.replace("_", "/")).parent.parts[1:])
-            )
+            raise FileNotFoundError(f"Unable to find SLEAP model config file for: {stream_reader.pattern}")
 
         # get bodyparts and classes
         bodyparts = stream_reader.get_bodyparts(config_file)
