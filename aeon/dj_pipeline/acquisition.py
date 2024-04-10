@@ -194,9 +194,6 @@ class Epoch(dj.Manual):
             # --- insert to Epoch ---
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
 
-            if epoch_start == "2023-12-13 15:20:48":
-                break
-
             # skip over those already ingested
             if cls & epoch_key or epoch_key in epoch_list:
                 continue
