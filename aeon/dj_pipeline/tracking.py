@@ -172,7 +172,7 @@ class SLEAPTracking(dj.Imported):
         )
 
         if not len(pose_data):
-            raise ValueError(f"No SLEAP data found for {device_name}")
+            raise ValueError(f"No SLEAP data found for {key['experiment_name']} - {device_name}")
 
         # Find the config file for the SLEAP model
         for data_dir in data_dirs:
