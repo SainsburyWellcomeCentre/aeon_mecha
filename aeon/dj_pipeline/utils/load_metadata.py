@@ -201,10 +201,9 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
 
             if not (streams.Device & device_key):
                 logger.warning(
-                    f"Device {device_name} (serial number: {device_sn}) is not yet registered in streams.Device. Skipping..."
+                    f"Device {device_name} (serial number: {device_sn}) is not yet registered in streams.Device.\nThis should not happen - check if metadata.yml and schemas dotmap are consistent. Skipping..."
                 )
                 # skip if this device (with a serial number) is not yet inserted in streams.Device
-                # this should not happen - check if metadata.yml and schemas dotmap are consistent
                 continue
 
             device_list.append(device_key)

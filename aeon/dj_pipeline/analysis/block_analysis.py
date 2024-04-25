@@ -58,7 +58,7 @@ class BlockDetection(dj.Computed):
         )
 
         block_query = acquisition.Environment.BlockState & chunk_restriction
-        block_df = fetch_stream(block_query).sort_index()[previous_block_start:chunk_end]
+        block_df = fetch_stream(block_query)[previous_block_start:chunk_end]
 
         block_ends = block_df[block_df.pellet_ct.diff() < 0]
 
@@ -323,7 +323,6 @@ class BlockSubjectAnalysis(dj.Computed):
         subject_names = [s["subject_name"] for s in block_subjects]
         # Construct subject position dataframe
         subjects_positions_df = pd.concat(
-
             [
                 pd.DataFrame(
                     {"subject_name": [s["subject_name"]] * len(s["position_timestamps"])}
