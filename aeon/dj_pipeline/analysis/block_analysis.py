@@ -155,10 +155,9 @@ class BlockAnalysis(dj.Computed):
         )
         for streams_table in streams_tables:
             if len(streams_table & chunk_keys) < len(streams_table.key_source & chunk_keys):
-                logger.info(
-                    f"{streams_table.__name__} not yet fully ingested for block: {key}. Skip BlockAnalysis (to retry later)..."
+                raise ValueError(
+                    f"BlockAnalysis Not Ready - {streams_table.__name__} not yet fully ingested for block: {key}. Skipping (to retry later)..."
                 )
-                return
 
         self.insert1({**key, "block_duration": (block_end - block_start).total_seconds() / 3600})
 
