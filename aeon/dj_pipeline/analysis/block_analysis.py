@@ -86,7 +86,7 @@ class BlockDetection(dj.Computed):
                 block_entries[-1]["block_end"] = block_end
             block_entries.append({**exp_key, "block_start": block_end, "block_end": None})
 
-        Block.insert(block_entries)
+        Block.insert(block_entries, skip_duplicates=True)
         self.insert1(key)
 
 
