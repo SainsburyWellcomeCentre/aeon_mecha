@@ -385,17 +385,12 @@ class Chunk(dj.Manual):
                 continue
 
             chunk_start = chunk.name
+            chunk_start = max(chunk_start, epoch_start)  # first chunk of the epoch starts at epoch_start
             chunk_end = chunk_start + datetime.timedelta(hours=io_api.CHUNK_DURATION)
 
             if EpochEnd & epoch_key:
                 epoch_end = (EpochEnd & epoch_key).fetch1("epoch_end")
                 chunk_end = min(chunk_end, epoch_end)
-
-            if chunk_start in chunk_starts:
-                # handle cases where two chunks with identical start_time
-                # (starts in the same hour) but from 2 consecutive epochs
-                # using epoch_start as chunk_start in this case
-                chunk_start = epoch_start
 
             # --- insert to Chunk ---
             chunk_key = {"experiment_name": experiment_name, "chunk_start": chunk_start}

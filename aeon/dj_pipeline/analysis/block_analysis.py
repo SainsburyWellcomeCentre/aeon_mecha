@@ -1,5 +1,4 @@
 import json
-
 import datajoint as dj
 import numpy as np
 import pandas as pd

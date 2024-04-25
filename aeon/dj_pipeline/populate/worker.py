@@ -87,6 +87,7 @@ streams_worker = DataJointWorker(
     db_prefix=db_prefix,
     max_idled_cycle=50,
     sleep_duration=60,
+    autoclear_error_patterns=["%BlockAnalysis Not Ready%"],
 )
 
 for attr in vars(streams).values():
@@ -103,7 +104,6 @@ analysis_worker = DataJointWorker(
     db_prefix=db_prefix,
     max_idled_cycle=6,
     sleep_duration=1200,
-    autoclear_error_patterns=["%BlockAnalysis Not Ready%"],
 )
 
 analysis_worker(block_analysis.BlockAnalysis, max_calls=6)
