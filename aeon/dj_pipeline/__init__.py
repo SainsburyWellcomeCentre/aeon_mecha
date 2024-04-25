@@ -44,6 +44,7 @@ def fetch_stream(query, drop_pk=True):
     df.drop(columns=cols2drop, inplace=True, errors="ignore")
     df.rename(columns={"timestamps": "time"}, inplace=True)
     df.set_index("time", inplace=True)
+    df.sort_index(inplace=True)
     return df
 
 

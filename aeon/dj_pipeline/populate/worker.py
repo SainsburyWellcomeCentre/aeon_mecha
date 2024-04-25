@@ -64,7 +64,7 @@ acquisition_worker(ingest_epochs_chunks)
 acquisition_worker(acquisition.EpochConfig)
 acquisition_worker(acquisition.Environment)
 # acquisition_worker(ingest_environment_visits)
-acquisition_worker(block_analysis.BlockDetection)
+# acquisition_worker(block_analysis.BlockDetection)
 
 # configure a worker to handle pyrat sync
 pyrat_worker = DataJointWorker(
@@ -87,6 +87,7 @@ streams_worker = DataJointWorker(
     db_prefix=db_prefix,
     max_idled_cycle=50,
     sleep_duration=60,
+    autoclear_error_patterns=["%BlockAnalysis Not Ready%"],
 )
 
 for attr in vars(streams).values():

@@ -1,5 +1,4 @@
 import json
-
 import datajoint as dj
 import numpy as np
 import pandas as pd
@@ -58,7 +57,7 @@ class BlockDetection(dj.Computed):
         )
 
         block_query = acquisition.Environment.BlockState & chunk_restriction
-        block_df = fetch_stream(block_query).sort_index()[previous_block_start:chunk_end]
+        block_df = fetch_stream(block_query)[previous_block_start:chunk_end]
 
         block_ends = block_df[block_df.pellet_ct.diff() < 0]
 
@@ -87,7 +86,7 @@ class BlockDetection(dj.Computed):
                 block_entries[-1]["block_end"] = block_end
             block_entries.append({**exp_key, "block_start": block_end, "block_end": None})
 
-        Block.insert(block_entries)
+        Block.insert(block_entries, skip_duplicates=True)
         self.insert1(key)
 
 
@@ -155,10 +154,9 @@ class BlockAnalysis(dj.Computed):
         )
         for streams_table in streams_tables:
             if len(streams_table & chunk_keys) < len(streams_table.key_source & chunk_keys):
-                logger.info(
-                    f"{streams_table.__name__} not yet fully ingested for block: {key}. Skip BlockAnalysis (to retry later)..."
+                raise ValueError(
+                    f"BlockAnalysis Not Ready - {streams_table.__name__} not yet fully ingested for block: {key}. Skipping (to retry later)..."
                 )
-                return
 
         self.insert1({**key, "block_duration": (block_end - block_start).total_seconds() / 3600})
 
@@ -323,7 +321,6 @@ class BlockSubjectAnalysis(dj.Computed):
         subject_names = [s["subject_name"] for s in block_subjects]
         # Construct subject position dataframe
         subjects_positions_df = pd.concat(
-
             [
                 pd.DataFrame(
                     {"subject_name": [s["subject_name"]] * len(s["position_timestamps"])}
