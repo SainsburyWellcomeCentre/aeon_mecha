@@ -10,7 +10,7 @@ repos:
       - id: identity
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v4.6.0
     hooks:
       - id: check-json
       - id: check-yaml
@@ -25,20 +25,14 @@ repos:
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
 
-  - repo: https://github.com/psf/black
-    rev: 23.7.0
-    hooks:
-      - id: black
-        args: [--check, --config, ./pyproject.toml]
-
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.0.286
+    rev: v0.4.2
     hooks:
       - id: ruff
-        args: [--config, ./pyproject.toml]
+      - id: ruff-format
 
   - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.324
+    rev: v1.1.360
     hooks:
       - id: pyright
         args: [--level, error, --project, ./pyproject.toml]
