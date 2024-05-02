@@ -58,7 +58,6 @@ def dj_config():
     dj.config["custom"][
         "database.prefix"
     ] = f"u_{dj.config['database.user']}_testsuite_"
-    return
 
 
 def load_pipeline():
@@ -137,8 +136,6 @@ def experiment_creation(test_params, pipeline):
         }
     )
 
-    return
-
 
 @pytest.fixture(scope="session")
 def epoch_chunk_ingestion(test_params, pipeline, experiment_creation):
@@ -154,8 +151,6 @@ def epoch_chunk_ingestion(test_params, pipeline, experiment_creation):
 
     acquisition.Chunk.ingest_chunks(experiment_name=test_params["experiment_name"])
 
-    return
-
 
 @pytest.fixture(scope="session")
 def experimentlog_ingestion(pipeline):
@@ -166,20 +161,14 @@ def experimentlog_ingestion(pipeline):
     acquisition.SubjectEnterExit.populate(**_populate_settings)
     acquisition.SubjectWeight.populate(**_populate_settings)
 
-    return
-
 
 @pytest.fixture(scope="session")
 def camera_qc_ingestion(pipeline, epoch_chunk_ingestion):
     qc = pipeline["qc"]
     qc.CameraQC.populate(**_populate_settings)
 
-    return
-
 
 @pytest.fixture(scope="session")
 def camera_tracking_ingestion(pipeline, camera_qc_ingestion):
     tracking = pipeline["tracking"]
     tracking.CameraTracking.populate(**_populate_settings)
-
-    return
