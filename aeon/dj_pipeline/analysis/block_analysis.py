@@ -5,12 +5,11 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objs as go
 from matplotlib import path as mpl_path
+from datetime import datetime
 
 from aeon.analysis import utils as analysis_utils
-from aeon.dj_pipeline import (acquisition, fetch_stream, get_schema_name,
-                              streams, tracking)
-from aeon.dj_pipeline.analysis.visit import (filter_out_maintenance_periods,
-                                             get_maintenance_periods)
+from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, tracking
+from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
 
 schema = dj.schema(get_schema_name("block_analysis"))
 logger = dj.logger
@@ -91,6 +90,7 @@ class BlockDetection(dj.Computed):
 
 
 # ---- Block Analysis and Visualization ----
+
 
 @schema
 class BlockAnalysis(dj.Computed):
@@ -203,11 +203,18 @@ class BlockAnalysis(dj.Computed):
 
             encoder_df["distance_travelled"] = -1 * analysis_utils.distancetravelled(encoder_df.angle)
 
-            patch_rate = depletion_state_df.rate.unique()
-            patch_offset = depletion_state_df.offset.unique()
-            assert len(patch_rate) == 1, f"Found multiple patch rates: {patch_rate} for patch: {patch_name}"
-            patch_rate = patch_rate[0]
-            patch_offset = patch_offset[0]
+            if len(depletion_state_df.rate.unique()) > 1:
+                # multiple patch rates per block is unexpected, log a note and pick the first rate to move forward
+                AnalysisNote.insert1(
+                    {
+                        "note_timestamp": datetime.utcnow(),
+                        "note_type": "Multiple patch rates",
+                        "note": f"Found multiple patch rates for block {key} - patch: {patch_name} - rates: {depletion_state_df.rate.unique()}",
+                    }
+                )
+
+            patch_rate = depletion_state_df.rate.iloc[0]
+            patch_offset = depletion_state_df.offset.iloc[0]
 
             self.Patch.insert1(
                 {
@@ -255,6 +262,9 @@ class BlockAnalysis(dj.Computed):
             )
             pos_df = fetch_stream(pos_query)[block_start:block_end]
             pos_df = filter_out_maintenance_periods(pos_df, maintenance_period, block_end)
+
+            if pos_df.empty:
+                continue
 
             position_diff = np.sqrt(
                 np.square(np.diff(pos_df.x.astype(float))) + np.square(np.diff(pos_df.y.astype(float)))
@@ -553,3 +563,16 @@ class BlockPlots(dj.Computed):
                 "cumulative_pellet_plot": json.loads(cumulative_pellet_fig.to_json()),
             }
         )
+
+
+# ---- AnalysisNote ----
+
+
+@schema
+class AnalysisNote(dj.Manual):
+    definition = """  # Generic table to catch all notes generated during analysis
+    note_timestamp: datetime
+    ---
+    note_type='': varchar(64)
+    note: varchar(3000)
+    """
