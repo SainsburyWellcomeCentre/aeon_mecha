@@ -55,17 +55,17 @@ class BlockDetection(dj.Computed):
             key["experiment_name"], previous_block_start, chunk_end
         )
 
-        block_query = acquisition.Environment.BlockState & chunk_restriction
-        block_df = fetch_stream(block_query)[previous_block_start:chunk_end]
+        block_state_query = acquisition.Environment.BlockState & exp_key & chunk_restriction
+        block_state_df = fetch_stream(block_state_query)[previous_block_start:chunk_end]
 
-        block_ends = block_df[block_df.pellet_ct.diff() < 0]
+        block_ends = block_state_df[block_state_df.pellet_ct.diff() < 0]
 
         block_entries = []
         for idx, block_end in enumerate(block_ends.index):
             if idx == 0:
                 if previous_block_key:
                     # if there is a previous block - insert "block_end" for the previous block
-                    previous_pellet_time = block_df[:block_end].index[-2]
+                    previous_pellet_time = block_state_df[:block_end].index[-2]
                     previous_epoch = (
                         acquisition.Epoch.join(acquisition.EpochEnd, left=True)
                         & exp_key
@@ -254,6 +254,7 @@ class BlockAnalysis(dj.Computed):
                 streams.SpinnakerVideoSource
                 * tracking.SLEAPTracking.PoseIdentity.proj("identity_name", anchor_part="part_name")
                 * tracking.SLEAPTracking.Part
+                & key
                 & {
                     "spinnaker_video_source_name": "CameraTop",
                     "identity_name": subject_name,
