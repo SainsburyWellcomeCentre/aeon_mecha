@@ -323,6 +323,8 @@ class BlockSubjectAnalysis(dj.Computed):
         final_preference_by_time: float  # cumulative_preference_by_time at the end of the block
         """
 
+    key_source = BlockAnalysis & BlockAnalysis.Patch & BlockAnalysis.Subject
+
     def make(self, key):
         block_patches = (BlockAnalysis.Patch & key).fetch(as_dict=True)
         block_subjects = (BlockAnalysis.Subject & key).fetch(as_dict=True)
@@ -365,8 +367,11 @@ class BlockSubjectAnalysis(dj.Computed):
             # Get distance-to-patch at each wheel ts and pel del ts, organized by subject
             # Get patch x,y from metadata patch rfid loc
             patch_center = (
-                streams.RfidReader * streams.RfidReader.Attribute
+                streams.RfidReader.join(streams.RfidReader.RemovalTime, left=True)
+                * streams.RfidReader.Attribute
                 & key
+                & f"'{key['block_start']}' >= rfid_reader_install_time"
+                & f"'{key['block_start']}' < IFNULL(rfid_reader_removal_time, '2200-01-01')"
                 & f"rfid_reader_name LIKE '%{patch['patch_name']}%'"
                 & "attribute_name = 'Location'"
             ).fetch1("attribute_value")
@@ -376,9 +381,7 @@ class BlockSubjectAnalysis(dj.Computed):
             dist_to_patch_df = subjects_positions_df[["subject_name"]].copy()
             dist_to_patch_df["dist_to_patch"] = dist_to_patch
 
-            dist_to_patch_wheel_ts_id_df = pd.DataFrame(
-                index=cum_wheel_dist.index, columns=subject_names
-            )
+            dist_to_patch_wheel_ts_id_df = pd.DataFrame(index=cum_wheel_dist.index, columns=subject_names)
             dist_to_patch_pel_ts_id_df = pd.DataFrame(
                 index=patch["pellet_timestamps"], columns=subject_names
             )
@@ -386,9 +389,9 @@ class BlockSubjectAnalysis(dj.Computed):
                 # Find closest match between pose_df indices and wheel indices
                 if not dist_to_patch_wheel_ts_id_df.empty:
                     dist_to_patch_wheel_ts_subj = pd.merge_asof(
-                        left=pd.DataFrame(
-                            dist_to_patch_wheel_ts_id_df[subject_name].copy()
-                        ).reset_index(names="time"),
+                        left=pd.DataFrame(dist_to_patch_wheel_ts_id_df[subject_name].copy()).reset_index(
+                            names="time"
+                        ),
                         right=dist_to_patch_df[dist_to_patch_df["subject_name"] == subject_name]
                         .copy()
                         .reset_index(names="time"),
@@ -599,7 +602,7 @@ class BlockPlots(dj.Computed):
         )
 
 
-@schema
+# @schema
 class BlockSubjectPlots(dj.Computed):
     definition = """
     -> BlockAnalysis
@@ -609,18 +612,31 @@ class BlockSubjectPlots(dj.Computed):
     """
 
     def make(self, key):
-        from aeon.analysis.block_plotting import subject_colors, patch_markers_linestyles, patch_markers, gen_hex_grad
+        from aeon.analysis.block_plotting import (
+            subject_colors,
+            patch_markers_linestyles,
+            patch_markers,
+            gen_hex_grad,
+        )
 
-        patch_names, subject_names = (BlockSubjectAnalysis.Preference & key).fetch("patch_name", "subject_name")
+        patch_names, subject_names = (BlockSubjectAnalysis.Preference & key).fetch(
+            "patch_name", "subject_name"
+        )
         patch_names = set(patch_names)
         subject_names = set(subject_names)
 
         dist_pref_fig, time_pref_fig = go.Figure(), go.Figure()
         for subj_i, subj in enumerate(subject_names):
             for patch_i, p in enumerate(patch_names):
-                rate, offset, wheel_ts = (BlockAnalysis.Patch & key & {"patch_name": p}).fetch1("patch_rate", "patch_offset", "wheel_timestamps")
-                cum_pref_dist, cum_pref_time = (BlockSubjectAnalysis.Preference & key & {"patch_name": p, "subject_name": subj}).fetch1("cumulative_preference_by_wheel", "cumulative_preference_by_time")
-                pellet_ts = (BlockSubjectAnalysis.Patch & key & {"patch_name": p, "subject_name": subj}).fetch1("pellet_timestamps")
+                rate, offset, wheel_ts = (BlockAnalysis.Patch & key & {"patch_name": p}).fetch1(
+                    "patch_rate", "patch_offset", "wheel_timestamps"
+                )
+                cum_pref_dist, cum_pref_time = (
+                    BlockSubjectAnalysis.Preference & key & {"patch_name": p, "subject_name": subj}
+                ).fetch1("cumulative_preference_by_wheel", "cumulative_preference_by_time")
+                pellet_ts = (
+                    BlockSubjectAnalysis.Patch & key & {"patch_name": p, "subject_name": subj}
+                ).fetch1("pellet_timestamps")
 
                 patch_mean = 1 / rate // 100 * 100
                 cur_p = f"P{patch_i + 1}"
