@@ -319,8 +319,8 @@ class BlockSubjectAnalysis(dj.Computed):
         ---
         cumulative_preference_by_wheel: longblob
         cumulative_preference_by_time: longblob
-        final_preference_by_wheel: float  # cumulative_preference_by_wheel at the end of the block
-        final_preference_by_time: float  # cumulative_preference_by_time at the end of the block
+        final_preference_by_wheel=null: float  # cumulative_preference_by_wheel at the end of the block
+        final_preference_by_time=null: float  # cumulative_preference_by_time at the end of the block
         """
 
     key_source = BlockAnalysis & BlockAnalysis.Patch & BlockAnalysis.Subject
@@ -607,6 +607,7 @@ class BlockSubjectPlots(dj.Computed):
     definition = """
     -> BlockAnalysis
     ---
+    cum_wheel_dist_plot: longblob
     dist_pref_plot: longblob
     time_pref_plot: longblob
     """
@@ -622,8 +623,10 @@ class BlockSubjectPlots(dj.Computed):
         patch_names, subject_names = (BlockSubjectAnalysis.Preference & key).fetch(
             "patch_name", "subject_name"
         )
-        patch_names = set(patch_names)
-        subject_names = set(subject_names)
+        patch_names = np.unique(patch_names)
+        subject_names = np.unique(subject_names)
+
+        all_thresh_vals = np.concatenate((BlockAnalysis.Patch & key).fetch("patch_threshold")).astype(float)
 
         dist_pref_fig, time_pref_fig = go.Figure(), go.Figure()
         for subj_i, subj in enumerate(subject_names):
@@ -631,6 +634,10 @@ class BlockSubjectPlots(dj.Computed):
                 rate, offset, wheel_ts = (BlockAnalysis.Patch & key & {"patch_name": p}).fetch1(
                     "patch_rate", "patch_offset", "wheel_timestamps"
                 )
+                patch_thresh, patch_thresh_ts = (BlockAnalysis.Patch & key & {"patch_name": p}).fetch1(
+                    "patch_threshold", "patch_threshold_timestamps"
+                )
+
                 cum_pref_dist, cum_pref_time = (
                     BlockSubjectAnalysis.Preference & key & {"patch_name": p, "subject_name": subj}
                 ).fetch1("cumulative_preference_by_wheel", "cumulative_preference_by_time")
@@ -638,8 +645,19 @@ class BlockSubjectPlots(dj.Computed):
                     BlockSubjectAnalysis.Patch & key & {"patch_name": p, "subject_name": subj}
                 ).fetch1("pellet_timestamps")
 
-                patch_mean = 1 / rate // 100 * 100
-                cur_p = f"P{patch_i + 1}"
+                patch_thresh = patch_thresh[np.searchsorted(patch_thresh_ts, pellet_ts) - 1]
+                patch_mean = (1 / rate // 100 * 100)
+                patch_mean_thresh = patch_mean + offset
+                cum_pel_ct = pd.DataFrame(index=pellet_ts, data={
+                    "counter": np.arange(1, len(pellet_ts) + 1),
+                    "threshold": patch_thresh.astype(float),
+                    "mean_thresh": patch_mean_thresh,
+                    "patch_label": f"{p} μ: {patch_mean_thresh}",
+                })
+                cum_pel_ct["norm_thresh_val"] = (
+                        (cum_pel_ct["threshold"] - all_thresh_vals.min())
+                        / (all_thresh_vals.max() - all_thresh_vals.min())
+                ).round(3)
 
                 for fig, cum_pref in zip([dist_pref_fig, time_pref_fig], [cum_pref_dist, cum_pref_time]):
                     fig.add_trace(
@@ -652,12 +670,12 @@ class BlockSubjectPlots(dj.Computed):
                                 color=subject_colors[subj_i],
                                 dash=patch_markers_linestyles[patch_i],
                             ),
-                            name=f"{subj} - {cur_p}: μ: {patch_mean}",
+                            name=f"{subj} - {p}: μ: {patch_mean}",
                         )
                     )
                     # Add markers for each pellet
                     cur_cum_pel_ct = pd.merge_asof(
-                        pd.DataFrame(index=pellet_ts).reset_index(names="time"),
+                        cum_pel_ct.reset_index(names="time"),
                         pd.DataFrame(index=wheel_ts, data={"cum_pref": cum_pref}).reset_index(names="time"),
                         on="time",
                         direction="forward",
@@ -671,14 +689,14 @@ class BlockSubjectPlots(dj.Computed):
                                 mode="markers",
                                 marker=dict(
                                     symbol=patch_markers[patch_i],
-                                    # color=gen_hex_grad(
-                                    #     subject_colors[-1], cur_cum_pel_ct["norm_thresh_val"]
-                                    # ),
+                                    color=gen_hex_grad(
+                                        subject_colors[-1], cur_cum_pel_ct["norm_thresh_val"]
+                                    ),
                                     size=8,
                                 ),
                                 showlegend=False,
-                                # customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
-                                # hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                                customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
+                                hovertemplate="Threshold: %{customdata[0]:.2f} cm",
                             )
                         )
 
