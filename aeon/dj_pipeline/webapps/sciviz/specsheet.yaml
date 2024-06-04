@@ -94,7 +94,6 @@ SciViz:
                 - type: attribute
                   input: Task Scheduled Time
                   destination: pyrat_task_scheduled_time
-
     ExperimentEntry:
       route: /experiment_entry
       grids:
@@ -215,7 +214,6 @@ SciViz:
                 - type: attribute
                   input: Experiment Type
                   destination: experiment_type
-
     Subjects:
       route: /subjects
       grids:
@@ -701,6 +699,36 @@ SciViz:
                 def dj_query(aeon_block_analysis):
                     aeon_analysis = aeon_block_analysis
                     return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['cumulative_pellet_plot']}
+
+            comp7:
+              route: /dist_pref_plot
+              x: 0
+              y: 2.1
+              height: 0.3
+              width: 0.6
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockSubjectPlots(), 'fetch_args': ['dist_pref_plot']}
+
+            comp8:
+              route: /time_pref_plot
+              x: 0
+              y: 2.4
+              height: 0.3
+              width: 0.6
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockSubjectPlots(), 'fetch_args': ['time_pref_plot']}
 
     VideoStream:
       route: /videostream
