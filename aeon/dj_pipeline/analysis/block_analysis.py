@@ -605,10 +605,10 @@ class BlockPlots(dj.Computed):
 @schema
 class BlockSubjectPlots(dj.Computed):
     definition = """
-    -> BlockAnalysis
+    -> BlockSubjectAnalysis
     ---
-    dist_pref_plot: longblob
-    time_pref_plot: longblob
+    dist_pref_plot: longblob  # Cumulative Patch Preference by Wheel Distance - per subject per patch
+    time_pref_plot: longblob  # Cumulative Patch Preference by Time - per subject per patch
     """
 
     def make(self, key):

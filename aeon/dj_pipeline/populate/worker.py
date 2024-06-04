@@ -108,7 +108,8 @@ analysis_worker = DataJointWorker(
 
 analysis_worker(block_analysis.BlockAnalysis, max_calls=6)
 analysis_worker(block_analysis.BlockPlots, max_calls=6)
-
+analysis_worker(block_analysis.BlockSubjectAnalysis, max_calls=6)
+analysis_worker(block_analysis.BlockSubjectPlots, max_calls=6)
 
 def get_workflow_operation_overview():
     from datajoint_utilities.dj_worker.utils import get_workflow_operation_overview
