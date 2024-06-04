@@ -602,12 +602,11 @@ class BlockPlots(dj.Computed):
         )
 
 
-# @schema
+@schema
 class BlockSubjectPlots(dj.Computed):
     definition = """
     -> BlockAnalysis
     ---
-    cum_wheel_dist_plot: longblob
     dist_pref_plot: longblob
     time_pref_plot: longblob
     """
