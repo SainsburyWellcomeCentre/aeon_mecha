@@ -644,6 +644,9 @@ class BlockSubjectPlots(dj.Computed):
                     BlockSubjectAnalysis.Patch & key & {"patch_name": p, "subject_name": subj}
                 ).fetch1("pellet_timestamps")
 
+                if not len(pellet_ts):
+                    continue
+
                 patch_thresh = patch_thresh[np.searchsorted(patch_thresh_ts, pellet_ts) - 1]
                 patch_mean = 1 / rate // 100 * 100
                 patch_mean_thresh = patch_mean + offset
