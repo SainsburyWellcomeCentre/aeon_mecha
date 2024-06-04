@@ -645,17 +645,20 @@ class BlockSubjectPlots(dj.Computed):
                 ).fetch1("pellet_timestamps")
 
                 patch_thresh = patch_thresh[np.searchsorted(patch_thresh_ts, pellet_ts) - 1]
-                patch_mean = (1 / rate // 100 * 100)
+                patch_mean = 1 / rate // 100 * 100
                 patch_mean_thresh = patch_mean + offset
-                cum_pel_ct = pd.DataFrame(index=pellet_ts, data={
-                    "counter": np.arange(1, len(pellet_ts) + 1),
-                    "threshold": patch_thresh.astype(float),
-                    "mean_thresh": patch_mean_thresh,
-                    "patch_label": f"{p} μ: {patch_mean_thresh}",
-                })
+                cum_pel_ct = pd.DataFrame(
+                    index=pellet_ts,
+                    data={
+                        "counter": np.arange(1, len(pellet_ts) + 1),
+                        "threshold": patch_thresh.astype(float),
+                        "mean_thresh": patch_mean_thresh,
+                        "patch_label": f"{p} μ: {patch_mean_thresh}",
+                    },
+                )
                 cum_pel_ct["norm_thresh_val"] = (
-                        (cum_pel_ct["threshold"] - all_thresh_vals.min())
-                        / (all_thresh_vals.max() - all_thresh_vals.min())
+                    (cum_pel_ct["threshold"] - all_thresh_vals.min())
+                    / (all_thresh_vals.max() - all_thresh_vals.min())
                 ).round(3)
 
                 for fig, cum_pref in zip([dist_pref_fig, time_pref_fig], [cum_pref_dist, cum_pref_time]):
