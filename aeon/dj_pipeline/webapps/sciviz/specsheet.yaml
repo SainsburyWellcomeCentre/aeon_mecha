@@ -703,8 +703,8 @@ SciViz:
             comp7:
               route: /dist_pref_plot
               x: 0
-              y: 2.1
-              height: 0.3
+              y: 2.5
+              height: 0.4
               width: 0.6
               type: plot:plotly:stored_json
               restriction: >
@@ -718,8 +718,8 @@ SciViz:
             comp8:
               route: /time_pref_plot
               x: 0
-              y: 2.4
-              height: 0.3
+              y: 2.9
+              height: 0.4
               width: 0.6
               type: plot:plotly:stored_json
               restriction: >
