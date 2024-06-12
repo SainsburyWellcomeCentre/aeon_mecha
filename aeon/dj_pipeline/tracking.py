@@ -1,13 +1,13 @@
+from pathlib import Path
+
 import datajoint as dj
-import pandas as pd
+import matplotlib.path
 import numpy as np
-from matplotlib import path
+import pandas as pd
 
+from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, qc, streams
 from aeon.io import api as io_api
-
-from . import lab, acquisition, qc
-from . import get_schema_name, dict_to_uuid
-
+from aeon.schema import schemas as aeon_schemas
 
 schema = dj.schema(get_schema_name("tracking"))
 
@@ -23,12 +23,15 @@ arena_outer_radius = 0.97  # outer
 @schema
 class TrackingMethod(dj.Lookup):
     definition = """
-    tracking_method: varchar(16)  
+    tracking_method: varchar(16)
     ---
     tracking_method_description: varchar(256)
     """
 
-    contents = [("DLC", "Online DeepLabCut as part of Bonsai workflow")]
+    contents = [
+        ("DLC", "Online DeepLabCut as part of Bonsai workflow"),
+        ("SLEAP", "Online SLEAP as part of Bonsai workflow"),
+    ]
 
 
 @schema
@@ -36,7 +39,7 @@ class TrackingParamSet(dj.Lookup):
     definition = """  # Parameter set used in a particular TrackingMethod
     tracking_paramset_id:  smallint
     ---
-    -> TrackingMethod    
+    -> TrackingMethod
     paramset_description: varchar(128)
     param_set_hash: uuid
     unique index (param_set_hash)
@@ -50,7 +53,14 @@ class TrackingParamSet(dj.Lookup):
             "Default DLC method from online Bonsai - with params as empty dictionary",
             dict_to_uuid({"tracking_method": "DLC"}),
             {},
-        )
+        ),
+        (
+            1,
+            "SLEAP",
+            "Default SLEAP method from online Bonsai - with params as empty dictionary",
+            dict_to_uuid({"tracking_method": "SLEAP"}),
+            {},
+        ),
     ]
 
     @classmethod
@@ -62,18 +72,14 @@ class TrackingParamSet(dj.Lookup):
         tracking_paramset_id: int = None,
     ):
         if tracking_paramset_id is None:
-            tracking_paramset_id = (
-                dj.U().aggr(cls, n="max(tracking_paramset_id)").fetch1("n") or 0
-            ) + 1
+            tracking_paramset_id = (dj.U().aggr(cls, n="max(tracking_paramset_id)").fetch1("n") or 0) + 1
 
         param_dict = {
             "tracking_method": tracking_method,
             "tracking_paramset_id": tracking_paramset_id,
             "paramset_description": paramset_description,
             "params": params,
-            "param_set_hash": dict_to_uuid(
-                {**params, "tracking_method": tracking_method}
-            ),
+            "param_set_hash": dict_to_uuid({**params, "tracking_method": tracking_method}),
         }
         param_query = cls & {"param_set_hash": param_dict["param_set_hash"]}
 
@@ -97,135 +103,146 @@ class TrackingParamSet(dj.Lookup):
             cls.insert1(param_dict)
 
 
-# ---------- Video Tracking ------------------
+# ---------- VideoSource  ------------------
 
 
 @schema
-class CameraTracking(dj.Imported):
-    definition = """  # Tracked objects position data from a particular camera, using a particular tracking method, for a particular chunk
+class SLEAPTracking(dj.Imported):
+    definition = """  # Tracked objects position data from a particular VideoSource for multi-animal experiment using the SLEAP tracking method per chunk
     -> acquisition.Chunk
-    -> acquisition.ExperimentCamera
+    -> streams.SpinnakerVideoSource
     -> TrackingParamSet
     """
 
-    class Object(dj.Part):
-        definition = """  # Position data of object tracked by a particular camera tracking
+    class PoseIdentity(dj.Part):
+        definition = """
         -> master
-        object_id: int    # object with id = -1 means "unknown/not sure", could potentially be the same object as those with other id value
+        identity_idx:           smallint
         ---
-        timestamps:        longblob  # (datetime) timestamps of the position data
-        position_x:        longblob  # (px) object's x-position, in the arena's coordinate frame
-        position_y:        longblob  # (px) object's y-position, in the arena's coordinate frame
-        area=null:         longblob  # (px^2) object's size detected in the camera
+        identity_name:          varchar(16)
+        identity_likelihood:    longblob
+        anchor_part:         varchar(16)  # the name of the point used as anchor node for this class
+        """
+
+    class Part(dj.Part):
+        definition = """
+        -> master.PoseIdentity
+        part_name: varchar(16)
+        ---
+        sample_count: int      # number of data points acquired from this stream for a given chunk
+        x:          longblob
+        y:          longblob
+        likelihood: longblob
+        timestamps: longblob
         """
 
     @property
     def key_source(self):
-        ks = acquisition.Chunk * acquisition.ExperimentCamera * TrackingParamSet
         return (
-            ks
+            acquisition.Chunk
             * (
-                qc.CameraQC * acquisition.ExperimentCamera
-                & f"camera_description in {tuple(set(acquisition._ref_device_mapping.values()))}"
-            ).proj()
-            & "tracking_paramset_id = 0"
-        )
+                streams.SpinnakerVideoSource.join(streams.SpinnakerVideoSource.RemovalTime, left=True)
+                & "spinnaker_video_source_name='CameraTop'"
+            )
+            * (TrackingParamSet & "tracking_paramset_id = 1")
+            & "chunk_start >= spinnaker_video_source_install_time"
+            & 'chunk_start < IFNULL(spinnaker_video_source_removal_time, "2200-01-01")'
+        )  # SLEAP & CameraTop
 
     def make(self, key):
-        chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-            "chunk_start", "chunk_end", "directory_type"
-        )
-        camera = (acquisition.ExperimentCamera & key).fetch1("camera_description")
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
 
-        raw_data_dir = acquisition.Experiment.get_data_directory(
-            key, directory_type=dir_type
-        )
+        data_dirs = acquisition.Experiment.get_data_directories(key)
 
-        device = getattr(
-            acquisition._device_schema_mapping[key["experiment_name"]], camera
-        )
+        device_name = (streams.SpinnakerVideoSource & key).fetch1("spinnaker_video_source_name")
 
-        positiondata = io_api.load(
-            root=raw_data_dir.as_posix(),
-            reader=device.Position,
+        devices_schema = getattr(
+            aeon_schemas,
+            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
+        )
+        stream_reader = getattr(getattr(devices_schema, device_name), "Pose")
+
+        pose_data = io_api.load(
+            root=data_dirs,
+            reader=stream_reader,
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),
         )
 
-        # replace id=NaN with -1
-        positiondata.fillna({"id": -1}, inplace=True)
+        if not len(pose_data):
+            raise ValueError(f"No SLEAP data found for {key['experiment_name']} - {device_name}")
 
-        # Correct for frame offsets from Camera QC
-        qc_timestamps, qc_frame_offsets, camera_fs = (
-            qc.CameraQC * acquisition.ExperimentCamera & key
-        ).fetch1("timestamps", "frame_offset", "camera_sampling_rate")
-        qc_time_offsets = qc_frame_offsets / camera_fs
-        qc_time_offsets = np.where(
-            np.isnan(qc_time_offsets), 0, qc_time_offsets
-        )  # set NaNs to 0
-        positiondata.index += pd.to_timedelta(qc_time_offsets, "s")
+        # Find the config file for the SLEAP model
+        for data_dir in data_dirs:
+            try:
+                f = next(
+                    data_dir.glob(
+                        f"**/**/{stream_reader.pattern}{io_api.chunk(chunk_start).strftime('%Y-%m-%dT%H-%M-%S')}*.{stream_reader.extension}"
+                    )
+                )
+            except StopIteration:
+                continue
+            else:
+                config_file = stream_reader.get_config_file(
+                    stream_reader._model_root / Path(*Path(f.stem.replace("_", "/")).parent.parts[1:])
+                )
+                break
+        else:
+            raise FileNotFoundError(f"Unable to find SLEAP model config file for: {stream_reader.pattern}")
 
-        object_positions = []
-        for obj_id in set(positiondata.id.values):
-            obj_position = positiondata[positiondata.id == obj_id]
+        # get bodyparts and classes
+        bodyparts = stream_reader.get_bodyparts(config_file)
+        anchor_part = bodyparts[0]  # anchor_part is always the first one
+        class_names = stream_reader.get_class_names(config_file)
 
-            object_positions.append(
+        # ingest parts and classes
+        pose_identity_entries, part_entries = [], []
+        for class_idx in set(pose_data["class"].values.astype(int)):
+            class_position = pose_data[pose_data["class"] == class_idx]
+            for part in set(class_position.part.values):
+                part_position = class_position[class_position.part == part]
+                part_entries.append(
+                    {
+                        **key,
+                        "identity_idx": class_idx,
+                        "part_name": part,
+                        "timestamps": part_position.index.values,
+                        "x": part_position.x.values,
+                        "y": part_position.y.values,
+                        "likelihood": part_position.part_likelihood.values,
+                        "sample_count": len(part_position.index.values),
+                    }
+                )
+                if part == anchor_part:
+                    class_likelihood = part_position.class_likelihood.values
+            pose_identity_entries.append(
                 {
                     **key,
-                    "object_id": obj_id,
-                    "timestamps": obj_position.index.to_pydatetime(),
-                    "position_x": obj_position.x.values,
-                    "position_y": obj_position.y.values,
-                    "area": obj_position.area.values,
+                    "identity_idx": class_idx,
+                    "identity_name": class_names[class_idx],
+                    "anchor_part": anchor_part,
+                    "identity_likelihood": class_likelihood,
                 }
             )
 
         self.insert1(key)
-        self.Object.insert(object_positions)
-
-    @classmethod
-    def get_object_position(
-        cls,
-        experiment_name,
-        object_id,
-        start,
-        end,
-        camera_name="FrameTop",
-        tracking_paramset_id=0,
-        in_meter=False,
-    ):
-        table = (
-            cls.Object * acquisition.Chunk.proj("chunk_end")
-            & {"experiment_name": experiment_name}
-            & {"tracking_paramset_id": tracking_paramset_id}
-            & (acquisition.ExperimentCamera & {"camera_description": camera_name})
-        )
-
-        return _get_position(
-            table,
-            object_attr="object_id",
-            object_name=object_id,
-            start_attr="chunk_start",
-            end_attr="chunk_end",
-            start=start,
-            end=end,
-            fetch_attrs=["timestamps", "position_x", "position_y", "area"],
-            attrs_to_scale=["position_x", "position_y"],
-            scale_factor=pixel_scale if in_meter else 1,
-        )
+        self.PoseIdentity.insert(pose_identity_entries)
+        self.Part.insert(part_entries)
 
 
 # ---------- HELPER ------------------
 
 
-def compute_distance(position_df, target):
+def compute_distance(position_df, target, xcol="x", ycol="y"):
     assert len(target) == 2
-    return np.sqrt(np.square(position_df[["x", "y"]] - target).sum(axis=1))
+    return np.sqrt(np.square(position_df[[xcol, ycol]] - target).sum(axis=1))
 
 
-def is_in_patch(
+def is_position_in_patch(
     position_df, patch_position, wheel_distance_travelled, patch_radius=0.2
-):
+) -> pd.Series:
     distance_from_patch = compute_distance(position_df, patch_position)
     in_patch = distance_from_patch < patch_radius
     exit_patch = in_patch.astype(np.int8).diff() < 0
@@ -233,20 +250,17 @@ def is_in_patch(
         position_df.index, method="pad"
     )
     time_slice = exit_patch.cumsum()
-    return in_wheel.groupby(time_slice).apply(lambda x: x.cumsum()) > 0
+    return in_patch & (in_wheel.groupby(time_slice).apply(lambda x: x.cumsum()) > 0)
 
 
-def is_position_in_nest(position_df, nest_key):
+def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y") -> pd.Series:
+    """Given the session key and the position data - arrays of x and y
+    return an array of boolean indicating whether or not a position is inside the nest.
     """
-    Given the session key and the position data - arrays of x and y
-    return an array of boolean indicating whether or not a position is inside the nest
-    """
-    nest_vertices = list(
-        zip(*(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y"))
-    )
-    nest_path = path.Path(nest_vertices)
-
-    return nest_path.contains_points(position_df[["x", "y"]])
+    nest_vertices = list(zip(*(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y")))
+    nest_path = matplotlib.path.Path(nest_vertices)
+    position_df["in_nest"] = nest_path.contains_points(position_df[[xcol, ycol]])
+    return position_df["in_nest"]
 
 
 def _get_position(
@@ -269,9 +283,7 @@ def _get_position(
     start_query = table & obj_restriction & start_restriction
     end_query = table & obj_restriction & end_restriction
     if not (start_query and end_query):
-        raise ValueError(
-            f"No position data found for {object_name} between {start} and {end}"
-        )
+        raise ValueError(f"No position data found for {object_name} between {start} and {end}")
 
     time_restriction = (
         f'{start_attr} >= "{min(start_query.fetch(start_attr))}"'
@@ -279,14 +291,10 @@ def _get_position(
     )
 
     # subject's position data in the time slice
-    fetched_data = (table & obj_restriction & time_restriction).fetch(
-        *fetch_attrs, order_by=start_attr
-    )
+    fetched_data = (table & obj_restriction & time_restriction).fetch(*fetch_attrs, order_by=start_attr)
 
     if not len(fetched_data[0]):
-        raise ValueError(
-            f"No position data found for {object_name} between {start} and {end}"
-        )
+        raise ValueError(f"No position data found for {object_name} between {start} and {end}")
 
     timestamp_attr = next(attr for attr in fetch_attrs if "timestamps" in attr)
 

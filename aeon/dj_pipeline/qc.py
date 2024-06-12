@@ -1,12 +1,11 @@
 import datajoint as dj
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from aeon.io import api as io_api
 
-from . import acquisition
-from . import get_schema_name
-
+from aeon.dj_pipeline import get_schema_name
+from aeon.dj_pipeline import acquisition, streams
 
 schema = dj.schema(get_schema_name("qc"))
 
@@ -41,7 +40,7 @@ class QCRoutine(dj.Lookup):
 class CameraQC(dj.Imported):
     definition = """ # Quality controls performed on a particular camera for a particular acquisition chunk
     -> acquisition.Chunk
-    -> acquisition.ExperimentCamera
+    -> streams.SpinnakerVideoSource
     ---
     drop_count=null: int
     max_harp_delta: float    # (s)
@@ -58,29 +57,31 @@ class CameraQC(dj.Imported):
     def key_source(self):
         return (
             acquisition.Chunk
-            * acquisition.ExperimentCamera.join(
-                acquisition.ExperimentCamera.RemovalTime, left=True
+            * (
+                streams.SpinnakerVideoSource.join(streams.SpinnakerVideoSource.RemovalTime, left=True)
+                & "spinnaker_video_source_name='CameraTop'"
             )
-            & "chunk_start >= camera_install_time"
-            & 'chunk_start < IFNULL(camera_remove_time, "2200-01-01")'
-        )
+            & "chunk_start >= spinnaker_video_source_install_time"
+            & 'chunk_start < IFNULL(spinnaker_video_source_removal_time, "2200-01-01")'
+        )  # CameraTop
 
     def make(self, key):
-        chunk_start, chunk_end, dir_type = (acquisition.Chunk & key).fetch1(
-            "chunk_start", "chunk_end", "directory_type"
-        )
-        camera = (acquisition.ExperimentCamera & key).fetch1("camera_description")
-        raw_data_dir = acquisition.Experiment.get_data_directory(
-            key, directory_type=dir_type
-        )
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
 
-        device = getattr(
-            acquisition._device_schema_mapping[key["experiment_name"]], camera
+        device_name = (streams.SpinnakerVideoSource & key).fetch1("spinnaker_video_source_name")
+        data_dirs = acquisition.Experiment.get_data_directories(key)
+
+        devices_schema = getattr(
+            acquisition.aeon_schemas,
+            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
         )
+        stream_reader = getattr(getattr(devices_schema, device_name), "Video")
 
         videodata = io_api.load(
-            root=raw_data_dir.as_posix(),
-            reader=device.Video,
+            root=data_dirs,
+            reader=stream_reader,
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),
         ).reset_index()
@@ -101,11 +102,9 @@ class CameraQC(dj.Imported):
                 **key,
                 "drop_count": deltas.frame_offset.iloc[-1],
                 "max_harp_delta": deltas.time_delta.max().total_seconds(),
-                "max_camera_delta": deltas.hw_timestamp_delta.max()
-                / 1e9,  # convert to seconds
-                "timestamps": videodata.index.to_pydatetime(),
-                "time_delta": deltas.time_delta.values
-                / np.timedelta64(1, "s"),  # convert to seconds
+                "max_camera_delta": deltas.hw_timestamp_delta.max() / 1e9,  # convert to seconds
+                "timestamps": videodata.index.values,
+                "time_delta": deltas.time_delta.values / np.timedelta64(1, "s"),  # convert to seconds
                 "frame_delta": deltas.frame_delta.values,
                 "hw_counter_delta": deltas.hw_counter_delta.values,
                 "hw_timestamp_delta": deltas.hw_timestamp_delta.values,

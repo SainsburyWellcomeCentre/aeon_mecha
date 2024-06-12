@@ -3,7 +3,7 @@
 default_language_version:
   python: python3.11
 
-files: "^(test|aeon(?!\/dj_pipeline\/).*)$"
+files: "^(test|aeon)\/.*$"
 repos:
   - repo: meta
     hooks:
@@ -40,9 +40,8 @@ repos:
   - repo: https://github.com/RobertCraigie/pyright-python
     rev: v1.1.324
     hooks:
-    - id: pyright
-      args: [--level, error, --project, ./pyproject.toml]
-
+      - id: pyright
+        args: [--level, error, --project, ./pyproject.toml]
 
   # Pytest is expensive, so we show its set-up but leave it commented out.
   # - repo: local

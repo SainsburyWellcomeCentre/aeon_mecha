@@ -1,9 +1,9 @@
 import pathlib
 
 from aeon.dj_pipeline import acquisition, lab, subject
-from aeon.dj_pipeline.ingest.create_experiment_01 import ingest_exp01_metadata
+from aeon.dj_pipeline.create_experiments.create_experiment_01 import ingest_exp01_metadata
 
-# ============ Manual and automatic steps to for experiment 0.1 ingest ============
+# ============ Manual and automatic steps to for experiment 0.1 populate ============
 experiment_name = "social0-r1"
 
 
@@ -33,10 +33,7 @@ def create_new_experiment():
         skip_duplicates=True,
     )
     acquisition.Experiment.Subject.insert(
-        [
-            {"experiment_name": experiment_name, "subject": s["subject"]}
-            for s in subject_list
-        ],
+        [{"experiment_name": experiment_name, "subject": s["subject"]} for s in subject_list],
         skip_duplicates=True,
     )
 
@@ -91,12 +88,8 @@ def add_arena_setup():
     # manually update coordinates of foodpatch and nest
     patch_coordinates = {"Patch1": (1.13, 1.59, 0), "Patch2": (1.19, 0.50, 0)}
 
-    for patch_key in (
-        acquisition.ExperimentFoodPatch & {"experiment_name": experiment_name}
-    ).fetch("KEY"):
-        patch = (acquisition.ExperimentFoodPatch & patch_key).fetch1(
-            "food_patch_description"
-        )
+    for patch_key in (acquisition.ExperimentFoodPatch & {"experiment_name": experiment_name}).fetch("KEY"):
+        patch = (acquisition.ExperimentFoodPatch & patch_key).fetch1("food_patch_description")
         x, y, z = patch_coordinates[patch]
         acquisition.ExperimentFoodPatch.Position.update1(
             {
@@ -114,9 +107,7 @@ def main():
 
 
 def fixID(subjid, valid_ids=None, valid_id_file=None):
-    """
-    Legacy helper function for socialexperiment0 - originaly developed by ErlichLab
-    https://github.com/SainsburyWellcomeCentre/aeon_mecha/blob/ee1fa536b58e82fad01130d7689a70e68f94ec0e/aeon/util/helpers.py#L19
+    """Legacy helper function for socialexperiment0 - originaly developed by ErlichLab (https://github.com/SainsburyWellcomeCentre/aeon_mecha/blob/ee1fa536b58e82fad01130d7689a70e68f94ec0e/aeon/util/helpers.py#L19).
 
     Attempt to correct the id entered by the technician
     Attempt to correct the subjid entered by the technician
@@ -129,9 +120,10 @@ def fixID(subjid, valid_ids=None, valid_id_file=None):
     )
     """
     from os import path
+
     import jellyfish as jl
-    import pandas as pd
     import numpy as np
+    import pandas as pd
 
     if not valid_ids:
         if not valid_id_file:
@@ -155,11 +147,15 @@ def fixID(subjid, valid_ids=None, valid_id_file=None):
     # The subjid is a combo subjid.
     if ";" in subjid:
         subjidA, subjidB = subjid.split(";")
-        return f"{fixID(subjidA.strip(), valid_ids=valid_ids)};{fixID(subjidB.strip(), valid_ids=valid_ids)}"
+        return (
+            f"{fixID(subjidA.strip(), valid_ids=valid_ids)};{fixID(subjidB.strip(), valid_ids=valid_ids)}"
+        )
 
     if "vs" in subjid:
         subjidA, tmp, subjidB = subjid.split(" ")[1:]
-        return f"{fixID(subjidA.strip(), valid_ids=valid_ids)};{fixID(subjidB.strip(), valid_ids=valid_ids)}"
+        return (
+            f"{fixID(subjidA.strip(), valid_ids=valid_ids)};{fixID(subjidB.strip(), valid_ids=valid_ids)}"
+        )
 
     try:
         ld = [jl.levenshtein_distance(subjid, x[-len(subjid) :]) for x in valid_ids]
