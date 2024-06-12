@@ -10,3 +10,9 @@ class RfidEvents(Stream):
             path = path.replace("Events", "")
 
         super().__init__(_reader.Harp(f"RfidEvents{path}_32*", ["rfid"]))
+
+
+class Pose(Stream):
+
+    def __init__(self, path):
+        super().__init__(_reader.Pose(f"{path}_node-0*"))
