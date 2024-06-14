@@ -35,7 +35,7 @@ class BlockDetection(dj.Computed):
         """On a per-chunk basis, check for the presence of new block, insert into Block table."""
         # find the 0s
         # that would mark the start of a new block
-        # if the 0 is the first index - look back at the previous chunk
+        # In the BlockState data - if the 0 is the first index - look back at the previous chunk
         #   if the previous timestamp belongs to a previous epoch -> block_end is the previous timestamp
         #   else block_end is the timestamp of this 0
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
@@ -56,16 +56,26 @@ class BlockDetection(dj.Computed):
         )
 
         block_state_query = acquisition.Environment.BlockState & exp_key & chunk_restriction
-        block_state_df = fetch_stream(block_state_query)[previous_block_start:chunk_end]
+        block_state_df = fetch_stream(block_state_query)
+        block_state_df.index = block_state_df.index.round("us")  # timestamp precision in DJ is only at microseconds
+        block_state_df = block_state_df.loc[(block_state_df.index > previous_block_start)
+                                            & (block_state_df.index <= chunk_end)]
 
-        block_ends = block_state_df[block_state_df.pellet_ct.diff() < 0]
+        # detecting block end times
+        # find the 0s
+        block_ends = block_state_df[block_state_df.pellet_ct == 0]
+        # account for the double 0s - find any 0s that are within 1 second of each other, remove the 2nd one
+        double_0s = block_ends.index.to_series().diff().dt.total_seconds() < 1
+        # find the indices of the 2nd 0s and remove
+        double_0s = double_0s.shift(-1).fillna(False)
+        block_ends = block_ends[~double_0s]
 
         block_entries = []
         for idx, block_end in enumerate(block_ends.index):
             if idx == 0:
                 if previous_block_key:
                     # if there is a previous block - insert "block_end" for the previous block
-                    previous_pellet_time = block_state_df[:block_end].index[-2]
+                    previous_pellet_time = block_state_df[:block_end].index[-1]
                     previous_epoch = (
                         acquisition.Epoch.join(acquisition.EpochEnd, left=True)
                         & exp_key
