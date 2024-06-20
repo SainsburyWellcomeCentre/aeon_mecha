@@ -55,14 +55,15 @@ class BlockDetection(dj.Computed):
             key["experiment_name"], previous_block_start, chunk_end
         )
 
+        # detecting block end times
+        # pellet count reset - find 0s in BlockState
+
         block_state_query = acquisition.Environment.BlockState & exp_key & chunk_restriction
         block_state_df = fetch_stream(block_state_query)
         block_state_df.index = block_state_df.index.round("us")  # timestamp precision in DJ is only at microseconds
         block_state_df = block_state_df.loc[(block_state_df.index > previous_block_start)
                                             & (block_state_df.index <= chunk_end)]
 
-        # detecting block end times
-        # find the 0s
         block_ends = block_state_df[block_state_df.pellet_ct == 0]
         # account for the double 0s - find any 0s that are within 1 second of each other, remove the 2nd one
         double_0s = block_ends.index.to_series().diff().dt.total_seconds() < 1
@@ -243,6 +244,10 @@ class BlockAnalysis(dj.Computed):
                 }
             )
 
+            # update block_end if last timestamp of encoder_df is before the current block_end
+            if encoder_df.index[-1] < block_end:
+                block_end = encoder_df.index[-1]
+
         # Subject data
         # Get all unique subjects that visited the environment over the entire exp;
         # For each subject, see 'type' of visit most recent to start of block
@@ -258,6 +263,7 @@ class BlockAnalysis(dj.Computed):
             _df = subject_visits_df[subject_visits_df.id == subject_name]
             if _df.type[-1] != "Exit":
                 subject_names.append(subject_name)
+
         for subject_name in subject_names:
             # positions - query for CameraTop, identity_name matches subject_name,
             pos_query = (
@@ -300,6 +306,14 @@ class BlockAnalysis(dj.Computed):
                     "cumsum_distance_travelled": cumsum_distance_travelled,
                 }
             )
+
+            # update block_end if last timestamp of pos_df is before the current block_end
+            if pos_df.index[-1] < block_end:
+                block_end = pos_df.index[-1]
+
+        if block_end != (Block & key).fetch1("block_end"):
+            Block.update1({**key, "block_end": block_end})
+            self.update1({**key, "block_duration": (block_end - block_start).total_seconds() / 3600})
 
 
 @schema
@@ -511,7 +525,7 @@ class BlockSubjectAnalysis(dj.Computed):
 
 @schema
 class BlockPlots(dj.Computed):
-    definition = """
+    definition = """ 
     -> BlockAnalysis
     ---
     subject_positions_plot: longblob
