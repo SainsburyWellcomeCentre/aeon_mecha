@@ -60,9 +60,12 @@ class BlockDetection(dj.Computed):
 
         block_state_query = acquisition.Environment.BlockState & exp_key & chunk_restriction
         block_state_df = fetch_stream(block_state_query)
-        block_state_df.index = block_state_df.index.round("us")  # timestamp precision in DJ is only at microseconds
-        block_state_df = block_state_df.loc[(block_state_df.index > previous_block_start)
-                                            & (block_state_df.index <= chunk_end)]
+        block_state_df.index = block_state_df.index.round(
+            "us"
+        )  # timestamp precision in DJ is only at microseconds
+        block_state_df = block_state_df.loc[
+            (block_state_df.index > previous_block_start) & (block_state_df.index <= chunk_end)
+        ]
 
         block_ends = block_state_df[block_state_df.pellet_ct == 0]
         # account for the double 0s - find any 0s that are within 1 second of each other, remove the 2nd one
