@@ -111,6 +111,8 @@ analysis_worker(block_analysis.BlockPlots, max_calls=6)
 analysis_worker(block_analysis.BlockSubjectAnalysis, max_calls=6)
 analysis_worker(block_analysis.BlockSubjectPlots, max_calls=6)
 
+
 def get_workflow_operation_overview():
     from datajoint_utilities.dj_worker.utils import get_workflow_operation_overview
+
     return get_workflow_operation_overview(worker_schema_name=worker_schema_name, db_prefixes=[db_prefix])
