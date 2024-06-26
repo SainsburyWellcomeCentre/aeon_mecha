@@ -164,6 +164,7 @@ def extract_epoch_config(experiment_name: str, devices_schema, metadata_yml_file
 def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath):
     """Make entries into device tables."""
     from aeon.dj_pipeline import acquisition
+
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
     if experiment_name.startswith("oct"):
@@ -179,7 +180,7 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
         epoch_start="MAX(epoch_start)",
     )
     if len(acquisition.EpochConfig.Meta & previous_epoch) and epoch_config["commit"] == (
-            acquisition.EpochConfig.Meta & previous_epoch
+        acquisition.EpochConfig.Meta & previous_epoch
     ).fetch1("commit"):
         # if identical commit -> no changes
         return

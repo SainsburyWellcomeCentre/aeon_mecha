@@ -12,7 +12,9 @@ class Environment(StreamGroup):
 
     class BlockState(Stream):
         def __init__(self, path):
-            super().__init__(_reader.Csv(f"{path}_BlockState_*", columns=["pellet_ct", "pellet_ct_thresh", "due_time"]))
+            super().__init__(
+                _reader.Csv(f"{path}_BlockState_*", columns=["pellet_ct", "pellet_ct_thresh", "due_time"])
+            )
 
     class LightEvents(Stream):
         def __init__(self, path):
@@ -35,7 +37,11 @@ class SubjectData(StreamGroup):
 
     class SubjectWeight(Stream):
         def __init__(self, path):
-            super().__init__(_reader.Csv(f"{path}_SubjectWeight_*", columns=["weight", "confidence", "subject_id", "int_id"]))
+            super().__init__(
+                _reader.Csv(
+                    f"{path}_SubjectWeight_*", columns=["weight", "confidence", "subject_id", "int_id"]
+                )
+            )
 
 
 class Pose(Stream):

@@ -3,6 +3,7 @@ Cloning and archiving schemas and data for experiment 0.2.
 The pipeline code associated with this archived data pipeline is here
 https://github.com/SainsburyWellcomeCentre/aeon_mecha/releases/tag/dj_exp02_stable
 """
+
 import os
 import inspect
 import datajoint as dj

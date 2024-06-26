@@ -55,9 +55,7 @@ def dj_config():
     dj.config.load(dj_config_fp)
     dj.config["safemode"] = False
     assert "custom" in dj.config
-    dj.config["custom"][
-        "database.prefix"
-    ] = f"u_{dj.config['database.user']}_testsuite_"
+    dj.config["custom"]["database.prefix"] = f"u_{dj.config['database.user']}_testsuite_"
 
 
 def load_pipeline():
