@@ -174,39 +174,24 @@ class SLEAPTracking(dj.Imported):
         if not len(pose_data):
             raise ValueError(f"No SLEAP data found for {key['experiment_name']} - {device_name}")
 
-        # Find the config file for the SLEAP model
-        for data_dir in data_dirs:
-            try:
-                f = next(
-                    data_dir.glob(
-                        f"**/**/{stream_reader.pattern}{io_api.chunk(chunk_start).strftime('%Y-%m-%dT%H-%M-%S')}*.{stream_reader.extension}"
-                    )
-                )
-            except StopIteration:
-                continue
-            else:
-                config_file = stream_reader.get_config_file(
-                    stream_reader._model_root / Path(*Path(f.stem.replace("_", "/")).parent.parts[1:])
-                )
-                break
-        else:
-            raise FileNotFoundError(f"Unable to find SLEAP model config file for: {stream_reader.pattern}")
-
         # get bodyparts and classes
-        bodyparts = stream_reader.get_bodyparts(config_file)
+        bodyparts = stream_reader.get_bodyparts()
         anchor_part = bodyparts[0]  # anchor_part is always the first one
-        class_names = stream_reader.get_class_names(config_file)
+        class_names = stream_reader.get_class_names()
+        identity_mapping = {n: i for i, n in enumerate(class_names)}
 
         # ingest parts and classes
         pose_identity_entries, part_entries = [], []
-        for class_idx in set(pose_data["class"].values.astype(int)):
-            class_position = pose_data[pose_data["class"] == class_idx]
-            for part in set(class_position.part.values):
-                part_position = class_position[class_position.part == part]
+        for identity in identity_mapping:
+            identity_position = pose_data[pose_data["identity"] == identity]
+            if identity_position.empty:
+                continue
+            for part in set(identity_position.part.values):
+                part_position = identity_position[identity_position.part == part]
                 part_entries.append(
                     {
                         **key,
-                        "identity_idx": class_idx,
+                        "identity_idx": identity_mapping[identity],
                         "part_name": part,
                         "timestamps": part_position.index.values,
                         "x": part_position.x.values,
@@ -216,14 +201,17 @@ class SLEAPTracking(dj.Imported):
                     }
                 )
                 if part == anchor_part:
-                    class_likelihood = part_position.class_likelihood.values
+                    identity_likelihood = part_position.identity_likelihood.values
+                    if isinstance(identity_likelihood[0], dict):
+                        identity_likelihood = np.array([v[identity] for v in identity_likelihood])
+
             pose_identity_entries.append(
                 {
                     **key,
-                    "identity_idx": class_idx,
-                    "identity_name": class_names[class_idx],
+                    "identity_idx": identity_mapping[identity],
+                    "identity_name": identity,
                     "anchor_part": anchor_part,
-                    "identity_likelihood": class_likelihood,
+                    "identity_likelihood": identity_likelihood,
                 }
             )
 
