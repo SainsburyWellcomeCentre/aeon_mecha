@@ -1,16 +1,17 @@
 import json
+from datetime import datetime
+
 import datajoint as dj
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objs as go
 from matplotlib import path as mpl_path
-from datetime import datetime
 
-from aeon.io import api as io_api
 from aeon.analysis import utils as analysis_utils
 from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, tracking
 from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
+from aeon.io import api as io_api
 
 schema = dj.schema(get_schema_name("block_analysis"))
 logger = dj.logger
@@ -34,8 +35,7 @@ class BlockDetection(dj.Computed):
     """
 
     def make(self, key):
-        """
-        On a per-chunk basis, check for the presence of new block, insert into Block table.
+        """On a per-chunk basis, check for the presence of new block, insert into Block table.
         High level logic
         1. Find the 0s in `pellet_ct` (these are times when the pellet count reset - i.e. new block)
         2. Remove any double 0s (0s within 1 second of each other) (pick the first 0)
@@ -353,6 +353,7 @@ class BlockSubjectAnalysis(dj.Computed):
         pellet_count: int
         pellet_timestamps: longblob
         patch_threshold: longblob  # patch threshold value at each pellet delivery
+        patch_threshold: longblob  # patch threshold value at each pellet delivery
         wheel_cumsum_distance_travelled: longblob  # wheel's cumulative distance travelled
         """
 
@@ -492,9 +493,9 @@ class BlockSubjectAnalysis(dj.Computed):
                 )
                 subject_in_patch = in_patch[subject_name]
                 subject_in_patch_cum_time = subject_in_patch.cumsum().values * dt
-                all_subj_patch_pref_dict[patch["patch_name"]][subject_name][
-                    "cum_time"
-                ] = subject_in_patch_cum_time
+                all_subj_patch_pref_dict[patch["patch_name"]][subject_name]["cum_time"] = (
+                    subject_in_patch_cum_time
+                )
 
                 closest_subj_mask = closest_subjects_pellet_ts == subject_name
                 subj_pellets = closest_subjects_pellet_ts[closest_subj_mask]
@@ -663,10 +664,10 @@ class BlockSubjectPlots(dj.Computed):
 
     def make(self, key):
         from aeon.analysis.block_plotting import (
-            subject_colors,
-            patch_markers_linestyles,
-            patch_markers,
             gen_hex_grad,
+            patch_markers,
+            patch_markers_linestyles,
+            subject_colors,
         )
 
         patch_names, subject_names = (BlockSubjectAnalysis.Preference & key).fetch(
@@ -790,8 +791,7 @@ class AnalysisNote(dj.Manual):
 
 
 def get_threshold_associated_pellets(patch_key, start, end):
-    """
-    Retrieve the pellet delivery timestamps associated with each patch threshold update within the specified start-end time.
+    """Retrieve the pellet delivery timestamps associated with each patch threshold update within the specified start-end time.
     1. Get all patch state update timestamps (DepletionState): let's call these events "A"
         - Remove all events within 1 second of each other
         - Remove all events without threshold value (NaN)
@@ -889,5 +889,7 @@ def get_threshold_associated_pellets(patch_key, start, end):
     # Shift back the pellet_timestamp values by 1 to match with the previous threshold update
     pellet_ts_threshold_df.pellet_timestamp = pellet_ts_threshold_df.pellet_timestamp.shift(-1)
     pellet_ts_threshold_df.beam_break_timestamp = pellet_ts_threshold_df.beam_break_timestamp.shift(-1)
-    pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(subset=["pellet_timestamp", "beam_break_timestamp"])
+    pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(
+        subset=["pellet_timestamp", "beam_break_timestamp"]
+    )
     return pellet_ts_threshold_df
