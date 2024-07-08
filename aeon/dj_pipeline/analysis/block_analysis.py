@@ -230,6 +230,9 @@ class BlockAnalysis(dj.Computed):
             patch_rate = depletion_state_df.rate.iloc[0]
             patch_offset = depletion_state_df.offset.iloc[0]
 
+            # handles patch rate value being INF
+            patch_rate = 999999999 if np.isinf(patch_rate) else patch_rate
+
             self.Patch.insert1(
                 {
                     **key,
@@ -335,6 +338,7 @@ class BlockSubjectAnalysis(dj.Computed):
         in_patch_time: float  # total seconds spent in this patch for this block
         pellet_count: int
         pellet_timestamps: longblob
+        patch_threshold: longblob  # patch threshold value at each pellet delivery
         wheel_cumsum_distance_travelled: longblob  # wheel's cumulative distance travelled
         """
 
@@ -478,6 +482,9 @@ class BlockSubjectAnalysis(dj.Computed):
                     "cum_time"
                 ] = subject_in_patch_cum_time
                 subj_pellets = closest_subjects_pellet_ts[closest_subjects_pellet_ts == subject_name]
+
+                subj_patch_thresh = patch["patch_threshold"][np.searchsorted(patch["patch_threshold_timestamps"], subj_pellets.index.values) - 1]
+
                 self.Patch.insert1(
                     key
                     | dict(
@@ -487,6 +494,7 @@ class BlockSubjectAnalysis(dj.Computed):
                         in_patch_time=subject_in_patch_cum_time[-1],
                         pellet_count=len(subj_pellets),
                         pellet_timestamps=subj_pellets.index.values,
+                        patch_threshold=subj_patch_thresh,
                         wheel_cumsum_distance_travelled=cum_wheel_dist_subj_df[subject_name].values,
                     )
                 )
