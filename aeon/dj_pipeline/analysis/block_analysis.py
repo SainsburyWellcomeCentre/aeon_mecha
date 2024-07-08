@@ -230,6 +230,9 @@ class BlockAnalysis(dj.Computed):
             patch_rate = depletion_state_df.rate.iloc[0]
             patch_offset = depletion_state_df.offset.iloc[0]
 
+            # handles patch rate value being INF
+            patch_rate = 999999999 if np.isinf(patch_rate) else patch_rate
+
             self.Patch.insert1(
                 {
                     **key,
