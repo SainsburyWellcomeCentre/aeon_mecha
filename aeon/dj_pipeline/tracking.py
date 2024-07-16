@@ -174,10 +174,8 @@ class SLEAPTracking(dj.Imported):
         if not len(pose_data):
             raise ValueError(f"No SLEAP data found for {key['experiment_name']} - {device_name}")
 
-        # get bodyparts and classes
-        bodyparts = stream_reader.get_bodyparts()
-        anchor_part = bodyparts[0]  # anchor_part is always the first one
-        class_names = stream_reader.get_class_names()
+        # get identity names
+        class_names = np.unique(pose_data.identity)
         identity_mapping = {n: i for i, n in enumerate(class_names)}
 
         # ingest parts and classes
@@ -186,6 +184,10 @@ class SLEAPTracking(dj.Imported):
             identity_position = pose_data[pose_data["identity"] == identity]
             if identity_position.empty:
                 continue
+
+            # get anchor part - always the first one of all the body parts
+            anchor_part = np.unique(identity_position.part)[0]
+
             for part in set(identity_position.part.values):
                 part_position = identity_position[identity_position.part == part]
                 part_entries.append(
