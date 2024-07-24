@@ -241,6 +241,9 @@ class BlockAnalysis(dj.Computed):
 
             encoder_df["distance_travelled"] = -1 * analysis_utils.distancetravelled(encoder_df.angle)
 
+            if depletion_state_df.empty:
+                raise ValueError(f"No depletion state data found for block {key} - patch: {patch_name}")
+
             if len(depletion_state_df.rate.unique()) > 1:
                 # multiple patch rates per block is unexpected, log a note and pick the first rate to move forward
                 AnalysisNote.insert1(
