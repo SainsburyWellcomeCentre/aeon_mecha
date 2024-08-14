@@ -135,6 +135,20 @@ class Csv(Reader):
         )
 
 
+class Binary(Reader):
+    """Extracts data from raw flat binary files without timestamp information."""
+
+    def __init__(self, pattern, dtype, columns, extension="bin"):
+        super().__init__(pattern, columns, extension)
+        self.dtype = dtype
+
+    def read(self, file):
+        """Reads data from the specified flat binary file."""
+        data = np.fromfile(file, dtype=self.dtype)
+        data = data.reshape((-1, len(self.columns)))
+        return pd.DataFrame(data, columns=self.columns)
+
+
 class Subject(Csv):
     """Extracts metadata for subjects entering and exiting the environment.
 
