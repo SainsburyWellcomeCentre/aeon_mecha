@@ -213,6 +213,8 @@ class BlockAnalysis(dj.Computed):
                     continue
                 next_threshold_time = pellet_ts_threshold_df.index[threshold_idx + 1]
                 post_thresh_pellet_ts = beam_break_df.index[beam_break_df.index > next_threshold_time]
+                if post_thresh_pellet_ts.empty:
+                    break
                 next_beam_break = post_thresh_pellet_ts[np.searchsorted(post_thresh_pellet_ts, next_threshold_time)]
                 pellet_ts_threshold_df.pellet_timestamp.iloc[threshold_idx] = next_beam_break
             # remove NaNs from pellet_timestamp column (last row)
@@ -240,6 +242,9 @@ class BlockAnalysis(dj.Computed):
             )
 
             encoder_df["distance_travelled"] = -1 * analysis_utils.distancetravelled(encoder_df.angle)
+
+            if depletion_state_df.empty:
+                raise ValueError(f"No depletion state data found for block {key} - patch: {patch_name}")
 
             if len(depletion_state_df.rate.unique()) > 1:
                 # multiple patch rates per block is unexpected, log a note and pick the first rate to move forward
