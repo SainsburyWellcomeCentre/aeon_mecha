@@ -102,14 +102,15 @@ analysis_worker = DataJointWorker(
     "analysis_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    max_idled_cycle=6,
-    sleep_duration=1200,
+    max_idled_cycle=20,
+    sleep_duration=60,
 )
 
 analysis_worker(block_analysis.BlockAnalysis, max_calls=6)
 analysis_worker(block_analysis.BlockPlots, max_calls=6)
 analysis_worker(block_analysis.BlockSubjectAnalysis, max_calls=6)
 analysis_worker(block_analysis.BlockSubjectPlots, max_calls=6)
+
 
 def get_workflow_operation_overview():
     from datajoint_utilities.dj_worker.utils import get_workflow_operation_overview
