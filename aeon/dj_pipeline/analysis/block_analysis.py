@@ -2,18 +2,42 @@ import json
 import datajoint as dj
 import numpy as np
 import pandas as pd
+import plotly
 import plotly.express as px
 import plotly.graph_objs as go
 from matplotlib import path as mpl_path
 from datetime import datetime
 
 from aeon.analysis import utils as analysis_utils
+from aeon.analysis.block_plotting import gen_hex_grad, conv2d
 from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, tracking
 from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
 
 schema = dj.schema(get_schema_name("block_analysis"))
 logger = dj.logger
 
+subject_colors = plotly.colors.qualitative.Plotly
+subject_colors_dict = {  # @NOTE: really, we shouldn't have to assign each subject to a color explicitly
+    "BAA-1104516": subject_colors[0],
+    "BAA-1104519": subject_colors[1],
+    "BAA-1104568": subject_colors[2],
+    "BAA-1104569": subject_colors[3],
+}
+patch_colors = plotly.colors.qualitative.Dark2
+patch_markers = [
+    "circle",
+    "bowtie",
+    "square",
+    "hourglass",
+    "diamond",
+    "cross",
+    "x",
+    "triangle",
+    "star",
+]
+patch_markers_symbols = ["●", "⧓", "■", "⧗", "♦", "✖", "×", "▲", "★"]
+patch_markers_dict = {marker: symbol for marker, symbol in zip(patch_markers, patch_markers_symbols)}
+patch_markers_linestyles = ["solid", "dash", "dot", "dashdot", "longdashdot"]
 
 @schema
 class Block(dj.Manual):
@@ -189,6 +213,8 @@ class BlockAnalysis(dj.Computed):
         patch_keys, patch_names = patch_query.fetch("KEY", "underground_feeder_name")
 
         for patch_key, patch_name in zip(patch_keys, patch_names):
+            # TODO: update this to use pellet delivery timestamps: and remove pellet delivery timestamps that
+            # occur within some time diff, and remove manual deliveries
             delivered_pellet_df = fetch_stream(
                 streams.UndergroundFeederBeamBreak & patch_key & chunk_restriction
             )[block_start:block_end]
@@ -482,7 +508,7 @@ class BlockSubjectAnalysis(dj.Computed):
                     "cum_time"
                 ] = subject_in_patch_cum_time
                 subj_pellets = closest_subjects_pellet_ts[closest_subjects_pellet_ts == subject_name]
-
+                # TODO: get pellet timestamp that is before patch threshold update with min time diff
                 subj_patch_thresh = patch["patch_threshold"][np.searchsorted(patch["patch_threshold_timestamps"], subj_pellets.index.values) - 1]
 
                 self.Patch.insert1(
@@ -532,6 +558,72 @@ class BlockSubjectAnalysis(dj.Computed):
                         final_preference_by_wheel=cum_pref_dist[-1],
                     )
                 )
+
+
+@schema
+class BlockPlotsNew(dj.Computed):
+    definition = """
+     -> BlockAnalysis
+    ---
+    patch_stats_plot: longblob
+    """
+
+    def make(self, key):
+
+        # Create dataframe for plotting patch stats
+        subj_patch_info = (BlockSubjectAnalysis.Patch & key).fetch(format="frame")
+        patch_info = (BlockAnalysis.Patch & key).fetch("patch_name", "patch_rate", "patch_offset", as_dict=True)
+        reset_subj_patch_info = subj_patch_info.reset_index()  # reset to turn MultiIndex into columns
+        min_subj_patch_info = reset_subj_patch_info[  # select only relevant columns
+            ["patch_name", "subject_name", "pellet_timestamps", "patch_threshold"]
+        ]
+        min_subj_patch_info = (
+            min_subj_patch_info.explode(["pellet_timestamps", "patch_threshold"], ignore_index=True)
+            .dropna()
+            .reset_index(drop=True)
+        )
+        # Rename and reindex columns
+        min_subj_patch_info.columns = ["patch", "subject", "time", "threshold"]
+        min_subj_patch_info = min_subj_patch_info.reindex(columns=["time", "patch", "threshold", "subject"])
+        n_patches = len(patch_info)
+        patch_mean_info = pd.DataFrame(index=np.arange(n_patches), columns=min_subj_patch_info.columns)
+        patch_mean_info["subject"] = "mean"
+        patch_mean_info["patch"] = [d["patch_name"] for d in patch_info]
+        patch_mean_info["threshold"] = [((1 / d["patch_rate"]) + d["patch_offset"]) for d in patch_info]
+        patch_mean_info["time"] = subj_patch_info.index.get_level_values("block_start")[0]
+
+        min_subj_patch_info_plus = pd.concat((patch_mean_info, min_subj_patch_info)).reset_index(drop=True)
+        min_subj_patch_info_plus["norm_time"] = (
+            (min_subj_patch_info_plus["time"] - min_subj_patch_info_plus["time"].iloc[0])
+            / (min_subj_patch_info_plus["time"].iloc[-1] - min_subj_patch_info_plus["time"].iloc[0])
+        ).round(3)
+
+        # Plot patch stats from dataframe
+        box_colors = ["#0A0A0A"] + subject_colors[0 : len(subjects)]  # subject colors + mean color
+
+        fig = px.box(
+            min_subj_patch_info_plus.sort_values("patch"),
+            x="patch",
+            y="threshold",
+            color="subject",
+            hover_data=["norm_time"],
+            color_discrete_sequence=box_colors,
+            # notched=True,
+            points="all",
+        )
+
+        fig.update_layout(
+            title="Patch Stats: Patch Means and Sampled Threshold Values",
+            xaxis_title="Patch",
+            yaxis_title="Threshold (cm)",
+        )
+
+        self.insert1(
+            {
+                **key,
+                "patch_stats_fig": json.loads(fig.to_json()),
+            }
+        )
 
 
 @schema
@@ -647,12 +739,6 @@ class BlockSubjectPlots(dj.Computed):
     """
 
     def make(self, key):
-        from aeon.analysis.block_plotting import (
-            subject_colors,
-            patch_markers_linestyles,
-            patch_markers,
-            gen_hex_grad,
-        )
 
         patch_names, subject_names = (BlockSubjectAnalysis.Preference & key).fetch(
             "patch_name", "subject_name"

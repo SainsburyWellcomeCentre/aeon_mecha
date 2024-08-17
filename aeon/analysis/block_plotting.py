@@ -1,44 +1,9 @@
-import os
-import pathlib
+"""Some utility functions used in `block_analysis` for creating block plots."""
+
 from colorsys import hls_to_rgb, rgb_to_hls
-from contextlib import contextmanager
-from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import plotly
-import plotly.express as px
-import plotly.graph_objs as go
-import seaborn as sns
 from numpy.lib.stride_tricks import as_strided
-
-"""Standardize subject colors, patch colors, and markers."""
-
-subject_colors = plotly.colors.qualitative.Plotly
-subject_colors_dict = {
-    "BAA-1104045": subject_colors[0],
-    "BAA-1104047": subject_colors[1],
-    "BAA-1104048": subject_colors[2],
-    "BAA-1104049": subject_colors[3],
-}
-patch_colors = plotly.colors.qualitative.Dark2
-patch_markers = [
-    "circle",
-    "bowtie",
-    "square",
-    "hourglass",
-    "diamond",
-    "cross",
-    "x",
-    "triangle",
-    "star",
-]
-patch_markers_symbols = ["●", "⧓", "■", "⧗", "♦", "✖", "×", "▲", "★"]
-patch_markers_dict = {
-    marker: symbol for marker, symbol in zip(patch_markers, patch_markers_symbols)
-}
-patch_markers_linestyles = ["solid", "dash", "dot", "dashdot", "longdashdot"]
 
 
 def gen_hex_grad(hex_col, vals, min_l=0.3):
@@ -54,9 +19,19 @@ def gen_hex_grad(hex_col, vals, min_l=0.3):
         )  # get cur lightness relative to `hex_col`
         cur_l = max(min(cur_l, l), min_l)  # set min, max bounds
         cur_rgb_col = hls_to_rgb(h, cur_l, s)  # convert to rgb
-        cur_hex_col = "#%02x%02x%02x" % tuple(
+        cur_hex_col = "#{:02x}{:02x}{:02x}".format(*tuple(
             int(c * 255) for c in cur_rgb_col
-        )  # convert to hex
+        ))  # convert to hex
         grad[i] = cur_hex_col
 
     return grad
+
+
+def conv2d(arr, kernel):
+    """Performs "valid" 2d convolution using numpy `as_strided` and `einsum`."""
+    out_shape = tuple(np.subtract(arr.shape, kernel.shape) + 1)
+    sub_mat_shape = kernel.shape + out_shape
+    # Create "new view" of `arr` as submatrices at which kernel will be applied
+    sub_mats = as_strided(arr, shape=sub_mat_shape, strides=(arr.strides * 2))
+    out = np.einsum("ij, ijkl -> kl", kernel, sub_mats)
+    return out
