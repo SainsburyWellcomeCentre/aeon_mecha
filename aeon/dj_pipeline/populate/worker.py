@@ -1,5 +1,5 @@
 import datajoint as dj
-from datajoint_utilities.dj_worker import DataJointWorker, ErrorLog, WorkerLog
+from datajoint_utilities.dj_worker import DataJointWorker, ErrorLog, WorkerLog, RegisteredWorker
 from datajoint_utilities.dj_worker.worker_schema import is_djtable
 
 from aeon.dj_pipeline import db_prefix
