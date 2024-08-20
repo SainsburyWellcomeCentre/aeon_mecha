@@ -83,7 +83,7 @@ class DeliverPellet(Stream):
     """Pellet delivery commands."""
 
     def __init__(self, pattern):
-        super().__init__(_reader.BitmaskEvent(f"{pattern}_35_*", 0x80, "TriggerPellet"))
+        super().__init__(_reader.BitmaskEvent(f"{pattern}_35_*", 0x01, "TriggerPellet"))
 
 
 class Patch(StreamGroup):

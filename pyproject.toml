@@ -75,8 +75,8 @@ Repository = "https://github.com/sainsburyWellcomeCentre/aeon_mecha"
 Documentation = "https://sainsburywellcomecentre.github.io/aeon_docs/"
 DataJoint = "https://docs.datajoint.org/"
 
-[tool.setuptools]
-packages = ["aeon"]
+[tool.setuptools.packages.find]
+include = ["aeon*"]
 
 [tool.black]
 line-length = 108
