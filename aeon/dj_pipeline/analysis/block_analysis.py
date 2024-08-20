@@ -798,3 +798,65 @@ class AnalysisNote(dj.Manual):
     note_type='': varchar(64)
     note: varchar(3000)
     """
+
+# ---- Helper Functions ----
+
+
+def get_pellets(patch_key, block_start, block_end):
+    """
+    1. Get all patch state update timestamps: let's call these events "A"
+    2. Remove all "A" events near manual pellet delivery events (so we don't include manual pellet delivery events in downstream analysis)
+    3. For the remaining "A" events, find the nearest delivery event within 1s: for this delivery event, check if there are any repeat delivery events within 0.5 seconds - take the last of these as the pellet delivery timestamp (discard all "A" events that don't have such a corresponding delivery event)
+    4. Now for these 'clean' "A" events, go back in time to the SECOND preceding pellet threshold value: this is the threshold value for this pellet delivery (as seen in this image we discussed before)
+    """
+    # key = {'experiment_name': 'social0.3-aeon3', 'block_start': '2024-06-26 10:52:10.001984',
+    #        'block_end': '2024-06-26 12:57:18'}
+    chunk_restriction = acquisition.create_chunk_restriction(
+        patch_key["experiment_name"], block_start, block_end
+    )
+    # pellet delivery and patch threshold data
+    beam_break_df = fetch_stream(
+        streams.UndergroundFeederBeamBreak & patch_key & chunk_restriction
+    )[block_start:block_end]
+    depletion_state_df = fetch_stream(
+        streams.UndergroundFeederDepletionState & patch_key & chunk_restriction
+    )[block_start:block_end]
+    # remove NaNs from threshold column
+    depletion_state_df = depletion_state_df.dropna(subset=["threshold"])
+    # identify & remove invalid indices where the time difference is less than 1 second
+    invalid_indices = np.where(depletion_state_df.index.to_series().diff().dt.total_seconds() < 1)[0]
+    depletion_state_df = depletion_state_df.drop(depletion_state_df.index[invalid_indices])
+
+    # find pellet times approximately coincide with each threshold update (nearest pellet delivery within 1s)
+    delivered_pellet_ts = beam_break_df.index
+    pellet_ts_threshold_df = depletion_state_df.copy()
+    pellet_ts_threshold_df["pellet_timestamp"] = pd.NaT
+    for threshold_idx in range(len(pellet_ts_threshold_df)):
+        threshold_time = pellet_ts_threshold_df.index[threshold_idx]
+        pellet_time = delivered_pellet_ts[np.searchsorted(delivered_pellet_ts, threshold_time)]
+        if abs(pellet_time - threshold_time) > pd.Timedelta(seconds=1):
+            # no pellet delivery within 1s of threshold update (this is unexpected)
+            continue
+        pellet_ts_threshold_df.pellet_timestamp.iloc[threshold_idx] = pellet_time
+    # remove NaNs from pellet_timestamp column (last row)
+    pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(subset=["pellet_timestamp"])
+
+
+    # find pellet times associated with each threshold update
+    #   for each threshold, find the time of the next threshold update,
+    #   find the closest beam break after this update time,
+    #   and use this beam break time as the delivery time for the initial threshold
+    pellet_ts_threshold_df = depletion_state_df.copy()
+    pellet_ts_threshold_df["pellet_timestamp"] = pd.NaT
+    for threshold_idx in range(len(pellet_ts_threshold_df) - 1):
+        if np.isnan(pellet_ts_threshold_df.threshold.iloc[threshold_idx]):
+            continue
+        next_threshold_time = pellet_ts_threshold_df.index[threshold_idx + 1]
+        post_thresh_pellet_ts = beam_break_df.index[beam_break_df.index > next_threshold_time]
+        if post_thresh_pellet_ts.empty:
+            break
+        next_beam_break = post_thresh_pellet_ts[np.searchsorted(post_thresh_pellet_ts, next_threshold_time)]
+        pellet_ts_threshold_df.pellet_timestamp.iloc[threshold_idx] = next_beam_break
+    # remove NaNs from pellet_timestamp column (last row)
+    pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(subset=["pellet_timestamp"])
+
