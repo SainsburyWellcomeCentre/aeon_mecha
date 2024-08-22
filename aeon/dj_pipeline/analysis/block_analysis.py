@@ -162,7 +162,7 @@ class BlockAnalysis(dj.Computed):
         chunk_keys = (acquisition.Chunk & key & chunk_restriction).fetch("KEY")
         streams_tables = (
             streams.UndergroundFeederDepletionState,
-            streams.UndergroundFeederBeamBreak,
+            streams.UndergroundFeederDeliverPellet,
             streams.UndergroundFeederEncoder,
             tracking.SLEAPTracking,
         )
