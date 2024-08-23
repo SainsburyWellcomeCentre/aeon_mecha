@@ -278,7 +278,7 @@ class BlockAnalysis(dj.Computed):
             # positions - query for CameraTop, identity_name matches subject_name,
             pos_query = (
                 streams.SpinnakerVideoSource
-                * tracking.SLEAPTracking.PoseIdentity.proj("identity_name", anchor_part="part_name")
+                * tracking.SLEAPTracking.PoseIdentity.proj("identity_name", part_name="anchor_part")
                 * tracking.SLEAPTracking.Part
                 & key
                 & {
