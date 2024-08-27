@@ -217,10 +217,10 @@ class BlockAnalysis(dj.Computed):
                 encoder_df, maintenance_period, block_end, dropna=True
             )
 
-            encoder_df["distance_travelled"] = -1 * analysis_utils.distancetravelled(encoder_df.angle)
-
             if depletion_state_df.empty:
                 raise ValueError(f"No depletion state data found for block {key} - patch: {patch_name}")
+
+            encoder_df["distance_travelled"] = -1 * analysis_utils.distancetravelled(encoder_df.angle)
 
             if len(depletion_state_df.rate.unique()) > 1:
                 # multiple patch rates per block is unexpected, log a note and pick the first rate to move forward
@@ -781,10 +781,14 @@ class AnalysisNote(dj.Manual):
 def get_threshold_associated_pellets(patch_key, start, end):
     """
     Retrieve the pellet delivery timestamps associated with each patch threshold update within the specified start-end time.
-    1. Get all patch state update timestamps: let's call these events "A"
-    2. Remove all "A" events near manual pellet delivery events (so we don't include manual pellet delivery events in downstream analysis)
-    3. For the remaining "A" events, find the nearest delivery event within 1s: for this delivery event, check if there are any repeat delivery events within 0.5 seconds - take the last of these as the pellet delivery timestamp (discard all "A" events that don't have such a corresponding delivery event)
-    4. Now for these 'clean' "A" events, go back in time to the SECOND preceding pellet threshold value: this is the threshold value for this pellet delivery (as seen in this image we discussed before)
+    1. Get all patch state update timestamps (DepletionState): let's call these events "A"
+        - Remove all events within 1 second of each other
+        - Remove all events without threshold value (NaN)
+    2. Get all pellet delivery timestamps (DeliverPellet): let's call these events "B"
+    3. For each event "A", find the nearest event "B" within 100ms before or after the event "A"
+        - These are the pellet delivery events "B" associated with the previous threshold update event "A"
+    4. Shift back the pellet delivery timestamps by 1 to match the pellet delivery with the previous threshold update
+    5. Remove all threshold updates events "A" without a corresponding pellet delivery event "B"
     """
     chunk_restriction = acquisition.create_chunk_restriction(
         patch_key["experiment_name"], start, end
