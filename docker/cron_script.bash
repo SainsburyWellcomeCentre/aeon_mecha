@@ -49,3 +49,7 @@ if [ $? -eq 0 ]; then
 else
     print_verbose "Failed to restart workers."
 fi
+
+# Clean up old logs (older than 30 days)
+print_verbose "Cleaning up old logs..."
+find "${ROOT_LOG_DIR}" -mtime +30 -delete;
