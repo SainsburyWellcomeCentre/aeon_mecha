@@ -1,44 +1,9 @@
 import os
 import pathlib
 from colorsys import hls_to_rgb, rgb_to_hls
-from contextlib import contextmanager
-from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
-import plotly
-import plotly.express as px
-import plotly.graph_objs as go
-import seaborn as sns
 from numpy.lib.stride_tricks import as_strided
-
-"""Standardize subject colors, patch colors, and markers."""
-
-subject_colors = plotly.colors.qualitative.Plotly
-subject_colors_dict = {
-    "BAA-1104045": subject_colors[0],
-    "BAA-1104047": subject_colors[1],
-    "BAA-1104048": subject_colors[2],
-    "BAA-1104049": subject_colors[3],
-}
-patch_colors = plotly.colors.qualitative.Dark2
-patch_markers = [
-    "circle",
-    "bowtie",
-    "square",
-    "hourglass",
-    "diamond",
-    "cross",
-    "x",
-    "triangle",
-    "star",
-]
-patch_markers_symbols = ["●", "⧓", "■", "⧗", "♦", "✖", "×", "▲", "★"]
-patch_markers_dict = {
-    marker: symbol for marker, symbol in zip(patch_markers, patch_markers_symbols)
-}
-patch_markers_linestyles = ["solid", "dash", "dot", "dashdot", "longdashdot"]
 
 
 def gen_hex_grad(hex_col, vals, min_l=0.3):
