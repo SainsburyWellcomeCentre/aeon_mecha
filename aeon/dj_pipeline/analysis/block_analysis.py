@@ -877,8 +877,6 @@ class BlockPlotsNew(dj.Computed):
         subj_wheel_pel_weighted_dist.set_index(["patch_name", "subject_name"], inplace=True)
         subj_wheel_pel_weighted_dist["weighted_dist"] = np.nan
 
-        ## Calculate weighted distance
-
         ### Plotting
         # 1. Plot patch stats from dataframe of each pellet threshold per patch
         # block_subjects = (BlockAnalysis.Subject & key).fetch(as_dict=True)
@@ -1205,7 +1203,7 @@ class BlockPlotsNew(dj.Computed):
                     tolerance=pd.Timedelta("0.1s"),
                 )
                 if not cur_cum_pel_ct.empty:
-                    fig.add_trace(
+                    running_pref_by_wd_plot.add_trace(
                         go.Scatter(
                             x=cur_cum_pel_ct["time"],
                             y=cur_cum_pel_ct["run_wheel_pref"],
