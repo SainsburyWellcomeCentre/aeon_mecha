@@ -410,6 +410,11 @@ class BlockSubjectAnalysis(dj.Computed):
     key_source = BlockAnalysis & BlockAnalysis.Patch & BlockAnalysis.Subject
 
     def make(self, key):
+
+        # Constant values for In Patch Time
+        in_patch_radius = 130  # pixels
+
+        # Fetch data
         block_patches = (BlockAnalysis.Patch & key).fetch(as_dict=True)
         block_subjects = (BlockAnalysis.Subject & key).fetch(as_dict=True)
         subject_names = [s["subject_name"] for s in block_subjects]
@@ -436,7 +441,6 @@ class BlockSubjectAnalysis(dj.Computed):
 
         self.insert1(key)
 
-        in_patch_radius = 130  # pixels
         pref_attrs = ["cum_dist", "cum_time", "cum_pref_dist", "cum_pref_time"]
         all_subj_patch_pref_dict = {
             p: {s: {a: pd.Series() for a in pref_attrs} for s in subject_names} for p in patch_names
@@ -601,8 +605,9 @@ class BlockPlotsNew(dj.Computed):
 
     def make(self, key):
 
-        dt = (Block & key).fetch1("block_start")
-        one_day_into_social = dt.strftime("%Y-%m-%d %H:00")
+        # Constant values for (5.) Position ethograms
+        patch_radius = 120  # in px
+        gate_radius = 30  # in px
 
         block_start = (Block & key & f"block_start >= '{one_day_into_social}'").fetch(
             "block_start", limit=1
@@ -767,7 +772,6 @@ class BlockPlotsNew(dj.Computed):
         )
         rfid_names = np.unique([item["rfid_reader_name"] for item in rfid_names])
 
-        patch_radius, gate_radius = 120, 30  # in px
         rois = patch_names + ["Nest", "Gate", "Corridor"]  # ROIs: patches, nest, gate, corridor
         roi_colors = plotly.colors.qualitative.Dark2
         roi_colors_dict = {roi: roi_c for (roi, roi_c) in zip(rois, roi_colors)}
