@@ -2,7 +2,6 @@ import json
 import datajoint as dj
 import numpy as np
 import pandas as pd
-import plotly
 import plotly.express as px
 import plotly.graph_objs as go
 from matplotlib import path as mpl_path
