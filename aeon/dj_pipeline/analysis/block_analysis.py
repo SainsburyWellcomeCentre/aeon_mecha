@@ -613,10 +613,13 @@ class BlockPlotsNew(dj.Computed):
         patch_radius = 120  # in px
         gate_radius = 30  # in px
 
-        block_start = (Block & key & f"block_start >= '{one_day_into_social}'").fetch(
-            "block_start", limit=1
-        )[0]
-        block_end = (Block & key & f"block_start >= '{one_day_into_social}'").fetch("block_end", limit=1)[0]
+        # Fetch data
+        one_day_into_social = (Block & key).fetch("block_start", limit=1)[0]
+
+        block_start, block_end = (
+            BlockAnalysis * Block & key & f"block_start >= '{one_day_into_social}'"
+        ).fetch1("block_start", "block_end")
+
         key = (
             key
             | {"block_start": str(pd.Timestamp(block_start))}
