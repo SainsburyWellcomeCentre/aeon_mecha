@@ -802,26 +802,24 @@ def get_threshold_associated_pellets(patch_key, start, end):
     )[start:end]
     # remove NaNs from threshold column
     depletion_state_df = depletion_state_df.dropna(subset=["threshold"])
-    # identify & remove invalid indices where the time difference is less than 1 second
-    invalid_indices = np.where(depletion_state_df.index.to_series().diff().dt.total_seconds() < 1)[0]
-    depletion_state_df = depletion_state_df.drop(depletion_state_df.index[invalid_indices])
+    # remove invalid rows where the time difference is less than 1 second
+    depletion_state_df = depletion_state_df[~(depletion_state_df.index.diff().total_seconds() < 1)]
 
     # find pellet times approximately coincide with each threshold update
     # i.e. nearest pellet delivery within 100ms before or after threshold update
-    delivered_pellet_ts = delivered_pellet_df.index
-    pellet_ts_threshold_df = depletion_state_df.copy()
-    pellet_ts_threshold_df["pellet_timestamp"] = pd.NaT
-    for threshold_idx in range(len(pellet_ts_threshold_df)):
-        threshold_time = pellet_ts_threshold_df.index[threshold_idx]
-        within_range_pellet_ts = np.logical_and(delivered_pellet_ts >= threshold_time - pd.Timedelta(milliseconds=100),
-                                                delivered_pellet_ts <= threshold_time + pd.Timedelta(milliseconds=100))
-        if not within_range_pellet_ts.any():
-            continue
-        pellet_time = delivered_pellet_ts[within_range_pellet_ts][-1]
-        pellet_ts_threshold_df.pellet_timestamp.iloc[threshold_idx] = pellet_time
-
-    # remove rows of threshold updates without corresponding pellet times from i.e. pellet_timestamp is NaN
-    pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(subset=["pellet_timestamp"])
+    pellet_ts_threshold_df = (
+        pd.merge_asof(
+            depletion_state_df.reset_index(),
+            delivered_pellet_df.reset_index().rename(columns={"time": "pellet_timestamp"}),
+            left_on="time",
+            right_on="pellet_timestamp",
+            tolerance=pd.Timedelta("100ms"),
+            direction="nearest",
+        )
+        .set_index("time")
+        .dropna(subset=["pellet_timestamp"])
+    )
+    pellet_ts_threshold_df = pellet_ts_threshold_df.drop(columns=["event"])
     # shift back the pellet_timestamp values by 1 to match the pellet_timestamp with the previous threshold update
     pellet_ts_threshold_df.pellet_timestamp = pellet_ts_threshold_df.pellet_timestamp.shift(-1)
     # remove NaNs from pellet_timestamp column (last row)
