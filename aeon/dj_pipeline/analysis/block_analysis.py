@@ -224,7 +224,9 @@ class BlockAnalysis(dj.Computed):
             # remove NaNs from threshold column
             depletion_state_df = depletion_state_df.dropna(subset=["threshold"])
             # identify & remove invalid indices where the time difference is less than 1 second
-            invalid_indices = np.where(depletion_state_df.index.to_series().diff().dt.total_seconds() < 1)[0]
+            invalid_indices = np.where(depletion_state_df.index.to_series().diff().dt.total_seconds() < 1)[
+                0
+            ]
             depletion_state_df = depletion_state_df.drop(depletion_state_df.index[invalid_indices])
 
             # find pellet times associated with each threshold update
@@ -240,7 +242,9 @@ class BlockAnalysis(dj.Computed):
                 post_thresh_pellet_ts = beam_break_df.index[beam_break_df.index > next_threshold_time]
                 if post_thresh_pellet_ts.empty:
                     break
-                next_beam_break = post_thresh_pellet_ts[np.searchsorted(post_thresh_pellet_ts, next_threshold_time)]
+                next_beam_break = post_thresh_pellet_ts[
+                    np.searchsorted(post_thresh_pellet_ts, next_threshold_time)
+                ]
                 pellet_ts_threshold_df.pellet_timestamp.iloc[threshold_idx] = next_beam_break
             # remove NaNs from pellet_timestamp column (last row)
             pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(subset=["pellet_timestamp"])
