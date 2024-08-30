@@ -678,7 +678,8 @@ class BlockPlotsNew(dj.Computed):
         patch_means["mean_thresh"] = patch_means["mean_thresh"].astype(float).round(1)
         cum_pel_ct = cum_pel_ct.merge(patch_means, on="patch", how="left")
 
-        cum_pel_ct = cum_pel_ct[~cum_pel_ct["subject"].str.contains("mean")].reset_index(drop=True)
+        cum_pel_ct = cum_pel_ct.loc[~cum_pel_ct["subject"].str.contains("mean")].reset_index(drop=True)
+
         cum_pel_ct = (
             cum_pel_ct.groupby("subject", group_keys=False).apply(cumsum_helper).reset_index(drop=True)
         )
