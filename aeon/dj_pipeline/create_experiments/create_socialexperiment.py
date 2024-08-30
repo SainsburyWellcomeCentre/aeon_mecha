@@ -55,4 +55,3 @@ def create_new_social_experiment(experiment_name):
             {"experiment_name": experiment_name, "devices_schema_name": exp_name.replace(".", "")},
             skip_duplicates=True,
         )
-
