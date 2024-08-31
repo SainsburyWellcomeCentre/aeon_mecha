@@ -16,12 +16,6 @@ from numpy.lib.stride_tricks import as_strided
 """Standardize subject colors, patch colors, and markers."""
 
 subject_colors = plotly.colors.qualitative.Plotly
-subject_colors_dict = {
-    "BAA-1104045": subject_colors[0],
-    "BAA-1104047": subject_colors[1],
-    "BAA-1104048": subject_colors[2],
-    "BAA-1104049": subject_colors[3],
-}
 patch_colors = plotly.colors.qualitative.Dark2
 patch_markers = [
     "circle",
@@ -35,28 +29,50 @@ patch_markers = [
     "star",
 ]
 patch_markers_symbols = ["●", "⧓", "■", "⧗", "♦", "✖", "×", "▲", "★"]
-patch_markers_dict = {
-    marker: symbol for marker, symbol in zip(patch_markers, patch_markers_symbols)
-}
+patch_markers_dict = {marker: symbol for marker, symbol in zip(patch_markers, patch_markers_symbols)}
 patch_markers_linestyles = ["solid", "dash", "dot", "dashdot", "longdashdot"]
 
 
 def gen_hex_grad(hex_col, vals, min_l=0.3):
     """Generates an array of hex color values based on a gradient defined by unit-normalized values."""
     # Convert hex to rgb to hls
-    h, l, s = rgb_to_hls(
-        *[int(hex_col.lstrip("#")[i: i + 2], 16) / 255 for i in (0, 2, 4)]
-    )
+    h, l, s = rgb_to_hls(*[int(hex_col.lstrip("#")[i : i + 2], 16) / 255 for i in (0, 2, 4)])
     grad = np.empty(shape=(len(vals),), dtype="<U10")  # init grad
     for i, val in enumerate(vals):
-        cur_l = (l * val) + (
-            min_l * (1 - val)
-        )  # get cur lightness relative to `hex_col`
+        cur_l = (l * val) + (min_l * (1 - val))  # get cur lightness relative to `hex_col`
         cur_l = max(min(cur_l, l), min_l)  # set min, max bounds
         cur_rgb_col = hls_to_rgb(h, cur_l, s)  # convert to rgb
-        cur_hex_col = "#%02x%02x%02x" % tuple(
-            int(c * 255) for c in cur_rgb_col
-        )  # convert to hex
+        cur_hex_col = "#%02x%02x%02x" % tuple(int(c * 255) for c in cur_rgb_col)  # convert to hex
         grad[i] = cur_hex_col
 
     return grad
+
+
+def conv2d(arr, kernel):
+    """Performs "valid" 2d convolution using numpy `as_strided` and `einsum`."""
+    out_shape = tuple(np.subtract(arr.shape, kernel.shape) + 1)
+    sub_mat_shape = kernel.shape + out_shape
+    # Create "new view" of `arr` as submatrices at which kernel will be applied
+    sub_mats = as_strided(arr, shape=sub_mat_shape, strides=(arr.strides * 2))
+    out = np.einsum("ij, ijkl -> kl", kernel, sub_mats)
+    return out
+
+
+def gen_subject_colors_dict(subject_names):
+    """Generates a dictionary of subject colors based on a list of subjects."""
+    return {s: c for s, c in zip(subject_names, subject_colors)}
+
+
+def gen_patch_style_dict(patch_names):
+    """Based on a list of patches, generates a dictionary of:
+    - patch_colors_dict: patch name to color
+    - patch_markers_dict: patch name to marker
+    - patch_symbols_dict: patch name to symbol
+    - patch_linestyles_dict: patch name to linestyle
+    """
+    return {
+        "colors": {p: c for p, c in zip(patch_names, patch_colors)},
+        "markers": {p: m for p, m in zip(patch_names, patch_markers)},
+        "symbols": {p: s for p, s in zip(patch_names, patch_markers_symbols)},
+        "linestyles": {p: ls for p, ls in zip(patch_names, patch_markers_linestyles)},
+    }

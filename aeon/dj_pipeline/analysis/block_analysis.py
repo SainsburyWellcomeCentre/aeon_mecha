@@ -2,14 +2,24 @@ import json
 import datajoint as dj
 import numpy as np
 import pandas as pd
+import plotly
 import plotly.express as px
 import plotly.graph_objs as go
 from matplotlib import path as mpl_path
 from datetime import datetime
+import itertools
 
 from aeon.analysis import utils as analysis_utils
 from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, tracking
 from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
+
+from aeon.analysis.block_plotting import (
+    subject_colors,
+    gen_subject_colors_dict,
+    gen_patch_style_dict,
+    gen_hex_grad,
+    conv2d,
+)
 
 schema = dj.schema(get_schema_name("block_analysis"))
 logger = dj.logger
@@ -354,6 +364,8 @@ class BlockSubjectAnalysis(dj.Computed):
         ---
         cumulative_preference_by_wheel: longblob
         cumulative_preference_by_time: longblob
+        running_preference_by_time: longblob
+        running_preference_by_wheel: longblob
         final_preference_by_wheel=null: float  # cumulative_preference_by_wheel at the end of the block
         final_preference_by_time=null: float  # cumulative_preference_by_time at the end of the block
         """
@@ -514,11 +526,11 @@ class BlockSubjectAnalysis(dj.Computed):
             all_cum_time = np.sum(
                 [all_subj_patch_pref_dict[p][subject_name]["cum_time"][-1] for p in patch_names]
             )
-
             for patch_name in patch_names:
                 cum_pref_dist = (
                     all_subj_patch_pref_dict[patch_name][subject_name]["cum_dist"] / all_cum_dist
                 )
+                cum_pref_dist = np.where(cum_pref_dist < 1e-3, 0, cum_pref_dist)
                 all_subj_patch_pref_dict[patch_name][subject_name]["cum_pref_dist"] = cum_pref_dist
 
                 cum_pref_time = (
@@ -526,241 +538,797 @@ class BlockSubjectAnalysis(dj.Computed):
                 )
                 all_subj_patch_pref_dict[patch_name][subject_name]["cum_pref_time"] = cum_pref_time
 
-                self.Preference.insert1(
-                    key
-                    | dict(
-                        patch_name=patch_name,
-                        subject_name=subject_name,
-                        cumulative_preference_by_time=cum_pref_time,
-                        cumulative_preference_by_wheel=cum_pref_dist,
-                        final_preference_by_time=cum_pref_time[-1],
-                        final_preference_by_wheel=cum_pref_dist[-1],
-                    )
+            # sum pref at each ts across patches for each subject
+            total_dist_pref = np.sum(
+                np.vstack(
+                    [all_subj_patch_pref_dict[p][subject_name]["cum_pref_dist"] for p in patch_names]
+                ),
+                axis=0,
+            )
+            total_time_pref = np.sum(
+                np.vstack(
+                    [all_subj_patch_pref_dict[p][subject_name]["cum_pref_time"] for p in patch_names]
+                ),
+                axis=0,
+            )
+            for patch_name in patch_names:
+                cum_pref_dist = all_subj_patch_pref_dict[patch_name][subject_name]["cum_pref_dist"]
+                all_subj_patch_pref_dict[patch_name][subject_name]["running_dist_pref"] = (
+                    cum_pref_dist / total_dist_pref
+                )
+                cum_pref_time = all_subj_patch_pref_dict[patch_name][subject_name]["cum_pref_time"]
+                all_subj_patch_pref_dict[patch_name][subject_name]["running_time_pref"] = (
+                    cum_pref_time / total_time_pref
                 )
 
-
-@schema
-class BlockPlots(dj.Computed):
-    definition = """ 
-    -> BlockAnalysis
-    ---
-    subject_positions_plot: longblob
-    subject_weights_plot: longblob
-    patch_distance_travelled_plot: longblob
-    patch_rate_plot: longblob
-    cumulative_pellet_plot: longblob
-    """
-
-    def make(self, key):
-        # For position data , set confidence threshold to return position values and downsample by 5x
-        conf_thresh = 0.9
-        downsampling_factor = 5
-
-        # Make plotly plots
-        weight_fig = go.Figure()
-        pos_fig = go.Figure()
-        wheel_fig = go.Figure()
-        patch_rate_fig = go.Figure()
-        cumulative_pellet_fig = go.Figure()
-
-        for subject_data in BlockAnalysis.Subject & key:
-            # Subject weight over time
-            weight_fig.add_trace(
-                go.Scatter(
-                    x=subject_data["weight_timestamps"],
-                    y=subject_data["weights"],
-                    mode="lines",
-                    name=subject_data["subject_name"],
-                )
+        self.Preference.insert1(
+            key
+            | dict(
+                patch_name=p,
+                subject_name=s,
+                cumulative_preference_by_time=all_subj_patch_pref_dict[p][s]["cum_pref_time"],
+                cumulative_preference_by_wheel=all_subj_patch_pref_dict[p][s]["cum_pref_dist"],
+                running_preference_by_time=all_subj_patch_pref_dict[p][s]["running_time_pref"],
+                running_preference_by_wheel=all_subj_patch_pref_dict[p][s]["running_dist_pref"],
+                final_preference_by_time=all_subj_patch_pref_dict[p][s]["cum_pref_time"][-1],
+                final_preference_by_wheel=all_subj_patch_pref_dict[p][s]["cum_pref_dist"][-1],
             )
-            # Subject position over time
-            mask = subject_data["position_likelihood"] > conf_thresh
-            pos_fig.add_trace(
-                go.Scatter3d(
-                    x=subject_data["position_x"][mask][::downsampling_factor],
-                    y=subject_data["position_y"][mask][::downsampling_factor],
-                    z=subject_data["position_timestamps"][mask][::downsampling_factor],
-                    mode="lines",
-                    name=subject_data["subject_name"],
-                )
-            )
-
-        # Cumulative wheel distance travelled over time
-        for patch_data in BlockAnalysis.Patch & key:
-            wheel_fig.add_trace(
-                go.Scatter(
-                    x=patch_data["wheel_timestamps"][::2],
-                    y=patch_data["wheel_cumsum_distance_travelled"][::2],
-                    mode="lines",
-                    name=patch_data["patch_name"],
-                )
-            )
-
-        # Create a bar chart for patch rates
-        patch_df = (BlockAnalysis.Patch & key).fetch(format="frame").reset_index()
-        patch_rate_fig = px.bar(
-            patch_df,
-            x="patch_name",
-            y="patch_rate",
-            color="patch_name",
-            title="Patch Stats: Patch Rate for Each Patch",
-            labels={"patch_name": "Patch Name", "patch_rate": "Patch Rate"},
-            text="patch_rate",
-        )
-        patch_rate_fig.update_layout(bargap=0.2, width=600, height=400, template="simple_white")
-
-        # Cumulative pellets per patch over time
-        for _, row in patch_df.iterrows():
-            timestamps = row["pellet_timestamps"]
-            total_pellet_count = list(range(1, row["pellet_count"] + 1))
-
-            cumulative_pellet_fig.add_trace(
-                go.Scatter(x=timestamps, y=total_pellet_count, mode="lines+markers", name=row["patch_name"])
-            )
-
-        cumulative_pellet_fig.update_layout(
-            title="Cumulative Pellet Count Over Time",
-            xaxis_title="Time",
-            yaxis_title="Cumulative Pellet Count",
-            width=800,
-            height=500,
-            legend_title="Patch Name",
-            showlegend=True,
-            template="simple_white",
-        )
-
-        # Insert figures as json-formatted plotly plots
-        self.insert1(
-            {
-                **key,
-                "subject_positions_plot": json.loads(pos_fig.to_json()),
-                "subject_weights_plot": json.loads(weight_fig.to_json()),
-                "patch_distance_travelled_plot": json.loads(wheel_fig.to_json()),
-                "patch_rate_plot": json.loads(patch_rate_fig.to_json()),
-                "cumulative_pellet_plot": json.loads(cumulative_pellet_fig.to_json()),
-            }
+            for p, s in itertools.product(patch_names, subject_names)
         )
 
 
-@schema
-class BlockSubjectPlots(dj.Computed):
+# @schema
+class BlockPatchPlots(dj.Computed):
     definition = """
     -> BlockSubjectAnalysis
     ---
-    dist_pref_plot: longblob  # Cumulative Patch Preference by Wheel Distance - per subject per patch
-    time_pref_plot: longblob  # Cumulative Patch Preference by Time - per subject per patch
+    patch_stats_plot: longblob
+    weights_block_plot: longblob
+    cum_pl_by_patch_plot: longblob
+    cum_pl_per_subject_plot: longblob
+    pellet_delivery_plot: longblob
+    pellet_threshold_plot: longblob
+    cum_wheel_dist_plot: longblob
+    running_pref_by_wheel_dist_plot: longblob
+    running_pref_by_patch_plot: longblob
     """
 
     def make(self, key):
-        from aeon.analysis.block_plotting import (
-            subject_colors,
-            patch_markers_linestyles,
-            patch_markers,
-            gen_hex_grad,
+        # define subject colors and patch styling for plotting
+        exp_subject_names = (acquisition.Experiment.Subject & key).fetch("subject", order_by="subject")
+        if not len(exp_subject_names):
+            raise ValueError(
+                "No subjects found in the `acquisition.Experiment.Subject`, missing a manual insert step?."
+            )
+        subject_colors_dict = gen_subject_colors_dict(exp_subject_names)
+
+        exp_patch_names = np.unique(
+            (streams.UndergroundFeeder & key).fetch(
+                "underground_feeder_name", order_by="underground_feeder_name"
+            )
+        )
+        patch_style_dict = gen_patch_style_dict(exp_patch_names)
+        patch_markers_dict = patch_style_dict["markers"]
+        patch_linestyles_dict = patch_style_dict["linestyles"]
+
+        # Create dataframe for plotting patch stats
+        subj_patch_info = (
+            (BlockSubjectAnalysis.Patch.proj("pellet_timestamps", "patch_threshold") & key)
+            .fetch(format="frame")
+            .reset_index()
+        )
+        patch_info = (BlockAnalysis.Patch & key).fetch(
+            "patch_name", "patch_rate", "patch_offset", as_dict=True
+        )
+        patch_names = list(subj_patch_info["patch_name"].unique())
+        subject_names = list(subj_patch_info["subject_name"].unique())
+
+        # Convert `subj_patch_info` into a form amenable to plotting
+        min_subj_patch_info = subj_patch_info[  # select only relevant columns
+            ["patch_name", "subject_name", "pellet_timestamps", "patch_threshold"]
+        ]
+        min_subj_patch_info = (
+            min_subj_patch_info.explode(["pellet_timestamps", "patch_threshold"], ignore_index=True)
+            .dropna()
+            .reset_index(drop=True)
+        )
+        # Rename and reindex columns
+        min_subj_patch_info.columns = ["patch", "subject", "time", "threshold"]
+        min_subj_patch_info = min_subj_patch_info.reindex(columns=["time", "patch", "threshold", "subject"])
+
+        # Add patch mean values and block-normalized delivery times to pellet info
+        n_patches = len(patch_info)
+        patch_mean_info = pd.DataFrame(index=np.arange(n_patches), columns=min_subj_patch_info.columns)
+        patch_mean_info["subject"] = "mean"
+        patch_mean_info["patch"] = [d["patch_name"] for d in patch_info]
+        patch_mean_info["threshold"] = [((1 / d["patch_rate"]) + d["patch_offset"]) for d in patch_info]
+        patch_mean_info["time"] = subj_patch_info["block_start"][0]
+
+        min_subj_patch_info_plus = pd.concat((patch_mean_info, min_subj_patch_info)).reset_index(drop=True)
+        min_subj_patch_info_plus["norm_time"] = (
+            (min_subj_patch_info_plus["time"] - min_subj_patch_info_plus["time"].iloc[0])
+            / (min_subj_patch_info_plus["time"].iloc[-1] - min_subj_patch_info_plus["time"].iloc[0])
+        ).round(3)
+
+        ## Create cumulative pellet count by subject
+        cum_pel_ct = min_subj_patch_info_plus.sort_values("time").copy().reset_index(drop=True)
+
+        def cumsum_helper(group):
+            group["counter"] = np.arange(len(group)) + 1
+            return group
+
+        patch_means = cum_pel_ct.loc[0:3][["patch", "threshold"]].rename(
+            columns={"threshold": "mean_thresh"}
+        )
+        patch_means["mean_thresh"] = patch_means["mean_thresh"].astype(float).round(1)
+        cum_pel_ct = cum_pel_ct.merge(patch_means, on="patch", how="left")
+
+        cum_pel_ct = cum_pel_ct[~cum_pel_ct["subject"].str.contains("mean")].reset_index(drop=True)
+        cum_pel_ct = (
+            cum_pel_ct.groupby("subject", group_keys=False).apply(cumsum_helper).reset_index(drop=True)
         )
 
-        patch_names, subject_names = (BlockSubjectAnalysis.Preference & key).fetch(
-            "patch_name", "subject_name"
+        make_float_cols = ["threshold", "mean_thresh", "norm_time"]
+        cum_pel_ct[make_float_cols] = cum_pel_ct[make_float_cols].astype(float)
+
+        cum_pel_ct["patch_label"] = (
+            cum_pel_ct["patch"] + " μ: " + cum_pel_ct["mean_thresh"].astype(float).round(1).astype(str)
         )
-        patch_names = np.unique(patch_names)
-        subject_names = np.unique(subject_names)
 
-        all_thresh_vals = np.concatenate((BlockAnalysis.Patch & key).fetch("patch_threshold")).astype(float)
+        cum_pel_ct["norm_thresh_val"] = (
+            (cum_pel_ct["threshold"] - cum_pel_ct["threshold"].min())
+            / (cum_pel_ct["threshold"].max() - cum_pel_ct["threshold"].min())
+        ).round(3)
 
-        dist_pref_fig, time_pref_fig = go.Figure(), go.Figure()
-        for subj_i, subj in enumerate(subject_names):
-            for patch_i, p in enumerate(patch_names):
-                rate, offset, wheel_ts = (BlockAnalysis.Patch & key & {"patch_name": p}).fetch1(
-                    "patch_rate", "patch_offset", "wheel_timestamps"
+        # Sort by 'time' col
+        cum_pel_ct = cum_pel_ct.sort_values("time")
+
+        ## Get wheel timestamps for each patch
+        wheel_ts = (BlockAnalysis.Patch & key).fetch("patch_name", "wheel_timestamps", as_dict=True)
+        wheel_ts = {d["patch_name"]: d["wheel_timestamps"] for d in wheel_ts}
+
+        ## Get subject patch data
+        subj_wheel_cumsum_dist = (BlockSubjectAnalysis.Patch & key).fetch(
+            "subject_name", "patch_name", "wheel_cumsum_distance_travelled", as_dict=True
+        )
+        subj_wheel_cumsum_dist = {
+            (d["subject_name"], d["patch_name"]): d["wheel_cumsum_distance_travelled"]
+            for d in subj_wheel_cumsum_dist
+        }
+
+        # Figure 1. Plot patch stats from dataframe of each pellet threshold per patch
+        box_colors = ["#0A0A0A"] + list(subject_colors_dict.values())  # subject colors + mean color
+
+        patch_stats_fig = px.box(
+            min_subj_patch_info_plus.sort_values("patch"),
+            x="patch",
+            y="threshold",
+            color="subject",
+            hover_data=["norm_time"],
+            color_discrete_sequence=box_colors,
+            # notched=True,
+            points="all",
+        )
+
+        patch_stats_fig.update_layout(
+            title="Patch Stats: Patch Means and Sampled Threshold Values",
+            xaxis_title="Patch",
+            yaxis_title="Threshold (cm)",
+        )
+
+        ## 2. Get subject weights in block
+        weights_block = (
+            (BlockAnalysis.Subject.proj("weights", "weight_timestamps") & key)
+            .fetch(format="frame")
+            .reset_index()
+        )
+        weights_block = (
+            weights_block.explode(["weights", "weight_timestamps"], ignore_index=True)
+            .dropna()
+            .reset_index(drop=True)
+        )
+        weights_block.drop(columns=["experiment_name", "block_start"], inplace=True, errors="ignore")
+        weights_block.rename(columns={"weight_timestamps": "time"}, inplace=True)
+        weights_block.set_index("time", inplace=True)
+        weights_block.sort_index(inplace=True)
+
+        # Figure 2. Plot animal weights in block
+        weights_block_fig = px.line(
+            weights_block,
+            x=weights_block.index,
+            y="weights",
+            color="subject_name",
+            color_discrete_map=subject_colors_dict,
+            markers=True,
+        )
+
+        weights_block_fig.update_traces(line=dict(width=3), marker=dict(size=8))
+
+        weights_block_fig.update_layout(
+            title="Weights in block",
+            xaxis_title="Time",
+            yaxis_title="Weight (g)",
+        )
+
+        # Figure 5a. Cumulative pellet count over time per subject markered by patch
+        cum_pl_by_patch_fig = go.Figure()
+
+        for id_val, id_grp in cum_pel_ct.groupby("subject"):
+            # Add lines by subject
+            cum_pl_by_patch_fig.add_trace(
+                go.Scatter(
+                    x=id_grp["time"],
+                    y=id_grp["counter"],
+                    mode="lines",
+                    line=dict(width=2, color=subject_colors_dict[id_val]),
+                    name=id_val,
                 )
-                patch_thresh, patch_thresh_ts = (BlockAnalysis.Patch & key & {"patch_name": p}).fetch1(
-                    "patch_threshold", "patch_threshold_timestamps"
+            )
+        for patch_val, patch_grp in cum_pel_ct.groupby("patch_label"):
+            # Add markers by patch
+            cum_pl_by_patch_fig.add_trace(
+                go.Scatter(
+                    x=patch_grp["time"],
+                    y=patch_grp["counter"],
+                    mode="markers",
+                    marker=dict(
+                        symbol=patch_markers_dict[patch_grp["patch"].iloc[0]],
+                        color=gen_hex_grad("#d8d8d8", patch_grp["norm_thresh_val"]),
+                        size=8,
+                    ),
+                    name=patch_val,
+                    customdata=np.stack((patch_grp["threshold"],), axis=-1),
+                    hovertemplate="Threshold: %{customdata[0]:.2f} cm",
                 )
-
-                cum_pref_dist, cum_pref_time = (
-                    BlockSubjectAnalysis.Preference & key & {"patch_name": p, "subject_name": subj}
-                ).fetch1("cumulative_preference_by_wheel", "cumulative_preference_by_time")
-                pellet_ts = (
-                    BlockSubjectAnalysis.Patch & key & {"patch_name": p, "subject_name": subj}
-                ).fetch1("pellet_timestamps")
-
-                if not len(pellet_ts):
-                    continue
-
-                patch_thresh = patch_thresh[np.searchsorted(patch_thresh_ts, pellet_ts) - 1]
-                patch_mean = 1 / rate // 100 * 100
-                patch_mean_thresh = patch_mean + offset
-                cum_pel_ct = pd.DataFrame(
-                    index=pellet_ts,
-                    data={
-                        "counter": np.arange(1, len(pellet_ts) + 1),
-                        "threshold": patch_thresh.astype(float),
-                        "mean_thresh": patch_mean_thresh,
-                        "patch_label": f"{p} μ: {patch_mean_thresh}",
-                    },
-                )
-                cum_pel_ct["norm_thresh_val"] = (
-                    (cum_pel_ct["threshold"] - all_thresh_vals.min())
-                    / (all_thresh_vals.max() - all_thresh_vals.min())
-                ).round(3)
-
-                for fig, cum_pref in zip([dist_pref_fig, time_pref_fig], [cum_pref_dist, cum_pref_time]):
-                    fig.add_trace(
-                        go.Scatter(
-                            x=wheel_ts,
-                            y=cum_pref,
-                            mode="lines",  # +  markers",
-                            line=dict(
-                                width=2,
-                                color=subject_colors[subj_i],
-                                dash=patch_markers_linestyles[patch_i],
-                            ),
-                            name=f"{subj} - {p}: μ: {patch_mean}",
-                        )
-                    )
-                    # Add markers for each pellet
-                    cur_cum_pel_ct = pd.merge_asof(
-                        cum_pel_ct.reset_index(names="time"),
-                        pd.DataFrame(index=wheel_ts, data={"cum_pref": cum_pref}).reset_index(names="time"),
-                        on="time",
-                        direction="forward",
-                        tolerance=pd.Timedelta("0.1s"),
-                    )
-                    if not cur_cum_pel_ct.empty:
-                        fig.add_trace(
-                            go.Scatter(
-                                x=cur_cum_pel_ct["time"],
-                                y=cur_cum_pel_ct["cum_pref"],
-                                mode="markers",
-                                marker=dict(
-                                    symbol=patch_markers[patch_i],
-                                    color=gen_hex_grad(
-                                        subject_colors[-1], cur_cum_pel_ct["norm_thresh_val"]
-                                    ),
-                                    size=8,
-                                ),
-                                showlegend=False,
-                                customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
-                                hovertemplate="Threshold: %{customdata[0]:.2f} cm",
-                            )
-                        )
-
-        for fig, title in zip([dist_pref_fig, time_pref_fig], ["Wheel Distance", "Patch Time"]):
-            fig.update_layout(
-                title=f"Cumulative Patch Preference - {title}",
-                xaxis_title="Time",
-                yaxis_title="Pref Index",
-                yaxis=dict(tickvals=np.arange(0, 1.1, 0.1)),
             )
 
-        # Insert figures as json-formatted plotly plots
-        self.insert1(
-            {
-                **key,
-                "dist_pref_plot": json.loads(dist_pref_fig.to_json()),
-                "time_pref_plot": json.loads(time_pref_fig.to_json()),
-            }
+        cum_pl_by_patch_fig.update_layout(
+            title="Cumulative Pellet Count per Subject", xaxis_title="Time", yaxis_title="Count"
         )
+
+        # Figure 5a2. Cumulative pellet count over time, per subject-patch (one line per combo)
+        cum_pl_per_subject_fig = go.Figure()
+        for id_val, id_grp in cum_pel_ct.groupby("subject"):
+            for patch_val, patch_grp in id_grp.groupby("patch"):
+                cur_p_mean = patch_means[patch_means["patch"] == patch_val]["mean_thresh"].values[0]
+                cur_p = patch_val.replace("Patch", "P")
+                cum_pl_per_subject_fig.add_trace(
+                    go.Scatter(
+                        x=patch_grp["time"],
+                        y=np.arange(1, (len(patch_grp) + 1)),
+                        mode="lines+markers",
+                        line=dict(
+                            width=2,
+                            color=subject_colors_dict[id_val],
+                            dash=patch_linestyles_dict[patch_val],
+                        ),
+                        # line=dict(width=2, color=subject_colors_dict[id_val]),
+                        marker=dict(
+                            symbol=patch_markers_dict[patch_val],
+                            color=gen_hex_grad("#d8d8d8", patch_grp["norm_thresh_val"]),
+                            size=8,
+                        ),
+                        name=f"{id_val} - {cur_p} - μ: {cur_p_mean}",
+                        customdata=np.stack((patch_grp["threshold"],), axis=-1),
+                        hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                    )
+                )
+
+        cum_pl_per_subject_fig.update_layout(
+            title="Cumulative Pellet Count per Subject-Patch", xaxis_title="Time", yaxis_title="Count"
+        )
+
+        # Figure 5b. Pellet delivery over time per patch-subject
+        pl_delivery_fig = go.Figure()
+        for id_val, id_grp in cum_pel_ct.groupby("subject"):
+            # Add lines by subject
+            pl_delivery_fig.add_trace(
+                go.Scatter(
+                    x=id_grp["time"],
+                    y=id_grp["patch_label"],
+                    # mode="markers",
+                    mode="lines+markers",
+                    line=dict(width=2, color=subject_colors_dict[id_val]),
+                    marker=dict(
+                        symbol=patch_markers_dict[exp_patch_names[0]],
+                        color=gen_hex_grad(subject_colors_dict[id_val], id_grp["norm_thresh_val"]),
+                        size=8,
+                    ),
+                    name=id_val,
+                    customdata=np.stack((id_grp["threshold"],), axis=-1),
+                    hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                )
+            )
+
+        pl_delivery_fig.update_layout(
+            title="Pellet Delivery Over Time, per Subject and Patch",
+            xaxis_title="Time",
+            yaxis_title="Patch",
+            yaxis={
+                "categoryorder": "array",
+                "categoryarray": cum_pel_ct.sort_values("mean_thresh")[
+                    "patch_label"
+                ].unique(),  # sort y-axis by patch threshold mean
+            },
+        )
+
+        # Figure 5c. Pellet threshold vals over time per patch-subject
+        pl_threshold_fig = go.Figure()
+
+        for id_val, id_grp in cum_pel_ct.groupby("subject"):
+            # Add lines by subject
+            pl_threshold_fig.add_trace(
+                go.Scatter(
+                    x=id_grp["time"],
+                    y=id_grp["threshold"],
+                    mode="lines",
+                    line=dict(width=2, color=subject_colors_dict[id_val]),
+                    name=id_val,
+                )
+            )
+        for patch_val, patch_grp in cum_pel_ct.groupby("patch_label"):
+            # Add markers by patch
+            pl_threshold_fig.add_trace(
+                go.Scatter(
+                    x=patch_grp["time"],
+                    y=patch_grp["threshold"],
+                    mode="markers",
+                    marker=dict(
+                        symbol=patch_markers_dict[patch_grp["patch"].iloc[0]], color="black", size=8
+                    ),
+                    name=patch_val,
+                )
+            )
+
+        pl_threshold_fig.update_layout(
+            title="Pellet Thresholds over Time, per Subject",
+            xaxis_title="Time",
+            yaxis_title="Threshold (cm)",
+        )
+
+        # Figure 6. Cumulative wheel distance over time, per patch, per subject
+        # TODO: we can round all wheel values to the nearest 0.1 cm in the db, and use this for all downstream calcs
+        cum_wheel_dist_fig = go.Figure()
+        # Add trace for each subject-patch combo
+        for subj in subject_names:
+            for patch_name in patch_names:
+                cur_cum_wheel_dist = subj_wheel_cumsum_dist[(subj, patch_name)]
+                cur_p_mean = patch_means[patch_means["patch"] == patch_name]["mean_thresh"].values[0]
+                cur_p = patch_name.replace("Patch", "P")
+                cum_wheel_dist_fig.add_trace(
+                    go.Scatter(
+                        x=wheel_ts[patch_name],
+                        y=cur_cum_wheel_dist,
+                        mode="lines",  # +  markers",
+                        line=dict(
+                            width=2, color=subject_colors_dict[subj], dash=patch_linestyles_dict[patch_name]
+                        ),
+                        name=f"{subj} - {cur_p} - μ: {cur_p_mean}",
+                    )
+                )
+                # Add markers for each pellet
+                cur_cum_pel_ct = pd.merge_asof(
+                    cum_pel_ct[(cum_pel_ct["subject"] == subj) & (cum_pel_ct["patch"] == patch_name)],
+                    pd.DataFrame(
+                        {"time": wheel_ts[patch_name], "cum_wheel_dist": cur_cum_wheel_dist}
+                    ).sort_values("time"),
+                    on="time",
+                    direction="forward",
+                    tolerance=pd.Timedelta("0.1s"),
+                )
+                if not cur_cum_pel_ct.empty:
+                    cum_wheel_dist_fig.add_trace(
+                        go.Scatter(
+                            x=cur_cum_pel_ct["time"],
+                            y=cur_cum_pel_ct["cum_wheel_dist"],
+                            mode="markers",
+                            marker=dict(
+                                symbol=patch_markers_dict[patch_name],
+                                color=gen_hex_grad(subject_colors[-1], cur_cum_pel_ct["norm_thresh_val"]),
+                                size=8,
+                            ),
+                            name=f"{subj} - {cur_p} pellets",
+                            customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
+                            hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                        )
+                    )
+        cum_wheel_dist_fig.update_layout(
+            title="Cumulative Wheel Distance", xaxis_title="Time", yaxis_title="Distance (cm)"
+        )
+
+        # ---- Running preference by wheel and time ----
+        ## Get subject patch preference data
+        patch_pref = (BlockSubjectAnalysis.Preference & key).fetch(format="frame")
+        patch_pref.reset_index(level=["experiment_name", "block_start"], drop=True, inplace=True)
+        # Replace small vals with 0
+        patch_pref["cumulative_preference_by_wheel"] = patch_pref["cumulative_preference_by_wheel"].apply(
+            lambda arr: np.where(np.array(arr) < 1e-3, 0, np.array(arr))
+        )
+        ## Calculate running preference by wheel and time
+        # TODO: Store the running preference (as calculated here) in the db as well
+
+        def calculate_running_preference(group, pref_col, out_col):
+            total_pref = np.sum(np.vstack(group[pref_col].values), axis=0)  # sum pref at each ts
+            group[out_col] = group[pref_col].apply(
+                lambda x: np.nan_to_num(x / total_pref, 0.0)
+            )  # running pref
+            return group
+
+        patch_pref = (
+            patch_pref.groupby("subject_name")
+            .apply(
+                lambda group: calculate_running_preference(
+                    group, "cumulative_preference_by_wheel", "running_preference_by_wheel"
+                )
+            )
+            .droplevel(0)
+        )
+
+        patch_pref = (
+            patch_pref.groupby("subject_name")
+            .apply(
+                lambda group: calculate_running_preference(
+                    group, "cumulative_preference_by_time", "running_preference_by_time"
+                )
+            )
+            .droplevel(0)
+        )
+
+        # Figure 7a. Patch Preference: Running, normalized, by wheel_distance and in_patch_time
+        running_pref_by_wd_plot = go.Figure()
+        # Add trace for each subject-patch combo
+        for subj in subject_names:
+            for patch_name in patch_names:
+                cur_run_wheel_pref = patch_pref.loc[patch_name].loc[subj]["running_preference_by_wheel"]
+                cur_p_mean = patch_means[patch_means["patch"] == patch_name]["mean_thresh"].values[0]
+                cur_p = patch_name.replace("Patch", "P")
+                running_pref_by_wd_plot.add_trace(
+                    go.Scatter(
+                        x=wheel_ts[patch_name],
+                        y=cur_run_wheel_pref,
+                        mode="lines",
+                        line=dict(
+                            width=2, color=subject_colors_dict[subj], dash=patch_linestyles_dict[patch_name]
+                        ),
+                        name=f"{subj} - {cur_p} - μ: {cur_p_mean}",
+                    )
+                )
+                # Add markers for each pellet
+                cur_cum_pel_ct = pd.merge_asof(
+                    cum_pel_ct[(cum_pel_ct["subject"] == subj) & (cum_pel_ct["patch"] == patch_name)],
+                    pd.DataFrame(
+                        {"time": wheel_ts[patch_name], "run_wheel_pref": cur_run_wheel_pref}
+                    ).sort_values("time"),
+                    on="time",
+                    direction="forward",
+                    tolerance=pd.Timedelta("0.1s"),
+                )
+                if not cur_cum_pel_ct.empty:
+                    running_pref_by_wd_plot.add_trace(
+                        go.Scatter(
+                            x=cur_cum_pel_ct["time"],
+                            y=cur_cum_pel_ct["run_wheel_pref"],
+                            mode="markers",
+                            marker=dict(
+                                symbol=patch_markers_dict[patch_name],
+                                color=gen_hex_grad(subject_colors[-1], cur_cum_pel_ct["norm_thresh_val"]),
+                                size=8,
+                            ),
+                            name=f"{subj} - {cur_p} pellets",
+                            customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
+                            hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                        )
+                    )
+        running_pref_by_wd_plot.update_layout(
+            title="Running Patch Preference - Wheel Distance",
+            xaxis_title="Time",
+            yaxis_title="Preference",
+            yaxis=dict(tickvals=np.arange(0, 1.1, 0.1)),
+        )
+
+        # Figure 7b. Running preference by time in patch
+        running_pref_by_patch_fig = go.Figure()
+        # Add trace for each subject-patch combo
+        for subj in subject_names:
+            for patch_name in patch_names:
+                cur_run_time_pref = patch_pref.loc[patch_name].loc[subj]["running_preference_by_time"]
+                cur_p_mean = patch_means[patch_means["patch"] == patch_name]["mean_thresh"].values[0]
+                cur_p = patch_name.replace("Patch", "P")
+                running_pref_by_patch_fig.add_trace(
+                    go.Scatter(
+                        x=wheel_ts[patch_name],
+                        y=cur_run_time_pref,
+                        mode="lines",
+                        line=dict(
+                            width=2, color=subject_colors_dict[subj], dash=patch_linestyles_dict[patch_name]
+                        ),
+                        name=f"{subj} - {cur_p} - μ: {cur_p_mean}",
+                    )
+                )
+                # Add markers for each pellet
+                cur_cum_pel_ct = pd.merge_asof(
+                    cum_pel_ct[(cum_pel_ct["subject"] == subj) & (cum_pel_ct["patch"] == patch_name)],
+                    pd.DataFrame(
+                        {"time": wheel_ts[patch_name], "run_time_pref": cur_run_time_pref}
+                    ).sort_values("time"),
+                    on="time",
+                    direction="forward",
+                    tolerance=pd.Timedelta("0.1s"),
+                )
+                if not cur_cum_pel_ct.empty:
+                    running_pref_by_patch_fig.add_trace(
+                        go.Scatter(
+                            x=cur_cum_pel_ct["time"],
+                            y=cur_cum_pel_ct["run_time_pref"],
+                            mode="markers",
+                            marker=dict(
+                                symbol=patch_markers_dict[patch_name],
+                                color=gen_hex_grad(subject_colors[-1], cur_cum_pel_ct["norm_thresh_val"]),
+                                size=8,
+                            ),
+                            name=f"{subj} - {cur_p} pellets",
+                            customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
+                            hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                        )
+                    )
+        running_pref_by_patch_fig.update_layout(
+            title="Running Patch Preference - Time in Patch",
+            xaxis_title="Time",
+            yaxis_title="Preference",
+            yaxis=dict(tickvals=np.arange(0, 1.1, 0.1)),
+        )
+
+        entry = dict(key)
+        for fig, fig_name in zip(
+            [
+                patch_stats_fig,
+                weights_block_fig,
+                cum_pl_by_patch_fig,
+                cum_pl_per_subject_fig,
+                pl_delivery_fig,
+                pl_threshold_fig,
+                cum_wheel_dist_fig,
+                running_pref_by_wd_plot,
+                running_pref_by_patch_fig,
+            ],
+            [
+                "patch_stats_plot",
+                "weights_block_plot",
+                "cum_pl_by_patch_plot",
+                "cum_pl_per_subject_plot",
+                "pellet_delivery_plot",
+                "pellet_threshold_plot",
+                "cum_wheel_dist_plot",
+                "running_pref_by_wheel_dist_plot",
+                "running_pref_by_patch_plot",
+            ],
+        ):
+            entry[fig_name] = json.loads(fig.to_json())
+
+        self.insert1(entry)
+
+
+# @schema
+class BlockSubjectPositionPlots(dj.Computed):
+    definition = """
+    -> BlockSubjectAnalysis
+    ---
+    ethogram_data: longblob  # ethogram data in record array format
+    position_plot: longblob  # position plot (plotly)
+    position_heatmap_plot: longblob  # position heatmap plot (plotly)
+    position_ethogram_plot: longblob  # position ethogram plot (plotly)
+    """
+
+    def make(self, key):
+        block_start, block_end = (Block & key).fetch1("block_start", "block_end")
+
+        chunk_restriction = acquisition.create_chunk_restriction(
+            key["experiment_name"], block_start, block_end
+        )
+
+        exp_patch_names = np.unique(
+            (streams.UndergroundFeeder & key).fetch(
+                "underground_feeder_name", order_by="underground_feeder_name"
+            )
+        )
+
+        ## 3. Animal position in block
+        pose_query = (
+            streams.SpinnakerVideoSource
+            * tracking.SLEAPTracking.PoseIdentity.proj(
+                "identity_name", "identity_likelihood", part_name="anchor_part"
+            )
+            * tracking.SLEAPTracking.Part
+            & {"spinnaker_video_source_name": "CameraTop"}
+            & key
+            & chunk_restriction
+        )
+        centroid_df = fetch_stream(pose_query)[block_start:block_end]
+        centroid_df = (
+            centroid_df.groupby("identity_name")
+            .resample("100ms")
+            .first()
+            .droplevel("identity_name")
+            .dropna()
+            .sort_index()
+        )
+        centroid_df.drop(columns=["spinnaker_video_source_name"], inplace=True)
+        centroid_df["x"], centroid_df["y"] = (
+            centroid_df["x"].astype(np.int32),
+            centroid_df["y"].astype(np.int32),
+        )
+
+        # 4. Position heatmaps per subject
+        max_x, max_y = int(centroid_df["x"].max()), int(centroid_df["y"].max())
+        heatmaps = []
+        for id_i, (id_val, id_grp) in enumerate(centroid_df.groupby("identity_name")):
+            # <s Add counts of x,y points to a grid that will be used for heatmap
+            img_grid = np.zeros((max_x + 1, max_y + 1))
+            points, counts = np.unique(id_grp[["x", "y"]].values, return_counts=True, axis=0)
+            for point, count in zip(points, counts):
+                img_grid[point[0], point[1]] = count
+            img_grid /= img_grid.max()  # normalize
+            # /s>
+            # <s Smooth `img_grid`
+            # Mice can go ~450 cm/s, we've downsampled to 10 frames/s, we have 200 px / 1000 cm,
+            # so 45 cm/frame ~= 9 px/frame
+            win_sz = 9  # in pixels  (ensure odd for centering)
+            kernel = np.ones((win_sz, win_sz)) / win_sz**2  # moving avg kernel
+            img_grid_p = np.pad(img_grid, win_sz // 2, mode="edge")  # pad for full output from convolution
+            img_grid_smooth = conv2d(img_grid_p, kernel)
+            heatmaps.append((id_val, img_grid_smooth))
+
+        # 5. Position ethogram per subject
+        # get Active Region (ROI) locations
+        epoch_query = acquisition.Epoch & (acquisition.Chunk & key & chunk_restriction).proj("epoch_start")
+        active_region_query = acquisition.EpochConfig.ActiveRegion & epoch_query
+        roi_locs = {n: d for n, d in zip(*active_region_query.fetch("region_name", "region_data"))}
+        # get RFID reader locations
+        recent_rfid_query = (acquisition.Experiment.proj() * streams.Device.proj() & key).aggr(
+            streams.RfidReader & f"rfid_reader_install_time <= '{block_start}'",
+            rfid_reader_install_time="max(rfid_reader_install_time)",
+        )
+        rfid_location_query = (
+            streams.RfidReader * streams.RfidReader.Attribute
+            & recent_rfid_query
+            & "attribute_name = 'Location'"
+        )
+        rfid_locs = {
+            n: d for n, d in zip(*rfid_location_query.fetch("rfid_reader_name", "attribute_value"))
+        }
+        rfid_names = list(rfid_locs)
+
+        ## Create position ethogram df
+        arena_center_x = int(roi_locs["ArenaCenter"]["X"])
+        arena_center_y = int(roi_locs["ArenaCenter"]["Y"])
+        arena_center = (arena_center_x, arena_center_y)
+        arena_inner_radius = int(roi_locs["ArenaInnerRadius"])
+        arena_outer_radius = int(roi_locs["ArenaOuterRadius"])
+
+        patch_radius, gate_radius = 120, 30  # in px
+        rois = exp_patch_names + ["Nest", "Gate", "Corridor"]  # ROIs: patches, nest, gate, corridor
+        roi_colors = plotly.colors.qualitative.Dark2
+        roi_colors_dict = {roi: roi_c for (roi, roi_c) in zip(rois, roi_colors)}
+        pos_eth_df = pd.DataFrame(
+            columns=(["Subject"] + rois), index=centroid_df.index
+        )  # df to create eth fig
+        pos_eth_df["Subject"] = centroid_df["identity_name"]
+
+        # For each ROI, compute if within ROI
+        for roi in rois:
+            if roi == "Corridor":  # special case for corridor, based on between inner and outer radius
+                dist = np.linalg.norm(
+                    (np.vstack((centroid_df["x"], centroid_df["y"])).T) - arena_center, axis=1
+                )
+                pos_eth_df[roi] = (dist >= arena_inner_radius) & (dist <= arena_outer_radius)
+            elif roi == "Nest":  # special case for nest, based on 4 corners
+                nest_corners = roi_locs["NestRegion"]["ArrayOfPoint"]
+                nest_br_x, nest_br_y = int(nest_corners[0]["X"]), int(nest_corners[0]["Y"])
+                nest_bl_x, nest_bl_y = int(nest_corners[1]["X"]), int(nest_corners[1]["Y"])
+                nest_tl_x, nest_tl_y = int(nest_corners[2]["X"]), int(nest_corners[2]["Y"])
+                nest_tr_x, nest_tr_y = int(nest_corners[3]["X"]), int(nest_corners[3]["Y"])
+                pos_eth_df[roi] = (
+                    (centroid_df["x"] <= nest_br_x)
+                    & (centroid_df["y"] >= nest_br_y)
+                    & (centroid_df["x"] >= nest_bl_x)
+                    & (centroid_df["y"] >= nest_bl_y)
+                    & (centroid_df["x"] >= nest_tl_x)
+                    & (centroid_df["y"] <= nest_tl_y)
+                    & (centroid_df["x"] <= nest_tr_x)
+                    & (centroid_df["y"] <= nest_tr_y)
+                )
+            else:
+                roi_radius = gate_radius if roi == "Gate" else patch_radius
+                # Get ROI coords
+                roi_x, roi_y = int(rfid_locs[roi + "Rfid"]["X"]), int(rfid_locs[roi + "Rfid"]["Y"])
+                # Check if in ROI
+                dist = np.linalg.norm(
+                    (np.vstack((centroid_df["x"], centroid_df["y"])).T) - (roi_x, roi_y), axis=1
+                )
+                pos_eth_df[roi] = dist < roi_radius
+
+        # 3. Plot position (centroid) over time
+        position_fig = go.Figure()
+        for id_i, (id_val, id_grp) in enumerate(centroid_df.groupby("identity_name")):
+            norm_time = (
+                (id_grp.index - id_grp.index[0]) / (id_grp.index[-1] - id_grp.index[0])
+            ).values.round(3)
+            colors = gen_hex_grad(subject_colors[id_i], norm_time)
+            position_fig.add_trace(
+                go.Scatter(
+                    x=id_grp["x"],
+                    y=id_grp["y"],
+                    mode="markers",
+                    name=id_val,
+                    marker={
+                        # "opacity": norm_time,
+                        "color": colors,
+                        "size": 4,
+                    },
+                )
+            )
+        position_fig.update_layout(
+            title="Position Tracking over Time",
+            xaxis_title="X Coordinate",
+            yaxis_title="Y Coordinate",
+        )
+
+        # 4. Plot position heatmaps per subject
+        for id_val, img_grid_smooth in heatmaps:
+            pos_heatmap_fig = px.imshow(
+                img_grid_smooth.T,
+                zmin=0,
+                zmax=(img_grid_smooth.max() / 1000),
+                x=np.arange(img_grid.shape[0]),
+                y=np.arange(img_grid.shape[1]),
+                labels=dict(x="X", y="Y", color="Norm Freq / 1e3"),
+                aspect="auto",
+            )
+            pos_heatmap_fig.update_layout(title=f"Position Heatmap ({id_val})")
+
+        # 5. Plot position ethogram per subject
+        # Melt df to a single "Loc" column that contains loc for current time (row)
+        pos_eth_df = pos_eth_df.iloc[::100]  # downsample to 10s bins
+        melted_df = pos_eth_df.reset_index().melt(
+            id_vars=["time", "Subject"], var_name="Loc", value_name="Val"
+        )
+        melted_df = melted_df[melted_df["Val"]]
+
+        # Plot using Plotly Express
+        pos_etho_fig = px.scatter(
+            melted_df,
+            x="time",
+            y="Subject",
+            color="Loc",
+            color_discrete_map=roi_colors_dict,
+        )
+
+        pos_etho_fig.update_layout(
+            title="Position Ethogram",
+            xaxis_title="Time",
+            yaxis_title="Subject",
+            width=1000,
+            height=250,
+            yaxis=dict(
+                categoryorder="total ascending",
+                categoryarray=sorted(melted_df["Subject"].unique()),
+                tickmode="array",
+                tickvals=sorted(melted_df["Subject"].unique()),
+                ticktext=sorted(melted_df["Subject"].unique()),
+            ),
+        )
+
+        entry = dict(key)
+        for fig, fig_name in zip(
+            [position_fig, pos_heatmap_fig, pos_etho_fig],
+            ["position_plot", "position_heatmap_plot", "position_ethogram_plot"],
+        ):
+            entry[fig_name] = json.loads(fig.to_json())
+
+        melted_df.drop(columns=["Val"], inplace=True)
+        entry["ethogram_data"] = melted_df.to_records(index=False)
+
+        self.insert1(entry)
 
 
 # ---- AnalysisNote ----
@@ -774,6 +1342,7 @@ class AnalysisNote(dj.Manual):
     note_type='': varchar(64)
     note: varchar(3000)
     """
+
 
 # ---- Helper Functions ----
 
@@ -790,9 +1359,7 @@ def get_threshold_associated_pellets(patch_key, start, end):
     4. Shift back the pellet delivery timestamps by 1 to match the pellet delivery with the previous threshold update
     5. Remove all threshold updates events "A" without a corresponding pellet delivery event "B"
     """
-    chunk_restriction = acquisition.create_chunk_restriction(
-        patch_key["experiment_name"], start, end
-    )
+    chunk_restriction = acquisition.create_chunk_restriction(patch_key["experiment_name"], start, end)
     # pellet delivery and patch threshold data
     delivered_pellet_df = fetch_stream(
         streams.UndergroundFeederDeliverPellet & patch_key & chunk_restriction
