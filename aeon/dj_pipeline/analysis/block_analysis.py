@@ -584,7 +584,7 @@ class BlockSubjectAnalysis(dj.Computed):
         )
 
 
-# @schema
+@schema
 class BlockPatchPlots(dj.Computed):
     definition = """
     -> BlockSubjectAnalysis
@@ -1082,7 +1082,7 @@ class BlockPatchPlots(dj.Computed):
         self.insert1(entry)
 
 
-# @schema
+@schema
 class BlockSubjectPositionPlots(dj.Computed):
     definition = """
     -> BlockSubjectAnalysis
@@ -1180,7 +1180,7 @@ class BlockSubjectPositionPlots(dj.Computed):
         arena_outer_radius = int(roi_locs["ArenaOuterRadius"])
 
         patch_radius, gate_radius = 120, 30  # in px
-        rois = exp_patch_names + ["Nest", "Gate", "Corridor"]  # ROIs: patches, nest, gate, corridor
+        rois = list(exp_patch_names) + ["Nest", "Gate", "Corridor"]  # ROIs: patches, nest, gate, corridor
         roi_colors = plotly.colors.qualitative.Dark2
         roi_colors_dict = {roi: roi_c for (roi, roi_c) in zip(rois, roi_colors)}
         pos_eth_df = pd.DataFrame(
