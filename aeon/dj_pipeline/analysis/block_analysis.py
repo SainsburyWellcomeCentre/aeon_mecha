@@ -364,8 +364,8 @@ class BlockSubjectAnalysis(dj.Computed):
         ---
         cumulative_preference_by_wheel: longblob
         cumulative_preference_by_time: longblob
-        running_preference_by_time: longblob
-        running_preference_by_wheel: longblob
+        running_preference_by_time=null: longblob
+        running_preference_by_wheel=null: longblob
         final_preference_by_wheel=null: float  # cumulative_preference_by_wheel at the end of the block
         final_preference_by_time=null: float  # cumulative_preference_by_time at the end of the block
         """
@@ -400,7 +400,14 @@ class BlockSubjectAnalysis(dj.Computed):
         self.insert1(key)
 
         in_patch_radius = 130  # pixels
-        pref_attrs = ["cum_dist", "cum_time", "cum_pref_dist", "cum_pref_time"]
+        pref_attrs = [
+            "cum_dist",
+            "cum_time",
+            "running_dist_pref",
+            "running_time_pref",
+            "cum_pref_dist",
+            "cum_pref_time",
+        ]
         all_subj_patch_pref_dict = {
             p: {s: {a: pd.Series() for a in pref_attrs} for s in subject_names} for p in patch_names
         }
@@ -553,17 +560,17 @@ class BlockSubjectAnalysis(dj.Computed):
             )
             for patch_name in patch_names:
                 cum_pref_dist = all_subj_patch_pref_dict[patch_name][subject_name]["cum_pref_dist"]
-                all_subj_patch_pref_dict[patch_name][subject_name]["running_dist_pref"] = (
-                    cum_pref_dist / total_dist_pref
+                all_subj_patch_pref_dict[patch_name][subject_name]["running_dist_pref"] = np.divide(
+                    cum_pref_dist, total_dist_pref, out=np.zeros_like(cum_pref_dist), where=total_dist_pref != 0
                 )
                 cum_pref_time = all_subj_patch_pref_dict[patch_name][subject_name]["cum_pref_time"]
-                all_subj_patch_pref_dict[patch_name][subject_name]["running_time_pref"] = (
-                    cum_pref_time / total_time_pref
+                all_subj_patch_pref_dict[patch_name][subject_name]["running_time_pref"] = np.divide(
+                    cum_pref_time, total_time_pref, out=np.zeros_like(cum_pref_time), where=total_time_pref != 0
                 )
 
-        self.Preference.insert1(
-            key
-            | dict(
+        self.Preference.insert(
+            dict(
+                key,
                 patch_name=p,
                 subject_name=s,
                 cumulative_preference_by_time=all_subj_patch_pref_dict[p][s]["cum_pref_time"],
@@ -940,39 +947,6 @@ class BlockPatchPlots(dj.Computed):
         ## Get subject patch preference data
         patch_pref = (BlockSubjectAnalysis.Preference & key).fetch(format="frame")
         patch_pref.reset_index(level=["experiment_name", "block_start"], drop=True, inplace=True)
-        # Replace small vals with 0
-        patch_pref["cumulative_preference_by_wheel"] = patch_pref["cumulative_preference_by_wheel"].apply(
-            lambda arr: np.where(np.array(arr) < 1e-3, 0, np.array(arr))
-        )
-        ## Calculate running preference by wheel and time
-        # TODO: Store the running preference (as calculated here) in the db as well
-
-        def calculate_running_preference(group, pref_col, out_col):
-            total_pref = np.sum(np.vstack(group[pref_col].values), axis=0)  # sum pref at each ts
-            group[out_col] = group[pref_col].apply(
-                lambda x: np.nan_to_num(x / total_pref, 0.0)
-            )  # running pref
-            return group
-
-        patch_pref = (
-            patch_pref.groupby("subject_name")
-            .apply(
-                lambda group: calculate_running_preference(
-                    group, "cumulative_preference_by_wheel", "running_preference_by_wheel"
-                )
-            )
-            .droplevel(0)
-        )
-
-        patch_pref = (
-            patch_pref.groupby("subject_name")
-            .apply(
-                lambda group: calculate_running_preference(
-                    group, "cumulative_preference_by_time", "running_preference_by_time"
-                )
-            )
-            .droplevel(0)
-        )
 
         # Figure 7a. Patch Preference: Running, normalized, by wheel_distance and in_patch_time
         running_pref_by_wd_plot = go.Figure()
