@@ -735,7 +735,7 @@ SciViz:
             comp9:
               route: /per_block_running_pref_by_wheel_dist_plot
               x: 0
-              y: 3.2
+              y: 3.3
               height: 0.4
               width: 0.6
               type: plot:plotly:stored_json
@@ -750,7 +750,7 @@ SciViz:
             comp10:
               route: /per_block_running_pref_by_patch_plot
               x: 0
-              y: 3.6
+              y: 3.7
               height: 0.4
               width: 0.6
               type: plot:plotly:stored_json
@@ -765,7 +765,7 @@ SciViz:
             comp11:
               route: /per_block_position_ethogram_plot
               x: 0
-              y: 4.0
+              y: 4.1
               height: 0.4
               width: 0.6
               type: plot:plotly:stored_json
@@ -780,7 +780,7 @@ SciViz:
             comp12:
               route: /per_block_position_heatmap_plot
               x: 0
-              y: 4.4
+              y: 4.5
               height: 0.4
               width: 0.6
               type: plot:plotly:stored_json
@@ -795,7 +795,7 @@ SciViz:
             comp13:
               route: /per_block_position_plot
               x: 0
-              y: 4.8
+              y: 4.9
               height: 0.4
               width: 0.6
               type: plot:plotly:stored_json
