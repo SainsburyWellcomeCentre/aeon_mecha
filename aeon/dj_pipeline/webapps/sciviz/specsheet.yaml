@@ -765,7 +765,7 @@ SciViz:
             comp11:
               route: /per_block_position_ethogram_plot
               x: 0
-              y: 2.9
+              y: 4.0
               height: 0.4
               width: 0.6
               type: plot:plotly:stored_json
@@ -780,7 +780,7 @@ SciViz:
             comp12:
               route: /per_block_position_heatmap_plot
               x: 0
-              y: 3.2
+              y: 4.4
               height: 0.4
               width: 0.6
               type: plot:plotly:stored_json
@@ -795,7 +795,7 @@ SciViz:
             comp13:
               route: /per_block_position_plot
               x: 0
-              y: 3.6
+              y: 4.8
               height: 0.4
               width: 0.6
               type: plot:plotly:stored_json
