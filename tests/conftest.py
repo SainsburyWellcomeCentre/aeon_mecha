@@ -19,8 +19,7 @@ _populate_settings = {"suppress_errors": True}
 
 
 def data_dir():
-    """Returns test data directory
-    """
+    """Returns test data directory"""
     return os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
 
 
@@ -53,9 +52,7 @@ def dj_config():
     dj.config.load(dj_config_fp)
     dj.config["safemode"] = False
     assert "custom" in dj.config
-    dj.config["custom"][
-        "database.prefix"
-    ] = f"u_{dj.config['database.user']}_testsuite_"
+    dj.config["custom"]["database.prefix"] = f"u_{dj.config['database.user']}_testsuite_"
 
 
 def load_pipeline():
