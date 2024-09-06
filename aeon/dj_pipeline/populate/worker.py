@@ -48,7 +48,6 @@ def ingest_environment_visits():
     """Extract and insert complete visits for experiments specified in AutomatedExperimentIngestion."""
     experiment_names = AutomatedExperimentIngestion.fetch("experiment_name")
     # analysis.ingest_environment_visits(experiment_names)
-    pass
 
 
 # ---- Define worker(s) ----

@@ -57,11 +57,10 @@ def data_copy(restriction, table_block_list, batch_size=None):
 
 
 def validate():
-    """
-    Validation of schemas migration
-        1. for the provided list of schema names - validate all schemas have been migrated
-        2. for each schema - validate all tables have been migrated
-        3. for each table, validate all entries have been migrated
+    """Validation of schemas migration
+    1. for the provided list of schema names - validate all schemas have been migrated
+    2. for each schema - validate all tables have been migrated
+    3. for each table, validate all entries have been migrated
     """
     missing_schemas = []
     missing_tables = {}

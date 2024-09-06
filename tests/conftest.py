@@ -1,5 +1,4 @@
-"""
-# run all tests:
+"""# run all tests:
 # pytest -sv --cov-report term-missing --cov=aeon_mecha -p no:warnings tests/dj_pipeline
 
 # run one test, debug:
@@ -20,8 +19,7 @@ _populate_settings = {"suppress_errors": True}
 
 
 def data_dir():
-    """
-    Returns test data directory
+    """Returns test data directory
     """
     return os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
 

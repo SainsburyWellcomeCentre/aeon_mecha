@@ -1,6 +1,6 @@
 import aeon.io.reader as _reader
-from aeon.schema.streams import Stream, StreamGroup
 from aeon.schema import core, foraging
+from aeon.schema.streams import Stream, StreamGroup
 
 
 class Environment(StreamGroup):

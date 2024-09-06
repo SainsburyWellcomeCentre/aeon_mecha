@@ -77,7 +77,7 @@ class CameraQC(dj.Imported):
                 "devices_schema_name"
             ),
         )
-        stream_reader = getattr(getattr(devices_schema, device_name), "Video")
+        stream_reader = getattr(devices_schema, device_name).Video
 
         videodata = io_api.load(
             root=data_dirs,

@@ -604,8 +604,7 @@ def _match_experiment_directory(experiment_name, path, directories):
 
 
 def create_chunk_restriction(experiment_name, start_time, end_time):
-    """
-    Create a time restriction string for the chunks between the specified "start" and "end" times
+    """Create a time restriction string for the chunks between the specified "start" and "end" times
     """
     start_restriction = f'"{start_time}" BETWEEN chunk_start AND chunk_end'
     end_restriction = f'"{end_time}" BETWEEN chunk_start AND chunk_end'

@@ -44,8 +44,7 @@ def insert_stream_types():
 
 
 def insert_device_types(devices_schema: DotMap, metadata_yml_filepath: Path):
-    """
-    Use aeon.schema.schemas and metadata.yml to insert into streams.DeviceType and streams.Device.
+    """Use aeon.schema.schemas and metadata.yml to insert into streams.DeviceType and streams.Device.
     Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml.
     It then creates new device tables under streams schema.
     """

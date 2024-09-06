@@ -10,8 +10,7 @@ file_name = "exp0.2-r0-20220524090000-21053810-20220524082942-0-0.npy"  # test f
 
 
 def save_test_data(pipeline, test_params):
-    """save test dataset fetched from tracking.CameraTracking.Object"""
-
+    """Save test dataset fetched from tracking.CameraTracking.Object"""
     tracking = pipeline["tracking"]
 
     key = tracking.CameraTracking.Object().fetch("KEY")[index]

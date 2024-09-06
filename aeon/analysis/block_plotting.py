@@ -1,17 +1,7 @@
-import os
-import pathlib
 from colorsys import hls_to_rgb, rgb_to_hls
-from contextlib import contextmanager
-from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 import plotly
-import plotly.express as px
-import plotly.graph_objs as go
-import seaborn as sns
-from numpy.lib.stride_tricks import as_strided
 
 """Standardize subject colors, patch colors, and markers."""
 
@@ -36,7 +26,7 @@ patch_markers = [
 ]
 patch_markers_symbols = ["●", "⧓", "■", "⧗", "♦", "✖", "×", "▲", "★"]
 patch_markers_dict = {
-    marker: symbol for marker, symbol in zip(patch_markers, patch_markers_symbols)
+    marker: symbol for marker, symbol in zip(patch_markers, patch_markers_symbols, strict=False)
 }
 patch_markers_linestyles = ["solid", "dash", "dot", "dashdot", "longdashdot"]
 

@@ -14,7 +14,7 @@ def frames(data):
     filename = None
     index = 0
     try:
-        for frameidx, path in zip(data._frame, data._path):
+        for frameidx, path in zip(data._frame, data._path, strict=False):
             if filename != path:
                 if capture is not None:
                     capture.release()
