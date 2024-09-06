@@ -143,6 +143,10 @@ extend-exclude = [
 "tests/*" = [
   "D103",    # skip adding docstrings for public functions
 ]
+"aeon/schema/*" = [
+  "D101",    # skip adding docstrings for schema classes
+  "D106",    # skip adding docstrings for nested streams
+]
 "aeon/dj_pipeline/*" = [
   "B006",
   "B021",
