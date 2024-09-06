@@ -37,7 +37,8 @@ for device in devicenames:
             max_harp_delta = deltas.time_delta.max().total_seconds()
             max_camera_delta = deltas.hw_timestamp_delta.max() / 1e9  # convert nanoseconds to seconds
             print(
-                f"drops: {drop_count - frame_offset} frameOffset: {drop_count}  maxHarpDelta: {max_harp_delta} s  maxCameraDelta: {max_camera_delta} s"
+                f"drops: {drop_count - frame_offset} frameOffset: {drop_count}  "
+                + "maxHarpDelta: {max_harp_delta} s  maxCameraDelta: {max_camera_delta} s"
             )
             stats.append((drop_count, max_harp_delta, max_camera_delta, chunk.path))
             deltas.set_index(data.time, inplace=True)

@@ -25,9 +25,7 @@ patch_markers = [
     "star",
 ]
 patch_markers_symbols = ["●", "⧓", "■", "⧗", "♦", "✖", "×", "▲", "★"]
-patch_markers_dict = {
-    marker: symbol for marker, symbol in zip(patch_markers, patch_markers_symbols, strict=False)
-}
+patch_markers_dict = dict(zip(patch_markers, patch_markers_symbols, strict=False))
 patch_markers_linestyles = ["solid", "dash", "dot", "dashdot", "longdashdot"]
 
 
@@ -40,7 +38,9 @@ def gen_hex_grad(hex_col, vals, min_l=0.3):
         cur_l = (l * val) + (min_l * (1 - val))  # get cur lightness relative to `hex_col`
         cur_l = max(min(cur_l, l), min_l)  # set min, max bounds
         cur_rgb_col = hls_to_rgb(h, cur_l, s)  # convert to rgb
-        cur_hex_col = "#%02x%02x%02x" % tuple(int(c * 255) for c in cur_rgb_col)  # convert to hex
+        cur_hex_col = "#{:02x}{:02x}{:02x}".format(
+            *tuple(int(c * 255) for c in cur_rgb_col)
+        )  # convert to hex
         grad[i] = cur_hex_col
 
     return grad

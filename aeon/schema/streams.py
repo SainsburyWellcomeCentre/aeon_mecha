@@ -67,6 +67,7 @@ class Device:
                 warn(
                     f"Stream group classes with default constructors are deprecated. {factory}",
                     category=DeprecationWarning,
+                    stacklevel=2,
                 )
                 for method in vars(factory).values():
                     if isinstance(method, staticmethod):

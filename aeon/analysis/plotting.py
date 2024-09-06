@@ -6,7 +6,7 @@ import pandas as pd
 from matplotlib import colors
 from matplotlib.collections import LineCollection
 
-from aeon.analysis.utils import *
+from aeon.analysis.utils import rate, sessiontime
 
 
 def heatmap(position, frequency, ax=None, **kwargs):
@@ -60,8 +60,9 @@ def rateplot(
     ax=None,
     **kwargs,
 ):
-    """Plot the continuous event rate and raster of a discrete event sequence, given the specified
-    window size and sampling frequency.
+    """Plot the continuous event rate and raster of a discrete event sequence.
+
+    The window size and sampling frequency can be specified.
 
     :param Series events: The discrete sequence of events.
     :param offset window: The time period of each window used to compute the rate.
@@ -69,7 +70,7 @@ def rateplot(
     :param number, optional weight: A weight used to scale the continuous rate of each window.
     :param datetime, optional start: The left bound of the time range for the continuous rate.
     :param datetime, optional end: The right bound of the time range for the continuous rate.
-    :param datetime, optional smooth: The size of the smoothing kernel applied to the continuous rate output.
+    :param datetime, optional smooth: The size of the smoothing kernel applied to the rate output.
     :param DateOffset, Timedelta or str, optional smooth:
     The size of the smoothing kernel applied to the continuous rate output.
     :param bool, optional center: Specifies whether to center the convolution kernels.
@@ -108,8 +109,8 @@ def colorline(
     x,
     y,
     z=None,
-    cmap=plt.get_cmap("copper"),
-    norm=plt.Normalize(0.0, 1.0),
+    cmap=None,
+    norm=None,
     ax=None,
     **kwargs,
 ):
@@ -128,6 +129,10 @@ def colorline(
         ax = plt.gca()
     if z is None:
         z = np.linspace(0.0, 1.0, len(x))
+    if cmap is None:
+        cmap = plt.get_cmap("copper")
+    if norm is None:
+        norm = plt.Normalize(0.0, 1.0)
     z = np.asarray(z)
     points = np.array([x, y]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)

@@ -8,8 +8,7 @@ from aeon.io import video
 
 
 def gridframes(frames, width, height, shape=None):
-    """Arranges a set of frames into a grid layout with the specified
-    pixel dimensions and shape.
+    """Arranges a set of frames into a grid layout with the specified pixel dimensions and shape.
 
     :param list frames: A list of frames to include in the grid layout.
     :param int width: The width of the output grid image, in pixels.
@@ -65,7 +64,7 @@ def groupframes(frames, n, fun):
             i = i + 1
 
 
-def triggerclip(data, events, before=pd.Timedelta(0), after=pd.Timedelta(0)):
+def triggerclip(data, events, before=None, after=None):
     """Split video data around the specified sequence of event timestamps.
 
     :param DataFrame data:
@@ -76,10 +75,16 @@ def triggerclip(data, events, before=pd.Timedelta(0), after=pd.Timedelta(0)):
     :return:
     A pandas DataFrame containing the frames, clip and sequence numbers for each event timestamp.
     """
-    if before is not pd.Timedelta:
+    if before is None:
+        before = pd.Timedelta(0)
+    elif before is not pd.Timedelta:
         before = pd.Timedelta(before)
-    if after is not pd.Timedelta:
+
+    if after is None:
+        after = pd.Timedelta(0)
+    elif after is not pd.Timedelta:
         after = pd.Timedelta(after)
+
     if events is not pd.Index:
         events = events.index
 
@@ -107,8 +112,7 @@ def collatemovie(clipdata, fun):
 
 
 def gridmovie(clipdata, width, height, shape=None):
-    """Collates a set of video clips into a grid movie with the specified pixel dimensions
-    and grid layout.
+    """Collates a set of video clips into a grid movie with the specified pixel dimensions and grid layout.
 
     :param DataFrame clipdata:
     A pandas DataFrame where each row specifies video path, frame number, clip and sequence number.

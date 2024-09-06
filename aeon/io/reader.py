@@ -116,8 +116,9 @@ class Metadata(Reader):
 
 
 class Csv(Reader):
-    """Extracts data from comma-separated (csv) text files, where the first column
-    stores the Aeon timestamp, in seconds.
+    """Extracts data from comma-separated (CSV) text files.
+
+    The first column stores the Aeon timestamp, in seconds.
     """
 
     def __init__(self, pattern, columns, dtype=None, extension="csv"):
@@ -218,8 +219,9 @@ class BitmaskEvent(Harp):
         self.tag = tag
 
     def read(self, file):
-        """Reads a specific event code from digital data and matches it to the
-        specified unique identifier.
+        """Reads a specific event code from digital data.
+
+        Each data value is matched against the unique event identifier.
         """
         data = super().read(file)
         data = data[(data.event & self.value) == self.value]
@@ -239,8 +241,9 @@ class DigitalBitmask(Harp):
         self.mask = mask
 
     def read(self, file):
-        """Reads a specific event code from digital data and matches it to the
-        specified unique identifier.
+        """Reads a specific event code from digital data.
+
+        Each data value is checked against the specified bitmask.
         """
         data = super().read(file)
         state = data[self.columns] & self.mask

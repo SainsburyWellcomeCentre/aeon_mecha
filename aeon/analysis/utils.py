@@ -3,8 +3,9 @@ import pandas as pd
 
 
 def distancetravelled(angle, radius=4.0):
-    """Calculates the total distance travelled on the wheel, by taking into account
-    its radius and the total number of turns in both directions across time.
+    """Calculates the total distance travelled on the wheel.
+
+    Takes into account the wheel radius and the total number of turns in both directions across time.
 
     :param Series angle: A series of magnetic encoder measurements.
     :param float radius: The radius of the wheel, in metric units.
@@ -22,10 +23,11 @@ def distancetravelled(angle, radius=4.0):
 
 
 def visits(data, onset="Enter", offset="Exit"):
-    """Computes duration, onset and offset times from paired events. Allows for missing data
-    by trying to match event onset times with subsequent offset times. If the match fails,
-    event offset metadata is filled with NaN. Any additional metadata columns in the data
-    frame will be paired and included in the output.
+    """Computes duration, onset and offset times from paired events.
+
+    Allows for missing data by trying to match event onset times with subsequent offset times.
+    If the match fails, event offset metadata is filled with NaN. Any additional metadata columns
+    in the data frame will be paired and included in the output.
 
     :param DataFrame data: A pandas data frame containing visit onset and offset events.
     :param str, optional onset: The label used to identify event onsets.
@@ -69,8 +71,9 @@ def visits(data, onset="Enter", offset="Exit"):
 
 
 def rate(events, window, frequency, weight=1, start=None, end=None, smooth=None, center=False):
-    """Computes the continuous event rate from a discrete event sequence, given the specified
-    window size and sampling frequency.
+    """Computes the continuous event rate from a discrete event sequence.
+
+    The window size and sampling frequency can be specified.
 
     :param Series events: The discrete sequence of events.
     :param offset window: The time period of each window used to compute the rate.
@@ -78,7 +81,7 @@ def rate(events, window, frequency, weight=1, start=None, end=None, smooth=None,
     :param number, optional weight: A weight used to scale the continuous rate of each window.
     :param datetime, optional start: The left bound of the time range for the continuous rate.
     :param datetime, optional end: The right bound of the time range for the continuous rate.
-    :param datetime, optional smooth: The size of the smoothing kernel applied to the continuous rate output.
+    :param datetime, optional smooth: The size of the smoothing kernel applied to the rate output.
     :param DateOffset, Timedelta or str, optional smooth:
     The size of the smoothing kernel applied to the continuous rate output.
     :param bool, optional center: Specifies whether to center the convolution kernels.
