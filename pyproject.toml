@@ -116,6 +116,8 @@ lint.select = [
 ]
 line-length = 108
 lint.ignore = [
+  "D105",    # skip adding docstrings for magic methods
+  "D107",    # skip adding docstrings for __init__
   "E201",
   "E202",
   "E203",
