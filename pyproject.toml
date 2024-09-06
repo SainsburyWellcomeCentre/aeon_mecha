@@ -116,6 +116,8 @@ lint.select = [
 ]
 line-length = 108
 lint.ignore = [
+  "D100",    # skip adding docstrings for module
+  "D104",    # ignore missing docstring in public package
   "D105",    # skip adding docstrings for magic methods
   "D107",    # skip adding docstrings for __init__
   "E201",
@@ -138,14 +140,15 @@ extend-exclude = [
   "aeon/dj_pipeline/streams.py",
 ]
 [tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+  "D103",    # skip adding docstrings for public functions
+]
 "aeon/dj_pipeline/*" = [
   "B006",
   "B021",
-  "D100",    # skip adding docstrings for module
   "D101",    # skip adding docstrings for table class since it is added inside definition
   "D102",    # skip adding docstrings for make function
   "D103",    # skip adding docstrings for public functions
-  "D104",    # ignore missing docstring in public package
   "D106",    # skip adding docstrings for Part tables
   "E501",
   "F401",    # ignore unused import errors
