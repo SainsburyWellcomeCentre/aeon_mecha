@@ -31,13 +31,12 @@ class StreamGroup:
         self._nested = (
             member
             for member in vars(self.__class__).values()
-            if inspect.isclass(member) and issubclass(member, (Stream, StreamGroup))
+            if inspect.isclass(member) and issubclass(member, Stream | StreamGroup)
         )
 
     def __iter__(self):
         for factory in chain(self._nested, self._args):
-            for stream in iter(factory(self.path)):
-                yield stream
+            yield from iter(factory(self.path))
 
 
 class Device:

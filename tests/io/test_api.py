@@ -32,7 +32,8 @@ def test_load_filter_nonchunked():
 @mark.api
 def test_load_monotonic():
     data = aeon.load(monotonic_path, exp02.Patch2.Encoder)
-    assert len(data) > 0 and data.index.is_monotonic_increasing
+    assert len(data) > 0
+    assert data.index.is_monotonic_increasing
 
 
 @mark.api

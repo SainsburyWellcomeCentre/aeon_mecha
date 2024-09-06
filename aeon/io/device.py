@@ -12,10 +12,10 @@ def compositeStream(pattern, *args):
             if inspect.isclass(binder_fn):
                 for method in vars(binder_fn).values():
                     if isinstance(method, staticmethod):
-                        registry.update(method.__func__(pattern))
+                        composite.update(method.__func__(pattern))
             else:
-                registry.update(binder_fn(pattern))
-    return registry
+                composite.update(binder_fn(pattern))
+    return composite
 
 
 @deprecated("The Device class has been moved to the streams module.")
@@ -34,7 +34,7 @@ class Device:
 
     def __init__(self, name, *args, pattern=None):
         self.name = name
-        self.registry = register(name if pattern is None else pattern, *args)
+        self.registry = compositeStream(name if pattern is None else pattern, *args)
 
     def __iter__(self):
         if len(self.registry) == 1:
