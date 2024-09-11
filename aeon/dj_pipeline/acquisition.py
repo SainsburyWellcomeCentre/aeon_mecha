@@ -181,7 +181,7 @@ class Epoch(dj.Manual):
 
     @classmethod
     def ingest_epochs(cls, experiment_name):
-        """Ingest epochs for the specified "experiment_name" """
+        """Ingest epochs for the specified 'experiment_name'."""
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
@@ -223,7 +223,11 @@ class Epoch(dj.Manual):
             with cls.connection.transaction:
                 # insert new epoch
                 cls.insert1(
-                    {**epoch_key, **directory, "epoch_dir": epoch_dir.relative_to(raw_data_dir).as_posix()}
+                    {
+                        **epoch_key,
+                        **directory,
+                        "epoch_dir": epoch_dir.relative_to(raw_data_dir).as_posix(),
+                    }
                 )
                 epoch_list.append(epoch_key)
 
@@ -475,7 +479,7 @@ class Environment(dj.Imported):
         -> master
         ---
         sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) 
+        timestamps: longblob   # (datetime) timestamps
         priority: longblob
         type: longblob
         message: longblob
@@ -570,7 +574,9 @@ def _get_all_chunks(experiment_name, device_name):
     directory_types = ["quality-control", "raw"]
     raw_data_dirs = {
         dir_type: Experiment.get_data_directory(
-            experiment_key={"experiment_name": experiment_name}, directory_type=dir_type, as_posix=False
+            experiment_key={"experiment_name": experiment_name},
+            directory_type=dir_type,
+            as_posix=False,
         )
         for dir_type in directory_types
     }
@@ -605,7 +611,7 @@ def _match_experiment_directory(experiment_name, path, directories):
 
 def create_chunk_restriction(experiment_name, start_time, end_time):
     """
-    Create a time restriction string for the chunks between the specified "start" and "end" times
+    Create a time restriction string for the chunks between the specified "start" and "end" times.
     """
     start_restriction = f'"{start_time}" BETWEEN chunk_start AND chunk_end'
     end_restriction = f'"{end_time}" BETWEEN chunk_start AND chunk_end'

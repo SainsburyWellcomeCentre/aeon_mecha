@@ -33,7 +33,7 @@ def dict_to_uuid(key) -> uuid.UUID:
 def fetch_stream(query, drop_pk=True):
     """
     Provided a query containing data from a Stream table,
-     fetch and aggregate the data into one DataFrame indexed by "time"
+    fetch and aggregate the data into one DataFrame indexed by "time"
     """
     df = (query & "sample_count > 0").fetch(format="frame").reset_index()
     cols2explode = [
@@ -46,7 +46,10 @@ def fetch_stream(query, drop_pk=True):
     df.set_index("time", inplace=True)
     df.sort_index(inplace=True)
     df = df.convert_dtypes(
-        convert_string=False, convert_integer=False, convert_boolean=False, convert_floating=False
+        convert_string=False,
+        convert_integer=False,
+        convert_boolean=False,
+        convert_floating=False,
     )
     return df
 

@@ -47,16 +47,12 @@ class BlockDetection(dj.Computed):
         # In the BlockState data - if the 0 is the first index - look back at the previous chunk
         #   if the previous timestamp belongs to a previous epoch -> block_end is the previous timestamp
         #   else block_end is the timestamp of this 0
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
-            "chunk_start", "chunk_end"
-        )
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
         exp_key = {"experiment_name": key["experiment_name"]}
         # only consider the time period between the last block and the current chunk
         previous_block = Block & exp_key & f"block_start <= '{chunk_start}'"
         if previous_block:
-            previous_block_key = previous_block.fetch(
-                "KEY", limit=1, order_by="block_start DESC"
-            )[0]
+            previous_block_key = previous_block.fetch("KEY", limit=1, order_by="block_start DESC")[0]
             previous_block_start = previous_block_key["block_start"]
         else:
             previous_block_key = None
@@ -71,16 +67,13 @@ class BlockDetection(dj.Computed):
         # detecting block end times
         # pellet count reset - find 0s in BlockState
 
-        block_state_query = (
-            acquisition.Environment.BlockState & exp_key & chunk_restriction
-        )
+        block_state_query = acquisition.Environment.BlockState & exp_key & chunk_restriction
         block_state_df = fetch_stream(block_state_query)
         block_state_df.index = block_state_df.index.round(
             "us"
         )  # timestamp precision in DJ is only at microseconds
         block_state_df = block_state_df.loc[
-            (block_state_df.index > previous_block_start)
-            & (block_state_df.index <= chunk_end)
+            (block_state_df.index > previous_block_start) & (block_state_df.index <= chunk_end)
         ]
 
         block_ends = block_state_df[block_state_df.pellet_ct == 0]
@@ -108,16 +101,12 @@ class BlockDetection(dj.Computed):
                     ).fetch1("KEY")
 
                     previous_block_key["block_end"] = (
-                        block_end
-                        if current_epoch == previous_epoch
-                        else previous_pellet_time
+                        block_end if current_epoch == previous_epoch else previous_pellet_time
                     )
                     Block.update1(previous_block_key)
             else:
                 block_entries[-1]["block_end"] = block_end
-            block_entries.append(
-                {**exp_key, "block_start": block_end, "block_end": None}
-            )
+            block_entries.append({**exp_key, "block_start": block_end, "block_end": None})
 
         Block.insert(block_entries, skip_duplicates=True)
         self.insert1(key)
@@ -187,29 +176,21 @@ class BlockAnalysis(dj.Computed):
             tracking.SLEAPTracking,
         )
         for streams_table in streams_tables:
-            if len(streams_table & chunk_keys) < len(
-                streams_table.key_source & chunk_keys
-            ):
+            if len(streams_table & chunk_keys) < len(streams_table.key_source & chunk_keys):
                 raise ValueError(
                     f"BlockAnalysis Not Ready - {streams_table.__name__} not yet fully ingested for block: {key}. Skipping (to retry later)..."
                 )
 
-        self.insert1(
-            {**key, "block_duration": (block_end - block_start).total_seconds() / 3600}
-        )
+        self.insert1({**key, "block_duration": (block_end - block_start).total_seconds() / 3600})
 
         # Patch data - TriggerPellet, DepletionState, Encoder (distancetravelled)
         # For wheel data, downsample by 50x - 10Hz
         wheel_downsampling_factor = 50
 
-        maintenance_period = get_maintenance_periods(
-            key["experiment_name"], block_start, block_end
-        )
+        maintenance_period = get_maintenance_periods(key["experiment_name"], block_start, block_end)
 
         patch_query = (
-            streams.UndergroundFeeder.join(
-                streams.UndergroundFeeder.RemovalTime, left=True
-            )
+            streams.UndergroundFeeder.join(streams.UndergroundFeeder.RemovalTime, left=True)
             & key
             & f'"{block_start}" >= underground_feeder_install_time'
             & f'"{block_end}" < IFNULL(underground_feeder_removal_time, "2200-01-01")'
@@ -227,12 +208,10 @@ class BlockAnalysis(dj.Computed):
             # remove NaNs from threshold column
             depletion_state_df = depletion_state_df.dropna(subset=["threshold"])
             # identify & remove invalid indices where the time difference is less than 1 second
-            invalid_indices = np.where(
-                depletion_state_df.index.to_series().diff().dt.total_seconds() < 1
-            )[0]
-            depletion_state_df = depletion_state_df.drop(
-                depletion_state_df.index[invalid_indices]
-            )
+            invalid_indices = np.where(depletion_state_df.index.to_series().diff().dt.total_seconds() < 1)[
+                0
+            ]
+            depletion_state_df = depletion_state_df.drop(depletion_state_df.index[invalid_indices])
 
             # find pellet times associated with each threshold update
             #   for each threshold, find the time of the next threshold update,
@@ -244,26 +223,20 @@ class BlockAnalysis(dj.Computed):
                 if np.isnan(pellet_ts_threshold_df.threshold.iloc[threshold_idx]):
                     continue
                 next_threshold_time = pellet_ts_threshold_df.index[threshold_idx + 1]
-                post_thresh_pellet_ts = beam_break_df.index[
-                    beam_break_df.index > next_threshold_time
-                ]
+                post_thresh_pellet_ts = beam_break_df.index[beam_break_df.index > next_threshold_time]
                 if post_thresh_pellet_ts.empty:
                     break
                 next_beam_break = post_thresh_pellet_ts[
                     np.searchsorted(post_thresh_pellet_ts, next_threshold_time)
                 ]
-                pellet_ts_threshold_df.pellet_timestamp.iloc[threshold_idx] = (
-                    next_beam_break
-                )
+                pellet_ts_threshold_df.pellet_timestamp.iloc[threshold_idx] = next_beam_break
             # remove NaNs from pellet_timestamp column (last row)
-            pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(
-                subset=["pellet_timestamp"]
-            )
+            pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(subset=["pellet_timestamp"])
 
             # wheel encoder data
-            encoder_df = fetch_stream(
-                streams.UndergroundFeederEncoder & patch_key & chunk_restriction
-            )[block_start:block_end]
+            encoder_df = fetch_stream(streams.UndergroundFeederEncoder & patch_key & chunk_restriction)[
+                block_start:block_end
+            ]
             # filter out maintenance period based on logs
             pellet_ts_threshold_df = filter_out_maintenance_periods(
                 pellet_ts_threshold_df,
@@ -281,14 +254,10 @@ class BlockAnalysis(dj.Computed):
                 encoder_df, maintenance_period, block_end, dropna=True
             )
 
-            encoder_df["distance_travelled"] = -1 * analysis_utils.distancetravelled(
-                encoder_df.angle
-            )
+            encoder_df["distance_travelled"] = -1 * analysis_utils.distancetravelled(encoder_df.angle)
 
             if depletion_state_df.empty:
-                raise ValueError(
-                    f"No depletion state data found for block {key} - patch: {patch_name}"
-                )
+                raise ValueError(f"No depletion state data found for block {key} - patch: {patch_name}")
 
             if len(depletion_state_df.rate.unique()) > 1:
                 # multiple patch rates per block is unexpected, log a note and pick the first rate to move forward
@@ -314,9 +283,7 @@ class BlockAnalysis(dj.Computed):
                     "wheel_cumsum_distance_travelled": encoder_df.distance_travelled.values[
                         ::wheel_downsampling_factor
                     ],
-                    "wheel_timestamps": encoder_df.index.values[
-                        ::wheel_downsampling_factor
-                    ],
+                    "wheel_timestamps": encoder_df.index.values[::wheel_downsampling_factor],
                     "patch_threshold": pellet_ts_threshold_df.threshold.values,
                     "patch_threshold_timestamps": pellet_ts_threshold_df.index.values,
                     "patch_rate": patch_rate,
@@ -348,9 +315,7 @@ class BlockAnalysis(dj.Computed):
             # positions - query for CameraTop, identity_name matches subject_name,
             pos_query = (
                 streams.SpinnakerVideoSource
-                * tracking.SLEAPTracking.PoseIdentity.proj(
-                    "identity_name", anchor_part="part_name"
-                )
+                * tracking.SLEAPTracking.PoseIdentity.proj("identity_name", anchor_part="part_name")
                 * tracking.SLEAPTracking.Part
                 & key
                 & {
@@ -360,23 +325,18 @@ class BlockAnalysis(dj.Computed):
                 & chunk_restriction
             )
             pos_df = fetch_stream(pos_query)[block_start:block_end]
-            pos_df = filter_out_maintenance_periods(
-                pos_df, maintenance_period, block_end
-            )
+            pos_df = filter_out_maintenance_periods(pos_df, maintenance_period, block_end)
 
             if pos_df.empty:
                 continue
 
             position_diff = np.sqrt(
-                np.square(np.diff(pos_df.x.astype(float)))
-                + np.square(np.diff(pos_df.y.astype(float)))
+                np.square(np.diff(pos_df.x.astype(float))) + np.square(np.diff(pos_df.y.astype(float)))
             )
             cumsum_distance_travelled = np.concatenate([[0], np.cumsum(position_diff)])
 
             # weights
-            weight_query = (
-                acquisition.Environment.SubjectWeight & key & chunk_restriction
-            )
+            weight_query = acquisition.Environment.SubjectWeight & key & chunk_restriction
             weight_df = fetch_stream(weight_query)[block_start:block_end]
             weight_df.query(f"subject_id == '{subject_name}'", inplace=True)
 
@@ -451,10 +411,7 @@ class BlockSubjectAnalysis(dj.Computed):
         subjects_positions_df = pd.concat(
             [
                 pd.DataFrame(
-                    {
-                        "subject_name": [s["subject_name"]]
-                        * len(s["position_timestamps"])
-                    }
+                    {"subject_name": [s["subject_name"]] * len(s["position_timestamps"])}
                     | {
                         k: s[k]
                         for k in (
@@ -475,8 +432,7 @@ class BlockSubjectAnalysis(dj.Computed):
         in_patch_radius = 130  # pixels
         pref_attrs = ["cum_dist", "cum_time", "cum_pref_dist", "cum_pref_time"]
         all_subj_patch_pref_dict = {
-            p: {s: {a: pd.Series() for a in pref_attrs} for s in subject_names}
-            for p in patch_names
+            p: {s: {a: pd.Series() for a in pref_attrs} for s in subject_names} for p in patch_names
         }
 
         for patch in block_patches:
@@ -499,15 +455,11 @@ class BlockSubjectAnalysis(dj.Computed):
             ).fetch1("attribute_value")
             patch_center = (int(patch_center["X"]), int(patch_center["Y"]))
             subjects_xy = subjects_positions_df[["position_x", "position_y"]].values
-            dist_to_patch = np.sqrt(
-                np.sum((subjects_xy - patch_center) ** 2, axis=1).astype(float)
-            )
+            dist_to_patch = np.sqrt(np.sum((subjects_xy - patch_center) ** 2, axis=1).astype(float))
             dist_to_patch_df = subjects_positions_df[["subject_name"]].copy()
             dist_to_patch_df["dist_to_patch"] = dist_to_patch
 
-            dist_to_patch_wheel_ts_id_df = pd.DataFrame(
-                index=cum_wheel_dist.index, columns=subject_names
-            )
+            dist_to_patch_wheel_ts_id_df = pd.DataFrame(index=cum_wheel_dist.index, columns=subject_names)
             dist_to_patch_pel_ts_id_df = pd.DataFrame(
                 index=patch["pellet_timestamps"], columns=subject_names
             )
@@ -515,12 +467,10 @@ class BlockSubjectAnalysis(dj.Computed):
                 # Find closest match between pose_df indices and wheel indices
                 if not dist_to_patch_wheel_ts_id_df.empty:
                     dist_to_patch_wheel_ts_subj = pd.merge_asof(
-                        left=pd.DataFrame(
-                            dist_to_patch_wheel_ts_id_df[subject_name].copy()
-                        ).reset_index(names="time"),
-                        right=dist_to_patch_df[
-                            dist_to_patch_df["subject_name"] == subject_name
-                        ]
+                        left=pd.DataFrame(dist_to_patch_wheel_ts_id_df[subject_name].copy()).reset_index(
+                            names="time"
+                        ),
+                        right=dist_to_patch_df[dist_to_patch_df["subject_name"] == subject_name]
                         .copy()
                         .reset_index(names="time"),
                         on="time",
@@ -529,18 +479,16 @@ class BlockSubjectAnalysis(dj.Computed):
                         direction="nearest",
                         tolerance=pd.Timedelta("100ms"),
                     )
-                    dist_to_patch_wheel_ts_id_df[subject_name] = (
-                        dist_to_patch_wheel_ts_subj["dist_to_patch"].values
-                    )
+                    dist_to_patch_wheel_ts_id_df[subject_name] = dist_to_patch_wheel_ts_subj[
+                        "dist_to_patch"
+                    ].values
                 # Find closest match between pose_df indices and pel indices
                 if not dist_to_patch_pel_ts_id_df.empty:
                     dist_to_patch_pel_ts_subj = pd.merge_asof(
-                        left=pd.DataFrame(
-                            dist_to_patch_pel_ts_id_df[subject_name].copy()
-                        ).reset_index(names="time"),
-                        right=dist_to_patch_df[
-                            dist_to_patch_df["subject_name"] == subject_name
-                        ]
+                        left=pd.DataFrame(dist_to_patch_pel_ts_id_df[subject_name].copy()).reset_index(
+                            names="time"
+                        ),
+                        right=dist_to_patch_df[dist_to_patch_df["subject_name"] == subject_name]
                         .copy()
                         .reset_index(names="time"),
                         on="time",
@@ -549,9 +497,9 @@ class BlockSubjectAnalysis(dj.Computed):
                         direction="nearest",
                         tolerance=pd.Timedelta("200ms"),
                     )
-                    dist_to_patch_pel_ts_id_df[subject_name] = (
-                        dist_to_patch_pel_ts_subj["dist_to_patch"].values
-                    )
+                    dist_to_patch_pel_ts_id_df[subject_name] = dist_to_patch_pel_ts_subj[
+                        "dist_to_patch"
+                    ].values
 
             # Get closest subject to patch at each pellet timestep
             closest_subjects_pellet_ts = dist_to_patch_pel_ts_id_df.idxmin(axis=1)
@@ -563,12 +511,8 @@ class BlockSubjectAnalysis(dj.Computed):
             wheel_dist = cum_wheel_dist.diff().fillna(cum_wheel_dist.iloc[0])
             # Assign wheel dist to closest subject for each wheel timestep
             for subject_name in subject_names:
-                subj_idxs = cum_wheel_dist_subj_df[
-                    closest_subjects_wheel_ts == subject_name
-                ].index
-                cum_wheel_dist_subj_df.loc[subj_idxs, subject_name] = wheel_dist[
-                    subj_idxs
-                ]
+                subj_idxs = cum_wheel_dist_subj_df[closest_subjects_wheel_ts == subject_name].index
+                cum_wheel_dist_subj_df.loc[subj_idxs, subject_name] = wheel_dist[subj_idxs]
             cum_wheel_dist_subj_df = cum_wheel_dist_subj_df.cumsum(axis=0)
 
             # In patch time
@@ -576,9 +520,9 @@ class BlockSubjectAnalysis(dj.Computed):
             dt = np.median(np.diff(cum_wheel_dist.index)).astype(int) / 1e9  # s
             # Fill in `all_subj_patch_pref`
             for subject_name in subject_names:
-                all_subj_patch_pref_dict[patch["patch_name"]][subject_name][
-                    "cum_dist"
-                ] = cum_wheel_dist_subj_df[subject_name].values
+                all_subj_patch_pref_dict[patch["patch_name"]][subject_name]["cum_dist"] = (
+                    cum_wheel_dist_subj_df[subject_name].values
+                )
                 subject_in_patch = in_patch[subject_name]
                 subject_in_patch_cum_time = subject_in_patch.cumsum().values * dt
                 all_subj_patch_pref_dict[patch["patch_name"]][subject_name][
@@ -599,9 +543,7 @@ class BlockSubjectAnalysis(dj.Computed):
                         pellet_count=len(subj_pellets),
                         pellet_timestamps=subj_pellets.index.values,
                         patch_threshold=subj_patch_thresh,
-                        wheel_cumsum_distance_travelled=cum_wheel_dist_subj_df[
-                            subject_name
-                        ].values,
+                        wheel_cumsum_distance_travelled=cum_wheel_dist_subj_df[subject_name].values,
                     )
                 )
 
@@ -610,34 +552,22 @@ class BlockSubjectAnalysis(dj.Computed):
         for subject_name in subject_names:
             # Get sum of subj cum wheel dists and cum in patch time
             all_cum_dist = np.sum(
-                [
-                    all_subj_patch_pref_dict[p][subject_name]["cum_dist"][-1]
-                    for p in patch_names
-                ]
+                [all_subj_patch_pref_dict[p][subject_name]["cum_dist"][-1] for p in patch_names]
             )
             all_cum_time = np.sum(
-                [
-                    all_subj_patch_pref_dict[p][subject_name]["cum_time"][-1]
-                    for p in patch_names
-                ]
+                [all_subj_patch_pref_dict[p][subject_name]["cum_time"][-1] for p in patch_names]
             )
 
             for patch_name in patch_names:
                 cum_pref_dist = (
-                    all_subj_patch_pref_dict[patch_name][subject_name]["cum_dist"]
-                    / all_cum_dist
+                    all_subj_patch_pref_dict[patch_name][subject_name]["cum_dist"] / all_cum_dist
                 )
-                all_subj_patch_pref_dict[patch_name][subject_name][
-                    "cum_pref_dist"
-                ] = cum_pref_dist
+                all_subj_patch_pref_dict[patch_name][subject_name]["cum_pref_dist"] = cum_pref_dist
 
                 cum_pref_time = (
-                    all_subj_patch_pref_dict[patch_name][subject_name]["cum_time"]
-                    / all_cum_time
+                    all_subj_patch_pref_dict[patch_name][subject_name]["cum_time"] / all_cum_time
                 )
-                all_subj_patch_pref_dict[patch_name][subject_name][
-                    "cum_pref_time"
-                ] = cum_pref_time
+                all_subj_patch_pref_dict[patch_name][subject_name]["cum_pref_time"] = cum_pref_time
 
                 self.Preference.insert1(
                     key
@@ -720,9 +650,7 @@ class BlockPlots(dj.Computed):
             labels={"patch_name": "Patch Name", "patch_rate": "Patch Rate"},
             text="patch_rate",
         )
-        patch_rate_fig.update_layout(
-            bargap=0.2, width=600, height=400, template="simple_white"
-        )
+        patch_rate_fig.update_layout(bargap=0.2, width=600, height=400, template="simple_white")
 
         # Cumulative pellets per patch over time
         for _, row in patch_df.iterrows():
@@ -785,39 +713,29 @@ class BlockSubjectPlots(dj.Computed):
         patch_names = np.unique(patch_names)
         subject_names = np.unique(subject_names)
 
-        all_thresh_vals = np.concatenate(
-            (BlockAnalysis.Patch & key).fetch("patch_threshold")
-        ).astype(float)
+        all_thresh_vals = np.concatenate((BlockAnalysis.Patch & key).fetch("patch_threshold")).astype(float)
 
         dist_pref_fig, time_pref_fig = go.Figure(), go.Figure()
         for subj_i, subj in enumerate(subject_names):
             for patch_i, p in enumerate(patch_names):
-                rate, offset, wheel_ts = (
-                    BlockAnalysis.Patch & key & {"patch_name": p}
-                ).fetch1("patch_rate", "patch_offset", "wheel_timestamps")
-                patch_thresh, patch_thresh_ts = (
-                    BlockAnalysis.Patch & key & {"patch_name": p}
-                ).fetch1("patch_threshold", "patch_threshold_timestamps")
+                rate, offset, wheel_ts = (BlockAnalysis.Patch & key & {"patch_name": p}).fetch1(
+                    "patch_rate", "patch_offset", "wheel_timestamps"
+                )
+                patch_thresh, patch_thresh_ts = (BlockAnalysis.Patch & key & {"patch_name": p}).fetch1(
+                    "patch_threshold", "patch_threshold_timestamps"
+                )
 
                 cum_pref_dist, cum_pref_time = (
-                    BlockSubjectAnalysis.Preference
-                    & key
-                    & {"patch_name": p, "subject_name": subj}
-                ).fetch1(
-                    "cumulative_preference_by_wheel", "cumulative_preference_by_time"
-                )
+                    BlockSubjectAnalysis.Preference & key & {"patch_name": p, "subject_name": subj}
+                ).fetch1("cumulative_preference_by_wheel", "cumulative_preference_by_time")
                 pellet_ts = (
-                    BlockSubjectAnalysis.Patch
-                    & key
-                    & {"patch_name": p, "subject_name": subj}
+                    BlockSubjectAnalysis.Patch & key & {"patch_name": p, "subject_name": subj}
                 ).fetch1("pellet_timestamps")
 
                 if not len(pellet_ts):
                     continue
 
-                patch_thresh = patch_thresh[
-                    np.searchsorted(patch_thresh_ts, pellet_ts) - 1
-                ]
+                patch_thresh = patch_thresh[np.searchsorted(patch_thresh_ts, pellet_ts) - 1]
                 patch_mean = 1 / rate // 100 * 100
                 patch_mean_thresh = patch_mean + offset
                 cum_pel_ct = pd.DataFrame(
@@ -834,9 +752,7 @@ class BlockSubjectPlots(dj.Computed):
                     / (all_thresh_vals.max() - all_thresh_vals.min())
                 ).round(3)
 
-                for fig, cum_pref in zip(
-                    [dist_pref_fig, time_pref_fig], [cum_pref_dist, cum_pref_time]
-                ):
+                for fig, cum_pref in zip([dist_pref_fig, time_pref_fig], [cum_pref_dist, cum_pref_time]):
                     fig.add_trace(
                         go.Scatter(
                             x=wheel_ts,
@@ -853,9 +769,7 @@ class BlockSubjectPlots(dj.Computed):
                     # Add markers for each pellet
                     cur_cum_pel_ct = pd.merge_asof(
                         cum_pel_ct.reset_index(names="time"),
-                        pd.DataFrame(
-                            index=wheel_ts, data={"cum_pref": cum_pref}
-                        ).reset_index(names="time"),
+                        pd.DataFrame(index=wheel_ts, data={"cum_pref": cum_pref}).reset_index(names="time"),
                         on="time",
                         direction="forward",
                         tolerance=pd.Timedelta("0.1s"),
@@ -875,16 +789,12 @@ class BlockSubjectPlots(dj.Computed):
                                     size=8,
                                 ),
                                 showlegend=False,
-                                customdata=np.stack(
-                                    (cur_cum_pel_ct["threshold"],), axis=-1
-                                ),
+                                customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
                                 hovertemplate="Threshold: %{customdata[0]:.2f} cm",
                             )
                         )
 
-        for fig, title in zip(
-            [dist_pref_fig, time_pref_fig], ["Wheel Distance", "Patch Time"]
-        ):
+        for fig, title in zip([dist_pref_fig, time_pref_fig], ["Wheel Distance", "Patch Time"]):
             fig.update_layout(
                 title=f"Cumulative Patch Preference - {title}",
                 xaxis_title="Time",
