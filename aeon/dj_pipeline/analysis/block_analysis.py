@@ -7,6 +7,7 @@ import plotly.graph_objs as go
 from matplotlib import path as mpl_path
 from datetime import datetime
 
+from aeon.io import api as io_api
 from aeon.analysis import utils as analysis_utils
 from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, tracking
 from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
@@ -22,6 +23,7 @@ class Block(dj.Manual):
     block_start: datetime(6)
     ---
     block_end=null: datetime(6)
+    block_duration_hr=null: decimal(6, 3)  # (hour)
     """
 
 
@@ -32,72 +34,59 @@ class BlockDetection(dj.Computed):
     """
 
     def make(self, key):
-        """On a per-chunk basis, check for the presence of new block, insert into Block table."""
-        # find the 0s
+        """
+        On a per-chunk basis, check for the presence of new block, insert into Block table.
+        High level logic
+        1. Find the 0s in `pellet_ct` (these are times when the pellet count reset - i.e. new block)
+        2. Remove any double 0s (0s within 1 second of each other) (pick the first 0)
+        3. Calculate block end_times (use due_time) and durations
+        4. Insert into Block table
+        """
+        # find the 0s in `pellet_ct` (these are times when the pellet count reset - i.e. new block)
         # that would mark the start of a new block
-        # In the BlockState data - if the 0 is the first index - look back at the previous chunk
-        #   if the previous timestamp belongs to a previous epoch -> block_end is the previous timestamp
-        #   else block_end is the timestamp of this 0
+
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
         exp_key = {"experiment_name": key["experiment_name"]}
-        # only consider the time period between the last block and the current chunk
-        previous_block = Block & exp_key & f"block_start <= '{chunk_start}'"
-        if previous_block:
-            previous_block_key = previous_block.fetch("KEY", limit=1, order_by="block_start DESC")[0]
-            previous_block_start = previous_block_key["block_start"]
-        else:
-            previous_block_key = None
-            previous_block_start = (acquisition.Chunk & exp_key).fetch(
-                "chunk_start", limit=1, order_by="chunk_start"
-            )[0]
 
         chunk_restriction = acquisition.create_chunk_restriction(
-            key["experiment_name"], previous_block_start, chunk_end
+            key["experiment_name"], chunk_start, chunk_end
         )
-
-        # detecting block end times
-        # pellet count reset - find 0s in BlockState
 
         block_state_query = acquisition.Environment.BlockState & exp_key & chunk_restriction
         block_state_df = fetch_stream(block_state_query)
+        if block_state_df.empty:
+            self.insert1(key)
+            return
+
         block_state_df.index = block_state_df.index.round(
             "us"
         )  # timestamp precision in DJ is only at microseconds
         block_state_df = block_state_df.loc[
-            (block_state_df.index > previous_block_start) & (block_state_df.index <= chunk_end)
+            (block_state_df.index > chunk_start) & (block_state_df.index <= chunk_end)
         ]
 
-        block_ends = block_state_df[block_state_df.pellet_ct == 0]
+        blocks_df = block_state_df[block_state_df.pellet_ct == 0]
         # account for the double 0s - find any 0s that are within 1 second of each other, remove the 2nd one
-        double_0s = block_ends.index.to_series().diff().dt.total_seconds() < 1
+        double_0s = blocks_df.index.to_series().diff().dt.total_seconds() < 1
         # find the indices of the 2nd 0s and remove
         double_0s = double_0s.shift(-1).fillna(False)
-        block_ends = block_ends[~double_0s]
+        blocks_df = blocks_df[~double_0s]
 
         block_entries = []
-        for idx, block_end in enumerate(block_ends.index):
-            if idx == 0:
-                if previous_block_key:
-                    # if there is a previous block - insert "block_end" for the previous block
-                    previous_pellet_time = block_state_df[:block_end].index[-1]
-                    previous_epoch = (
-                        acquisition.Epoch.join(acquisition.EpochEnd, left=True)
-                        & exp_key
-                        & f"'{previous_pellet_time}' BETWEEN epoch_start AND IFNULL(epoch_end, '2200-01-01')"
-                    ).fetch1("KEY")
-                    current_epoch = (
-                        acquisition.Epoch.join(acquisition.EpochEnd, left=True)
-                        & exp_key
-                        & f"'{block_end}' BETWEEN epoch_start AND IFNULL(epoch_end, '2200-01-01')"
-                    ).fetch1("KEY")
+        if not blocks_df.empty:
+            # calculate block end_times (use due_time) and durations
+            blocks_df["end_time"] = blocks_df["due_time"].apply(lambda x: io_api.aeon(x))
+            blocks_df["duration"] = (blocks_df["end_time"] - blocks_df.index).dt.total_seconds() / 3600
 
-                    previous_block_key["block_end"] = (
-                        block_end if current_epoch == previous_epoch else previous_pellet_time
-                    )
-                    Block.update1(previous_block_key)
-            else:
-                block_entries[-1]["block_end"] = block_end
-            block_entries.append({**exp_key, "block_start": block_end, "block_end": None})
+            for _, row in blocks_df.iterrows():
+                block_entries.append(
+                    {
+                        **exp_key,
+                        "block_start": row.name,
+                        "block_end": row.end_time,
+                        "block_duration_hr": row.duration,
+                    }
+                )
 
         Block.insert(block_entries, skip_duplicates=True)
         self.insert1(key)
@@ -114,7 +103,13 @@ class BlockAnalysis(dj.Computed):
     block_duration: float  # (hour)
     """
 
-    key_source = Block & "block_end IS NOT NULL"
+    @property
+    def key_source(self):
+        # Ensure that the chunk ingestion has caught up with this block before processing
+        # (there exists a chunk that ends after the block end time)
+        ks = Block.aggr(acquisition.Chunk, latest_chunk_end="MAX(chunk_end)")
+        ks = ks * Block & "latest_chunk_end >= block_end" & "block_end IS NOT NULL"
+        return ks
 
     class Patch(dj.Part):
         definition = """
@@ -175,8 +170,8 @@ class BlockAnalysis(dj.Computed):
         self.insert1({**key, "block_duration": (block_end - block_start).total_seconds() / 3600})
 
         # Patch data - TriggerPellet, DepletionState, Encoder (distancetravelled)
-        # For wheel data, downsample by 50x - 10Hz
-        wheel_downsampling_factor = 50
+        # For wheel data, downsample to 10Hz
+        final_encoder_fs = 10
 
         maintenance_period = get_maintenance_periods(key["experiment_name"], block_start, block_end)
 
@@ -236,6 +231,9 @@ class BlockAnalysis(dj.Computed):
             patch_offset = depletion_state_df.offset.iloc[0]
             # handles patch rate value being INF
             patch_rate = 999999999 if np.isinf(patch_rate) else patch_rate
+
+            encoder_fs = 1 / encoder_df.index.to_series().diff().dt.total_seconds().median()  # mean or median?
+            wheel_downsampling_factor = int(encoder_fs / final_encoder_fs)
 
             self.Patch.insert1(
                 {
@@ -322,7 +320,6 @@ class BlockAnalysis(dj.Computed):
                 block_end = pos_df.index[-1]
 
         if block_end != (Block & key).fetch1("block_end"):
-            Block.update1({**key, "block_end": block_end})
             self.update1({**key, "block_duration": (block_end - block_start).total_seconds() / 3600})
 
 
@@ -803,7 +800,8 @@ def get_threshold_associated_pellets(patch_key, start, end):
     # remove NaNs from threshold column
     depletion_state_df = depletion_state_df.dropna(subset=["threshold"])
     # remove invalid rows where the time difference is less than 1 second
-    depletion_state_df = depletion_state_df[~(depletion_state_df.index.diff().total_seconds() < 1)]
+    invalid_rows = depletion_state_df.index.to_series().diff().dt.total_seconds() < 1
+    depletion_state_df = depletion_state_df[~invalid_rows]
 
     # find pellet times approximately coincide with each threshold update
     # i.e. nearest pellet delivery within 100ms before or after threshold update
