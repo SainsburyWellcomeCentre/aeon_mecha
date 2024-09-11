@@ -77,6 +77,8 @@ jobs:
           activate-environment: aeon
           architecture: arm64
           miniconda-version: "latest"
+        run: |
+          pip install datajoint
 
       - name: Update conda env with dev reqs
         run: mamba env update -f ./env_config/env_dev.yml

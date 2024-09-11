@@ -22,7 +22,6 @@ license = { file = "license.md" }
 readme = "readme.md"
 dependencies = [
   "bottleneck>=1.2.1,<2",
-  "setuptools",
   "datajoint>=0.13.7",
   "datajoint-utilities @ git+https://github.com/datajoint-company/datajoint-utilities",
   "dotmap",
