@@ -66,6 +66,7 @@ jobs:
           environment-file: ./env_config/env.yml
           activate-environment: aeon
           architecture: amd64
+          miniconda-version: "latest"
 
       - name: set up conda env for macOS
         if: ${{ matrix.os == 'macos-latest' }}
@@ -77,6 +78,7 @@ jobs:
           environment-file: ./env_config/env.yml
           activate-environment: aeon
           architecture: arm64
+          miniconda-version: "latest"
 
       - name: Update conda env with dev reqs
         run: mamba env update -f ./env_config/env_dev.yml
