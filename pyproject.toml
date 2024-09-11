@@ -165,6 +165,8 @@ extend-exclude = [
   "PLW0127",
   "PLR2004",
   "I001",
+  "E741",   # ignore ambiguous variable name
+  "F841",   # ignore unused variable
 ]
 
 [tool.ruff.pydocstyle]
