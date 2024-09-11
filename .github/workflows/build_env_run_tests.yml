@@ -66,6 +66,10 @@ jobs:
           environment-file: ./env_config/env.yml
           activate-environment: aeon
 
+      - name: Install datajoint on macOS
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: pip install datajoint
+
       - name: set up conda env for macOS
         if: ${{ matrix.os == 'macos-latest' }}
         uses: conda-incubator/setup-miniconda@v2
@@ -77,10 +81,6 @@ jobs:
           activate-environment: aeon
           architecture: arm64
           miniconda-version: "latest"
-
-      - name: Install datajoint on macOS
-        if: ${{ matrix.os == 'macos-latest' }}
-        run: pip install datajoint
 
       - name: Update conda env with dev reqs
         run: mamba env update -f ./env_config/env_dev.yml
