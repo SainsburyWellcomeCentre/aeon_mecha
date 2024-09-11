@@ -65,8 +65,6 @@ jobs:
           python-version: ${{ matrix.python-version }}
           environment-file: ./env_config/env.yml
           activate-environment: aeon
-          architecture: amd64
-          miniconda-version: "latest"
 
       - name: set up conda env for macOS
         if: ${{ matrix.os == 'macos-latest' }}
