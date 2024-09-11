@@ -68,15 +68,14 @@ jobs:
 
       - name: set up conda env for macOS
         if: ${{ matrix.os == 'macos-latest' }}
-        uses: conda-incubator/setup-miniconda@v2
-        with:
-          use-mamba: true
-          miniforge-variant: Mambaforge
-          python-version: ${{ matrix.python-version }}
-          environment-file: ./env_config/env_macos.yml
-          activate-environment: aeon
-          architecture: arm64
-          miniconda-version: "latest"
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install datajoint
+          python -m pip install .
+          # Now set up the Conda environment
+          conda env create -f ./env_config/env.yml
+          conda activate aeon
+        shell: bash
 
       - name: Update conda env with dev reqs
         run: mamba env update -f ./env_config/env_dev.yml
