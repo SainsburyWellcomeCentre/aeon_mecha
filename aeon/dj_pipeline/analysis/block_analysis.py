@@ -803,7 +803,8 @@ def get_threshold_associated_pellets(patch_key, start, end):
     # remove NaNs from threshold column
     depletion_state_df = depletion_state_df.dropna(subset=["threshold"])
     # remove invalid rows where the time difference is less than 1 second
-    depletion_state_df = depletion_state_df[~(depletion_state_df.index.diff().total_seconds() < 1)]
+    invalid_rows = depletion_state_df.index.to_series().diff().dt.total_seconds() < 1
+    depletion_state_df = depletion_state_df[~invalid_rows]
 
     # find pellet times approximately coincide with each threshold update
     # i.e. nearest pellet delivery within 100ms before or after threshold update
