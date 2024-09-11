@@ -66,11 +66,6 @@ jobs:
           environment-file: ./env_config/env.yml
           activate-environment: aeon
 
-      - name: Install datajoint on macOS
-        if: ${{ matrix.os == 'macos-latest' }}
-        run: |
-          pip install --use-pep517 datajoint
-
       - name: set up conda env for macOS
         if: ${{ matrix.os == 'macos-latest' }}
         uses: conda-incubator/setup-miniconda@v2
@@ -78,7 +73,7 @@ jobs:
           use-mamba: true
           miniforge-variant: Mambaforge
           python-version: ${{ matrix.python-version }}
-          environment-file: ./env_config/env.yml
+          environment-file: ./env_config/env_macos.yml
           activate-environment: aeon
           architecture: arm64
           miniconda-version: "latest"
