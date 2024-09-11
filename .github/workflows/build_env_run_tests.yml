@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
     defaults:
       run:
-        shell: ${{ matrix.os == 'windows-latest' && 'cmd' || 'bash' }} -l {0}
+        shell: bash -l {0} # reset shell for each step
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
