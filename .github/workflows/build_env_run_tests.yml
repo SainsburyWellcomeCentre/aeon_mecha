@@ -11,7 +11,7 @@ on:
 jobs:
   build_env_pip_pyproject: # checks only for building env using pip and pyproject.toml
     name: Build env using pip and pyproject.toml
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     if: github.event.pull_request.draft == false
     strategy:
       matrix:
@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
     defaults:
       run:
-        shell: ${{ matrix.os == 'windows-latest' && 'cmd' || 'bash' }} -l {0}
+        shell: ${{ matrix.os == 'windows-latest' && 'cmd' || 'bash' }} -l {0} # Adjust shell based on OS
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -31,7 +31,11 @@ jobs:
       - name: Create venv and install dependencies
         run: |
           python -m venv .venv
-          source .venv/bin/activate
+          if [ ${{ matrix.os }} = 'windows-latest' ]; then
+            .venv\Scripts\activate
+          else
+            source .venv/bin/activate
+          fi
           pip install -e .[dev]
           pip list
           .venv/bin/python -c "import aeon"
