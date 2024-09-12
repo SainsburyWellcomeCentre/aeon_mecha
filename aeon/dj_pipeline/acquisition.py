@@ -564,7 +564,7 @@ class Environment(dj.Imported):
 
 
 @schema
-class EnvironmentActiveConfig(dj.Imported):
+class EnvironmentActiveConfiguration(dj.Imported):
     definition = """  # Environment Active Configuration
     -> Chunk
     """
@@ -588,7 +588,7 @@ class EnvironmentActiveConfig(dj.Imported):
             ),
         )
         device = devices_schema.Environment
-        stream_reader = device.ActiveConfiguration  # expecting columns: time, name, value
+        stream_reader = device.EnvActiveConfiguration  # expecting columns: time, name, value
         stream_data = io_api.load(
             root=data_dirs,
             reader=stream_reader,

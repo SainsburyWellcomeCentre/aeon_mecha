@@ -10,7 +10,7 @@ class Pose(Stream):
         super().__init__(_reader.Pose(f"{path}_202_*"))
 
 
-class EnvActiveConfigReader(_reader.JsonList):
+class EnvActiveConfigurationReader(_reader.JsonList):
     def __init__(self, pattern):
         super().__init__(pattern)
 
@@ -20,7 +20,7 @@ class EnvActiveConfigReader(_reader.JsonList):
         return data
 
 
-class ActiveConfiguration(Stream):
+class EnvActiveConfiguration(Stream):
 
     def __init__(self, path):
-        super().__init__(EnvActiveConfigReader(f"{path}_ActiveConfiguration_*"))
+        super().__init__(EnvActiveConfigurationReader(f"{path}_ActiveConfiguration_*"))
