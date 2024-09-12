@@ -101,6 +101,7 @@ def rate(events, window, frequency, weight=1, start=None, end=None, smooth=None,
 def get_events_rates(
     events, window_len_sec, frequency, unit_len_sec=60, start=None, end=None, smooth=None, center=False
 ):
+    """Computes the event rate from a sequence of events over a specified window."""
     # events is an array with the time (in seconds) of event occurence
     # window_len_sec is the size of the window over which the event rate is estimated
     # unit_len_sec is the length of one sample point
