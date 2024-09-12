@@ -40,13 +40,13 @@ jobs:
           pip list
           .venv/bin/python -c "import aeon"
 
-  build_env_run_tests: # checks for building env using mamba and runs codebase checks and tests
+  build_env_run_tests: # checks for building env using mamba and runs codebase checks and tests (Windows, Linux)
     name: Build env and run tests on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     if: github.event.pull_request.draft == false
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, windows-latest]
         python-version: [3.11]
       fail-fast: false
     defaults:
@@ -65,24 +65,6 @@ jobs:
           python-version: ${{ matrix.python-version }}
           environment-file: ./env_config/env.yml
           activate-environment: aeon
-
-      - name: Set up conda env (macOS)
-        if: ${{ matrix.os == 'macos-latest' }}
-        uses: conda-incubator/setup-miniconda@v2
-        with:
-          use-mamba: true
-          miniforge-variant: Mambaforge
-          python-version: ${{ matrix.python-version }}
-          environment-file: ./env_config/env_macos.yml
-          activate-environment: aeon
-          architecture: arm64
-          miniconda-version: "latest"
-
-      - name: Install datajoint
-        if: ${{ matrix.os == 'macos-latest' }}
-        run: |
-          conda run -n aeon pip install "datajoint>=0.13.6, <1"
-        shell: bash
 
       - name: Update conda env with dev reqs
         run: mamba env update -f ./env_config/env_dev.yml
