@@ -115,11 +115,12 @@ def insert_device_types(devices_schema: DotMap, metadata_yml_filepath: Path):
         streams.Device.insert(new_devices)
 
 
-def extract_epoch_config(experiment_name: str, devices_schema, metadata_yml_filepath: str) -> dict:
+def extract_epoch_config(experiment_name: str, devices_schema: DotMap, metadata_yml_filepath: str) -> dict:
     """Parse experiment metadata YAML file and extract epoch configuration.
 
     Args:
         experiment_name (str): Name of the experiment.
+        devices_schema (DotMap): DotMap object (e.g., exp02, octagon01)
         metadata_yml_filepath (str): path to the metadata YAML file.
 
     Returns:
