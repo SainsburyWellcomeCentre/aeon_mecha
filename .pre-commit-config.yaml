@@ -32,11 +32,11 @@ repos:
       - id: ruff-format
         types_or: [ python, pyi ] # Ignore .ipynb files
 
-  # - repo: https://github.com/RobertCraigie/pyright-python
-  #   rev: v1.1.380
-  #   hooks:
-  #     - id: pyright
-  #       args: [--level, error, --project, ./pyproject.toml]
+  - repo: https://github.com/RobertCraigie/pyright-python
+    rev: v1.1.380
+    hooks:
+      - id: pyright
+        args: [--level, error, --project, ./pyproject.toml]
 
   # Pytest is expensive, so we show its set-up but leave it commented out.
   # - repo: local
