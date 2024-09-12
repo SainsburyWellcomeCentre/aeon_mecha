@@ -528,7 +528,7 @@ class BlockSubjectAnalysis(dj.Computed):
 
 @schema
 class BlockPlots(dj.Computed):
-    definition = """ 
+    definition = """
     -> BlockAnalysis
     ---
     subject_positions_plot: longblob

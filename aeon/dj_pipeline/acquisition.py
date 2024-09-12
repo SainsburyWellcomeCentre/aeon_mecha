@@ -475,7 +475,7 @@ class Environment(dj.Imported):
         -> master
         ---
         sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) 
+        timestamps: longblob   # (datetime)
         priority: longblob
         type: longblob
         message: longblob
