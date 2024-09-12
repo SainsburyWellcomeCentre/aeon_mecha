@@ -77,7 +77,7 @@ jobs:
       - name: Install datajoint wheel build with pip flag (macOS)
         if: ${{ matrix.os == 'macos-latest' }}
         run: |
-          source activate aeon
+          source $CONDA/bin/activate aeon
           pip install --use-pep517 datajoint git+https://github.com/datajoint-company/datajoint-utilities.git
 
       - name: Update conda env with dev reqs (Linux, Windows, macOS)
