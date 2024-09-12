@@ -21,16 +21,16 @@ repos:
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
 
-  # - repo: https://github.com/astral-sh/ruff-pre-commit
-  #   rev: v0.6.4
-  #   hooks:
-  #     # Run the linter with the `--fix` flag.
-  #     - id: ruff
-  #       types_or: [ python, pyi ]
-  #       args: [ --fix ]
-  #     # Run the formatter.
-  #     - id: ruff-format
-  #       types_or: [ python, pyi ]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.4
+    hooks:
+      # Run the linter with the `--fix` flag.
+      - id: ruff
+        types_or: [ python, pyi ] # Ignore .ipynb files
+        args: [ --fix ]
+      # Run the formatter.
+      - id: ruff-format
+        types_or: [ python, pyi ] # Ignore .ipynb files
 
   # - repo: https://github.com/RobertCraigie/pyright-python
   #   rev: v1.1.380
