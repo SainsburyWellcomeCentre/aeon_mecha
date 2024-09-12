@@ -1,6 +1,5 @@
 # Create env e.g. w/mamba: `mamba env create -q -f env.yml`
 # Update existing env e.g. w/mamba: `mamba env update -f env.yml`
-# Install datajoint in macOS conda env: `pip install datajoint>=0.13.6, <1 --use-pep517`
 
 name: aeon
 channels:
@@ -33,5 +32,5 @@ dependencies:
   - seaborn
   - xarray>=0.12.3, <1
   - pip:
-      - git+https://github.com/datajoint-company/datajoint-utilities.git
+      - --use-pep517 git+https://github.com/datajoint-company/datajoint-utilities.git
       - opencv-python

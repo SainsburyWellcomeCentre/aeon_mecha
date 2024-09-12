@@ -64,7 +64,7 @@ jobs:
 
       - name: Set up conda env (macOS)
         if: ${{ matrix.os == 'macos-latest' }}
-        uses: conda-incubator/setup-miniconda@v2
+        uses: conda-incubator/setup-miniconda@v3
         with:
           use-mamba: true
           miniforge-variant: Mambaforge
