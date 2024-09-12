@@ -10,7 +10,7 @@ on:
 
 jobs:
   build_env_pip_pyproject: # checks only for building env using pip and pyproject.toml
-    name: Build env using pip and pyproject.toml
+    name: Build env using pip and pyproject.toml on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     if: github.event.pull_request.draft == false
     strategy:
@@ -74,16 +74,16 @@ jobs:
           architecture: arm64
           miniconda-version: "latest"
 
-      - name: Install datajoint and datajoint-utilities using pip and flag for wheel build in macOS conda env
+      - name: Install datajoint wheel build with pip flag (macOS)
         if: ${{ matrix.os == 'macos-latest' }}
         run: |
-          conda activate aeon
+          mamba activate aeon
           pip install --use-pep517 datajoint git+https://github.com/datajoint-company/datajoint-utilities.git
 
-      - name: Update conda env with dev reqs
+      - name: Update conda env with dev reqs (Linux, Windows, macOS)
         run: mamba env update -f ./env_config/env_dev.yml
 
-      # Only run codebase checks and tests for ubuntu.
+      # Only run codebase checks and tests for Linux (ubuntu).
       - name: ruff
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: python -m ruff check --config ./pyproject.toml .
