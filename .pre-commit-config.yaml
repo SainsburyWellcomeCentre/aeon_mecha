@@ -26,11 +26,9 @@ repos:
     hooks:
       # Run the linter with the `--fix` flag.
       - id: ruff
-        types_or: [ python, pyi ] # Ignore .ipynb files
         args: [ --fix ]
       # Run the formatter.
       - id: ruff-format
-        types_or: [ python, pyi ] # Ignore .ipynb files
 
   - repo: https://github.com/RobertCraigie/pyright-python
     rev: v1.1.380

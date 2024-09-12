@@ -118,6 +118,7 @@ extend-exclude = [
   ".git",
   ".github",
   ".idea",
+  "*.ipynb",
   ".vscode",
   "aeon/dj_pipeline/streams.py",
 ]
