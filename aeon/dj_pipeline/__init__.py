@@ -31,7 +31,9 @@ def dict_to_uuid(key) -> uuid.UUID:
 
 
 def fetch_stream(query, drop_pk=True):
-    """Provided a query containing data from a Stream table,
+    """Fetches data from a Stream table based on a query and returns it as a DataFrame.
+
+    Provided a query containing data from a Stream table,
     fetch and aggregate the data into one DataFrame indexed by "time"
     """
     df = (query & "sample_count > 0").fetch(format="frame").reset_index()

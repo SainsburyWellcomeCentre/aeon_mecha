@@ -1,11 +1,12 @@
-"""Jan 2024
-Cloning and archiving schemas and data for experiment 0.2.
+"""Jan 2024: Cloning and archiving schemas and data for experiment 0.2.
+
 The pipeline code associated with this archived data pipeline is here
 https://github.com/SainsburyWellcomeCentre/aeon_mecha/releases/tag/dj_exp02_stable
 """
 
-import os
 import inspect
+import os
+
 import datajoint as dj
 from datajoint_utilities.dj_data_copy import db_migration
 from datajoint_utilities.dj_data_copy.pipeline_cloning import ClonedPipeline
@@ -58,7 +59,8 @@ def data_copy(restriction, table_block_list, batch_size=None):
 
 
 def validate():
-    """Validation of schemas migration
+    """Validates schemas migration.
+
     1. for the provided list of schema names - validate all schemas have been migrated
     2. for each schema - validate all tables have been migrated
     3. for each table, validate all entries have been migrated
