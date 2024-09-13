@@ -7,7 +7,6 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - black[jupyter]
   - gh
   - ipdb
   - jellyfish

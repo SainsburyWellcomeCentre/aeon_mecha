@@ -4,7 +4,6 @@ from aeon.schema.streams import Stream, StreamGroup
 
 
 class Environment(StreamGroup):
-
     def __init__(self, path):
         super().__init__(path)
 
@@ -45,25 +44,21 @@ class SubjectData(StreamGroup):
 
 
 class Pose(Stream):
-
     def __init__(self, path):
         super().__init__(_reader.Pose(f"{path}_test-node1*"))
 
 
 class WeightRaw(Stream):
-
     def __init__(self, path):
         super().__init__(_reader.Harp(f"{path}_200_*", ["weight(g)", "stability"]))
 
 
 class WeightFiltered(Stream):
-
     def __init__(self, path):
         super().__init__(_reader.Harp(f"{path}_202_*", ["weight(g)", "stability"]))
 
 
 class Patch(StreamGroup):
-
     def __init__(self, path):
         super().__init__(path)
 
@@ -89,6 +84,5 @@ class Patch(StreamGroup):
 
 
 class RfidEvents(Stream):
-
     def __init__(self, path):
         super().__init__(_reader.Harp(f"{path}_32*", ["rfid"]))

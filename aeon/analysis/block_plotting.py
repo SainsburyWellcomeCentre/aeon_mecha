@@ -32,7 +32,7 @@ patch_markers_linestyles = ["solid", "dash", "dot", "dashdot", "longdashdot"]
 def gen_hex_grad(hex_col, vals, min_l=0.3):
     """Generates an array of hex color values based on a gradient defined by unit-normalized values."""
     # Convert hex to rgb to hls
-    h, l, s = rgb_to_hls(*[int(hex_col.lstrip("#")[i : i + 2], 16) / 255 for i in (0, 2, 4)])
+    h, l, s = rgb_to_hls(*[int(hex_col.lstrip("#")[i : i + 2], 16) / 255 for i in (0, 2, 4)])  # noqa: E741
     grad = np.empty(shape=(len(vals),), dtype="<U10")  # init grad
     for i, val in enumerate(vals):
         cur_l = (l * val) + (min_l * (1 - val))  # get cur lightness relative to `hex_col`

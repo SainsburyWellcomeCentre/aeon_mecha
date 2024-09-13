@@ -1,18 +1,18 @@
 import datetime
+import json
 import pathlib
 import re
+
 import datajoint as dj
 import numpy as np
 import pandas as pd
-import json
 
-from aeon.io import api as io_api
-from aeon.schema import schemas as aeon_schemas
-from aeon.io import reader as io_reader
 from aeon.analysis import utils as analysis_utils
-
 from aeon.dj_pipeline import get_schema_name, lab, subject
 from aeon.dj_pipeline.utils import paths
+from aeon.io import api as io_api
+from aeon.io import reader as io_reader
+from aeon.schema import schemas as aeon_schemas
 
 logger = dj.logger
 schema = dj.schema(get_schema_name("acquisition"))
@@ -181,7 +181,7 @@ class Epoch(dj.Manual):
 
     @classmethod
     def ingest_epochs(cls, experiment_name):
-        """Ingest epochs for the specified "experiment_name" """
+        """Ingest epochs for the specified ``experiment_name``."""
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
@@ -475,7 +475,7 @@ class Environment(dj.Imported):
         -> master
         ---
         sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) 
+        timestamps: longblob   # (datetime)
         priority: longblob
         type: longblob
         message: longblob
@@ -604,7 +604,7 @@ def _match_experiment_directory(experiment_name, path, directories):
 
 
 def create_chunk_restriction(experiment_name, start_time, end_time):
-    """Create a time restriction string for the chunks between the specified "start" and "end" times"""
+    """Create a time restriction string for the chunks between the specified "start" and "end" times."""
     start_restriction = f'"{start_time}" BETWEEN chunk_start AND chunk_end'
     end_restriction = f'"{end_time}" BETWEEN chunk_start AND chunk_end'
     start_query = Chunk & {"experiment_name": experiment_name} & start_restriction

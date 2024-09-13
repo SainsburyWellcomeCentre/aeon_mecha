@@ -12,7 +12,7 @@ file_name = (
 
 
 def save_test_data(pipeline, test_params):
-    """Save test dataset fetched from tracking.CameraTracking.Object"""
+    """Save test dataset fetched from tracking.CameraTracking.Object."""
     tracking = pipeline["tracking"]
 
     key = tracking.CameraTracking.Object().fetch("KEY")[index]
@@ -36,7 +36,6 @@ def save_test_data(pipeline, test_params):
 @mark.ingestion
 @mark.tracking
 def test_camera_tracking_ingestion(test_params, pipeline, camera_tracking_ingestion):
-
     tracking = pipeline["tracking"]
 
     assert len(tracking.CameraTracking.Object()) == test_params["camera_tracking_object_count"]

@@ -248,8 +248,7 @@ class BlockAnalysis(dj.Computed):
             )
 
             # update block_end if last timestamp of encoder_df is before the current block_end
-            if encoder_df.index[-1] < block_end:
-                block_end = encoder_df.index[-1]
+            block_end = min(encoder_df.index[-1], block_end)
 
         # Subject data
         # Get all unique subjects that visited the environment over the entire exp;
@@ -311,8 +310,7 @@ class BlockAnalysis(dj.Computed):
             )
 
             # update block_end if last timestamp of pos_df is before the current block_end
-            if pos_df.index[-1] < block_end:
-                block_end = pos_df.index[-1]
+            block_end = min(pos_df.index[-1], block_end)
 
         if block_end != (Block & key).fetch1("block_end"):
             Block.update1({**key, "block_end": block_end})
@@ -474,9 +472,9 @@ class BlockSubjectAnalysis(dj.Computed):
                 )
                 subject_in_patch = in_patch[subject_name]
                 subject_in_patch_cum_time = subject_in_patch.cumsum().values * dt
-                all_subj_patch_pref_dict[patch["patch_name"]][subject_name][
-                    "cum_time"
-                ] = subject_in_patch_cum_time
+                all_subj_patch_pref_dict[patch["patch_name"]][subject_name]["cum_time"] = (
+                    subject_in_patch_cum_time
+                )
                 subj_pellets = closest_subjects_pellet_ts[closest_subjects_pellet_ts == subject_name]
                 self.Patch.insert1(
                     key
@@ -528,7 +526,7 @@ class BlockSubjectAnalysis(dj.Computed):
 
 @schema
 class BlockPlots(dj.Computed):
-    definition = """ 
+    definition = """
     -> BlockAnalysis
     ---
     subject_positions_plot: longblob

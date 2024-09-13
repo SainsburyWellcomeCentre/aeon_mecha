@@ -51,7 +51,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "bandit",
-  "black[jupyter]",
   "gh",
   "ipdb",
   "pre-commit",
@@ -77,24 +76,6 @@ DataJoint = "https://docs.datajoint.org/"
 
 [tool.setuptools.packages.find]
 include = ["aeon*"]
-
-[tool.black]
-line-length = 108
-color = false
-exclude = '''
-/(
-    \.git
-    | \.mypy_cache
-    | \.tox
-    | \.venv
-    | _build
-    | build
-    | dist
-    | env
-    | venv
-)/
-'''
-extend-exclude = "aeon/dj_pipeline/streams.py"
 
 [tool.ruff]
 lint.select = [
@@ -127,6 +108,7 @@ lint.ignore = [
   "E731",
   "E702",
   "S101",
+  "PT004",  # Rule `PT004` is deprecated and will be removed in a future release.
   "PT013",
   "PLR0912",
   "PLR0913",
@@ -136,6 +118,7 @@ extend-exclude = [
   ".git",
   ".github",
   ".idea",
+  "*.ipynb",
   ".vscode",
   "aeon/dj_pipeline/streams.py",
 ]
