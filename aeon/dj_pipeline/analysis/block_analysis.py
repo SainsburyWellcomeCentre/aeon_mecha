@@ -893,3 +893,116 @@ def get_threshold_associated_pellets(patch_key, start, end):
         subset=["pellet_timestamp", "beam_break_timestamp"]
     )
     return pellet_ts_threshold_df
+
+
+"""Foraging bout function."""
+
+
+def get_foraging_bouts(
+    key: dict,
+    min_pellets: int = 3,
+    max_inactive_time: pd.Timedelta | None = None,  # seconds
+    min_wheel_movement: float = 10,  # cm
+) -> pd.DataFrame:
+    """Gets foraging bouts for all subjects across all patches within a block.
+
+    Args:
+        key: Block key - dict containing keys for 'experiment_name', 'block_start', 'block_end'.
+        min_pellets: Minimum number of pellets for a foraging bout.
+        max_inactive_time: Maximum time between `min_wheel_movement`s for a foraging bout.
+        min_wheel_movement: Minimum wheel movement for a foraging bout.
+
+    Returns:
+        DataFrame containing foraging bouts. Columns: duration, n_pellets, cum_wheel_dist, subject.
+    """
+    max_inactive_time = pd.Timedelta(seconds=60) if max_inactive_time is None else max_inactive_time
+    subject_patch_data = (BlockSubjectAnalysis.Patch() & key).fetch(format="frame")
+    subject_patch_data.reset_index(level=["experiment_name"], drop=True, inplace=True)
+    subject_names = subject_patch_data.index.get_level_values("subject_name").unique()
+    wheel_ts = (BlockAnalysis.Patch & key).fetch("wheel_timestamps")[0]
+    # For each subject:
+    #   - Create cumulative wheel distance spun sum df combining all patches
+    #     - Columns: timestamp, wheel distance, patch
+    #   - Discretize into 'possible foraging events' based on `max_inactive_time`, and `min_wheel_movement`
+    #   - Filter out events with < `min_pellets`
+    #   - For final events, get: duration, n_pellets, cum_wheel_distance -> add to returned DF
+    bout_data = pd.DataFrame(columns=["start", "end", "n_pellets", "cum_wheel_dist", "subject"])
+    for subject in subject_names:
+        cur_subject_data = subject_patch_data.xs(subject, level="subject_name")
+        # Create combined cumulative wheel distance spun: ensure equal length wheel vals across patches
+        wheel_vals = cur_subject_data["wheel_cumsum_distance_travelled"].values
+        min_len = min(len(arr) for arr in wheel_vals)
+        comb_cum_wheel_dist = np.sum([arr[:min_len] for arr in wheel_vals], axis=0)
+        wheel_ts, comb_cum_wheel_dist = (  # ensure equal length wheel vals and wheel ts
+            arr[: min(len(wheel_ts), len(comb_cum_wheel_dist))] for arr in [wheel_ts, comb_cum_wheel_dist]
+        )
+        # For each wheel_ts, get the correspdoning patch that was spun
+        patch_spun = np.empty(len(wheel_ts), dtype="<U20")
+        patch_spun[:] = ""
+        wheel_spun_thresh = 0.03  # threshold for wheel movement (cm)
+        for _, row in cur_subject_data.iterrows():
+            patch_name = row.name[1]
+            diff = np.diff(row["wheel_cumsum_distance_travelled"], prepend=0)
+            spun_indices = np.where(diff > wheel_spun_thresh)[0]
+            patch_spun[spun_indices] = patch_name
+        patch_spun_df = pd.DataFrame(index=wheel_ts, columns=["cum_wheel_dist", "patch_spun"])
+        patch_spun_df["cum_wheel_dist"] = comb_cum_wheel_dist
+        patch_spun_df["patch_spun"] = patch_spun
+        wheel_s_r = pd.Timedelta(wheel_ts[1] - wheel_ts[0], unit="ns")
+        win_len = int(max_inactive_time / wheel_s_r)
+        # Find times when foraging
+        max_windowed_wheel_vals = (
+            patch_spun_df["cum_wheel_dist"]
+            .shift(-(win_len - 1))
+            .rolling(window=win_len, min_periods=1)
+            .max()
+        )
+        foraging_mask = max_windowed_wheel_vals > (patch_spun_df["cum_wheel_dist"] + min_wheel_movement)
+        # Discretize into foraging bouts
+        bout_start_indxs = np.where(np.diff(foraging_mask.astype(int), prepend=0) == 1)[0]
+        bout_end_indxs = np.where(np.diff(foraging_mask.astype(int), prepend=0) == -1)[0]
+        assert len(bout_start_indxs) == len(bout_end_indxs)
+        bout_durations = (wheel_ts[bout_end_indxs] - wheel_ts[bout_start_indxs]).astype(  # in seconds
+            "timedelta64[ns]"
+        ).astype(float) / 1e9
+        bout_starts_ends = np.array(
+            [
+                (wheel_ts[start_idx], wheel_ts[end_idx])
+                for start_idx, end_idx in zip(bout_start_indxs, bout_end_indxs, strict=True)
+            ]
+        )
+        all_pel_ts = np.sort(
+            np.concatenate([arr for arr in cur_subject_data["pellet_timestamps"] if len(arr) > 0])
+        )
+        bout_pellets = np.array(
+            [
+                len(all_pel_ts[(all_pel_ts >= start) & (all_pel_ts <= end)])
+                for start, end in bout_starts_ends
+            ]
+        )
+        # Filter by `min_pellets`
+        bout_durations = bout_durations[bout_pellets >= min_pellets]
+        bout_starts_ends = bout_starts_ends[bout_pellets >= min_pellets]
+        bout_pellets = bout_pellets[bout_pellets >= min_pellets]
+        bout_cum_wheel_dist = np.array(
+            [
+                patch_spun_df.loc[end, "cum_wheel_dist"] - patch_spun_df.loc[start, "cum_wheel_dist"]
+                for start, end in bout_starts_ends
+            ]
+        )
+        # Add to returned DF
+        bout_data = pd.concat(
+            [
+                bout_data,
+                pd.DataFrame(
+                    {
+                        "start": bout_starts_ends[:, 0],
+                        "end": bout_starts_ends[:, 1],
+                        "n_pellets": bout_pellets,
+                        "cum_wheel_dist": bout_cum_wheel_dist,
+                        "subject": subject,
+                    }
+                ),
+            ]
+        )
+    return bout_data.sort_values("start").reset_index(drop=True)
