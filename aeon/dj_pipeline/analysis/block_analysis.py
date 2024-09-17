@@ -785,10 +785,24 @@ def get_threshold_associated_pellets(patch_key, start, end):
         - Remove all events within 1 second of each other
         - Remove all events without threshold value (NaN)
     2. Get all pellet delivery timestamps (DeliverPellet): let's call these events "B"
+        - Find matching beam break timestamps within 500ms after each pellet delivery
     3. For each event "A", find the nearest event "B" within 100ms before or after the event "A"
         - These are the pellet delivery events "B" associated with the previous threshold update event "A"
     4. Shift back the pellet delivery timestamps by 1 to match the pellet delivery with the previous threshold update
     5. Remove all threshold updates events "A" without a corresponding pellet delivery event "B"
+
+    Args:
+        patch_key (dict): primary key for the patch
+        start (datetime): start timestamp
+        end (datetime): end timestamp
+
+    Returns:
+        pd.DataFrame: DataFrame with the following columns:
+        - threshold_update_timestamp (index)
+        - pellet_timestamp
+        - beam_break_timestamp
+        - offset
+        - rate
     """
     chunk_restriction = acquisition.create_chunk_restriction(
         patch_key["experiment_name"], start, end
@@ -796,6 +810,9 @@ def get_threshold_associated_pellets(patch_key, start, end):
     # pellet delivery and patch threshold data
     delivered_pellet_df = fetch_stream(
         streams.UndergroundFeederDeliverPellet & patch_key & chunk_restriction
+    )[start:end]
+    beam_break_df = fetch_stream(
+        streams.UndergroundFeederBeamBreak & patch_key & chunk_restriction
     )[start:end]
     depletion_state_df = fetch_stream(
         streams.UndergroundFeederDepletionState & patch_key & chunk_restriction
@@ -806,12 +823,23 @@ def get_threshold_associated_pellets(patch_key, start, end):
     invalid_rows = depletion_state_df.index.to_series().diff().dt.total_seconds() < 1
     depletion_state_df = depletion_state_df[~invalid_rows]
 
+    # find pellet times with matching beam break times (within 500ms after pellet times)
+    pellet_beam_break_df = pd.merge_asof(
+        delivered_pellet_df.reset_index(),
+        beam_break_df.reset_index().rename(columns={"time": "beam_break_timestamp"}),
+        left_on="time",
+        right_on="beam_break_timestamp",
+        tolerance=pd.Timedelta("1.2s"),
+        direction="forward",
+    ).set_index("time").dropna(subset=["beam_break_timestamp"])
+    pellet_beam_break_df.drop_duplicates(subset="beam_break_timestamp", keep="last", inplace=True)
+
     # find pellet times approximately coincide with each threshold update
     # i.e. nearest pellet delivery within 100ms before or after threshold update
     pellet_ts_threshold_df = (
         pd.merge_asof(
             depletion_state_df.reset_index(),
-            delivered_pellet_df.reset_index().rename(columns={"time": "pellet_timestamp"}),
+            pellet_beam_break_df.reset_index().rename(columns={"time": "pellet_timestamp"}),
             left_on="time",
             right_on="pellet_timestamp",
             tolerance=pd.Timedelta("100ms"),
@@ -820,10 +848,11 @@ def get_threshold_associated_pellets(patch_key, start, end):
         .set_index("time")
         .dropna(subset=["pellet_timestamp"])
     )
-    pellet_ts_threshold_df = pellet_ts_threshold_df.drop(columns=["event"])
+    pellet_ts_threshold_df = pellet_ts_threshold_df.drop(columns=["event_x", "event_y"])
     # shift back the pellet_timestamp values by 1 to match the pellet_timestamp with the previous threshold update
     pellet_ts_threshold_df.pellet_timestamp = pellet_ts_threshold_df.pellet_timestamp.shift(-1)
+    pellet_ts_threshold_df.beam_break_timestamp = pellet_ts_threshold_df.beam_break_timestamp.shift(-1)
     # remove NaNs from pellet_timestamp column (last row)
-    pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(subset=["pellet_timestamp"])
+    pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(subset=["pellet_timestamp", "beam_break_timestamp"])
 
     return pellet_ts_threshold_df
