@@ -101,6 +101,8 @@ class BlockAnalysis(dj.Computed):
     -> Block
     ---
     block_duration: float  # (hour)
+    patch_count=null: int  # number of patches in the block
+    subject_count=null: int  # number of subjects in the block
     """
 
     @property
@@ -167,8 +169,6 @@ class BlockAnalysis(dj.Computed):
                     f"BlockAnalysis Not Ready - {streams_table.__name__} not yet fully ingested for block: {key}. Skipping (to retry later)..."
                 )
 
-        self.insert1({**key, "block_duration": (block_end - block_start).total_seconds() / 3600})
-
         # Patch data - TriggerPellet, DepletionState, Encoder (distancetravelled)
         # For wheel data, downsample to 10Hz
         final_encoder_fs = 10
@@ -183,6 +183,7 @@ class BlockAnalysis(dj.Computed):
         )
         patch_keys, patch_names = patch_query.fetch("KEY", "underground_feeder_name")
 
+        block_patch_entries = []
         for patch_key, patch_name in zip(patch_keys, patch_names):
             # pellet delivery and patch threshold data
             depletion_state_df = fetch_stream(
@@ -235,7 +236,7 @@ class BlockAnalysis(dj.Computed):
             encoder_fs = 1 / encoder_df.index.to_series().diff().dt.total_seconds().median()  # mean or median?
             wheel_downsampling_factor = int(encoder_fs / final_encoder_fs)
 
-            self.Patch.insert1(
+            block_patch_entries.append(
                 {
                     **key,
                     "patch_name": patch_name,
@@ -272,6 +273,7 @@ class BlockAnalysis(dj.Computed):
             if _df.type.iloc[-1] != "Exit":
                 subject_names.append(subject_name)
 
+        block_subject_entries = []
         for subject_name in subject_names:
             # positions - query for CameraTop, identity_name matches subject_name,
             pos_query = (
@@ -301,7 +303,7 @@ class BlockAnalysis(dj.Computed):
             weight_df = fetch_stream(weight_query)[block_start:block_end]
             weight_df.query(f"subject_id == '{subject_name}'", inplace=True)
 
-            self.Subject.insert1(
+            block_subject_entries.append(
                 {
                     **key,
                     "subject_name": subject_name,
@@ -318,6 +320,13 @@ class BlockAnalysis(dj.Computed):
             # update block_end if last timestamp of pos_df is before the current block_end
             if pos_df.index[-1] < block_end:
                 block_end = pos_df.index[-1]
+
+        self.insert1({**key,
+                      "block_duration": (block_end - block_start).total_seconds() / 3600,
+                      "patch_count": len(patch_keys),
+                      "subject_count": len(subject_names)})
+        self.Patch.insert(block_patch_entries)
+        self.Subject.insert(block_subject_entries)
 
         if block_end != (Block & key).fetch1("block_end"):
             self.update1({**key, "block_duration": (block_end - block_start).total_seconds() / 3600})
@@ -804,13 +813,18 @@ def get_threshold_associated_pellets(patch_key, start, end):
     chunk_restriction = acquisition.create_chunk_restriction(
         patch_key["experiment_name"], start, end
     )
-    # pellet delivery and patch threshold data
+    # pellet delivery and beam break data
     delivered_pellet_df = fetch_stream(
         streams.UndergroundFeederDeliverPellet & patch_key & chunk_restriction
     )[start:end]
     beam_break_df = fetch_stream(
         streams.UndergroundFeederBeamBreak & patch_key & chunk_restriction
     )[start:end]
+
+    if delivered_pellet_df.empty or beam_break_df.empty:
+        return acquisition.io_api._empty(["threshold", "offset", "rate", "pellet_timestamp", "beam_break_timestamp"])
+
+    # patch threshold data
     depletion_state_df = fetch_stream(
         streams.UndergroundFeederDepletionState & patch_key & chunk_restriction
     )[start:end]
