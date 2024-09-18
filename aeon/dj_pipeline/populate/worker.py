@@ -44,12 +44,6 @@ def ingest_epochs_chunks():
         acquisition.Chunk.ingest_chunks(experiment_name)
 
 
-def ingest_environment_visits():
-    """Extract and insert complete visits for experiments specified in AutomatedExperimentIngestion."""
-    experiment_names = AutomatedExperimentIngestion.fetch("experiment_name")
-    # analysis.ingest_environment_visits(experiment_names)
-
-
 # ---- Define worker(s) ----
 # configure a worker to process `acquisition`-related tasks
 acquisition_worker = DataJointWorker(

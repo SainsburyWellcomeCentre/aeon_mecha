@@ -11,8 +11,8 @@ import pandas as pd
 from dotmap import DotMap
 
 from aeon import util
-from aeon.io.api import chunk, chunk_key
 from aeon.io.api import aeon as aeon_time
+from aeon.io.api import chunk, chunk_key
 
 _SECONDS_PER_TICK = 32e-6
 _payloadtypes = {
@@ -188,8 +188,10 @@ class Encoder(Harp):
         super().__init__(pattern, columns=["angle", "intensity"])
 
     def read(self, file, downsample=True):
-        """Reads encoder data from the specified Harp binary file, and optionally downsamples
-        the frequency to 50Hz.
+        """Reads encoder data from the specified Harp binary file.
+
+        By default the encoder data is downsampled to 50Hz. Setting downsample to
+        False or None can be used to force the raw data to be returned.
         """
         data = super().read(file)
         if downsample is True:
@@ -200,7 +202,7 @@ class Encoder(Harp):
             if first_index is not None:
                 # since data is absolute angular position we decimate by taking first of each bin
                 chunk_origin = chunk(first_index)
-                data = data.resample('20ms', origin=chunk_origin).first()
+                data = data.resample("20ms", origin=chunk_origin).first()
         return data
 
 
@@ -319,15 +321,17 @@ class Pose(Harp):
         parts = self.get_bodyparts(config_file)
 
         # Using bodyparts, assign column names to Harp register values, and read data in default format.
+        BONSAI_SLEAP_V2 = 0.2
+        BONSAI_SLEAP_V3 = 0.3
         try:  # Bonsai.Sleap0.2
-            bonsai_sleap_v = 0.2
+            bonsai_sleap_v = BONSAI_SLEAP_V2
             columns = ["identity", "identity_likelihood"]
             for part in parts:
                 columns.extend([f"{part}_x", f"{part}_y", f"{part}_likelihood"])
             self.columns = columns
             data = super().read(file)
         except ValueError:  # column mismatch; Bonsai.Sleap0.3
-            bonsai_sleap_v = 0.3
+            bonsai_sleap_v = BONSAI_SLEAP_V3
             columns = ["identity"]
             columns.extend([f"{identity}_likelihood" for identity in identities])
             for part in parts:
@@ -352,10 +356,13 @@ class Pose(Harp):
         new_columns = ["identity", "identity_likelihood", "part", "x", "y", "part_likelihood"]
         new_data = pd.DataFrame(columns=new_columns)
         for i, part in enumerate(parts):
-            part_columns = columns[0 : (len(identities) + 1)] if bonsai_sleap_v == 0.3 else columns[0:2]
+            part_columns = (
+                columns[0 : (len(identities) + 1)] if bonsai_sleap_v == BONSAI_SLEAP_V3 else columns[0:2]
+            )
             part_columns.extend([f"{part}_x", f"{part}_y", f"{part}_likelihood"])
             part_data = pd.DataFrame(data[part_columns])
-            if bonsai_sleap_v == 0.3:  # combine all identity_likelihood cols into a single col as dict
+            if bonsai_sleap_v == BONSAI_SLEAP_V3:
+                # combine all identity_likelihood cols into a single col as dict
                 part_data["identity_likelihood"] = part_data.apply(
                     lambda row: {identity: row[f"{identity}_likelihood"] for identity in identities}, axis=1
                 )

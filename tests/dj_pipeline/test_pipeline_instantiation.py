@@ -3,7 +3,6 @@ from pytest import mark
 
 @mark.instantiation
 def test_pipeline_instantiation(pipeline):
-
     assert hasattr(pipeline["acquisition"], "FoodPatchEvent")
     assert hasattr(pipeline["lab"], "Arena")
     assert hasattr(pipeline["qc"], "CameraQC")

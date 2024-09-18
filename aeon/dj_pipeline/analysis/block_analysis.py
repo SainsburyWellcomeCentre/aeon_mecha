@@ -478,15 +478,15 @@ class BlockSubjectAnalysis(dj.Computed):
                 subj_pellets = closest_subjects_pellet_ts[closest_subjects_pellet_ts == subject_name]
                 self.Patch.insert1(
                     key
-                    | dict(
-                        patch_name=patch["patch_name"],
-                        subject_name=subject_name,
-                        in_patch_timestamps=subject_in_patch.index.values,
-                        in_patch_time=subject_in_patch_cum_time[-1],
-                        pellet_count=len(subj_pellets),
-                        pellet_timestamps=subj_pellets.index.values,
-                        wheel_cumsum_distance_travelled=cum_wheel_dist_subj_df[subject_name].values,
-                    )
+                    | {
+                        "patch_name": patch["patch_name"],
+                        "subject_name": subject_name,
+                        "in_patch_timestamps": subject_in_patch.index.values,
+                        "in_patch_time": subject_in_patch_cum_time[-1],
+                        "pellet_count": len(subj_pellets),
+                        "pellet_timestamps": subj_pellets.index.values,
+                        "wheel_cumsum_distance_travelled": cum_wheel_dist_subj_df[subject_name].values,
+                    }
                 )
 
         # Now that we have computed all individual patch and subject values, we iterate again through
@@ -513,14 +513,14 @@ class BlockSubjectAnalysis(dj.Computed):
 
                 self.Preference.insert1(
                     key
-                    | dict(
-                        patch_name=patch_name,
-                        subject_name=subject_name,
-                        cumulative_preference_by_time=cum_pref_time,
-                        cumulative_preference_by_wheel=cum_pref_dist,
-                        final_preference_by_time=cum_pref_time[-1],
-                        final_preference_by_wheel=cum_pref_dist[-1],
-                    )
+                    | {
+                        "patch_name": patch_name,
+                        "subject_name": subject_name,
+                        "cumulative_preference_by_time": cum_pref_time,
+                        "cumulative_preference_by_wheel": cum_pref_dist,
+                        "final_preference_by_time": cum_pref_time[-1],
+                        "final_preference_by_wheel": cum_pref_dist[-1],
+                    }
                 )
 
 
@@ -695,11 +695,11 @@ class BlockSubjectPlots(dj.Computed):
                             x=wheel_ts,
                             y=cum_pref,
                             mode="lines",  # +  markers",
-                            line=dict(
-                                width=2,
-                                color=subject_colors[subj_i],
-                                dash=patch_markers_linestyles[patch_i],
-                            ),
+                            line={
+                                "width": 2,
+                                "color": subject_colors[subj_i],
+                                "dash": patch_markers_linestyles[patch_i],
+                            },
                             name=f"{subj} - {p}: μ: {patch_mean}",
                         )
                     )
@@ -717,13 +717,13 @@ class BlockSubjectPlots(dj.Computed):
                                 x=cur_cum_pel_ct["time"],
                                 y=cur_cum_pel_ct["cum_pref"],
                                 mode="markers",
-                                marker=dict(
-                                    symbol=patch_markers[patch_i],
-                                    color=gen_hex_grad(
+                                marker={
+                                    "symbol": patch_markers[patch_i],
+                                    "color": gen_hex_grad(
                                         subject_colors[-1], cur_cum_pel_ct["norm_thresh_val"]
                                     ),
-                                    size=8,
-                                ),
+                                    "size": 8,
+                                },
                                 showlegend=False,
                                 customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
                                 hovertemplate="Threshold: %{customdata[0]:.2f} cm",
@@ -735,7 +735,7 @@ class BlockSubjectPlots(dj.Computed):
                 title=f"Cumulative Patch Preference - {title}",
                 xaxis_title="Time",
                 yaxis_title="Pref Index",
-                yaxis=dict(tickvals=np.arange(0, 1.1, 0.1)),
+                yaxis={"tickvals": np.arange(0, 1.1, 0.1)},
             )
 
         # Insert figures as json-formatted plotly plots
