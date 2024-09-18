@@ -233,7 +233,9 @@ class BlockAnalysis(dj.Computed):
             # handles patch rate value being INF
             patch_rate = 999999999 if np.isinf(patch_rate) else patch_rate
 
-            encoder_fs = 1 / encoder_df.index.to_series().diff().dt.total_seconds().median()  # mean or median?
+            encoder_fs = (
+                1 / encoder_df.index.to_series().diff().dt.total_seconds().median()
+            )  # mean or median?
             wheel_downsampling_factor = int(encoder_fs / final_encoder_fs)
 
             block_patch_entries.append(
@@ -321,10 +323,14 @@ class BlockAnalysis(dj.Computed):
             if pos_df.index[-1] < block_end:
                 block_end = pos_df.index[-1]
 
-        self.insert1({**key,
-                      "block_duration": (block_end - block_start).total_seconds() / 3600,
-                      "patch_count": len(patch_keys),
-                      "subject_count": len(subject_names)})
+        self.insert1(
+            {
+                **key,
+                "block_duration": (block_end - block_start).total_seconds() / 3600,
+                "patch_count": len(patch_keys),
+                "subject_count": len(subject_names),
+            }
+        )
         self.Patch.insert(block_patch_entries)
         self.Subject.insert(block_subject_entries)
 
@@ -781,6 +787,7 @@ class AnalysisNote(dj.Manual):
     note: varchar(3000)
     """
 
+
 # ---- Helper Functions ----
 
 
@@ -810,19 +817,19 @@ def get_threshold_associated_pellets(patch_key, start, end):
         - offset
         - rate
     """
-    chunk_restriction = acquisition.create_chunk_restriction(
-        patch_key["experiment_name"], start, end
-    )
+    chunk_restriction = acquisition.create_chunk_restriction(patch_key["experiment_name"], start, end)
     # pellet delivery and beam break data
     delivered_pellet_df = fetch_stream(
         streams.UndergroundFeederDeliverPellet & patch_key & chunk_restriction
     )[start:end]
-    beam_break_df = fetch_stream(
-        streams.UndergroundFeederBeamBreak & patch_key & chunk_restriction
-    )[start:end]
+    beam_break_df = fetch_stream(streams.UndergroundFeederBeamBreak & patch_key & chunk_restriction)[
+        start:end
+    ]
 
     if delivered_pellet_df.empty or beam_break_df.empty:
-        return acquisition.io_api._empty(["threshold", "offset", "rate", "pellet_timestamp", "beam_break_timestamp"])
+        return acquisition.io_api._empty(
+            ["threshold", "offset", "rate", "pellet_timestamp", "beam_break_timestamp"]
+        )
 
     # patch threshold data
     depletion_state_df = fetch_stream(
@@ -835,14 +842,18 @@ def get_threshold_associated_pellets(patch_key, start, end):
     depletion_state_df = depletion_state_df[~invalid_rows]
 
     # find pellet times with matching beam break times (within 500ms after pellet times)
-    pellet_beam_break_df = pd.merge_asof(
-        delivered_pellet_df.reset_index(),
-        beam_break_df.reset_index().rename(columns={"time": "beam_break_timestamp"}),
-        left_on="time",
-        right_on="beam_break_timestamp",
-        tolerance=pd.Timedelta("1.2s"),
-        direction="forward",
-    ).set_index("time").dropna(subset=["beam_break_timestamp"])
+    pellet_beam_break_df = (
+        pd.merge_asof(
+            delivered_pellet_df.reset_index(),
+            beam_break_df.reset_index().rename(columns={"time": "beam_break_timestamp"}),
+            left_on="time",
+            right_on="beam_break_timestamp",
+            tolerance=pd.Timedelta("1.2s"),
+            direction="forward",
+        )
+        .set_index("time")
+        .dropna(subset=["beam_break_timestamp"])
+    )
     pellet_beam_break_df.drop_duplicates(subset="beam_break_timestamp", keep="last", inplace=True)
 
     # find pellet times approximately coincide with each threshold update
@@ -864,6 +875,8 @@ def get_threshold_associated_pellets(patch_key, start, end):
     pellet_ts_threshold_df.pellet_timestamp = pellet_ts_threshold_df.pellet_timestamp.shift(-1)
     pellet_ts_threshold_df.beam_break_timestamp = pellet_ts_threshold_df.beam_break_timestamp.shift(-1)
     # remove NaNs from pellet_timestamp column (last row)
-    pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(subset=["pellet_timestamp", "beam_break_timestamp"])
+    pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(
+        subset=["pellet_timestamp", "beam_break_timestamp"]
+    )
 
     return pellet_ts_threshold_df
