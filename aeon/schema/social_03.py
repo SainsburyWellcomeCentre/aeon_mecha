@@ -10,7 +10,7 @@ class Pose(Stream):
         super().__init__(_reader.Pose(f"{path}_202_*"))
 
 
-class EnvActiveConfiguration(Stream):
+class EnvironmentActiveConfiguration(Stream):
 
     def __init__(self, path):
         super().__init__(_reader.JsonList(f"{path}_ActiveConfiguration_*", columns=["name"]))
