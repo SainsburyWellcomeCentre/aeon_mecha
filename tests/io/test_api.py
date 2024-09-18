@@ -63,6 +63,9 @@ def test_load_encoder_with_downsampling():
     # is at least 20ms (50Hz)
     assert data.index.to_series().diff().dt.total_seconds().min() >= 0.02
 
+    # Check that the timestamps in the downsampled data are strictly increasing
+    assert data.index.is_monotonic_increasing
+
 
 if __name__ == "__main__":
     pytest.main()
