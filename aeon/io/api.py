@@ -60,7 +60,7 @@ def _empty(columns):
     return pd.DataFrame(columns=columns, index=pd.DatetimeIndex([], name="time"))
 
 
-def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=None):
+def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=None, **kwargs):
     """Extracts chunk data from the root path of an Aeon dataset.
 
     Reads all chunk data using the specified data stream reader. A subset of the data can be loaded
@@ -75,6 +75,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
     :param datetime, optional tolerance:
     The maximum distance between original and new timestamps for inexact matches.
     :param str, optional epoch: A wildcard pattern to use when searching epoch data.
+    :param optional kwargs: Optional keyword arguments to forward to the reader when reading chunk data.
     :return: A pandas data frame containing epoch event metadata, sorted by time.
     """
     if isinstance(root, str):
@@ -104,7 +105,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
         for key, values in time.groupby(by=chunk):
             i = bisect.bisect_left(filetimes, key)
             if i < len(filetimes):
-                frame = reader.read(files[i])
+                frame = reader.read(files[i], **kwargs)
                 _set_index(frame)
             else:
                 frame = _empty(reader.columns)
@@ -115,7 +116,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
             if missing > 0 and i > 0:
                 # expand reindex to allow adjacent chunks
                 # to fill missing values
-                previous = reader.read(files[i - 1])
+                previous = reader.read(files[i - 1], **kwargs)
                 data = pd.concat([previous, frame])
                 data = data.reindex(values, tolerance=tolerance)
                 data.dropna(inplace=True)
@@ -136,7 +137,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
     if len(files) == 0:
         return _empty(reader.columns)
 
-    data = pd.concat([reader.read(file) for _, file in files])
+    data = pd.concat([reader.read(file, **kwargs) for _, file in files])
     _set_index(data)
     if start is not None or end is not None:
         try:
