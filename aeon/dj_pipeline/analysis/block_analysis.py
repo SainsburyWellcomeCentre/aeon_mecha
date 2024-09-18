@@ -798,7 +798,7 @@ def get_threshold_associated_pellets(patch_key, start, end):
         - Remove all events within 1 second of each other
         - Remove all events without threshold value (NaN)
     2. Get all pellet delivery timestamps (DeliverPellet): let's call these events "B"
-        - Find matching beam break timestamps within 500ms after each pellet delivery
+        - Find matching beam break timestamps within 1.2s after each pellet delivery
     3. For each event "A", find the nearest event "B" within 100ms before or after the event "A"
         - These are the pellet delivery events "B" associated with the previous threshold update event "A"
     4. Shift back the pellet delivery timestamps by 1 to match the pellet delivery with the previous threshold update
@@ -841,7 +841,7 @@ def get_threshold_associated_pellets(patch_key, start, end):
     invalid_rows = depletion_state_df.index.to_series().diff().dt.total_seconds() < 1
     depletion_state_df = depletion_state_df[~invalid_rows]
 
-    # find pellet times with matching beam break times (within 500ms after pellet times)
+    # find pellet times with matching beam break times (within 1.2s after pellet times)
     pellet_beam_break_df = (
         pd.merge_asof(
             delivered_pellet_df.reset_index(),
