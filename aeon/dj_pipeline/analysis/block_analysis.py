@@ -818,12 +818,21 @@ def get_threshold_associated_pellets(patch_key, start, end):
         - rate
     """
     chunk_restriction = acquisition.create_chunk_restriction(patch_key["experiment_name"], start, end)
+
     # pellet delivery and beam break data
     delivered_pellet_df = fetch_stream(
         streams.UndergroundFeederDeliverPellet & patch_key & chunk_restriction
     )[start:end]
     beam_break_df = fetch_stream(streams.UndergroundFeederBeamBreak & patch_key & chunk_restriction)[
         start:end
+    ]
+    manual_delivery_df = fetch_stream(
+        streams.UndergroundFeederManualDelivery & patch_key & chunk_restriction
+    )[start:end]
+
+    # exclude ManualDelivery from the pellet delivery (take the not intersecting part)
+    delivered_pellet_df = delivered_pellet_df.loc[
+        delivered_pellet_df.index.difference(manual_delivery_df.index)
     ]
 
     if delivered_pellet_df.empty or beam_break_df.empty:
