@@ -56,7 +56,6 @@ acquisition_worker = DataJointWorker(
 acquisition_worker(ingest_epochs_chunks)
 acquisition_worker(acquisition.EpochConfig)
 acquisition_worker(acquisition.Environment)
-# acquisition_worker(ingest_environment_visits)
 acquisition_worker(block_analysis.BlockDetection)
 
 # configure a worker to handle pyrat sync
