@@ -163,6 +163,7 @@ extend-exclude = [
 convention = "google"
 
 [tool.pyright]
+useLibraryCodeForTypes = false
 reportMissingImports = "none"
 reportImportCycles = "error"
 reportUnusedImport = "error"
