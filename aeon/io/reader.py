@@ -43,7 +43,7 @@ class Reader:
         self.columns = columns
         self.extension = extension
 
-    def read(self, _):
+    def read(self, file):
         """Reads data from the specified file."""
         return pd.DataFrame(columns=self.columns, index=pd.DatetimeIndex([]))
 
@@ -94,7 +94,7 @@ class Chunk(Reader):
         """Returns path and epoch information for the specified chunk."""
         epoch, chunk = chunk_key(file)
         data = {"path": file, "epoch": epoch}
-        return pd.DataFrame(data, index=[chunk], columns=self.columns)
+        return pd.DataFrame(data, index=pd.Series(chunk), columns=self.columns)
 
 
 class Metadata(Reader):
@@ -113,7 +113,7 @@ class Metadata(Reader):
         workflow = metadata.pop("Workflow")
         commit = metadata.pop("Commit", pd.NA)
         data = {"workflow": workflow, "commit": commit, "metadata": [DotMap(metadata)]}
-        return pd.DataFrame(data, index=[time], columns=self.columns)
+        return pd.DataFrame(data, index=pd.Series(time), columns=self.columns)
 
 
 class Csv(Reader):
@@ -353,7 +353,7 @@ class Pose(Harp):
         data = self.class_int2str(data, config_file)
         n_parts = len(parts)
         part_data_list = [pd.DataFrame()] * n_parts
-        new_columns = ["identity", "identity_likelihood", "part", "x", "y", "part_likelihood"]
+        new_columns = pd.Series(["identity", "identity_likelihood", "part", "x", "y", "part_likelihood"])
         new_data = pd.DataFrame(columns=new_columns)
         for i, part in enumerate(parts):
             part_columns = (
@@ -379,17 +379,16 @@ class Pose(Harp):
     @staticmethod
     def get_class_names(config_file: Path) -> list[str]:
         """Returns a list of classes from a model's config file."""
-        classes = None
         with open(config_file) as f:
             config = json.load(f)
-        if config_file.stem == "confmap_config":  # SLEAP
-            try:
-                heads = config["model"]["heads"]
-                classes = util.find_nested_key(heads, "class_vectors")["classes"]
-            except KeyError as err:
-                if not classes:
-                    raise KeyError(f"Cannot find class_vectors in {config_file}.") from err
-        return classes
+        if config_file.stem != "confmap_config":  # SLEAP
+            raise ValueError(f"The model config file '{config_file}' is not supported.")
+
+        try:
+            heads = config["model"]["heads"]
+            return util.find_nested_key(heads, "class_vectors")["classes"]
+        except KeyError as err:
+            raise KeyError(f"Cannot find class_vectors in {config_file}.") from err
 
     @staticmethod
     def get_bodyparts(config_file: Path) -> list[str]:

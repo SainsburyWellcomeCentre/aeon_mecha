@@ -31,21 +31,20 @@ def heatmap(position, frequency, ax=None, **kwargs):
     return mesh, cbar
 
 
-def circle(x, y, radius, fmt=None, ax=None, **kwargs):
+def circle(x, y, radius, *args, ax=None, **kwargs):
     """Plot a circle centered at the given x, y position with the specified radius.
 
     :param number x: The x-component of the circle center.
     :param number y: The y-component of the circle center.
     :param number radius: The radius of the circle.
-    :param str, optional fmt: The format used to plot the circle line.
     :param Axes, optional ax: The Axes on which to draw the circle.
     """
     if ax is None:
         ax = plt.gca()
-    points = pd.DataFrame(np.linspace(0, 2 * math.pi, 360), columns=["angle"])
+    points = pd.DataFrame({"angle": np.linspace(0, 2 * math.pi, 360)})
     points["x"] = radius * np.cos(points.angle) + x
     points["y"] = radius * np.sin(points.angle) + y
-    ax.plot(points.x, points.y, fmt, **kwargs)
+    ax.plot(points.x, points.y, *args, **kwargs)
 
 
 def rateplot(
@@ -132,10 +131,10 @@ def colorline(
     if cmap is None:
         cmap = plt.get_cmap("copper")
     if norm is None:
-        norm = plt.Normalize(0.0, 1.0)
+        norm = colors.Normalize(0.0, 1.0)
     z = np.asarray(z)
     points = np.array([x, y]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
-    lines = LineCollection(segments, array=z, cmap=cmap, norm=norm, **kwargs)
+    lines = LineCollection(segments, array=z, cmap=cmap, norm=norm, **kwargs)  # type: ignore
     ax.add_collection(lines)
     return lines

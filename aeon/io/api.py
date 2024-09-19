@@ -103,7 +103,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
         filetimes = [chunk for (_, chunk), _ in files]
         files = [file for _, file in files]
         for key, values in time.groupby(by=chunk):
-            i = bisect.bisect_left(filetimes, key)
+            i = bisect.bisect_left(filetimes, key)  # type: ignore
             if i < len(filetimes):
                 frame = reader.read(files[i], **kwargs)
                 _set_index(frame)

@@ -7,7 +7,7 @@ import pandas as pd
 from aeon.io import video
 
 
-def gridframes(frames, width, height, shape=None):
+def gridframes(frames, width, height, shape: None | int | tuple[int, int] = None):
     """Arranges a set of frames into a grid layout with the specified pixel dimensions and shape.
 
     :param list frames: A list of frames to include in the grid layout.
@@ -20,7 +20,7 @@ def gridframes(frames, width, height, shape=None):
     """
     if shape is None:
         shape = len(frames)
-    if type(shape) not in [list, tuple]:
+    if isinstance(shape, int):
         shape = math.ceil(math.sqrt(shape))
         shape = (shape, shape)
 
@@ -43,7 +43,7 @@ def gridframes(frames, width, height, shape=None):
 
 def averageframes(frames):
     """Returns the average of the specified collection of frames."""
-    return cv2.convertScaleAbs(sum(np.multiply(1 / len(frames), frames)))
+    return cv2.convertScaleAbs(np.sum(np.multiply(1 / len(frames), frames)))
 
 
 def groupframes(frames, n, fun):

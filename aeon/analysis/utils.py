@@ -48,7 +48,7 @@ def visits(data, onset="Enter", offset="Exit"):
     data = data.reset_index()
     data_onset = data[data.event == onset]
     data_offset = data[data.event == offset]
-    data = pd.merge(data_onset, data_offset, on="id", how="left", suffixes=[lsuffix, rsuffix])
+    data = pd.merge(data_onset, data_offset, on="id", how="left", suffixes=(lsuffix, rsuffix))
 
     # valid pairings have the smallest positive duration
     data["duration"] = data[time_offset] - data[time_onset]
