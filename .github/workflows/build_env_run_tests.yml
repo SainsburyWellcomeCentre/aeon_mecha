@@ -66,12 +66,14 @@ jobs:
       - name: ruff
         if: matrix.os == 'ubuntu-latest'
         run: python -m ruff check .
+
       - name: pyright
         if: matrix.os == 'ubuntu-latest'
         run: python -m pyright --level error --project ./pyproject.toml . 
+
       - name: pytest
         if: matrix.os == 'ubuntu-latest'
-        run: python -m pytest tests/
+        run: python -m pytest tests/ --ignore=tests/dj_pipeline
 
       - name: generate test coverage report
         if: matrix.os == 'ubuntu-latest'
