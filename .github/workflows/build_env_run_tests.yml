@@ -9,7 +9,7 @@ on:
   workflow_dispatch: # allows running manually from Github's 'Actions' tab
 
 jobs:
-  build_env_pip_pyproject: # checks only for building env using pip and pyproject.toml
+  build_env_run_tests: # checks for building env using pyproject.toml and runs codebase checks and tests
     name: Build env using pip and pyproject.toml on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     if: github.event.pull_request.draft == false
@@ -35,67 +35,25 @@ jobs:
           pip install -e .[dev]
           pip list
           python -c "import aeon"
-
-  build_env_run_tests: # checks for building env using mamba and runs codebase checks and tests
-    name: Build env and run tests on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    if: github.event.pull_request.draft == false
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: [3.11]
-      fail-fast: false
-    defaults:
-      run:
-        shell: ${{ matrix.os == 'windows-latest' && 'cmd' || 'bash' }} -l {0}
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up conda env (Linux, Windows)
-        if: ${{ matrix.os != 'macos-latest' }}
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          use-mamba: true
-          miniforge-variant: Mambaforge
-          python-version: ${{ matrix.python-version }}
-          activate-environment: aeon
-
-      - name: Set up conda env (macOS)
-        if: ${{ matrix.os == 'macos-latest' }}
-        uses: conda-incubator/setup-miniconda@v2
-        with:
-          use-mamba: true
-          miniforge-variant: Mambaforge
-          python-version: ${{ matrix.python-version }}
-          activate-environment: aeon
-          architecture: arm64
-          miniconda-version: "latest"
-
-      - name: Install datajoint wheel build with pip flag (macOS)
-        if: ${{ matrix.os == 'macos-latest' }}
-        run: pip install --use-pep517 datajoint git+https://github.com/datajoint-company/datajoint-utilities.git
-
-      - name: Install pyproject.toml dependencies
-        run: pip install -e .[dev]
-
-      # Run codebase checks and tests
+      - name: Activate venv for later steps
+        run: |
+          echo "VIRTUAL_ENV=$(pwd)/.venv" >> $GITHUB_ENV
+          echo "$(pwd)/.venv/bin" >> $GITHUB_PATH      # For Unix-like systems
+          echo "$(pwd)/.venv/Scripts" >> $GITHUB_PATH  # For Windows
+      # Only run codebase checks and tests for Linux (ubuntu).
       - name: ruff
-        run: python -m ruff check .
-
+        run: ruff check .
       - name: pyright
-        run: python -m pyright --level error --project ./pyproject.toml . 
-
+        run: pyright --level error --project ./pyproject.toml . 
       - name: pytest
-        run: python -m pytest tests/ --ignore=tests/dj_pipeline
-
+        run: pytest tests/ --ignore=tests/dj_pipeline
       - name: generate test coverage report
         if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
           python -m pytest --cov=aeon tests/ --ignore=tests/dj_pipeline --cov-report=xml:tests/test_coverage/test_coverage_report.xml
       - name: upload test coverage report to codecov
         if: ${{ matrix.os == 'ubuntu-latest' }}
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: tests/test_coverage/
