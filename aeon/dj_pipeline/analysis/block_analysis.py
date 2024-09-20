@@ -503,16 +503,16 @@ class BlockSubjectAnalysis(dj.Computed):
 
                 self.Patch.insert1(
                     key
-                    | dict(
-                        patch_name=patch["patch_name"],
-                        subject_name=subject_name,
-                        in_patch_timestamps=subject_in_patch.index.values,
-                        in_patch_time=subject_in_patch_cum_time[-1],
-                        pellet_count=len(subj_pellets),
-                        pellet_timestamps=subj_pellets.index.values,
-                        patch_threshold=subj_patch_thresh,
-                        wheel_cumsum_distance_travelled=cum_wheel_dist_subj_df[subject_name].values,
-                    )
+                    | {
+                        "patch_name": patch["patch_name"],
+                        "subject_name": subject_name,
+                        "in_patch_timestamps": subject_in_patch.index.values,
+                        "in_patch_time": subject_in_patch_cum_time[-1],
+                        "pellet_count": len(subj_pellets),
+                        "pellet_timestamps": subj_pellets.index.values,
+                        "patch_threshold": subj_patch_thresh,
+                        "wheel_cumsum_distance_travelled": cum_wheel_dist_subj_df[subject_name].values,
+                    }
                 )
 
         # Now that we have computed all individual patch and subject values, we iterate again through
