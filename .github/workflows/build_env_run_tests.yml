@@ -53,7 +53,7 @@ jobs:
           python -m pytest --cov=aeon tests/ --ignore=tests/dj_pipeline --cov-report=xml:tests/test_coverage/test_coverage_report.xml
       - name: upload test coverage report to codecov
         if: ${{ matrix.os == 'ubuntu-latest' }}
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           directory: tests/test_coverage/
