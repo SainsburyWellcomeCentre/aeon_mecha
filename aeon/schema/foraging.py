@@ -1,5 +1,7 @@
 from enum import Enum
+
 import pandas as pd
+
 import aeon.io.reader as _reader
 import aeon.schema.core as _stream
 from aeon.schema.streams import Stream, StreamGroup

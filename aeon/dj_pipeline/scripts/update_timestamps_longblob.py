@@ -1,6 +1,7 @@
 """July 2022
 Upgrade all timestamps longblob fields with datajoint 0.13.7.
 """
+
 from datetime import datetime
 
 import datajoint as dj

@@ -61,11 +61,13 @@ def _empty(columns):
 
 
 def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=None, **kwargs):
-    """Extracts chunk data from the root path of an Aeon dataset using the specified data stream
-    reader. A subset of the data can be loaded by specifying an optional time range, or a list
-    of timestamps used to index the data on file. Returned data will be sorted chronologically.
+    """Extracts chunk data from the root path of an Aeon dataset.
 
-    :param str or PathLike root: The root path, or prioritised sequence of paths, where epoch data is stored.
+    Reads all chunk data using the specified data stream reader. A subset of the data can be loaded
+    by specifying an optional time range, or a list of timestamps used to index the data on file.
+    Returned data will be sorted chronologically.
+
+    :param str or PathLike root: The root path, or prioritised sequence of paths, where data is stored.
     :param Reader reader: A data stream reader object used to read chunk data from the dataset.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
@@ -85,7 +87,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
     fileset = {
         chunk_key(fname): fname
         for path in root
-        for fname in path.glob(f"{epoch_pattern}/**/{reader.pattern}.{reader.extension}")
+        for fname in Path(path).glob(f"{epoch_pattern}/**/{reader.pattern}.{reader.extension}")
     }
     files = sorted(fileset.items())
 
@@ -101,7 +103,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
         filetimes = [chunk for (_, chunk), _ in files]
         files = [file for _, file in files]
         for key, values in time.groupby(by=chunk):
-            i = bisect.bisect_left(filetimes, key)
+            i = bisect.bisect_left(filetimes, key)  # type: ignore
             if i < len(filetimes):
                 frame = reader.read(files[i], **kwargs)
                 _set_index(frame)
@@ -144,10 +146,12 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
             import warnings
 
             if not data.index.has_duplicates:
-                warnings.warn(f"data index for {reader.pattern} contains out-of-order timestamps!")
+                warnings.warn(
+                    f"data index for {reader.pattern} contains out-of-order timestamps!", stacklevel=2
+                )
                 data = data.sort_index()
             else:
-                warnings.warn(f"data index for {reader.pattern} contains duplicate keys!")
+                warnings.warn(f"data index for {reader.pattern} contains duplicate keys!", stacklevel=2)
                 data = data[~data.index.duplicated(keep="first")]
             return data.loc[start:end]
     return data

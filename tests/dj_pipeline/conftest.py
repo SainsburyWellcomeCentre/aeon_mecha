@@ -1,4 +1,5 @@
-"""
+"""Global configurations and fixtures for pytest.
+
 # run all tests:
 # pytest -sv --cov-report term-missing --cov=aeon_mecha -p no:warnings tests/dj_pipeline
 
@@ -20,15 +21,12 @@ _populate_settings = {"suppress_errors": True}
 
 
 def data_dir():
-    """
-    Returns test data directory
-    """
+    """Returns test data directory."""
     return os.path.join(os.path.dirname(os.path.realpath(__file__)), "data")
 
 
 @pytest.fixture(autouse=True, scope="session")
 def test_params():
-
     return {
         "start_ts": "2022-06-22 08:51:10",
         "end_ts": "2022-06-22 14:00:00",
@@ -49,28 +47,17 @@ def test_params():
 
 @pytest.fixture(autouse=True, scope="session")
 def dj_config():
-    """If dj_local_config exists, load"""
+    """Configures DataJoint connection and loads custom settings."""
     dj_config_fp = pathlib.Path("dj_local_conf.json")
     assert dj_config_fp.exists()
     dj.config.load(dj_config_fp)
     dj.config["safemode"] = False
     assert "custom" in dj.config
-    dj.config["custom"][
-        "database.prefix"
-    ] = f"u_{dj.config['database.user']}_testsuite_"
+    dj.config["custom"]["database.prefix"] = f"u_{dj.config['database.user']}_testsuite_"
 
 
 def load_pipeline():
-
-    from aeon.dj_pipeline import (
-        acquisition,
-        analysis,
-        lab,
-        qc,
-        report,
-        subject,
-        tracking,
-    )
+    from aeon.dj_pipeline import acquisition, analysis, lab, qc, report, subject, tracking
 
     return {
         "subject": subject,
@@ -84,7 +71,6 @@ def load_pipeline():
 
 
 def drop_schema():
-
     _pipeline = load_pipeline()
 
     _pipeline["report"].schema.drop()
@@ -100,7 +86,6 @@ def drop_schema():
 
 @pytest.fixture(autouse=True, scope="session")
 def pipeline(dj_config):
-
     _pipeline = load_pipeline()
 
     yield _pipeline

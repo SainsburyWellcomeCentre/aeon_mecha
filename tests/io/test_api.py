@@ -36,7 +36,8 @@ def test_load_filter_nonchunked():
 @mark.api
 def test_load_monotonic():
     data = aeon.load(monotonic_path, exp02.Patch2.Encoder, downsample=None)
-    assert len(data) > 0 and data.index.is_monotonic_increasing
+    assert len(data) > 0
+    assert data.index.is_monotonic_increasing
 
 
 @mark.api
@@ -47,6 +48,7 @@ def test_load_nonmonotonic():
 
 @mark.api
 def test_load_encoder_with_downsampling():
+    DOWNSAMPLE_PERIOD = 0.02
     data = aeon.load(monotonic_path, exp02.Patch2.Encoder, downsample=True)
     raw_data = aeon.load(monotonic_path, exp02.Patch2.Encoder, downsample=None)
 
@@ -54,14 +56,14 @@ def test_load_encoder_with_downsampling():
     assert len(data) < len(raw_data)
 
     # Check that the first timestamp of the downsampled data is within 20ms of the raw data
-    assert abs(data.index[0] - raw_data.index[0]).total_seconds() <= 0.02
+    assert abs(data.index[0] - raw_data.index[0]).total_seconds() <= DOWNSAMPLE_PERIOD
 
     # Check that the last timestamp of the downsampled data is within 20ms of the raw data
-    assert abs(data.index[-1] - raw_data.index[-1]).total_seconds() <= 0.02
+    assert abs(data.index[-1] - raw_data.index[-1]).total_seconds() <= DOWNSAMPLE_PERIOD
 
     # Check that the minimum difference between consecutive timestamps in the downsampled data
     # is at least 20ms (50Hz)
-    assert data.index.to_series().diff().dt.total_seconds().min() >= 0.02
+    assert data.index.to_series().diff().dt.total_seconds().min() >= DOWNSAMPLE_PERIOD
 
     # Check that the timestamps in the downsampled data are strictly increasing
     assert data.index.is_monotonic_increasing

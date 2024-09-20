@@ -1,4 +1,5 @@
 import inspect
+
 from typing_extensions import deprecated
 
 
@@ -11,17 +12,17 @@ def compositeStream(pattern, *args):
             if inspect.isclass(binder_fn):
                 for method in vars(binder_fn).values():
                     if isinstance(method, staticmethod):
-                        registry.update(method.__func__(pattern))
+                        composite.update(method.__func__(pattern))
             else:
-                registry.update(binder_fn(pattern))
-    return registry
+                composite.update(binder_fn(pattern))
+    return composite
 
 
 @deprecated("The Device class has been moved to the streams module.")
 class Device:
     """Groups multiple Readers into a logical device.
 
-    If a device contains a single stream reader with the same pattern as the device `name`, it will be 
+    If a device contains a single stream reader with the same pattern as the device `name`, it will be
     considered a singleton, and the stream reader will be paired directly with the device without nesting.
 
     Attributes:
@@ -33,7 +34,7 @@ class Device:
 
     def __init__(self, name, *args, pattern=None):
         self.name = name
-        self.registry = register(name if pattern is None else pattern, *args)
+        self.registry = compositeStream(name if pattern is None else pattern, *args)
 
     def __iter__(self):
         if len(self.registry) == 1:

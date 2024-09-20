@@ -22,8 +22,8 @@ license = { file = "license.md" }
 readme = "readme.md"
 dependencies = [
   "bottleneck>=1.2.1,<2",
-  "datajoint-utilities @ git+https://github.com/datajoint-company/datajoint-utilities",
   "datajoint>=0.13.7",
+  "datajoint-utilities @ git+https://github.com/datajoint-company/datajoint-utilities",
   "dotmap",
   "fastparquet",
   "graphviz",
@@ -51,7 +51,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "bandit",
-  "black[jupyter]",
   "gh",
   "ipdb",
   "pre-commit",
@@ -78,26 +77,8 @@ DataJoint = "https://docs.datajoint.org/"
 [tool.setuptools.packages.find]
 include = ["aeon*"]
 
-[tool.black]
-line-length = 108
-color = false
-exclude = '''
-/(
-    \.git
-    | \.mypy_cache
-    | \.tox
-    | \.venv
-    | _build
-    | build
-    | dist
-    | env
-    | venv
-)/
-'''
-extend-exclude = "aeon/dj_pipeline/streams.py"
-
 [tool.ruff]
-select = [
+lint.select = [
   "E",
   "W",
   "F",
@@ -115,7 +96,11 @@ select = [
   "PL",
 ]
 line-length = 108
-ignore = [
+lint.ignore = [
+  "D100",    # skip adding docstrings for module
+  "D104",    # ignore missing docstring in public package
+  "D105",    # skip adding docstrings for magic methods
+  "D107",    # skip adding docstrings for __init__
   "E201",
   "E202",
   "E203",
@@ -123,6 +108,7 @@ ignore = [
   "E731",
   "E702",
   "S101",
+  "PT004",  # Rule `PT004` is deprecated and will be removed in a future release.
   "PT013",
   "PLR0912",
   "PLR0913",
@@ -132,18 +118,24 @@ extend-exclude = [
   ".git",
   ".github",
   ".idea",
+  "*.ipynb",
   ".vscode",
   "aeon/dj_pipeline/streams.py",
 ]
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+  "D103",    # skip adding docstrings for public functions
+]
+"aeon/schema/*" = [
+  "D101",    # skip adding docstrings for schema classes
+  "D106",    # skip adding docstrings for nested streams
+]
 "aeon/dj_pipeline/*" = [
   "B006",
   "B021",
-  "D100",    # skip adding docstrings for module
   "D101",    # skip adding docstrings for table class since it is added inside definition
   "D102",    # skip adding docstrings for make function
   "D103",    # skip adding docstrings for public functions
-  "D104",    # ignore missing docstring in public package
   "D106",    # skip adding docstrings for Part tables
   "E501",
   "F401",    # ignore unused import errors
@@ -167,10 +159,11 @@ extend-exclude = [
   "I001",
 ]
 
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.pyright]
+useLibraryCodeForTypes = false
 reportMissingImports = "none"
 reportImportCycles = "error"
 reportUnusedImport = "error"
@@ -193,6 +186,6 @@ reportShadowedImports = "error"
 # *Note*: we may want to set all 'ReportOptional*' rules to "none", but leaving 'em default for now
 venvPath = "."
 venv = ".venv"
-exclude = ["aeon/dj_pipeline/*"]
+exclude = ["aeon/dj_pipeline/*", ".venv/*"]
 [tool.pytest.ini_options]
 markers = ["api"]

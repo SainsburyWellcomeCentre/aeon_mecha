@@ -4,40 +4,13 @@
 name: build_env_run_tests
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
     types: [opened, reopened, synchronize]
-  workflow_dispatch:  # allows running manually from Github's 'Actions' tab
+  workflow_dispatch: # allows running manually from Github's 'Actions' tab
 
 jobs:
-  build_env_pip_pyproject:  # checks only for building env using pip and pyproject.toml
-    name: Build env using pip and pyproject.toml
-    runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: [3.11]
-      fail-fast: false
-    defaults:
-      run:
-        shell: bash -l {0}  # reset shell for each step
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-      - name: Set up Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: Create venv and install dependencies
-        run: |
-          python -m venv .venv
-          source .venv/bin/activate
-          pip install -e .[dev]
-          pip list
-          .venv/bin/python -c "import aeon"
-  
-  build_env_run_tests:  # checks for building env using mamba and runs codebase checks and tests
-    name: Build env and run tests on ${{ matrix.os }}
+  build_env_run_tests: # checks for building env using pyproject.toml and runs codebase checks and tests
+    name: Build env using pip and pyproject.toml on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     if: github.event.pull_request.draft == false
     strategy:
@@ -47,43 +20,43 @@ jobs:
       fail-fast: false
     defaults:
       run:
-        shell: bash -l {0}  # reset shell for each step
+        shell: ${{ matrix.os == 'windows-latest' && 'cmd' || 'bash' }} -l {0} # Adjust shell based on OS
     steps:
-      - name: checkout repo
-        uses: actions/checkout@v2
-      - name: set up conda env
-        uses: conda-incubator/setup-miniconda@v2
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          use-mamba: true
-          miniforge-variant: Mambaforge
           python-version: ${{ matrix.python-version }}
-          environment-file: ./env_config/env.yml
-          activate-environment: aeon
-      - name: Update conda env with dev reqs
-        run: mamba env update -f ./env_config/env_dev.yml
-
-      # Only run codebase checks and tests for ubuntu.
-      - name: ruff
-        if: matrix.os == 'ubuntu-latest'
-        run: python -m ruff check --config ./pyproject.toml .
-      - name: pyright
-        if: matrix.os == 'ubuntu-latest'
-        run: python -m pyright --level error --project ./pyproject.toml . 
-      - name: pytest
-        if: matrix.os == 'ubuntu-latest'
-        run: python -m pytest tests/
-
-      - name: generate test coverage report
-        if: matrix.os == 'ubuntu-latest'
+      - name: Create venv and install dependencies
         run: |
-          python -m pytest --cov=aeon ./tests/ --cov-report=xml:./tests/test_coverage/test_coverage_report.xml
-          #python -m pytest --cov=aeon ./tests/ --cov-report=html:./tests/test_coverage/test_coverage_report_html
+          python -m venv .venv
+          .venv/Scripts/activate || source .venv/bin/activate
+          pip install -e .[dev]
+          pip list
+          python -c "import aeon"
+      - name: Activate venv for later steps
+        run: |
+          echo "VIRTUAL_ENV=$(pwd)/.venv" >> $GITHUB_ENV
+          echo "$(pwd)/.venv/bin" >> $GITHUB_PATH      # For Unix-like systems
+          echo "$(pwd)/.venv/Scripts" >> $GITHUB_PATH  # For Windows
+      # Only run codebase checks and tests for Linux (ubuntu).
+      - name: ruff
+        run: ruff check .
+      - name: pyright
+        run: pyright --level error --project ./pyproject.toml . 
+      - name: pytest
+        run: pytest tests/ --ignore=tests/dj_pipeline
+      - name: generate test coverage report
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        run: |
+          python -m pytest --cov=aeon tests/ --ignore=tests/dj_pipeline --cov-report=xml:tests/test_coverage/test_coverage_report.xml
       - name: upload test coverage report to codecov
-        if: matrix.os == 'ubuntu-latest'
-        uses: codecov/codecov-action@v2
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          directory: ./tests/test_coverage/
+          directory: tests/test_coverage/
           files: test_coverage_report.xml
           fail_ci_if_error: true
           verbose: true
