@@ -1,5 +1,6 @@
 # Create env e.g. w/mamba: `mamba env create -q -f env.yml`
 # Update existing env e.g. w/mamba: `mamba env update -f env.yml`
+# Update existing env pip installing datajoint and datajoint-utilities: pip install --use-pep517 datajoint git+https://github.com/datajoint-company/datajoint-utilities.git
 
 name: aeon
 channels:
@@ -32,6 +33,4 @@ dependencies:
   - seaborn
   - xarray>=0.12.3, <1
   - pip:
-      - datajoint>=0.13.6, <1
-      - git+https://github.com/datajoint-company/datajoint-utilities.git
       - opencv-python

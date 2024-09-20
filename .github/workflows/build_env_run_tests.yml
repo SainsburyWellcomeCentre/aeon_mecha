@@ -4,14 +4,14 @@
 name: build_env_run_tests
 on:
   pull_request:
-    branches: [ main ]
+    branches: [main]
     types: [opened, reopened, synchronize]
-  workflow_dispatch:  # allows running manually from Github's 'Actions' tab
+  workflow_dispatch: # allows running manually from Github's 'Actions' tab
 
 jobs:
-  build_env_pip_pyproject:  # checks only for building env using pip and pyproject.toml
-    name: Build env using pip and pyproject.toml
-    runs-on: ubuntu-latest
+  build_env_pip_pyproject: # checks only for building env using pip and pyproject.toml
+    name: Build env using pip and pyproject.toml on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     if: github.event.pull_request.draft == false
     strategy:
       matrix:
@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
     defaults:
       run:
-        shell: bash -l {0}  # reset shell for each step
+        shell: ${{ matrix.os == 'windows-latest' && 'cmd' || 'bash' }} -l {0} # Adjust shell based on OS
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -31,12 +31,12 @@ jobs:
       - name: Create venv and install dependencies
         run: |
           python -m venv .venv
-          source .venv/bin/activate
+          .venv/Scripts/activate || source .venv/bin/activate
           pip install -e .[dev]
           pip list
-          .venv/bin/python -c "import aeon"
-  
-  build_env_run_tests:  # checks for building env using mamba and runs codebase checks and tests
+          python -c "import aeon"
+
+  build_env_run_tests: # checks for building env using mamba and runs codebase checks and tests
     name: Build env and run tests on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     if: github.event.pull_request.draft == false
@@ -47,11 +47,13 @@ jobs:
       fail-fast: false
     defaults:
       run:
-        shell: bash -l {0}  # reset shell for each step
+        shell: ${{ matrix.os == 'windows-latest' && 'cmd' || 'bash' }} -l {0}
     steps:
-      - name: checkout repo
+      - name: Checkout repo
         uses: actions/checkout@v2
-      - name: set up conda env
+
+      - name: Set up conda env (Linux, Windows)
+        if: ${{ matrix.os != 'macos-latest' }}
         uses: conda-incubator/setup-miniconda@v2
         with:
           use-mamba: true
@@ -59,10 +61,30 @@ jobs:
           python-version: ${{ matrix.python-version }}
           environment-file: ./env_config/env.yml
           activate-environment: aeon
+
+      - name: Set up conda env (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          use-mamba: true
+          miniforge-variant: Mambaforge
+          python-version: ${{ matrix.python-version }}
+          environment-file: ./env_config/env_macos.yml
+          activate-environment: aeon
+          architecture: arm64
+          miniconda-version: "latest"
+
+      - name: Install datajoint wheel build with pip flag (macOS)
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: |
+          source $CONDA/bin/activate aeon
+          pip install --use-pep517 datajoint git+https://github.com/datajoint-company/datajoint-utilities.git
+
       - name: Update conda env with dev reqs
+        if: ${{ matrix.os != 'macos-latest' }}
         run: mamba env update -f ./env_config/env_dev.yml
 
-      # Only run codebase checks and tests for ubuntu.
+      # Only run codebase checks and tests for Linux (ubuntu).
       - name: ruff
         if: matrix.os == 'ubuntu-latest'
         run: python -m ruff check .
@@ -76,12 +98,11 @@ jobs:
         run: python -m pytest tests/ --ignore=tests/dj_pipeline
 
       - name: generate test coverage report
-        if: matrix.os == 'ubuntu-latest'
+        if: ${{ matrix.os == 'ubuntu-latest' }}
         run: |
           python -m pytest --cov=aeon --ignore=tests/dj_pipeline ./tests/ --cov-report=xml:./tests/test_coverage/test_coverage_report.xml
-          #python -m pytest --cov=aeon --ignore=tests/dj_pipeline ./tests/ --cov-report=html:./tests/test_coverage/test_coverage_report_html
       - name: upload test coverage report to codecov
-        if: matrix.os == 'ubuntu-latest'
+        if: ${{ matrix.os == 'ubuntu-latest' }}
         uses: codecov/codecov-action@v2
         with:
           token: ${{ secrets.CODECOV_TOKEN }}

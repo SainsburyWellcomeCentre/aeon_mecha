@@ -1,6 +1,6 @@
 # Contains only the dev package requirements.
 # Create env e.g. w/mamba: `mamba env create -q -f env.yml`
-# Update exisiting env e.g. w/mamba: `mamba env update -f env_dev.yml`
+# Update existing env e.g. w/mamba: `mamba env update -f env_dev.yml`
 
 name: aeon
 channels:
@@ -10,14 +10,13 @@ dependencies:
   - gh
   - ipdb
   - jellyfish
-  - pre-commit 
+  - pre-commit
   - pydantic
-  - pyright 
-  - pytest 
-  - pytest-cov 
+  - pyright
+  - pytest
+  - pytest-cov
   - ruff
-  - sphinx 
+  - sphinx
   - tox
   - pip:
       - git+https://github.com/Technologicat/pyan.git
-
