@@ -135,6 +135,26 @@ class Csv(Reader):
         )
 
 
+class JsonList(Reader):
+    """Extracts data from json list (.jsonl) files, where the key "seconds"
+    stores the Aeon timestamp, in seconds.
+    """
+
+    def __init__(self, pattern, columns=(), root_key="value", extension="jsonl"):
+        super().__init__(pattern, columns, extension)
+        self.columns = columns
+        self.root_key = root_key
+
+    def read(self, file):
+        """Reads data from the specified jsonl file."""
+        with open(file, "r") as f:
+            df = pd.read_json(f, lines=True)
+        df.set_index("seconds", inplace=True)
+        for column in self.columns:
+            df[column] = df[self.root_key].apply(lambda x: x[column])
+        return df
+
+
 class Subject(Csv):
     """Extracts metadata for subjects entering and exiting the environment.
 
