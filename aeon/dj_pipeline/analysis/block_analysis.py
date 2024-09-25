@@ -902,7 +902,7 @@ def get_foraging_bouts(
     key: dict,
     min_pellets: int = 3,
     max_inactive_time: pd.Timedelta | None = None,  # seconds
-    min_wheel_movement: float = 10,  # cm
+    min_wheel_movement: float = 5,  # cm
 ) -> pd.DataFrame:
     """Gets foraging bouts for all subjects across all patches within a block.
 
@@ -923,7 +923,7 @@ def get_foraging_bouts(
     #   - Create cumulative wheel distance spun sum df combining all patches
     #     - Columns: timestamp, wheel distance, patch
     #   - Discretize into 'possible foraging events' based on `max_inactive_time`, and `min_wheel_movement`
-    #       - Look ahead by `max_inactive_time` and compare with current wheel distance,
+    #       - Look ahead by `max_inactive_time` and compare with current wheel distance;
     #         if the wheel will have moved by `min_wheel_movement`, then it is a foraging event
     #       - Because we "looked ahead" (shifted), we need to readjust the start time of a foraging bout
     #       - For the foraging bout end time, we need to account for the final pellet delivery time
@@ -936,7 +936,8 @@ def get_foraging_bouts(
         wheel_vals = cur_subject_data["wheel_cumsum_distance_travelled"].values
         # Ensure equal length wheel_vals across patches and wheel_ts
         min_len = min(*(len(arr) for arr in wheel_vals), len(wheel_ts))
-        comb_cum_wheel_dist = np.sum([arr[:min_len] for arr in wheel_vals], axis=0)
+        wheel_vals = [arr[:min_len] for arr in wheel_vals]
+        comb_cum_wheel_dist = np.vstack(wheel_vals).sum(axis=0)
         wheel_ts = wheel_ts[:min_len]
         # For each wheel_ts, get the corresponding patch that was spun
         patch_spun = np.full(len(wheel_ts), "", dtype="<U20")
@@ -957,7 +958,8 @@ def get_foraging_bouts(
         foraging_mask = max_windowed_wheel_vals > (patch_spun_df["cum_wheel_dist"] + min_wheel_movement)
         # Discretize into foraging bouts
         bout_start_indxs = np.where(np.diff(foraging_mask, prepend=0) == 1)[0] + (win_len - 1)
-        bout_end_indxs = np.where(np.diff(foraging_mask, prepend=0) == -1)[0] + 4  # TODO: Change this
+        n_samples_in_1s = int(1 / ((wheel_ts[1] - wheel_ts[0]).astype(int) / 1e9))
+        bout_end_indxs = np.where(np.diff(foraging_mask, prepend=0) == -1)[0] + n_samples_in_1s
         assert len(bout_start_indxs) == len(bout_end_indxs)
         bout_durations = (wheel_ts[bout_end_indxs] - wheel_ts[bout_start_indxs]).astype(  # in seconds
             "timedelta64[ns]"
