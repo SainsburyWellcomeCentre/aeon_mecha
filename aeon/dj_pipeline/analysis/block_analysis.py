@@ -958,7 +958,7 @@ def get_foraging_bouts(
         foraging_mask = max_windowed_wheel_vals > (patch_spun_df["cum_wheel_dist"] + min_wheel_movement)
         # Discretize into foraging bouts
         bout_start_indxs = np.where(np.diff(foraging_mask, prepend=0) == 1)[0] + (win_len - 1)
-        n_samples_in_1s = int(1 / ((wheel_ts[1] - wheel_ts[0]).astype(int) / 1e9))
+        n_samples_in_1s = int(1 / wheel_s_r.total_seconds())
         bout_end_indxs = np.where(np.diff(foraging_mask, prepend=0) == -1)[0] + n_samples_in_1s
         assert len(bout_start_indxs) == len(bout_end_indxs)
         bout_durations = (wheel_ts[bout_end_indxs] - wheel_ts[bout_start_indxs]).astype(  # in seconds
