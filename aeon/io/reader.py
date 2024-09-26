@@ -412,8 +412,10 @@ class Pose(Harp):
     @staticmethod
     def class_int2str(data: pd.DataFrame, classes: list[str]) -> pd.DataFrame:
         """Converts a class integer in a tracking data dataframe to its associated string (subject id)."""
+        identity = data["identity"].astype("string")
         for i, subj in enumerate(classes):
-            data.loc[data["identity"] == i, "identity"] = subj
+            identity.loc[data[identity.name] == i] = subj
+        data[identity.name] = identity
         return data
 
     @classmethod
