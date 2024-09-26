@@ -313,9 +313,12 @@ class Pose(Harp):
         """Reads data from the Harp-binarized tracking file."""
         # Get config file from `file`, then bodyparts from config file.
         model_dir = Path(*Path(file.stem.replace("_", "/")).parent.parts[-4:])
-        config_file_dir = Path(self._model_root) / model_dir
+        config_file_dir = file.parent / model_dir
         if not config_file_dir.exists():
-            raise FileNotFoundError(f"Cannot find model dir {config_file_dir}")
+            config_file_dir = Path(self._model_root) / model_dir
+            if not config_file_dir.exists():
+                raise FileNotFoundError(f"Cannot find model dir {config_file_dir}")
+            
         config_file = self.get_config_file(config_file_dir)
         identities = self.get_class_names(config_file)
         parts = self.get_bodyparts(config_file)
