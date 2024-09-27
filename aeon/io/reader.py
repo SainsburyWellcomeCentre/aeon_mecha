@@ -312,7 +312,7 @@ class Pose(Harp):
     def read(self, file: Path) -> pd.DataFrame:
         """Reads data from the Harp-binarized tracking file."""
         # Get config file from `file`, then bodyparts from config file.
-        model_dir = Path(*Path(file.stem.replace("_", "/")).parent.parts[-4:])
+        model_dir = Path(*Path(file.stem.replace("_", "/")).parent.parts[1:])
 
         # Check if model directory exists in local or shared directories.
         # Local directory is prioritized over shared directory.
