@@ -313,11 +313,20 @@ class Pose(Harp):
         """Reads data from the Harp-binarized tracking file."""
         # Get config file from `file`, then bodyparts from config file.
         model_dir = Path(*Path(file.stem.replace("_", "/")).parent.parts[-4:])
-        config_file_dir = file.parent / model_dir
-        if not config_file_dir.exists():
-            config_file_dir = Path(self._model_root) / model_dir
-            if not config_file_dir.exists():
-                raise FileNotFoundError(f"Cannot find model dir {config_file_dir}")
+
+        # Check if model directory exists in local or shared directories.
+        # Local directory is prioritized over shared directory.
+        local_config_file_dir = file.parent / model_dir
+        shared_config_file_dir = Path(self._model_root) / model_dir
+        if local_config_file_dir.exists():
+            config_file_dir = local_config_file_dir
+        elif shared_config_file_dir.exists():
+            config_file_dir = shared_config_file_dir
+        else:
+            raise FileNotFoundError(
+                f"""Cannot find model dir in either local ({local_config_file_dir}) \
+                    or shared ({shared_config_file_dir}) directories"""
+            )
 
         config_file = self.get_config_file(config_file_dir)
         identities = self.get_class_names(config_file)
@@ -412,6 +421,8 @@ class Pose(Harp):
     @staticmethod
     def class_int2str(data: pd.DataFrame, classes: list[str]) -> pd.DataFrame:
         """Converts a class integer in a tracking data dataframe to its associated string (subject id)."""
+        if not classes:
+            raise ValueError("Classes list cannot be None or empty.")
         identity_mapping = dict(enumerate(classes))
         data["identity"] = data["identity"].replace(identity_mapping)
         return data
