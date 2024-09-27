@@ -4,7 +4,10 @@
 <!-- CameraTracking -->
 <g id="node1" class="node">
 <title>CameraTracking</title>
-<g id="a_node1"><a xlink:title="→ Chunk→ ExperimentCamera→ TrackingParamSet">
+<g id="a_node1"><a xlink:title="→ Chunk
+→ ExperimentCamera
+→ TrackingParamSet
+">
 <ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="65.62" cy="-72.5" rx="65.75" ry="17.5"/>
 <text text-anchor="middle" x="65.62" y="-69.4" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">CameraTracking</text>
 </a>
@@ -13,7 +16,15 @@
 <!-- CameraTracking.Object -->
 <g id="node12" class="node">
 <title>CameraTracking.Object</title>
-<g id="a_node12"><a xlink:title="→ CameraTrackingobject_id            ------------------------------timestamps           position_x           position_y           position_z=null      area=null            ">
+<g id="a_node12"><a xlink:title="→ CameraTracking
+object_id            
+------------------------------
+timestamps           
+position_x           
+position_y           
+position_z=null      
+area=null            
+">
 <polygon fill="transparent" stroke="transparent" points="125.62,-19 5.63,-19 5.63,0 125.62,0 125.62,-19"/>
 <text text-anchor="start" x="13.62" y="-8" font-family="arial" text-decoration="underline" font-size="10.00">CameraTracking.Object</text>
 </a>
@@ -27,7 +38,8 @@
 <!-- WeightScale -->
 <g id="node2" class="node">
 <title>WeightScale</title>
-<g id="a_node2"><a xlink:title="weight_scale_serial_number ">
+<g id="a_node2"><a xlink:title="weight_scale_serial_number
+">
 <polygon fill="#000000" fill-opacity="0.125490" stroke="transparent" points="685.12,-303 614.12,-303 614.12,-268 685.12,-268 685.12,-303"/>
 <text text-anchor="start" x="622.12" y="-284" font-family="arial" text-decoration="underline" font-size="10.00">WeightScale</text>
 </a>
@@ -36,7 +48,14 @@
 <!-- ExperimentWeightScale -->
 <g id="node7" class="node">
 <title>ExperimentWeightScale</title>
-<g id="a_node7"><a xlink:title="→ Experiment→ WeightScaleweight_scale_install_time ------------------------------→ ArenaNestweight_scale_description weight_scale_sampling_rate=null ">
+<g id="a_node7"><a xlink:title="→ Experiment
+→ WeightScale
+weight_scale_install_time
+------------------------------
+→ ArenaNest
+weight_scale_description
+weight_scale_sampling_rate=null
+">
 <polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="722.62,-232 576.62,-232 576.62,-197 722.62,-197 722.62,-232"/>
 <text text-anchor="middle" x="649.62" y="-211.4" font-family="arial" font-size="12.00" fill="darkgreen">ExperimentWeightScale</text>
 </a>
@@ -50,7 +69,9 @@
 <!-- WheelState -->
 <g id="node3" class="node">
 <title>WheelState</title>
-<g id="a_node3"><a xlink:title="→ Chunk→ ExperimentFoodPatch">
+<g id="a_node3"><a xlink:title="→ Chunk
+→ ExperimentFoodPatch
+">
 <ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="333.62" cy="-72.5" rx="49.25" ry="17.5"/>
 <text text-anchor="middle" x="333.62" y="-69.4" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">WheelState</text>
 </a>
@@ -59,7 +80,14 @@
 <!-- ExperimentFoodPatch -->
 <g id="node4" class="node">
 <title>ExperimentFoodPatch</title>
-<g id="a_node4"><a xlink:title="→ Experiment→ FoodPatchfood_patch_install_time ------------------------------food_patch_description wheel_sampling_rate  wheel_radius=null    ">
+<g id="a_node4"><a xlink:title="→ Experiment
+→ FoodPatch
+food_patch_install_time
+------------------------------
+food_patch_description
+wheel_sampling_rate  
+wheel_radius=null    
+">
 <polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="537.62,-161 401.62,-161 401.62,-126 537.62,-126 537.62,-161"/>
 <text text-anchor="middle" x="469.62" y="-140.4" font-family="arial" font-size="12.00" fill="darkgreen">ExperimentFoodPatch</text>
 </a>
@@ -73,7 +101,13 @@
 <!-- FoodPatchWheel -->
 <g id="node8" class="node">
 <title>FoodPatchWheel</title>
-<g id="a_node8"><a xlink:title="→ Chunk→ ExperimentFoodPatch------------------------------timestamps           angle                intensity            ">
+<g id="a_node8"><a xlink:title="→ Chunk
+→ ExperimentFoodPatch
+------------------------------
+timestamps           
+angle                
+intensity            
+">
 <ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="469.62" cy="-72.5" rx="68.5" ry="17.5"/>
 <text text-anchor="middle" x="469.62" y="-69.4" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">FoodPatchWheel</text>
 </a>
@@ -87,7 +121,13 @@
 <!-- FoodPatchEvent -->
 <g id="node18" class="node">
 <title>FoodPatchEvent</title>
-<g id="a_node18"><a xlink:title="→ Chunk→ ExperimentFoodPatchevent_number         ------------------------------event_time           → EventType">
+<g id="a_node18"><a xlink:title="→ Chunk
+→ ExperimentFoodPatch
+event_number         
+------------------------------
+event_time           
+→ EventType
+">
 <ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="622.62" cy="-72.5" rx="66" ry="17.5"/>
 <text text-anchor="start" x="577.62" y="-70.4" font-family="arial" text-decoration="underline" font-size="12.00" fill="#00007f" fill-opacity="0.627451">FoodPatchEvent</text>
 </a>
@@ -101,7 +141,13 @@
 <!-- WeightMeasurement -->
 <g id="node5" class="node">
 <title>WeightMeasurement</title>
-<g id="a_node5"><a xlink:title="→ Chunk→ ExperimentWeightScale------------------------------timestamps           weight               confidence           ">
+<g id="a_node5"><a xlink:title="→ Chunk
+→ ExperimentWeightScale
+------------------------------
+timestamps           
+weight               
+confidence           
+">
 <ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="786.62" cy="-72.5" rx="79.25" ry="17.5"/>
 <text text-anchor="middle" x="786.62" y="-69.4" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">WeightMeasurement</text>
 </a>
@@ -110,7 +156,14 @@
 <!-- Arena -->
 <g id="node6" class="node">
 <title>Arena</title>
-<g id="a_node6"><a xlink:title="arena_name           ------------------------------arena_description=&quot;&quot; → ArenaShapearena_x_dim          arena_y_dim          arena_z_dim=0        ">
+<g id="a_node6"><a xlink:title="arena_name           
+------------------------------
+arena_description=&quot;&quot;
+→ ArenaShape
+arena_x_dim          
+arena_y_dim          
+arena_z_dim=0        
+">
 <polygon fill="#000000" fill-opacity="0.125490" stroke="transparent" points="407.62,-374 365.62,-374 365.62,-339 407.62,-339 407.62,-374"/>
 <text text-anchor="start" x="373.62" y="-355" font-family="arial" text-decoration="underline" font-size="10.00">Arena</text>
 </a>
@@ -119,7 +172,15 @@
 <!-- Experiment -->
 <g id="node16" class="node">
 <title>Experiment</title>
-<g id="a_node16"><a xlink:title="experiment_name      ------------------------------experiment_start_time experiment_description → Arena→ Locationexperiment_type=&quot;foraging&quot; INDEX (experiment_type)">
+<g id="a_node16"><a xlink:title="experiment_name      
+------------------------------
+experiment_start_time
+experiment_description
+→ Arena
+→ Location
+experiment_type=&quot;foraging&quot;
+INDEX (experiment_type)
+">
 <polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="425.12,-303 348.12,-303 348.12,-268 425.12,-268 425.12,-303"/>
 <text text-anchor="start" x="356.12" y="-283.4" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Experiment</text>
 </a>
@@ -138,7 +199,10 @@
 <!-- EventType -->
 <g id="node9" class="node">
 <title>EventType</title>
-<g id="a_node9"><a xlink:title="event_code           ------------------------------event_type           ">
+<g id="a_node9"><a xlink:title="event_code           
+------------------------------
+event_type           
+">
 <polygon fill="#000000" fill-opacity="0.125490" stroke="transparent" points="654.12,-161 591.12,-161 591.12,-126 654.12,-126 654.12,-161"/>
 <text text-anchor="start" x="599.12" y="-142" font-family="arial" text-decoration="underline" font-size="10.00">EventType</text>
 </a>
@@ -152,7 +216,15 @@
 <!-- ExperimentCamera -->
 <g id="node10" class="node">
 <title>ExperimentCamera</title>
-<g id="a_node10"><a xlink:title="→ Experiment→ Cameracamera_install_time  ------------------------------camera_description   camera_sampling_rate camera_gain=null     camera_bin=null      ">
+<g id="a_node10"><a xlink:title="→ Experiment
+→ Camera
+camera_install_time  
+------------------------------
+camera_description   
+camera_sampling_rate
+camera_gain=null     
+camera_bin=null      
+">
 <polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="267.62,-161 147.62,-161 147.62,-126 267.62,-126 267.62,-161"/>
 <text text-anchor="start" x="155.62" y="-141.4" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">ExperimentCamera</text>
 </a>
@@ -166,7 +238,19 @@
 <!-- qc.CameraQC -->
 <g id="node14" class="node">
 <title>qc.CameraQC</title>
-<g id="a_node14"><a xlink:title="→ Chunk→ ExperimentCamera------------------------------drop_count=null      max_harp_delta       max_camera_delta     timestamps           time_delta           frame_delta          hw_counter_delta     hw_timestamp_delta   frame_offset         ">
+<g id="a_node14"><a xlink:title="→ Chunk
+→ ExperimentCamera
+------------------------------
+drop_count=null      
+max_harp_delta       
+max_camera_delta     
+timestamps           
+time_delta           
+frame_delta          
+hw_counter_delta     
+hw_timestamp_delta   
+frame_offset         
+">
 <ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="207.62" cy="-72.5" rx="58.25" ry="17.5"/>
 <text text-anchor="middle" x="207.62" y="-69.4" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">qc.CameraQC</text>
 </a>
@@ -180,7 +264,8 @@
 <!-- Camera -->
 <g id="node11" class="node">
 <title>Camera</title>
-<g id="a_node11"><a xlink:title="camera_serial_number ">
+<g id="a_node11"><a xlink:title="camera_serial_number
+">
 <polygon fill="#000000" fill-opacity="0.125490" stroke="transparent" points="287.12,-232 236.12,-232 236.12,-197 287.12,-197 287.12,-232"/>
 <text text-anchor="start" x="244.12" y="-213" font-family="arial" text-decoration="underline" font-size="10.00">Camera</text>
 </a>
@@ -194,7 +279,9 @@
 <!-- Epoch -->
 <g id="node13" class="node">
 <title>Epoch</title>
-<g id="a_node13"><a xlink:title="→ Experimentepoch_start          ">
+<g id="a_node13"><a xlink:title="→ Experiment
+epoch_start          
+">
 <polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="412.12,-232 361.12,-232 361.12,-197 412.12,-197 412.12,-232"/>
 <text text-anchor="start" x="369.12" y="-212.4" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Epoch</text>
 </a>
@@ -203,7 +290,13 @@
 <!-- Chunk -->
 <g id="node15" class="node">
 <title>Chunk</title>
-<g id="a_node15"><a xlink:title="→ Experimentchunk_start          ------------------------------chunk_end            → Experiment.Directory→ [nullable] Epoch">
+<g id="a_node15"><a xlink:title="→ Experiment
+chunk_start          
+------------------------------
+chunk_end            
+→ Experiment.Directory
+→ [nullable] Epoch
+">
 <polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="367.62,-161 315.62,-161 315.62,-126 367.62,-126 367.62,-161"/>
 <text text-anchor="middle" x="341.62" y="-140.4" font-family="arial" font-size="12.00" fill="darkgreen">Chunk</text>
 </a>
@@ -272,7 +365,8 @@
 <!-- FoodPatch -->
 <g id="node17" class="node">
 <title>FoodPatch</title>
-<g id="a_node17"><a xlink:title="food_patch_serial_number ">
+<g id="a_node17"><a xlink:title="food_patch_serial_number
+">
 <polygon fill="#000000" fill-opacity="0.125490" stroke="transparent" points="494.62,-232 430.62,-232 430.62,-197 494.62,-197 494.62,-232"/>
 <text text-anchor="start" x="438.62" y="-213" font-family="arial" text-decoration="underline" font-size="10.00">FoodPatch</text>
 </a>

@@ -256,8 +256,7 @@ class BlockAnalysis(dj.Computed):
             )
 
             # update block_end if last timestamp of encoder_df is before the current block_end
-            if encoder_df.index[-1] < block_end:
-                block_end = encoder_df.index[-1]
+            block_end = min(encoder_df.index[-1], block_end)
 
         # Subject data
         # Get all unique subjects that visited the environment over the entire exp;
@@ -320,8 +319,7 @@ class BlockAnalysis(dj.Computed):
             )
 
             # update block_end if last timestamp of pos_df is before the current block_end
-            if pos_df.index[-1] < block_end:
-                block_end = pos_df.index[-1]
+            block_end = min(pos_df.index[-1], block_end)
 
         self.insert1(
             {
@@ -540,20 +538,20 @@ class BlockSubjectAnalysis(dj.Computed):
 
                 self.Preference.insert1(
                     key
-                    | dict(
-                        patch_name=patch_name,
-                        subject_name=subject_name,
-                        cumulative_preference_by_time=cum_pref_time,
-                        cumulative_preference_by_wheel=cum_pref_dist,
-                        final_preference_by_time=cum_pref_time[-1],
-                        final_preference_by_wheel=cum_pref_dist[-1],
-                    )
+                    | {
+                        "patch_name": patch_name,
+                        "subject_name": subject_name,
+                        "cumulative_preference_by_time": cum_pref_time,
+                        "cumulative_preference_by_wheel": cum_pref_dist,
+                        "final_preference_by_time": cum_pref_time[-1],
+                        "final_preference_by_wheel": cum_pref_dist[-1],
+                    }
                 )
 
 
 @schema
 class BlockPlots(dj.Computed):
-    definition = """ 
+    definition = """
     -> BlockAnalysis
     ---
     subject_positions_plot: longblob
@@ -722,11 +720,11 @@ class BlockSubjectPlots(dj.Computed):
                             x=wheel_ts,
                             y=cum_pref,
                             mode="lines",  # +  markers",
-                            line=dict(
-                                width=2,
-                                color=subject_colors[subj_i],
-                                dash=patch_markers_linestyles[patch_i],
-                            ),
+                            line={
+                                "width": 2,
+                                "color": subject_colors[subj_i],
+                                "dash": patch_markers_linestyles[patch_i],
+                            },
                             name=f"{subj} - {p}: μ: {patch_mean}",
                         )
                     )
@@ -744,13 +742,13 @@ class BlockSubjectPlots(dj.Computed):
                                 x=cur_cum_pel_ct["time"],
                                 y=cur_cum_pel_ct["cum_pref"],
                                 mode="markers",
-                                marker=dict(
-                                    symbol=patch_markers[patch_i],
-                                    color=gen_hex_grad(
+                                marker={
+                                    "symbol": patch_markers[patch_i],
+                                    "color": gen_hex_grad(
                                         subject_colors[-1], cur_cum_pel_ct["norm_thresh_val"]
                                     ),
-                                    size=8,
-                                ),
+                                    "size": 8,
+                                },
                                 showlegend=False,
                                 customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
                                 hovertemplate="Threshold: %{customdata[0]:.2f} cm",
@@ -762,7 +760,7 @@ class BlockSubjectPlots(dj.Computed):
                 title=f"Cumulative Patch Preference - {title}",
                 xaxis_title="Time",
                 yaxis_title="Pref Index",
-                yaxis=dict(tickvals=np.arange(0, 1.1, 0.1)),
+                yaxis={"tickvals": np.arange(0, 1.1, 0.1)},
             )
 
         # Insert figures as json-formatted plotly plots

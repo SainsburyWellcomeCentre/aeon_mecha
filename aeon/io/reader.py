@@ -11,8 +11,8 @@ import pandas as pd
 from dotmap import DotMap
 
 from aeon import util
-from aeon.io.api import chunk, chunk_key
 from aeon.io.api import aeon as aeon_time
+from aeon.io.api import chunk, chunk_key
 
 _SECONDS_PER_TICK = 32e-6
 _payloadtypes = {
@@ -43,7 +43,7 @@ class Reader:
         self.columns = columns
         self.extension = extension
 
-    def read(self, _):
+    def read(self, file):
         """Reads data from the specified file."""
         return pd.DataFrame(columns=self.columns, index=pd.DatetimeIndex([]))
 
@@ -94,7 +94,7 @@ class Chunk(Reader):
         """Returns path and epoch information for the specified chunk."""
         epoch, chunk = chunk_key(file)
         data = {"path": file, "epoch": epoch}
-        return pd.DataFrame(data, index=[chunk], columns=self.columns)
+        return pd.DataFrame(data, index=pd.Series(chunk), columns=self.columns)
 
 
 class Metadata(Reader):
@@ -113,12 +113,13 @@ class Metadata(Reader):
         workflow = metadata.pop("Workflow")
         commit = metadata.pop("Commit", pd.NA)
         data = {"workflow": workflow, "commit": commit, "metadata": [DotMap(metadata)]}
-        return pd.DataFrame(data, index=[time], columns=self.columns)
+        return pd.DataFrame(data, index=pd.Series(time), columns=self.columns)
 
 
 class Csv(Reader):
-    """Extracts data from comma-separated (csv) text files, where the first column
-    stores the Aeon timestamp, in seconds.
+    """Extracts data from comma-separated (CSV) text files.
+
+    The first column stores the Aeon timestamp, in seconds.
     """
 
     def __init__(self, pattern, columns, dtype=None, extension="csv"):
@@ -187,8 +188,10 @@ class Encoder(Harp):
         super().__init__(pattern, columns=["angle", "intensity"])
 
     def read(self, file, downsample=True):
-        """Reads encoder data from the specified Harp binary file, and optionally downsamples
-        the frequency to 50Hz.
+        """Reads encoder data from the specified Harp binary file.
+
+        By default the encoder data is downsampled to 50Hz. Setting downsample to
+        False or None can be used to force the raw data to be returned.
         """
         data = super().read(file)
         if downsample is True:
@@ -199,7 +202,7 @@ class Encoder(Harp):
             if first_index is not None:
                 # since data is absolute angular position we decimate by taking first of each bin
                 chunk_origin = chunk(first_index)
-                data = data.resample('20ms', origin=chunk_origin).first()
+                data = data.resample("20ms", origin=chunk_origin).first()
         return data
 
 
@@ -235,8 +238,9 @@ class BitmaskEvent(Harp):
         self.tag = tag
 
     def read(self, file):
-        """Reads a specific event code from digital data and matches it to the
-        specified unique identifier.
+        """Reads a specific event code from digital data.
+
+        Each data value is matched against the unique event identifier.
         """
         data = super().read(file)
         data = data[(data.event & self.value) == self.value]
@@ -256,8 +260,9 @@ class DigitalBitmask(Harp):
         self.mask = mask
 
     def read(self, file):
-        """Reads a specific event code from digital data and matches it to the
-        specified unique identifier.
+        """Reads a specific event code from digital data.
+
+        Each data value is checked against the specified bitmask.
         """
         data = super().read(file)
         state = data[self.columns] & self.mask
@@ -316,15 +321,17 @@ class Pose(Harp):
         parts = self.get_bodyparts(config_file)
 
         # Using bodyparts, assign column names to Harp register values, and read data in default format.
+        BONSAI_SLEAP_V2 = 0.2
+        BONSAI_SLEAP_V3 = 0.3
         try:  # Bonsai.Sleap0.2
-            bonsai_sleap_v = 0.2
+            bonsai_sleap_v = BONSAI_SLEAP_V2
             columns = ["identity", "identity_likelihood"]
             for part in parts:
                 columns.extend([f"{part}_x", f"{part}_y", f"{part}_likelihood"])
             self.columns = columns
             data = super().read(file)
         except ValueError:  # column mismatch; Bonsai.Sleap0.3
-            bonsai_sleap_v = 0.3
+            bonsai_sleap_v = BONSAI_SLEAP_V3
             columns = ["identity"]
             columns.extend([f"{identity}_likelihood" for identity in identities])
             for part in parts:
@@ -346,13 +353,16 @@ class Pose(Harp):
         data = self.class_int2str(data, config_file)
         n_parts = len(parts)
         part_data_list = [pd.DataFrame()] * n_parts
-        new_columns = ["identity", "identity_likelihood", "part", "x", "y", "part_likelihood"]
+        new_columns = pd.Series(["identity", "identity_likelihood", "part", "x", "y", "part_likelihood"])
         new_data = pd.DataFrame(columns=new_columns)
         for i, part in enumerate(parts):
-            part_columns = columns[0 : (len(identities) + 1)] if bonsai_sleap_v == 0.3 else columns[0:2]
+            part_columns = (
+                columns[0 : (len(identities) + 1)] if bonsai_sleap_v == BONSAI_SLEAP_V3 else columns[0:2]
+            )
             part_columns.extend([f"{part}_x", f"{part}_y", f"{part}_likelihood"])
             part_data = pd.DataFrame(data[part_columns])
-            if bonsai_sleap_v == 0.3:  # combine all identity_likelihood cols into a single col as dict
+            if bonsai_sleap_v == BONSAI_SLEAP_V3:
+                # combine all identity_likelihood cols into a single col as dict
                 part_data["identity_likelihood"] = part_data.apply(
                     lambda row: {identity: row[f"{identity}_likelihood"] for identity in identities}, axis=1
                 )
@@ -369,17 +379,16 @@ class Pose(Harp):
     @staticmethod
     def get_class_names(config_file: Path) -> list[str]:
         """Returns a list of classes from a model's config file."""
-        classes = None
         with open(config_file) as f:
             config = json.load(f)
-        if config_file.stem == "confmap_config":  # SLEAP
-            try:
-                heads = config["model"]["heads"]
-                classes = util.find_nested_key(heads, "class_vectors")["classes"]
-            except KeyError as err:
-                if not classes:
-                    raise KeyError(f"Cannot find class_vectors in {config_file}.") from err
-        return classes
+        if config_file.stem != "confmap_config":  # SLEAP
+            raise ValueError(f"The model config file '{config_file}' is not supported.")
+
+        try:
+            heads = config["model"]["heads"]
+            return util.find_nested_key(heads, "class_vectors")["classes"]
+        except KeyError as err:
+            raise KeyError(f"Cannot find class_vectors in {config_file}.") from err
 
     @staticmethod
     def get_bodyparts(config_file: Path) -> list[str]:
@@ -428,6 +437,7 @@ class Pose(Harp):
 
 
 def from_dict(data, pattern=None):
+    """Converts a dictionary to a DotMap object."""
     reader_type = data.get("type", None)
     if reader_type is not None:
         kwargs = {k: v for k, v in data.items() if k != "type"}
@@ -439,6 +449,7 @@ def from_dict(data, pattern=None):
 
 
 def to_dict(dotmap):
+    """Converts a DotMap object to a dictionary."""
     if isinstance(dotmap, Reader):
         kwargs = {k: v for k, v in vars(dotmap).items() if k not in ["pattern"] and not k.startswith("_")}
         kwargs["type"] = type(dotmap).__name__
