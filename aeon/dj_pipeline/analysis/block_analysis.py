@@ -803,12 +803,10 @@ def get_threshold_associated_pellets(patch_key, start, end):
         - These are the pellet delivery events "B" associated with the previous threshold update event "A"
     4. Shift back the pellet delivery timestamps by 1 to match the pellet delivery with the previous threshold update
     5. Remove all threshold updates events "A" without a corresponding pellet delivery event "B"
-
     Args:
         patch_key (dict): primary key for the patch
         start (datetime): start timestamp
         end (datetime): end timestamp
-
     Returns:
         pd.DataFrame: DataFrame with the following columns:
         - threshold_update_timestamp (index)
@@ -819,42 +817,40 @@ def get_threshold_associated_pellets(patch_key, start, end):
     """
     chunk_restriction = acquisition.create_chunk_restriction(patch_key["experiment_name"], start, end)
 
-    # pellet delivery and beam break data
+    # Get pellet delivery trigger data
     delivered_pellet_df = fetch_stream(
         streams.UndergroundFeederDeliverPellet & patch_key & chunk_restriction
     )[start:end]
-    beam_break_df = fetch_stream(streams.UndergroundFeederBeamBreak & patch_key & chunk_restriction)[
+    # Remove invalid rows where the time difference is less than 1.2 seconds
+    invalid_rows = delivered_pellet_df.index.to_series().diff().dt.total_seconds() < 1.2
+    delivered_pellet_df = delivered_pellet_df[~invalid_rows]
+
+    # Get beambreak data
+    beambreak_df = fetch_stream(streams.UndergroundFeederBeamBreak & patch_key & chunk_restriction)[
         start:end
     ]
+    # Remove invalid rows where the time difference is less than 1 second
+    invalid_rows = beambreak_df.index.to_series().diff().dt.total_seconds() < 1
+    beambreak_df = beambreak_df[~invalid_rows]
+    # Exclude manual deliveries
     manual_delivery_df = fetch_stream(
         streams.UndergroundFeederManualDelivery & patch_key & chunk_restriction
     )[start:end]
-
-    # exclude ManualDelivery from the pellet delivery (take the not intersecting part)
     delivered_pellet_df = delivered_pellet_df.loc[
         delivered_pellet_df.index.difference(manual_delivery_df.index)
     ]
 
-    if delivered_pellet_df.empty or beam_break_df.empty:
+    # Return empty if no pellets
+    if delivered_pellet_df.empty or beambreak_df.empty:
         return acquisition.io_api._empty(
             ["threshold", "offset", "rate", "pellet_timestamp", "beam_break_timestamp"]
         )
 
-    # patch threshold data
-    depletion_state_df = fetch_stream(
-        streams.UndergroundFeederDepletionState & patch_key & chunk_restriction
-    )[start:end]
-    # remove NaNs from threshold column
-    depletion_state_df = depletion_state_df.dropna(subset=["threshold"])
-    # remove invalid rows where the time difference is less than 1 second
-    invalid_rows = depletion_state_df.index.to_series().diff().dt.total_seconds() < 1
-    depletion_state_df = depletion_state_df[~invalid_rows]
-
-    # find pellet times with matching beam break times (within 1.2s after pellet times)
+    # Find pellet delivery triggers with matching beambreaks within 1.2s after each pellet delivery
     pellet_beam_break_df = (
         pd.merge_asof(
             delivered_pellet_df.reset_index(),
-            beam_break_df.reset_index().rename(columns={"time": "beam_break_timestamp"}),
+            beambreak_df.reset_index().rename(columns={"time": "beam_break_timestamp"}),
             left_on="time",
             right_on="beam_break_timestamp",
             tolerance=pd.Timedelta("1.2s"),
@@ -865,7 +861,17 @@ def get_threshold_associated_pellets(patch_key, start, end):
     )
     pellet_beam_break_df.drop_duplicates(subset="beam_break_timestamp", keep="last", inplace=True)
 
-    # find pellet times approximately coincide with each threshold update
+    # Get patch threshold data
+    depletion_state_df = fetch_stream(
+        streams.UndergroundFeederDepletionState & patch_key & chunk_restriction
+    )[start:end]
+    # Remove NaNs
+    depletion_state_df = depletion_state_df.dropna(subset=["threshold"])
+    # Remove invalid rows where the time difference is less than 1 second
+    invalid_rows = depletion_state_df.index.to_series().diff().dt.total_seconds() < 1
+    depletion_state_df = depletion_state_df[~invalid_rows]
+
+    # Find pellet delivery triggers that approximately coincide with each threshold update
     # i.e. nearest pellet delivery within 100ms before or after threshold update
     pellet_ts_threshold_df = (
         pd.merge_asof(
@@ -879,13 +885,11 @@ def get_threshold_associated_pellets(patch_key, start, end):
         .set_index("time")
         .dropna(subset=["pellet_timestamp"])
     )
+
+    # Clean up the df
     pellet_ts_threshold_df = pellet_ts_threshold_df.drop(columns=["event_x", "event_y"])
-    # shift back the pellet_timestamp values by 1 to match the pellet_timestamp with the previous threshold update
+    # Shift back the pellet_timestamp values by 1 to match with the previous threshold update
     pellet_ts_threshold_df.pellet_timestamp = pellet_ts_threshold_df.pellet_timestamp.shift(-1)
     pellet_ts_threshold_df.beam_break_timestamp = pellet_ts_threshold_df.beam_break_timestamp.shift(-1)
-    # remove NaNs from pellet_timestamp column (last row)
-    pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(
-        subset=["pellet_timestamp", "beam_break_timestamp"]
-    )
-
+    pellet_ts_threshold_df = pellet_ts_threshold_df.dropna(subset=["pellet_timestamp", "beam_break_timestamp"])
     return pellet_ts_threshold_df
