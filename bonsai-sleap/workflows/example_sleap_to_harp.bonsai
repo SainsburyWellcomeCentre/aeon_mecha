@@ -1,0 +1,89 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<WorkflowBuilder Version="2.8.1"
+                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xmlns:cv="clr-namespace:Bonsai.Vision;assembly=Bonsai.Vision"
+                 xmlns:sleap="clr-namespace:Bonsai.Sleap;assembly=Bonsai.Sleap"
+                 xmlns:rx="clr-namespace:Bonsai.Reactive;assembly=Bonsai.Core"
+                 xmlns="https://bonsai-rx.org/2018/workflow">
+  <Workflow>
+    <Nodes>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="cv:FileCapture">
+          <cv:FileName>/ceph/aeon/aeon/data/raw/AEON4/social0.2/2024-02-09T16-39-14/CameraTop/CameraTop_2024-02-11T18-00-00.avi</cv:FileName>
+          <cv:PlaybackRate>0</cv:PlaybackRate>
+          <cv:StartPosition>0</cv:StartPosition>
+          <cv:PositionUnits>Frames</cv:PositionUnits>
+          <cv:Loop>false</cv:Loop>
+          <cv:Playing>true</cv:Playing>
+        </Combinator>
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="cv:Grayscale" />
+      </Expression>
+      <Expression xsi:type="Disable">
+        <Builder xsi:type="Combinator">
+          <Combinator xsi:type="sleap:PredictCentroids">
+            <sleap:ModelFileName>bonsai-sleap/sleap_models/exports/frozen_graph.pb</sleap:ModelFileName>
+            <sleap:TrainingConfig>bonsai-sleap/sleap_models/exports/centroid_config.json</sleap:TrainingConfig>
+            <sleap:CentroidMinConfidence xsi:nil="true" />
+            <sleap:ScaleFactor xsi:nil="true" />
+            <sleap:ColorConversion xsi:nil="true" />
+          </Combinator>
+        </Builder>
+      </Expression>
+      <Expression xsi:type="Disable">
+        <Builder xsi:type="Combinator">
+          <Combinator xsi:type="sleap:PredictPoses">
+            <sleap:ModelFileName>bonsai-sleap/sleap_models/exports/frozen_graph.pb</sleap:ModelFileName>
+            <sleap:TrainingConfig>bonsai-sleap/sleap_models/exports/confmap_config.json</sleap:TrainingConfig>
+            <sleap:CentroidMinConfidence xsi:nil="true" />
+            <sleap:PartMinConfidence xsi:nil="true" />
+            <sleap:ScaleFactor xsi:nil="true" />
+            <sleap:ColorConversion xsi:nil="true" />
+          </Combinator>
+        </Builder>
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="sleap:PredictPoseIdentities">
+          <sleap:ModelFileName>/ceph/aeon/aeon/data/processed/test-node1/4311747/2024-01-15T18-00-00/topdown-multianimal-id-133/frozen_graph.pb</sleap:ModelFileName>
+          <sleap:TrainingConfig>/ceph/aeon/aeon/data/processed/test-node1/4311747/2024-01-15T18-00-00/topdown-multianimal-id-133/confmap_config.json</sleap:TrainingConfig>
+          <sleap:CentroidMinConfidence xsi:nil="true" />
+          <sleap:IdentityMinConfidence xsi:nil="true" />
+          <sleap:PartMinConfidence xsi:nil="true" />
+          <sleap:ScaleFactor xsi:nil="true" />
+          <sleap:ColorConversion xsi:nil="true" />
+        </Combinator>
+      </Expression>
+      <Expression xsi:type="Disable">
+        <Builder xsi:type="Combinator">
+          <Combinator xsi:type="sleap:GetMaximumConfidencePoseIdentity" />
+        </Builder>
+      </Expression>
+      <Expression xsi:type="Disable">
+        <Builder xsi:type="Combinator">
+          <Combinator xsi:type="rx:TimeInterval" />
+        </Builder>
+      </Expression>
+      <Expression xsi:type="Disable">
+        <Builder xsi:type="MemberSelector">
+          <Selector>Interval.TotalMilliseconds</Selector>
+        </Builder>
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="rx:Take">
+          <rx:Count>500</rx:Count>
+        </Combinator>
+      </Expression>
+    </Nodes>
+    <Edges>
+      <Edge From="0" To="1" Label="Source1" />
+      <Edge From="1" To="2" Label="Source1" />
+      <Edge From="2" To="3" Label="Source1" />
+      <Edge From="3" To="4" Label="Source1" />
+      <Edge From="4" To="5" Label="Source1" />
+      <Edge From="5" To="6" Label="Source1" />
+      <Edge From="6" To="7" Label="Source1" />
+      <Edge From="7" To="8" Label="Source1" />
+    </Edges>
+  </Workflow>
+</WorkflowBuilder>
