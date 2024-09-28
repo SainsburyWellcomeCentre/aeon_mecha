@@ -563,6 +563,47 @@ class Environment(dj.Imported):
             )
 
 
+@schema
+class EnvironmentActiveConfiguration(dj.Imported):
+    definition = """  # Environment Active Configuration
+    -> Chunk
+    """
+
+    class Name(dj.Part):
+        definition = """
+        -> master
+        time: datetime(6)  # time when the configuration is applied to the environment
+        ---
+        name: varchar(32)  # name of the environment configuration
+        value: longblob    # dictionary of the configuration
+        """
+
+    def make(self, key):
+        chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
+        data_dirs = Experiment.get_data_directories(key)
+        devices_schema = getattr(
+            aeon_schemas,
+            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
+        )
+        device = devices_schema.Environment
+        stream_reader = device.EnvironmentActiveConfiguration  # expecting columns: time, name, value
+        stream_data = io_api.load(
+            root=data_dirs,
+            reader=stream_reader,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end),
+        )
+
+        stream_data.reset_index(inplace=True)
+        for k, v in key.items():
+            stream_data[k] = v
+
+        self.insert1(key)
+        self.Name.insert(stream_data)
+
+
 # ---- HELPERS ----
 
 
