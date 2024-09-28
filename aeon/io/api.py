@@ -60,12 +60,14 @@ def _empty(columns):
     return pd.DataFrame(columns=columns, index=pd.DatetimeIndex([], name="time"))
 
 
-def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=None):
-    """Extracts chunk data from the root path of an Aeon dataset using the specified data stream
-    reader. A subset of the data can be loaded by specifying an optional time range, or a list
-    of timestamps used to index the data on file. Returned data will be sorted chronologically.
+def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=None, **kwargs):
+    """Extracts chunk data from the root path of an Aeon dataset.
 
-    :param str or PathLike root: The root path, or prioritised sequence of paths, where epoch data is stored.
+    Reads all chunk data using the specified data stream reader. A subset of the data can be loaded
+    by specifying an optional time range, or a list of timestamps used to index the data on file.
+    Returned data will be sorted chronologically.
+
+    :param str or PathLike root: The root path, or prioritised sequence of paths, where data is stored.
     :param Reader reader: A data stream reader object used to read chunk data from the dataset.
     :param datetime, optional start: The left bound of the time range to extract.
     :param datetime, optional end: The right bound of the time range to extract.
@@ -73,6 +75,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
     :param datetime, optional tolerance:
     The maximum distance between original and new timestamps for inexact matches.
     :param str, optional epoch: A wildcard pattern to use when searching epoch data.
+    :param optional kwargs: Optional keyword arguments to forward to the reader when reading chunk data.
     :return: A pandas data frame containing epoch event metadata, sorted by time.
     """
     if isinstance(root, str):
@@ -84,7 +87,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
     fileset = {
         chunk_key(fname): fname
         for path in root
-        for fname in path.glob(f"{epoch_pattern}/**/{reader.pattern}.{reader.extension}")
+        for fname in Path(path).glob(f"{epoch_pattern}/**/{reader.pattern}.{reader.extension}")
     }
     files = sorted(fileset.items())
 
@@ -100,9 +103,9 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
         filetimes = [chunk for (_, chunk), _ in files]
         files = [file for _, file in files]
         for key, values in time.groupby(by=chunk):
-            i = bisect.bisect_left(filetimes, key)
+            i = bisect.bisect_left(filetimes, key)  # type: ignore
             if i < len(filetimes):
-                frame = reader.read(files[i])
+                frame = reader.read(files[i], **kwargs)
                 _set_index(frame)
             else:
                 frame = _empty(reader.columns)
@@ -113,7 +116,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
             if missing > 0 and i > 0:
                 # expand reindex to allow adjacent chunks
                 # to fill missing values
-                previous = reader.read(files[i - 1])
+                previous = reader.read(files[i - 1], **kwargs)
                 data = pd.concat([previous, frame])
                 data = data.reindex(values, tolerance=tolerance)
                 data.dropna(inplace=True)
@@ -134,7 +137,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
     if len(files) == 0:
         return _empty(reader.columns)
 
-    data = pd.concat([reader.read(file) for _, file in files])
+    data = pd.concat([reader.read(file, **kwargs) for _, file in files])
     _set_index(data)
     if start is not None or end is not None:
         try:
@@ -143,10 +146,12 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
             import warnings
 
             if not data.index.has_duplicates:
-                warnings.warn(f"data index for {reader.pattern} contains out-of-order timestamps!")
+                warnings.warn(
+                    f"data index for {reader.pattern} contains out-of-order timestamps!", stacklevel=2
+                )
                 data = data.sort_index()
             else:
-                warnings.warn(f"data index for {reader.pattern} contains duplicate keys!")
+                warnings.warn(f"data index for {reader.pattern} contains duplicate keys!", stacklevel=2)
                 data = data[~data.index.duplicated(keep="first")]
             return data.loc[start:end]
     return data

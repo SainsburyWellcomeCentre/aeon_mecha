@@ -14,8 +14,8 @@ def frames(data):
     filename = None
     index = 0
     try:
-        for frameidx, path in zip(data._frame, data._path):
-            if filename != path:
+        for frameidx, path in zip(data._frame, data._path, strict=False):
+            if filename != path or capture is None:
                 if capture is not None:
                     capture.release()
                 capture = cv2.VideoCapture(path)
@@ -49,7 +49,7 @@ def export(frames, file, fps, fourcc=None):
         for frame in frames:
             if writer is None:
                 if fourcc is None:
-                    fourcc = cv2.VideoWriter_fourcc("m", "p", "4", "v")
+                    fourcc = cv2.VideoWriter_fourcc("m", "p", "4", "v")  # type: ignore
                 writer = cv2.VideoWriter(file, fourcc, fps, (frame.shape[1], frame.shape[0]))
             writer.write(frame)
     finally:

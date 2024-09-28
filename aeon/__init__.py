@@ -9,5 +9,5 @@ except PackageNotFoundError:
 finally:
     del version, PackageNotFoundError
 
-# Set functions avaialable directly under the 'aeon' top-level namespace
-from aeon.io.api import load
+# Set functions available directly under the 'aeon' top-level namespace
+from aeon.io.api import load as load  # noqa: PLC0414

@@ -1,10 +1,9 @@
 import aeon.io.reader as _reader
-from aeon.schema.streams import Stream, StreamGroup
 from aeon.schema import core, foraging
+from aeon.schema.streams import Stream, StreamGroup
 
 
 class Environment(StreamGroup):
-
     def __init__(self, path):
         super().__init__(path)
 
@@ -12,7 +11,9 @@ class Environment(StreamGroup):
 
     class BlockState(Stream):
         def __init__(self, path):
-            super().__init__(_reader.Csv(f"{path}_BlockState_*", columns=["pellet_ct", "pellet_ct_thresh", "due_time"]))
+            super().__init__(
+                _reader.Csv(f"{path}_BlockState_*", columns=["pellet_ct", "pellet_ct_thresh", "due_time"])
+            )
 
     class LightEvents(Stream):
         def __init__(self, path):
@@ -35,29 +36,29 @@ class SubjectData(StreamGroup):
 
     class SubjectWeight(Stream):
         def __init__(self, path):
-            super().__init__(_reader.Csv(f"{path}_SubjectWeight_*", columns=["weight", "confidence", "subject_id", "int_id"]))
+            super().__init__(
+                _reader.Csv(
+                    f"{path}_SubjectWeight_*", columns=["weight", "confidence", "subject_id", "int_id"]
+                )
+            )
 
 
 class Pose(Stream):
-
     def __init__(self, path):
         super().__init__(_reader.Pose(f"{path}_test-node1*"))
 
 
 class WeightRaw(Stream):
-
     def __init__(self, path):
         super().__init__(_reader.Harp(f"{path}_200_*", ["weight(g)", "stability"]))
 
 
 class WeightFiltered(Stream):
-
     def __init__(self, path):
         super().__init__(_reader.Harp(f"{path}_202_*", ["weight(g)", "stability"]))
 
 
 class Patch(StreamGroup):
-
     def __init__(self, path):
         super().__init__(path)
 
@@ -83,6 +84,5 @@ class Patch(StreamGroup):
 
 
 class RfidEvents(Stream):
-
     def __init__(self, path):
         super().__init__(_reader.Harp(f"{path}_32*", ["rfid"]))
