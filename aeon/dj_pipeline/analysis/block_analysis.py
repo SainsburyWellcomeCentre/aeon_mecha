@@ -916,7 +916,10 @@ def get_foraging_bouts(
         DataFrame containing foraging bouts. Columns: duration, n_pellets, cum_wheel_dist, subject.
     """
     max_inactive_time = pd.Timedelta(seconds=60) if max_inactive_time is None else max_inactive_time
+    bout_data = pd.DataFrame(columns=["start", "end", "n_pellets", "cum_wheel_dist", "subject"])
     subject_patch_data = (BlockSubjectAnalysis.Patch() & key).fetch(format="frame")
+    if subject_patch_data.empty:
+        return bout_data
     subject_patch_data.reset_index(level=["experiment_name"], drop=True, inplace=True)
     wheel_ts = (BlockAnalysis.Patch() & key).fetch("wheel_timestamps")[0]
     # For each subject:
@@ -929,7 +932,6 @@ def get_foraging_bouts(
     #       - For the foraging bout end time, we need to account for the final pellet delivery time
     #   - Filter out events with < `min_pellets`
     #   - For final events, get: duration, n_pellets, cum_wheel_distance -> add to returned DF
-    bout_data = pd.DataFrame(columns=["start", "end", "n_pellets", "cum_wheel_dist", "subject"])
     for subject in subject_patch_data.index.unique("subject_name"):
         cur_subject_data = subject_patch_data.xs(subject, level="subject_name")
         # Create combined cumulative wheel distance spun
@@ -980,7 +982,6 @@ def get_foraging_bouts(
                 for start, end in bout_starts_ends
             ]
         )
-        import ipdb; ipdb.set_trace()
         # Filter by `min_pellets`
         bout_durations = bout_durations[bout_pellets >= min_pellets]
         bout_starts_ends = bout_starts_ends[bout_pellets >= min_pellets]
