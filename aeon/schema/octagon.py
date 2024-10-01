@@ -54,10 +54,10 @@ class OSC:
         }
     
     @staticmethod
-    def gratings_slice(pattern):
+    def checkboards_slice(pattern):
         return {
-            "GratingsSlice": _reader.Csv(
-                f"{pattern}_octagongratingsslice_*",
+            "CheckerboardsSlice": _reader.Csv(
+                f"{pattern}_octagoncheckerboardsslice_*",
                 columns=[
                     "typetag",
                     "wall_id",
