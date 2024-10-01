@@ -59,11 +59,11 @@ octagon01 = DotMap(
 )
 
 octagon02 = DotMap([
-    Device("Metadata", stream.metadata),
-    Device("CameraTop", stream.video, stream.position),
-    Device("CameraColorTop", stream.video),
-    Device("ExperimentalMetadata", stream.subject_state),
-    Device("Photodiode", octagon.photodiode),
+    Device("Metadata", stream.Metadata),
+    Device("CameraTop", stream.Video, stream.Position),
+    Device("CameraColorTop", stream.Video),
+    Device("ExperimentalMetadata", stream.SubjectState),
+    Device("Photodiode", octagon.Photodiode),
     Device("OSC", octagon.OSC),
     Device("TaskLogic", octagon.TaskLogic),
     Device("Wall1", octagon.Wall),
