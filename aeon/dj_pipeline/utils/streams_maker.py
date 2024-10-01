@@ -126,8 +126,8 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
     for col in stream.columns:
         if col.startswith("_"):
             continue
-        col = re.sub(r"\([^)]*\)", "", col)
-        table_definition += f"{col}: longblob\n    "
+        new_col = re.sub(r"\([^)]*\)", "", col)
+        table_definition += f"{new_col}: longblob\n    "
 
     class DeviceDataStream(dj.Imported):
         definition = table_definition

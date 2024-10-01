@@ -1,8 +1,8 @@
 from dotmap import DotMap
 
 import aeon.schema.core as stream
-from aeon.schema.streams import Device
 from aeon.schema import foraging, octagon
+from aeon.schema.streams import Device
 
 exp02 = DotMap(
     [

@@ -44,13 +44,6 @@ def ingest_epochs_chunks():
         acquisition.Chunk.ingest_chunks(experiment_name)
 
 
-def ingest_environment_visits():
-    """Extract and insert complete visits for experiments specified in AutomatedExperimentIngestion."""
-    experiment_names = AutomatedExperimentIngestion.fetch("experiment_name")
-    # analysis.ingest_environment_visits(experiment_names)
-    pass
-
-
 # ---- Define worker(s) ----
 # configure a worker to process `acquisition`-related tasks
 acquisition_worker = DataJointWorker(
@@ -63,7 +56,6 @@ acquisition_worker = DataJointWorker(
 acquisition_worker(ingest_epochs_chunks)
 acquisition_worker(acquisition.EpochConfig)
 acquisition_worker(acquisition.Environment)
-# acquisition_worker(ingest_environment_visits)
 acquisition_worker(block_analysis.BlockDetection)
 
 # configure a worker to handle pyrat sync
@@ -114,4 +106,5 @@ analysis_worker(block_analysis.BlockSubjectPlots, max_calls=6)
 
 def get_workflow_operation_overview():
     from datajoint_utilities.dj_worker.utils import get_workflow_operation_overview
+
     return get_workflow_operation_overview(worker_schema_name=worker_schema_name, db_prefixes=[db_prefix])

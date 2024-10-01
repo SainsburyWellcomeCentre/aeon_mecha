@@ -1,9 +1,8 @@
 from dotmap import DotMap
 
 import aeon.schema.core as stream
-from aeon.schema.streams import Device
 from aeon.schema import foraging, octagon, social_01, social_02, social_03
-
+from aeon.schema.streams import Device
 
 exp02 = DotMap(
     [
@@ -116,7 +115,7 @@ social02 = DotMap(
 social03 = DotMap(
     [
         Device("Metadata", stream.Metadata),
-        Device("Environment", social_02.Environment, social_02.SubjectData),
+        Device("Environment", social_02.Environment, social_02.SubjectData, social_03.EnvironmentActiveConfiguration),
         Device("CameraTop", stream.Video, social_03.Pose),
         Device("CameraNorth", stream.Video),
         Device("CameraSouth", stream.Video),
@@ -147,7 +146,7 @@ social03 = DotMap(
 social04 = DotMap(
     [
         Device("Metadata", stream.Metadata),
-        Device("Environment", social_02.Environment, social_02.SubjectData),
+        Device("Environment", social_02.Environment, social_02.SubjectData, social_03.EnvironmentActiveConfiguration),
         Device("CameraTop", stream.Video, social_03.Pose),
         Device("CameraNorth", stream.Video),
         Device("CameraSouth", stream.Video),

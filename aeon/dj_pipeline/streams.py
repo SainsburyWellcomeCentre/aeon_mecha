@@ -14,7 +14,7 @@ from aeon.schema import schemas as aeon_schemas
 schema = dj.Schema(get_schema_name("streams"))
 
 
-@schema 
+@schema
 class StreamType(dj.Lookup):
     """Catalog of all steam types for the different device types used across Project Aeon. One StreamType corresponds to one reader class in `aeon.io.reader`. The combination of `stream_reader` and `stream_reader_kwargs` should fully specify the data loading routine for a particular device, using the `aeon.io.utils`."""
 
@@ -29,7 +29,7 @@ class StreamType(dj.Lookup):
     """
 
 
-@schema 
+@schema
 class DeviceType(dj.Lookup):
     """Catalog of all device types used across Project Aeon."""
 
@@ -46,7 +46,7 @@ class DeviceType(dj.Lookup):
         """
 
 
-@schema 
+@schema
 class Device(dj.Lookup):
     definition = """  # Physical devices, of a particular type, identified by unique serial number
     device_serial_number: varchar(12)
@@ -55,7 +55,7 @@ class Device(dj.Lookup):
     """
 
 
-@schema 
+@schema
 class RfidReader(dj.Manual):
         definition = f"""
         # rfid_reader placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
@@ -82,7 +82,7 @@ class RfidReader(dj.Manual):
             """
 
 
-@schema 
+@schema
 class SpinnakerVideoSource(dj.Manual):
         definition = f"""
         # spinnaker_video_source placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
@@ -109,7 +109,7 @@ class SpinnakerVideoSource(dj.Manual):
             """
 
 
-@schema 
+@schema
 class UndergroundFeeder(dj.Manual):
         definition = f"""
         # underground_feeder placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
@@ -136,7 +136,7 @@ class UndergroundFeeder(dj.Manual):
             """
 
 
-@schema 
+@schema
 class WeightScale(dj.Manual):
         definition = f"""
         # weight_scale placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
@@ -163,7 +163,7 @@ class WeightScale(dj.Manual):
             """
 
 
-@schema 
+@schema
 class RfidReaderRfidEvents(dj.Imported):
         definition = """  # Raw per-chunk RfidEvents data stream from RfidReader (auto-generated with aeon_mecha-unknown)
     -> RfidReader
@@ -838,5 +838,3 @@ class WeightScaleWeightRaw(dj.Imported):
                 },
                 ignore_extra_fields=True,
             )
-
-

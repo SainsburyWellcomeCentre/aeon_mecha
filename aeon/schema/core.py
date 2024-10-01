@@ -1,5 +1,5 @@
-from aeon.schema.streams import Stream, StreamGroup
 import aeon.io.reader as _reader
+from aeon.schema.streams import Stream, StreamGroup
 
 
 class Heartbeat(Stream):

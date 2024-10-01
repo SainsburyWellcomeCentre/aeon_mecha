@@ -44,8 +44,7 @@ def insert_stream_types():
 
 
 def insert_device_types(devices_schema: DotMap, metadata_yml_filepath: Path):
-    """
-    Use aeon.schema.schemas and metadata.yml to insert into streams.DeviceType and streams.Device.
+    """Use aeon.schema.schemas and metadata.yml to insert into streams.DeviceType and streams.Device.
     Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml.
     It then creates new device tables under streams schema.
     """
@@ -116,11 +115,12 @@ def insert_device_types(devices_schema: DotMap, metadata_yml_filepath: Path):
         streams.Device.insert(new_devices)
 
 
-def extract_epoch_config(experiment_name: str, devices_schema, metadata_yml_filepath: str) -> dict:
+def extract_epoch_config(experiment_name: str, devices_schema: DotMap, metadata_yml_filepath: str) -> dict:
     """Parse experiment metadata YAML file and extract epoch configuration.
 
     Args:
         experiment_name (str): Name of the experiment.
+        devices_schema (DotMap): DotMap object (e.g., exp02, octagon01)
         metadata_yml_filepath (str): path to the metadata YAML file.
 
     Returns:
@@ -164,6 +164,7 @@ def extract_epoch_config(experiment_name: str, devices_schema, metadata_yml_file
 def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath):
     """Make entries into device tables."""
     from aeon.dj_pipeline import acquisition
+
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
     if experiment_name.startswith("oct"):
@@ -179,7 +180,7 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
         epoch_start="MAX(epoch_start)",
     )
     if len(acquisition.EpochConfig.Meta & previous_epoch) and epoch_config["commit"] == (
-            acquisition.EpochConfig.Meta & previous_epoch
+        acquisition.EpochConfig.Meta & previous_epoch
     ).fetch1("commit"):
         # if identical commit -> no changes
         return
