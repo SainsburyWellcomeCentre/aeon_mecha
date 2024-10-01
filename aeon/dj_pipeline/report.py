@@ -1,20 +1,21 @@
-import os
-import datajoint as dj
-import pandas as pd
-import numpy as np
-import pathlib
-import matplotlib.pyplot as plt
-import re
 import datetime
 import json
+import os
+import pathlib
+
+import datajoint as dj
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
 from aeon.analysis import plotting as analysis_plotting
+from aeon.dj_pipeline.analysis.visit import Visit, VisitEnd
+from aeon.dj_pipeline.analysis.visit_analysis import *
 
-from . import acquisition, analysis
-from . import get_schema_name
+from . import acquisition, analysis, get_schema_name
 
-
-schema = dj.schema(get_schema_name("report"))
+# schema = dj.schema(get_schema_name("report"))
+schema = dj.schema()
 os.environ["DJ_SUPPORT_FILEPATH_MANAGEMENT"] = "TRUE"
 
 
@@ -32,9 +33,7 @@ class InArenaSummaryPlot(dj.Computed):
     summary_plot_png: attach
     """
 
-    key_source = (
-        analysis.InArena & analysis.InArenaTimeDistribution & analysis.InArenaSummary
-    )
+    key_source = analysis.InArena & analysis.InArenaTimeDistribution & analysis.InArenaSummary
 
     color_code = {
         "Patch1": "b",
@@ -45,41 +44,35 @@ class InArenaSummaryPlot(dj.Computed):
     }
 
     def make(self, key):
-        raw_data_dir = acquisition.Experiment.get_data_directory(key)
-
-        in_arena_start, in_arena_end = (
-            analysis.InArena * analysis.InArenaEnd & key
-        ).fetch1("in_arena_start", "in_arena_end")
+        in_arena_start, in_arena_end = (analysis.InArena * analysis.InArenaEnd & key).fetch1(
+            "in_arena_start", "in_arena_end"
+        )
 
         # subject's position data in the time_slices
         position = analysis.InArenaSubjectPosition.get_position(key)
+        position.rename(columns={"position_x": "x", "position_y": "y"}, inplace=True)
 
-        position_minutes_elapsed = (
-            position.index - in_arena_start
-        ).total_seconds() / 60
+        position_minutes_elapsed = (position.index - in_arena_start).total_seconds() / 60
 
         # figure
-        fig = plt.figure(figsize=(16, 8))
-        gs = fig.add_gridspec(21, 6)
-        rate_ax = fig.add_subplot(gs[:10, :4])
-        distance_ax = fig.add_subplot(gs[10:20, :4])
-        ethogram_ax = fig.add_subplot(gs[20, :4])
-        position_ax = fig.add_subplot(gs[10:, 4:])
-        pellet_ax = fig.add_subplot(gs[:10, 4])
-        time_dist_ax = fig.add_subplot(gs[:10, 5:])
+        fig = plt.figure(figsize=(20, 9))
+        gs = fig.add_gridspec(22, 5)
+        threshold_ax = fig.add_subplot(gs[:3, :3])
+        rate_ax = fig.add_subplot(gs[5:13, :3])
+        distance_ax = fig.add_subplot(gs[14:20, :3])
+        ethogram_ax = fig.add_subplot(gs[20, :3])
+        position_ax = fig.add_subplot(gs[13:, 3:])
+        pellet_ax = fig.add_subplot(gs[2:12, 3])
+        time_dist_ax = fig.add_subplot(gs[2:12, 4:])
 
         # position plot
         non_nan = np.logical_and(~np.isnan(position.x), ~np.isnan(position.y))
-        analysis_plotting.heatmap(
-            position[non_nan], 50, ax=position_ax, bins=500, alpha=0.5
-        )
+        analysis_plotting.heatmap(position[non_nan], 50, ax=position_ax, bins=500, alpha=0.5)
 
         # event rate plots
         in_arena_food_patches = (
             analysis.InArena
-            * acquisition.ExperimentFoodPatch.join(
-                acquisition.ExperimentFoodPatch.RemovalTime, left=True
-            )
+            * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
             & key
             & "in_arena_start >= food_patch_install_time"
             & 'in_arena_start < IFNULL(food_patch_remove_time, "2200-01-01")'
@@ -107,6 +100,7 @@ class InArenaSummaryPlot(dj.Computed):
                 start=in_arena_start,
                 end=in_arena_end,
                 color=self.color_code[food_patch_key["food_patch_description"]],
+                label=food_patch_key["food_patch_serial_number"],
             )
 
             # wheel data
@@ -125,21 +119,49 @@ class InArenaSummaryPlot(dj.Computed):
                 color=self.color_code[food_patch_key["food_patch_description"]],
             )
 
+            # plot wheel threshold
+            wheel_time, wheel_threshold = (
+                acquisition.WheelState.Time
+                & food_patch_key
+                & f'state_timestamp between "{in_arena_start}" and "{in_arena_end}"'
+            ).fetch("state_timestamp", "threshold")
+            wheel_time -= in_arena_start
+            wheel_time /= datetime.timedelta(minutes=1)
+
+            wheel_time = np.append(wheel_time, position_minutes_elapsed[-1])
+
+            for i in range(len(wheel_time) - 1):
+                threshold_ax.hlines(
+                    y=wheel_threshold[i],
+                    xmin=wheel_time[i],
+                    xmax=wheel_time[i + 1],
+                    linewidth=2,
+                    color=self.color_code[food_patch_key["food_patch_description"]],
+                    alpha=0.3,
+                )
+            threshold_change_ind = np.where(wheel_threshold[:-1] != wheel_threshold[1:])[0]
+            threshold_ax.vlines(
+                wheel_time[threshold_change_ind + 1],
+                ymin=wheel_threshold[threshold_change_ind],
+                ymax=wheel_threshold[threshold_change_ind + 1],
+                linewidth=1,
+                linestyle="dashed",
+                color=self.color_code[food_patch_key["food_patch_description"]],
+                alpha=0.4,
+            )
+
         # ethogram
-        in_arena, in_corridor, arena_time, corridor_time = (
-            analysis.InArenaTimeDistribution & key
-        ).fetch1(
+        in_arena, in_corridor, arena_time, corridor_time = (analysis.InArenaTimeDistribution & key).fetch1(
             "in_arena",
             "in_corridor",
             "time_fraction_in_arena",
             "time_fraction_in_corridor",
         )
-        nest_keys, in_nests, nests_times = (
-            analysis.InArenaTimeDistribution.Nest & key
-        ).fetch("KEY", "in_nest", "time_fraction_in_nest")
+        nest_keys, in_nests, nests_times = (analysis.InArenaTimeDistribution.Nest & key).fetch(
+            "KEY", "in_nest", "time_fraction_in_nest"
+        )
         patch_names, in_patches, patches_times = (
-            analysis.InArenaTimeDistribution.FoodPatch * acquisition.ExperimentFoodPatch
-            & key
+            analysis.InArenaTimeDistribution.FoodPatch * acquisition.ExperimentFoodPatch & key
         ).fetch("food_patch_description", "in_patch", "time_fraction_in_patch")
 
         ethogram_ax.plot(
@@ -149,7 +171,7 @@ class InArenaSummaryPlot(dj.Computed):
             color=self.color_code["arena"],
             markersize=0.5,
             alpha=0.6,
-            label=f"Times in arena",
+            label="arena",
         )
         ethogram_ax.plot(
             position_minutes_elapsed[in_corridor],
@@ -158,7 +180,7 @@ class InArenaSummaryPlot(dj.Computed):
             color=self.color_code["corridor"],
             markersize=0.5,
             alpha=0.6,
-            label=f"Times in corridor",
+            label="corridor",
         )
         for in_nest in in_nests:
             ethogram_ax.plot(
@@ -168,11 +190,9 @@ class InArenaSummaryPlot(dj.Computed):
                 color=self.color_code["nest"],
                 markersize=0.5,
                 alpha=0.6,
-                label=f"Times in nest",
+                label="nest",
             )
-        for patch_idx, (patch_name, in_patch) in enumerate(
-            zip(patch_names, in_patches)
-        ):
+        for patch_idx, (patch_name, in_patch) in enumerate(zip(patch_names, in_patches)):
             ethogram_ax.plot(
                 position_minutes_elapsed[in_patch],
                 np.full_like(position_minutes_elapsed[in_patch], (patch_idx + 3)),
@@ -180,7 +200,7 @@ class InArenaSummaryPlot(dj.Computed):
                 color=self.color_code[patch_name],
                 markersize=0.5,
                 alpha=0.6,
-                label=f"Times in {patch_name}",
+                label=f"{patch_name}",
             )
 
         # pellet
@@ -195,7 +215,10 @@ class InArenaSummaryPlot(dj.Computed):
 
         # time distribution
         time_fractions = [arena_time, corridor_time]
-        colors = [self.color_code["arena"], self.color_code["corridor"]]
+        colors = [
+            self.color_code["arena"],
+            self.color_code["corridor"],
+        ]
         time_fractions.extend(nests_times)
         colors.extend([self.color_code["nest"] for _ in nests_times])
         time_fractions.extend(patches_times)
@@ -209,14 +232,22 @@ class InArenaSummaryPlot(dj.Computed):
         rate_ax.set_ylabel("pellets / min")
         rate_ax.set_title("foraging rate (bin size = 10 min)")
         distance_ax.set_ylabel("distance travelled (m)")
+        threshold_ax.set_ylabel("threshold")
+        threshold_ax.set_ylim([threshold_ax.get_ylim()[0] - 100, threshold_ax.get_ylim()[1] + 100])
         ethogram_ax.set_xlabel("time (min)")
         analysis_plotting.set_ymargin(distance_ax, 0.2, 0.1)
-        for ax in (rate_ax, distance_ax, pellet_ax, time_dist_ax):
+        for ax in (rate_ax, distance_ax, pellet_ax, time_dist_ax, threshold_ax):
             ax.spines["top"].set_visible(False)
             ax.spines["right"].set_visible(False)
             ax.spines["bottom"].set_visible(False)
             ax.tick_params(bottom=False, labelbottom=False)
 
+        ethogram_ax.legend(
+            loc="center left",
+            bbox_to_anchor=(1.01, 2.5),
+            prop={"size": 12},
+            markerscale=40,
+        )
         ethogram_ax.spines["top"].set_visible(False)
         ethogram_ax.spines["right"].set_visible(False)
         ethogram_ax.spines["left"].set_visible(False)
@@ -231,9 +262,7 @@ class InArenaSummaryPlot(dj.Computed):
 
         # ---- Save fig and insert ----
         save_dir = _make_path(key)
-        fig_dict = _save_figs(
-            (fig,), ("summary_plot_png",), save_dir=save_dir, prefix=save_dir.name
-        )
+        fig_dict = _save_figs((fig,), ("summary_plot_png",), save_dir=save_dir, prefix=save_dir.name)
 
         self.insert1({**key, **fig_dict})
 
@@ -269,12 +298,7 @@ class SubjectRewardRateDifference(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """
-        Each entry in this table correspond to one subject. However, the plot is capturing
-            data for all sessions.
-        Hence a dynamic update routine is needed to recompute the plot as new sessions
-            become available
-        """
+        """Each entry in this table correspond to one subject. However, the plot is capturing data for all sessions.Hence a dynamic update routine is needed to recompute the plot as new sessions become available."""
         outdated_entries = (
             cls
             * (
@@ -319,12 +343,7 @@ class SubjectWheelTravelledDistance(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """
-        Each entry in this table correspond to one subject. However the plot is capturing
-            data for all sessions.
-        Hence a dynamic update routine is needed to recompute the plot as new sessions
-            become available
-        """
+        """Each entry in this table correspond to one subject. However the plot is capturing data for all sessions. Hence a dynamic update routine is needed to recompute the plot as new sessions become available."""
         outdated_entries = (
             cls
             * (
@@ -367,12 +386,7 @@ class ExperimentTimeDistribution(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """
-        Each entry in this table correspond to one subject. However the plot is capturing
-            data for all sessions.
-        Hence a dynamic update routine is needed to recompute the plot as new sessions
-            become available
-        """
+        """Each entry in this table correspond to one subject. However the plot is capturing data for all sessions. Hence a dynamic update routine is needed to recompute the plot as new sessions become available."""
         outdated_entries = (
             cls
             * (
@@ -396,6 +410,122 @@ def delete_outdated_plot_entries():
         tbl.delete_outdated_entries()
 
 
+@schema
+class VisitDailySummaryPlot(dj.Computed):
+    definition = """
+    -> Visit
+    ---
+    pellet_count_plotly:             longblob  # Dictionary storing the plotly object (from fig.to_plotly_json())
+    wheel_distance_travelled_plotly: longblob
+    total_distance_travelled_plotly: longblob
+    weight_patch_plotly:                longblob
+    foraging_bouts_plotly:              longblob
+    foraging_bouts_pellet_count_plotly: longblob
+    foraging_bouts_duration_plotly:     longblob
+    region_time_fraction_daily_plotly:  longblob
+    region_time_fraction_hourly_plotly: longblob
+    """
+
+    key_source = (
+        Visit & analysis.VisitSummary & (VisitEnd & "visit_duration > 24") & "experiment_name= 'exp0.2-r0'"
+    )
+
+    def make(self, key):
+        from aeon.dj_pipeline.utils.plotting import (
+            plot_foraging_bouts_count,
+            plot_foraging_bouts_distribution,
+            plot_visit_daily_summary,
+            plot_visit_time_distribution,
+            plot_weight_patch_data,
+        )
+
+        # bout criteria
+        min_wheel_dist = 1  # in cm (minimum wheel distance travelled)
+        min_bout_duration = 1  # in seconds (minimum foraging bout duration)
+        min_pellet_count = 3  # minimum number of pellets
+
+        fig = plot_visit_daily_summary(
+            key,
+            attr="pellet_count",
+            per_food_patch=True,
+        )
+        fig_pellet = json.loads(fig.to_json())
+
+        fig = plot_visit_daily_summary(
+            key,
+            attr="wheel_distance_travelled",
+            per_food_patch=True,
+        )
+        fig_wheel_dist = json.loads(fig.to_json())
+
+        fig = plot_visit_daily_summary(
+            key,
+            attr="total_distance_travelled",
+        )
+        fig_total_dist = json.loads(fig.to_json())
+
+        fig = plot_weight_patch_data(
+            key,
+        )
+        fig_weight_patch = json.loads(fig.to_json())
+
+        fig = plot_foraging_bouts_count(
+            key,
+            per_food_patch=True,
+            min_bout_duration=min_bout_duration,
+            min_pellet_count=min_pellet_count,
+            min_wheel_dist=min_wheel_dist,
+        )
+        fig_foraging_bouts = json.loads(fig.to_json())
+
+        fig = plot_foraging_bouts_distribution(
+            key,
+            "pellet_count",
+            per_food_patch=True,
+            min_bout_duration=min_bout_duration,
+            min_pellet_count=min_pellet_count,
+            min_wheel_dist=min_wheel_dist,
+        )
+        fig_foraging_bouts_pellet_count = json.loads(fig.to_json())
+
+        fig = plot_foraging_bouts_distribution(
+            key,
+            "bout_duration",
+            per_food_patch=False,
+            min_bout_duration=min_bout_duration,
+            min_pellet_count=min_pellet_count,
+            min_wheel_dist=min_wheel_dist,
+        )
+        fig_foraging_bouts_duration = json.loads(fig.to_json())
+
+        fig = plot_visit_time_distribution(
+            key,
+            freq="D",
+        )
+        fig_region_time_fraction_daily = json.loads(fig.to_json())
+
+        fig = plot_visit_time_distribution(
+            key,
+            freq="H",
+        )
+        fig_region_time_fraction_hourly = json.loads(fig.to_json())
+
+        self.insert1(
+            {
+                **key,
+                "pellet_count_plotly": fig_pellet,
+                "wheel_distance_travelled_plotly": fig_wheel_dist,
+                "total_distance_travelled_plotly": fig_total_dist,
+                "weight_patch_plotly": fig_weight_patch,
+                "foraging_bouts_plotly": fig_foraging_bouts,
+                "foraging_bouts_pellet_count_plotly": fig_foraging_bouts_pellet_count,
+                "foraging_bouts_duration_plotly": fig_foraging_bouts_duration,
+                "region_time_fraction_daily_plotly": fig_region_time_fraction_daily,
+                "region_time_fraction_hourly_plotly": fig_region_time_fraction_hourly,
+            }
+        )
+
+
 # ---------- HELPER FUNCTIONS --------------
 
 
@@ -404,12 +534,7 @@ def _make_path(in_arena_key):
     experiment_name, subject, in_arena_start = (analysis.InArena & in_arena_key).fetch1(
         "experiment_name", "subject", "in_arena_start"
     )
-    output_dir = (
-        store_stage
-        / experiment_name
-        / subject
-        / in_arena_start.strftime("%y%m%d_%H%M%S_%f")
-    )
+    output_dir = store_stage / experiment_name / subject / in_arena_start.strftime("%y%m%d_%H%M%S_%f")
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 

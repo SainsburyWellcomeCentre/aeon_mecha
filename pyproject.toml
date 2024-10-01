@@ -22,8 +22,8 @@ license = { file = "license.md" }
 readme = "readme.md"
 dependencies = [
   "bottleneck>=1.2.1,<2",
+  "datajoint>=0.13.7",
   "datajoint-utilities @ git+https://github.com/datajoint-company/datajoint-utilities",
-  "datajoint>=0.13.6",
   "dotmap",
   "fastparquet",
   "graphviz",
@@ -36,6 +36,7 @@ dependencies = [
   "numpy>=1.21.0, <2",
   "opencv-python",
   "pandas>=1.3",
+  "pillow",
   "plotly",
   "pyarrow",
   "pydotplus",
@@ -50,7 +51,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "bandit",
-  "black[jupyter]",
   "gh",
   "ipdb",
   "pre-commit",
@@ -63,13 +63,10 @@ dev = [
   "ruff",
   "tox",
 ]
-gpu = [
-  "cupy",
-  "dask"
-]
+gpu = ["cupy", "dask"]
 
 [project.scripts]
-aeon_ingest = "aeon.dj_pipeline.ingest.process:cli"
+aeon_ingest = "aeon.dj_pipeline.populate.process:cli"
 
 [project.urls]
 Homepage = "https://sainsburywellcomecentre.github.io/aeon_docs/"
@@ -77,41 +74,96 @@ Repository = "https://github.com/sainsburyWellcomeCentre/aeon_mecha"
 Documentation = "https://sainsburywellcomecentre.github.io/aeon_docs/"
 DataJoint = "https://docs.datajoint.org/"
 
-[tool.setuptools]
-packages = ["aeon"]
-
-[tool.black]
-line-length = 108
-color = false
-exclude = '''
-/(
-    \.git
-    | \.mypy_cache
-    | \.tox
-    | \.venv
-    | _build
-    | build
-    | dist
-    | env
-    | venv
-)/
-'''
+[tool.setuptools.packages.find]
+include = ["aeon*"]
 
 [tool.ruff]
-select = ["E", "W", "F", "I", "D", "UP", "S", "B", "A", "C4", "ICN", "PIE", "PT", "SIM", "PL"]
-line-length = 108
-ignore = [
-    "E201", "E202", "E203", "E231", "E731", "E702",
-    "S101",
-    "PT013",
-    "PLR0912", "PLR0913", "PLR0915"
+lint.select = [
+  "E",
+  "W",
+  "F",
+  "I",
+  "D",
+  "UP",
+  "S",
+  "B",
+  "A",
+  "C4",
+  "ICN",
+  "PIE",
+  "PT",
+  "SIM",
+  "PL",
 ]
-extend-exclude = [".git", ".github", ".idea", ".vscode"]
+line-length = 108
+lint.ignore = [
+  "D100",    # skip adding docstrings for module
+  "D104",    # ignore missing docstring in public package
+  "D105",    # skip adding docstrings for magic methods
+  "D107",    # skip adding docstrings for __init__
+  "E201",
+  "E202",
+  "E203",
+  "E231",
+  "E731",
+  "E702",
+  "S101",
+  "PT004",  # Rule `PT004` is deprecated and will be removed in a future release.
+  "PT013",
+  "PLR0912",
+  "PLR0913",
+  "PLR0915",
+]
+extend-exclude = [
+  ".git",
+  ".github",
+  ".idea",
+  "*.ipynb",
+  ".vscode",
+  "aeon/dj_pipeline/streams.py",
+]
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+  "D103",    # skip adding docstrings for public functions
+]
+"aeon/schema/*" = [
+  "D101",    # skip adding docstrings for schema classes
+  "D106",    # skip adding docstrings for nested streams
+]
+"aeon/dj_pipeline/*" = [
+  "B006",
+  "B021",
+  "D101",    # skip adding docstrings for table class since it is added inside definition
+  "D102",    # skip adding docstrings for make function
+  "D103",    # skip adding docstrings for public functions
+  "D106",    # skip adding docstrings for Part tables
+  "E501",
+  "F401",    # ignore unused import errors
+  "B905",    # ignore unused import errors
+  "E999",
+  "S324",
+  "E722",
+  "S110",
+  "F821",
+  "B904",
+  "UP038",
+  "S607",
+  "S605",
+  "D205",
+  "D202",
+  "F403",
+  "PLR2004",
+  "SIM108",
+  "PLW0127",
+  "PLR2004",
+  "I001",
+]
 
-[tool.ruff.pydocstyle]
+[tool.ruff.lint.pydocstyle]
 convention = "google"
 
 [tool.pyright]
+useLibraryCodeForTypes = false
 reportMissingImports = "none"
 reportImportCycles = "error"
 reportUnusedImport = "error"
@@ -134,8 +186,6 @@ reportShadowedImports = "error"
 # *Note*: we may want to set all 'ReportOptional*' rules to "none", but leaving 'em default for now
 venvPath = "."
 venv = ".venv"
-
+exclude = ["aeon/dj_pipeline/*", ".venv/*"]
 [tool.pytest.ini_options]
-markers = [
-    "api",
-]
+markers = ["api"]

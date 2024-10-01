@@ -1,13 +1,13 @@
-from enum import Enum as _Enum
+from enum import Enum
 
 import pandas as pd
 
-import aeon.io.device as _device
 import aeon.io.reader as _reader
 import aeon.schema.core as _stream
+from aeon.schema.streams import Stream, StreamGroup
 
 
-class Area(_Enum):
+class Area(Enum):
     Null = 0
     Nest = 1
     Corridor = 2
@@ -53,56 +53,78 @@ class _Weight(_reader.Harp):
         super().__init__(pattern, columns=["value", "stable"])
 
 
-def region(pattern):
+class Region(Stream):
     """Region tracking data for the specified camera."""
-    return {"Region": _RegionReader(f"{pattern}_201_*")}
+
+    def __init__(self, pattern):
+        super().__init__(_RegionReader(f"{pattern}_201_*"))
 
 
-def depletionFunction(pattern):
+class DepletionFunction(Stream):
     """State of the linear depletion function for foraging patches."""
-    return {"DepletionState": _PatchState(f"{pattern}_State_*")}
+
+    def __init__(self, pattern):
+        super().__init__(_PatchState(f"{pattern}_State_*"))
 
 
-def feeder(pattern):
+class Feeder(StreamGroup):
     """Feeder commands and events."""
-    return _device.compositeStream(pattern, beam_break, deliver_pellet)
+
+    def __init__(self, pattern):
+        super().__init__(pattern, BeamBreak, DeliverPellet)
 
 
-def beam_break(pattern):
+class BeamBreak(Stream):
     """Beam break events for pellet detection."""
-    return {"BeamBreak": _reader.BitmaskEvent(f"{pattern}_32_*", 0x22, "PelletDetected")}
+
+    def __init__(self, pattern):
+        super().__init__(_reader.BitmaskEvent(f"{pattern}_32_*", 0x22, "PelletDetected"))
 
 
-def deliver_pellet(pattern):
+class DeliverPellet(Stream):
     """Pellet delivery commands."""
-    return {"DeliverPellet": _reader.BitmaskEvent(f"{pattern}_35_*", 0x80, "TriggerPellet")}
+
+    def __init__(self, pattern):
+        super().__init__(_reader.BitmaskEvent(f"{pattern}_35_*", 0x01, "TriggerPellet"))
 
 
-def patch(pattern):
+class Patch(StreamGroup):
     """Data streams for a patch."""
-    return _device.compositeStream(pattern, depletionFunction, _stream.encoder, feeder)
+
+    def __init__(self, pattern):
+        super().__init__(pattern, DepletionFunction, _stream.Encoder, Feeder)
 
 
-def weight(pattern):
+class Weight(StreamGroup):
     """Weight measurement data streams for a specific nest."""
-    return _device.compositeStream(pattern, weight_raw, weight_filtered, weight_subject)
+
+    def __init__(self, pattern):
+        super().__init__(pattern, WeightRaw, WeightFiltered, WeightSubject)
 
 
-def weight_raw(pattern):
+class WeightRaw(Stream):
     """Raw weight measurement for a specific nest."""
-    return {"WeightRaw": _Weight(f"{pattern}_200_*")}
+
+    def __init__(self, pattern):
+        super().__init__(_Weight(f"{pattern}_200_*"))
 
 
-def weight_filtered(pattern):
+class WeightFiltered(Stream):
     """Filtered weight measurement for a specific nest."""
-    return {"WeightFiltered": _Weight(f"{pattern}_202_*")}
+
+    def __init__(self, pattern):
+        super().__init__(_Weight(f"{pattern}_202_*"))
 
 
-def weight_subject(pattern):
+class WeightSubject(Stream):
     """Subject weight measurement for a specific nest."""
-    return {"WeightSubject": _Weight(f"{pattern}_204_*")}
+
+    def __init__(self, pattern):
+        super().__init__(_Weight(f"{pattern}_204_*"))
 
 
-def session(pattern):
+class SessionData(Stream):
     """Session metadata for Experiment 0.1."""
-    return {pattern: _reader.Csv(f"{pattern}_2*", columns=["id", "weight", "event"])}
+
+    def __init__(self, pattern):
+        super().__init__(_reader.Csv(f"{pattern}_2*", columns=["id", "weight", "event"]))

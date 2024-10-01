@@ -1,7 +1,219 @@
-version: 'v0.0.0'
+version: "v0.1.0"
 LabBook: null
 SciViz:
+  route: /aeon
+  auth:
+    mode: "database"
+  hostname: aeon-db2
+  component_interface:
+    override: |
+      from datetime import datetime
+      from pharus.component_interface import SlideshowComponent, NumpyEncoder, type_map
+      from flask import request
+      from aeon.dj_pipeline.utils.video import retrieve_video_frames
+
+      class AeonSlideshowComponent(SlideshowComponent):
+          def dj_query_route(self):
+              fetch_metadata = self.fetch_metadata
+
+              # Dj query provided should return only a video location
+              fetched_args = (fetch_metadata["query"] & self.restriction).fetch1(
+                  *fetch_metadata["fetch_args"]
+              )
+              kwargs = {**fetched_args, **request.args}
+              kwargs['camera_name'] = kwargs.pop('camera_description')
+              kwargs['start_time'] = datetime.utcfromtimestamp(int(kwargs.pop('startTime')))
+              kwargs['end_time'] = datetime.utcfromtimestamp(int(kwargs.pop('endTime')))
+              kwargs['start_frame'] = int(kwargs.pop('start_frame'))
+              kwargs['chunk_size'] = int(kwargs.pop('chunk_size'))
+
+              return (
+                  NumpyEncoder.dumps(
+                      retrieve_video_frames(**kwargs)
+                  ),
+                  200,
+                  {"Content-Type": "application/json"},
+              )
+
+      type_map = dict({"slideshow:aeon": AeonSlideshowComponent}, **type_map)
+
   pages:
+    Colony:
+      route: /colony_page
+      grids:
+        grid1:
+          type: fixed
+          columns: 1
+          row_height: 1000
+          components:
+            Pyrat Subjects:
+              route: /colony_page_pyrat_subjects
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: antd-table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_subject):
+                    query = aeon_subject.Subject * aeon_subject.SubjectDetail * aeon_subject.SubjectReferenceWeight.proj('reference_weight', min_since_last_update='TIMESTAMPDIFF(MINUTE, last_updated_time, UTC_TIMESTAMP())') & 'available = 1'
+                    return {'query': query.proj(..., '-available'), 'fetch_args': []}
+
+            Pyrat User Entry:
+              route: /colony_page_pyrat_user_entry
+              x: 0
+              y: 1
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_lab.User
+              map:
+                - type: attribute
+                  input: SWC Username
+                  destination: user
+                - type: attribute
+                  input: Pyrat Responsible Owner
+                  destination: responsible_owner
+                - type: attribute
+                  input: Pyrat Responsible ID
+                  destination: responsible_id
+
+            Pyrat Sync Task:
+              route: /colony_page_pyrat_sync_task
+              x: 0
+              y: 1.3
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_subject.PyratIngestionTask
+              map:
+                - type: attribute
+                  input: Task Scheduled Time
+                  destination: pyrat_task_scheduled_time
+    ExperimentEntry:
+      route: /experiment_entry
+      grids:
+        grid5:
+          type: fixed
+          columns: 1
+          row_height: 1000
+          components:
+            New Experiment:
+              route: /exp_form
+              x: 0
+              y: 0
+              height: 0.4
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment
+                - aeon_acquisition.Experiment.DevicesSchema
+              map:
+                - type: attribute
+                  input: Experiment Name
+                  destination: experiment_name
+                - type: attribute
+                  input: Start Time
+                  destination: experiment_start_time
+                - type: attribute
+                  input: Description
+                  destination: experiment_description
+                - type: table
+                  input: Lab Arena
+                  destination: aeon_lab.Arena
+                - type: table
+                  input: Lab Location
+                  destination: aeon_lab.Location
+                - type: attribute
+                  input: Experiment Type
+                  destination: aeon_acquisition.ExperimentType
+                - type: table
+                  input: Devices Schema Name
+                  destination: aeon_acquisition.DevicesSchema
+
+            New Experiment Subject:
+              route: /exp_subject_form
+              x: 0
+              y: 0.4
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment.Subject
+              map:
+                - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.Experiment
+                - type: table
+                  input: Subject in the experiment
+                  destination: aeon_subject.Subject
+
+            New Experiment Note:
+              route: /exp_note_form
+              x: 0
+              y: 0.7
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment.Note
+              map:
+                - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.Experiment
+                - type: attribute
+                  input: Note Time
+                  destination: note_timestamp
+                - type: attribute
+                  input: Note Type
+                  destination: note_type
+                - type: attribute
+                  input: Note
+                  destination: note
+
+            New Experiment Directory:
+              route: /exp_directory_form
+              x: 0
+              y: 1.0
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.Experiment.Directory
+              map:
+                - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.Experiment
+                - type: table
+                  input: Directory Type
+                  destination: aeon_acquisition.DirectoryType
+                - type: table
+                  input: Pipeline Repository
+                  destination: aeon_acquisition.PipelineRepository
+                - type: attribute
+                  input: Directory Path
+                  destination: directory_path
+                - type: attribute
+                  input: Loading Order
+                  destination: load_order
+
+            New Experiment Type:
+              route: /exp_type_form
+              x: 0
+              y: 1.3
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.ExperimentType
+              map:
+                - type: attribute
+                  input: Experiment Type
+                  destination: experiment_type
     Subjects:
       route: /subjects
       grids:
@@ -17,62 +229,44 @@ SciViz:
               y: 0
               height: 1
               width: 1
-              type: table
+              type: antd-table
               restriction: >
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_acquisition):
-                    acquisition = aeon_acquisition
-                    subject_session_count = acquisition.Experiment.Subject.aggr(acquisition.SessionEnd.join(acquisition.Session, left=True), ..., session_count='count(session_start)')
-                    subject_latest_session = acquisition.Experiment.Subject.aggr(acquisition.Session, session_start='max(session_start)').join(acquisition.SessionEnd, left=True)
-                    return {'query': subject_session_count * subject_latest_session, 'fetch_args': []}
-    Sessions:
-      route: /sessions
-      grids:
-        grid2:
-          type: fixed
-          columns: 1
-          row_height: 700
-          components:
-            Sessions:
-              route: /query2
-              link: /per_session_report
-              x: 0
-              y: 0
-              height: 1
-              width: 1
-              type: table
-              restriction: >
-                def restriction(**kwargs):
-                    return dict(**kwargs)
-              dj_query: >
-                def dj_query(aeon_acquisition):
-                    query = aeon_acquisition.Session.join(aeon_acquisition.SessionEnd, left=True).proj('session_end', session_duration='IFNULL(session_duration, -1)')
-                    return {'query': query, 'fetch_args': []}
-    SessionSummary:
-      route: /summary_sessions
+                def dj_query(aeon_archived_exp02_acquisition, aeon_archived_exp02_analysis):
+                    acquisition = aeon_archived_exp02_acquisition
+                    visit_analysis = aeon_archived_exp02_analysis
+                    query = acquisition.Experiment.Subject.aggr(visit_analysis.VisitEnd.join(visit_analysis.Visit, left=True), first_visit_start='MIN(visit_start)', last_visit_end='MAX(visit_end)', total_visit_count='COUNT(visit_start)', total_visit_duration='SUM(visit_duration)')
+                    query = query.proj("first_visit_start", "last_visit_end", "total_visit_count", total_visit_duration="CAST(total_visit_duration AS DOUBLE(10, 3))")
+                    return {'query': query, 'fetch_args': {'order_by': 'last_visit_end DESC'}}
+
+    VisitSummary:
+      route: /visit_summary
       grids:
         grid3:
           type: fixed
           columns: 1
           row_height: 700
           components:
-            SessionSummary:
-              route: /sessions_summary_grid3_1
-              link: /per_session_report
+            VisitSummary:
+              route: /visit_summary_grid3_1
+              link: /per_visit_report
               x: 0
               y: 0
               height: 1
               width: 1
-              type: table
+              type: antd-table
               restriction: >
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_analysis):
-                    query = aeon_analysis.SessionSummary
-                    return {'query': query, 'fetch_args': []}
+                def dj_query(aeon_archived_exp02_analysis):
+                    aeon_analysis = aeon_archived_exp02_analysis
+                    query = aeon_analysis.Visit.aggr(aeon_analysis.VisitSummary, ..., duration="SUM(day_duration)", total_distance_travelled="SUM(total_distance_travelled)", total_pellet_count="SUM(total_pellet_count)", total_wheel_distance_travelled="SUM(total_wheel_distance_travelled)", keep_all_rows=True)
+                    query = query.join(aeon_analysis.VisitEnd, left=True)
+                    query = query.proj("visit_end", total_pellet_count="CAST(total_pellet_count AS DOUBLE)", duration="CAST(duration AS DOUBLE(10, 3))", total_distance_travelled="CAST(total_distance_travelled AS DOUBLE(10, 3))", total_wheel_distance_travelled="CAST(total_wheel_distance_travelled AS DOUBLE(10, 3))")
+                    return {'query': query, 'fetch_args': {'order_by': 'visit_end DESC'}}
 
     ExperimentReport:
       route: /experiment_report
@@ -86,9 +280,9 @@ SciViz:
             def restriction(**kwargs):
                 return dict(**kwargs)
           dj_query: >
-            def dj_query(aeon_acquisition):
-                acquisition = aeon_acquisition
-                return {'query': aeon_acquisition.Experiment(), 'fetch_args': []}
+            def dj_query(aeon_archived_exp01_acquisition):
+                acquisition = aeon_archived_exp01_acquisition
+                return {'query': acquisition.Experiment(), 'fetch_args': []}
           component_templates:
             comp3:
               route: /avg_time_distribution
@@ -97,8 +291,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
-                    report = aeon_report
+                def dj_query(aeon_archived_exp01_report):
+                    report = aeon_archived_exp01_report
                     return {'query': report.ExperimentTimeDistribution(), 'fetch_args': ['time_distribution_plotly']}
 
     SubjectReport:
@@ -113,9 +307,9 @@ SciViz:
             def restriction(**kwargs):
                 return dict(**kwargs)
           dj_query: >
-            def dj_query(aeon_acquisition):
-                acquisition = aeon_acquisition
-                return {'query': aeon_acquisition.Experiment.Subject & {'experiment_name': 'exp0.1-r0'}, 'fetch_args': []}
+            def dj_query(aeon_archived_exp01_acquisition):
+                acquisition = aeon_archived_exp01_acquisition
+                return {'query': acquisition.Experiment.Subject & {'experiment_name': 'exp0.1-r0'}, 'fetch_args': []}
           component_templates:
             comp1:
               route: /subject_meta
@@ -124,8 +318,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_acquisition):
-                    return dict(query=aeon_acquisition.Experiment.Subject(), fetch_args=[])
+                def dj_query(aeon_archived_exp01_acquisition):
+                    return dict(query=aeon_archived_exp01_acquisition.Experiment.Subject(), fetch_args=[])
             comp2:
               route: /reward_diff_plot
               type: plot:plotly:stored_json
@@ -133,8 +327,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
-                    report = aeon_report
+                def dj_query(aeon_archived_exp01_report):
+                    report = aeon_archived_exp01_report
                     return {'query': report.SubjectRewardRateDifference(), 'fetch_args': ['reward_rate_difference_plotly']}
             comp3:
               route: /wheel_distance_travelled
@@ -143,9 +337,10 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
-                    report = aeon_report
+                def dj_query(aeon_archived_exp01_report):
+                    report = aeon_archived_exp01_report
                     return {'query': report.SubjectWheelTravelledDistance(), 'fetch_args': ['wheel_travelled_distance_plotly']}
+
     PerSubjectReport:
       hidden: true
       route: /per_subject_report
@@ -167,8 +362,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_acquisition):
-                    return dict(query=aeon_acquisition.Experiment.Subject(), fetch_args=[])
+                def dj_query(aeon_archived_exp01_acquisition):
+                    return dict(query=aeon_archived_exp01_acquisition.Experiment.Subject(), fetch_args=[])
             comp2:
               route: /per_subject_reward_diff_plot
               x: 0
@@ -180,8 +375,8 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
-                    report = aeon_report
+                def dj_query(aeon_archived_exp01_report):
+                    report = aeon_archived_exp01_report
                     return {'query': report.SubjectRewardRateDifference(), 'fetch_args': ['reward_rate_difference_plotly']}
             comp3:
               route: /per_subject_wheel_distance_travelled
@@ -194,22 +389,22 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
-                    report = aeon_report
+                def dj_query(aeon_archived_exp01_report):
+                    report = aeon_archived_exp01_report
                     return {'query': report.SubjectWheelTravelledDistance(), 'fetch_args': ['wheel_travelled_distance_plotly']}
 
-    PerSessionReport:
+    PerVisitReport:
       hidden: true
-      route: /per_session_report
+      route: /per_visit_report
       grids:
-        per_session_report:
+        per_visit_report:
           type: fixed
-          route: /per_session_report
+          route: /per_visit_report
           columns: 1
           row_height: 400
           components:
             comp1:
-              route: /per_session_meta
+              route: /per_visit_meta
               x: 0
               y: 0
               height: 1
@@ -219,11 +414,14 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_analysis):
-                    query = aeon_analysis.SessionSummary()
+                def dj_query(aeon_archived_exp02_analysis):
+                    aeon_analysis = aeon_archived_exp02_analysis
+                    query = aeon_analysis.Visit.aggr(aeon_analysis.VisitSummary, ..., duration="SUM(day_duration)", total_distance_travelled="SUM(total_distance_travelled)", total_pellet_count="SUM(total_pellet_count)", total_wheel_distance_travelled="SUM(total_wheel_distance_travelled)", keep_all_rows=True)
+                    query = query.join(aeon_analysis.VisitEnd, left=True)
+                    query = query.proj("visit_end", total_pellet_count="CAST(total_pellet_count AS DOUBLE)", duration="CAST(duration AS DOUBLE(10, 3))", total_distance_travelled="CAST(total_distance_travelled AS DOUBLE(10, 3))", total_wheel_distance_travelled="CAST(total_wheel_distance_travelled AS DOUBLE(10, 3))")
                     return {'query': query, 'fetch_args': []}
             comp2:
-              route: /per_session_summary_plot
+              route: /per_visit_summary_plot
               x: 0
               y: 1
               height: 1
@@ -233,102 +431,374 @@ SciViz:
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_report):
-                    report = aeon_report
-                    return {'query': report.SessionSummaryPlot(), 'fetch_args': ['summary_plot_png']}
+                def dj_query(aeon_archived_exp02_report):
+                    report = aeon_archived_exp02_report
+                    return {'query': report.VisitDailySummaryPlot(), 'fetch_args': ['summary_plot_png']}
 
-    Pipeline Monitor:
-      route: /pipeline_monitor
+    Visits247:
+      route: /visits247
+      grids:
+        visit_daily_summary:
+          route: /visit_daily_summary_grid1
+          type: dynamic
+          columns: 1
+          row_height: 4000
+          restriction: >
+            def restriction(**kwargs):
+                return dict(**kwargs)
+          dj_query: >
+            def dj_query(aeon_archived_exp02_report):
+                aeon_report = aeon_archived_exp02_report
+                return {'query': aeon_report.VisitDailySummaryPlot.proj(), 'fetch_args': []}
+          component_templates:
+            comp1:
+              route: /visit_daily_summary_pellet_count
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['pellet_count_plotly'])
+            comp2:
+              route: /visit_daily_summary_wheel_distance_travelled
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['wheel_distance_travelled_plotly'])
+            comp3:
+              route: /visit_daily_summary_total_distance_travelled
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['total_distance_travelled_plotly'])
+            comp4:
+              route: /visit_daily_summary_weight_patch
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['weight_patch_plotly'])
+            comp5:
+              route: /visit_daily_summary_foraging_bouts
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['foraging_bouts_plotly'])
+            comp6:
+              route: /visit_daily_summary_foraging_bouts_pellet_count
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['foraging_bouts_pellet_count_plotly'])
+            comp7:
+              route: /visit_daily_summary_foraging_bouts_duration
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['foraging_bouts_duration_plotly'])
+            comp8:
+              route: /visit_daily_summary_region_time_fraction_daily
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['region_time_fraction_daily_plotly'])
+            comp9:
+              route: /visit_daily_summary_region_time_fraction_hourly
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_archived_exp02_report):
+                    aeon_report = aeon_archived_exp02_report
+                    return dict(query=aeon_report.VisitDailySummaryPlot(), fetch_args=['region_time_fraction_hourly_plotly'])
+
+    SocialExperiment:
+      route: /social_experiment
       grids:
         grid1:
           type: fixed
           columns: 1
-          row_height: 680
+          row_height: 700
           components:
-            Worker Status:
-              route: /pipeline_monitor_workerstatus
+            SocialExperiment:
+              route: /social_experiment_grid
+              link: /per_social_experiment
               x: 0
               y: 0
               height: 1
               width: 1
-              type: table
+              type: antd-table
               restriction: >
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_workerlog):
-                    cls = aeon_workerlog.WorkerLog
-                    backtrack_minutes = 60
-                    recent = (
-                        cls.proj(
-                            minute_elapsed="TIMESTAMPDIFF(MINUTE, process_timestamp, UTC_TIMESTAMP())"
-                        )
-                        & f"minute_elapsed < {backtrack_minutes}"
-                    )
-                    recent_jobs = dj.U("process").aggr(
-                        cls & recent,
-                        worker_count="count(DISTINCT pid)",
-                        minutes_since_oldest="TIMESTAMPDIFF(MINUTE, MIN(process_timestamp), UTC_TIMESTAMP())",
-                        minutes_since_newest="TIMESTAMPDIFF(MINUTE, MAX(process_timestamp), UTC_TIMESTAMP())",
-                    )
-                    
-                    return {'query': recent_jobs, 'fetch_args': {'order_by': 'minutes_since_newest ASC'}}
-            Error Log:
-              route: /pipeline_monitor_errorlog
+                def dj_query(aeon_acquisition, aeon_block_analysis, aeon_tracking):
+
+                    acquisition = aeon_acquisition
+                    block_analysis = aeon_block_analysis
+                    tracking = aeon_tracking
+
+                    query = acquisition.Experiment.aggr(block_analysis.Block, block_count="COUNT(experiment_name)") + acquisition.Experiment.aggr(acquisition.Chunk, chunk_count="COUNT(experiment_name)", latest_chunk_start="MAX(chunk_start)")
+
+                    query = query.join(acquisition.Experiment.aggr(
+                        tracking.SLEAPTracking.PoseIdentity,
+                        participants="GROUP_CONCAT(DISTINCT identity_name SEPARATOR ', ')"
+                    ), left=True)
+
+                    return {'query': query, 'fetch_args': []}
+
+    BlockAnalysis:
+      route: /block_analysis
+      grids:
+        grid3:
+          type: fixed
+          columns: 1
+          row_height: 700
+          components:
+            BlockAnalysis:
+              route: /block_analysis_grid
+              link: /per_block_report
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: antd-table
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_analysis.Block * aeon_analysis.BlockAnalysis, 'fetch_args': {'order_by': 'block_end DESC'}}
+
+    PerBlockReport:
+      hidden: true
+      route: /per_block_report
+      grids:
+        per_block_report:
+          type: fixed
+          route: /per_block_report
+          columns: 1
+          row_height: 1500
+          components:
+            comp1:
+              route: /per_block_meta
+              x: 0
+              y: 0
+              height: 0.2
+              width: 0.8
+              type: metadata
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    query = aeon_analysis.Block * aeon_analysis.BlockAnalysis
+                    return dict(query=query, fetch_args=[])
+            comp2:
+              route: /subject_positions_plot
+              x: 0
+              y: 0.2
+              height: 0.5
+              width: 0.8
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['subject_positions_plot']}
+            comp3:
+              route: /subject_weights_plot
+              x: 0
+              y: 0.7
+              height: 0.5
+              width: 0.8
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['subject_weights_plot']}
+
+            comp4:
+              route: /patch_distance_travelled_plot
+              x: 0
+              y: 1.2
+              height: 0.5
+              width: 0.8
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['patch_distance_travelled_plot']}
+
+            comp5:
+              route: /patch_rate_plot
+              x: 0
+              y: 1.7
+              height: 0.4
+              width: 0.6
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['patch_rate_plot']}
+
+            comp6:
+              route: /cumulative_pellet_plot
+              x: 0
+              y: 2.1
+              height: 0.4
+              width: 0.6
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['cumulative_pellet_plot']}
+
+            comp7:
+              route: /dist_pref_plot
+              x: 0
+              y: 2.5
+              height: 0.4
+              width: 0.6
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockSubjectPlots(), 'fetch_args': ['dist_pref_plot']}
+
+            comp8:
+              route: /time_pref_plot
+              x: 0
+              y: 2.9
+              height: 0.4
+              width: 0.6
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockSubjectPlots(), 'fetch_args': ['time_pref_plot']}
+
+    VideoStream:
+      route: /videostream
+      grids:
+        grid1:
+          type: fixed
+          columns: 3
+          row_height: 100
+          components:
+            experiment_dropdown:
+              x: 0
+              y: 0
+              height: 1
+              width: 1
+              type: dropdown-query
+              channel: stream_experiment_selector
+              route: /videostream_experiment_dropdown
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_archived_exp02_acquisition):
+                    acquisition = aeon_archived_exp02_acquisition
+                    return {'query': acquisition.Experiment(), 'fetch_args': ['experiment_name']}
+            camera_dropdown:
               x: 0
               y: 1
               height: 1
               width: 1
-              type: table
+              route: /videostream_camera_dropdown
+              type: dropdown-query
+              channel: stream_camera_selector
+              channels: [stream_experiment_selector]
               restriction: >
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_workerlog):
-                    cls = aeon_workerlog.ErrorLog.proj(..., '-error_timestamp', minutes_elapsed='TIMESTAMPDIFF(MINUTE, error_timestamp, UTC_TIMESTAMP())')
-                    return {'query': cls, 'fetch_args': {'order_by': 'minutes_elapsed ASC'}}
-            Jobs Log:
-              route: /pipeline_monitor_jobslog
+                def dj_query(aeon_archived_exp02_acquisition):
+                    acquisition = aeon_archived_exp02_acquisition
+                    q = dj.U('camera_description') & acquisition.ExperimentCamera
+                    return {'query': q, 'fetch_args': ['camera_description']}
+            time_range_selector:
               x: 0
               y: 2
               height: 1
               width: 1
-              type: table
+              type: daterangepicker
+              channel: stream_time_selector
+            video_streamer:
+              x: 1
+              y: 0
+              height: 5
+              width: 2
+              type: slideshow:aeon
+              route: /videostream_video_streamer
+              batch_size: 9
+              chunk_size: 60
+              buffer_size: 60
+              max_FPS: 50
+              channels:
+                [
+                  stream_experiment_selector,
+                  stream_camera_selector,
+                  stream_time_selector,
+                ]
               restriction: >
                 def restriction(**kwargs):
                     return dict(**kwargs)
               dj_query: >
-                def dj_query(aeon_workerlog):
-                    workerlog_vm = aeon_workerlog
-                    db_prefix = workerlog_vm.schema.database.replace('workerlog', '')
-                    connection = dj.conn(
-                        host=workerlog_vm.schema.connection.conn_info['host'],
-                        user=workerlog_vm.schema.connection.conn_info['user'],
-                        password=workerlog_vm.schema.connection.conn_info['passwd'],
-                        reset=True)
-                    schema_names = [s for s in dj.list_schemas(connection=connection) if s.startswith(db_prefix)]
-                    jobs_table = None
-                    print(schema_names, flush=True)
-                    for schema_name in schema_names:
-                        vm = dj.VirtualModule(schema_name, schema_name, connection=connection)
-                        jobs_query = dj.U(*vm.schema.jobs.heading.names) & vm.schema.jobs
-                        if jobs_table is None:
-                            jobs_table = jobs_query
-                        else:
-                            jobs_table += jobs_query
-                    jobs_table = jobs_table.proj(..., minutes_elapsed='TIMESTAMPDIFF(MINUTE, timestamp, UTC_TIMESTAMP())')
-                    return {'query': jobs_table, 'fetch_args': {'order_by': 'status DESC, minutes_elapsed ASC'}}
-            Worker Log:
-              route: /pipeline_monitor_workerlog
-              x: 0
-              y: 3
-              height: 1
-              width: 1
-              type: table
-              restriction: >
-                def restriction(**kwargs):
-                    return dict(**kwargs)
-              dj_query: >
-                def dj_query(aeon_workerlog):
-                      cls = aeon_workerlog.WorkerLog.proj(..., minutes_elapsed='TIMESTAMPDIFF(MINUTE, process_timestamp, UTC_TIMESTAMP())')
-                      return {'query': cls, 'fetch_args': {'order_by': 'minutes_elapsed ASC'}}
+                def dj_query(aeon_archived_exp02_acquisition):
+                    acquisition = aeon_archived_exp02_acquisition
+                    q = dj.U('camera_description', 'raw_data_dir') & (acquisition.ExperimentCamera * acquisition.Experiment.Directory & 'directory_type = "raw"').proj('camera_description', raw_data_dir="CONCAT('/ceph/aeon/', directory_path)")
+                    return {'query': q, 'fetch_args': []}

@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="487pt" height="302pt" viewBox="0.00 0.00 486.62 302.00">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 298)">
+<polygon fill="white" stroke="transparent" points="-4,4 -4,-298 482.62,-298 482.62,4 -4,4"/>
+<!-- VisitSummary -->
+<g id="node1" class="node">
+<title>VisitSummary</title>
+<g id="a_node1"><a xlink:title="→ Visit
+visit_date           
+------------------------------
+day_duration         
+total_distance_travelled
+total_pellet_count   
+total_wheel_distance_travelled
+">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="289.62" cy="-68" rx="13" ry="13"/>
+<text text-anchor="start" x="252.62" y="-65.9" font-family="arial" text-decoration="underline" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">VisitSummary</text>
+</a>
+</g>
+</g>
+<!-- VisitSubjectPosition -->
+<g id="node2" class="node">
+<title>VisitSubjectPosition</title>
+<g id="a_node2"><a xlink:title="→ Visit
+→ Chunk
+">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="164.62" cy="-68" rx="13" ry="13"/>
+<text text-anchor="middle" x="164.62" y="-64.9" font-family="arial" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">VisitSubjectPosition</text>
+</a>
+</g>
+</g>
+<!-- VisitSubjectPosition.TimeSlice -->
+<g id="node10" class="node">
+<title>VisitSubjectPosition.TimeSlice</title>
+<g id="a_node10"><a xlink:title="→ VisitSubjectPosition
+time_slice_start     
+------------------------------
+time_slice_end       
+timestamps           
+position_x           
+position_y           
+position_z=null      
+">
+<polygon fill="transparent" stroke="transparent" points="240.12,-19 89.12,-19 89.12,0 240.12,0 240.12,-19"/>
+<text text-anchor="start" x="97.12" y="-8" font-family="arial" text-decoration="underline" font-size="10.00">VisitSubjectPosition.TimeSlice</text>
+</a>
+</g>
+</g>
+<!-- VisitSubjectPosition&#45;&gt;VisitSubjectPosition.TimeSlice -->
+<g id="edge1" class="edge">
+<title>VisitSubjectPosition-&gt;VisitSubjectPosition.TimeSlice</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M164.62,-54.74C164.62,-43.97 164.62,-28.56 164.62,-19.06"/>
+</g>
+<!-- VisitTimeDistribution -->
+<g id="node3" class="node">
+<title>VisitTimeDistribution</title>
+<g id="a_node3"><a xlink:title="→ Visit
+visit_date           
+------------------------------
+day_duration         
+time_fraction_in_corridor
+in_corridor          
+time_fraction_in_arena
+in_arena             
+">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="415.62" cy="-68" rx="13" ry="13"/>
+<text text-anchor="start" x="360.62" y="-65.9" font-family="arial" text-decoration="underline" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">VisitTimeDistribution</text>
+</a>
+</g>
+</g>
+<!-- ExperimentCamera -->
+<g id="node4" class="node">
+<title>ExperimentCamera</title>
+<g id="a_node4"><a xlink:title="→ Experiment
+→ Camera
+camera_install_time  
+------------------------------
+camera_description   
+camera_sampling_rate
+camera_gain=null     
+camera_bin=null      
+">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="120.62,-223 0.63,-223 0.63,-188 120.62,-188 120.62,-223"/>
+<text text-anchor="middle" x="60.62" y="-202.4" font-family="arial" font-size="12.00" fill="darkgreen">ExperimentCamera</text>
+</a>
+</g>
+</g>
+<!-- CameraTracking -->
+<g id="node8" class="node">
+<title>CameraTracking</title>
+<g id="a_node8"><a xlink:title="→ Chunk
+→ ExperimentCamera
+→ TrackingParamSet
+">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="65.62" cy="-134.5" rx="65.75" ry="17.5"/>
+<text text-anchor="middle" x="65.62" y="-131.4" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">CameraTracking</text>
+</a>
+</g>
+</g>
+<!-- ExperimentCamera&#45;&gt;CameraTracking -->
+<g id="edge2" class="edge">
+<title>ExperimentCamera-&gt;CameraTracking</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M61.84,-187.8C62.62,-176.95 63.64,-162.87 64.43,-152.05"/>
+</g>
+<!-- Visit -->
+<g id="node5" class="node">
+<title>Visit</title>
+<g id="a_node5"><a xlink:title="→ Experiment.Subject
+→ Place
+visit_start          
+">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="309.12,-152 270.12,-152 270.12,-117 309.12,-117 309.12,-152"/>
+<text text-anchor="start" x="278.12" y="-132.4" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Visit</text>
+</a>
+</g>
+</g>
+<!-- Visit&#45;&gt;VisitSummary -->
+<g id="edge3" class="edge">
+<title>Visit-&gt;VisitSummary</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M289.62,-116.89C289.62,-105.69 289.62,-91.17 289.62,-81.07"/>
+</g>
+<!-- Visit&#45;&gt;VisitSubjectPosition -->
+<g id="edge4" class="edge">
+<title>Visit-&gt;VisitSubjectPosition</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M270.09,-123.42C243.59,-109.75 197.1,-85.76 175.83,-74.78"/>
+</g>
+<!-- Visit&#45;&gt;VisitTimeDistribution -->
+<g id="edge5" class="edge">
+<title>Visit-&gt;VisitTimeDistribution</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M309.31,-123.42C336.03,-109.75 382.89,-85.76 404.33,-74.78"/>
+</g>
+<!-- Place -->
+<g id="node6" class="node">
+<title>Place</title>
+<g id="a_node6"><a xlink:title="place                
+------------------------------
+place_description    
+">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="transparent" points="370.12,-223 329.12,-223 329.12,-188 370.12,-188 370.12,-223"/>
+<text text-anchor="start" x="337.12" y="-204" font-family="arial" text-decoration="underline" font-size="10.00">Place</text>
+</a>
+</g>
+</g>
+<!-- Place&#45;&gt;Visit -->
+<g id="edge6" class="edge">
+<title>Place-&gt;Visit</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M335.1,-187.8C325.67,-176.95 313.42,-162.87 304.02,-152.05"/>
+</g>
+<!-- Chunk -->
+<g id="node7" class="node">
+<title>Chunk</title>
+<g id="a_node7"><a xlink:title="→ Experiment
+chunk_start          
+------------------------------
+chunk_end            
+→ Experiment.Directory
+→ [nullable] Epoch
+">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="190.62,-223 138.62,-223 138.62,-188 190.62,-188 190.62,-223"/>
+<text text-anchor="middle" x="164.62" y="-202.4" font-family="arial" font-size="12.00" fill="darkgreen">Chunk</text>
+</a>
+</g>
+</g>
+<!-- Chunk&#45;&gt;VisitSubjectPosition -->
+<g id="edge7" class="edge">
+<title>Chunk-&gt;VisitSubjectPosition</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M164.62,-187.89C164.62,-160.32 164.62,-105.77 164.62,-81.34"/>
+</g>
+<!-- Chunk&#45;&gt;CameraTracking -->
+<g id="edge8" class="edge">
+<title>Chunk-&gt;CameraTracking</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M140.91,-187.97C124.9,-176.81 103.88,-162.16 88.12,-151.18"/>
+</g>
+<!-- Experiment -->
+<g id="node9" class="node">
+<title>Experiment</title>
+<g id="a_node9"><a xlink:title="experiment_name      
+------------------------------
+experiment_start_time
+experiment_description
+→ Arena
+→ Location
+experiment_type=&quot;foraging&quot;
+INDEX (experiment_type)
+">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="298.12,-294 221.12,-294 221.12,-259 298.12,-259 298.12,-294"/>
+<text text-anchor="start" x="229.12" y="-274.4" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Experiment</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;ExperimentCamera -->
+<g id="edge9" class="edge">
+<title>Experiment-&gt;ExperimentCamera</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M220.78,-262.03C188.66,-250.89 142.9,-235.03 108.51,-223.1"/>
+</g>
+<!-- Experiment&#45;&gt;Chunk -->
+<g id="edge10" class="edge">
+<title>Experiment-&gt;Chunk</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M236.63,-258.8C221.69,-247.95 202.3,-233.87 187.41,-223.05"/>
+</g>
+<!-- Experiment.Subject -->
+<g id="node11" class="node">
+<title>Experiment.Subject</title>
+<g id="a_node11"><a xlink:title="→ Experiment
+→ Subject
+">
+<polygon fill="transparent" stroke="transparent" points="310.62,-215 208.62,-215 208.62,-196 310.62,-196 310.62,-215"/>
+<text text-anchor="middle" x="259.62" y="-203" font-family="arial" font-size="10.00">Experiment.Subject</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;Experiment.Subject -->
+<g id="edge11" class="edge">
+<title>Experiment-&gt;Experiment.Subject</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M259.62,-258.8C259.62,-245.08 259.62,-226.19 259.62,-215.27"/>
+</g>
+<!-- Experiment.Subject&#45;&gt;Visit -->
+<g id="edge12" class="edge">
+<title>Experiment.Subject-&gt;Visit</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M263.42,-195.76C268.19,-184.81 276.45,-165.81 282.42,-152.07"/>
+</g>
+</g>
+</svg>

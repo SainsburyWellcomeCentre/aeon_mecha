@@ -1,7 +1,7 @@
 name: Experiment 0.1
-start-time: 2021-06-02T23:49:41.0000000
-description: 
-data-path: /ceph/aeon/experiment0.1
+start-time: 2021-11-30 14:00:00
+description:
+data-path: /ceph/preprocessed/socialexperiment0
 time-bin-size: 1
 arena:
   dimensions:
@@ -16,15 +16,15 @@ arena:
   gates:
   - position: *o0
 clock-synchronizer:
-  serial-number: 
+  serial-number:
   port-name: COM6
   description: ClockSynchronizer
 ambient-microphone:
-  serial-number: 
+  serial-number:
   description: AudioAmbient
   sample-rate: 192000
 video-controller:
-  serial-number: 
+  serial-number:
   port-name: COM3
   description: VideoController
   standard-trigger-frequency: 50
@@ -71,14 +71,14 @@ cameras:
   trigger-source: HighSpeedTrigger
   gain: 10
 patches:
-- serial-number: 
+- serial-number:
   port-name: COM4
   description: Patch1
   position: *o0
   radius: 4
   starting-torque: 0
-  workflow-path: 
-- serial-number: 
+  workflow-path:
+- serial-number:
   port-name: COM7
   description: Patch2
   position: *o0
@@ -89,4 +89,3 @@ weight-scales:
 - serial-number: SCALE1
   description: WeightData
   nest: 1
-

@@ -1,12 +1,13 @@
+import datetime
 import datajoint as dj
 import pandas as pd
 import numpy as np
-import datetime
+from collections import deque
 
 from aeon.analysis import utils as analysis_utils
 
-from .. import lab, acquisition, tracking, qc
-from .. import get_schema_name
+from aeon.dj_pipeline import get_schema_name, fetch_stream
+from aeon.dj_pipeline import acquisition, lab, qc, tracking
 
 schema = dj.schema(get_schema_name("analysis"))
 
@@ -66,14 +67,14 @@ class OverlapVisit(dj.Computed):
 
     @property
     def key_source(self):
-        return dj.U("experiment_name", "place", "overlap_start") & (
-            Visit & VisitEnd
-        ).proj(overlap_start="visit_start")
+        return dj.U("experiment_name", "place", "overlap_start") & (Visit & VisitEnd).proj(
+            overlap_start="visit_start"
+        )
 
     def make(self, key):
-        visit_starts, visit_ends = (
-            Visit * VisitEnd & key & {"visit_start": key["overlap_start"]}
-        ).fetch("visit_start", "visit_end")
+        visit_starts, visit_ends = (Visit * VisitEnd & key & {"visit_start": key["overlap_start"]}).fetch(
+            "visit_start", "visit_end"
+        )
         visit_start = min(visit_starts)
         visit_end = max(visit_ends)
 
@@ -87,9 +88,7 @@ class OverlapVisit(dj.Computed):
             if len(overlap_query) <= 1:
                 break
             overlap_visits.extend(
-                overlap_query.proj(overlap_start=f'"{key["overlap_start"]}"').fetch(
-                    as_dict=True
-                )
+                overlap_query.proj(overlap_start=f'"{key["overlap_start"]}"').fetch(as_dict=True)
             )
             visit_starts, visit_ends = overlap_query.fetch("visit_start", "visit_end")
             if visit_start == max(visit_starts) and visit_end == max(visit_ends):
@@ -103,11 +102,8 @@ class OverlapVisit(dj.Computed):
                 {
                     **key,
                     "overlap_end": visit_end,
-                    "overlap_duration": (
-                        visit_end - key["overlap_start"]
-                    ).total_seconds()
-                    / 3600,
-                    "subject_count": len(set(v["subject"] for v in overlap_visits)),
+                    "overlap_duration": (visit_end - key["overlap_start"]).total_seconds() / 3600,
+                    "subject_count": len({v["subject"] for v in overlap_visits}),
                 }
             )
             self.Visit.insert(overlap_visits, skip_duplicates=True)
@@ -116,14 +112,15 @@ class OverlapVisit(dj.Computed):
 # ---- HELPERS ----
 
 
-def ingest_environment_visits(experiment_names=["exp0.2-r0"]):
-    """
-    Function to ingest into `Visit` and `VisitEnd` for specified experiments (default: 'exp0.2-r0')
-    This ingestion routine handles only those "complete" visits, not ingesting any "on-going" visits
-    Using "analyze" method: `aeon.analyze.utils.visits()`
+def ingest_environment_visits(experiment_names: list | None = None):
+    """Function to populate into `Visit` and `VisitEnd` for specified experiments (default: 'exp0.2-r0'). This ingestion routine handles only those "complete" visits, not ingesting any "on-going" visits using "analyze" method: `aeon.analyze.utils.visits()`.
 
-    :param list experiment_names: list of names of the experiment to ingest into the Visit table
+    Args:
+        experiment_names (list, optional): list of names of the experiment to populate into the Visit table. Defaults to None.
     """
+
+    if experiment_names is None:
+        experiment_names = ["exp0.2-r0"]
     place_key = {"place": "environment"}
     for experiment_name in experiment_names:
         exp_key = {"experiment_name": experiment_name}
@@ -187,3 +184,58 @@ def ingest_environment_visits(experiment_names=["exp0.2-r0"]):
                     },
                     skip_duplicates=True,
                 )
+
+
+def get_maintenance_periods(experiment_name, start, end):
+    # get states from acquisition.Environment.EnvironmentState
+    chunk_restriction = acquisition.create_chunk_restriction(experiment_name, start, end)
+    state_query = (
+        acquisition.Environment.EnvironmentState & {"experiment_name": experiment_name} & chunk_restriction
+    )
+    env_state_df = fetch_stream(state_query)[start:end]
+    if env_state_df.empty:
+        return deque([])
+
+    env_state_df.reset_index(inplace=True)
+    env_state_df = env_state_df[env_state_df["state"].shift() != env_state_df["state"]].reset_index(
+        drop=True
+    )  # remove duplicates and keep the first one
+    # An experiment starts with visit start (anything before the first maintenance is experiment)
+    # Delete the row if it starts with "Experiment"
+    if env_state_df.iloc[0]["state"] == "Experiment":
+        env_state_df.drop(index=0, inplace=True)  # look for the first maintenance
+        if env_state_df.empty:
+            return deque([])
+
+    # Last entry is the visit end
+    if env_state_df.iloc[-1]["state"] == "Maintenance":
+        log_df_end = pd.DataFrame({"time": [pd.Timestamp(end)], "state": ["VisitEnd"]})
+        env_state_df = pd.concat([env_state_df, log_df_end])
+        env_state_df.reset_index(drop=True, inplace=True)
+
+    maintenance_starts = env_state_df.loc[env_state_df["state"] == "Maintenance", "time"].values
+    maintenance_ends = env_state_df.loc[env_state_df["state"] != "Maintenance", "time"].values
+
+    return deque(
+        [
+            (pd.Timestamp(start), pd.Timestamp(end))
+            for start, end in zip(maintenance_starts, maintenance_ends)
+        ]
+    )  # queue object. pop out from left after use
+
+
+def filter_out_maintenance_periods(data_df, maintenance_period, end_time, dropna=False):
+    maint_period = maintenance_period.copy()
+    while maint_period:
+        (maintenance_start, maintenance_end) = maint_period[0]
+        if end_time < maintenance_start:  # no more maintenance for this date
+            break
+        maintenance_filter = (data_df.index >= maintenance_start) & (data_df.index <= maintenance_end)
+        data_df[maintenance_filter] = np.nan
+        if end_time >= maintenance_end:  # remove this range
+            maint_period.popleft()
+        else:
+            break
+    if dropna:
+        data_df.dropna(inplace=True)
+    return data_df
