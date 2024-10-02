@@ -112,7 +112,6 @@ dj_local_conf*.json
 **/#*#
 **/.#*
 docker-compose.yml
-Diagram.ipynb
 test*.ipynb
 
 # docker
@@ -138,3 +137,7 @@ run.env
 # Mac
 .DS_Store
 **/.DS_Store
+log*.txt
+scratch/
+scratch*.py
+**/*.nfs*
