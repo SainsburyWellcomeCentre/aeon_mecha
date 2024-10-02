@@ -1,4 +1,4 @@
-# docker compose --env-file=../../.env  -f docker-compose-standard_worker.yaml -p ucsf_cadwell-lab build
+# docker compose --env-file=../../.env  -f docker-compose-standard_worker.yaml -p ucl-swc_aeon build
 version: '2.4'
 services:
   standard_worker:
