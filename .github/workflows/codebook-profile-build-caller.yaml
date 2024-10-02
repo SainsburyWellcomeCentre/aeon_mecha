@@ -32,7 +32,7 @@ jobs:
       workflow_version: ${{steps.get_version.outputs.workflow_version}}
   call_sciops_docker_image_debian:
     needs: [get_meta]
-    uses: .github/workflows/codebook-profile-build.yaml@main
+    uses: ./.github/workflows/codebook-profile-build.yaml
     # uses: yambottle/dj-sciops.github/.github/workflows/codebook-profile-build.yaml@main
     with:
       jhub_ver: ${{ inputs.jhub_ver }}
