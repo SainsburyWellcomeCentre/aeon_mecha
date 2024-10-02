@@ -1,0 +1,142 @@
+name: worker-ami-build
+on:
+  workflow_call:
+    inputs:
+      worker_type:
+        required: true
+        type: string
+      workflow_version:
+        required: true
+        type: string
+      staging:
+        required: true
+        type: string
+    secrets:
+      RUNNER_PAT:
+        required: true
+      RUNNER_AWS_ACCESS_KEY_ID:
+        required: true
+      RUNNER_AWS_SECRET_ACCESS_KEY:
+        required: true
+      DJ_HOST:
+        required: true
+      DJ_USER:
+        required: true
+      DJ_PASS:
+        required: true
+      BUILD_PAT:
+        required: true
+      BUILD_AWS_ACCESS_KEY_ID:
+        required: true
+      BUILD_AWS_SECRET_ACCESS_KEY:
+        required: true
+      DEPLOY_SSH_KEY_BASE64:
+        required: true
+      DOCKER_REGISTRY_HOST:
+        required: true
+      DOCKER_REGISTRY_REPO:
+        required: true  
+      DOCKER_REGISTRY_USERNAME:
+        required: true
+      DOCKER_REGISTRY_PASSWORD:
+        required: true
+
+jobs:
+  start-runner:
+    timeout-minutes: 5              # normally it only takes 1-2 minutes
+    name: Start self-hosted EC2 runner   
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write        
+    steps:  
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: NextChapterSoftware/ec2-action-builder@main
+        with:
+          github_token: ${{ secrets.RUNNER_PAT}}
+          aws_access_key_id: ${{ secrets.RUNNER_AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.RUNNER_AWS_SECRET_ACCESS_KEY }}
+          aws_region: "us-east-2"
+          ec2_instance_type: t3a.medium
+          ec2_ami_id: ami-0172431f1b2be4fc6
+          ec2_subnet_id: "subnet-0a602071414b8b2eb"
+          ec2_security_group_id: "sg-02810c38b0dcb2462"
+          ec2_instance_ttl: 180                # Optional (default is 60 minutes)
+          ec2_spot_instance_strategy: BestEffort    # Other options are: SpotOnly, BestEffort, MaxPerformance 
+          ec2_instance_tags: >
+            [
+              {"Key": "Scope", "Value": "Works"}, 
+              {"Key": "Contract", "Value": "${{github.event.repository.name}}"}, 
+              {"Key": "Application", "Value": "worker-ami-build-runner"},
+              {"Key": "WorkflowVersion", "Value": "${{ inputs.workflow_version }}"}, 
+              {"Key": "WorkerType", "Value": "${{ inputs.worker_type }}"}, 
+              {"Key": "Staging", "Value": "${{ inputs.staging }}"}
+            ]
+  build_worker_ami:
+    needs:
+      - start-runner
+    runs-on: ${{ github.run_id }}   
+    env:
+      HOME: /root       
+    steps:              
+      - name: Checkout packer build repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.BUILD_PAT }}
+          repository: 'datajoint-company/dj-gitops'
+          path: 'dj-gitops'
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        # WARNING: Running pip as the 'root'
+        # https://github.com/actions/setup-python/issues/513
+        with:
+          python-version: '3.10'
+      - run: pip install --user datajoint
+      - name: Call fetcher
+        env:
+          DJ_HOST: ${{ secrets.DJ_HOST }}
+          DJ_USER: ${{ secrets.DJ_USER }}
+          DJ_PASS: ${{ secrets.DJ_PASS }}
+          REPO_NAME: ${{github.event.repository.name}}
+          WORKER_TYPE: ${{ inputs.worker_type }}
+          WORKFLOW_VERSION: ${{ inputs.workflow_version }}
+          STAGING: ${{ inputs.staging }}
+        run: |
+          export ORG_NAME=$(echo ${REPO_NAME} | cut -d "_" -f 1)
+          export WORKFLOW_NAME=$(echo ${REPO_NAME} | cut -d "_" -f 2)
+          cd ${GITHUB_WORKSPACE}/dj-gitops/infrastructures/packer/worker_ami/inputs/
+          python fetcher.py
+      - name: Build worker AMI
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BUILD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BUILD_AWS_SECRET_ACCESS_KEY }}
+          STAGING: ${{ inputs.staging }}
+          REPO_NAME: ${{github.event.repository.name}}
+          DOCKER_REGISTRY_HOST: ${{ secrets.DOCKER_REGISTRY_HOST }}
+          DOCKER_REGISTRY_REPO: ${{ secrets.DOCKER_REGISTRY_REPO }}
+          DOCKER_REGISTRY_USERNAME: ${{ secrets.DOCKER_REGISTRY_USERNAME }}
+          DOCKER_REGISTRY_PASSWORD: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
+        run: |
+          # Set up deploy SSH key
+          echo -n "${{ secrets.DEPLOY_SSH_KEY_BASE64 }}" | base64 -d > ${GITHUB_WORKSPACE}/dj-gitops/infrastructures/packer/worker_ami/keys/${REPO_NAME}-deploy.pem
+          cd ${GITHUB_WORKSPACE}/dj-gitops/infrastructures/packer/worker_ami
+          packer init .
+          packer build -var-file ./inputs/${REPO_NAME}/${STAGING}.pkrvars.hcl . | tee ./outputs/packer.temp.log
+      - name: Terminate builder
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BUILD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BUILD_AWS_SECRET_ACCESS_KEY }}
+        if: always()
+        run: |
+          cd ${GITHUB_WORKSPACE}/dj-gitops/infrastructures/packer/worker_ami/outputs
+          bash terminate_builder_by_log.sh packer.temp.log
+      - name: Update worker AMI metadata
+        if: ${{ inputs.staging == 'stable' }}
+        env:
+          DJ_HOST: ${{ secrets.DJ_HOST }}
+          DJ_USER: ${{ secrets.DJ_USER }}
+          DJ_PASS: ${{ secrets.DJ_PASS }}
+        run: |
+          cd ${GITHUB_WORKSPACE}/dj-gitops/infrastructures/packer/worker_ami/outputs/
+          python insert_ami_meta.py
+          
