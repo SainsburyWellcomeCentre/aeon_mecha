@@ -1,4 +1,4 @@
-name: codebook-profile-build
+name: codebook-profile-build-caller
 on:
   workflow_dispatch:
     inputs:
