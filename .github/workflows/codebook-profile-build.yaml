@@ -1,0 +1,127 @@
+name: codebook-profile-build
+on:
+  workflow_call:
+    inputs:
+      jhub_ver:
+        required: true
+        type: string
+      py_ver:
+        required: true
+        type: string
+      worker_type:
+        required: true
+        type: string
+      workflow_version:
+        required: true
+        type: string
+    secrets:
+      RUNNER_PAT:
+        required: true
+      RUNNER_AWS_ACCESS_KEY_ID:
+        required: true
+      RUNNER_AWS_SECRET_ACCESS_KEY:
+        required: true
+      DEPLOY_SSH_KEY_BASE64:
+        required: true
+      DOCKER_REGISTRY_HOST:
+        required: true
+      DOCKER_REGISTRY_REPO:
+        required: true
+      DOCKER_REGISTRY_USERNAME:
+        required: true
+      DOCKER_REGISTRY_PASSWORD:
+        required: true
+jobs:
+  start-runner:
+    timeout-minutes: 5              # normally it only takes 1-2 minutes
+    name: Start self-hosted EC2 runner   
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write        
+    steps:      
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: NextChapterSoftware/ec2-action-builder@main
+        with:
+          github_token: ${{ secrets.RUNNER_PAT}}
+          aws_access_key_id: ${{ secrets.RUNNER_AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.RUNNER_AWS_SECRET_ACCESS_KEY }}
+          aws_region: "us-east-2"
+          ec2_instance_type: t3a.medium
+          ec2_ami_id: ami-0172431f1b2be4fc6
+          ec2_subnet_id: "subnet-0a602071414b8b2eb"
+          ec2_security_group_id: "sg-02810c38b0dcb2462"
+          ec2_instance_ttl: 60                # Optional (default is 60 minutes)
+          ec2_spot_instance_strategy: BestEffort    # Other options are: SpotOnly, BestEffort, MaxPerformance 
+          ec2_instance_tags: >
+            [
+              {"Key": "Scope", "Value": "Works"}, 
+              {"Key": "Contract", "Value": "${{github.event.repository.name}}"}, 
+              {"Key": "Application", "Value": "codebook-profile-build-runner"},
+              {"Key": "WorkflowVersion", "Value": "${{ inputs.workflow_version }}"}, 
+              {"Key": "WorkerType", "Value": "${{ inputs.worker_type }}"}
+            ]
+  ## Build/Publish codebook env image
+  build_codebook_image:
+    needs:
+      - start-runner
+    runs-on: ${{ github.run_id }}  
+    env:
+      JHUB_VER: ${{inputs.jhub_ver}}
+      PY_VER: ${{inputs.py_ver}}
+      WORKER_TYPE: ${{inputs.worker_type}}
+      WORKFLOW_VERSION: ${{inputs.workflow_version}}
+    steps:
+      - name: Checkout workflow repo
+        uses: actions/checkout@v4
+      - id: build_env
+        name: Build codebook env image
+        run: |
+          ## Get build info
+          cd ${GITHUB_WORKSPACE}/docker/${WORKER_TYPE}_worker/dist/debian
+          export REPO_NAME=${{github.event.repository.name}}
+          export REPO_OWNER=${{github.repository_owner}}
+          export REPO_BRANCH=${{github.ref_name}}
+
+          echo "${{secrets.DEPLOY_SSH_KEY_BASE64}}" | base64 -di >> ${REPO_NAME}-deploy.pem
+          chmod u=r,g-rwx,o-rwx ${REPO_NAME}-deploy.pem
+          export DEPLOY_KEY=${REPO_NAME}-deploy.pem
+
+          cat <<EOF > docker-compose-codebook-profile.yaml
+          services:
+            codebook_env:
+              build:
+                # only necessary if rebuilding image
+                context: .
+                dockerfile: codebook.Dockerfile
+                args:
+                  - JHUB_VER
+                  - PY_VER
+                  - DEPLOY_KEY
+                  - REPO_OWNER
+                  - REPO_NAME
+                  - REPO_BRANCH
+              image: ${{ secrets.DOCKER_REGISTRY_HOST }}/${{ secrets.DOCKER_REGISTRY_REPO }}/codebook_${REPO_NAME}:singleuser-${JHUB_VER}-py${PY_VER}-${WORKFLOW_VERSION}
+          EOF
+
+          cp ${WORKER_TYPE}_worker.Dockerfile codebook.Dockerfile
+          sed -i '1s/^/ARG JHUB_VER\n/' codebook.Dockerfile
+          sed -i 's@FROM.*@FROM datajoint/djlabhub:singleuser-${JHUB_VER}-py${PY_VER}-latest@g' codebook.Dockerfile
+
+          ## Build image
+          docker compose -f docker-compose-codebook-profile.yaml build
+      - name: Login to vathes Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.DOCKER_REGISTRY_HOST }}
+          username: ${{ secrets.DOCKER_REGISTRY_USERNAME }}
+          password: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
+      - name: Push codebook image
+        run: |
+          export IMAGE=${{ secrets.DOCKER_REGISTRY_HOST }}/${{ secrets.DOCKER_REGISTRY_REPO }}/codebook_${{github.event.repository.name}}
+          export TAG=singleuser-${{env.JHUB_VER}}-py${{env.PY_VER}}-${{env.WORKFLOW_VERSION}}
+          echo ${IMAGE} ${TAG}
+          docker push "${IMAGE}:${TAG}"
+          echo ${IMAGE} latest
+          docker tag "${IMAGE}:${TAG}" "${IMAGE}:latest"
+          docker push "${IMAGE}:latest"
