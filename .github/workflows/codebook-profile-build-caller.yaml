@@ -27,7 +27,7 @@ jobs:
         name: Get build metadata
         run: |
           ## Get workflow version as codebook env image version
-          echo "workflow_version=$(cat $(find . -name "version.py" | head -n 1) | grep -oP '\d+\.\d+\.[a-z0-9]+')" >> $GITHUB_OUTPUT
+          echo "workflow_version=$(cat $(find . -name "version.py" -o -name "pyproject.toml" ) | grep version | head -n 1 | grep -oP '\d+\.\d+\.[a-z0-9]+')" >> $GITHUB_OUTPUT
     outputs:
       workflow_version: ${{steps.get_version.outputs.workflow_version}}
   call_sciops_docker_image_debian:
