@@ -36,6 +36,7 @@ class BlockDetection(dj.Computed):
 
     def make(self, key):
         """On a per-chunk basis, check for the presence of new block, insert into Block table.
+
         High level logic
         1. Find the 0s in `pellet_ct` (these are times when the pellet count reset - i.e. new block)
         2. Remove any double 0s (0s within 1 second of each other) (pick the first 0)
@@ -792,6 +793,7 @@ class AnalysisNote(dj.Manual):
 
 def get_threshold_associated_pellets(patch_key, start, end):
     """Retrieve the pellet delivery timestamps associated with each patch threshold update within the specified start-end time.
+
     1. Get all patch state update timestamps (DepletionState): let's call these events "A"
         - Remove all events within 1 second of each other
         - Remove all events without threshold value (NaN)
