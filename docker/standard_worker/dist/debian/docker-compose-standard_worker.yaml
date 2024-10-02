@@ -37,5 +37,4 @@ services:
       - /bin/bash
       - -c
       - |
-        # run_workflow standard_worker
-        tail -f /dev/null
+        run_workflow standard_worker
