@@ -32,7 +32,7 @@ jobs:
       workflow_version: ${{steps.get_version.outputs.workflow_version}}
   call-worker-ami-build:
     needs: [get_meta]
-    uses: .github/workflows/worker-ami-build.yaml@main
+    uses: ./.github/workflows/worker-ami-build.yaml
     # uses: yambottle/dj-sciops.github/.github/workflows/worker-ami-build.yaml@main
     with:
       worker_type: ${{github.event.inputs.worker_type}}
