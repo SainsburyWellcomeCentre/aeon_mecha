@@ -1,0 +1,50 @@
+name: codebook-profile-build
+on:
+  workflow_dispatch:
+    inputs:
+      jhub_ver:
+        description: "JupyterHub version"
+        required: true
+        default: "4.0.2"
+      py_ver:
+        description: "Python version"
+        required: true
+        default: "3.10"
+      worker_type:
+        description: "Use worker image as codebook profile image"
+        required: true
+        type: choice
+        default: "standard"
+        options:
+          - standard
+
+jobs:
+  get_meta:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: get_version
+        name: Get build metadata
+        run: |
+          ## Get workflow version as codebook env image version
+          echo "workflow_version=$(cat $(find . -name "version.py" | head -n 1) | grep -oP '\d+\.\d+\.[a-z0-9]+')" >> $GITHUB_OUTPUT
+    outputs:
+      workflow_version: ${{steps.get_version.outputs.workflow_version}}
+  call_sciops_docker_image_debian:
+    needs: [get_meta]
+    uses: dj-sciops/.github/.github/workflows/codebook-profile-build.yaml@main
+    # uses: yambottle/dj-sciops.github/.github/workflows/codebook-profile-build.yaml@main
+    with:
+      jhub_ver: ${{ inputs.jhub_ver }}
+      py_ver: ${{ inputs.py_ver }}
+      worker_type: ${{ inputs.worker_type }}
+      workflow_version: ${{needs.get_meta.outputs.workflow_version}}
+    secrets:
+      RUNNER_PAT: ${{secrets.RUNNER_PAT}}
+      RUNNER_AWS_ACCESS_KEY_ID: ${{secrets.RUNNER_AWS_ACCESS_KEY_ID}}
+      RUNNER_AWS_SECRET_ACCESS_KEY: ${{secrets.RUNNER_AWS_SECRET_ACCESS_KEY}}
+      DEPLOY_SSH_KEY_BASE64: ${{secrets.DEPLOY_SSH_KEY_BASE64}}
+      DOCKER_REGISTRY_HOST: ${{secrets.DOCKER_REGISTRY_HOST}}
+      DOCKER_REGISTRY_REPO: ${{secrets.DOCKER_REGISTRY_REPO}}
+      DOCKER_REGISTRY_USERNAME: ${{secrets.DOCKER_REGISTRY_USERNAME}}
+      DOCKER_REGISTRY_PASSWORD: ${{secrets.DOCKER_REGISTRY_PASSWORD}}
