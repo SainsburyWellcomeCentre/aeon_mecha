@@ -1,0 +1,41 @@
+# docker compose --env-file=../../.env  -f docker-compose-standard_worker.yaml -p ucsf_cadwell-lab build
+version: '2.4'
+services:
+  standard_worker:
+    build:
+      # only necessary if rebuilding image
+      context: ../../
+      dockerfile: ./dist/debian/standard_worker.Dockerfile
+      args:
+        - PY_VER
+        - DEPLOY_KEY
+        - REPO_OWNER
+        - REPO_NAME
+        - REPO_BRANCH=${REPO_BRANCH:-main}
+    image: ${DOCKER_IMAGE_TAG}
+    environment:
+      - DJ_HOST
+      - DJ_USER
+      - DJ_PASS
+      - DATABASE_PREFIX
+      - AWS_ACCESS_KEY
+      - AWS_ACCESS_SECRET
+      - RAW_ROOT_DATA_DIR=/home/jovyan/s3/inbox
+      - PROCESSED_ROOT_DATA_DIR=/home/jovyan/efs/outbox
+      - WORKER_MAX_IDLED_CYCLE
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    volumes:
+      - ${OUTBOX_MOUNTPOINT:-./outbox}:/home/jovyan/efs/outbox
+      - ${S3_ROOT_MOUNTPOINT:-./s3_root}:/home/jovyan/s3
+    scale: ${WORKER_COUNT:-1}
+    command:
+      - /bin/bash
+      - -c
+      - |
+        # run_workflow standard_worker
+        tail -f /dev/null
