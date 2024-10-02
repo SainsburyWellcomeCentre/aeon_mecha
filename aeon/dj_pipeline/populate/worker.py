@@ -22,7 +22,9 @@ __all__ = [
 
 # ---- Some constants ----
 logger = dj.logger
-worker_schema_name = db_prefix + "worker"
+
+org_name, workflow_name, *_ = db_prefix.split("_")
+worker_schema_name = f"{org_name}_support_{workflow_name}_" + "worker"
 
 # ---- Manage experiments for automated ingestion ----
 

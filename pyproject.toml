@@ -66,7 +66,7 @@ dev = [
 gpu = ["cupy", "dask"]
 
 [project.scripts]
-aeon_ingest = "aeon.dj_pipeline.populate.process:cli"
+run_workflow = "aeon.dj_pipeline.populate.process:cli"
 
 [project.urls]
 Homepage = "https://sainsburywellcomecentre.github.io/aeon_docs/"

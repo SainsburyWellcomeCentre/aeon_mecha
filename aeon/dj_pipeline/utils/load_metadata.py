@@ -40,7 +40,7 @@ def insert_stream_types():
                     # human error, trying to add the same content with different name
                     raise dj.DataJointError(f"The specified stream type already exists - name: {pname}")
             else:
-                streams.StreamType.insert1(entry)
+                streams.StreamType.insert1(entry, skip_duplicates=True)
 
 
 def insert_device_types(devices_schema: DotMap, metadata_yml_filepath: Path):
