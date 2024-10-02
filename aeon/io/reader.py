@@ -304,15 +304,22 @@ class Pose(Harp):
     """
 
     def __init__(self, pattern: str, model_root: str = "/ceph/aeon/aeon/data/processed"):
-        """Pose reader constructor."""
-        # `pattern` for this reader should typically be '<hpcnode>_<jobid>*'
+        """Pose reader constructor.
+
+        The pattern for this reader should typically be `<device>_<hpcnode>_<jobid>*`.
+        If a register prefix is required, the pattern should end with a trailing
+        underscore, e.g. `Camera_202_*`. Otherwise, the pattern should include a
+        common prefix for the pose model folder excluding the trailing underscore,
+        e.g. `Camera_model-dir*`.
+        """
         super().__init__(pattern, columns=None)
         self._model_root = model_root
+        self._pattern_offset = pattern.rfind("_") + 1
 
     def read(self, file: Path) -> pd.DataFrame:
         """Reads data from the Harp-binarized tracking file."""
         # Get config file from `file`, then bodyparts from config file.
-        model_dir = Path(*Path(file.stem.replace("_", "/")).parent.parts[1:])
+        model_dir = Path(file.stem[self._pattern_offset :].replace("_", "/")).parent
 
         # Check if model directory exists in local or shared directories.
         # Local directory is prioritized over shared directory.
