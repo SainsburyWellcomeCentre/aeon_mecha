@@ -1,7 +1,10 @@
+"""Helper functions for plotting block data."""
+
 from colorsys import hls_to_rgb, rgb_to_hls
 
 import numpy as np
 import plotly
+from numpy.lib.stride_tricks import as_strided
 
 """Standardize subject colors, patch colors, and markers."""
 
