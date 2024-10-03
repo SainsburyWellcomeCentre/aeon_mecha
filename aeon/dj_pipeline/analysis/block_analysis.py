@@ -11,6 +11,7 @@ from matplotlib import path as mpl_path
 from datetime import datetime
 import itertools
 
+from aeon.io import api as io_api
 from aeon.analysis import utils as analysis_utils
 from aeon.dj_pipeline import (
     acquisition,
