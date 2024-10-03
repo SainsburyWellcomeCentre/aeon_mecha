@@ -1,32 +1,9 @@
+"""Helper functions for plotting block data."""
+
 from colorsys import hls_to_rgb, rgb_to_hls
 
 import numpy as np
-import plotly
-
-"""Standardize subject colors, patch colors, and markers."""
-
-subject_colors = plotly.colors.qualitative.Plotly
-subject_colors_dict = {
-    "BAA-1104045": subject_colors[0],
-    "BAA-1104047": subject_colors[1],
-    "BAA-1104048": subject_colors[2],
-    "BAA-1104049": subject_colors[3],
-}
-patch_colors = plotly.colors.qualitative.Dark2
-patch_markers = [
-    "circle",
-    "bowtie",
-    "square",
-    "hourglass",
-    "diamond",
-    "cross",
-    "x",
-    "triangle",
-    "star",
-]
-patch_markers_symbols = ["●", "⧓", "■", "⧗", "♦", "✖", "×", "▲", "★"]
-patch_markers_dict = dict(zip(patch_markers, patch_markers_symbols, strict=False))
-patch_markers_linestyles = ["solid", "dash", "dot", "dashdot", "longdashdot"]
+from numpy.lib.stride_tricks import as_strided
 
 
 def gen_hex_grad(hex_col, vals, min_l=0.3):
@@ -44,3 +21,13 @@ def gen_hex_grad(hex_col, vals, min_l=0.3):
         grad[i] = cur_hex_col
 
     return grad
+
+
+def conv2d(arr, kernel):
+    """Performs "valid" 2d convolution using numpy `as_strided` and `einsum`."""
+    out_shape = tuple(np.subtract(arr.shape, kernel.shape) + 1)
+    sub_mat_shape = kernel.shape + out_shape
+    # Create "new view" of `arr` as submatrices at which kernel will be applied
+    sub_mats = as_strided(arr, shape=sub_mat_shape, strides=(arr.strides * 2))
+    out = np.einsum("ij, ijkl -> kl", kernel, sub_mats)
+    return out
