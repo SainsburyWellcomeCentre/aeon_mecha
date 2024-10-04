@@ -612,13 +612,12 @@ class BlockPatchPlots(dj.Computed):
     ---
     patch_stats_plot: longblob
     weights_block_plot: longblob
-    cum_pl_by_patch_plot: longblob
-    cum_pl_per_subject_plot: longblob
-    pellet_delivery_plot: longblob
-    pellet_threshold_plot: longblob
+    cum_pel_by_patch_plot: longblob
+    cum_pel_per_subject_plot: longblob
     cum_wheel_dist_plot: longblob
     running_pref_by_wheel_dist_plot: longblob
     running_pref_by_patch_plot: longblob
+    weighted_patch_pref_plot: longblob
     """
 
     def make(self, key):
@@ -1400,7 +1399,7 @@ class BlockSubjectPositionPlots(dj.Computed):
             "Corridor",
         ]  # ROIs: patches, nest, gate, corridor
         roi_colors = plotly.colors.qualitative.Dark2
-        roi_colors_dict = dict(zip(rois, roi_colors, strict=True))
+        roi_colors_dict = dict(zip(rois, roi_colors))
         pos_eth_df = pd.DataFrame(
             columns=(["Subject"] + rois), index=centroid_df.index
         )  # df to create eth fig
