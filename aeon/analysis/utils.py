@@ -18,7 +18,7 @@ def distancetravelled(angle, radius=4.0):
     clickdown = (turns > jumpthreshold).astype(int) * -1
     turns = (clickup + clickdown).cumsum()
     distance = 2 * np.pi * radius * (turns + angle / maxvalue)
-    distance = distance - distance[0]
+    distance = distance - distance.iloc[0]
     return distance
 
 
