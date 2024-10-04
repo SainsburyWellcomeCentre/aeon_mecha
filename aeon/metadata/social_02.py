@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import numpy as np
 from dotmap import DotMap
 from numpy.typing import NDArray
+from pandas import DataFrame
 
 
 @dataclass
@@ -20,7 +21,7 @@ class ArenaMetadata:
         self.center_px = _parse_point(region.ArenaCenter)
         self.pixel_to_cm = self.radius_cm / self.radius_px
 
-    def point_to_cm(self, point: NDArray[np.float64]):
+    def point_to_cm(self, point: NDArray[np.float64] | DataFrame):
         """Converts the coordinates of a point or series of points from pixels to centimeters."""
         return (point - self.center_px) * self.pixel_to_cm
 
