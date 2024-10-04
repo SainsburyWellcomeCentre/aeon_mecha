@@ -1496,6 +1496,46 @@ class BlockSubjectPositionPlots(dj.Computed):
         self.insert1(entry)
 
 
+# ---- Foraging Bout Analysis ----
+
+@schema
+class BlockForaging(dj.Computed):
+    definition = """
+    -> BlockSubjectAnalysis
+    ---
+    bout_count: int  # number of foraging bouts in the block
+    """
+
+    class Bout(dj.Part):
+        definition = """
+        -> master
+        -> BlockAnalysis.Subject
+        bout_start: datetime(6)
+        ---
+        bout_end: datetime(6)
+        bout_duration: float  # (seconds)
+        pellet_count: int  # number of pellets consumed during the bout
+        cum_wheel_dist: float  # cumulative distance travelled during the bout
+        """
+
+    def make(self, key):
+        foraging_bout_df = get_foraging_bouts(key)
+        foraging_bout_df.rename(
+            columns={
+                "subject_name": "subject",
+                "bout_start": "start",
+                "bout_end": "end",
+                "bout_duration": "duration",
+                "pellet_count": "n_pellets",
+                "cum_wheel_dist": "cum_wheel_dist",
+            },
+            inplace=True,
+        )
+
+        self.insert1({**key, "bout_count": len(foraging_bout_df)})
+        self.Bout.insert({**key, **row} for _, row in foraging_bout_df.iterrows())
+
+
 # ---- AnalysisNote ----
 
 
@@ -1741,6 +1781,7 @@ def get_foraging_bouts(
                     {
                         "start": bout_starts_ends[:, 0],
                         "end": bout_starts_ends[:, 1],
+                        "duration": bout_durations,
                         "n_pellets": bout_pellets,
                         "cum_wheel_dist": bout_cum_wheel_dist,
                         "subject": subject,
