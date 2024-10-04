@@ -9,7 +9,7 @@ on:
       py_ver:
         description: "Python version"
         required: true
-        default: "3.10"
+        default: "3.11"
       worker_type:
         description: "Use worker image as codebook profile image"
         required: true
