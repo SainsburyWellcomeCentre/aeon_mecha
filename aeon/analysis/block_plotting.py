@@ -3,7 +3,27 @@
 from colorsys import hls_to_rgb, rgb_to_hls
 
 import numpy as np
+import plotly
 from numpy.lib.stride_tricks import as_strided
+
+"""Standardize subject colors, patch colors, and markers."""
+
+subject_colors = plotly.colors.qualitative.Plotly
+patch_colors = plotly.colors.qualitative.Dark2
+patch_markers = [
+    "circle",
+    "bowtie",
+    "square",
+    "hourglass",
+    "diamond",
+    "cross",
+    "x",
+    "triangle",
+    "star",
+]
+patch_markers_symbols = ["●", "⧓", "■", "⧗", "♦", "✖", "×", "▲", "★"]
+patch_markers_dict = dict(zip(patch_markers, patch_markers_symbols, strict=False))
+patch_markers_linestyles = ["solid", "dash", "dot", "dashdot", "longdashdot"]
 
 
 def gen_hex_grad(hex_col, vals, min_l=0.3):
@@ -31,3 +51,23 @@ def conv2d(arr, kernel):
     sub_mats = as_strided(arr, shape=sub_mat_shape, strides=(arr.strides * 2))
     out = np.einsum("ij, ijkl -> kl", kernel, sub_mats)
     return out
+
+
+def gen_subject_colors_dict(subject_names):
+    """Generates a dictionary of subject colors based on a list of subjects."""
+    return {s: c for s, c in zip(subject_names, subject_colors)}
+
+
+def gen_patch_style_dict(patch_names):
+    """Based on a list of patches, generates a dictionary of:
+    - patch_colors_dict: patch name to color
+    - patch_markers_dict: patch name to marker
+    - patch_symbols_dict: patch name to symbol
+    - patch_linestyles_dict: patch name to linestyle
+    """
+    return {
+        "colors": {p: c for p, c in zip(patch_names, patch_colors)},
+        "markers": {p: m for p, m in zip(patch_names, patch_markers)},
+        "symbols": {p: s for p, s in zip(patch_names, patch_markers_symbols)},
+        "linestyles": {p: ls for p, ls in zip(patch_names, patch_markers_linestyles)},
+    }
