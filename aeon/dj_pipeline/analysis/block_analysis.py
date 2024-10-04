@@ -1513,7 +1513,6 @@ class BlockForaging(dj.Computed):
         bout_start: datetime(6)
         ---
         bout_end: datetime(6)
-        bout_duration: float  # (seconds)
         pellet_count: int  # number of pellets consumed during the bout
         cum_wheel_dist: float  # cumulative distance travelled during the bout
         """
@@ -1525,7 +1524,6 @@ class BlockForaging(dj.Computed):
                 "subject_name": "subject",
                 "bout_start": "start",
                 "bout_end": "end",
-                "bout_duration": "duration",
                 "pellet_count": "n_pellets",
                 "cum_wheel_dist": "cum_wheel_dist",
             },
@@ -1781,7 +1779,6 @@ def get_foraging_bouts(
                     {
                         "start": bout_starts_ends[:, 0],
                         "end": bout_starts_ends[:, 1],
-                        "duration": bout_durations,
                         "n_pellets": bout_pellets,
                         "cum_wheel_dist": bout_cum_wheel_dist,
                         "subject": subject,
