@@ -1411,7 +1411,7 @@ class BlockSubjectPositionPlots(dj.Computed):
             "Corridor",
         ]  # ROIs: patches, nest, gate, corridor
         roi_colors = plotly.colors.qualitative.Dark2
-        roi_colors_dict = dict(zip(rois, roi_colors))
+        roi_colors_dict = dict(zip(rois, roi_colors, strict=False))
         pos_eth_df = pd.DataFrame(
             columns=(["Subject"] + rois), index=centroid_df.index
         )  # df to create eth fig
