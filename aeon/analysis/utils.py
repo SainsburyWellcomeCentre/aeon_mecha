@@ -19,6 +19,7 @@ def distancetravelled(angle, radius=4.0):
     turns = (clickup + clickdown).cumsum()
     distance = 2 * np.pi * radius * (turns + angle / maxvalue)
     distance = distance - distance.iloc[0]
+    distance.name = "distance"
     return distance
 
 
