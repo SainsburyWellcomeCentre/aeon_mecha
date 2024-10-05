@@ -14,7 +14,7 @@ CMD /usr/local/bin/bootstrap-kernel.sh
 
 
 # Additional packages
-RUN apt install -y graphviz
+RUN apt install -y graphviz libsm6 libxext6 libgl1 libegl1-mesa
 
 USER jovyan
 ARG DEPLOY_KEY
