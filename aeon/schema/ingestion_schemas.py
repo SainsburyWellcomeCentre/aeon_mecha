@@ -23,7 +23,7 @@ class _Encoder(reader.Encoder):
         data.index = aeon_time(data.index)
         first_index = data.first_valid_index()
         if first_index is not None:
-            data = data.resample(f"{1/sr_hz}S").first()  # take first sample in each resampled bin
+            data = data.resample(f"{1/sr_hz}s").first()  # take first sample in each resampled bin
         return data
 
 
