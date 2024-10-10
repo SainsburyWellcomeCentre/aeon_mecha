@@ -99,12 +99,32 @@ analysis_worker = DataJointWorker(
 )
 
 analysis_worker(block_analysis.BlockAnalysis, max_calls=6)
-analysis_worker(block_analysis.BlockPlots, max_calls=6)
 analysis_worker(block_analysis.BlockSubjectAnalysis, max_calls=6)
-analysis_worker(block_analysis.BlockSubjectPlots, max_calls=6)
+analysis_worker(block_analysis.BlockForaging, max_calls=6)
+analysis_worker(block_analysis.BlockPatchPlots, max_calls=6)
+analysis_worker(block_analysis.BlockSubjectPositionPlots, max_calls=6)
 
 
 def get_workflow_operation_overview():
     from datajoint_utilities.dj_worker.utils import get_workflow_operation_overview
 
     return get_workflow_operation_overview(worker_schema_name=worker_schema_name, db_prefixes=[db_prefix])
+
+
+def retrieve_schemas_sizes(schema_only=False, all_schemas=False):
+    schema_names = [n for n in dj.list_schemas() if n != "mysql"]
+    if not all_schemas:
+        schema_names = [n for n in schema_names
+                        if n.startswith(db_prefix) and not n.startswith(f"{db_prefix}archived")]
+
+    if schema_only:
+        return {n: dj.Schema(n).size_on_disk / 1e9 for n in schema_names}
+
+    schema_sizes = {n: {} for n in schema_names}
+    for n in schema_names:
+        vm = dj.VirtualModule(n, n)
+        schema_sizes[n]["schema_gb"] = vm.schema.size_on_disk / 1e9
+        schema_sizes[n]["tables_gb"] = {n: t().size_on_disk / 1e9
+                                        for n, t in vm.__dict__.items()
+                                        if isinstance(t, dj.user_tables.TableMeta)}
+    return schema_sizes
