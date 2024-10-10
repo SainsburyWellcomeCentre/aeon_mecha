@@ -11,8 +11,7 @@ import pandas as pd
 from dotmap import DotMap
 
 from aeon import util
-from aeon.io.api import aeon as aeon_time
-from aeon.io.api import chunk, chunk_key
+from aeon.io.api import chunk_key
 
 _SECONDS_PER_TICK = 32e-6
 _payloadtypes = {
@@ -186,24 +185,6 @@ class Encoder(Harp):
 
     def __init__(self, pattern):
         super().__init__(pattern, columns=["angle", "intensity"])
-
-    def read(self, file, downsample=True):
-        """Reads encoder data from the specified Harp binary file.
-
-        By default the encoder data is downsampled to 50Hz. Setting downsample to
-        False or None can be used to force the raw data to be returned.
-        """
-        data = super().read(file)
-        if downsample is True:
-            # resample requires a DatetimeIndex so we convert early
-            data.index = aeon_time(data.index)
-
-            first_index = data.first_valid_index()
-            if first_index is not None:
-                # since data is absolute angular position we decimate by taking first of each bin
-                chunk_origin = chunk(first_index)
-                data = data.resample("20ms", origin=chunk_origin).first()
-        return data
 
 
 class Position(Harp):
