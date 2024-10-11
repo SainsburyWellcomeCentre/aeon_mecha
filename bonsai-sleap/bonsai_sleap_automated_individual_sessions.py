@@ -146,13 +146,13 @@ def main():
     )
     parser.add_argument(
         "--start",
-        help="Start time of the social period",
+        help="Start time of the individual period",
         required=True,
         type=str
     )
     parser.add_argument(
         "--end",
-        help="End time of the social period",
+        help="End time of the individual period",
         required=True,
         type=str
     )
