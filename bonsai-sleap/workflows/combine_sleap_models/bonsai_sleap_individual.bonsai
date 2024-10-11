@@ -1,0 +1,108 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<WorkflowBuilder Version="2.8.1"
+                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xmlns:aeon="clr-namespace:Aeon.Acquisition;assembly=Aeon.Acquisition"
+                 xmlns:sleap="clr-namespace:Bonsai.Sleap;assembly=Bonsai.Sleap"
+                 xmlns:rx="clr-namespace:Bonsai.Reactive;assembly=Bonsai.Core"
+                 xmlns:p1="clr-namespace:;assembly=Extensions"
+                 xmlns:harp="clr-namespace:Bonsai.Harp;assembly=Bonsai.Harp"
+                 xmlns="https://bonsai-rx.org/2018/workflow">
+  <Workflow>
+    <Nodes>
+      <Expression xsi:type="ExternalizedMapping">
+        <Property Name="FileName" DisplayName="VideoFile" />
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="aeon:VideoFileCapture">
+          <aeon:FileName>Z:\aeon\data\raw\AEON4\social0.3\2024-06-08T18-27-09\CameraTop\CameraTop_2024-06-11T08-00-00.avi</aeon:FileName>
+        </Combinator>
+      </Expression>
+      <Expression xsi:type="MemberSelector">
+        <Selector>Value.Image</Selector>
+      </Expression>
+      <Expression xsi:type="ExternalizedMapping">
+        <Property Name="ModelFileName" DisplayName="PoseModelFile" />
+        <Property Name="TrainingConfig" DisplayName="PoseTrainingConfig" />
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="sleap:PredictPoses">
+          <sleap:ModelFileName>aeon4_social03_exported_models\full_pose\frozen_graph.pb</sleap:ModelFileName>
+          <sleap:TrainingConfig>aeon4_social03_exported_models\full_pose\confmap_config.json</sleap:TrainingConfig>
+          <sleap:CentroidMinConfidence xsi:nil="true" />
+          <sleap:PartMinConfidence xsi:nil="true" />
+          <sleap:ScaleFactor xsi:nil="true" />
+          <sleap:ColorConversion xsi:nil="true" />
+        </Combinator>
+      </Expression>
+      <Expression xsi:type="ExternalizedMapping">
+        <Property Name="Value" DisplayName="Id" />
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="rx:Timer">
+          <rx:DueTime>PT0S</rx:DueTime>
+          <rx:Period>PT0.02S</rx:Period>
+        </Combinator>
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="StringProperty">
+          <Value>coolMouse</Value>
+        </Combinator>
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="rx:Zip" />
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="p1:CombineModelWithFixedId" />
+      </Expression>
+      <Expression xsi:type="MemberSelector">
+        <Selector>Seconds</Selector>
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="rx:Zip" />
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="harp:CreateTimestamped" />
+      </Expression>
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="aeon:FormatPose">
+          <aeon:Address>255</aeon:Address>
+          <aeon:IdentityIndex xsi:nil="true" />
+        </Combinator>
+      </Expression>
+      <Expression xsi:type="ExternalizedMapping">
+        <Property Name="LogName" DisplayName="OutputFile" />
+      </Expression>
+      <Expression xsi:type="IncludeWorkflow" Path="Aeon.Acquisition:LogHarp.bonsai">
+        <Heartbeats xsi:nil="true" />
+        <ClosingDuration xsi:nil="true" />
+        <LogName>fullpose-id-chunkname</LogName>
+      </Expression>
+      <Expression xsi:type="ExternalizedMapping">
+        <Property Name="Path" DisplayName="OutputDir" />
+      </Expression>
+      <Expression xsi:type="IncludeWorkflow" Path="Aeon.Acquisition:LogController.bonsai">
+        <Path>workflow_out</Path>
+        <ChunkSize>1</ChunkSize>
+      </Expression>
+    </Nodes>
+    <Edges>
+      <Edge From="0" To="1" Label="Source1" />
+      <Edge From="1" To="2" Label="Source1" />
+      <Edge From="1" To="10" Label="Source1" />
+      <Edge From="2" To="4" Label="Source1" />
+      <Edge From="3" To="4" Label="Source2" />
+      <Edge From="4" To="8" Label="Source1" />
+      <Edge From="5" To="7" Label="Source1" />
+      <Edge From="6" To="7" Label="Source2" />
+      <Edge From="7" To="8" Label="Source2" />
+      <Edge From="8" To="9" Label="Source1" />
+      <Edge From="9" To="11" Label="Source1" />
+      <Edge From="10" To="11" Label="Source2" />
+      <Edge From="11" To="12" Label="Source1" />
+      <Edge From="12" To="13" Label="Source1" />
+      <Edge From="13" To="15" Label="Source1" />
+      <Edge From="14" To="15" Label="Source2" />
+      <Edge From="16" To="17" Label="Source1" />
+    </Edges>
+  </Workflow>
+</WorkflowBuilder>

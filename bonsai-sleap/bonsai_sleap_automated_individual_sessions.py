@@ -57,6 +57,7 @@ def find_chunks(
 
 def create_slurm_script(
         chunks_to_process: list, 
+        animal_id: str,
         email: str, 
         output_dir: str, 
         job_id: int, 
@@ -98,12 +99,11 @@ echo "Output file: $OUTPUT_FILE"
 
 MONO_OUTPUT=$(mono /ceph/aeon/aeon/code/bonsai-sleap/bonsai2.8.2/Bonsai.exe \\
     --no-editor \\
-    /ceph/aeon/aeon/code/bonsai-sleap/example_workflows/combine_sleap_models/combine_sleap_models_aeon.bonsai \\
+    /ceph/aeon/aeon/code/bonsai-sleap/example_workflows/combine_sleap_models/bonsai_sleap_individual.bonsai \\
     -p:VideoFile=$VIDEO_FILE \\
     -p:OutputDir=$OUTPUT_DIR \\
     -p:OutputFile=$OUTPUT_FILE \\
-    -p:IdModelFile="/ceph/aeon/aeon/code/bonsai-sleap/example_workflows/combine_sleap_models/{acquisition_computer}_{exp_name}_exported_models/id/frozen_graph.pb" \\
-    -p:IdTrainingConfig="/ceph/aeon/aeon/code/bonsai-sleap/example_workflows/combine_sleap_models/{acquisition_computer}_{exp_name}_exported_models/id/confmap_config.json" \\
+    -p:Id="{animal_id}" \\
     -p:PoseModelFile="/ceph/aeon/aeon/code/bonsai-sleap/example_workflows/combine_sleap_models/{acquisition_computer}_{exp_name}_exported_models/full_pose/frozen_graph.pb" \\
     -p:PoseTrainingConfig="/ceph/aeon/aeon/code/bonsai-sleap/example_workflows/combine_sleap_models/{acquisition_computer}_{exp_name}_exported_models/full_pose/confmap_config.json" \\
     2>&1)
@@ -157,6 +157,12 @@ def main():
         type=str
     )
     parser.add_argument(
+        "--animal_id",
+        help="ID of the animal to track",
+        required=True,
+        type=str
+    )
+    parser.add_argument(
         "--job_id",
         help="Job ID, to be specified if you want it to match a set of already processed files",
         required=False,
@@ -182,6 +188,7 @@ def main():
     # DEFINE VARIABLES
     start = pd.Timestamp(args["start"])
     end = pd.Timestamp(args["end"])
+    animal_id = args["animal_id"]
     if args["job_id"] is not None:
         job_id = args["job_id"]
     else:
@@ -217,17 +224,19 @@ def main():
         print(f"Creating full pose ID config file: {pose_id_config_dir}")
         os.makedirs(pose_id_config_dir)
         pose_config_path = f"/ceph/aeon/aeon/code/bonsai-sleap/example_workflows/combine_sleap_models/{acquisition_computer}_{exp_name}_exported_models/full_pose/confmap_config.json"
-        id_config_path = f"/ceph/aeon/aeon/code/bonsai-sleap/example_workflows/combine_sleap_models/{acquisition_computer}_{exp_name}_exported_models/id/confmap_config.json"
-        shutil.copy(id_config_path, pose_id_config_dir)
-        with open(pose_config_path) as f:
-            pose_data = json.load(f)
+        shutil.copy(pose_config_path, pose_id_config_dir)
         with open(f'{pose_id_config_dir}/confmap_config.json') as f:
-            combined_data = json.load(f)
-        combined_data['model']['heads']['multi_class_topdown']['confmaps']['part_names'] = pose_data['model']['heads']['centered_instance']['part_names']
+            pose_id_data = json.load(f)
+        pose_id_data['model']['heads']['multi_class_topdown'] = {"confmaps": pose_id_data['model']['heads']['centered_instance'], "class_vectors": {"classes": [animal_id]}}
+        pose_id_data['model']['heads']['centered_instance'] = None
         with open(f'{pose_id_config_dir}/confmap_config.json', 'w') as f:
-            json.dump(combined_data, f, indent=4)
+            json.dump(pose_id_data, f, indent=4)
     else:  
         print(f"Full pose ID config file already exists: {pose_id_config_dir}")
+        with open(f'{pose_id_config_dir}/confmap_config.json') as f:
+            pose_id_data = json.load(f)
+        if pose_id_data['model']['heads']['multi_class_topdown']['class_vectors']['classes'] != [animal_id]:
+            raise ValueError(f"The existing config file is either for a different animal, or a multi-animal session. If you specified a job ID and job start time, please ensure it's for the same type of session i.e. {animal_id} only.")
 
     pattern_full_pose_slp_chunks = re.compile(fr"{camera}_202.*_(\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}})_fullpose-id_(\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}})\.bin")
     pattern_video_chunks = re.compile(fr"{camera}_(\d{{4}}-\d{{2}}-\d{{2}}T\d{{2}}-\d{{2}}-\d{{2}})\.avi") 
@@ -254,11 +263,11 @@ def main():
             chunks_to_process_epoch = [chunk for chunk in chunks_to_process if epoch in chunk]
             # If there are chunks to process, run inference
             if len(chunks_to_process_epoch) > 0:
-                print(output_dir)
-                script = create_slurm_script(chunks_to_process_epoch, args["email"], output_dir, job_id, job_start_time, acquisition_computer, exp_name, camera)
-                with open("full_pose_id_inference_bonsai.sh", "w") as f:
+                print("Submitting job for chunks: ", chunks_to_process_epoch)
+                script = create_slurm_script(chunks_to_process_epoch, animal_id, args["email"], output_dir, job_id, job_start_time, acquisition_computer, exp_name, camera)
+                with open("full_pose_id_inference_bonsai_individual_sessions.sh", "w") as f:
                     f.write(script)
-                subprocess.run("sbatch full_pose_id_inference_bonsai.sh", shell=True)
+                subprocess.run("sbatch full_pose_id_inference_bonsai_individual_sessions.sh", shell=True)
         # Exit or sleep for 30 minutes before checking again 
         if pd.Timestamp.now() > end + pd.Timedelta(hours=6):
             print("Exiting.")
