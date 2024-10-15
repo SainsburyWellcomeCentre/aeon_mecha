@@ -294,7 +294,7 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
     return set(epoch_device_types)
 
 
-# region Get stream & device information
+# Get stream & device information
 def get_stream_entries(devices_schema: DotMap) -> list[dict]:
     """Returns a list of dictionaries containing the stream entries for a given device.
 

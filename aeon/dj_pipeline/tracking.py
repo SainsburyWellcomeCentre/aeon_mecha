@@ -7,7 +7,8 @@ import pandas as pd
 
 from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, qc, streams
 from aeon.io import api as io_api
-from aeon.schema import schemas as aeon_schemas
+
+aeon_schemas = acquisition.aeon_schemas
 
 schema = dj.schema(get_schema_name("tracking"))
 

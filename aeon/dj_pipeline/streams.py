@@ -9,7 +9,8 @@ from uuid import UUID
 import aeon
 from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.io import api as io_api
-from aeon.schema import schemas as aeon_schemas
+
+aeon_schemas = acquisition.aeon_schemas
 
 schema = dj.Schema(get_schema_name("streams"))
 
