@@ -20,8 +20,9 @@ class _Encoder(reader.Encoder):
         data = super().read(file)
         data.index = aeon_time(data.index)
         first_index = data.first_valid_index()
+        freq = 1 / sr_hz * 1e3  # convert to ms
         if first_index is not None:
-            data = data.resample(f"{1/sr_hz}s").first()  # take first sample in each resampled bin
+            data = data.resample(f"{freq}ms").first()  # take first sample in each resampled bin
         return data
 
 
@@ -35,7 +36,7 @@ class _Video(reader.Csv):
     def read(self, file):
         """Reads video metadata from the specified file."""
         data = pd.read_csv(file, header=0, names=self._rawcolumns)
-        drop_cols = [c for c in data.columns if c not in self.columns]
+        drop_cols = [c for c in data.columns if c not in self.columns + ["time"]]
         data.drop(columns=drop_cols, errors="ignore", inplace=True)
         data.set_index("time", inplace=True)
         return data
