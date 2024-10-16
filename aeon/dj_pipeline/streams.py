@@ -15,22 +15,21 @@ aeon_schemas = acquisition.aeon_schemas
 schema = dj.Schema(get_schema_name("streams"))
 
 
-@schema
+@schema 
 class StreamType(dj.Lookup):
     """Catalog of all steam types for the different device types used across Project Aeon. One StreamType corresponds to one reader class in `aeon.io.reader`. The combination of `stream_reader` and `stream_reader_kwargs` should fully specify the data loading routine for a particular device, using the `aeon.io.utils`."""
 
     definition = """  # Catalog of all stream types used across Project Aeon
-    stream_type          : varchar(20)
+    stream_type          : varchar(36)
     ---
     stream_reader        : varchar(256)     # name of the reader class found in `aeon_mecha` package (e.g. aeon.io.reader.Video)
     stream_reader_kwargs : longblob  # keyword arguments to instantiate the reader class
     stream_description='': varchar(256)
     stream_hash          : uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
-    unique index (stream_hash)
     """
 
 
-@schema
+@schema 
 class DeviceType(dj.Lookup):
     """Catalog of all device types used across Project Aeon."""
 
@@ -47,7 +46,7 @@ class DeviceType(dj.Lookup):
         """
 
 
-@schema
+@schema 
 class Device(dj.Lookup):
     definition = """  # Physical devices, of a particular type, identified by unique serial number
     device_serial_number: varchar(12)
@@ -56,7 +55,7 @@ class Device(dj.Lookup):
     """
 
 
-@schema
+@schema 
 class RfidReader(dj.Manual):
         definition = f"""
         # rfid_reader placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
@@ -83,7 +82,7 @@ class RfidReader(dj.Manual):
             """
 
 
-@schema
+@schema 
 class SpinnakerVideoSource(dj.Manual):
         definition = f"""
         # spinnaker_video_source placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
@@ -110,7 +109,7 @@ class SpinnakerVideoSource(dj.Manual):
             """
 
 
-@schema
+@schema 
 class UndergroundFeeder(dj.Manual):
         definition = f"""
         # underground_feeder placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
@@ -137,7 +136,7 @@ class UndergroundFeeder(dj.Manual):
             """
 
 
-@schema
+@schema 
 class WeightScale(dj.Manual):
         definition = f"""
         # weight_scale placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
@@ -164,7 +163,7 @@ class WeightScale(dj.Manual):
             """
 
 
-@schema
+@schema 
 class RfidReaderRfidEvents(dj.Imported):
         definition = """  # Raw per-chunk RfidEvents data stream from RfidReader (auto-generated with aeon_mecha-unknown)
     -> RfidReader
@@ -190,7 +189,6 @@ class RfidReaderRfidEvents(dj.Imported):
 
         def make(self, key):
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
-
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (RfidReader & key).fetch1('rfid_reader_name')
@@ -225,7 +223,7 @@ class RfidReaderRfidEvents(dj.Imported):
             )
 
 
-@schema
+@schema 
 class SpinnakerVideoSourceVideo(dj.Imported):
         definition = """  # Raw per-chunk Video data stream from SpinnakerVideoSource (auto-generated with aeon_mecha-unknown)
     -> SpinnakerVideoSource
@@ -233,7 +231,6 @@ class SpinnakerVideoSourceVideo(dj.Imported):
     ---
     sample_count: int      # number of data points acquired from this stream for a given chunk
     timestamps: longblob   # (datetime) timestamps of Video data
-    hw_counter: longblob
     hw_timestamp: longblob
     """
 
@@ -252,7 +249,6 @@ class SpinnakerVideoSourceVideo(dj.Imported):
 
         def make(self, key):
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
-
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (SpinnakerVideoSource & key).fetch1('spinnaker_video_source_name')
@@ -287,7 +283,7 @@ class SpinnakerVideoSourceVideo(dj.Imported):
             )
 
 
-@schema
+@schema 
 class UndergroundFeederBeamBreak(dj.Imported):
         definition = """  # Raw per-chunk BeamBreak data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -313,7 +309,6 @@ class UndergroundFeederBeamBreak(dj.Imported):
 
         def make(self, key):
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
-
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
@@ -348,7 +343,7 @@ class UndergroundFeederBeamBreak(dj.Imported):
             )
 
 
-@schema
+@schema 
 class UndergroundFeederDeliverPellet(dj.Imported):
         definition = """  # Raw per-chunk DeliverPellet data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -374,7 +369,6 @@ class UndergroundFeederDeliverPellet(dj.Imported):
 
         def make(self, key):
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
-
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
@@ -409,7 +403,7 @@ class UndergroundFeederDeliverPellet(dj.Imported):
             )
 
 
-@schema
+@schema 
 class UndergroundFeederDepletionState(dj.Imported):
         definition = """  # Raw per-chunk DepletionState data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -437,7 +431,6 @@ class UndergroundFeederDepletionState(dj.Imported):
 
         def make(self, key):
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
-
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
@@ -472,7 +465,7 @@ class UndergroundFeederDepletionState(dj.Imported):
             )
 
 
-@schema
+@schema 
 class UndergroundFeederEncoder(dj.Imported):
         definition = """  # Raw per-chunk Encoder data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -499,7 +492,6 @@ class UndergroundFeederEncoder(dj.Imported):
 
         def make(self, key):
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
-
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
@@ -534,7 +526,7 @@ class UndergroundFeederEncoder(dj.Imported):
             )
 
 
-@schema
+@schema 
 class UndergroundFeederManualDelivery(dj.Imported):
         definition = """  # Raw per-chunk ManualDelivery data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -560,7 +552,6 @@ class UndergroundFeederManualDelivery(dj.Imported):
 
         def make(self, key):
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
-
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
@@ -595,7 +586,7 @@ class UndergroundFeederManualDelivery(dj.Imported):
             )
 
 
-@schema
+@schema 
 class UndergroundFeederMissedPellet(dj.Imported):
         definition = """  # Raw per-chunk MissedPellet data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -621,7 +612,6 @@ class UndergroundFeederMissedPellet(dj.Imported):
 
         def make(self, key):
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
-
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
@@ -656,7 +646,7 @@ class UndergroundFeederMissedPellet(dj.Imported):
             )
 
 
-@schema
+@schema 
 class UndergroundFeederRetriedDelivery(dj.Imported):
         definition = """  # Raw per-chunk RetriedDelivery data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
     -> UndergroundFeeder
@@ -682,7 +672,6 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
 
         def make(self, key):
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
-
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
@@ -717,7 +706,7 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
             )
 
 
-@schema
+@schema 
 class WeightScaleWeightFiltered(dj.Imported):
         definition = """  # Raw per-chunk WeightFiltered data stream from WeightScale (auto-generated with aeon_mecha-unknown)
     -> WeightScale
@@ -744,7 +733,6 @@ class WeightScaleWeightFiltered(dj.Imported):
 
         def make(self, key):
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
-
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (WeightScale & key).fetch1('weight_scale_name')
@@ -779,7 +767,7 @@ class WeightScaleWeightFiltered(dj.Imported):
             )
 
 
-@schema
+@schema 
 class WeightScaleWeightRaw(dj.Imported):
         definition = """  # Raw per-chunk WeightRaw data stream from WeightScale (auto-generated with aeon_mecha-unknown)
     -> WeightScale
@@ -806,7 +794,6 @@ class WeightScaleWeightRaw(dj.Imported):
 
         def make(self, key):
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
-
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (WeightScale & key).fetch1('weight_scale_name')
@@ -839,3 +826,5 @@ class WeightScaleWeightRaw(dj.Imported):
                 },
                 ignore_extra_fields=True,
             )
+
+

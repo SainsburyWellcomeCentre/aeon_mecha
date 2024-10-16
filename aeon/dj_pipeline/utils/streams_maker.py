@@ -25,13 +25,12 @@ class StreamType(dj.Lookup):
     """Catalog of all steam types for the different device types used across Project Aeon. One StreamType corresponds to one reader class in `aeon.io.reader`. The combination of `stream_reader` and `stream_reader_kwargs` should fully specify the data loading routine for a particular device, using the `aeon.io.utils`."""
 
     definition = """  # Catalog of all stream types used across Project Aeon
-    stream_type          : varchar(20)
+    stream_type          : varchar(36)
     ---
     stream_reader        : varchar(256)     # name of the reader class found in `aeon_mecha` package (e.g. aeon.io.reader.Video)
     stream_reader_kwargs : longblob  # keyword arguments to instantiate the reader class
     stream_description='': varchar(256)
     stream_hash          : uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
-    unique index (stream_hash)
     """
 
 
