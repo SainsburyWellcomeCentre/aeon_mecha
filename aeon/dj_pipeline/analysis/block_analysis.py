@@ -53,6 +53,8 @@ class BlockDetection(dj.Computed):
     -> acquisition.Environment
     """
 
+    key_source = acquisition.Environment - {"experiment_name": "social0.1-aeon3"}
+
     def make(self, key):
         """On a per-chunk basis, check for the presence of new block, insert into Block table.
 
@@ -1521,10 +1523,10 @@ class BlockForaging(dj.Computed):
         foraging_bout_df = get_foraging_bouts(key)
         foraging_bout_df.rename(
             columns={
-                "subject_name": "subject",
-                "bout_start": "start",
-                "bout_end": "end",
-                "pellet_count": "n_pellets",
+                "subject": "subject_name",
+                "start": "bout_start",
+                "end": "bout_end",
+                "n_pellets": "pellet_count",
                 "cum_wheel_dist": "cum_wheel_dist",
             },
             inplace=True,
