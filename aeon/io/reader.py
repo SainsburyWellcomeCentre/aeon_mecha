@@ -75,9 +75,12 @@ class Harp(Reader):
         if self.columns is not None and payloadshape[1] < len(self.columns):
             data = pd.DataFrame(payload, index=seconds, columns=self.columns[: payloadshape[1]])
             data[self.columns[payloadshape[1] :]] = math.nan
-            return data
         else:
-            return pd.DataFrame(payload, index=seconds, columns=self.columns)
+            data = pd.DataFrame(payload, index=seconds, columns=self.columns)
+
+        # remove rows where the index is zero (why? corrupted data in harp files?)
+        data = data[data.index != 0]
+        return data
 
 
 class Chunk(Reader):
