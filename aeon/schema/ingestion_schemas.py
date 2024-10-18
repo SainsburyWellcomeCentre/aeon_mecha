@@ -6,7 +6,7 @@ from dotmap import DotMap
 
 import aeon.schema.core as stream
 from aeon.io import reader
-from aeon.io.api import aeon as aeon_time
+from aeon.io.api import aeon as aeon_time, chunk as aeon_chunk
 from aeon.schema import foraging, octagon, social_01, social_02, social_03
 from aeon.schema.streams import Device, Stream, StreamGroup
 
@@ -15,6 +15,9 @@ from aeon.schema.streams import Device, Stream, StreamGroup
 class _Encoder(reader.Encoder):
     """A version of the encoder reader that can downsample the data."""
 
+    def __init__(self, pattern):
+        super().__init__(pattern)
+
     def read(self, file: PathLike[str], sr_hz: int = 50) -> pd.DataFrame:
         """Reads encoder data from the specified Harp binary file."""
         data = super().read(file)
@@ -22,7 +25,8 @@ class _Encoder(reader.Encoder):
         first_index = data.first_valid_index()
         freq = 1 / sr_hz * 1e3  # convert to ms
         if first_index is not None:
-            data = data.resample(f"{freq}ms").first()  # take first sample in each resampled bin
+            chunk_origin = aeon_chunk(first_index)
+            data = data.resample(f"{freq}ms", origin=chunk_origin).first()  # take first sample in each resampled bin
         return data
 
 
