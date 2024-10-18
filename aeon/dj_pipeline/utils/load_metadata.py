@@ -4,7 +4,6 @@ import json
 import pathlib
 from collections import defaultdict
 from pathlib import Path
-
 import datajoint as dj
 import numpy as np
 from dotmap import DotMap
@@ -16,31 +15,29 @@ from aeon.io import api as io_api
 logger = dj.logger
 _weight_scale_rate = 100
 _weight_scale_nest = 1
-_aeon_schemas = ["social01", "social02"]
 
 
 def insert_stream_types():
     """Insert into streams.streamType table all streams in the aeon schemas."""
-    from aeon.schema import schemas as aeon_schemas
+    from aeon.schema import ingestion_schemas as aeon_schemas
 
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
-    schemas = [getattr(aeon_schemas, aeon_schema) for aeon_schema in _aeon_schemas]
-    for schema in schemas:
-        stream_entries = get_stream_entries(schema)
+    for devices_schema_name in aeon_schemas.__all__:
+        devices_schema = getattr(aeon_schemas, devices_schema_name)
+        stream_entries = get_stream_entries(devices_schema)
 
         for entry in stream_entries:
-            q_param = streams.StreamType & {"stream_hash": entry["stream_hash"]}
-            if q_param:  # If the specified stream type already exists
-                pname = q_param.fetch1("stream_type")
-                if pname == entry["stream_type"]:
-                    continue
-                else:
-                    # If the existed stream type does not have the same name:
-                    # human error, trying to add the same content with different name
-                    raise dj.DataJointError(f"The specified stream type already exists - name: {pname}")
-            else:
+            try:
                 streams.StreamType.insert1(entry)
+                logger.info(f"New stream type created: {entry['stream_type']}")
+            except dj.errors.DuplicateError:
+                existing_stream = (streams.StreamType.proj(
+                    "stream_reader", "stream_reader_kwargs")
+                                   & {"stream_type": entry["stream_type"]}).fetch1()
+                if existing_stream["stream_reader_kwargs"].get("columns") != entry["stream_reader_kwargs"].get(
+                        "columns"):
+                    logger.warning(f"Stream type already exists:\n\t{entry}\n\t{existing_stream}")
 
 
 def insert_device_types(devices_schema: DotMap, metadata_yml_filepath: Path):
@@ -294,7 +291,7 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
     return set(epoch_device_types)
 
 
-# region Get stream & device information
+# Get stream & device information
 def get_stream_entries(devices_schema: DotMap) -> list[dict]:
     """Returns a list of dictionaries containing the stream entries for a given device.
 
@@ -366,31 +363,25 @@ def get_device_info(devices_schema: DotMap) -> dict[dict]:
 
         if isinstance(device, DotMap):
             for stream_type, stream_obj in device.items():
-                if stream_obj.__class__.__module__ in [
-                    "aeon.io.reader",
-                    "aeon.schema.foraging",
-                    "aeon.schema.octagon",
-                    "aeon.schema.social",
-                ]:
-                    device_info[device_name]["stream_type"].append(stream_type)
-                    device_info[device_name]["stream_reader"].append(_get_class_path(stream_obj))
+                device_info[device_name]["stream_type"].append(stream_type)
+                device_info[device_name]["stream_reader"].append(_get_class_path(stream_obj))
 
-                    required_args = [
-                        k for k in inspect.signature(stream_obj.__init__).parameters if k != "self"
-                    ]
-                    pattern = schema_dict[device_name][stream_type].get("pattern")
-                    schema_dict[device_name][stream_type]["pattern"] = pattern.replace(
-                        device_name, "{pattern}"
-                    )
+                required_args = [
+                    k for k in inspect.signature(stream_obj.__init__).parameters if k != "self"
+                ]
+                pattern = schema_dict[device_name][stream_type].get("pattern")
+                schema_dict[device_name][stream_type]["pattern"] = pattern.replace(
+                    device_name, "{pattern}"
+                )
 
-                    kwargs = {
-                        k: v for k, v in schema_dict[device_name][stream_type].items() if k in required_args
-                    }
-                    device_info[device_name]["stream_reader_kwargs"].append(kwargs)
-                    # Add hash
-                    device_info[device_name]["stream_hash"].append(
-                        dict_to_uuid({**kwargs, "stream_reader": _get_class_path(stream_obj)})
-                    )
+                kwargs = {
+                    k: v for k, v in schema_dict[device_name][stream_type].items() if k in required_args
+                }
+                device_info[device_name]["stream_reader_kwargs"].append(kwargs)
+                # Add hash
+                device_info[device_name]["stream_hash"].append(
+                    dict_to_uuid({**kwargs, "stream_reader": _get_class_path(stream_obj)})
+                )
         else:
             stream_type = device.__class__.__name__
             device_info[device_name]["stream_type"].append(stream_type)
@@ -501,6 +492,3 @@ def ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath):
         experiment_table = getattr(streams, f"Experiment{device_type}")
         if not (experiment_table & {"experiment_name": experiment_name, "device_serial_number": device_sn}):
             experiment_table.insert1((experiment_name, device_sn, epoch_start, device_name))
-
-
-# endregion

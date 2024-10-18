@@ -12,7 +12,7 @@ from aeon.dj_pipeline import get_schema_name, lab, subject
 from aeon.dj_pipeline.utils import paths
 from aeon.io import api as io_api
 from aeon.io import reader as io_reader
-from aeon.schema import schemas as aeon_schemas
+from aeon.schema import ingestion_schemas as aeon_schemas
 
 logger = dj.logger
 schema = dj.schema(get_schema_name("acquisition"))

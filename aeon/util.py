@@ -14,7 +14,7 @@ def find_nested_key(obj: dict | list, key: str) -> Any:
             found = find_nested_key(v, key)
             if found:
                 return found
-    elif isinstance(obj, list):
+    elif obj is not None:
         for item in obj:
             found = find_nested_key(item, key)
             if found:
