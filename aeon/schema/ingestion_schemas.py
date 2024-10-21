@@ -157,7 +157,7 @@ social02 = DotMap(
     [
         Device("Metadata", stream.Metadata),
         Device("Environment", social_02.Environment, social_02.SubjectData),
-        Device("CameraTop", Video, social_02.Pose),
+        Device("CameraTop", Video, social_02.Pose, social_02.Pose03),
         Device("CameraNorth", Video),
         Device("CameraSouth", Video),
         Device("CameraEast", Video),
