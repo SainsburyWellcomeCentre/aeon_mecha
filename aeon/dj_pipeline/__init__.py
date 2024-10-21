@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import os
 import uuid
 
@@ -30,11 +31,17 @@ def dict_to_uuid(key) -> uuid.UUID:
     return uuid.UUID(hex=hashed.hexdigest())
 
 
-def fetch_stream(query, drop_pk=True):
+def fetch_stream(query, drop_pk=True, round_microseconds=True):
     """Fetches data from a Stream table based on a query and returns it as a DataFrame.
 
     Provided a query containing data from a Stream table,
     fetch and aggregate the data into one DataFrame indexed by "time"
+
+    Args:
+        query (datajoint.Query): A query object containing data from a Stream table
+        drop_pk (bool, optional): Drop primary key columns. Defaults to True.
+        round_microseconds (bool, optional): Round timestamps to microseconds. Defaults to False.
+            (this is important as timestamps in mysql is only accurate to microseconds)
     """
     df = (query & "sample_count > 0").fetch(format="frame").reset_index()
     cols2explode = [
@@ -47,6 +54,10 @@ def fetch_stream(query, drop_pk=True):
     df.set_index("time", inplace=True)
     df.sort_index(inplace=True)
     df = df.convert_dtypes(convert_string=False, convert_integer=False, convert_boolean=False, convert_floating=False)
+    if not df.empty and round_microseconds:
+        logging.warning("Rounding timestamps to microseconds is now enabled by default."
+                        " To disable, set round_microseconds=False.")
+        df.index = df.index.round("us")
     return df
 
 
