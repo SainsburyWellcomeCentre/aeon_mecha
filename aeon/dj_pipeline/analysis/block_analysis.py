@@ -528,7 +528,7 @@ class BlockSubjectAnalysis(dj.Computed):
                 all_subj_patch_pref_dict[patch["patch_name"]][subject_name]["cum_dist"] = (
                     cum_wheel_dist_subj_df[subject_name].values
                 )
-                subject_in_patch = in_patch[subject_name]
+                subject_in_patch = dist_to_patch_wheel_ts_id_df[in_patch[subject_name]]
                 subject_in_patch_cum_time = subject_in_patch.cumsum().values * dt
                 all_subj_patch_pref_dict[patch["patch_name"]][subject_name]["cum_time"] = (
                     subject_in_patch_cum_time
