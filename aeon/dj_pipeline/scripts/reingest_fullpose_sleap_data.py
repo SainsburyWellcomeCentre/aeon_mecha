@@ -4,7 +4,7 @@ from aeon.dj_pipeline import acquisition, tracking
 aeon_schemas = acquisition.aeon_schemas
 
 
-exp_key = {"experiment_name": "social0.2-aeon4"}
+exp_key = {"experiment_name": "social0.3-aeon3"}
 
 
 def find_chunks_to_reingest(exp_key, delete_not_fullpose=False):
@@ -45,8 +45,9 @@ def find_chunks_to_reingest(exp_key, delete_not_fullpose=False):
         else:
             fullpose.append(key)
 
+    print(f"Fullpose: {len(fullpose)}\nNot fullpose: {len(not_fullpose)}")
+
     if delete_not_fullpose:
         (tracking.SLEAPTracking & not_fullpose).delete()
 
     return fullpose, not_fullpose
-
