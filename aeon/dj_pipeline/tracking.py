@@ -163,7 +163,15 @@ class SLEAPTracking(dj.Imported):
                 "devices_schema_name"
             ),
         )
-        stream_reader = getattr(devices_schema, device_name).Pose
+
+        stream_reader = getattr(getattr(devices_schema, device_name), "Pose")
+
+        # special ingestion case for social0.2 full-pose data (using Pose reader from social03)
+        if key["experiment_name"].startswith("social0.2"):
+            from aeon.io import reader as io_reader
+            stream_reader = getattr(getattr(devices_schema, device_name), "Pose03")
+            assert isinstance(stream_reader, io_reader.Pose), "Pose03 is not a Pose reader"
+            data_dirs = [acquisition.Experiment.get_data_directory(key, "processed")]
 
         pose_data = io_api.load(
             root=data_dirs,
@@ -187,6 +195,9 @@ class SLEAPTracking(dj.Imported):
                 continue
 
             # get anchor part - always the first one of all the body parts
+            # FIXME: the logic below to get "anchor_part" is not robust, it relies on the ordering of the unique parts
+            #  but if there are missing frames for the actual anchor part, it will be missed
+            #  and another part will be incorrectly chosen as "anchor_part"
             anchor_part = np.unique(identity_position.part)[0]
 
             for part in set(identity_position.part.values):

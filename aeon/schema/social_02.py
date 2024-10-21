@@ -48,6 +48,12 @@ class Pose(Stream):
         super().__init__(_reader.Pose(f"{path}_test-node1*"))
 
 
+class Pose03(Stream):
+
+    def __init__(self, path):
+        super().__init__(_reader.Pose(f"{path}_202_*"))
+
+
 class WeightRaw(Stream):
     def __init__(self, path):
         super().__init__(_reader.Harp(f"{path}_200_*", ["weight(g)", "stability"]))
