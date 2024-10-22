@@ -646,10 +646,14 @@ def _match_experiment_directory(experiment_name, path, directories):
 
 def create_chunk_restriction(experiment_name, start_time, end_time):
     """Create a time restriction string for the chunks between the specified "start" and "end" times."""
+    exp_key = {"experiment_name": experiment_name}
     start_restriction = f'"{start_time}" BETWEEN chunk_start AND chunk_end'
     end_restriction = f'"{end_time}" BETWEEN chunk_start AND chunk_end'
-    start_query = Chunk & {"experiment_name": experiment_name} & start_restriction
-    end_query = Chunk & {"experiment_name": experiment_name} & end_restriction
+    start_query = Chunk & exp_key & start_restriction
+    end_query = Chunk & exp_key & end_restriction
+    if not end_query:
+        # No chunk contains the end time, so we need to find the last chunk that starts before the end time
+        end_query = Chunk & exp_key & f'chunk_end BETWEEN "{start_time}" AND "{end_time}"'
     if not (start_query and end_query):
         raise ValueError(f"No Chunk found between {start_time} and {end_time}")
     time_restriction = (

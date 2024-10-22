@@ -90,8 +90,7 @@ class BlockDetection(dj.Computed):
         blocks_df = block_state_df[block_state_df.pellet_ct == 0]
         # account for the double 0s - find any 0s that are within 1 second of each other, remove the 2nd one
         double_0s = blocks_df.index.to_series().diff().dt.total_seconds() < 1
-        # find the indices of the 2nd 0s and remove
-        double_0s = double_0s.shift(-1).fillna(False)
+        # keep the first 0s
         blocks_df = blocks_df[~double_0s]
 
         block_entries = []
