@@ -5,7 +5,7 @@ import matplotlib.path
 import numpy as np
 import pandas as pd
 
-from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, qc, streams
+from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, qc, streams, fetch_stream
 from aeon.io import api as io_api
 
 aeon_schemas = acquisition.aeon_schemas
@@ -232,6 +232,121 @@ class SLEAPTracking(dj.Imported):
         self.insert1(key)
         self.PoseIdentity.insert(pose_identity_entries)
         self.Part.insert(part_entries)
+
+
+# ---------- Blob Position Tracking ------------------
+
+
+@schema
+class BlobPosition(dj.Imported):
+    definition = """  # Blob object position tracking from a particular camera, for a particular chunk
+    -> acquisition.Chunk
+    -> streams.SpinnakerVideoSource
+    ---
+    object_count: int  # number of objects tracked in this chunk
+    subject_count: int  # number of subjects present in the arena during this chunk
+    subject_names: varchar(256)  # names of subjects present in arena during this chunk
+    """
+
+    class Object(dj.Part):
+        definition = """  # Position data of object tracked by a particular camera tracking
+        -> master
+        object_id: int    # object with id = -1 means "unknown/not sure", could potentially be the same object as those with other id value
+        ---
+        identity_name='': varchar(16)
+        sample_count:  int       # number of data points acquired from this stream for a given chunk
+        x:             longblob  # (px) object's x-position, in the arena's coordinate frame
+        y:             longblob  # (px) object's y-position, in the arena's coordinate frame
+        timestamps:    longblob  # (datetime) timestamps of the position data
+        area=null:     longblob  # (px^2) object's size detected in the camera
+        """
+
+    @property
+    def key_source(self):
+        ks = (
+            acquisition.Chunk
+            * (
+                streams.SpinnakerVideoSource.join(streams.SpinnakerVideoSource.RemovalTime, left=True)
+                & "spinnaker_video_source_name='CameraTop'"
+            )
+            & "chunk_start >= spinnaker_video_source_install_time"
+            & 'chunk_start < IFNULL(spinnaker_video_source_removal_time, "2200-01-01")'
+        )
+        return ks - SLEAPTracking  # do this only when SLEAPTracking is not available
+
+    def make(self, key):
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+
+        data_dirs = acquisition.Experiment.get_data_directories(key)
+
+        device_name = (streams.SpinnakerVideoSource & key).fetch1("spinnaker_video_source_name")
+
+        devices_schema = getattr(
+            aeon_schemas,
+            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
+        )
+
+        stream_reader = devices_schema.CameraTop.Position
+
+        positiondata = io_api.load(
+            root=data_dirs,
+            reader=stream_reader,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end),
+        )
+
+        if not len(positiondata):
+            raise ValueError(f"No Blob position data found for {key['experiment_name']} - {device_name}")
+
+        # replace id=NaN with -1
+        positiondata.fillna({"id": -1}, inplace=True)
+        positiondata["identity_name"] = ""
+
+        # Find animal(s) in the arena during the chunk
+        # Get all unique subjects that visited the environment over the entire exp;
+        # For each subject, see 'type' of visit most recent to start of block
+        # If "Exit", this animal was not in the block.
+        subject_visits_df = fetch_stream(
+            acquisition.Environment.SubjectVisits
+            & {"experiment_name": key["experiment_name"]}
+            & f'chunk_start <= "{chunk_start}"'
+        )[:chunk_end]
+        subject_visits_df = subject_visits_df[subject_visits_df.region == "Environment"]
+        subject_visits_df = subject_visits_df[~subject_visits_df.id.str.contains("Test", case=False)]
+        subject_names = []
+        for subject_name in set(subject_visits_df.id):
+            _df = subject_visits_df[subject_visits_df.id == subject_name]
+            if _df.type.iloc[-1] != "Exit":
+                subject_names.append(subject_name)
+
+        if len(subject_names) == 1:
+            # if there is only one known subject, replace all object ids with the subject name
+            positiondata["id"] = [0] * len(positiondata)
+            positiondata["identity_name"] = subject_names[0]
+
+        object_positions = []
+        for obj_id in set(positiondata.id.values):
+            obj_position = positiondata[positiondata.id == obj_id]
+
+            object_positions.append(
+                {
+                    **key,
+                    "object_id": obj_id,
+                    "identity_name": obj_position.identity_name.values[0],
+                    "sample_count": len(obj_position.index.values),
+                    "timestamps": obj_position.index.values,
+                    "x": obj_position.x.values,
+                    "y": obj_position.y.values,
+                    "area": obj_position.area.values,
+                }
+            )
+
+        self.insert1({**key, "object_count": len(object_positions),
+                      "subject_count": len(subject_names),
+                      "subject_names": ",".join(subject_names)})
+        self.Object.insert(object_positions)
 
 
 # ---------- HELPER ------------------

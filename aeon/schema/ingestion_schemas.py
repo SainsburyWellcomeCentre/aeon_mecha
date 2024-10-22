@@ -130,7 +130,7 @@ social01 = DotMap(
     [
         Device("Metadata", stream.Metadata),
         Device("Environment", social_02.Environment, social_02.SubjectData),
-        Device("CameraTop", Video, social_01.Pose),
+        Device("CameraTop", Video, stream.Position, social_01.Pose),
         Device("CameraNorth", Video),
         Device("CameraSouth", Video),
         Device("CameraEast", Video),
@@ -157,7 +157,7 @@ social02 = DotMap(
     [
         Device("Metadata", stream.Metadata),
         Device("Environment", social_02.Environment, social_02.SubjectData),
-        Device("CameraTop", Video, social_02.Pose, social_02.Pose03),
+        Device("CameraTop", Video, stream.Position, social_02.Pose, social_02.Pose03),
         Device("CameraNorth", Video),
         Device("CameraSouth", Video),
         Device("CameraEast", Video),
@@ -184,7 +184,7 @@ social03 = DotMap(
     [
         Device("Metadata", stream.Metadata),
         Device("Environment", social_02.Environment, social_02.SubjectData),
-        Device("CameraTop", Video, social_03.Pose),
+        Device("CameraTop", Video, stream.Position, social_03.Pose),
         Device("CameraNorth", Video),
         Device("CameraSouth", Video),
         Device("CameraEast", Video),
@@ -215,7 +215,7 @@ social04 = DotMap(
     [
         Device("Metadata", stream.Metadata),
         Device("Environment", social_02.Environment, social_02.SubjectData, social_03.EnvironmentActiveConfiguration),
-        Device("CameraTop", Video, social_03.Pose),
+        Device("CameraTop", Video, stream.Position, social_03.Pose),
         Device("CameraNorth", Video),
         Device("CameraSouth", Video),
         Device("CameraEast", Video),
