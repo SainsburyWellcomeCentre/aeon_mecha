@@ -146,8 +146,8 @@ class BlockAnalysis(dj.Computed):
         wheel_timestamps: longblob
         patch_threshold: longblob
         patch_threshold_timestamps: longblob
-        patch_rate: float
-        patch_offset: float
+        patch_rate=null: float
+        patch_offset=null: float
         """
 
     class Subject(dj.Part):
@@ -183,7 +183,6 @@ class BlockAnalysis(dj.Computed):
             streams.UndergroundFeederDepletionState,
             streams.UndergroundFeederDeliverPellet,
             streams.UndergroundFeederEncoder,
-            tracking.SLEAPTracking,
         )
         for streams_table in streams_tables:
             if len(streams_table & chunk_keys) < len(streams_table.key_source & chunk_keys):
@@ -191,9 +190,20 @@ class BlockAnalysis(dj.Computed):
                     f"BlockAnalysis Not Ready - {streams_table.__name__} not yet fully ingested for block: {key}. Skipping (to retry later)..."
                 )
 
+        # Check if SLEAPTracking is ready, if not, see if BlobPosition can be used instead
+        use_blob_position = False
+        if len(tracking.SLEAPTracking & chunk_keys) < len(tracking.SLEAPTracking.key_source & chunk_keys):
+            if len(tracking.BlobPosition & chunk_keys) < len(tracking.BlobPosition.key_source & chunk_keys):
+                raise ValueError(
+                    f"BlockAnalysis Not Ready - SLEAPTracking (and BlobPosition) not yet fully ingested for block: {key}. Skipping (to retry later)..."
+                )
+            else:
+                use_blob_position = True
+
         # Patch data - TriggerPellet, DepletionState, Encoder (distancetravelled)
         # For wheel data, downsample to 10Hz
-        final_encoder_fs = 10
+        final_encoder_hz = 10
+        freq = 1 / final_encoder_hz * 1e3  # in ms
 
         maintenance_period = get_maintenance_periods(key["experiment_name"], block_start, block_end)
 
@@ -235,30 +245,35 @@ class BlockAnalysis(dj.Computed):
                 encoder_df, maintenance_period, block_end, dropna=True
             )
 
-            if depletion_state_df.empty:
-                raise ValueError(f"No depletion state data found for block {key} - patch: {patch_name}")
+            # if all dataframes are empty, skip
+            if pellet_ts_threshold_df.empty and depletion_state_df.empty and encoder_df.empty:
+                continue
 
-            encoder_df["distance_travelled"] = -1 * analysis_utils.distancetravelled(encoder_df.angle)
+            if encoder_df.empty:
+                encoder_df["distance_travelled"] = 0
+            else:
+                encoder_df["distance_travelled"] = -1 * analysis_utils.distancetravelled(encoder_df.angle)
+                encoder_df = encoder_df.resample(f"{freq}ms").first()
 
-            if len(depletion_state_df.rate.unique()) > 1:
-                # multiple patch rates per block is unexpected, log a note and pick the first rate to move forward
-                AnalysisNote.insert1(
-                    {
-                        "note_timestamp": datetime.utcnow(),
-                        "note_type": "Multiple patch rates",
-                        "note": f"Found multiple patch rates for block {key} - patch: {patch_name} - rates: {depletion_state_df.rate.unique()}",
-                    }
-                )
+            if not depletion_state_df.empty:
+                if len(depletion_state_df.rate.unique()) > 1:
+                    # multiple patch rates per block is unexpected, log a note and pick the first rate to move forward
+                    AnalysisNote.insert1(
+                        {
+                            "note_timestamp": datetime.utcnow(),
+                            "note_type": "Multiple patch rates",
+                            "note": f"Found multiple patch rates for block {key} - patch: {patch_name} - rates: {depletion_state_df.rate.unique()}",
+                        }
+                    )
 
-            patch_rate = depletion_state_df.rate.iloc[0]
-            patch_offset = depletion_state_df.offset.iloc[0]
-            # handles patch rate value being INF
-            patch_rate = 999999999 if np.isinf(patch_rate) else patch_rate
-
-            encoder_fs = (
-                1 / encoder_df.index.to_series().diff().dt.total_seconds().median()
-            )  # mean or median?
-            wheel_downsampling_factor = int(encoder_fs / final_encoder_fs)
+                patch_rate = depletion_state_df.rate.iloc[0]
+                patch_offset = depletion_state_df.offset.iloc[0]
+                # handles patch rate value being INF
+                patch_rate = 999999999 if np.isinf(patch_rate) else patch_rate
+            else:
+                logger.warning(f"No depletion state data found for block {key} - patch: {patch_name}")
+                patch_rate = None
+                patch_offset = None
 
             block_patch_entries.append(
                 {
@@ -266,19 +281,14 @@ class BlockAnalysis(dj.Computed):
                     "patch_name": patch_name,
                     "pellet_count": len(pellet_ts_threshold_df),
                     "pellet_timestamps": pellet_ts_threshold_df.pellet_timestamp.values,
-                    "wheel_cumsum_distance_travelled": encoder_df.distance_travelled.values[
-                        ::wheel_downsampling_factor
-                    ],
-                    "wheel_timestamps": encoder_df.index.values[::wheel_downsampling_factor],
+                    "wheel_cumsum_distance_travelled": encoder_df.distance_travelled.values,
+                    "wheel_timestamps": encoder_df.index.values,
                     "patch_threshold": pellet_ts_threshold_df.threshold.values,
                     "patch_threshold_timestamps": pellet_ts_threshold_df.index.values,
                     "patch_rate": patch_rate,
                     "patch_offset": patch_offset,
                 }
             )
-
-            # update block_end if last timestamp of encoder_df is before the current block_end
-            block_end = min(encoder_df.index[-1], block_end)
 
         # Subject data
         # Get all unique subjects that visited the environment over the entire exp;
@@ -290,27 +300,50 @@ class BlockAnalysis(dj.Computed):
             & f'chunk_start <= "{chunk_keys[-1]["chunk_start"]}"'
         )[:block_start]
         subject_visits_df = subject_visits_df[subject_visits_df.region == "Environment"]
+        subject_visits_df = subject_visits_df[~subject_visits_df.id.str.contains("Test", case=False)]
         subject_names = []
         for subject_name in set(subject_visits_df.id):
             _df = subject_visits_df[subject_visits_df.id == subject_name]
             if _df.type.iloc[-1] != "Exit":
                 subject_names.append(subject_name)
 
+        if use_blob_position and len(subject_names) > 1:
+            raise ValueError(
+                f"Without SLEAPTracking, BlobPosition can only handle single-subject block. Found {len(subject_names)} subjects."
+            )
+
         block_subject_entries = []
         for subject_name in subject_names:
             # positions - query for CameraTop, identity_name matches subject_name,
-            pos_query = (
-                streams.SpinnakerVideoSource
-                * tracking.SLEAPTracking.PoseIdentity.proj("identity_name", part_name="anchor_part")
-                * tracking.SLEAPTracking.Part
-                & key
-                & {
-                    "spinnaker_video_source_name": "CameraTop",
-                    "identity_name": subject_name,
-                }
-                & chunk_restriction
-            )
-            pos_df = fetch_stream(pos_query)[block_start:block_end]
+            if use_blob_position:
+                pos_query = (
+                    streams.SpinnakerVideoSource
+                    * tracking.BlobPosition.Object
+                    & key
+                    & chunk_restriction
+                    & {
+                        "spinnaker_video_source_name": "CameraTop",
+                        "identity_name": subject_name
+                    }
+                )
+                pos_df = fetch_stream(pos_query)[block_start:block_end]
+                pos_df["likelihood"] = np.nan
+                # keep only rows with area between 0 and 1000
+                pos_df = pos_df[(pos_df.area > 0) & (pos_df.area < 1000)]
+            else:
+                pos_query = (
+                    streams.SpinnakerVideoSource
+                    * tracking.SLEAPTracking.PoseIdentity.proj("identity_name", part_name="anchor_part")
+                    * tracking.SLEAPTracking.Part
+                    & key
+                    & {
+                        "spinnaker_video_source_name": "CameraTop",
+                        "identity_name": subject_name,
+                    }
+                    & chunk_restriction
+                )
+                pos_df = fetch_stream(pos_query)[block_start:block_end]
+
             pos_df = filter_out_maintenance_periods(pos_df, maintenance_period, block_end)
 
             if pos_df.empty:
@@ -347,8 +380,8 @@ class BlockAnalysis(dj.Computed):
             {
                 **key,
                 "block_duration": (block_end - block_start).total_seconds() / 3600,
-                "patch_count": len(patch_keys),
-                "subject_count": len(subject_names),
+                "patch_count": len(block_patch_entries),
+                "subject_count": len(block_subject_entries),
             }
         )
         self.Patch.insert(block_patch_entries)
