@@ -2,12 +2,17 @@ from datetime import datetime
 from aeon.dj_pipeline import acquisition, tracking
 
 aeon_schemas = acquisition.aeon_schemas
+logger = acquisition.logger
 
-
-exp_key = {"experiment_name": "social0.3-aeon3"}
+exp_key = {"experiment_name": "social0.2-aeon4"}
 
 
 def find_chunks_to_reingest(exp_key, delete_not_fullpose=False):
+    """
+    Find chunks with newly available full pose data to reingest.
+    If available, fullpose data can be found in `processed` folder
+    """
+
     device_name = "CameraTop"
 
     devices_schema = getattr(
@@ -45,7 +50,7 @@ def find_chunks_to_reingest(exp_key, delete_not_fullpose=False):
         else:
             fullpose.append(key)
 
-    print(f"Fullpose: {len(fullpose)}\nNot fullpose: {len(not_fullpose)}")
+    logger.info(f"Fullpose: {len(fullpose)} | Not fullpose: {len(not_fullpose)}")
 
     if delete_not_fullpose:
         (tracking.SLEAPTracking & not_fullpose).delete()
