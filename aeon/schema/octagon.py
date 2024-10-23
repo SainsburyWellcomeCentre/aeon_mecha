@@ -4,7 +4,7 @@ from aeon.schema.streams import Stream, StreamGroup
 
 class Photodiode(Stream):
     def __init__(self, path):
-        super().__init__(_reader.Harp(f"{path}_44_*", columns=["adc", "encoder"]))
+        super().__init__(_reader.Harp(f"{path}_44_*", columns=["adc", "encoder","adc2"]))
 
 
 class OSC(StreamGroup):
@@ -31,7 +31,7 @@ class OSC(StreamGroup):
         def __init__(self, pattern):
             super().__init__(
                 _reader.Csv(
-                    f"{pattern}_octagonslice_*", columns=["typetag", "wall_id", "r", "g", "b", "a", "delay"]
+                    f"{pattern}_octagonslice_*", columns=["typetag", "wall_id", "r", "g", "b", "a", "delay","aperture_angle"]
                 )
             )
 
