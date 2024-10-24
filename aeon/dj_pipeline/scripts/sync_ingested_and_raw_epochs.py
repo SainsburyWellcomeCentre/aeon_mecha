@@ -7,7 +7,7 @@ from aeon.dj_pipeline.analysis import block_analysis
 aeon_schemas = acquisition.aeon_schemas
 logger = acquisition.logger
 
-exp_key = {"experiment_name": "social0.2-aeon4"}
+exp_key = {"experiment_name": "social0.3-aeon3"}
 
 
 def find_orphaned_ingested_epochs(exp_key, delete_invalid_epochs=False):
@@ -42,17 +42,16 @@ def find_orphaned_ingested_epochs(exp_key, delete_invalid_epochs=False):
 
     # devices
     invalid_devices_query = acquisition.EpochConfig.DeviceType & invalid_epochs
-    if invalid_devices_query:
-        logger.warning("Invalid devices found - please run the rest manually to confirm deletion")
-        logger.warning(invalid_devices_query)
-        return
-
     device_types = set(invalid_devices_query.fetch("device_type"))
     device_table_invalid_query = []
     for device_type in device_types:
         device_table = getattr(streams, device_type)
         install_time_attr_name = next(n for n in device_table.primary_key if n.endswith("_install_time"))
         invalid_device_query = device_table & invalid_epochs.proj(**{install_time_attr_name: "epoch_start"})
+        if invalid_device_query:
+            logger.warning("Invalid devices found - please run the rest manually to confirm deletion")
+            logger.warning(invalid_devices_query)
+            return
         logger.debug(invalid_device_query)
         device_table_invalid_query.append((device_table, invalid_device_query))
 
