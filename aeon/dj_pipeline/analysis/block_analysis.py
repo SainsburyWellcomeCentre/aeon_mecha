@@ -457,6 +457,17 @@ class BlockSubjectAnalysis(dj.Computed):
         )
         subjects_positions_df.set_index("position_timestamps", inplace=True)
 
+        # Ensure wheel_timestamps are of the same length across all patches
+        wheel_lens = [len(p["wheel_timestamps"]) for p in block_patches]
+        if len(set(wheel_lens)) > 1:
+            max_diff = max(wheel_lens) - min(wheel_lens)
+            if max_diff > 10:
+                # if diff is more than 10 samples, raise error, this is unexpected, some patches crash?
+                raise ValueError(f"Wheel data lengths are not consistent across patches ({max_diff} samples diff)")
+            for p in block_patches:
+                p["wheel_timestamps"] = p["wheel_timestamps"][: min(wheel_lens)]
+                p["wheel_cumsum_distance_travelled"] = p["wheel_cumsum_distance_travelled"][: min(wheel_lens)]
+
         self.insert1(key)
 
         in_patch_radius = 130  # pixels
@@ -1574,7 +1585,7 @@ class BlockForaging(dj.Computed):
 @schema
 class AnalysisNote(dj.Manual):
     definition = """  # Generic table to catch all notes generated during analysis
-    note_timestamp: datetime
+    note_timestamp: datetime(6)
     ---
     note_type='': varchar(64)
     note: varchar(3000)
