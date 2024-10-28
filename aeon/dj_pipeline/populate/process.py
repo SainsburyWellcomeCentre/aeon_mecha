@@ -76,7 +76,9 @@ def run(**kwargs):
     try:
         worker.run()
     except Exception:
-        logger.exception("action '{}' encountered an exception:".format(kwargs["worker_name"]))
+        logger.exception(
+            "action '{}' encountered an exception:".format(kwargs["worker_name"])
+        )
 
     logger.info("Ingestion process ended.")
 

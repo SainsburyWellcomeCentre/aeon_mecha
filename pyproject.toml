@@ -97,9 +97,6 @@ lint.select = [
 ]
 line-length = 108
 lint.ignore = [
-  "E201",
-  "E202",
-  "E203",
   "E231",
   "E731",
   "E702",

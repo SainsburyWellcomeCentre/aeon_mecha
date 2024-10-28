@@ -15,7 +15,15 @@ target_db_prefix = "aeon_archived_exp01_"
 
 schema_name_mapper = {
     source_db_prefix + schema_name: target_db_prefix + schema_name
-    for schema_name in ("lab", "subject", "acquisition", "tracking", "qc", "report", "analysis")
+    for schema_name in (
+        "lab",
+        "subject",
+        "acquisition",
+        "tracking",
+        "qc",
+        "report",
+        "analysis",
+    )
 }
 
 restriction = {"experiment_name": "exp0.1-r0"}

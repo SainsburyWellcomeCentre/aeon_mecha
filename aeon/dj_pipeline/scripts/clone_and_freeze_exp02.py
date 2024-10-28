@@ -19,7 +19,15 @@ target_db_prefix = "aeon_archived_exp02_"
 
 schema_name_mapper = {
     source_db_prefix + schema_name: target_db_prefix + schema_name
-    for schema_name in ("lab", "subject", "acquisition", "tracking", "qc", "analysis", "report")
+    for schema_name in (
+        "lab",
+        "subject",
+        "acquisition",
+        "tracking",
+        "qc",
+        "analysis",
+        "report",
+    )
 }
 
 restriction = [{"experiment_name": "exp0.2-r0"}, {"experiment_name": "social0-r1"}]
@@ -98,7 +106,8 @@ def validate():
                 target_entry_count = len(target_tbl())
                 missing_entries[orig_schema_name][source_tbl.__name__] = {
                     "entry_count_diff": source_entry_count - target_entry_count,
-                    "db_size_diff": source_tbl().size_on_disk - target_tbl().size_on_disk,
+                    "db_size_diff": source_tbl().size_on_disk
+                    - target_tbl().size_on_disk,
                 }
 
     return {
