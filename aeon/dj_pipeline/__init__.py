@@ -15,7 +15,9 @@ if "custom" not in dj.config:
 
 db_prefix = dj.config["custom"].get("database.prefix", _default_database_prefix)
 
-repository_config = dj.config["custom"].get("repository_config", _default_repository_config)
+repository_config = dj.config["custom"].get(
+    "repository_config", _default_repository_config
+)
 
 
 def get_schema_name(name) -> str:
@@ -25,11 +27,11 @@ def get_schema_name(name) -> str:
 
 def dict_to_uuid(key) -> uuid.UUID:
     """Given a dictionary `key`, returns a hash string as UUID."""
-    hashed = hashlib.md5()
+    hashed = hashlib.sha256()
     for k, v in sorted(key.items()):
         hashed.update(str(k).encode())
         hashed.update(str(v).encode())
-    return uuid.UUID(hex=hashed.hexdigest())
+    return uuid.UUID(hex=hashed.hexdigest()[:32])
 
 
 def fetch_stream(query, drop_pk=True):
@@ -40,7 +42,9 @@ def fetch_stream(query, drop_pk=True):
     """
     df = (query & "sample_count > 0").fetch(format="frame").reset_index()
     cols2explode = [
-        c for c in query.heading.secondary_attributes if query.heading.attributes[c].type == "longblob"
+        c
+        for c in query.heading.secondary_attributes
+        if query.heading.attributes[c].type == "longblob"
     ]
     df = df.explode(column=cols2explode)
     cols2drop = ["sample_count"] + (query.primary_key if drop_pk else [])
