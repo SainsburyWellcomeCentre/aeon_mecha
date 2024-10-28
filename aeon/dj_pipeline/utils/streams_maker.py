@@ -141,10 +141,10 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
         @property
         def key_source(self):
-            f"""
-            Only the combination of Chunk and {device_type} with overlapping time
-            +  Chunk(s) that started after {device_type} install time and ended before {device_type} remove time
-            +  Chunk(s) that started after {device_type} install time for {device_type} that are not yet removed
+            """
+            Only the combination of Chunk and device_type with overlapping time
+            +  Chunk(s) that started after device_type install time and ended before device_type remove time
+            +  Chunk(s) that started after device_type install time for device_type that are not yet removed
             """
             return (
                 acquisition.Chunk
