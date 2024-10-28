@@ -99,7 +99,6 @@ line-length = 108
 lint.ignore = [
   "E731",
   "PT004",  # Rule `PT004` is deprecated and will be removed in a future release.
-  "PT013",
   "PLR0912",
   "PLR0913",
   "PLR0915",

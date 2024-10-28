@@ -48,7 +48,14 @@ def test_params():
 
 @pytest.fixture(autouse=True, scope="session")
 def dj_config():
-    """Configures DataJoint connection and loads custom settings."""
+    """
+    Configures DataJoint connection and loads custom settings.
+
+    This fixture sets up the DataJoint configuration using the
+    'dj_local_conf.json' file. It raises FileNotFoundError if the file
+    does not exist, and KeyError if 'custom' is not found in the
+    DataJoint configuration.
+    """
     dj_config_fp = pathlib.Path("dj_local_conf.json")
     if not dj_config_fp.exists():
         raise FileNotFoundError(
