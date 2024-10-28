@@ -1,6 +1,5 @@
 """DataJoint schema for tracking data."""
 
-
 import datajoint as dj
 import matplotlib.path
 import numpy as np
@@ -283,7 +282,10 @@ def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y") -> pd.Series:
     return an array of boolean indicating whether or not a position is inside the nest.
     """
     nest_vertices = list(
-        zip(*(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y"), strict=False)
+        zip(
+            *(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y"),
+            strict=False,
+        )
     )
     nest_path = matplotlib.path.Path(nest_vertices)
     position_df["in_nest"] = nest_path.contains_points(position_df[[xcol, ycol]])
