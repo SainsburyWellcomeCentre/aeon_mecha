@@ -3,7 +3,7 @@
 import json
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import datajoint as dj
 import requests
@@ -193,7 +193,7 @@ class SubjectReferenceWeight(dj.Manual):
                 "procedure_date", order_by="procedure_date DESC", limit=1
             )[0]
         else:
-            ref_date = datetime.now().date()
+            ref_date = datetime.now(timezone.utc).date()
 
         weight_query = SubjectWeight & subj_key & f"weight_time < '{ref_date}'"
         ref_weight = (
@@ -205,7 +205,7 @@ class SubjectReferenceWeight(dj.Manual):
         entry = {
             "subject": subject_name,
             "reference_weight": ref_weight,
-            "last_updated_time": datetime.utcnow(),
+            "last_updated_time": datetime.now(timezone.utc),
         }
         cls.update1(entry) if cls & {"subject": subject_name} else cls.insert1(entry)
 
@@ -247,7 +247,7 @@ class PyratIngestion(dj.Imported):
     schedule_interval = 12  # schedule interval in number of hours
 
     def _auto_schedule(self):
-        utc_now = datetime.utcnow()
+        utc_now = datetime.now(timezone.utc)
 
         next_task_schedule_time = utc_now + timedelta(hours=self.schedule_interval)
         if (
@@ -261,8 +261,8 @@ class PyratIngestion(dj.Imported):
         )
 
     def make(self, key):
-        execution_time = datetime.utcnow()
         """Automatically import or update entries in the Subject table."""
+        execution_time = datetime.now(timezone.utc)
         new_eartags = []
         for responsible_id in lab.User.fetch("responsible_id"):
             # 1 - retrieve all animals from this user
@@ -298,7 +298,7 @@ class PyratIngestion(dj.Imported):
             new_entry_count += 1
 
         logger.info(f"Inserting {new_entry_count} new subject(s) from Pyrat")
-        completion_time = datetime.utcnow()
+        completion_time = datetime.now(timezone.utc)
         self.insert1(
             {
                 **key,
@@ -330,7 +330,7 @@ class PyratCommentWeightProcedure(dj.Imported):
     key_source = (PyratIngestion * SubjectDetail) & "available = 1"
 
     def make(self, key):
-        execution_time = datetime.utcnow()
+        execution_time = datetime.now(timezone.utc)
         logger.info("Extracting weights/comments/procedures")
 
         eartag_or_id = key["subject"]
@@ -373,7 +373,7 @@ class PyratCommentWeightProcedure(dj.Imported):
             # compute/update reference weight
             SubjectReferenceWeight.get_reference_weight(eartag_or_id)
         finally:
-            completion_time = datetime.utcnow()
+            completion_time = datetime.now(timezone.utc)
             self.insert1(
                 {
                     **key,
@@ -393,7 +393,9 @@ class CreatePyratIngestionTask(dj.Computed):
 
     def make(self, key):
         """Create one new PyratIngestionTask for every newly added users."""
-        PyratIngestionTask.insert1({"pyrat_task_scheduled_time": datetime.utcnow()})
+        PyratIngestionTask.insert1(
+            {"pyrat_task_scheduled_time": datetime.now(timezone.utc)}
+        )
         time.sleep(1)
         self.insert1(key)
 

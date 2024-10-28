@@ -3,7 +3,7 @@
 import itertools
 import json
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 
 import datajoint as dj
 import numpy as np
@@ -264,7 +264,7 @@ class BlockAnalysis(dj.Computed):
                 # multiple patch rates per block is unexpected, log a note and pick the first rate to move forward
                 AnalysisNote.insert1(
                     {
-                        "note_timestamp": datetime.utcnow(),
+                        "note_timestamp": datetime.now(timezone.utc),
                         "note_type": "Multiple patch rates",
                         "note": f"Found multiple patch rates for block {key} - patch: {patch_name} - rates: {depletion_state_df.rate.unique()}",
                     }
