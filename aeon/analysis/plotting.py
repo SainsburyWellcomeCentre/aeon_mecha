@@ -1,5 +1,6 @@
-import math
+"""Helper functions for plotting data."""
 
+import math
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -76,7 +77,9 @@ def rateplot(
     :param Axes, optional ax: The Axes on which to draw the rate plot and raster.
     """
     label = kwargs.pop("label", None)
-    eventrate = rate(events, window, frequency, weight, start, end, smooth=smooth, center=center)
+    eventrate = rate(
+        events, window, frequency, weight, start, end, smooth=smooth, center=center
+    )
     if ax is None:
         ax = plt.gca()
     ax.plot(
@@ -85,7 +88,9 @@ def rateplot(
         label=label,
         **kwargs,
     )
-    ax.vlines(sessiontime(events.index, eventrate.index[0]), -0.2, -0.1, linewidth=1, **kwargs)
+    ax.vlines(
+        sessiontime(events.index, eventrate.index[0]), -0.2, -0.1, linewidth=1, **kwargs
+    )
 
 
 def set_ymargin(ax, bottom, top):

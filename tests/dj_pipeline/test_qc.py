@@ -1,3 +1,5 @@
+""" Tests for the QC pipeline. """
+
 from pytest import mark
 
 

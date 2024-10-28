@@ -1,3 +1,5 @@
+"""DataJoint schema for animal subjects."""
+
 import json
 import os
 import time
@@ -83,7 +85,9 @@ class SubjectDetail(dj.Imported):
                 )
             return
         elif len(animal_resp) > 1:
-            raise ValueError(f"Found {len(animal_resp)} with eartag {eartag_or_id}, expect one")
+            raise ValueError(
+                f"Found {len(animal_resp)} with eartag {eartag_or_id}, expect one"
+            )
         else:
             animal_resp = animal_resp[0]
 
@@ -96,7 +100,10 @@ class SubjectDetail(dj.Imported):
             }
         )
         Strain.insert1(
-            {"strain_id": animal_resp["strain_id"], "strain_name": animal_resp["strain_id"]},
+            {
+                "strain_id": animal_resp["strain_id"],
+                "strain_name": animal_resp["strain_id"],
+            },
             skip_duplicates=True,
         )
         entry = {
@@ -108,7 +115,10 @@ class SubjectDetail(dj.Imported):
         }
         if animal_resp["gen_bg_id"] is not None:
             GeneticBackground.insert1(
-                {"gen_bg_id": animal_resp["gen_bg_id"], "gen_bg": animal_resp["gen_bg"]},
+                {
+                    "gen_bg_id": animal_resp["gen_bg_id"],
+                    "gen_bg": animal_resp["gen_bg"],
+                },
                 skip_duplicates=True,
             )
             entry["gen_bg_id"] = animal_resp["gen_bg_id"]
@@ -175,17 +185,21 @@ class SubjectReferenceWeight(dj.Manual):
     def get_reference_weight(cls, subject_name):
         subj_key = {"subject": subject_name}
 
-        food_restrict_query = SubjectProcedure & subj_key & "procedure_name = 'R02 - food restriction'"
+        food_restrict_query = (
+            SubjectProcedure & subj_key & "procedure_name = 'R02 - food restriction'"
+        )
         if food_restrict_query:
-            ref_date = food_restrict_query.fetch("procedure_date", order_by="procedure_date DESC", limit=1)[
-                0
-            ]
+            ref_date = food_restrict_query.fetch(
+                "procedure_date", order_by="procedure_date DESC", limit=1
+            )[0]
         else:
             ref_date = datetime.now().date()
 
         weight_query = SubjectWeight & subj_key & f"weight_time < '{ref_date}'"
         ref_weight = (
-            weight_query.fetch("weight", order_by="weight_time DESC", limit=1)[0] if weight_query else -1
+            weight_query.fetch("weight", order_by="weight_time DESC", limit=1)[0]
+            if weight_query
+            else -1
         )
 
         entry = {
@@ -242,7 +256,9 @@ class PyratIngestion(dj.Imported):
         ):
             return
 
-        PyratIngestionTask.insert1({"pyrat_task_scheduled_time": next_task_schedule_time})
+        PyratIngestionTask.insert1(
+            {"pyrat_task_scheduled_time": next_task_schedule_time}
+        )
 
     def make(self, key):
         execution_time = datetime.utcnow()
@@ -250,11 +266,15 @@ class PyratIngestion(dj.Imported):
         new_eartags = []
         for responsible_id in lab.User.fetch("responsible_id"):
             # 1 - retrieve all animals from this user
-            animal_resp = get_pyrat_data(endpoint="animals", params={"responsible_id": responsible_id})
+            animal_resp = get_pyrat_data(
+                endpoint="animals", params={"responsible_id": responsible_id}
+            )
             for animal_entry in animal_resp:
                 # 2 - find animal with comment - Project Aeon
                 eartag_or_id = animal_entry["eartag_or_id"]
-                comment_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/comments")
+                comment_resp = get_pyrat_data(
+                    endpoint=f"animals/{eartag_or_id}/comments"
+                )
                 for comment in comment_resp:
                     if comment["attributes"]:
                         first_attr = comment["attributes"][0]
@@ -283,7 +303,9 @@ class PyratIngestion(dj.Imported):
             {
                 **key,
                 "execution_time": execution_time,
-                "execution_duration": (completion_time - execution_time).total_seconds(),
+                "execution_duration": (
+                    completion_time - execution_time
+                ).total_seconds(),
                 "new_pyrat_entry_count": new_entry_count,
             }
         )
@@ -328,7 +350,9 @@ class PyratCommentWeightProcedure(dj.Imported):
             for cmt in comment_resp:
                 cmt["subject"] = eartag_or_id
                 cmt["attributes"] = json.dumps(cmt["attributes"], default=str)
-            SubjectComment.insert(comment_resp, skip_duplicates=True, allow_direct_insert=True)
+            SubjectComment.insert(
+                comment_resp, skip_duplicates=True, allow_direct_insert=True
+            )
 
             weight_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/weights")
             SubjectWeight.insert(
@@ -337,7 +361,9 @@ class PyratCommentWeightProcedure(dj.Imported):
                 allow_direct_insert=True,
             )
 
-            procedure_resp = get_pyrat_data(endpoint=f"animals/{eartag_or_id}/procedures")
+            procedure_resp = get_pyrat_data(
+                endpoint=f"animals/{eartag_or_id}/procedures"
+            )
             SubjectProcedure.insert(
                 [{**v, "subject": eartag_or_id} for v in procedure_resp],
                 skip_duplicates=True,
@@ -352,7 +378,9 @@ class PyratCommentWeightProcedure(dj.Imported):
                 {
                     **key,
                     "execution_time": execution_time,
-                    "execution_duration": (completion_time - execution_time).total_seconds(),
+                    "execution_duration": (
+                        completion_time - execution_time
+                    ).total_seconds(),
                 }
             )
 

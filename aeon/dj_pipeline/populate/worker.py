@@ -1,5 +1,14 @@
+"""
+This module defines the workers for the AEON pipeline.
+"""
+
 import datajoint as dj
-from datajoint_utilities.dj_worker import DataJointWorker, ErrorLog, WorkerLog, RegisteredWorker
+from datajoint_utilities.dj_worker import (
+    DataJointWorker,
+    ErrorLog,
+    WorkerLog,
+    RegisteredWorker,
+)
 from datajoint_utilities.dj_worker.worker_schema import is_djtable
 
 from aeon.dj_pipeline import db_prefix
@@ -107,4 +116,6 @@ analysis_worker(block_analysis.BlockSubjectPlots, max_calls=6)
 def get_workflow_operation_overview():
     from datajoint_utilities.dj_worker.utils import get_workflow_operation_overview
 
-    return get_workflow_operation_overview(worker_schema_name=worker_schema_name, db_prefixes=[db_prefix])
+    return get_workflow_operation_overview(
+        worker_schema_name=worker_schema_name, db_prefixes=[db_prefix]
+    )

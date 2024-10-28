@@ -1,3 +1,5 @@
+""" Dataset schema definitions. """
+
 from dotmap import DotMap
 
 import aeon.schema.core as stream

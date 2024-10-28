@@ -1,3 +1,5 @@
+"""DataJoint schema for tracking data."""
+
 from pathlib import Path
 
 import datajoint as dj
@@ -5,7 +7,14 @@ import matplotlib.path
 import numpy as np
 import pandas as pd
 
-from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, qc, streams
+from aeon.dj_pipeline import (
+    acquisition,
+    dict_to_uuid,
+    get_schema_name,
+    lab,
+    qc,
+    streams,
+)
 from aeon.io import api as io_api
 from aeon.schema import schemas as aeon_schemas
 
@@ -72,14 +81,18 @@ class TrackingParamSet(dj.Lookup):
         tracking_paramset_id: int = None,
     ):
         if tracking_paramset_id is None:
-            tracking_paramset_id = (dj.U().aggr(cls, n="max(tracking_paramset_id)").fetch1("n") or 0) + 1
+            tracking_paramset_id = (
+                dj.U().aggr(cls, n="max(tracking_paramset_id)").fetch1("n") or 0
+            ) + 1
 
         param_dict = {
             "tracking_method": tracking_method,
             "tracking_paramset_id": tracking_paramset_id,
             "paramset_description": paramset_description,
             "params": params,
-            "param_set_hash": dict_to_uuid({**params, "tracking_method": tracking_method}),
+            "param_set_hash": dict_to_uuid(
+                {**params, "tracking_method": tracking_method}
+            ),
         }
         param_query = cls & {"param_set_hash": param_dict["param_set_hash"]}
 
@@ -141,7 +154,9 @@ class SLEAPTracking(dj.Imported):
         return (
             acquisition.Chunk
             * (
-                streams.SpinnakerVideoSource.join(streams.SpinnakerVideoSource.RemovalTime, left=True)
+                streams.SpinnakerVideoSource.join(
+                    streams.SpinnakerVideoSource.RemovalTime, left=True
+                )
                 & "spinnaker_video_source_name='CameraTop'"
             )
             * (TrackingParamSet & "tracking_paramset_id = 1")
@@ -150,17 +165,22 @@ class SLEAPTracking(dj.Imported):
         )  # SLEAP & CameraTop
 
     def make(self, key):
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end"
+        )
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
-        device_name = (streams.SpinnakerVideoSource & key).fetch1("spinnaker_video_source_name")
+        device_name = (streams.SpinnakerVideoSource & key).fetch1(
+            "spinnaker_video_source_name"
+        )
 
         devices_schema = getattr(
             aeon_schemas,
-            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
+            (
+                acquisition.Experiment.DevicesSchema
+                & {"experiment_name": key["experiment_name"]}
+            ).fetch1("devices_schema_name"),
         )
         stream_reader = getattr(devices_schema, device_name).Pose
 
@@ -172,7 +192,9 @@ class SLEAPTracking(dj.Imported):
         )
 
         if not len(pose_data):
-            raise ValueError(f"No SLEAP data found for {key['experiment_name']} - {device_name}")
+            raise ValueError(
+                f"No SLEAP data found for {key['experiment_name']} - {device_name}"
+            )
 
         # get identity names
         class_names = np.unique(pose_data.identity)
@@ -205,7 +227,9 @@ class SLEAPTracking(dj.Imported):
                 if part == anchor_part:
                     identity_likelihood = part_position.identity_likelihood.values
                     if isinstance(identity_likelihood[0], dict):
-                        identity_likelihood = np.array([v[identity] for v in identity_likelihood])
+                        identity_likelihood = np.array(
+                            [v[identity] for v in identity_likelihood]
+                        )
 
             pose_identity_entries.append(
                 {
@@ -247,7 +271,9 @@ def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y") -> pd.Series:
     """Given the session key and the position data - arrays of x and y
     return an array of boolean indicating whether or not a position is inside the nest.
     """
-    nest_vertices = list(zip(*(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y")))
+    nest_vertices = list(
+        zip(*(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y"))
+    )
     nest_path = matplotlib.path.Path(nest_vertices)
     position_df["in_nest"] = nest_path.contains_points(position_df[[xcol, ycol]])
     return position_df["in_nest"]
@@ -273,7 +299,9 @@ def _get_position(
     start_query = table & obj_restriction & start_restriction
     end_query = table & obj_restriction & end_restriction
     if not (start_query and end_query):
-        raise ValueError(f"No position data found for {object_name} between {start} and {end}")
+        raise ValueError(
+            f"No position data found for {object_name} between {start} and {end}"
+        )
 
     time_restriction = (
         f'{start_attr} >= "{min(start_query.fetch(start_attr))}"'
@@ -281,10 +309,14 @@ def _get_position(
     )
 
     # subject's position data in the time slice
-    fetched_data = (table & obj_restriction & time_restriction).fetch(*fetch_attrs, order_by=start_attr)
+    fetched_data = (table & obj_restriction & time_restriction).fetch(
+        *fetch_attrs, order_by=start_attr
+    )
 
     if not len(fetched_data[0]):
-        raise ValueError(f"No position data found for {object_name} between {start} and {end}")
+        raise ValueError(
+            f"No position data found for {object_name} between {start} and {end}"
+        )
 
     timestamp_attr = next(attr for attr in fetch_attrs if "timestamps" in attr)
 

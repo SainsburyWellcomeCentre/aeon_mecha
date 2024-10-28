@@ -1,3 +1,7 @@
+"""
+Utility functions for working with paths in the context of the DJ pipeline.
+"""
+
 from __future__ import annotations
 
 import pathlib
@@ -63,5 +67,6 @@ def find_root_directory(
 
     except StopIteration:
         raise FileNotFoundError(
-            f"No valid root directory found (from {root_directories})" f" for {full_path}"
+            f"No valid root directory found (from {root_directories})"
+            f" for {full_path}"
         )

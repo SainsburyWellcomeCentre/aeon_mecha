@@ -1,3 +1,5 @@
+""" Test tracking pipeline. """
+
 import datetime
 import pathlib
 
@@ -6,9 +8,7 @@ from pytest import mark
 
 index = 0
 column_name = "position_x"  # data column to run test on
-file_name = (
-    "exp0.2-r0-20220524090000-21053810-20220524082942-0-0.npy"  # test file to be saved with save_test_data
-)
+file_name = "exp0.2-r0-20220524090000-21053810-20220524082942-0-0.npy"  # test file to be saved with save_test_data
 
 
 def save_test_data(pipeline, test_params):
@@ -19,7 +19,11 @@ def save_test_data(pipeline, test_params):
     file_name = (
         "-".join(
             [
-                v.strftime("%Y%m%d%H%M%S") if isinstance(v, datetime.datetime) else str(v)
+                (
+                    v.strftime("%Y%m%d%H%M%S")
+                    if isinstance(v, datetime.datetime)
+                    else str(v)
+                )
                 for v in key.values()
             ]
         )
@@ -38,13 +42,20 @@ def save_test_data(pipeline, test_params):
 def test_camera_tracking_ingestion(test_params, pipeline, camera_tracking_ingestion):
     tracking = pipeline["tracking"]
 
-    assert len(tracking.CameraTracking.Object()) == test_params["camera_tracking_object_count"]
+    assert (
+        len(tracking.CameraTracking.Object())
+        == test_params["camera_tracking_object_count"]
+    )
 
     key = tracking.CameraTracking.Object().fetch("KEY")[index]
     file_name = (
         "-".join(
             [
-                v.strftime("%Y%m%d%H%M%S") if isinstance(v, datetime.datetime) else str(v)
+                (
+                    v.strftime("%Y%m%d%H%M%S")
+                    if isinstance(v, datetime.datetime)
+                    else str(v)
+                )
                 for v in key.values()
             ]
         )

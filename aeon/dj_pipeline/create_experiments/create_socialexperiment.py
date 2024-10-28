@@ -1,3 +1,5 @@
+"""Function to create new social experiments"""
+
 from pathlib import Path
 from datetime import datetime
 from aeon.dj_pipeline import acquisition
@@ -37,7 +39,9 @@ def create_new_social_experiment(experiment_name):
             "experiment_name": experiment_name,
             "repository_name": "ceph_aeon",
             "directory_type": dir_type,
-            "directory_path": (ceph_data_dir / dir_type / machine_name.upper() / exp_name)
+            "directory_path": (
+                ceph_data_dir / dir_type / machine_name.upper() / exp_name
+            )
             .relative_to(ceph_dir)
             .as_posix(),
             "load_order": load_order,
@@ -50,9 +54,13 @@ def create_new_social_experiment(experiment_name):
             new_experiment_entry,
             skip_duplicates=True,
         )
-        acquisition.Experiment.Directory.insert(experiment_directories, skip_duplicates=True)
+        acquisition.Experiment.Directory.insert(
+            experiment_directories, skip_duplicates=True
+        )
         acquisition.Experiment.DevicesSchema.insert1(
-            {"experiment_name": experiment_name, "devices_schema_name": exp_name.replace(".", "")},
+            {
+                "experiment_name": experiment_name,
+                "devices_schema_name": exp_name.replace(".", ""),
+            },
             skip_duplicates=True,
         )
-

@@ -1,3 +1,5 @@
+""" Deprecated Device class for grouping multiple Readers into a logical device. """
+
 import inspect
 
 from typing_extensions import deprecated

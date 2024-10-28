@@ -1,3 +1,5 @@
+""" Octagon schema definition. """
+
 import aeon.io.reader as _reader
 from aeon.schema.streams import Stream, StreamGroup
 
@@ -14,24 +16,33 @@ class OSC(StreamGroup):
     class BackgroundColor(Stream):
         def __init__(self, pattern):
             super().__init__(
-                _reader.Csv(f"{pattern}_backgroundcolor_*", columns=["typetag", "r", "g", "b", "a"])
+                _reader.Csv(
+                    f"{pattern}_backgroundcolor_*",
+                    columns=["typetag", "r", "g", "b", "a"],
+                )
             )
 
     class ChangeSubjectState(Stream):
         def __init__(self, pattern):
             super().__init__(
-                _reader.Csv(f"{pattern}_changesubjectstate_*", columns=["typetag", "id", "weight", "event"])
+                _reader.Csv(
+                    f"{pattern}_changesubjectstate_*",
+                    columns=["typetag", "id", "weight", "event"],
+                )
             )
 
     class EndTrial(Stream):
         def __init__(self, pattern):
-            super().__init__(_reader.Csv(f"{pattern}_endtrial_*", columns=["typetag", "value"]))
+            super().__init__(
+                _reader.Csv(f"{pattern}_endtrial_*", columns=["typetag", "value"])
+            )
 
     class Slice(Stream):
         def __init__(self, pattern):
             super().__init__(
                 _reader.Csv(
-                    f"{pattern}_octagonslice_*", columns=["typetag", "wall_id", "r", "g", "b", "a", "delay"]
+                    f"{pattern}_octagonslice_*",
+                    columns=["typetag", "wall_id", "r", "g", "b", "a", "delay"],
                 )
             )
 
@@ -74,7 +85,8 @@ class OSC(StreamGroup):
         def __init__(self, pattern):
             super().__init__(
                 _reader.Csv(
-                    f"{pattern}_response_*", columns=["typetag", "wall_id", "poke_id", "response_time"]
+                    f"{pattern}_response_*",
+                    columns=["typetag", "wall_id", "poke_id", "response_time"],
                 )
             )
 
@@ -96,7 +108,9 @@ class OSC(StreamGroup):
 
     class StartNewSession(Stream):
         def __init__(self, pattern):
-            super().__init__(_reader.Csv(f"{pattern}_startnewsession_*", columns=["typetag", "path"]))
+            super().__init__(
+                _reader.Csv(f"{pattern}_startnewsession_*", columns=["typetag", "path"])
+            )
 
 
 class TaskLogic(StreamGroup):
@@ -109,7 +123,9 @@ class TaskLogic(StreamGroup):
 
     class Response(Stream):
         def __init__(self, pattern):
-            super().__init__(_reader.Harp(f"{pattern}_2_*", columns=["wall_id", "poke_id"]))
+            super().__init__(
+                _reader.Harp(f"{pattern}_2_*", columns=["wall_id", "poke_id"])
+            )
 
     class PreTrialState(Stream):
         def __init__(self, pattern):
@@ -138,15 +154,21 @@ class Wall(StreamGroup):
 
     class BeamBreak0(Stream):
         def __init__(self, pattern):
-            super().__init__(_reader.DigitalBitmask(f"{pattern}_32_*", 0x1, columns=["state"]))
+            super().__init__(
+                _reader.DigitalBitmask(f"{pattern}_32_*", 0x1, columns=["state"])
+            )
 
     class BeamBreak1(Stream):
         def __init__(self, pattern):
-            super().__init__(_reader.DigitalBitmask(f"{pattern}_32_*", 0x2, columns=["state"]))
+            super().__init__(
+                _reader.DigitalBitmask(f"{pattern}_32_*", 0x2, columns=["state"])
+            )
 
     class BeamBreak2(Stream):
         def __init__(self, pattern):
-            super().__init__(_reader.DigitalBitmask(f"{pattern}_32_*", 0x4, columns=["state"]))
+            super().__init__(
+                _reader.DigitalBitmask(f"{pattern}_32_*", 0x4, columns=["state"])
+            )
 
     class SetLed0(Stream):
         def __init__(self, pattern):

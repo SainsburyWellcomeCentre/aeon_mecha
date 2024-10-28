@@ -1,3 +1,5 @@
+""" Contains classes for defining data streams and devices. """
+
 import inspect
 from itertools import chain
 from warnings import warn

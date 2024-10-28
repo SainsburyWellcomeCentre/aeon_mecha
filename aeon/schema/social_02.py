@@ -1,3 +1,5 @@
+""" This module defines the schema for the social_02 dataset. """
+
 import aeon.io.reader as _reader
 from aeon.schema import core, foraging
 from aeon.schema.streams import Stream, StreamGroup
@@ -12,12 +14,17 @@ class Environment(StreamGroup):
     class BlockState(Stream):
         def __init__(self, path):
             super().__init__(
-                _reader.Csv(f"{path}_BlockState_*", columns=["pellet_ct", "pellet_ct_thresh", "due_time"])
+                _reader.Csv(
+                    f"{path}_BlockState_*",
+                    columns=["pellet_ct", "pellet_ct_thresh", "due_time"],
+                )
             )
 
     class LightEvents(Stream):
         def __init__(self, path):
-            super().__init__(_reader.Csv(f"{path}_LightEvents_*", columns=["channel", "value"]))
+            super().__init__(
+                _reader.Csv(f"{path}_LightEvents_*", columns=["channel", "value"])
+            )
 
     MessageLog = core.MessageLog
 
@@ -28,17 +35,22 @@ class SubjectData(StreamGroup):
 
     class SubjectState(Stream):
         def __init__(self, path):
-            super().__init__(_reader.Csv(f"{path}_SubjectState_*", columns=["id", "weight", "type"]))
+            super().__init__(
+                _reader.Csv(f"{path}_SubjectState_*", columns=["id", "weight", "type"])
+            )
 
     class SubjectVisits(Stream):
         def __init__(self, path):
-            super().__init__(_reader.Csv(f"{path}_SubjectVisits_*", columns=["id", "type", "region"]))
+            super().__init__(
+                _reader.Csv(f"{path}_SubjectVisits_*", columns=["id", "type", "region"])
+            )
 
     class SubjectWeight(Stream):
         def __init__(self, path):
             super().__init__(
                 _reader.Csv(
-                    f"{path}_SubjectWeight_*", columns=["weight", "confidence", "subject_id", "int_id"]
+                    f"{path}_SubjectWeight_*",
+                    columns=["weight", "confidence", "subject_id", "int_id"],
                 )
             )
 
@@ -64,7 +76,9 @@ class Patch(StreamGroup):
 
     class DepletionState(Stream):
         def __init__(self, path):
-            super().__init__(_reader.Csv(f"{path}_State_*", columns=["threshold", "offset", "rate"]))
+            super().__init__(
+                _reader.Csv(f"{path}_State_*", columns=["threshold", "offset", "rate"])
+            )
 
     Encoder = core.Encoder
 

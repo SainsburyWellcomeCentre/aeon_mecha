@@ -1,3 +1,5 @@
+"""This module provides functions to read and write video files using OpenCV."""
+
 import cv2
 
 
@@ -27,7 +29,9 @@ def frames(data):
                 index = frameidx
             success, frame = capture.read()
             if not success:
-                raise ValueError(f'Unable to read frame {frameidx} from video path "{path}".')
+                raise ValueError(
+                    f'Unable to read frame {frameidx} from video path "{path}".'
+                )
             yield frame
             index = index + 1
     finally:
@@ -50,7 +54,9 @@ def export(frames, file, fps, fourcc=None):
             if writer is None:
                 if fourcc is None:
                     fourcc = cv2.VideoWriter_fourcc("m", "p", "4", "v")  # type: ignore
-                writer = cv2.VideoWriter(file, fourcc, fps, (frame.shape[1], frame.shape[0]))
+                writer = cv2.VideoWriter(
+                    file, fourcc, fps, (frame.shape[1], frame.shape[0])
+                )
             writer.write(frame)
     finally:
         if writer is not None:

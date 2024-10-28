@@ -1,3 +1,5 @@
+""" This module contains the schema for the social_01 dataset. """
+
 import aeon.io.reader as _reader
 from aeon.schema.streams import Stream
 

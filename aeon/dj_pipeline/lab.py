@@ -1,3 +1,5 @@
+"""DataJoint schema for the lab pipeline."""
+
 import datajoint as dj
 
 from . import get_schema_name

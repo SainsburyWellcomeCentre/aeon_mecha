@@ -1,3 +1,5 @@
+"""Helper functions for processing video data."""
+
 import math
 
 import cv2
@@ -107,7 +109,9 @@ def collatemovie(clipdata, fun):
     :return: The sequence of processed frames representing the collated movie.
     """
     clipcount = len(clipdata.groupby("clip_sequence").frame_sequence.count())
-    allframes = video.frames(clipdata.sort_values(by=["frame_sequence", "clip_sequence"]))
+    allframes = video.frames(
+        clipdata.sort_values(by=["frame_sequence", "clip_sequence"])
+    )
     return groupframes(allframes, clipcount, fun)
 
 
