@@ -32,21 +32,24 @@ def test_experimentlog_ingestion(
 ):
     acquisition = pipeline["acquisition"]
 
-    experiment_log_message_count = len(
+    exp_log_message_count = len(
         acquisition.ExperimentLog.Message
         & {"experiment_name": test_params["experiment_name"]}
     )
-    if experiment_log_message_count != test_params["experiment_log_message_count"]:
+    if exp_log_message_count != test_params["experiment_log_message_count"]:
         raise AssertionError(
-            f"Expected {test_params['experiment_log_message_count']} experiment log messages, but got {experiment_log_message_count}."
+            f"Expected {test_params['experiment_log_message_count']} log messages,"
+            f"but got {exp_log_message_count}."
         )
+
     subject_enter_exit_count = len(
         acquisition.SubjectEnterExit.Time
         & {"experiment_name": test_params["experiment_name"]}
     )
     if subject_enter_exit_count != test_params["subject_enter_exit_count"]:
         raise AssertionError(
-            f"Expected {test_params['subject_enter_exit_count']} subject enter/exit events, but got {subject_enter_exit_count}."
+            f"Expected {test_params['subject_enter_exit_count']} subject enter/exit events,"
+            f"but got {subject_enter_exit_count}."
         )
 
     subject_weight_time_count = len(
@@ -55,5 +58,6 @@ def test_experimentlog_ingestion(
     )
     if subject_weight_time_count != test_params["subject_weight_time_count"]:
         raise AssertionError(
-            f"Expected {test_params['subject_weight_time_count']} subject weight events, but got {subject_weight_time_count}."
+            f"Expected {test_params['subject_weight_time_count']} subject weight events,"
+            f"but got {subject_weight_time_count}."
         )

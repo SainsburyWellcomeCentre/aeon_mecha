@@ -89,7 +89,8 @@ def test_load_encoder_with_downsampling():
             f"The last timestamp of downsampled data is not within {DOWNSAMPLE_PERIOD*1000} ms of raw data."
         )
 
-    # Check that the minimum difference between consecutive timestamps in the downsampled data is at least 20ms (50Hz)
+    # Check that the minimum difference between consecutive timestamps in the downsampled data
+    # is at least 20ms (50Hz)
     min_diff = data.index.to_series().diff().dt.total_seconds().min()
     if min_diff < DOWNSAMPLE_PERIOD:
         raise AssertionError(
