@@ -155,7 +155,10 @@ def extract_epoch_config(
     if isinstance(commit, float) and np.isnan(commit):
         commit = epoch_config["metadata"]["Revision"]
 
-    assert commit, f'Neither "Commit" nor "Revision" found in {metadata_yml_filepath}'
+    if not commit:
+        raise ValueError(
+            f'Neither "Commit" nor "Revision" found in {metadata_yml_filepath}'
+        )
 
     devices: list[dict] = json.loads(
         json.dumps(

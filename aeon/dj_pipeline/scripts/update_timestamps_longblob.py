@@ -5,10 +5,16 @@ Upgrade all timestamps longblob fields with datajoint 0.13.7.
 from datetime import datetime
 
 import datajoint as dj
+
+logger = dj.logger
+
 import numpy as np
 from tqdm import tqdm
 
-assert dj.__version__ >= "0.13.7"
+if dj.__version__ < "0.13.7":
+    raise ImportError(
+        f"DataJoint version must be at least 0.13.7, but found {dj.__version__}."
+    )
 
 
 schema = dj.schema("u_thinh_aeonfix")
@@ -60,7 +66,10 @@ def main():
                         if not len(ts) or isinstance(ts[0], np.datetime64):
                             TimestampFix.insert1(fix_key)
                             continue
-                        assert isinstance(ts[0], datetime)
+                        if not isinstance(ts[0], datetime):
+                            raise TypeError(
+                                f"Expected ts[0] to be of type 'datetime', but got {type(ts[0])}."
+                            )
                         with table.connection.transaction:
                             table.update1(
                                 {

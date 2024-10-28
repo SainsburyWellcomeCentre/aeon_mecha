@@ -1985,7 +1985,10 @@ def get_foraging_bouts(
         if bout_start_indxs[-1] >= len(wheel_ts):
             bout_start_indxs = bout_start_indxs[:-1]
             bout_end_indxs = bout_end_indxs[:-1]
-        assert len(bout_start_indxs) == len(bout_end_indxs)
+        if len(bout_start_indxs) != len(bout_end_indxs):
+            raise ValueError(
+                "Mismatch between the lengths of bout_start_indxs and bout_end_indxs."
+            )
         bout_durations = (
             wheel_ts[bout_end_indxs] - wheel_ts[bout_start_indxs]
         ).astype(  # in seconds

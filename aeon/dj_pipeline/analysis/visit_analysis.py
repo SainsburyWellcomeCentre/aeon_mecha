@@ -201,7 +201,10 @@ class VisitSubjectPosition(dj.Computed):
     def get_position(cls, visit_key=None, subject=None, start=None, end=None):
         """Given a key to a single Visit, return a Pandas DataFrame for the position data of the subject for the specified Visit time period."""
         if visit_key is not None:
-            assert len(Visit & visit_key) == 1
+            if len(Visit & visit_key) != 1:
+                raise ValueError(
+                    "The `visit_key` must correspond to exactly one Visit."
+                )
             start, end = (
                 Visit.join(VisitEnd, left=True).proj(
                     visit_end="IFNULL(visit_end, NOW())"
