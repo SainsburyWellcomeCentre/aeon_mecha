@@ -41,6 +41,7 @@ class Reader:
     """
 
     def __init__(self, pattern, columns, extension):
+        """Initialize the object with specified pattern, columns, and file extension."""
         self.pattern = pattern
         self.columns = columns
         self.extension = extension
@@ -54,6 +55,7 @@ class Harp(Reader):
     """Extracts data from raw binary files encoded using the Harp protocol."""
 
     def __init__(self, pattern, columns, extension="bin"):
+        """Initialize the object."""
         super().__init__(pattern, columns, extension)
 
     def read(self, file):
@@ -97,6 +99,7 @@ class Chunk(Reader):
     """Extracts path and epoch information from chunk files in the dataset."""
 
     def __init__(self, reader=None, pattern=None, extension=None):
+        """Initialize the object with optional reader, pattern, and file extension."""
         if isinstance(reader, Reader):
             pattern = reader.pattern
             extension = reader.extension
@@ -113,6 +116,7 @@ class Metadata(Reader):
     """Extracts metadata information from all epochs in the dataset."""
 
     def __init__(self, pattern="Metadata"):
+        """Initialize the object with the specified pattern."""
         super().__init__(
             pattern, columns=["workflow", "commit", "metadata"], extension="yml"
         )
@@ -139,6 +143,7 @@ class Csv(Reader):
     """
 
     def __init__(self, pattern, columns, dtype=None, extension="csv"):
+        """Initialize the object with the specified pattern, columns, and data type."""
         super().__init__(pattern, columns, extension)
         self.dtype = dtype
 
@@ -159,6 +164,7 @@ class JsonList(Reader):
     """
 
     def __init__(self, pattern, columns=(), root_key="value", extension="jsonl"):
+        """Initialize the object with the specified pattern, columns, and root key."""
         super().__init__(pattern, columns, extension)
         self.columns = columns
         self.root_key = root_key
@@ -184,6 +190,7 @@ class Subject(Csv):
     """
 
     def __init__(self, pattern):
+        """Initialize the object with a specified pattern."""
         super().__init__(pattern, columns=["id", "weight", "event"])
 
 
@@ -198,6 +205,7 @@ class Log(Csv):
     """
 
     def __init__(self, pattern):
+        """Initialize the object with a specified pattern and columns."""
         super().__init__(pattern, columns=["priority", "type", "message"])
 
 
@@ -209,6 +217,7 @@ class Heartbeat(Harp):
     """
 
     def __init__(self, pattern):
+        """Initialize the object with a specified pattern."""
         super().__init__(pattern, columns=["second"])
 
 
@@ -221,6 +230,7 @@ class Encoder(Harp):
     """
 
     def __init__(self, pattern):
+        """Initialize the object with a specified pattern and columns."""
         super().__init__(pattern, columns=["angle", "intensity"])
 
     def read(self, file, downsample=True):
@@ -258,6 +268,7 @@ class Position(Harp):
     """
 
     def __init__(self, pattern):
+        """Initialize the object with a specified pattern and columns."""
         super().__init__(
             pattern, columns=["x", "y", "angle", "major", "minor", "area", "id"]
         )
@@ -271,6 +282,7 @@ class BitmaskEvent(Harp):
     """
 
     def __init__(self, pattern, value, tag):
+        """Initialize the object with specified pattern, value, and tag."""
         super().__init__(pattern, columns=["event"])
         self.value = value
         self.tag = tag
@@ -294,6 +306,7 @@ class DigitalBitmask(Harp):
     """
 
     def __init__(self, pattern, mask, columns):
+        """Initialize the object with specified pattern, mask, and columns."""
         super().__init__(pattern, columns)
         self.mask = mask
 
@@ -316,6 +329,7 @@ class Video(Csv):
     """
 
     def __init__(self, pattern):
+        """Initialize the object with a specified pattern."""
         super().__init__(
             pattern, columns=["hw_counter", "hw_timestamp", "_frame", "_path", "_epoch"]
         )

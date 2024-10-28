@@ -13,6 +13,7 @@ class Stream:
     """
 
     def __init__(self, reader):
+        """Initializes the stream with a reader."""
         self.reader = reader
 
     def __iter__(self):
@@ -29,6 +30,7 @@ class StreamGroup:
     """
 
     def __init__(self, path, *args):
+        """Initializes the stream group with a path and a list of data streams."""
         self.path = path
         self._args = args
         self._nested = (
@@ -57,6 +59,7 @@ class Device:
     """
 
     def __init__(self, name, *args, path=None):
+        """Initializes the device with a name and a list of data streams."""
         if name is None:
             raise ValueError("name cannot be None.")
 

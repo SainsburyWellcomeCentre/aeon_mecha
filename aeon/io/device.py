@@ -35,6 +35,7 @@ class Device:
     """
 
     def __init__(self, name, *args, pattern=None):
+        """Initializes the Device class."""
         self.name = name
         self.registry = compositeStream(name if pattern is None else pattern, *args)
 
