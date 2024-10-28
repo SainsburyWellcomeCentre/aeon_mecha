@@ -98,7 +98,6 @@ lint.select = [
 line-length = 108
 lint.ignore = [
   "E731",
-  "S101",
   "PT004",  # Rule `PT004` is deprecated and will be removed in a future release.
   "PT013",
   "PLR0912",
