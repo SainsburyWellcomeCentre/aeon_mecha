@@ -73,7 +73,6 @@ def gen_patch_style_dict(patch_names):
     - patch_linestyles_dict: patch name to linestyle
 
     """
-
     return {
         "colors": {p: c for p, c in zip(patch_names, patch_colors, strict=False)},
         "markers": {p: m for p, m in zip(patch_names, patch_markers, strict=False)},

@@ -120,7 +120,6 @@ extend-exclude = [
   "D106",    # skip adding docstrings for nested streams
 ]
 "aeon/dj_pipeline/*" = [
-  "D202",
   "F403",
   "PLR2004",
   "SIM108",
