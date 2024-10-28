@@ -27,9 +27,7 @@ def chunk(time):
         return pd.to_datetime(time.dt.date) + pd.to_timedelta(hour, "h")
     else:
         hour = CHUNK_DURATION * (time.hour // CHUNK_DURATION)
-        return pd.to_datetime(
-            datetime.datetime.combine(time.date(), datetime.time(hour=hour))
-        )
+        return pd.to_datetime(datetime.datetime.combine(time.date(), datetime.time(hour=hour)))
 
 
 def chunk_range(start, end):
@@ -39,9 +37,7 @@ def chunk_range(start, end):
     :param datetime end: The right bound of the time range.
     :return: A DatetimeIndex representing the acquisition chunk range.
     """
-    return pd.date_range(
-        chunk(start), chunk(end), freq=pd.DateOffset(hours=CHUNK_DURATION)
-    )
+    return pd.date_range(chunk(start), chunk(end), freq=pd.DateOffset(hours=CHUNK_DURATION))
 
 
 def chunk_key(file):
@@ -53,9 +49,7 @@ def chunk_key(file):
     except ValueError:
         epoch = file.parts[-2]
         date_str, time_str = epoch.split("T")
-    return epoch, datetime.datetime.fromisoformat(
-        date_str + "T" + time_str.replace("-", ":")
-    )
+    return epoch, datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":"))
 
 
 def _set_index(data):
@@ -68,9 +62,7 @@ def _empty(columns):
     return pd.DataFrame(columns=columns, index=pd.DatetimeIndex([], name="time"))
 
 
-def load(
-    root, reader, start=None, end=None, time=None, tolerance=None, epoch=None, **kwargs
-):
+def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=None, **kwargs):
     """Extracts chunk data from the root path of an Aeon dataset.
 
     Reads all chunk data using the specified data stream reader. A subset of the data can be loaded
@@ -97,9 +89,7 @@ def load(
     fileset = {
         chunk_key(fname): fname
         for path in root
-        for fname in Path(path).glob(
-            f"{epoch_pattern}/**/{reader.pattern}.{reader.extension}"
-        )
+        for fname in Path(path).glob(f"{epoch_pattern}/**/{reader.pattern}.{reader.extension}")
     }
     files = sorted(fileset.items())
 
@@ -144,9 +134,7 @@ def load(
     if start is not None or end is not None:
         chunk_start = chunk(start) if start is not None else pd.Timestamp.min
         chunk_end = chunk(end) if end is not None else pd.Timestamp.max
-        files = list(
-            filter(lambda item: chunk_start <= chunk(item[0][1]) <= chunk_end, files)
-        )
+        files = list(filter(lambda item: chunk_start <= chunk(item[0][1]) <= chunk_end, files))
 
     if len(files) == 0:
         return _empty(reader.columns)

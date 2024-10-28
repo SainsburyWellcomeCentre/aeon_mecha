@@ -36,10 +36,7 @@ def create_new_experiment():
         skip_duplicates=True,
     )
     acquisition.Experiment.Subject.insert(
-        [
-            {"experiment_name": experiment_name, "subject": s["subject"]}
-            for s in subject_list
-        ],
+        [{"experiment_name": experiment_name, "subject": s["subject"]} for s in subject_list],
         skip_duplicates=True,
     )
 

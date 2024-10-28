@@ -117,6 +117,4 @@ def get_workflow_operation_overview():
     """Get the workflow operation overview for the worker schema."""
     from datajoint_utilities.dj_worker.utils import get_workflow_operation_overview
 
-    return get_workflow_operation_overview(
-        worker_schema_name=worker_schema_name, db_prefixes=[db_prefix]
-    )
+    return get_workflow_operation_overview(worker_schema_name=worker_schema_name, db_prefixes=[db_prefix])

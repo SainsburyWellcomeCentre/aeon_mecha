@@ -25,9 +25,7 @@ def retrieve_video_frames(
     """Retrive video trames from the raw data directory."""
     raw_data_dir = Path(raw_data_dir)
     if not raw_data_dir.exists():
-        raise FileNotFoundError(
-            f"The specified raw data directory does not exist: {raw_data_dir}"
-        )
+        raise FileNotFoundError(f"The specified raw data directory does not exist: {raw_data_dir}")
     # Load video data
     videodata = io_api.load(
         root=raw_data_dir.as_posix(),

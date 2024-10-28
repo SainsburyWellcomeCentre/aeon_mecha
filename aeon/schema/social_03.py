@@ -14,6 +14,4 @@ class EnvironmentActiveConfiguration(Stream):
 
     def __init__(self, path):
         """Initializes the EnvironmentActiveConfiguration stream."""
-        super().__init__(
-            _reader.JsonList(f"{path}_ActiveConfiguration_*", columns=["name"])
-        )
+        super().__init__(_reader.JsonList(f"{path}_ActiveConfiguration_*", columns=["name"]))

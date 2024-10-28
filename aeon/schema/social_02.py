@@ -25,9 +25,7 @@ class Environment(StreamGroup):
     class LightEvents(Stream):
         def __init__(self, path):
             """Initializes the LightEvents stream."""
-            super().__init__(
-                _reader.Csv(f"{path}_LightEvents_*", columns=["channel", "value"])
-            )
+            super().__init__(_reader.Csv(f"{path}_LightEvents_*", columns=["channel", "value"]))
 
     MessageLog = core.MessageLog
 
@@ -40,16 +38,12 @@ class SubjectData(StreamGroup):
     class SubjectState(Stream):
         def __init__(self, path):
             """Initializes the SubjectState stream."""
-            super().__init__(
-                _reader.Csv(f"{path}_SubjectState_*", columns=["id", "weight", "type"])
-            )
+            super().__init__(_reader.Csv(f"{path}_SubjectState_*", columns=["id", "weight", "type"]))
 
     class SubjectVisits(Stream):
         def __init__(self, path):
             """Initializes the SubjectVisits stream."""
-            super().__init__(
-                _reader.Csv(f"{path}_SubjectVisits_*", columns=["id", "type", "region"])
-            )
+            super().__init__(_reader.Csv(f"{path}_SubjectVisits_*", columns=["id", "type", "region"]))
 
     class SubjectWeight(Stream):
         def __init__(self, path):
@@ -88,9 +82,7 @@ class Patch(StreamGroup):
     class DepletionState(Stream):
         def __init__(self, path):
             """Initializes the DepletionState stream."""
-            super().__init__(
-                _reader.Csv(f"{path}_State_*", columns=["threshold", "offset", "rate"])
-            )
+            super().__init__(_reader.Csv(f"{path}_State_*", columns=["threshold", "offset", "rate"]))
 
     Encoder = core.Encoder
 

@@ -12,9 +12,7 @@ def create_new_experiment():
     """Create new experiments for presocial0.1"""
     lab.Location.insert1({"lab": "SWC", "location": location}, skip_duplicates=True)
 
-    acquisition.ExperimentType.insert1(
-        {"experiment_type": experiment_type}, skip_duplicates=True
-    )
+    acquisition.ExperimentType.insert1({"experiment_type": experiment_type}, skip_duplicates=True)
 
     acquisition.Experiment.insert(
         [

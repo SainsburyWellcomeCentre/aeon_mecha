@@ -25,9 +25,7 @@ class _RegionReader(_reader.Harp):
 
     def read(self, file):
         data = super().read(file)
-        categorical = pd.Categorical(
-            data.region, categories=range(len(Area._member_names_))
-        )
+        categorical = pd.Categorical(data.region, categories=range(len(Area._member_names_)))
         data["region"] = categorical.rename_categories(Area._member_names_)
         return data
 
@@ -89,9 +87,7 @@ class BeamBreak(Stream):
 
     def __init__(self, pattern):
         """Initializes the BeamBreak stream."""
-        super().__init__(
-            _reader.BitmaskEvent(f"{pattern}_32_*", 0x22, "PelletDetected")
-        )
+        super().__init__(_reader.BitmaskEvent(f"{pattern}_32_*", 0x22, "PelletDetected"))
 
 
 class DeliverPellet(Stream):
@@ -147,6 +143,4 @@ class SessionData(Stream):
 
     def __init__(self, pattern):
         """Initializes the SessionData stream."""
-        super().__init__(
-            _reader.Csv(f"{pattern}_2*", columns=["id", "weight", "event"])
-        )
+        super().__init__(_reader.Csv(f"{pattern}_2*", columns=["id", "weight", "event"]))

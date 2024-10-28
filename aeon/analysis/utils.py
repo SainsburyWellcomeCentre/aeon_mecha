@@ -50,9 +50,7 @@ def visits(data, onset="Enter", offset="Exit"):
     data = data.reset_index()
     data_onset = data[data.event == onset]
     data_offset = data[data.event == offset]
-    data = pd.merge(
-        data_onset, data_offset, on="id", how="left", suffixes=(lsuffix, rsuffix)
-    )
+    data = pd.merge(data_onset, data_offset, on="id", how="left", suffixes=(lsuffix, rsuffix))
 
     # valid pairings have the smallest positive duration
     data["duration"] = data[time_offset] - data[time_onset]
@@ -69,23 +67,15 @@ def visits(data, onset="Enter", offset="Exit"):
         ] = pd.NA
 
     # rename columns and sort data
-    data.rename(
-        {time_onset: lonset, id_onset: "id", time_offset: loffset}, axis=1, inplace=True
-    )
-    data = data[
-        ["id"]
-        + [name for name in data.columns if "_" in name]
-        + [lonset, loffset, "duration"]
-    ]
+    data.rename({time_onset: lonset, id_onset: "id", time_offset: loffset}, axis=1, inplace=True)
+    data = data[["id"] + [name for name in data.columns if "_" in name] + [lonset, loffset, "duration"]]
     data.drop([event_onset, event_offset], axis=1, inplace=True)
     data.sort_index(inplace=True)
     data.reset_index(drop=True, inplace=True)
     return data
 
 
-def rate(
-    events, window, frequency, weight=1, start=None, end=None, smooth=None, center=False
-):
+def rate(events, window, frequency, weight=1, start=None, end=None, smooth=None, center=False):
     """Computes the continuous event rate from a discrete event sequence.
 
     The window size and sampling frequency can be specified.
@@ -136,9 +126,7 @@ def get_events_rates(
     counts.sort_index(inplace=True)
     counts_resampled = counts.resample(frequency).sum()
     counts_rolled = (
-        counts_resampled.rolling(window_len_sec_str, center=center).sum()
-        * unit_len_sec
-        / window_len_sec
+        counts_resampled.rolling(window_len_sec_str, center=center).sum() * unit_len_sec / window_len_sec
     )
     counts_rolled_smoothed = counts_rolled.rolling(
         window_len_sec_str if smooth is None else smooth, center=center
@@ -166,8 +154,6 @@ def activepatch(wheel, in_patch):
     :return: A pandas Series specifying for each timepoint whether the patch is active.
     """
     exit_patch = in_patch.astype(np.int8).diff() < 0
-    in_wheel = (wheel.diff().rolling("1s").sum() > 1).reindex(
-        in_patch.index, method="pad"
-    )
+    in_wheel = (wheel.diff().rolling("1s").sum() > 1).reindex(in_patch.index, method="pad")
     epochs = exit_patch.cumsum()
     return in_wheel.groupby(epochs).apply(lambda x: x.cumsum()) > 0

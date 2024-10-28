@@ -12,9 +12,7 @@ import numpy as np
 from tqdm import tqdm
 
 if dj.__version__ < "0.13.7":
-    raise ImportError(
-        f"DataJoint version must be at least 0.13.7, but found {dj.__version__}."
-    )
+    raise ImportError(f"DataJoint version must be at least 0.13.7, but found {dj.__version__}.")
 
 
 schema = dj.schema("u_thinh_aeonfix")
@@ -42,13 +40,7 @@ def main():
     for schema_name in schema_names:
         vm = dj.create_virtual_module(schema_name, schema_name)
         table_names = [
-            ".".join(
-                [
-                    dj.utils.to_camel_case(s)
-                    for s in tbl_name.strip("`").split("__")
-                    if s
-                ]
-            )
+            ".".join([dj.utils.to_camel_case(s) for s in tbl_name.strip("`").split("__") if s])
             for tbl_name in vm.schema.list_tables()
         ]
         for table_name in table_names:

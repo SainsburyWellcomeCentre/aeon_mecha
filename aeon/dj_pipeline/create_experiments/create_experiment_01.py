@@ -35,10 +35,7 @@ def ingest_exp01_metadata(metadata_yml_filepath, experiment_name):
                 & camera_key
             )
             if current_camera_query:  # If the same camera is currently installed
-                if (
-                    current_camera_query.fetch1("camera_install_time")
-                    == arena_setup["start-time"]
-                ):
+                if current_camera_query.fetch1("camera_install_time") == arena_setup["start-time"]:
                     # If it is installed at the same time as that read from this yml file
                     # then it is the same ExperimentCamera instance, no need to do anything
                     continue
@@ -58,9 +55,7 @@ def ingest_exp01_metadata(metadata_yml_filepath, experiment_name):
                     "experiment_name": experiment_name,
                     "camera_install_time": arena_setup["start-time"],
                     "camera_description": camera["description"],
-                    "camera_sampling_rate": device_frequency_mapper[
-                        camera["trigger-source"].lower()
-                    ],
+                    "camera_sampling_rate": device_frequency_mapper[camera["trigger-source"].lower()],
                 }
             )
             acquisition.ExperimentCamera.Position.insert1(
@@ -76,23 +71,17 @@ def ingest_exp01_metadata(metadata_yml_filepath, experiment_name):
         # ---- Load food patches ----
         for patch in arena_setup["patches"]:
             # ---- Check if this is a new food patch, add to lab.FoodPatch if needed
-            patch_key = {
-                "food_patch_serial_number": patch["serial-number"] or patch["port-name"]
-            }
+            patch_key = {"food_patch_serial_number": patch["serial-number"] or patch["port-name"]}
             if patch_key not in lab.FoodPatch():
                 lab.FoodPatch.insert1(patch_key)
             # ---- Check if this food patch is currently installed - if so, remove it
             current_patch_query = (
-                acquisition.ExperimentFoodPatch
-                - acquisition.ExperimentFoodPatch.RemovalTime
+                acquisition.ExperimentFoodPatch - acquisition.ExperimentFoodPatch.RemovalTime
                 & {"experiment_name": experiment_name}
                 & patch_key
             )
             if current_patch_query:  # If the same food-patch is currently installed
-                if (
-                    current_patch_query.fetch1("food_patch_install_time")
-                    == arena_setup["start-time"]
-                ):
+                if current_patch_query.fetch1("food_patch_install_time") == arena_setup["start-time"]:
                     # If it is installed at the same time as that read from this yml file
                     # then it is the same ExperimentFoodPatch instance, no need to do anything
                     continue
@@ -127,21 +116,16 @@ def ingest_exp01_metadata(metadata_yml_filepath, experiment_name):
             )
         # ---- Load weight scales ----
         for weight_scale in arena_setup["weight-scales"]:
-            weight_scale_key = {
-                "weight_scale_serial_number": weight_scale["serial-number"]
-            }
+            weight_scale_key = {"weight_scale_serial_number": weight_scale["serial-number"]}
             if weight_scale_key not in lab.WeightScale():
                 lab.WeightScale.insert1(weight_scale_key)
             # ---- Check if this weight scale is currently installed - if so, remove it
             current_weight_scale_query = (
-                acquisition.ExperimentWeightScale
-                - acquisition.ExperimentWeightScale.RemovalTime
+                acquisition.ExperimentWeightScale - acquisition.ExperimentWeightScale.RemovalTime
                 & {"experiment_name": experiment_name}
                 & weight_scale_key
             )
-            if (
-                current_weight_scale_query
-            ):  # If the same weight scale is currently installed
+            if current_weight_scale_query:  # If the same weight scale is currently installed
                 if (
                     current_weight_scale_query.fetch1("weight_scale_install_time")
                     == arena_setup["start-time"]
@@ -271,12 +255,8 @@ def add_arena_setup():
     # manually update coordinates of foodpatch and nest
     patch_coordinates = {"Patch1": (1.13, 1.59, 0), "Patch2": (1.19, 0.50, 0)}
 
-    for patch_key in (
-        acquisition.ExperimentFoodPatch & {"experiment_name": experiment_name}
-    ).fetch("KEY"):
-        patch = (acquisition.ExperimentFoodPatch & patch_key).fetch1(
-            "food_patch_description"
-        )
+    for patch_key in (acquisition.ExperimentFoodPatch & {"experiment_name": experiment_name}).fetch("KEY"):
+        patch = (acquisition.ExperimentFoodPatch & patch_key).fetch1("food_patch_description")
         x, y, z = patch_coordinates[patch]
         acquisition.ExperimentFoodPatch.Position.update1(
             {

@@ -38,9 +38,7 @@ class OSC(StreamGroup):
     class EndTrial(Stream):
         def __init__(self, pattern):
             """Initialises the EndTrial stream."""
-            super().__init__(
-                _reader.Csv(f"{pattern}_endtrial_*", columns=["typetag", "value"])
-            )
+            super().__init__(_reader.Csv(f"{pattern}_endtrial_*", columns=["typetag", "value"]))
 
     class Slice(Stream):
         def __init__(self, pattern):
@@ -119,9 +117,7 @@ class OSC(StreamGroup):
     class StartNewSession(Stream):
         def __init__(self, pattern):
             """Initializes the StartNewSession class."""
-            super().__init__(
-                _reader.Csv(f"{pattern}_startnewsession_*", columns=["typetag", "path"])
-            )
+            super().__init__(_reader.Csv(f"{pattern}_startnewsession_*", columns=["typetag", "path"]))
 
 
 class TaskLogic(StreamGroup):
@@ -137,9 +133,7 @@ class TaskLogic(StreamGroup):
     class Response(Stream):
         def __init__(self, pattern):
             """Initializes the Response stream."""
-            super().__init__(
-                _reader.Harp(f"{pattern}_2_*", columns=["wall_id", "poke_id"])
-            )
+            super().__init__(_reader.Harp(f"{pattern}_2_*", columns=["wall_id", "poke_id"]))
 
     class PreTrialState(Stream):
         def __init__(self, pattern):
@@ -175,23 +169,17 @@ class Wall(StreamGroup):
     class BeamBreak0(Stream):
         def __init__(self, pattern):
             """Initialises the BeamBreak0 stream."""
-            super().__init__(
-                _reader.DigitalBitmask(f"{pattern}_32_*", 0x1, columns=["state"])
-            )
+            super().__init__(_reader.DigitalBitmask(f"{pattern}_32_*", 0x1, columns=["state"]))
 
     class BeamBreak1(Stream):
         def __init__(self, pattern):
             """Initialises the BeamBreak1 stream."""
-            super().__init__(
-                _reader.DigitalBitmask(f"{pattern}_32_*", 0x2, columns=["state"])
-            )
+            super().__init__(_reader.DigitalBitmask(f"{pattern}_32_*", 0x2, columns=["state"]))
 
     class BeamBreak2(Stream):
         def __init__(self, pattern):
             """Initialises the BeamBreak2 stream."""
-            super().__init__(
-                _reader.DigitalBitmask(f"{pattern}_32_*", 0x4, columns=["state"])
-            )
+            super().__init__(_reader.DigitalBitmask(f"{pattern}_32_*", 0x4, columns=["state"]))
 
     class SetLed0(Stream):
         def __init__(self, pattern):
