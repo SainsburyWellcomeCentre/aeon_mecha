@@ -39,6 +39,7 @@ class Device:
         self.registry = compositeStream(name if pattern is None else pattern, *args)
 
     def __iter__(self):
+        """Iterates over the device registry."""
         if len(self.registry) == 1:
             singleton = self.registry.get(self.name, None)
             if singleton:

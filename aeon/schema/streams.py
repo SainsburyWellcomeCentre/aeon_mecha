@@ -16,6 +16,7 @@ class Stream:
         self.reader = reader
 
     def __iter__(self):
+        """Yields the stream name and reader."""
         yield (self.__class__.__name__, self.reader)
 
 
@@ -37,6 +38,7 @@ class StreamGroup:
         )
 
     def __iter__(self):
+        """Yields the stream name and reader for each data stream in the group."""
         for factory in chain(self._nested, self._args):
             yield from iter(factory(self.path))
 
@@ -79,6 +81,7 @@ class Device:
         return streams
 
     def __iter__(self):
+        """Iterates over the device streams."""
         if len(self._streams) == 1:
             singleton = self._streams.get(self.name, None)
             if singleton:
