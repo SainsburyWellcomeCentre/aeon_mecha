@@ -53,7 +53,7 @@ def plot_reward_rate_differences(subject_keys):
 
     y_labels = [
         f'{subj_name}_{sess_start.strftime("%m/%d/%Y")}'
-        for subj_name, sess_start in zip(subj_names, sess_starts)
+        for subj_name, sess_start in zip(subj_names, sess_starts, strict=False)
     ]
 
     rateDiffs_matrix = np.full((nSessions, longest_rateDiff), np.nan)
@@ -110,7 +110,7 @@ def plot_wheel_travelled_distance(session_keys):
     distance_travelled_df["in_arena"] = [
         f'{subj_name}_{sess_start.strftime("%m/%d/%Y")}'
         for subj_name, sess_start in zip(
-            distance_travelled_df.subject, distance_travelled_df.in_arena_start
+            distance_travelled_df.subject, distance_travelled_df.in_arena_start, strict=False
         )
     ]
 

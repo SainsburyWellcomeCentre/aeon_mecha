@@ -47,7 +47,7 @@ def create_new_experiment():
                 "directory_type": "raw",
                 "directory_path": f"aeon/data/raw/{computer}/{experiment_type}",
             }
-            for experiment_name, computer in zip(experiment_names, computers)
+            for experiment_name, computer in zip(experiment_names, computers, strict=False)
         ],
         skip_duplicates=True,
     )

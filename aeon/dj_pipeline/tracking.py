@@ -283,7 +283,7 @@ def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y") -> pd.Series:
     return an array of boolean indicating whether or not a position is inside the nest.
     """
     nest_vertices = list(
-        zip(*(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y"))
+        zip(*(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y"), strict=False)
     )
     nest_path = matplotlib.path.Path(nest_vertices)
     position_df["in_nest"] = nest_path.contains_points(position_df[[xcol, ycol]])
@@ -336,7 +336,7 @@ def _get_position(
     position = pd.DataFrame(
         {
             k: np.hstack(v) * scale_factor if k in attrs_to_scale else np.hstack(v)
-            for k, v in zip(fetch_attrs, fetched_data)
+            for k, v in zip(fetch_attrs, fetched_data, strict=False)
         }
     )
     position.set_index(timestamp_attr, inplace=True)

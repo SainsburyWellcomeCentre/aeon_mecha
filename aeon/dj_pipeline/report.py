@@ -206,7 +206,7 @@ class InArenaSummaryPlot(dj.Computed):
                 label="nest",
             )
         for patch_idx, (patch_name, in_patch) in enumerate(
-            zip(patch_names, in_patches)
+            zip(patch_names, in_patches, strict=False)
         ):
             ethogram_ax.plot(
                 position_minutes_elapsed[in_patch],
@@ -584,7 +584,7 @@ def _make_path(in_arena_key):
 def _save_figs(figs, fig_names, save_dir, prefix, extension=".png"):
     """Save figures and return a dictionary with figure names and file paths"""
     fig_dict = {}
-    for fig, figname in zip(figs, fig_names):
+    for fig, figname in zip(figs, fig_names, strict=False):
         fig_fp = save_dir / (prefix + "_" + figname + extension)
         fig.tight_layout()
         fig.savefig(fig_fp, dpi=300)

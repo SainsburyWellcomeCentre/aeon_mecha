@@ -163,7 +163,7 @@ def ingest_environment_visits(experiment_names: list | None = None):
                     "enter_exit_time",
                     "event_type",
                     order_by="enter_exit_time",
-                )
+                ), strict=False
             )
         )
         enter_exit_df.columns = ["id", "time", "event"]
@@ -243,7 +243,7 @@ def get_maintenance_periods(experiment_name, start, end):
     return deque(
         [
             (pd.Timestamp(start), pd.Timestamp(end))
-            for start, end in zip(maintenance_starts, maintenance_ends)
+            for start, end in zip(maintenance_starts, maintenance_ends, strict=False)
         ]
     )  # queue object. pop out from left after use
 

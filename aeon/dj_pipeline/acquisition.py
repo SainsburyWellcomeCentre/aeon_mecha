@@ -35,7 +35,7 @@ class ExperimentType(dj.Lookup):
     experiment_type: varchar(32)
     """
 
-    contents = zip(["foraging", "social"])
+    contents = zip(["foraging", "social"], strict=False)
 
 
 @schema
@@ -63,7 +63,7 @@ class DevicesSchema(dj.Lookup):
     devices_schema_name: varchar(32)
     """
 
-    contents = zip(aeon_schemas.__all__)
+    contents = zip(aeon_schemas.__all__, strict=False)
 
 
 # ------------------- Data repository/directory ------------------------
@@ -75,7 +75,7 @@ class PipelineRepository(dj.Lookup):
     repository_name: varchar(16)
     """
 
-    contents = zip(["ceph_aeon"])
+    contents = zip(["ceph_aeon"], strict=False)
 
 
 @schema
@@ -84,7 +84,7 @@ class DirectoryType(dj.Lookup):
     directory_type: varchar(16)
     """
 
-    contents = zip(["raw", "processed", "qc"])
+    contents = zip(["raw", "processed", "qc"], strict=False)
 
 
 # ------------------- GENERAL INFORMATION ABOUT AN EXPERIMENT --------------------

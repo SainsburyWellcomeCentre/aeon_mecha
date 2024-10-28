@@ -227,7 +227,7 @@ class BlockAnalysis(dj.Computed):
         patch_keys, patch_names = patch_query.fetch("KEY", "underground_feeder_name")
 
         block_patch_entries = []
-        for patch_key, patch_name in zip(patch_keys, patch_names):
+        for patch_key, patch_name in zip(patch_keys, patch_names, strict=False):
             # pellet delivery and patch threshold data
             depletion_state_df = fetch_stream(
                 streams.UndergroundFeederDepletionState & patch_key & chunk_restriction
