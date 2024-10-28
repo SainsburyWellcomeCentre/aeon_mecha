@@ -1,6 +1,5 @@
 """DataJoint schema for tracking data."""
 
-from pathlib import Path
 
 import datajoint as dj
 import matplotlib.path
@@ -12,7 +11,6 @@ from aeon.dj_pipeline import (
     dict_to_uuid,
     get_schema_name,
     lab,
-    qc,
     streams,
 )
 from aeon.io import api as io_api

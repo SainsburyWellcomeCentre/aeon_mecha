@@ -6,11 +6,9 @@ import pathlib
 import re
 
 import datajoint as dj
-import numpy as np
 import pandas as pd
 
-from aeon.analysis import utils as analysis_utils
-from aeon.dj_pipeline import get_schema_name, lab, subject
+from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline.utils import paths
 from aeon.io import api as io_api
 from aeon.io import reader as io_reader

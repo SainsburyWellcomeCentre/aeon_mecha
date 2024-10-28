@@ -14,7 +14,7 @@ from aeon.analysis import plotting as analysis_plotting
 from aeon.dj_pipeline.analysis.visit import Visit, VisitEnd
 from aeon.dj_pipeline.analysis.visit_analysis import *
 
-from . import acquisition, analysis, get_schema_name
+from . import acquisition, analysis
 
 logger = dj.logger
 

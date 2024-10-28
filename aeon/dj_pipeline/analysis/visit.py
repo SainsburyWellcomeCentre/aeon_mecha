@@ -9,7 +9,7 @@ from collections import deque
 from aeon.analysis import utils as analysis_utils
 
 from aeon.dj_pipeline import get_schema_name, fetch_stream
-from aeon.dj_pipeline import acquisition, lab, qc, tracking
+from aeon.dj_pipeline import acquisition
 
 schema = dj.schema(get_schema_name("analysis"))
 

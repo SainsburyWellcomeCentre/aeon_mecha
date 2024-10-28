@@ -1,6 +1,5 @@
 """Function to create new social experiments"""
 
-from pathlib import Path
 from datetime import datetime
 from aeon.dj_pipeline import acquisition
 from aeon.dj_pipeline.utils.paths import get_repository_path

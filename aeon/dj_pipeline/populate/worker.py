@@ -7,7 +7,6 @@ from datajoint_utilities.dj_worker import (
     DataJointWorker,
     ErrorLog,
     WorkerLog,
-    RegisteredWorker,
 )
 from datajoint_utilities.dj_worker.worker_schema import is_djtable
 

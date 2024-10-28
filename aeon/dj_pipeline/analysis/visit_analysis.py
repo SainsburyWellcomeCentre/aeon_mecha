@@ -7,7 +7,6 @@ import datajoint as dj
 import numpy as np
 import pandas as pd
 
-from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline import acquisition, lab, tracking
 from aeon.dj_pipeline.analysis.visit import (
     Visit,
