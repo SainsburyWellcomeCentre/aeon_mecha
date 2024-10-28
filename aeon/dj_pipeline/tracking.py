@@ -254,6 +254,7 @@ class SLEAPTracking(dj.Imported):
 
 
 def compute_distance(position_df, target, xcol="x", ycol="y"):
+    """Compute the distance of the position data from a target point."""
     if len(target) != 2:
         raise ValueError("Target must be a list of tuple of length 2.")
     return np.sqrt(np.square(position_df[[xcol, ycol]] - target).sum(axis=1))
@@ -262,6 +263,7 @@ def compute_distance(position_df, target, xcol="x", ycol="y"):
 def is_position_in_patch(
     position_df, patch_position, wheel_distance_travelled, patch_radius=0.2
 ) -> pd.Series:
+    """The function returns a boolean array indicating whether the position is inside the patch."""
     distance_from_patch = compute_distance(position_df, patch_position)
     in_patch = distance_from_patch < patch_radius
     exit_patch = in_patch.astype(np.int8).diff() < 0
@@ -296,6 +298,7 @@ def _get_position(
     attrs_to_scale: list,
     scale_factor=1.0,
 ):
+    """Get the position data for a given object between the specified time range."""
     obj_restriction = {object_attr: object_name}
 
     start_restriction = f'"{start}" BETWEEN {start_attr} AND {end_attr}'

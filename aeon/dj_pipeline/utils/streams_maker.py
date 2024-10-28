@@ -154,6 +154,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             )
 
         def make(self, key):
+            """Load and insert the data for the DeviceDataStream table."""
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end"
             )
@@ -204,6 +205,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
 
 def main(create_tables=True):
+    """Main function to create and update stream-related tables in the analysis schema."""
     if not _STREAMS_MODULE_FILE.exists():
         with open(_STREAMS_MODULE_FILE, "w") as f:
             imports_str = (

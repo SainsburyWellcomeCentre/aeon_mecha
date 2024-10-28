@@ -18,6 +18,7 @@ ceph_data_dir = ceph_dir / "aeon" / "data"
 
 
 def create_new_social_experiment(experiment_name):
+    """Create new social experiment"""
     exp_name, machine_name = experiment_name.split("-")
     raw_dir = ceph_data_dir / "raw" / machine_name.upper() / exp_name
     if not raw_dir.exists():

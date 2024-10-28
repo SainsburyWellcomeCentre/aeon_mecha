@@ -8,6 +8,7 @@ _weight_scale_rate = 20
 
 
 def create_new_experiment():
+    """Create new experiment for octagon1.0"""
     # ---------------- Subject -----------------
     # This will get replaced by content from colony.csv
     subject_list = [
@@ -62,6 +63,7 @@ def create_new_experiment():
 
 
 def main():
+    """Main function to create a new experiment."""
     create_new_experiment()
 
 

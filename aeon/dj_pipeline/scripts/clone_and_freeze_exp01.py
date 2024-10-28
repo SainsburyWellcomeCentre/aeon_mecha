@@ -34,6 +34,7 @@ batch_size = None
 
 
 def clone_pipeline():
+    """Clone the pipeline for experiment 0.1"""
     diagram = None
     for orig_schema_name in schema_name_mapper:
         virtual_module = dj.create_virtual_module(orig_schema_name, orig_schema_name)
@@ -47,6 +48,7 @@ def clone_pipeline():
 
 
 def data_copy(restriction, table_block_list, batch_size=None):
+    """Migrate schema."""
     for orig_schema_name, cloned_schema_name in schema_name_mapper.items():
         orig_schema = dj.create_virtual_module(orig_schema_name, orig_schema_name)
         cloned_schema = dj.create_virtual_module(cloned_schema_name, cloned_schema_name)

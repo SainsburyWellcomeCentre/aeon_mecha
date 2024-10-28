@@ -9,6 +9,7 @@ computers = ["AEON2", "AEON3", "AEON4"]
 
 
 def create_new_experiment():
+    """Create new experiments for presocial0.1"""
     lab.Location.insert1({"lab": "SWC", "location": location}, skip_duplicates=True)
 
     acquisition.ExperimentType.insert1(
@@ -55,6 +56,8 @@ def create_new_experiment():
 
 
 def main():
+    """Main function to create a new experiment."""
+
     create_new_experiment()
 
 

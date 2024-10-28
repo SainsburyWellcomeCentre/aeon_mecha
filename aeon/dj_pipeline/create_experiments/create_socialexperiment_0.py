@@ -12,6 +12,7 @@ experiment_name = "social0-r1"
 
 
 def create_new_experiment():
+    """Create new experiments for social0-r1"""
     # ---------------- Subject -----------------
     subject_list = [
         {"subject": "BAA-1100704", "sex": "U", "subject_birth_date": "2021-01-01"},
@@ -86,6 +87,7 @@ def create_new_experiment():
 
 
 def add_arena_setup():
+    """Add arena setup."""
     # Arena Setup - Experiment Devices
     this_file = pathlib.Path(__file__).expanduser().absolute().resolve()
     metadata_yml_filepath = this_file.parent / "setup_yml" / "SocialExperiment0.yml"
@@ -113,6 +115,7 @@ def add_arena_setup():
 
 
 def main():
+    """Main function to create a new experiment and set up the arena."""
     create_new_experiment()
     add_arena_setup()
 

@@ -390,6 +390,7 @@ def get_device_info(devices_schema: DotMap) -> dict[dict]:
     """
 
     def _get_class_path(obj):
+        """Returns the class path of the object."""
         return f"{obj.__class__.__module__}.{obj.__class__.__name__}"
 
     schema_json = json.dumps(devices_schema, default=lambda x: x.__dict__, indent=4)

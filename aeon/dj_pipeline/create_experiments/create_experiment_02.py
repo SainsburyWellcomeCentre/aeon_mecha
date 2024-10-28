@@ -8,6 +8,7 @@ _weight_scale_rate = 20
 
 
 def create_new_experiment():
+    """Create new experiment for experiment0.2"""
     # ---------------- Subject -----------------
     subject_list = [
         {"subject": "BAA-1100699", "sex": "U", "subject_birth_date": "2021-01-01"},
@@ -81,6 +82,7 @@ def create_new_experiment():
 
 
 def main():
+    """Main function to create a new experiment."""
     create_new_experiment()
 
 

@@ -114,6 +114,7 @@ analysis_worker(block_analysis.BlockSubjectPlots, max_calls=6)
 
 
 def get_workflow_operation_overview():
+    """Get the workflow operation overview for the worker schema."""
     from datajoint_utilities.dj_worker.utils import get_workflow_operation_overview
 
     return get_workflow_operation_overview(

@@ -11,6 +11,7 @@ _weight_scale_rate = 100
 
 
 def ingest_exp01_metadata(metadata_yml_filepath, experiment_name):
+    """Ingest metadata from a yml file into the database for experiment 0.1."""
     with open(metadata_yml_filepath) as f:
         arena_setup = yaml.full_load(f)
 
@@ -181,6 +182,7 @@ experiment_name = "exp0.1-r0"
 
 
 def create_new_experiment():
+    """Create a new experiment and add subjects to it."""
     # ---------------- Subject -----------------
     subject.Subject.insert(
         [
@@ -259,6 +261,7 @@ def create_new_experiment():
 
 
 def add_arena_setup():
+    """Add arena setup."""
     # Arena Setup - Experiment Devices
     this_file = pathlib.Path(__file__).expanduser().absolute().resolve()
     metadata_yml_filepath = this_file.parent / "setup_yml" / "Experiment0.1.yml"
@@ -286,6 +289,7 @@ def add_arena_setup():
 
 
 def main():
+    """Main function to create a new experiment and set up the arena."""
     create_new_experiment()
     add_arena_setup()
 

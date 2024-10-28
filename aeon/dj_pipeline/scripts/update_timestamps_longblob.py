@@ -38,6 +38,7 @@ schema_names = (
 
 
 def main():
+    """Update all timestamps longblob fields in the specified schemas."""
     for schema_name in schema_names:
         vm = dj.create_virtual_module(schema_name, schema_name)
         table_names = [
@@ -81,6 +82,7 @@ def main():
 
 
 def get_table(schema_object, table_object_name):
+    """Get the table object from the schema object."""
     if "." in table_object_name:
         master_name, part_name = table_object_name.split(".")
         return getattr(getattr(schema_object, master_name), part_name)
