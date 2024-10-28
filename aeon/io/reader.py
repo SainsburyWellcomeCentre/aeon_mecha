@@ -159,8 +159,8 @@ class Csv(Reader):
 
 
 class JsonList(Reader):
-    """Extracts data from json list (.jsonl) files, where the key "seconds"
-    stores the Aeon timestamp, in seconds.
+    """
+    Extracts data from json list (.jsonl) files, where the key "seconds" stores the Aeon timestamp, in seconds.
     """
 
     def __init__(self, pattern, columns=(), root_key="value", extension="jsonl"):

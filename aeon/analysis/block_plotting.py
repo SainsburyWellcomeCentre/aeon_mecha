@@ -63,12 +63,17 @@ def gen_subject_colors_dict(subject_names):
 
 
 def gen_patch_style_dict(patch_names):
-    """Based on a list of patches, generates a dictionary of:
+    """
+
+    Based on a list of patches, generates a dictionary of:
+
     - patch_colors_dict: patch name to color
     - patch_markers_dict: patch name to marker
     - patch_symbols_dict: patch name to symbol
     - patch_linestyles_dict: patch name to linestyle
+
     """
+
     return {
         "colors": {p: c for p, c in zip(patch_names, patch_colors, strict=False)},
         "markers": {p: m for p, m in zip(patch_names, patch_markers, strict=False)},
