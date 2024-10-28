@@ -103,6 +103,7 @@ class VisitSubjectPosition(dj.Computed):
         )
 
     def make(self, key):
+        """Populate VisitSubjectPosition for each visit"""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )
@@ -275,6 +276,7 @@ class VisitTimeDistribution(dj.Computed):
     )
 
     def make(self, key):
+        """Populate VisitTimeDistribution for each visit"""
         visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
         visit_dates = pd.date_range(
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
@@ -430,6 +432,7 @@ class VisitSummary(dj.Computed):
     )
 
     def make(self, key):
+        """Populate VisitSummary for each visit"""
         visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
         visit_dates = pd.date_range(
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
@@ -574,6 +577,7 @@ class VisitForagingBout(dj.Computed):
     ) * acquisition.ExperimentFoodPatch
 
     def make(self, key):
+        """Populate VisitForagingBout for each visit."""
         visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
 
         # get in_patch timestamps

@@ -137,8 +137,10 @@ class BlockAnalysis(dj.Computed):
 
     @property
     def key_source(self):
-        # Ensure that the chunk ingestion has caught up with this block before processing
-        # (there exists a chunk that ends after the block end time)
+        """
+        Ensure that the chunk ingestion has caught up with this block before processing
+        (there exists a chunk that ends after the block end time)
+        """
         ks = Block.aggr(acquisition.Chunk, latest_chunk_end="MAX(chunk_end)")
         ks = ks * Block & "latest_chunk_end >= block_end" & "block_end IS NOT NULL"
         return ks
@@ -430,6 +432,7 @@ class BlockSubjectAnalysis(dj.Computed):
     key_source = BlockAnalysis & BlockAnalysis.Patch & BlockAnalysis.Subject
 
     def make(self, key):
+        """Compute preference scores for each subject at each patch within a block."""
         block_patches = (BlockAnalysis.Patch & key).fetch(as_dict=True)
         block_subjects = (BlockAnalysis.Subject & key).fetch(as_dict=True)
         subject_names = [s["subject_name"] for s in block_subjects]
@@ -720,6 +723,7 @@ class BlockPatchPlots(dj.Computed):
     """
 
     def make(self, key):
+        """Compute and plot various block-level statistics and visualizations."""
         # Define subject colors and patch styling for plotting
         exp_subject_names = (acquisition.Experiment.Subject & key).fetch(
             "subject", order_by="subject"
@@ -1461,6 +1465,8 @@ class BlockSubjectPositionPlots(dj.Computed):
     """
 
     def make(self, key):
+        """Compute and plot various block-level statistics and visualizations."""
+
         # Get some block info
         block_start, block_end = (Block & key).fetch1("block_start", "block_end")
         chunk_restriction = acquisition.create_chunk_restriction(
@@ -1737,6 +1743,7 @@ class BlockForaging(dj.Computed):
         """
 
     def make(self, key):
+        """ Compute and store foraging bouts for each subject in the block. """
         foraging_bout_df = get_foraging_bouts(key)
         foraging_bout_df.rename(
             columns={

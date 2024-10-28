@@ -45,6 +45,7 @@ class InArenaSummaryPlot(dj.Computed):
     }
 
     def make(self, key):
+        """Make method for InArenaSummaryPlot table"""
         in_arena_start, in_arena_end = (
             analysis.InArena * analysis.InArenaEnd & key
         ).fetch1("in_arena_start", "in_arena_end")
@@ -300,6 +301,7 @@ class SubjectRewardRateDifference(dj.Computed):
     key_source = acquisition.Experiment.Subject & analysis.InArenaRewardRate
 
     def make(self, key):
+        """Insert reward rate differences plot in SubjectRewardRateDifference table."""
         from aeon.dj_pipeline.utils.plotting import plot_reward_rate_differences
 
         fig = plot_reward_rate_differences(key)
@@ -343,6 +345,7 @@ class SubjectWheelTravelledDistance(dj.Computed):
     key_source = acquisition.Experiment.Subject & analysis.InArenaSummary
 
     def make(self, key):
+        """Insert wheel travelled distance plot in SubjectWheelTravelledDistance table."""
         from aeon.dj_pipeline.utils.plotting import plot_wheel_travelled_distance
 
         in_arena_keys = (analysis.InArenaSummary & key).fetch("KEY")
@@ -386,6 +389,7 @@ class ExperimentTimeDistribution(dj.Computed):
     """
 
     def make(self, key):
+        """Insert average time distribution plot into ExperimentTimeDistribution table."""
         from aeon.dj_pipeline.utils.plotting import plot_average_time_distribution
 
         in_arena_keys = (analysis.InArenaTimeDistribution & key).fetch("KEY")
@@ -420,6 +424,7 @@ class ExperimentTimeDistribution(dj.Computed):
 
 
 def delete_outdated_plot_entries():
+    """Delete outdated entries in the tables that store plots."""
     for tbl in (
         SubjectRewardRateDifference,
         SubjectWheelTravelledDistance,
@@ -452,6 +457,7 @@ class VisitDailySummaryPlot(dj.Computed):
     )
 
     def make(self, key):
+        """Make method for VisitDailySummaryPlot table"""
         from aeon.dj_pipeline.utils.plotting import (
             plot_foraging_bouts_count,
             plot_foraging_bouts_distribution,
@@ -551,6 +557,7 @@ class VisitDailySummaryPlot(dj.Computed):
 
 
 def _make_path(in_arena_key):
+    """Make path for saving figures"""
     store_stage = pathlib.Path(dj.config["stores"]["djstore"]["stage"])
     experiment_name, subject, in_arena_start = (analysis.InArena & in_arena_key).fetch1(
         "experiment_name", "subject", "in_arena_start"
@@ -566,6 +573,7 @@ def _make_path(in_arena_key):
 
 
 def _save_figs(figs, fig_names, save_dir, prefix, extension=".png"):
+    """Save figures and return a dictionary with figure names and file paths"""
     fig_dict = {}
     for fig, figname in zip(figs, fig_names):
         fig_fp = save_dir / (prefix + "_" + figname + extension)

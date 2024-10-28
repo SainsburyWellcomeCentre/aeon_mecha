@@ -189,6 +189,7 @@ class RfidReaderRfidEvents(dj.Imported):
         )
 
     def make(self, key):
+        """Load and insert RfidEvents data stream for a given chunk and RfidReader."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )
@@ -242,11 +243,11 @@ class SpinnakerVideoSourceVideo(dj.Imported):
 
     @property
     def key_source(self):
-        f"""
-            Only the combination of Chunk and SpinnakerVideoSource with overlapping time
-            +  Chunk(s) that started after SpinnakerVideoSource install time and ended before SpinnakerVideoSource remove time
-            +  Chunk(s) that started after SpinnakerVideoSource install time for SpinnakerVideoSource that are not yet removed
-            """
+        """
+        Only the combination of Chunk and SpinnakerVideoSource with overlapping time
+        +  Chunk(s) that started after SpinnakerVideoSource install time and ended before SpinnakerVideoSource remove time
+        +  Chunk(s) that started after SpinnakerVideoSource install time for SpinnakerVideoSource that are not yet removed
+        """
         return (
             acquisition.Chunk
             * SpinnakerVideoSource.join(SpinnakerVideoSource.RemovalTime, left=True)
@@ -255,6 +256,7 @@ class SpinnakerVideoSourceVideo(dj.Imported):
         )
 
     def make(self, key):
+        """Load and insert Video data stream for a given chunk and SpinnakerVideoSource."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )
@@ -307,11 +309,11 @@ class UndergroundFeederBeamBreak(dj.Imported):
 
     @property
     def key_source(self):
-        f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
-            """
+        """
+        Only the combination of Chunk and UndergroundFeeder with overlapping time
+        +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
+        +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+        """
         return (
             acquisition.Chunk
             * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
@@ -320,6 +322,7 @@ class UndergroundFeederBeamBreak(dj.Imported):
         )
 
     def make(self, key):
+        """Load and insert BeamBreak data stream for a given chunk and UndergroundFeeder."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )
@@ -372,11 +375,11 @@ class UndergroundFeederDeliverPellet(dj.Imported):
 
     @property
     def key_source(self):
-        f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
-            """
+        """
+        Only the combination of Chunk and UndergroundFeeder with overlapping time
+        +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
+        +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+        """
         return (
             acquisition.Chunk
             * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
@@ -385,6 +388,7 @@ class UndergroundFeederDeliverPellet(dj.Imported):
         )
 
     def make(self, key):
+        """Load and insert DeliverPellet data stream for a given chunk and UndergroundFeeder."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )
@@ -439,11 +443,11 @@ class UndergroundFeederDepletionState(dj.Imported):
 
     @property
     def key_source(self):
-        f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
-            """
+        """
+        Only the combination of Chunk and UndergroundFeeder with overlapping time
+        +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
+        +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+        """
         return (
             acquisition.Chunk
             * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
@@ -452,6 +456,7 @@ class UndergroundFeederDepletionState(dj.Imported):
         )
 
     def make(self, key):
+        """Load and insert DepletionState data stream for a given chunk and UndergroundFeeder."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )
@@ -505,11 +510,11 @@ class UndergroundFeederEncoder(dj.Imported):
 
     @property
     def key_source(self):
-        f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
-            """
+        """
+        Only the combination of Chunk and UndergroundFeeder with overlapping time
+        +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
+        +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+        """
         return (
             acquisition.Chunk
             * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
@@ -518,6 +523,7 @@ class UndergroundFeederEncoder(dj.Imported):
         )
 
     def make(self, key):
+        """Load and insert Encoder data stream for a given chunk and UndergroundFeeder."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )
@@ -570,11 +576,11 @@ class UndergroundFeederManualDelivery(dj.Imported):
 
     @property
     def key_source(self):
-        f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
-            """
+        """
+        Only the combination of Chunk and UndergroundFeeder with overlapping time
+        +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
+        +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+        """
         return (
             acquisition.Chunk
             * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
@@ -583,6 +589,7 @@ class UndergroundFeederManualDelivery(dj.Imported):
         )
 
     def make(self, key):
+        """Load and insert ManualDelivery data stream for a given chunk and UndergroundFeeder."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )
@@ -635,11 +642,11 @@ class UndergroundFeederMissedPellet(dj.Imported):
 
     @property
     def key_source(self):
-        f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
-            """
+        """
+        Only the combination of Chunk and UndergroundFeeder with overlapping time
+        +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
+        +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+        """
         return (
             acquisition.Chunk
             * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
@@ -648,6 +655,7 @@ class UndergroundFeederMissedPellet(dj.Imported):
         )
 
     def make(self, key):
+        """Load and insert MissedPellet data stream for a given chunk and UndergroundFeeder."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )
@@ -700,11 +708,11 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
 
     @property
     def key_source(self):
-        f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
-            """
+        """
+        Only the combination of Chunk and UndergroundFeeder with overlapping time
+        +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
+        +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+        """
         return (
             acquisition.Chunk
             * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
@@ -713,6 +721,7 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
         )
 
     def make(self, key):
+        """Load and insert RetriedDelivery data stream for a given chunk and UndergroundFeeder."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )
@@ -766,11 +775,11 @@ class WeightScaleWeightFiltered(dj.Imported):
 
     @property
     def key_source(self):
-        f"""
-            Only the combination of Chunk and WeightScale with overlapping time
-            +  Chunk(s) that started after WeightScale install time and ended before WeightScale remove time
-            +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed
-            """
+        """
+        Only the combination of Chunk and WeightScale with overlapping time
+        +  Chunk(s) that started after WeightScale install time and ended before WeightScale remove time
+        +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed
+        """
         return (
             acquisition.Chunk * WeightScale.join(WeightScale.RemovalTime, left=True)
             & "chunk_start >= weight_scale_install_time"
@@ -778,6 +787,7 @@ class WeightScaleWeightFiltered(dj.Imported):
         )
 
     def make(self, key):
+        """Load and insert WeightFiltered data stream for a given chunk and WeightScale."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )
@@ -831,11 +841,11 @@ class WeightScaleWeightRaw(dj.Imported):
 
     @property
     def key_source(self):
-        f"""
-            Only the combination of Chunk and WeightScale with overlapping time
-            +  Chunk(s) that started after WeightScale install time and ended before WeightScale remove time
-            +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed
-            """
+        """
+        Only the combination of Chunk and WeightScale with overlapping time
+        +  Chunk(s) that started after WeightScale install time and ended before WeightScale remove time
+        +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed
+        """
         return (
             acquisition.Chunk * WeightScale.join(WeightScale.RemovalTime, left=True)
             & "chunk_start >= weight_scale_install_time"
@@ -843,6 +853,7 @@ class WeightScaleWeightRaw(dj.Imported):
         )
 
     def make(self, key):
+        """Load and insert WeightRaw data stream for a given chunk and WeightScale."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )

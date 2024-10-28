@@ -81,6 +81,7 @@ class TrackingParamSet(dj.Lookup):
         params: dict,
         tracking_paramset_id: int = None,
     ):
+        """Insert a new set of parameters for a given tracking method."""
         if tracking_paramset_id is None:
             tracking_paramset_id = (
                 dj.U().aggr(cls, n="max(tracking_paramset_id)").fetch1("n") or 0
@@ -152,6 +153,7 @@ class SLEAPTracking(dj.Imported):
 
     @property
     def key_source(self):
+        """Return the keys to be processed."""
         return (
             acquisition.Chunk
             * (
@@ -166,6 +168,7 @@ class SLEAPTracking(dj.Imported):
         )  # SLEAP & CameraTop
 
     def make(self, key):
+        """Ingest SLEAP tracking data for a given chunk."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )

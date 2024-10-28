@@ -138,6 +138,7 @@ class Experiment(dj.Manual):
 
     @classmethod
     def get_data_directory(cls, experiment_key, directory_type="raw", as_posix=False):
+        """Get the data directory for the specified ``experiment_key`` and ``directory_type``."""
         try:
             repo_name, dir_path = (
                 cls.Directory & experiment_key & {"directory_type": directory_type}
@@ -158,6 +159,7 @@ class Experiment(dj.Manual):
 
     @classmethod
     def get_data_directories(cls, experiment_key, directory_types=None, as_posix=False):
+        """Get the data directories for the specified ``experiment_key`` and ``directory_types``."""
         if directory_types is None:
             directory_types = (cls.Directory & experiment_key).fetch(
                 "directory_type", order_by="load_order"
@@ -318,6 +320,7 @@ class EpochConfig(dj.Imported):
         """
 
     def make(self, key):
+        """Ingest metadata into EpochConfig."""
         from aeon.dj_pipeline.utils import streams_maker
         from aeon.dj_pipeline.utils.load_metadata import (
             extract_epoch_config,
@@ -398,6 +401,7 @@ class Chunk(dj.Manual):
 
     @classmethod
     def ingest_chunks(cls, experiment_name):
+        """Ingest chunks for the specified ``experiment_name``."""
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
@@ -553,6 +557,7 @@ class Environment(dj.Imported):
         """
 
     def make(self, key):
+        """Ingest environment data into Environment table."""
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
 
         # Populate the part table
@@ -616,6 +621,7 @@ class EnvironmentActiveConfiguration(dj.Imported):
         """
 
     def make(self, key):
+        """Ingest active configuration data into EnvironmentActiveConfiguration table."""
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
         data_dirs = Experiment.get_data_directories(key)
         devices_schema = getattr(
@@ -647,6 +653,7 @@ class EnvironmentActiveConfiguration(dj.Imported):
 
 
 def _get_all_chunks(experiment_name, device_name):
+    """Get all chunks for the specified ``experiment_name`` and ``device_name``."""
     directory_types = ["quality-control", "raw"]
     raw_data_dirs = {
         dir_type: Experiment.get_data_directory(
@@ -672,6 +679,7 @@ def _get_all_chunks(experiment_name, device_name):
 
 
 def _match_experiment_directory(experiment_name, path, directories):
+    """Match the path to the experiment directory."""
     for k, v in directories.items():
         raw_data_dir = v
         if pathlib.Path(raw_data_dir) in list(path.parents):

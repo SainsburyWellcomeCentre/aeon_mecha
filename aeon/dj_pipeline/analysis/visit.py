@@ -69,11 +69,13 @@ class OverlapVisit(dj.Computed):
 
     @property
     def key_source(self):
+        """Key source for OverlapVisit."""
         return dj.U("experiment_name", "place", "overlap_start") & (
             Visit & VisitEnd
         ).proj(overlap_start="visit_start")
 
     def make(self, key):
+        """Populate OverlapVisit table with overlapping visits."""
         visit_starts, visit_ends = (
             Visit * VisitEnd & key & {"visit_start": key["overlap_start"]}
         ).fetch("visit_start", "visit_end")
@@ -194,6 +196,7 @@ def ingest_environment_visits(experiment_names: list | None = None):
 
 
 def get_maintenance_periods(experiment_name, start, end):
+    """Get maintenance periods for the specified experiment and time range."""
     # get states from acquisition.Environment.EnvironmentState
     chunk_restriction = acquisition.create_chunk_restriction(
         experiment_name, start, end
@@ -242,6 +245,7 @@ def get_maintenance_periods(experiment_name, start, end):
 
 
 def filter_out_maintenance_periods(data_df, maintenance_period, end_time, dropna=False):
+    """Filter out maintenance periods from the data_df."""
     maint_period = maintenance_period.copy()
     while maint_period:
         (maintenance_start, maintenance_end) = maint_period[0]

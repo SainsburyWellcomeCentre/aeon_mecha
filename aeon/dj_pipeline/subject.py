@@ -58,6 +58,7 @@ class SubjectDetail(dj.Imported):
     """
 
     def make(self, key):
+        """Automatically import and update entries in the Subject table."""
         eartag_or_id = key["subject"]
         # cage id, sex, line/strain, genetic background, dob, lab id
         params = {
@@ -183,6 +184,7 @@ class SubjectReferenceWeight(dj.Manual):
 
     @classmethod
     def get_reference_weight(cls, subject_name):
+        """Get the reference weight for the subject."""
         subj_key = {"subject": subject_name}
 
         food_restrict_query = (
@@ -247,6 +249,7 @@ class PyratIngestion(dj.Imported):
     schedule_interval = 12  # schedule interval in number of hours
 
     def _auto_schedule(self):
+        """Automatically schedule the next task."""
         utc_now = datetime.now(timezone.utc)
 
         next_task_schedule_time = utc_now + timedelta(hours=self.schedule_interval)
@@ -330,6 +333,7 @@ class PyratCommentWeightProcedure(dj.Imported):
     key_source = (PyratIngestion * SubjectDetail) & "available = 1"
 
     def make(self, key):
+        """Automatically import or update entries in the PyratCommentWeightProcedure table."""
         execution_time = datetime.now(timezone.utc)
         logger.info("Extracting weights/comments/procedures")
 
@@ -465,6 +469,7 @@ _pyrat_animal_attributes = [
 
 
 def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
+    """Get data from PyRat API."""
     base_url = "https://swc.pyrat.cloud/api/v3/"
     pyrat_system_token = os.getenv("PYRAT_SYSTEM_TOKEN")
     pyrat_user_token = os.getenv("PYRAT_USER_TOKEN")
