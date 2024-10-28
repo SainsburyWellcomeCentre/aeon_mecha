@@ -1,12 +1,12 @@
 """ Tests for the QC pipeline. """
 
-from pytest import mark
+import pytest
 import datajoint as dj
 
 logger = dj.logger
 
 
-@mark.qc
+@pytest.mark.qc
 def test_camera_qc_ingestion(test_params, pipeline, camera_qc_ingestion):
     qc = pipeline["qc"]
 

@@ -1,12 +1,12 @@
 """ Tests for the acquisition pipeline. """
 
-from pytest import mark
+import pytest
 import datajoint as dj
 
 logger = dj.logger
 
 
-@mark.ingestion
+@pytest.mark.ingestion
 def test_epoch_chunk_ingestion(test_params, pipeline, epoch_chunk_ingestion):
     acquisition = pipeline["acquisition"]
     epoch_count = len(
@@ -26,7 +26,7 @@ def test_epoch_chunk_ingestion(test_params, pipeline, epoch_chunk_ingestion):
         )
 
 
-@mark.ingestion
+@pytest.mark.ingestion
 def test_experimentlog_ingestion(
     test_params, pipeline, epoch_chunk_ingestion, experimentlog_ingestion
 ):

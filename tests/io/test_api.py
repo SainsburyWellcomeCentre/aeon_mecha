@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from pytest import mark
+import pytest
 
 import aeon
 from aeon.schema.schemas import exp02
@@ -13,7 +13,7 @@ nonmonotonic_path = Path(__file__).parent.parent / "data" / "nonmonotonic"
 monotonic_path = Path(__file__).parent.parent / "data" / "monotonic"
 
 
-@mark.api
+@pytest.mark.api
 def test_load_start_only():
     data = aeon.load(
         nonmonotonic_path,
@@ -25,7 +25,7 @@ def test_load_start_only():
         raise AssertionError("Loaded data is empty. Expected non-empty data.")
 
 
-@mark.api
+@pytest.mark.api
 def test_load_end_only():
     data = aeon.load(
         nonmonotonic_path,
@@ -37,7 +37,7 @@ def test_load_end_only():
         raise AssertionError("Loaded data is empty. Expected non-empty data.")
 
 
-@mark.api
+@pytest.mark.api
 def test_load_filter_nonchunked():
     data = aeon.load(
         nonmonotonic_path, exp02.Metadata, start=pd.Timestamp("2022-06-06T09:00:00")
@@ -46,7 +46,7 @@ def test_load_filter_nonchunked():
         raise AssertionError("Loaded data is empty. Expected non-empty data.")
 
 
-@mark.api
+@pytest.mark.api
 def test_load_monotonic():
     data = aeon.load(monotonic_path, exp02.Patch2.Encoder, downsample=None)
     if len(data) <= 0:
@@ -56,7 +56,7 @@ def test_load_monotonic():
         raise AssertionError("Data index is not monotonic increasing.")
 
 
-@mark.api
+@pytest.mark.api
 def test_load_nonmonotonic():
     data = aeon.load(nonmonotonic_path, exp02.Patch2.Encoder, downsample=None)
     if data.index.is_monotonic_increasing:
@@ -65,7 +65,7 @@ def test_load_nonmonotonic():
         )
 
 
-@mark.api
+@pytest.mark.api
 def test_load_encoder_with_downsampling():
     DOWNSAMPLE_PERIOD = 0.02
     data = aeon.load(monotonic_path, exp02.Patch2.Encoder, downsample=True)

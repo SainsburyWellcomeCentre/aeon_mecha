@@ -4,10 +4,10 @@ import datajoint as dj
 
 logger = dj.logger
 
-from pytest import mark
+import pytest
 
 
-@mark.instantiation
+@pytest.mark.instantiation
 def test_pipeline_instantiation(pipeline):
     if not hasattr(pipeline["acquisition"], "FoodPatchEvent"):
         raise AssertionError(
@@ -34,7 +34,7 @@ def test_pipeline_instantiation(pipeline):
         )
 
 
-@mark.instantiation
+@pytest.mark.instantiation
 def test_experiment_creation(test_params, pipeline, experiment_creation):
     acquisition = pipeline["acquisition"]
 
