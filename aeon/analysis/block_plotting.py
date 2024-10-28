@@ -59,7 +59,7 @@ def conv2d(arr, kernel):
 
 def gen_subject_colors_dict(subject_names):
     """Generates a dictionary of subject colors based on a list of subjects."""
-    return {s: c for s, c in zip(subject_names, subject_colors)}
+    return {s: c for s, c in zip(subject_names, subject_colors, strict=False)}
 
 
 def gen_patch_style_dict(patch_names):
@@ -70,8 +70,12 @@ def gen_patch_style_dict(patch_names):
     - patch_linestyles_dict: patch name to linestyle
     """
     return {
-        "colors": {p: c for p, c in zip(patch_names, patch_colors)},
-        "markers": {p: m for p, m in zip(patch_names, patch_markers)},
-        "symbols": {p: s for p, s in zip(patch_names, patch_markers_symbols)},
-        "linestyles": {p: ls for p, ls in zip(patch_names, patch_markers_linestyles)},
+        "colors": {p: c for p, c in zip(patch_names, patch_colors, strict=False)},
+        "markers": {p: m for p, m in zip(patch_names, patch_markers, strict=False)},
+        "symbols": {
+            p: s for p, s in zip(patch_names, patch_markers_symbols, strict=False)
+        },
+        "linestyles": {
+            p: ls for p, ls in zip(patch_names, patch_markers_linestyles, strict=False)
+        },
     }
