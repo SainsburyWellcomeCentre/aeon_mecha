@@ -119,7 +119,10 @@ extend-exclude = [
   "D101",    # skip adding docstrings for schema classes
   "D106",    # skip adding docstrings for nested streams
 ]
-"aeon/dj_pipeline/*" = []
+"aeon/dj_pipeline/*" = [
+  "D101",    # skip adding docstrings for schema classes
+  "D106",    # skip adding docstrings for nested streams
+]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

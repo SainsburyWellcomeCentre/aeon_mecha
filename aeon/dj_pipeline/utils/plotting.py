@@ -551,18 +551,20 @@ def plot_visit_time_distribution(visit_key, freq="D"):
     return fig
 
 
-def _get_region_data(
-    visit_key, attrs=["in_nest", "in_arena", "in_corridor", "in_patch"]
-):
+def _get_region_data(visit_key, attrs=None):
     """Retrieve region data from VisitTimeDistribution tables.
 
     Args:
         visit_key (dict): Key from the Visit table
-        attrs (list, optional): List of column names (in VisitTimeDistribution tables) to retrieve. Defaults to all.
+        attrs (list, optional): List of column names (in VisitTimeDistribution tables) to retrieve.
+        Defaults is None, which will create a new list with the desired default values inside the function.
 
     Returns:
         region (pd.DataFrame): Timestamped region info
     """
+    if attrs is None:
+        attrs = ["in_nest", "in_arena", "in_corridor", "in_patch"]
+
     visit_start, visit_end = (VisitEnd & visit_key).fetch1("visit_start", "visit_end")
     region = pd.DataFrame()
 
