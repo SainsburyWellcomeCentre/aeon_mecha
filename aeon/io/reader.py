@@ -500,7 +500,9 @@ def from_dict(data, pattern=None):
 def to_dict(dotmap):
     """Converts a DotMap object to a dictionary."""
     if isinstance(dotmap, Reader):
-        kwargs = {k: v for k, v in vars(dotmap).items() if k not in ["pattern"] and not k.startswith("_")}
+        kwargs = {
+            k: v for k, v in vars(dotmap).items() if k not in ["pattern"] and not k.startswith("_")
+        }
         kwargs["type"] = type(dotmap).__name__
         return kwargs
     return {k: to_dict(v) for k, v in dotmap.items()}

@@ -114,10 +114,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
     # DeviceDataStream table(s)
     stream_detail = (
         streams_module.StreamType
-        & (
-            streams_module.DeviceType.Stream
-            & {"device_type": device_type, "stream_type": stream_type}
-        )
+        & (streams_module.DeviceType.Stream & {"device_type": device_type, "stream_type": stream_type})
     ).fetch1()
 
     for i, n in enumerate(stream_detail["stream_reader"].split(".")):
@@ -159,8 +156,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             """
 
             key_source_query = (
-                acquisition.Chunk
-                * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
+                acquisition.Chunk * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
                 & f"chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time"
                 & f'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time,\
                 "2200-01-01")'
@@ -170,9 +166,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
         def make(self, key):
             """Load and insert the data for the DeviceDataStream table."""
-            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
-                "chunk_start", "chunk_end"
-            )
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (ExperimentDevice & key).fetch1(
@@ -182,13 +176,10 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             devices_schema = getattr(
                 aeon_schemas,
                 (
-                    acquisition.Experiment.DevicesSchema
-                    & {"experiment_name": key["experiment_name"]}
+                    acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}
                 ).fetch1("devices_schema_name"),
             )
-            stream_reader = getattr(
-                getattr(devices_schema, device_name), "{stream_type}"
-            )
+            stream_reader = getattr(getattr(devices_schema, device_name), "{stream_type}")
 
             stream_data = io_api.load(
                 root=data_dirs,

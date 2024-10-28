@@ -45,7 +45,9 @@ def test_experiment_creation(test_params, pipeline, experiment_creation):
     if raw_dir != test_params["raw_dir"]:
         raise AssertionError(f"Expected raw directory '{test_params['raw_dir']}', but got '{raw_dir}'.")
 
-    exp_subjects = (acquisition.Experiment.Subject & {"experiment_name": experiment_name}).fetch("subject")
+    exp_subjects = (acquisition.Experiment.Subject & {"experiment_name": experiment_name}).fetch(
+        "subject"
+    )
     if len(exp_subjects) != test_params["subject_count"]:
         raise AssertionError(
             f"Expected subject count {test_params['subject_count']}, but got {len(exp_subjects)}."

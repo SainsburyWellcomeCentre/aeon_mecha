@@ -32,7 +32,9 @@ class InArenaSummaryPlot(dj.Computed):
     summary_plot_png: attach
     """
 
-    key_source = analysis.InArena & analysis.InArenaTimeDistribution & analysis.InArenaSummary
+    key_source = (
+        analysis.InArena & analysis.InArenaTimeDistribution & analysis.InArenaSummary
+    )
 
     color_code = {
         "Patch1": "b",
@@ -44,15 +46,17 @@ class InArenaSummaryPlot(dj.Computed):
 
     def make(self, key):
         """Make method for InArenaSummaryPlot table"""
-        in_arena_start, in_arena_end = (analysis.InArena * analysis.InArenaEnd & key).fetch1(
-            "in_arena_start", "in_arena_end"
-        )
+        in_arena_start, in_arena_end = (
+            analysis.InArena * analysis.InArenaEnd & key
+        ).fetch1("in_arena_start", "in_arena_end")
 
         # subject's position data in the time_slices
         position = analysis.InArenaSubjectPosition.get_position(key)
         position.rename(columns={"position_x": "x", "position_y": "y"}, inplace=True)
 
-        position_minutes_elapsed = (position.index - in_arena_start).total_seconds() / 60
+        position_minutes_elapsed = (
+            position.index - in_arena_start
+        ).total_seconds() / 60
 
         # figure
         fig = plt.figure(figsize=(20, 9))
@@ -67,12 +71,16 @@ class InArenaSummaryPlot(dj.Computed):
 
         # position plot
         non_nan = np.logical_and(~np.isnan(position.x), ~np.isnan(position.y))
-        analysis_plotting.heatmap(position[non_nan], 50, ax=position_ax, bins=500, alpha=0.5)
+        analysis_plotting.heatmap(
+            position[non_nan], 50, ax=position_ax, bins=500, alpha=0.5
+        )
 
         # event rate plots
         in_arena_food_patches = (
             analysis.InArena
-            * acquisition.ExperimentFoodPatch.join(acquisition.ExperimentFoodPatch.RemovalTime, left=True)
+            * acquisition.ExperimentFoodPatch.join(
+                acquisition.ExperimentFoodPatch.RemovalTime, left=True
+            )
             & key
             & "in_arena_start >= food_patch_install_time"
             & 'in_arena_start < IFNULL(food_patch_remove_time, "2200-01-01")'
@@ -139,7 +147,9 @@ class InArenaSummaryPlot(dj.Computed):
                     color=self.color_code[food_patch_key["food_patch_description"]],
                     alpha=0.3,
                 )
-            threshold_change_ind = np.where(wheel_threshold[:-1] != wheel_threshold[1:])[0]
+            threshold_change_ind = np.where(
+                wheel_threshold[:-1] != wheel_threshold[1:]
+            )[0]
             threshold_ax.vlines(
                 wheel_time[threshold_change_ind + 1],
                 ymin=wheel_threshold[threshold_change_ind],
@@ -151,17 +161,20 @@ class InArenaSummaryPlot(dj.Computed):
             )
 
         # ethogram
-        in_arena, in_corridor, arena_time, corridor_time = (analysis.InArenaTimeDistribution & key).fetch1(
+        in_arena, in_corridor, arena_time, corridor_time = (
+            analysis.InArenaTimeDistribution & key
+        ).fetch1(
             "in_arena",
             "in_corridor",
             "time_fraction_in_arena",
             "time_fraction_in_corridor",
         )
-        nest_keys, in_nests, nests_times = (analysis.InArenaTimeDistribution.Nest & key).fetch(
-            "KEY", "in_nest", "time_fraction_in_nest"
-        )
+        nest_keys, in_nests, nests_times = (
+            analysis.InArenaTimeDistribution.Nest & key
+        ).fetch("KEY", "in_nest", "time_fraction_in_nest")
         patch_names, in_patches, patches_times = (
-            analysis.InArenaTimeDistribution.FoodPatch * acquisition.ExperimentFoodPatch & key
+            analysis.InArenaTimeDistribution.FoodPatch * acquisition.ExperimentFoodPatch
+            & key
         ).fetch("food_patch_description", "in_patch", "time_fraction_in_patch")
 
         ethogram_ax.plot(
@@ -192,7 +205,9 @@ class InArenaSummaryPlot(dj.Computed):
                 alpha=0.6,
                 label="nest",
             )
-        for patch_idx, (patch_name, in_patch) in enumerate(zip(patch_names, in_patches)):
+        for patch_idx, (patch_name, in_patch) in enumerate(
+            zip(patch_names, in_patches)
+        ):
             ethogram_ax.plot(
                 position_minutes_elapsed[in_patch],
                 np.full_like(position_minutes_elapsed[in_patch], (patch_idx + 3)),
@@ -233,7 +248,9 @@ class InArenaSummaryPlot(dj.Computed):
         rate_ax.set_title("foraging rate (bin size = 10 min)")
         distance_ax.set_ylabel("distance travelled (m)")
         threshold_ax.set_ylabel("threshold")
-        threshold_ax.set_ylim([threshold_ax.get_ylim()[0] - 100, threshold_ax.get_ylim()[1] + 100])
+        threshold_ax.set_ylim(
+            [threshold_ax.get_ylim()[0] - 100, threshold_ax.get_ylim()[1] + 100]
+        )
         ethogram_ax.set_xlabel("time (min)")
         analysis_plotting.set_ymargin(distance_ax, 0.2, 0.1)
         for ax in (rate_ax, distance_ax, pellet_ax, time_dist_ax, threshold_ax):
@@ -262,7 +279,9 @@ class InArenaSummaryPlot(dj.Computed):
 
         # ---- Save fig and insert ----
         save_dir = _make_path(key)
-        fig_dict = _save_figs((fig,), ("summary_plot_png",), save_dir=save_dir, prefix=save_dir.name)
+        fig_dict = _save_figs(
+            (fig,), ("summary_plot_png",), save_dir=save_dir, prefix=save_dir.name
+        )
 
         self.insert1({**key, **fig_dict})
 
@@ -276,7 +295,7 @@ class SubjectRewardRateDifference(dj.Computed):
     -> acquisition.Experiment.Subject
     ---
     in_arena_count: int
-    reward_rate_difference_plotly: longblob  # dictionary storing the plotly object (from fig.to_plotly_json())
+    reward_rate_difference_plotly: longblob  # dict storing the plotly object (from fig.to_plotly_json())
     """
 
     key_source = acquisition.Experiment.Subject & analysis.InArenaRewardRate
@@ -299,7 +318,10 @@ class SubjectRewardRateDifference(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """Each entry in this table correspond to one subject. However, the plot is capturing data for all sessions.Hence a dynamic update routine is needed to recompute the plot as new sessions become available."""
+        """Each entry in this table correspond to one subject.
+        However, the plot is capturing data for all sessions.
+        Hence a dynamic update routine is needed to recompute
+        the plot as new sessions become available."""
         outdated_entries = (
             cls
             * (
@@ -320,7 +342,7 @@ class SubjectWheelTravelledDistance(dj.Computed):
     -> acquisition.Experiment.Subject
     ---
     in_arena_count: int
-    wheel_travelled_distance_plotly: longblob  # dictionary storing the plotly object (from fig.to_plotly_json())
+    wheel_travelled_distance_plotly: longblob  # dict storing the plotly object (from fig.to_plotly_json())
     """
 
     key_source = acquisition.Experiment.Subject & analysis.InArenaSummary
@@ -345,7 +367,10 @@ class SubjectWheelTravelledDistance(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """Each entry in this table correspond to one subject. However the plot is capturing data for all sessions. Hence a dynamic update routine is needed to recompute the plot as new sessions become available."""
+        """Each entry in this table correspond to one subject.
+        However the plot is capturing data for all sessions.
+        Hence a dynamic update routine is needed to recompute
+        the plot as new sessions become available."""
         outdated_entries = (
             cls
             * (
@@ -389,7 +414,10 @@ class ExperimentTimeDistribution(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """Each entry in this table correspond to one subject. However the plot is capturing data for all sessions. Hence a dynamic update routine is needed to recompute the plot as new sessions become available."""
+        """Each entry in this table correspond to one subject.
+        However the plot is capturing data for all sessions.
+        Hence a dynamic update routine is needed to recompute
+        the plot as new sessions become available."""
         outdated_entries = (
             cls
             * (
@@ -419,7 +447,7 @@ class VisitDailySummaryPlot(dj.Computed):
     definition = """
     -> Visit
     ---
-    pellet_count_plotly:             longblob  # Dictionary storing the plotly object (from fig.to_plotly_json())
+    pellet_count_plotly:             longblob  # Dict storing the plotly object (from fig.to_plotly_json())
     wheel_distance_travelled_plotly: longblob
     total_distance_travelled_plotly: longblob
     weight_patch_plotly:                longblob
@@ -431,7 +459,10 @@ class VisitDailySummaryPlot(dj.Computed):
     """
 
     key_source = (
-        Visit & analysis.VisitSummary & (VisitEnd & "visit_duration > 24") & "experiment_name= 'exp0.2-r0'"
+        Visit
+        & analysis.VisitSummary
+        & (VisitEnd & "visit_duration > 24")
+        & "experiment_name= 'exp0.2-r0'"
     )
 
     def make(self, key):
@@ -540,7 +571,12 @@ def _make_path(in_arena_key):
     experiment_name, subject, in_arena_start = (analysis.InArena & in_arena_key).fetch1(
         "experiment_name", "subject", "in_arena_start"
     )
-    output_dir = store_stage / experiment_name / subject / in_arena_start.strftime("%y%m%d_%H%M%S_%f")
+    output_dir = (
+        store_stage
+        / experiment_name
+        / subject
+        / in_arena_start.strftime("%y%m%d_%H%M%S_%f")
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 

@@ -38,7 +38,10 @@ def create_new_experiment():
         skip_duplicates=True,
     )
     acquisition.Experiment.Subject.insert(
-        [{"experiment_name": experiment_name, "subject": s["subject"]} for s in subject_list],
+        [
+            {"experiment_name": experiment_name, "subject": s["subject"]}
+            for s in subject_list
+        ],
         skip_duplicates=True,
     )
 
@@ -94,8 +97,12 @@ def add_arena_setup():
     # manually update coordinates of foodpatch and nest
     patch_coordinates = {"Patch1": (1.13, 1.59, 0), "Patch2": (1.19, 0.50, 0)}
 
-    for patch_key in (acquisition.ExperimentFoodPatch & {"experiment_name": experiment_name}).fetch("KEY"):
-        patch = (acquisition.ExperimentFoodPatch & patch_key).fetch1("food_patch_description")
+    for patch_key in (
+        acquisition.ExperimentFoodPatch & {"experiment_name": experiment_name}
+    ).fetch("KEY"):
+        patch = (acquisition.ExperimentFoodPatch & patch_key).fetch1(
+            "food_patch_description"
+        )
         x, y, z = patch_coordinates[patch]
         acquisition.ExperimentFoodPatch.Position.update1(
             {
@@ -155,13 +162,15 @@ def fixID(subjid, valid_ids=None, valid_id_file=None):
     if ";" in subjid:
         subjidA, subjidB = subjid.split(";")
         return (
-            f"{fixID(subjidA.strip(), valid_ids=valid_ids)};{fixID(subjidB.strip(), valid_ids=valid_ids)}"
+            f"{fixID(subjidA.strip(), valid_ids=valid_ids)};"
+            f"{fixID(subjidB.strip(), valid_ids=valid_ids)}"
         )
 
     if "vs" in subjid:
         subjidA, tmp, subjidB = subjid.split(" ")[1:]
         return (
-            f"{fixID(subjidA.strip(), valid_ids=valid_ids)};{fixID(subjidB.strip(), valid_ids=valid_ids)}"
+            f"{fixID(subjidA.strip(), valid_ids=valid_ids)};"
+            f"{fixID(subjidB.strip(), valid_ids=valid_ids)}"
         )
 
     try:
