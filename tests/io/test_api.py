@@ -4,7 +4,6 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-import pytest
 
 import aeon
 from aeon.schema.schemas import exp02

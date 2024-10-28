@@ -1,7 +1,7 @@
 """ Tests for the QC pipeline. """
 
-import pytest
 import datajoint as dj
+import pytest
 
 logger = dj.logger
 

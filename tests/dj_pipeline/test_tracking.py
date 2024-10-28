@@ -3,9 +3,9 @@
 import datetime
 import pathlib
 
+import datajoint as dj
 import numpy as np
 import pytest
-import datajoint as dj
 
 logger = dj.logger
 
