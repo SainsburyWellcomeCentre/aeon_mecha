@@ -19,6 +19,7 @@ from aeon.io import api as io_api
 from aeon.schema import schemas as aeon_schemas
 
 schema = dj.schema(get_schema_name("tracking"))
+logger = dj.logger
 
 pixel_scale = 0.00192  # 1 px = 1.92 mm
 arena_center_x, arena_center_y = 1.475, 1.075  # center
@@ -250,7 +251,8 @@ class SLEAPTracking(dj.Imported):
 
 
 def compute_distance(position_df, target, xcol="x", ycol="y"):
-    assert len(target) == 2
+    if len(target) != 2:
+        raise ValueError("Target must be a list of tuple of length 2.")
     return np.sqrt(np.square(position_df[[xcol, ycol]] - target).sum(axis=1))
 
 

@@ -18,6 +18,7 @@ import pytest
 
 _tear_down = True  # always set to True since most fixtures are session-scoped
 _populate_settings = {"suppress_errors": True}
+logger = dj.logger
 
 
 def data_dir():
@@ -49,10 +50,14 @@ def test_params():
 def dj_config():
     """Configures DataJoint connection and loads custom settings."""
     dj_config_fp = pathlib.Path("dj_local_conf.json")
-    assert dj_config_fp.exists()
+    if not dj_config_fp.exists():
+        raise FileNotFoundError(
+            f"DataJoint configuration file not found: {dj_config_fp}"
+        )
     dj.config.load(dj_config_fp)
     dj.config["safemode"] = False
-    assert "custom" in dj.config
+    if "custom" not in dj.config:
+        raise KeyError("'custom' not found in DataJoint configuration.")
     dj.config["custom"][
         "database.prefix"
     ] = f"u_{dj.config['database.user']}_testsuite_"

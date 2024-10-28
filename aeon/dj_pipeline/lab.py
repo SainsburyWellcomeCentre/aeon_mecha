@@ -5,6 +5,7 @@ import datajoint as dj
 from . import get_schema_name
 
 schema = dj.schema(get_schema_name("lab"))
+logger = dj.logger
 
 
 # ------------------- GENERAL LAB INFORMATION --------------------

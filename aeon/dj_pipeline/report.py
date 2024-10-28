@@ -16,6 +16,8 @@ from aeon.dj_pipeline.analysis.visit_analysis import *
 
 from . import acquisition, analysis, get_schema_name
 
+logger = dj.logger
+
 # schema = dj.schema(get_schema_name("report"))
 schema = dj.schema()
 os.environ["DJ_SUPPORT_FILEPATH_MANAGEMENT"] = "TRUE"

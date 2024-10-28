@@ -12,6 +12,7 @@ from aeon.io import api as io_api
 from aeon.schema import schemas as aeon_schemas
 
 schema = dj.Schema(get_schema_name("streams"))
+logger = dj.logger
 
 
 @schema

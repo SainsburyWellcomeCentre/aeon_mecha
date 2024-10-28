@@ -10,6 +10,7 @@ from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline import acquisition, streams
 
 schema = dj.schema(get_schema_name("qc"))
+logger = dj.logger
 
 # -------------- Quality Control ---------------------
 

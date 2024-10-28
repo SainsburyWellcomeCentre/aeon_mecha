@@ -5,6 +5,10 @@ import pathlib
 
 import numpy as np
 from pytest import mark
+import datajoint as dj
+
+logger = dj.logger
+
 
 index = 0
 column_name = "position_x"  # data column to run test on
@@ -42,10 +46,11 @@ def save_test_data(pipeline, test_params):
 def test_camera_tracking_ingestion(test_params, pipeline, camera_tracking_ingestion):
     tracking = pipeline["tracking"]
 
-    assert (
-        len(tracking.CameraTracking.Object())
-        == test_params["camera_tracking_object_count"]
-    )
+    camera_tracking_object_count = len(tracking.CameraTracking.Object())
+    if camera_tracking_object_count != test_params["camera_tracking_object_count"]:
+        raise AssertionError(
+            f"Expected camera tracking object count {test_params['camera_tracking_object_count']},but got {camera_tracking_object_count}."
+        )
 
     key = tracking.CameraTracking.Object().fetch("KEY")[index]
     file_name = (
@@ -63,13 +68,15 @@ def test_camera_tracking_ingestion(test_params, pipeline, camera_tracking_ingest
     )
 
     test_file = pathlib.Path(test_params["test_dir"] + "/" + file_name)
-    assert test_file.exists()
+    if not test_file.exists():
+        raise AssertionError(f"Test file '{test_file}' does not exist.")
 
     print(f"\nTesting {file_name}")
 
     data = np.load(test_file)
-    assert np.allclose(
-        data,
-        (tracking.CameraTracking.Object() & key).fetch(column_name)[0],
-        equal_nan=True,
-    )
+    expected_data = (tracking.CameraTracking.Object() & key).fetch(column_name)[0]
+
+    if not np.allclose(data, expected_data, equal_nan=True):
+        raise AssertionError(
+            f"Loaded data does not match the expected data.nExpected: {expected_data}, but got: {data}."
+        )

@@ -147,7 +147,8 @@ class Experiment(dj.Manual):
 
         dir_path = pathlib.Path(dir_path)
         if dir_path.exists():
-            assert dir_path.is_relative_to(paths.get_repository_path(repo_name))
+            if not dir_path.is_relative_to(paths.get_repository_path(repo_name)):
+                raise ValueError(f"f{dir_path} is not relative to the repository path.")
             data_directory = dir_path
         else:
             data_directory = paths.get_repository_path(repo_name) / dir_path
