@@ -176,7 +176,7 @@ def fixID(subjid, valid_ids=None, valid_id_file=None):
     try:
         ld = [jl.levenshtein_distance(subjid, x[-len(subjid) :]) for x in valid_ids]
         return valid_ids[np.argmin(ld)]
-    except:
+    except ValueError:
         return subjid
 
 

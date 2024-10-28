@@ -68,5 +68,5 @@ except ImportError:
         from .utils import streams_maker
 
         streams = dj.VirtualModule("streams", streams_maker.schema_name)
-    except:
+    except ImportError:
         pass
