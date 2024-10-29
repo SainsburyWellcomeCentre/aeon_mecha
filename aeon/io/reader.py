@@ -159,10 +159,7 @@ class Csv(Reader):
 
 
 class JsonList(Reader):
-    """Extracts data from json list (.jsonl) files,
-
-    where the key "seconds" stores the Aeon timestamp, in seconds.
-    """
+    """Extracts data from .jsonl files, where the key "seconds" stores the Aeon timestamp (s)."""
 
     def __init__(self, pattern, columns=(), root_key="value", extension="jsonl"):
         """Initialize the object with the specified pattern, columns, and root key."""
@@ -176,7 +173,7 @@ class JsonList(Reader):
             df = pd.read_json(f, lines=True)
         df.set_index("seconds", inplace=True)
         for column in self.columns:
-            df[column] = df[self.root_key].apply(lambda x: x[column])
+            df[column] = df[self.root_key].apply(lambda x, col=column: x[col])
         return df
 
 
@@ -347,9 +344,7 @@ class Video(Csv):
 
 
 class Pose(Harp):
-    """Reader for Harp-binarized tracking data given a model
-
-    that outputs id, parts, and likelihoods.
+    """Reader for Harp-binarized tracking data given a model that outputs id, parts, and likelihoods.
 
     Columns:
         class (int): Int ID of a subject in the environment.
