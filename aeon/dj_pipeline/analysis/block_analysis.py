@@ -1843,11 +1843,15 @@ def get_threshold_associated_pellets(patch_key, start, end):
         )
 
     # Step 2 - Remove invalid rows (back-to-back events)
-    BTB_TIME_DIFF = (
-        1.2  # pellet delivery trigger - time difference is less than 1.2 seconds
+    BTB_MIN_TIME_DIFF = (
+        1.2  # pellet delivery trigger - time diff is less than 1.2 seconds
     )
+    BB_MIN_TIME_DIFF = 1.0  # beambreak - time difference is less than 1 seconds
+    PT_MIN_TIME_DIFF = 1.0  # patch threshold - time difference is less than 1 seconds
+
     invalid_rows = (
-        delivered_pellet_df.index.to_series().diff().dt.total_seconds() < BTB_TIME_DIFF
+        delivered_pellet_df.index.to_series().diff().dt.total_seconds()
+        < BTB_MIN_TIME_DIFF
     )
     delivered_pellet_df = delivered_pellet_df[~invalid_rows]
     # exclude manual deliveries
@@ -1855,16 +1859,15 @@ def get_threshold_associated_pellets(patch_key, start, end):
         delivered_pellet_df.index.difference(manual_delivery_df.index)
     ]
 
-    BB_TIME_DIFF = 1.0  # beambreak - time difference is less than 1 seconds
     invalid_rows = (
-        beambreak_df.index.to_series().diff().dt.total_seconds() < BB_TIME_DIFF
+        beambreak_df.index.to_series().diff().dt.total_seconds() < BB_MIN_TIME_DIFF
     )
     beambreak_df = beambreak_df[~invalid_rows]
 
-    PT_TIME_DIFF = 1.0  # patch threshold - time difference is less than 1 seconds
     depletion_state_df = depletion_state_df.dropna(subset=["threshold"])
     invalid_rows = (
-        depletion_state_df.index.to_series().diff().dt.total_seconds() < PT_TIME_DIFF
+        depletion_state_df.index.to_series().diff().dt.total_seconds()
+        < PT_MIN_TIME_DIFF
     )
     depletion_state_df = depletion_state_df[~invalid_rows]
 
@@ -1882,7 +1885,7 @@ def get_threshold_associated_pellets(patch_key, start, end):
             beambreak_df.reset_index().rename(columns={"time": "beam_break_timestamp"}),
             left_on="time",
             right_on="beam_break_timestamp",
-            tolerance=pd.Timedelta("{BTB_TIME_DIFF}s"),
+            tolerance=pd.Timedelta("{BTB_MIN_TIME_DIFF}s"),
             direction="forward",
         )
         .set_index("time")
