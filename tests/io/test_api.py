@@ -1,4 +1,4 @@
-""" Tests for the aeon API """
+"""Tests for the aeon API."""
 
 from pathlib import Path
 
@@ -38,7 +38,9 @@ def test_load_end_only():
 
 @pytest.mark.api
 def test_load_filter_nonchunked():
-    data = aeon.load(nonmonotonic_path, exp02.Metadata, start=pd.Timestamp("2022-06-06T09:00:00"))
+    data = aeon.load(
+        nonmonotonic_path, exp02.Metadata, start=pd.Timestamp("2022-06-06T09:00:00")
+    )
     if len(data) <= 0:
         raise AssertionError("Loaded data is empty. Expected non-empty data.")
 
@@ -57,7 +59,9 @@ def test_load_monotonic():
 def test_load_nonmonotonic():
     data = aeon.load(nonmonotonic_path, exp02.Patch2.Encoder, downsample=None)
     if data.index.is_monotonic_increasing:
-        raise AssertionError("Data index is monotonic increasing, but it should not be.")
+        raise AssertionError(
+            "Data index is monotonic increasing, but it should not be."
+        )
 
 
 @pytest.mark.api
@@ -68,11 +72,15 @@ def test_load_encoder_with_downsampling():
 
     # Check that the length of the downsampled data is less than the raw data
     if len(data) >= len(raw_data):
-        raise AssertionError("Downsampled data length should be less than raw data length.")
+        raise AssertionError(
+            "Downsampled data length should be less than raw data length."
+        )
 
     # Check that the first timestamp of the downsampled data is within 20ms of the raw data
     if abs(data.index[0] - raw_data.index[0]).total_seconds() > DOWNSAMPLE_PERIOD:
-        raise AssertionError("The first timestamp of downsampled data is not within 20ms of raw data.")
+        raise AssertionError(
+            "The first timestamp of downsampled data is not within 20ms of raw data."
+        )
 
     # Check that the last timestamp of the downsampled data is within 20ms of the raw data
     if abs(data.index[-1] - raw_data.index[-1]).total_seconds() > DOWNSAMPLE_PERIOD:
@@ -90,7 +98,9 @@ def test_load_encoder_with_downsampling():
 
     # Check that the timestamps in the downsampled data are strictly increasing
     if not data.index.is_monotonic_increasing:
-        raise AssertionError("Timestamps in downsampled data are not strictly increasing.")
+        raise AssertionError(
+            "Timestamps in downsampled data are not strictly increasing."
+        )
 
 
 if __name__ == "__main__":

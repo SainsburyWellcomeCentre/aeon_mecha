@@ -1,4 +1,4 @@
-""" Tests for the QC pipeline. """
+"""Tests for the QC pipeline."""
 
 import datajoint as dj
 import pytest

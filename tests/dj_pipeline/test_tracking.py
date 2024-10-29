@@ -1,4 +1,4 @@
-""" Test tracking pipeline. """
+"""Test tracking pipeline."""
 
 import datetime
 import pathlib
@@ -24,7 +24,11 @@ def save_test_data(pipeline, test_params):
     file_name = (
         "-".join(
             [
-                (v.strftime("%Y%m%d%H%M%S") if isinstance(v, datetime.datetime) else str(v))
+                (
+                    v.strftime("%Y%m%d%H%M%S")
+                    if isinstance(v, datetime.datetime)
+                    else str(v)
+                )
                 for v in key.values()
             ]
         )
@@ -54,7 +58,11 @@ def test_camera_tracking_ingestion(test_params, pipeline, camera_tracking_ingest
     file_name = (
         "-".join(
             [
-                (v.strftime("%Y%m%d%H%M%S") if isinstance(v, datetime.datetime) else str(v))
+                (
+                    v.strftime("%Y%m%d%H%M%S")
+                    if isinstance(v, datetime.datetime)
+                    else str(v)
+                )
                 for v in key.values()
             ]
         )
