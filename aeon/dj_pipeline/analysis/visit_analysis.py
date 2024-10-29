@@ -19,7 +19,6 @@ logger = dj.logger
 # schema = dj.schema(get_schema_name("analysis"))
 schema = dj.schema()
 
-
 # ---------- Position Filtering Method ------------------
 
 
