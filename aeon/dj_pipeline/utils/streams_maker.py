@@ -236,9 +236,7 @@ def main(create_tables=True):
                 full_def = "@schema \n" + device_table_def + "\n\n"
                 f.write(full_def)
     else:
-        raise FileExistsError(
-            f"File {_STREAMS_MODULE_FILE} already exists. Please remove it and try again."
-        )
+        pass
 
     streams = importlib.import_module("aeon.dj_pipeline.streams")
 
