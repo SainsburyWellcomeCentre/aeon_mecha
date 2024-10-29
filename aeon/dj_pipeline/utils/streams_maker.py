@@ -147,11 +147,11 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
         @property
         def key_source(self):
-            """Only the combination of Chunk and device_type with overlapping time.
+            f"""Only the combination of Chunk and {device_type} with overlapping time.
 
-            +  Chunk(s) that started after device_type install time and ended before device_type remove time
-            +  Chunk(s) that started after device_type install time for device_type that are not yet removed
-            """
+            +  Chunk(s) that started after {device_type} install time and ended before {device_type} remove time
+            +  Chunk(s) that started after {device_type} install time for {device_type} that are not yet removed
+            """  # noqa B021
             key_source_query = (
                 acquisition.Chunk
                 * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
