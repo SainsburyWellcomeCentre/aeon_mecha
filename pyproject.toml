@@ -124,6 +124,7 @@ extend-exclude = [
   "D101",    # skip adding docstrings for schema classes
   "D106",    # skip adding docstrings for nested streams
   "S324",
+  "F401",    # skip incorrectly detecting `aeon.dj_pipeline` dependencies as unused
 ]
 
 [tool.ruff.lint.pydocstyle]
