@@ -1,9 +1,6 @@
 """Tests for the acquisition pipeline."""
 
-import datajoint as dj
 import pytest
-
-logger = dj.logger
 
 
 @pytest.mark.ingestion
