@@ -1,6 +1,4 @@
-"""Jan 2024
-
-Cloning and archiving schemas and data for experiment 0.2.
+"""Jan 2024. Cloning and archiving schemas and data for experiment 0.2.
 
 The pipeline code associated with this archived data pipeline is here
 https://github.com/SainsburyWellcomeCentre/aeon_mecha/releases/tag/dj_exp02_stable
@@ -40,7 +38,7 @@ batch_size = None
 
 
 def clone_pipeline():
-    """Clone the pipeline for experiment 0.2"""
+    """Clone the pipeline for experiment 0.2."""
     diagram = None
     for orig_schema_name in schema_name_mapper:
         virtual_module = dj.create_virtual_module(orig_schema_name, orig_schema_name)

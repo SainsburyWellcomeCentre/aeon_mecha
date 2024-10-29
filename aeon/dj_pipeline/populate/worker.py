@@ -1,5 +1,4 @@
-"""This module defines the workers for the AEON pipeline.
-"""
+"""This module defines the workers for the AEON pipeline."""
 
 import datajoint as dj
 from datajoint_utilities.dj_worker import (

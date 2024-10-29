@@ -70,8 +70,7 @@ class VisitSubjectPosition(dj.Computed):
     """
 
     class TimeSlice(dj.Part):
-        definition = """
-        # A short time-slice (e.g. 10 minutes) of the recording of a given animal for a visit
+        definition = """ # A short time-slice (e.g. 10min) of the recording of a given animal for a visit
         -> master
         time_slice_start: datetime(6)   # datetime of the start of this time slice
         ---
@@ -87,7 +86,7 @@ class VisitSubjectPosition(dj.Computed):
 
     @property
     def key_source(self):
-        """Chunk for all visits:
+        """Chunk for all visits as the following conditions.
 
         + visit_start during this Chunk - i.e. first chunk of the visit
         + visit_end during this Chunk - i.e. last chunk of the visit
@@ -107,7 +106,7 @@ class VisitSubjectPosition(dj.Computed):
         )
 
     def make(self, key):
-        """Populate VisitSubjectPosition for each visit"""
+        """Populate VisitSubjectPosition for each visit."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )
@@ -221,9 +220,9 @@ class VisitSubjectPosition(dj.Computed):
             ).fetch1("visit_start", "visit_end")
             subject = visit_key["subject"]
         elif all((subject, start, end)):
-            start = start
-            end = end
-            subject = subject
+            start = start  # noqa PLW0127
+            end = end  # noqa PLW0127
+            subject = subject  # noqa PLW0127
         else:
             raise ValueError(
                 'Either "visit_key" or all three "subject", "start" and "end" has to be specified'
@@ -283,7 +282,7 @@ class VisitTimeDistribution(dj.Computed):
     )
 
     def make(self, key):
-        """Populate VisitTimeDistribution for each visit"""
+        """Populate VisitTimeDistribution for each visit."""
         visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
         visit_dates = pd.date_range(
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
@@ -439,7 +438,7 @@ class VisitSummary(dj.Computed):
     )
 
     def make(self, key):
-        """Populate VisitSummary for each visit"""
+        """Populate VisitSummary for each visit."""
         visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
         visit_dates = pd.date_range(
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
@@ -564,8 +563,7 @@ class VisitSummary(dj.Computed):
 
 @schema
 class VisitForagingBout(dj.Computed):
-    """Time period from when the animal enters to when it leaves a food patch while moving the wheel.
-    """
+    """Time period from when the animal enters to when it leaves a food patch while moving the wheel."""
 
     definition = """
     -> Visit

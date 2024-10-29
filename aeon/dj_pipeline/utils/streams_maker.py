@@ -23,25 +23,23 @@ _STREAMS_MODULE_FILE = Path(__file__).parent.parent / "streams.py"
 
 
 class StreamType(dj.Lookup):
-    """Catalog of all steam types for the different device types used across
+    """Catalog of all stream types used across Project Aeon.
 
-    Project Aeon. One StreamType corresponds to one reader class in `aeon.io.reader`.
-
-    The combination of `stream_reader` and `stream_reader_kwargs` should fully
-
-    specify the data loading routine for a particular device, using the `aeon.io.utils`.
+    Catalog of all steam types for the different device types used across Project Aeon.
+    One StreamType corresponds to one reader class in `aeon.io.reader`.The
+    combination of `stream_reader` and `stream_reader_kwargs` should fully specify the data
+    loading routine for a particular device, using the `aeon.io.utils`.
     """
 
-    definition = """  # Catalog of all stream types used across Project Aeon
+    definition = """ # Catalog of all stream types used across Project Aeon
     stream_type          : varchar(20)
     ---
-    stream_reader        : varchar(256)     # name of the reader class found in `aeon_mecha` 
-                                            # package (e.g. aeon.io.reader.Video)
+    stream_reader        : varchar(256)     # name of the reader class found in `aeon_mecha` package (e.g. aeon.io.reader.Video)
     stream_reader_kwargs : longblob  # keyword arguments to instantiate the reader class
     stream_description='': varchar(256)
     stream_hash          : uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
     unique index (stream_hash)
-    """
+    """  # noqa: E501
 
 
 class DeviceType(dj.Lookup):
@@ -77,26 +75,22 @@ def get_device_template(device_type: str):
     device_type = dj.utils.from_camel_case(device_type)
 
     class ExperimentDevice(dj.Manual):
-        definition = f"""
-        # {device_title} placement and operation for a particular time period, 
-        # at a certain location, for a given experiment (auto-generated with 
-        # aeon_mecha-{aeon.__version__})
+        definition = f""" # {device_title} placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-{aeon.__version__})
         -> acquisition.Experiment
         -> Device
         {device_type}_install_time  : datetime(6)   # time of the {device_type} placed
                                                     # and started operation at this position
         ---
         {device_type}_name          : varchar(36)
-        """
+        """  # noqa: E501
 
         class Attribute(dj.Part):
-            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) 
-                              # associated with this experimental device
+            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
             -> master
             attribute_name          : varchar(32)
             ---
             attribute_value=null    : longblob
-            """
+            """  # noqa: E501
 
         class RemovalTime(dj.Part):
             definition = f"""
@@ -124,7 +118,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
     ).fetch1()
 
     for i, n in enumerate(stream_detail["stream_reader"].split(".")):
-        reader = aeon if i == 0 else getattr(reader, n)
+        reader = aeon if i == 0 else getattr(reader, n)  # noqa: F821
 
     if reader is aeon.io.reader.Pose:
         logger.warning(
@@ -134,15 +128,13 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
     stream = reader(**stream_detail["stream_reader_kwargs"])
 
-    table_definition = f"""  
-    # Raw per-chunk {stream_type} data stream from {device_type} 
-    # (auto-generated with aeon_mecha-{aeon.__version__})
+    table_definition = f""" # Raw per-chunk {stream_type} data stream from {device_type} (auto-generated with aeon_mecha-{aeon.__version__})
     -> {device_type}
     -> acquisition.Chunk
     ---
     sample_count: int      # number of data points acquired from this stream for a given chunk
     timestamps: longblob   # (datetime) timestamps of {stream_type} data
-    """
+    """  # noqa: E501
 
     for col in stream.columns:
         if col.startswith("_"):
@@ -155,10 +147,9 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
         @property
         def key_source(self):
-            """Only the combination of Chunk and device_type with overlapping time
+            """Only the combination of Chunk and device_type with overlapping time.
 
             +  Chunk(s) that started after device_type install time and ended before device_type remove time
-
             +  Chunk(s) that started after device_type install time for device_type that are not yet removed
             """
             key_source_query = (
@@ -304,12 +295,8 @@ def main(create_tables=True):
                 'f"chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time"': (
                     f"'chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time'"
                 ),
-                """f'chunk_start < 
-                IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, 
-                "2200-01-01")'""": (
-                    f"""'chunk_start < 
-                    IFNULL({dj.utils.from_camel_case(device_type)}_removal_time,
-                    "2200-01-01")'"""
+                """f'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, "2200-01-01")'""": (  # noqa: E501
+                    f"""'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time,"2200-01-01")'"""  # noqa: W291, E501
                 ),
                 'f"{dj.utils.from_camel_case(device_type)}_name"': (
                     f"'{dj.utils.from_camel_case(device_type)}_name'"

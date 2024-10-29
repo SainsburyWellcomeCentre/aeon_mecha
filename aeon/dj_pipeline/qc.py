@@ -56,7 +56,7 @@ class CameraQC(dj.Imported):
 
     @property
     def key_source(self):
-        """Return the keys for the CameraQC table"""
+        """Return the keys for the CameraQC table."""
         return (
             acquisition.Chunk
             * (
@@ -70,7 +70,7 @@ class CameraQC(dj.Imported):
         )  # CameraTop
 
     def make(self, key):
-        """Perform quality control checks on the CameraTop stream"""
+        """Perform quality control checks on the CameraTop stream."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
             "chunk_start", "chunk_end"
         )

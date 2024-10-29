@@ -44,7 +44,7 @@ class InArenaSummaryPlot(dj.Computed):
     }
 
     def make(self, key):
-        """Make method for InArenaSummaryPlot table"""
+        """Make method for InArenaSummaryPlot table."""
         in_arena_start, in_arena_end = (
             analysis.InArena * analysis.InArenaEnd & key
         ).fetch1("in_arena_start", "in_arena_end")
@@ -475,7 +475,7 @@ class VisitDailySummaryPlot(dj.Computed):
     )
 
     def make(self, key):
-        """Make method for VisitDailySummaryPlot table"""
+        """Make method for VisitDailySummaryPlot table."""
         from aeon.dj_pipeline.utils.plotting import (
             plot_foraging_bouts_count,
             plot_foraging_bouts_distribution,
@@ -575,7 +575,7 @@ class VisitDailySummaryPlot(dj.Computed):
 
 
 def _make_path(in_arena_key):
-    """Make path for saving figures"""
+    """Make path for saving figures."""
     store_stage = pathlib.Path(dj.config["stores"]["djstore"]["stage"])
     experiment_name, subject, in_arena_start = (analysis.InArena & in_arena_key).fetch1(
         "experiment_name", "subject", "in_arena_start"
@@ -591,7 +591,7 @@ def _make_path(in_arena_key):
 
 
 def _save_figs(figs, fig_names, save_dir, prefix, extension=".png"):
-    """Save figures and return a dictionary with figure names and file paths"""
+    """Save figures and return a dictionary with figure names and file paths."""
     fig_dict = {}
     for fig, figname in zip(figs, fig_names, strict=False):
         fig_fp = save_dir / (prefix + "_" + figname + extension)

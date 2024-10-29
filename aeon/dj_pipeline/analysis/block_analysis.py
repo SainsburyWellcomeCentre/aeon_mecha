@@ -137,10 +137,7 @@ class BlockAnalysis(dj.Computed):
 
     @property
     def key_source(self):
-        """Ensure that the chunk ingestion has caught up with this block before processing
-
-        (there exists a chunk that ends after the block end time)
-        """
+        """Ensure that the chunk ingestion has caught up with this block before processing (there exists a chunk that ends after the block end time).""" # noqa 501
         ks = Block.aggr(acquisition.Chunk, latest_chunk_end="MAX(chunk_end)")
         ks = ks * Block & "latest_chunk_end >= block_end" & "block_end IS NOT NULL"
         return ks
@@ -175,17 +172,14 @@ class BlockAnalysis(dj.Computed):
         """
 
     def make(self, key):
-        """Restrict, fetch and aggregate data from different streams to
-
-        produce intermediate data products at a per-block level
-
-        (for different patches and different subjects).
+        """
+        Restrict, fetch and aggregate data from different streams to produce intermediate data products at a per-block level (for different patches and different subjects).
 
         1. Query data for all chunks within the block.
         2. Fetch streams, filter by maintenance period.
         3. Fetch subject position data (SLEAP).
         4. Aggregate and insert into the table.
-        """
+        """  # noqa 501
         block_start, block_end = (Block & key).fetch1("block_start", "block_end")
 
         chunk_restriction = acquisition.create_chunk_restriction(
@@ -1791,12 +1785,8 @@ class AnalysisNote(dj.Manual):
 
 
 def get_threshold_associated_pellets(patch_key, start, end):
-    """Retrieve the pellet delivery timestamps associated with each patch threshold update
+    """Retrieve the pellet delivery timestamps associated with each patch threshold update within the specified start-end time.
 
-    within the specified start-end time.
-
-
-    Notes:
     1. Get all patch state update timestamps (DepletionState): let's call these events "A"
         - Remove all events within 1 second of each other
         - Remove all events without threshold value (NaN)
@@ -1821,7 +1811,7 @@ def get_threshold_associated_pellets(patch_key, start, end):
         - beam_break_timestamp
         - offset
         - rate
-    """
+    """  # noqa 501
     chunk_restriction = acquisition.create_chunk_restriction(
         patch_key["experiment_name"], start, end
     )

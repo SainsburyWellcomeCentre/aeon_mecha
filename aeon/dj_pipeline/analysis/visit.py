@@ -121,9 +121,7 @@ class OverlapVisit(dj.Computed):
 
 
 def ingest_environment_visits(experiment_names: list | None = None):
-    """Function to populate into `Visit` and `VisitEnd` for specified
-
-    experiments (default: 'exp0.2-r0').
+    """Function to populate into `Visit` and `VisitEnd` for specified experiments (default: 'exp0.2-r0').
 
     This ingestion routine handles only those "complete" visits,
     not ingesting any "on-going" visits using "analyze" method:

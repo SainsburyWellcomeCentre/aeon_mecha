@@ -1,16 +1,13 @@
-"""July 2022
-
-Upgrade all timestamps longblob fields with datajoint 0.13.7.
-"""
+"""July 2022. Upgrade all timestamps longblob fields with datajoint 0.13.7."""
 
 from datetime import datetime
 
 import datajoint as dj
+import numpy as np
+from tqdm import tqdm
 
 logger = dj.logger
 
-import numpy as np
-from tqdm import tqdm
 
 if dj.__version__ < "0.13.7":
     raise ImportError(

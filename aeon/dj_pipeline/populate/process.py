@@ -1,11 +1,11 @@
 """Start an Aeon ingestion process.
 
 This script defines auto-processing routines to operate the DataJoint pipeline
-for the Aeon project. Three separate "process" functions are defined to call 
-`populate()` for different groups of tables, depending on their priority in 
+for the Aeon project. Three separate "process" functions are defined to call
+`populate()` for different groups of tables, depending on their priority in
 the ingestion routines (high, mid, low).
 
-Each process function is run in a while-loop with the total run-duration configurable 
+Each process function is run in a while-loop with the total run-duration configurable
 via command line argument '--duration' (if not set, runs perpetually)
     - the loop will not begin a new cycle after this period of time (in seconds)
     - the loop will run perpetually if duration<0 or if duration==None

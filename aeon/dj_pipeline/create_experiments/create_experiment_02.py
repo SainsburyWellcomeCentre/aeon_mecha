@@ -1,4 +1,4 @@
-"""Function to create new experiments for experiment0.2"""
+"""Function to create new experiments for experiment0.2."""
 
 from aeon.dj_pipeline import acquisition, lab, subject
 
@@ -8,7 +8,7 @@ _weight_scale_rate = 20
 
 
 def create_new_experiment():
-    """Create new experiment for experiment0.2"""
+    """Create new experiment for experiment0.2."""
     # ---------------- Subject -----------------
     subject_list = [
         {"subject": "BAA-1100699", "sex": "U", "subject_birth_date": "2021-01-01"},
@@ -33,7 +33,10 @@ def create_new_experiment():
         skip_duplicates=True,
     )
     acquisition.Experiment.Subject.insert(
-        [{"experiment_name": experiment_name, "subject": s["subject"]} for s in subject_list],
+        [
+            {"experiment_name": experiment_name, "subject": s["subject"]}
+            for s in subject_list
+        ],
         skip_duplicates=True,
     )
 

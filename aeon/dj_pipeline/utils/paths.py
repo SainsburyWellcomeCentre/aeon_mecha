@@ -1,5 +1,4 @@
-"""Utility functions for working with paths in the context of the DJ pipeline.
-"""
+"""Utility functions for working with paths in the context of the DJ pipeline."""
 
 from __future__ import annotations
 
@@ -35,9 +34,7 @@ def get_repository_path(repository_name: str) -> pathlib.Path:
 def find_root_directory(
     root_directories: str | pathlib.Path, full_path: str | pathlib.Path
 ) -> pathlib.Path:
-    """Given multiple potential root directories and a full-path,
-
-    search and return one directory that is the parent of the given path.
+    """Given multiple potential root directories and a full-path, search and return one directory that is the parent of the given path.
 
     Args:
         root_directories (str | pathlib.Path): A list of potential root directories.
@@ -49,7 +46,7 @@ def find_root_directory(
 
     Returns:
         pathlib.Path: The full path to the discovered root directory.
-    """
+    """  # noqa E501
     full_path = pathlib.Path(full_path)
 
     if not full_path.exists():

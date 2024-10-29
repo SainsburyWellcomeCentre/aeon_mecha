@@ -1,4 +1,4 @@
-"""Function to create new experiments for social0-r1"""
+"""Function to create new experiments for social0-r1."""
 
 import pathlib
 
@@ -12,7 +12,7 @@ experiment_name = "social0-r1"
 
 
 def create_new_experiment():
-    """Create new experiments for social0-r1"""
+    """Create new experiments for social0-r1."""
     # ---------------- Subject -----------------
     subject_list = [
         {"subject": "BAA-1100704", "sex": "U", "subject_birth_date": "2021-01-01"},

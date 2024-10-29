@@ -1,4 +1,4 @@
-"""Function to create new experiments for octagon1.0"""
+"""Function to create new experiments for octagon1.0."""
 
 from aeon.dj_pipeline import acquisition, subject
 
@@ -8,7 +8,7 @@ _weight_scale_rate = 20
 
 
 def create_new_experiment():
-    """Create new experiment for octagon1.0"""
+    """Create new experiment for octagon1.0."""
     # ---------------- Subject -----------------
     # This will get replaced by content from colony.csv
     subject_list = [
@@ -36,7 +36,10 @@ def create_new_experiment():
         skip_duplicates=True,
     )
     acquisition.Experiment.Subject.insert(
-        [{"experiment_name": experiment_name, "subject": s["subject"]} for s in subject_list],
+        [
+            {"experiment_name": experiment_name, "subject": s["subject"]}
+            for s in subject_list
+        ],
         skip_duplicates=True,
     )
 

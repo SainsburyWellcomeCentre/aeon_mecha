@@ -1,5 +1,4 @@
-"""Load metadata from the experiment and insert into streams schema.
-"""
+"""Load metadata from the experiment and insert into streams schema."""
 
 import datetime
 import inspect
@@ -265,9 +264,11 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
                     }
                 )
 
-            """Check if this device is currently installed. If the same
-            device serial number is currently installed check for any 
-            changes in configuration. If not, skip this"""
+            """
+            Check if this device is currently installed.
+            If the same device serial number is currently installed check for changes in configuration.
+            If not, skip this.
+            """
             current_device_query = (
                 table - table.RemovalTime & experiment_key & device_key
             )
