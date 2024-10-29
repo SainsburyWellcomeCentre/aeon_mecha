@@ -8,14 +8,16 @@ import re
 import datajoint as dj
 import pandas as pd
 
+from aeon.dj_pipeline import get_schema_name, lab, subject
 from aeon.dj_pipeline.utils import paths
 from aeon.io import api as io_api
 from aeon.io import reader as io_reader
 from aeon.schema import schemas as aeon_schemas
-from aeon.dj_pipeline import get_schema_name, lab, subject
+
+schema = dj.schema(get_schema_name("acquisition"))
 
 logger = dj.logger
-schema = dj.schema(get_schema_name("acquisition"))
+
 
 # ------------------- Some Constants --------------------------
 
@@ -147,7 +149,7 @@ class Experiment(dj.Manual):
         dir_path = pathlib.Path(dir_path)
         if dir_path.exists():
             if not dir_path.is_relative_to(paths.get_repository_path(repo_name)):
-                raise ValueError(f"f{dir_path} is not relative to the repository path.")
+                raise ValueError(f"{dir_path} is not relative to the repository path.")
             data_directory = dir_path
         else:
             data_directory = paths.get_repository_path(repo_name) / dir_path
