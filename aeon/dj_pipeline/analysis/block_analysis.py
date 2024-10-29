@@ -1482,7 +1482,6 @@ class BlockSubjectPositionPlots(dj.Computed):
 
     def make(self, key):
         """Compute and plot various block-level statistics and visualizations."""
-
         # Get some block info
         block_start, block_end = (Block & key).fetch1("block_start", "block_end")
         chunk_restriction = acquisition.create_chunk_restriction(

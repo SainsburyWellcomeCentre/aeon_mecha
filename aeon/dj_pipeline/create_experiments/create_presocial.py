@@ -55,7 +55,6 @@ def create_new_experiment():
 
 def main():
     """Main function to create a new experiment."""
-
     create_new_experiment()
 
 

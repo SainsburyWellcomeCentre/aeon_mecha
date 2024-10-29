@@ -163,7 +163,6 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
             +  Chunk(s) that started after device_type install time for device_type that are not yet removed
             """
-
             key_source_query = (
                 acquisition.Chunk
                 * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)

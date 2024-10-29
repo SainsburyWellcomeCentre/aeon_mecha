@@ -135,7 +135,6 @@ def ingest_environment_visits(experiment_names: list | None = None):
         experiment_names (list, optional): list of names of the experiment
         to populate into the Visit table. Defaults to None.
     """
-
     if experiment_names is None:
         experiment_names = ["exp0.2-r0"]
     place_key = {"place": "environment"}
