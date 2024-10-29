@@ -1,6 +1,6 @@
 """Module for visit-related tables in the analysis schema."""
 
-import datetime
+from datetime import datetime, timezone
 from collections import deque
 
 import datajoint as dj
@@ -143,7 +143,7 @@ def ingest_environment_visits(experiment_names: list | None = None):
             .fetch("last_visit")
         )
         start = min(subjects_last_visits) if len(subjects_last_visits) else "1900-01-01"
-        end = datetime.datetime.now() if start else "2200-01-01"
+        end = datetime.now(timezone.utc) if start else "2200-01-01"
 
         enter_exit_query = (
             acquisition.SubjectEnterExit.Time * acquisition.EventType
