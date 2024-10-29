@@ -27,11 +27,11 @@ def get_schema_name(name) -> str:
 
 def dict_to_uuid(key) -> uuid.UUID:
     """Given a dictionary `key`, returns a hash string as UUID."""
-    hashed = hashlib.sha256()
+    hashed = hashlib.md5()
     for k, v in sorted(key.items()):
         hashed.update(str(k).encode())
         hashed.update(str(v).encode())
-    return uuid.UUID(hex=hashed.hexdigest()[:32])
+    return uuid.UUID(hex=hashed.hexdigest())
 
 
 def fetch_stream(query, drop_pk=True):
@@ -68,5 +68,5 @@ except ImportError:
         from .utils import streams_maker
 
         streams = dj.VirtualModule("streams", streams_maker.schema_name)
-    except ImportError:
+    except Exception:
         pass
