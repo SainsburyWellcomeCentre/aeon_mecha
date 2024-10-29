@@ -11,8 +11,8 @@ from aeon.dj_pipeline import acquisition, lab, tracking
 from aeon.dj_pipeline.analysis.visit import (
     Visit,
     VisitEnd,
-    get_maintenance_periods,
     filter_out_maintenance_periods,
+    get_maintenance_periods,
 )
 
 logger = dj.logger

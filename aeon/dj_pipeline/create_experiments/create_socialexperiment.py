@@ -1,9 +1,9 @@
 """Function to create new social experiments"""
 
 from datetime import datetime
+
 from aeon.dj_pipeline import acquisition
 from aeon.dj_pipeline.utils.paths import get_repository_path
-
 
 # ---- Programmatic creation of a new social experiment ----
 # Infer experiment metadata from the experiment name

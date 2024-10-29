@@ -10,8 +10,7 @@ from datajoint_utilities.dj_worker import (
 )
 from datajoint_utilities.dj_worker.worker_schema import is_djtable
 
-from aeon.dj_pipeline import db_prefix
-from aeon.dj_pipeline import subject, acquisition, tracking, qc
+from aeon.dj_pipeline import acquisition, db_prefix, qc, subject, tracking
 from aeon.dj_pipeline.analysis import block_analysis
 from aeon.dj_pipeline.utils import streams_maker
 

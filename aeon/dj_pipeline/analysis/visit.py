@@ -1,15 +1,14 @@
 """Module for visit-related tables in the analysis schema."""
 
 import datetime
-import datajoint as dj
-import pandas as pd
-import numpy as np
 from collections import deque
 
-from aeon.analysis import utils as analysis_utils
+import datajoint as dj
+import numpy as np
+import pandas as pd
 
-from aeon.dj_pipeline import get_schema_name, fetch_stream
-from aeon.dj_pipeline import acquisition
+from aeon.analysis import utils as analysis_utils
+from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name
 
 schema = dj.schema(get_schema_name("analysis"))
 

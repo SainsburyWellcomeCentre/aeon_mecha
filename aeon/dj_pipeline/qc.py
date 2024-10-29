@@ -4,10 +4,8 @@ import datajoint as dj
 import numpy as np
 import pandas as pd
 
+from aeon.dj_pipeline import acquisition, get_schema_name, streams
 from aeon.io import api as io_api
-
-from aeon.dj_pipeline import get_schema_name
-from aeon.dj_pipeline import acquisition, streams
 
 schema = dj.schema(get_schema_name("qc"))
 logger = dj.logger

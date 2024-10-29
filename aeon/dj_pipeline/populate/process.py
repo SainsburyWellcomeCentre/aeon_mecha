@@ -38,10 +38,10 @@ from datajoint_utilities.dj_worker import parse_args
 
 from aeon.dj_pipeline.populate.worker import (
     acquisition_worker,
-    logger,
     analysis_worker,
-    streams_worker,
+    logger,
     pyrat_worker,
+    streams_worker,
 )
 
 # ---- some wrappers to support execution as script or CLI
