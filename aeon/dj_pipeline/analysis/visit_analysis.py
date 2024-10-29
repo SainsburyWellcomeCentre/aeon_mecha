@@ -114,13 +114,11 @@ class VisitSubjectPosition(dj.Computed):
         )
 
         # -- Determine the time to start time_slicing in this chunk
-        if chunk_start < key["visit_start"] < chunk_end:
-            # For chunk containing the visit_start - i.e. first chunk of this visit
-            start_time = key["visit_start"]
-        else:
-            # For chunks after the first chunk of this visit
-            start_time = chunk_start
-
+        start_time = (
+            key["visit_start"]
+            if chunk_start < key["visit_start"] < chunk_end
+            else chunk_start  # Use chunk_start if the visit has not yet started.
+        )
         # -- Determine the time to end time_slicing in this chunk
         if VisitEnd & key:  # finished visit
             visit_end = (VisitEnd & key).fetch1("visit_end")
