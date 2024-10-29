@@ -84,7 +84,9 @@ class VisitSubjectPosition(dj.Computed):
 
     @property
     def key_source(self):
-        """Chunk for all visits:
+        """
+        Chunk for all visits:
+
         + visit_start during this Chunk - i.e. first chunk of the visit
         + visit_end during this Chunk - i.e. last chunk of the visit
         + chunk starts after visit_start and ends before visit_end (or NOW() - i.e. ongoing visits).
@@ -201,8 +203,12 @@ class VisitSubjectPosition(dj.Computed):
 
     @classmethod
     def get_position(cls, visit_key=None, subject=None, start=None, end=None):
-        """Given a key to a single Visit, return a Pandas DataFrame for
-        the position data of the subject for the specified Visit time period."""
+        """
+        Return a Pandas df of the subject's position data for a specified Visit given its key.
+
+        Given a key to a single Visit, return a Pandas DataFrame for
+        the position data of the subject for the specified Visit time period.
+        """
         if visit_key is not None:
             if len(Visit & visit_key) != 1:
                 raise ValueError(
@@ -560,8 +566,7 @@ class VisitSummary(dj.Computed):
 @schema
 class VisitForagingBout(dj.Computed):
     """
-    A time period spanning the time when the animal enters a food patch and moves
-    the wheel to when it leaves the food patch.
+    Time period from when the animal enters to when it leaves a food patch while moving the wheel.
     """
 
     definition = """

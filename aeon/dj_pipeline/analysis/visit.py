@@ -122,10 +122,14 @@ class OverlapVisit(dj.Computed):
 
 
 def ingest_environment_visits(experiment_names: list | None = None):
-    """Function to populate into `Visit` and `VisitEnd` for specified
-    experiments (default: 'exp0.2-r0'). This ingestion routine handles
-    only those "complete" visits, not ingesting any "on-going" visits
-    using "analyze" method: `aeon.analyze.utils.visits()`.
+    """
+    Function to populate into `Visit` and `VisitEnd` for specified
+
+    experiments (default: 'exp0.2-r0').
+
+    This ingestion routine handles only those "complete" visits,
+    not ingesting any "on-going" visits using "analyze" method:
+    `aeon.analyze.utils.visits()`.
 
     Args:
         experiment_names (list, optional): list of names of the experiment
@@ -163,7 +167,8 @@ def ingest_environment_visits(experiment_names: list | None = None):
                     "enter_exit_time",
                     "event_type",
                     order_by="enter_exit_time",
-                ), strict=False
+                ),
+                strict=False,
             )
         )
         enter_exit_df.columns = ["id", "time", "event"]

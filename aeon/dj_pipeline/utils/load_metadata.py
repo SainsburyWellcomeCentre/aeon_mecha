@@ -50,7 +50,11 @@ def insert_stream_types():
 
 
 def insert_device_types(devices_schema: DotMap, metadata_yml_filepath: Path):
-    """Use aeon.schema.schemas and metadata.yml to insert into streams.DeviceType and streams.Device.
+    """
+
+    Insert device types into streams.DeviceType and streams.Device.
+
+    Notes: Use aeon.schema.schemas and metadata.yml to insert into streams.DeviceType and streams.Device.
     Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml.
     It then creates new device tables under streams schema.
     """
@@ -470,7 +474,10 @@ def get_device_info(devices_schema: DotMap) -> dict[dict]:
 
 
 def get_device_mapper(devices_schema: DotMap, metadata_yml_filepath: Path):
-    """Returns a mapping dictionary between device name and device type
+    """
+    Returns a mapping dictionary of device names to types based on the dataset schema and metadata.yml.
+
+    Notes: Returns a mapping dictionary between device name and device type
     based on the dataset schema and metadata.yml from the experiment.
     Store the mapper dictionary and read from it if the type info doesn't
     exist in Metadata.yml.

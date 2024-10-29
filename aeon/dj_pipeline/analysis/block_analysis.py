@@ -138,7 +138,9 @@ class BlockAnalysis(dj.Computed):
     @property
     def key_source(self):
         """
+
         Ensure that the chunk ingestion has caught up with this block before processing
+
         (there exists a chunk that ends after the block end time)
         """
         ks = Block.aggr(acquisition.Chunk, latest_chunk_end="MAX(chunk_end)")
@@ -175,8 +177,12 @@ class BlockAnalysis(dj.Computed):
         """
 
     def make(self, key):
-        """Restrict, fetch and aggregate data from different streams to
+        """
+
+        Restrict, fetch and aggregate data from different streams to
+
         produce intermediate data products at a per-block level
+
         (for different patches and different subjects).
 
         1. Query data for all chunks within the block.
@@ -1787,9 +1793,13 @@ class AnalysisNote(dj.Manual):
 
 
 def get_threshold_associated_pellets(patch_key, start, end):
-    """Retrieve the pellet delivery timestamps associated with each patch threshold update
+    """
+    Retrieve the pellet delivery timestamps associated with each patch threshold update
+
     within the specified start-end time.
 
+
+    Notes:
     1. Get all patch state update timestamps (DepletionState): let's call these events "A"
         - Remove all events within 1 second of each other
         - Remove all events without threshold value (NaN)
@@ -1801,10 +1811,12 @@ def get_threshold_associated_pellets(patch_key, start, end):
     4. Shift back the pellet delivery timestamps by 1 to match the pellet delivery with the
     previous threshold update
     5. Remove all threshold updates events "A" without a corresponding pellet delivery event "B"
+
     Args:
         patch_key (dict): primary key for the patch
         start (datetime): start timestamp
         end (datetime): end timestamp
+
     Returns:
         pd.DataFrame: DataFrame with the following columns:
         - threshold_update_timestamp (index)

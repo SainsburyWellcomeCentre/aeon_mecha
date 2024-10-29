@@ -26,6 +26,7 @@ from aeon.dj_pipeline.analysis.visit_analysis import (
 
 def plot_reward_rate_differences(subject_keys):
     """Plotting the reward rate differences between food patches
+
     (Patch 2 - Patch 1) for all sessions from all subjects specified in "subject_keys".
 
     Examples:
@@ -83,6 +84,7 @@ def plot_reward_rate_differences(subject_keys):
 
 def plot_wheel_travelled_distance(session_keys):
     """Plotting the wheel travelled distance for different patches
+
     for all sessions specified in "session_keys".
 
     Examples:
@@ -110,7 +112,9 @@ def plot_wheel_travelled_distance(session_keys):
     distance_travelled_df["in_arena"] = [
         f'{subj_name}_{sess_start.strftime("%m/%d/%Y")}'
         for subj_name, sess_start in zip(
-            distance_travelled_df.subject, distance_travelled_df.in_arena_start, strict=False
+            distance_travelled_df.subject,
+            distance_travelled_df.in_arena_start,
+            strict=False,
         )
     ]
 

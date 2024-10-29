@@ -37,6 +37,7 @@ def find_root_directory(
     root_directories: str | pathlib.Path, full_path: str | pathlib.Path
 ) -> pathlib.Path:
     """Given multiple potential root directories and a full-path,
+
     search and return one directory that is the parent of the given path.
 
     Args:
