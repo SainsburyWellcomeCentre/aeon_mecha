@@ -26,7 +26,7 @@ patch_markers_dict = dict(zip(patch_markers, patch_markers_symbols, strict=False
 patch_markers_linestyles = ["solid", "dash", "dot", "dashdot", "longdashdot"]
 
 
-def gen_hex_grad(hex_col, vals, min_l=0.3):
+def gen_hex_grad(hex_col, vals, min_lightness=0.3):
     """Generates an array of hex color values based on a gradient defined by unit-normalized values."""
     # Convert hex to rgb to hls
     hue, lightness, saturation = rgb_to_hls(
@@ -34,11 +34,13 @@ def gen_hex_grad(hex_col, vals, min_l=0.3):
     )
     grad = np.empty(shape=(len(vals),), dtype="<U10")  # init grad
     for i, val in enumerate(vals):
-        cur_l = (lightness * val) + (
-            min_l * (1 - val)
+        curl_lightness = (lightness * val) + (
+            min_lightness * (1 - val)
         )  # get cur lightness relative to `hex_col`
-        cur_l = max(min(cur_l, lightness), min_l)  # set min, max bounds
-        cur_rgb_col = hls_to_rgb(hue, cur_l, saturation)  # convert to rgb
+        curl_lightness = max(
+            min(curl_lightness, lightness), min_lightness
+        )  # set min, max bounds
+        cur_rgb_col = hls_to_rgb(hue, curl_lightness, saturation)  # convert to rgb
         cur_hex_col = "#{:02x}{:02x}{:02x}".format(
             *tuple(int(c * 255) for c in cur_rgb_col)
         )  # convert to hex
