@@ -486,7 +486,7 @@ def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
     if params is not None:
         params_str_list = []
         for k, v in params.items():
-            if isinstance(v, (list, tuple)):
+            if isinstance(v, (list | tuple)):
                 for i in v:
                     params_str_list.append(f"{k}={i}")
             else:

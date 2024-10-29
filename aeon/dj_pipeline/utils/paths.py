@@ -56,7 +56,7 @@ def find_root_directory(
         raise FileNotFoundError(f"{full_path} does not exist!")
 
     # turn to list if only a single root directory is provided
-    if isinstance(root_directories, (str, pathlib.Path)):
+    if isinstance(root_directories, (str | pathlib.Path)):
         root_directories = [root_directories]
 
     try:
