@@ -291,8 +291,8 @@ def main(create_tables=True):
                 'f"chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time"': (
                     f"'chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time'"
                 ),
-                """f'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, "2200-01-01")'""": (  # noqa: E501
-                    f"""'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time,"2200-01-01")'"""  # noqa: W291, E501
+                """f'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, "2200-01-01")'""": (  # noqa E501
+                    f"""'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time,"2200-01-01")'"""  # noqa E501
                 ),
                 'f"{dj.utils.from_camel_case(device_type)}_name"': (
                     f"'{dj.utils.from_camel_case(device_type)}_name'"
