@@ -8,7 +8,14 @@ import numpy as np
 import pandas as pd
 
 from aeon.analysis import utils as analysis_utils
-from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name
+from aeon.dj_pipeline import (
+    acquisition,
+    fetch_stream,
+    get_schema_name,
+    lab,
+    qc,
+    tracking,
+)
 
 schema = dj.schema(get_schema_name("analysis"))
 
