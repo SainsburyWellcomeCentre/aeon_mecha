@@ -137,7 +137,7 @@ class BlockAnalysis(dj.Computed):
 
     @property
     def key_source(self):
-        """Ensure that the chunk ingestion has caught up with this block before processing (there exists a chunk that ends after the block end time).""" # noqa 501
+        """Ensure that the chunk ingestion has caught up with this block before processing (there exists a chunk that ends after the block end time)."""  # noqa 501
         ks = Block.aggr(acquisition.Chunk, latest_chunk_end="MAX(chunk_end)")
         ks = ks * Block & "latest_chunk_end >= block_end" & "block_end IS NOT NULL"
         return ks
@@ -624,12 +624,14 @@ class BlockSubjectAnalysis(dj.Computed):
                     for p in patch_names
                 ]
             )
+
+            CUM_PREF_DIST_MIN = 1e-3
+
             for patch_name in patch_names:
                 cum_pref_dist = (
                     all_subj_patch_pref_dict[patch_name][subject_name]["cum_dist"]
                     / all_cum_dist
                 )
-                CUM_PREF_DIST_MIN = 1e-3
                 cum_pref_dist = np.where(
                     cum_pref_dist < CUM_PREF_DIST_MIN, 0, cum_pref_dist
                 )
