@@ -565,7 +565,7 @@ class VisitSummary(dj.Computed):
 class VisitForagingBout(dj.Computed):
     """Time period from when the animal enters to when it leaves a food patch while moving the wheel."""
 
-    definition = """
+    definition = """ # Time from animal's entry to exit of a food patch while moving the wheel.
     -> Visit
     -> acquisition.ExperimentFoodPatch
     bout_start: datetime(6)                    # start time of bout
