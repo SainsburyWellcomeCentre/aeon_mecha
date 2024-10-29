@@ -257,11 +257,13 @@ class SLEAPTracking(dj.Imported):
 
 # ---------- HELPER ------------------
 
+TARGET_LENGTH = 2
+
 
 def compute_distance(position_df, target, xcol="x", ycol="y"):
     """Compute the distance of the position data from a target point."""
-    if len(target) != 2:
-        raise ValueError("Target must be a list of tuple of length 2.")
+    if len(target) != TARGET_LENGTH:
+        raise ValueError(f"Target must be a list of tuple of length {TARGET_LENGTH}.")
     return np.sqrt(np.square(position_df[[xcol, ycol]] - target).sum(axis=1))
 
 

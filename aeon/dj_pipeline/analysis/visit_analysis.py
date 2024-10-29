@@ -19,6 +19,10 @@ logger = dj.logger
 # schema = dj.schema(get_schema_name("analysis"))
 schema = dj.schema()
 
+# Constants values
+MIN_AREA = 0
+MAX_AREA = 1000
+
 # ---------- Position Filtering Method ------------------
 
 
@@ -315,7 +319,7 @@ class VisitTimeDistribution(dj.Computed):
             )
 
             # filter for objects of the correct size
-            valid_position = (position.area > 0) & (position.area < 1000)
+            valid_position = (position.area > MIN_AREA) & (position.area < MAX_AREA)
             position[~valid_position] = np.nan
             position.rename(
                 columns={"position_x": "x", "position_y": "y"}, inplace=True
@@ -471,7 +475,7 @@ class VisitSummary(dj.Computed):
                 position, maintenance_period, day_end
             )
             # filter for objects of the correct size
-            valid_position = (position.area > 0) & (position.area < 1000)
+            valid_position = (position.area > MIN_AREA) & (position.area < MAX_AREA)
             position[~valid_position] = np.nan
             position.rename(
                 columns={"position_x": "x", "position_y": "y"}, inplace=True

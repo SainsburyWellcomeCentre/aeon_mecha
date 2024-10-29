@@ -639,7 +639,10 @@ class BlockSubjectAnalysis(dj.Computed):
                     all_subj_patch_pref_dict[patch_name][subject_name]["cum_dist"]
                     / all_cum_dist
                 )
-                cum_pref_dist = np.where(cum_pref_dist < 1e-3, 0, cum_pref_dist)
+                CUM_PREF_DIST_MIN = 1e-3
+                cum_pref_dist = np.where(
+                    cum_pref_dist < CUM_PREF_DIST_MIN, 0, cum_pref_dist
+                )
                 all_subj_patch_pref_dict[patch_name][subject_name][
                     "cum_pref_dist"
                 ] = cum_pref_dist
@@ -1853,19 +1856,29 @@ def get_threshold_associated_pellets(patch_key, start, end):
         )
 
     # Step 2 - Remove invalid rows (back-to-back events)
-    # pellet delivery trigger - time difference is less than 1.2 seconds
-    invalid_rows = delivered_pellet_df.index.to_series().diff().dt.total_seconds() < 1.2
+    BTB_TIME_DIFF = (
+        1.2  # pellet delivery trigger - time difference is less than 1.2 seconds
+    )
+    invalid_rows = (
+        delivered_pellet_df.index.to_series().diff().dt.total_seconds() < BTB_TIME_DIFF
+    )
     delivered_pellet_df = delivered_pellet_df[~invalid_rows]
     # exclude manual deliveries
     delivered_pellet_df = delivered_pellet_df.loc[
         delivered_pellet_df.index.difference(manual_delivery_df.index)
     ]
-    # beambreak - time difference is less than 1 seconds
-    invalid_rows = beambreak_df.index.to_series().diff().dt.total_seconds() < 1
+
+    BB_TIME_DIFF = 1.0  # beambreak - time difference is less than 1 seconds
+    invalid_rows = (
+        beambreak_df.index.to_series().diff().dt.total_seconds() < BB_TIME_DIFF
+    )
     beambreak_df = beambreak_df[~invalid_rows]
-    # patch threshold - time difference is less than 1 seconds
+
+    PT_TIME_DIFF = 1.0  # patch threshold - time difference is less than 1 seconds
     depletion_state_df = depletion_state_df.dropna(subset=["threshold"])
-    invalid_rows = depletion_state_df.index.to_series().diff().dt.total_seconds() < 1
+    invalid_rows = (
+        depletion_state_df.index.to_series().diff().dt.total_seconds() < PT_TIME_DIFF
+    )
     depletion_state_df = depletion_state_df[~invalid_rows]
 
     # Return empty if no data
@@ -1882,7 +1895,7 @@ def get_threshold_associated_pellets(patch_key, start, end):
             beambreak_df.reset_index().rename(columns={"time": "beam_break_timestamp"}),
             left_on="time",
             right_on="beam_break_timestamp",
-            tolerance=pd.Timedelta("1.2s"),
+            tolerance=pd.Timedelta("{BTB_TIME_DIFF}s"),
             direction="forward",
         )
         .set_index("time")

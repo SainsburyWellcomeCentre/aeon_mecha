@@ -497,7 +497,9 @@ def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
 
     response = session.get(base_url + endpoint + params_str, **kwargs)
 
-    if response.status_code != 200:
+    RESPONSE_STATUS_CODE_OK = 200
+
+    if response.status_code != RESPONSE_STATUS_CODE_OK:
         raise requests.exceptions.HTTPError(
             f"PyRat API errored out with response code: {response.status_code}"
         )
