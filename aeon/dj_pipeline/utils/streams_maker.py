@@ -116,8 +116,9 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
         )
     ).fetch1()
 
-    for i, n in enumerate(stream_detail["stream_reader"].split(".")):
-        reader = aeon if i == 0 else getattr(reader, n)  # noqa: F821
+    reader = aeon
+    for n in stream_detail["stream_reader"].split(".")[1:]:
+        reader = getattr(reader, n)
 
     if reader is aeon.io.reader.Pose:
         logger.warning(
