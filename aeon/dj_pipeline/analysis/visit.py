@@ -1,7 +1,7 @@
 """Module for visit-related tables in the analysis schema."""
 
-from datetime import datetime, timezone
 from collections import deque
+from datetime import datetime, timezone
 
 import datajoint as dj
 import numpy as np
