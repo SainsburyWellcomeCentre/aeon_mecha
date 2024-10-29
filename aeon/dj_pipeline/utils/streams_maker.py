@@ -152,15 +152,13 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             +  Chunk(s) that started after {device_type} install time and ended before {device_type} remove time
             +  Chunk(s) that started after {device_type} install time for {device_type} that are not yet removed
             """  # noqa B021
-            key_source_query = (
+            device_type_name = dj.utils.from_camel_case(device_type)
+            return (
                 acquisition.Chunk
                 * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
-                & f"chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time"
-                & f'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time,\
-                "2200-01-01")'
+                & f"chunk_start >= {device_type_name}_install_time"
+                & f'chunk_start < IFNULL({device_type_name}_removal_time,"2200-01-01")'
             )
-
-            return key_source_query
 
         def make(self, key):
             """Load and insert the data for the DeviceDataStream table."""
