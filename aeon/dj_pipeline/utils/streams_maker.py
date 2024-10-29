@@ -78,8 +78,7 @@ def get_device_template(device_type: str):
         definition = f""" # {device_title} placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-{aeon.__version__})
         -> acquisition.Experiment
         -> Device
-        {device_type}_install_time  : datetime(6)   # time of the {device_type} placed
-                                                    # and started operation at this position
+        {device_type}_install_time  : datetime(6)   # time of the {device_type} placed and started operation at this position
         ---
         {device_type}_name          : varchar(36)
         """  # noqa: E501
