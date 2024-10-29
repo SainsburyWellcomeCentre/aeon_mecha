@@ -123,6 +123,7 @@ extend-exclude = [
 "aeon/dj_pipeline/*" = [
   "D101",    # skip adding docstrings for schema classes
   "D106",    # skip adding docstrings for nested streams
+  "S324",
 ]
 
 [tool.ruff.lint.pydocstyle]
