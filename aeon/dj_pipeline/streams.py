@@ -190,7 +190,9 @@ class RfidReaderRfidEvents(dj.Imported):
 
     def make(self, key):
         """Load and insert RfidEvents data stream for a given chunk and RfidReader."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end"
+        )
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
@@ -198,9 +200,10 @@ class RfidReaderRfidEvents(dj.Imported):
 
         devices_schema = getattr(
             aeon_schemas,
-            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
+            (
+                acquisition.Experiment.DevicesSchema
+                & {"experiment_name": key["experiment_name"]}
+            ).fetch1("devices_schema_name"),
         )
         stream_reader = getattr(getattr(devices_schema, device_name), "RfidEvents")
 
@@ -246,14 +249,17 @@ class SpinnakerVideoSourceVideo(dj.Imported):
         +  Chunk(s) that started after SpinnakerVideoSource install time for SpinnakerVideoSource that are not yet removed
         """
         return (
-            acquisition.Chunk * SpinnakerVideoSource.join(SpinnakerVideoSource.RemovalTime, left=True)
+            acquisition.Chunk
+            * SpinnakerVideoSource.join(SpinnakerVideoSource.RemovalTime, left=True)
             & "chunk_start >= spinnaker_video_source_install_time"
             & 'chunk_start < IFNULL(spinnaker_video_source_removal_time, "2200-01-01")'
         )
 
     def make(self, key):
         """Load and insert Video data stream for a given chunk and SpinnakerVideoSource."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end"
+        )
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
@@ -261,9 +267,10 @@ class SpinnakerVideoSourceVideo(dj.Imported):
 
         devices_schema = getattr(
             aeon_schemas,
-            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
+            (
+                acquisition.Experiment.DevicesSchema
+                & {"experiment_name": key["experiment_name"]}
+            ).fetch1("devices_schema_name"),
         )
         stream_reader = getattr(getattr(devices_schema, device_name), "Video")
 
@@ -308,14 +315,17 @@ class UndergroundFeederBeamBreak(dj.Imported):
         +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
         """
         return (
-            acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
+            acquisition.Chunk
+            * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
             & "chunk_start >= underground_feeder_install_time"
             & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
         )
 
     def make(self, key):
         """Load and insert BeamBreak data stream for a given chunk and UndergroundFeeder."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end"
+        )
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
@@ -323,9 +333,10 @@ class UndergroundFeederBeamBreak(dj.Imported):
 
         devices_schema = getattr(
             aeon_schemas,
-            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
+            (
+                acquisition.Experiment.DevicesSchema
+                & {"experiment_name": key["experiment_name"]}
+            ).fetch1("devices_schema_name"),
         )
         stream_reader = getattr(getattr(devices_schema, device_name), "BeamBreak")
 
@@ -370,14 +381,17 @@ class UndergroundFeederDeliverPellet(dj.Imported):
         +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
         """
         return (
-            acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
+            acquisition.Chunk
+            * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
             & "chunk_start >= underground_feeder_install_time"
             & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
         )
 
     def make(self, key):
         """Load and insert DeliverPellet data stream for a given chunk and UndergroundFeeder."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end"
+        )
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
@@ -385,9 +399,10 @@ class UndergroundFeederDeliverPellet(dj.Imported):
 
         devices_schema = getattr(
             aeon_schemas,
-            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
+            (
+                acquisition.Experiment.DevicesSchema
+                & {"experiment_name": key["experiment_name"]}
+            ).fetch1("devices_schema_name"),
         )
         stream_reader = getattr(getattr(devices_schema, device_name), "DeliverPellet")
 
@@ -434,14 +449,17 @@ class UndergroundFeederDepletionState(dj.Imported):
         +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
         """
         return (
-            acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
+            acquisition.Chunk
+            * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
             & "chunk_start >= underground_feeder_install_time"
             & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
         )
 
     def make(self, key):
         """Load and insert DepletionState data stream for a given chunk and UndergroundFeeder."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end"
+        )
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
@@ -449,9 +467,10 @@ class UndergroundFeederDepletionState(dj.Imported):
 
         devices_schema = getattr(
             aeon_schemas,
-            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
+            (
+                acquisition.Experiment.DevicesSchema
+                & {"experiment_name": key["experiment_name"]}
+            ).fetch1("devices_schema_name"),
         )
         stream_reader = getattr(getattr(devices_schema, device_name), "DepletionState")
 
@@ -497,14 +516,17 @@ class UndergroundFeederEncoder(dj.Imported):
         +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
         """
         return (
-            acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
+            acquisition.Chunk
+            * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
             & "chunk_start >= underground_feeder_install_time"
             & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
         )
 
     def make(self, key):
         """Load and insert Encoder data stream for a given chunk and UndergroundFeeder."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end"
+        )
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
@@ -512,9 +534,10 @@ class UndergroundFeederEncoder(dj.Imported):
 
         devices_schema = getattr(
             aeon_schemas,
-            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
+            (
+                acquisition.Experiment.DevicesSchema
+                & {"experiment_name": key["experiment_name"]}
+            ).fetch1("devices_schema_name"),
         )
         stream_reader = getattr(getattr(devices_schema, device_name), "Encoder")
 
@@ -559,14 +582,17 @@ class UndergroundFeederManualDelivery(dj.Imported):
         +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
         """
         return (
-            acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
+            acquisition.Chunk
+            * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
             & "chunk_start >= underground_feeder_install_time"
             & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
         )
 
     def make(self, key):
         """Load and insert ManualDelivery data stream for a given chunk and UndergroundFeeder."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end"
+        )
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
@@ -574,9 +600,10 @@ class UndergroundFeederManualDelivery(dj.Imported):
 
         devices_schema = getattr(
             aeon_schemas,
-            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
+            (
+                acquisition.Experiment.DevicesSchema
+                & {"experiment_name": key["experiment_name"]}
+            ).fetch1("devices_schema_name"),
         )
         stream_reader = getattr(getattr(devices_schema, device_name), "ManualDelivery")
 
@@ -621,14 +648,17 @@ class UndergroundFeederMissedPellet(dj.Imported):
         +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
         """
         return (
-            acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
+            acquisition.Chunk
+            * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
             & "chunk_start >= underground_feeder_install_time"
             & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
         )
 
     def make(self, key):
         """Load and insert MissedPellet data stream for a given chunk and UndergroundFeeder."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end"
+        )
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
@@ -636,9 +666,10 @@ class UndergroundFeederMissedPellet(dj.Imported):
 
         devices_schema = getattr(
             aeon_schemas,
-            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
+            (
+                acquisition.Experiment.DevicesSchema
+                & {"experiment_name": key["experiment_name"]}
+            ).fetch1("devices_schema_name"),
         )
         stream_reader = getattr(getattr(devices_schema, device_name), "MissedPellet")
 
@@ -683,14 +714,17 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
         +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
         """
         return (
-            acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
+            acquisition.Chunk
+            * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
             & "chunk_start >= underground_feeder_install_time"
             & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
         )
 
     def make(self, key):
         """Load and insert RetriedDelivery data stream for a given chunk and UndergroundFeeder."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end"
+        )
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
@@ -698,9 +732,10 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
 
         devices_schema = getattr(
             aeon_schemas,
-            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
+            (
+                acquisition.Experiment.DevicesSchema
+                & {"experiment_name": key["experiment_name"]}
+            ).fetch1("devices_schema_name"),
         )
         stream_reader = getattr(getattr(devices_schema, device_name), "RetriedDelivery")
 
@@ -753,7 +788,9 @@ class WeightScaleWeightFiltered(dj.Imported):
 
     def make(self, key):
         """Load and insert WeightFiltered data stream for a given chunk and WeightScale."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end"
+        )
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
@@ -761,9 +798,10 @@ class WeightScaleWeightFiltered(dj.Imported):
 
         devices_schema = getattr(
             aeon_schemas,
-            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
+            (
+                acquisition.Experiment.DevicesSchema
+                & {"experiment_name": key["experiment_name"]}
+            ).fetch1("devices_schema_name"),
         )
         stream_reader = getattr(getattr(devices_schema, device_name), "WeightFiltered")
 
@@ -816,7 +854,9 @@ class WeightScaleWeightRaw(dj.Imported):
 
     def make(self, key):
         """Load and insert WeightRaw data stream for a given chunk and WeightScale."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
+            "chunk_start", "chunk_end"
+        )
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
@@ -824,9 +864,10 @@ class WeightScaleWeightRaw(dj.Imported):
 
         devices_schema = getattr(
             aeon_schemas,
-            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
+            (
+                acquisition.Experiment.DevicesSchema
+                & {"experiment_name": key["experiment_name"]}
+            ).fetch1("devices_schema_name"),
         )
         stream_reader = getattr(getattr(devices_schema, device_name), "WeightRaw")
 
