@@ -235,8 +235,6 @@ def main(create_tables=True):
                 device_table_def = inspect.getsource(table_class).lstrip()
                 full_def = "@schema \n" + device_table_def + "\n\n"
                 f.write(full_def)
-    else:
-        pass
 
     streams = importlib.import_module("aeon.dj_pipeline.streams")
 
