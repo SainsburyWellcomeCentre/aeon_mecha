@@ -120,8 +120,7 @@ class TrackingParamSet(dj.Lookup):
 
 @schema
 class SLEAPTracking(dj.Imported):
-    """
-    Tracking data from SLEAP for multi-animal experiments.
+    """Tracking data from SLEAP for multi-animal experiments.
 
     Tracked objects position data from a particular
     VideoSource for multi-animal experiment using the SLEAP tracking
@@ -282,8 +281,7 @@ def is_position_in_patch(
 
 
 def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y") -> pd.Series:
-    """
-    Check if a position is inside the nest.
+    """Check if a position is inside the nest.
 
     Notes: Given the session key and the position data - arrays of x and y
     return an array of boolean indicating whether or not a position is inside the nest.

@@ -1,1 +1,1 @@
-""" Utilities for I/O operations. """
+"""Utilities for I/O operations."""

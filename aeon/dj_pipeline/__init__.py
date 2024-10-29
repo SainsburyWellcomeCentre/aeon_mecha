@@ -1,4 +1,4 @@
-""" DataJoint pipeline for Aeon. """
+"""DataJoint pipeline for Aeon."""
 
 import hashlib
 import os

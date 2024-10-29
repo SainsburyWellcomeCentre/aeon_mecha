@@ -1,5 +1,4 @@
-"""
-Jan 2024
+"""Jan 2024
 
 Cloning and archiving schemas and data for experiment 0.2.
 

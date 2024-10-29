@@ -1,4 +1,4 @@
-""" This module defines the schema for the social_02 dataset. """
+"""This module defines the schema for the social_02 dataset."""
 
 import aeon.io.reader as _reader
 from aeon.schema import core, foraging

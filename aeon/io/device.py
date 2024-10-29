@@ -1,4 +1,4 @@
-""" Deprecated Device class for grouping multiple Readers into a logical device. """
+"""Deprecated Device class for grouping multiple Readers into a logical device."""
 
 import inspect
 

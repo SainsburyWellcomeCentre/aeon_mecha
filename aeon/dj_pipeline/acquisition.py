@@ -1,4 +1,4 @@
-""" DataJoint schema for the acquisition pipeline. """
+"""DataJoint schema for the acquisition pipeline."""
 
 import datetime
 import json

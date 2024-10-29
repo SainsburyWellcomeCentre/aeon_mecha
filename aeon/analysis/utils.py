@@ -1,4 +1,4 @@
-""" Helper functions for data analysis and visualization."""
+"""Helper functions for data analysis and visualization."""
 
 import numpy as np
 import pandas as pd

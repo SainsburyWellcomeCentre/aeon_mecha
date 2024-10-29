@@ -1,4 +1,4 @@
-""" Top-level package for aeon. """
+"""Top-level package for aeon."""
 
 from importlib.metadata import PackageNotFoundError, version
 

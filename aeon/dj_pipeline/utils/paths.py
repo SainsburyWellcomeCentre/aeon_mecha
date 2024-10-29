@@ -1,5 +1,4 @@
-"""
-Utility functions for working with paths in the context of the DJ pipeline.
+"""Utility functions for working with paths in the context of the DJ pipeline.
 """
 
 from __future__ import annotations

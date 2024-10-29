@@ -23,8 +23,7 @@ _STREAMS_MODULE_FILE = Path(__file__).parent.parent / "streams.py"
 
 
 class StreamType(dj.Lookup):
-    """
-    Catalog of all steam types for the different device types used across
+    """Catalog of all steam types for the different device types used across
 
     Project Aeon. One StreamType corresponds to one reader class in `aeon.io.reader`.
 
@@ -156,8 +155,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
         @property
         def key_source(self):
-            """
-            Only the combination of Chunk and device_type with overlapping time
+            """Only the combination of Chunk and device_type with overlapping time
 
             +  Chunk(s) that started after device_type install time and ended before device_type remove time
 

@@ -1,4 +1,4 @@
-""" Dataset schema definitions. """
+"""Dataset schema definitions."""
 
 from dotmap import DotMap
 

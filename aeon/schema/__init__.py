@@ -1,1 +1,1 @@
-""" Utilities for the schemas. """
+"""Utilities for the schemas."""

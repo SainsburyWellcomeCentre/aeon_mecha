@@ -1,4 +1,4 @@
-""" Contains classes for defining data streams and devices. """
+"""Contains classes for defining data streams and devices."""
 
 import inspect
 from itertools import chain

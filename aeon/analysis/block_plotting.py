@@ -61,9 +61,7 @@ def gen_subject_colors_dict(subject_names):
 
 
 def gen_patch_style_dict(patch_names):
-    """
-
-    Based on a list of patches, generates a dictionary of:
+    """Based on a list of patches, generates a dictionary of:
 
     - patch_colors_dict: patch name to color
     - patch_markers_dict: patch name to marker

@@ -121,8 +121,7 @@ class OverlapVisit(dj.Computed):
 
 
 def ingest_environment_visits(experiment_names: list | None = None):
-    """
-    Function to populate into `Visit` and `VisitEnd` for specified
+    """Function to populate into `Visit` and `VisitEnd` for specified
 
     experiments (default: 'exp0.2-r0').
 

@@ -1,4 +1,4 @@
-""" Schemas for different experiments. """
+"""Schemas for different experiments."""
 
 from dotmap import DotMap
 

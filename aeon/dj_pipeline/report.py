@@ -1,4 +1,4 @@
-"""DataJoint schema dedicated for tables containing figures. """
+"""DataJoint schema dedicated for tables containing figures."""
 
 import datetime
 import json
@@ -317,8 +317,7 @@ class SubjectRewardRateDifference(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """
-        Dynamically update the plot for all sessions.
+        """Dynamically update the plot for all sessions.
 
         Each entry in this table correspond to one subject.
         However, the plot is capturing data for all sessions.
@@ -371,8 +370,7 @@ class SubjectWheelTravelledDistance(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """
-        Dynamically update the plot for all sessions.
+        """Dynamically update the plot for all sessions.
 
         Each entry in this table correspond to one subject.
         However the plot is capturing data for all sessions.
@@ -422,8 +420,7 @@ class ExperimentTimeDistribution(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """
-        Dynamically update the plot for all sessions.
+        """Dynamically update the plot for all sessions.
 
         Each entry in this table correspond to one subject.
         However the plot is capturing data for all sessions.

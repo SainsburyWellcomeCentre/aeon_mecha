@@ -1,1 +1,1 @@
-""" Utilities for analyzing data. """
+"""Utilities for analyzing data."""

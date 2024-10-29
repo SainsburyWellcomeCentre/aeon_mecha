@@ -1,5 +1,4 @@
-"""
-July 2022
+"""July 2022
 
 Upgrade all timestamps longblob fields with datajoint 0.13.7.
 """

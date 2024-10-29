@@ -3,7 +3,7 @@
 import itertools
 import json
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import datajoint as dj
 import numpy as np
@@ -137,9 +137,7 @@ class BlockAnalysis(dj.Computed):
 
     @property
     def key_source(self):
-        """
-
-        Ensure that the chunk ingestion has caught up with this block before processing
+        """Ensure that the chunk ingestion has caught up with this block before processing
 
         (there exists a chunk that ends after the block end time)
         """
@@ -177,9 +175,7 @@ class BlockAnalysis(dj.Computed):
         """
 
     def make(self, key):
-        """
-
-        Restrict, fetch and aggregate data from different streams to
+        """Restrict, fetch and aggregate data from different streams to
 
         produce intermediate data products at a per-block level
 
@@ -278,7 +274,7 @@ class BlockAnalysis(dj.Computed):
                 # log a note and pick the first rate to move forward
                 AnalysisNote.insert1(
                     {
-                        "note_timestamp": datetime.now(timezone.utc),
+                        "note_timestamp": datetime.now(UTC),
                         "note_type": "Multiple patch rates",
                         "note": (
                             f"Found multiple patch rates for block {key} "
@@ -1795,8 +1791,7 @@ class AnalysisNote(dj.Manual):
 
 
 def get_threshold_associated_pellets(patch_key, start, end):
-    """
-    Retrieve the pellet delivery timestamps associated with each patch threshold update
+    """Retrieve the pellet delivery timestamps associated with each patch threshold update
 
     within the specified start-end time.
 

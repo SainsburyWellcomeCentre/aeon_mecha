@@ -1,4 +1,4 @@
-""" Module for reading data from raw files in an Aeon dataset."""
+"""Module for reading data from raw files in an Aeon dataset."""
 
 from __future__ import annotations
 
@@ -159,8 +159,7 @@ class Csv(Reader):
 
 
 class JsonList(Reader):
-    """
-    Extracts data from json list (.jsonl) files,
+    """Extracts data from json list (.jsonl) files,
 
     where the key "seconds" stores the Aeon timestamp, in seconds.
     """
@@ -173,7 +172,7 @@ class JsonList(Reader):
 
     def read(self, file):
         """Reads data from the specified jsonl file."""
-        with open(file, "r") as f:
+        with open(file) as f:
             df = pd.read_json(f, lines=True)
         df.set_index("seconds", inplace=True)
         for column in self.columns:
@@ -348,8 +347,7 @@ class Video(Csv):
 
 
 class Pose(Harp):
-    """
-    Reader for Harp-binarized tracking data given a model
+    """Reader for Harp-binarized tracking data given a model
 
     that outputs id, parts, and likelihoods.
 
