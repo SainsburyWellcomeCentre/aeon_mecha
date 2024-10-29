@@ -66,8 +66,8 @@ def find_root_directory(
             if pathlib.Path(root_dir) in set(full_path.parents)
         )
 
-    except StopIteration:
+    except StopIteration as err:
         raise FileNotFoundError(
             f"No valid root directory found (from {root_directories})"
             f" for {full_path}"
-        )
+        ) from err
