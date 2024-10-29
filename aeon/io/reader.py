@@ -173,7 +173,7 @@ class JsonList(Reader):
             df = pd.read_json(f, lines=True)
         df.set_index("seconds", inplace=True)
         for column in self.columns:
-            df[column] = df[self.root_key].apply(lambda x, col=column: x[col])
+            df[column] = df[self.root_key].apply(lambda x: x[column])  # noqa B023
         return df
 
 
