@@ -115,6 +115,7 @@ extend-exclude = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
   "D103",    # skip adding docstrings for public functions  
+  "S101",    # skip using assert
 ]
 "aeon/schema/*" = [
   "D101",    # skip adding docstrings for schema classes
