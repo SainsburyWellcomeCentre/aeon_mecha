@@ -40,7 +40,7 @@ def fetch_stream(query, drop_pk=True, round_microseconds=True):
     Args:
         query (datajoint.Query): A query object containing data from a Stream table
         drop_pk (bool, optional): Drop primary key columns. Defaults to True.
-        round_microseconds (bool, optional): Round timestamps to microseconds. Defaults to False.
+        round_microseconds (bool, optional): Round timestamps to microseconds. Defaults to True.
             (this is important as timestamps in mysql is only accurate to microseconds)
     """
     df = (query & "sample_count > 0").fetch(format="frame").reset_index()

@@ -251,6 +251,7 @@ class BlockAnalysis(dj.Computed):
             if encoder_df.empty:
                 encoder_df["distance_travelled"] = 0
             else:
+                # -1 is for placement of magnetic encoder, where wheel movement actually decreases encoder
                 encoder_df["distance_travelled"] = -1 * analysis_utils.distancetravelled(encoder_df.angle)
                 encoder_df = encoder_df.resample(f"{freq}ms").first()
 
@@ -327,7 +328,7 @@ class BlockAnalysis(dj.Computed):
                 )
                 pos_df = fetch_stream(pos_query)[block_start:block_end]
                 pos_df["likelihood"] = np.nan
-                # keep only rows with area between 0 and 1000
+                # keep only rows with area between 0 and 1000 - likely artifacts otherwise
                 pos_df = pos_df[(pos_df.area > 0) & (pos_df.area < 1000)]
             else:
                 pos_query = (
