@@ -65,6 +65,5 @@ def find_root_directory(
 
     except StopIteration as err:
         raise FileNotFoundError(
-            f"No valid root directory found (from {root_directories})"
-            f" for {full_path}"
+            f"No valid root directory found (from {root_directories})" f" for {full_path}"
         ) from err

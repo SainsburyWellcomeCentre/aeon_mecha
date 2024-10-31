@@ -255,9 +255,7 @@ def add_arena_setup():
     # manually update coordinates of foodpatch and nest
     patch_coordinates = {"Patch1": (1.13, 1.59, 0), "Patch2": (1.19, 0.50, 0)}
 
-    for patch_key in (acquisition.ExperimentFoodPatch & {"experiment_name": experiment_name}).fetch(
-        "KEY"
-    ):
+    for patch_key in (acquisition.ExperimentFoodPatch & {"experiment_name": experiment_name}).fetch("KEY"):
         patch = (acquisition.ExperimentFoodPatch & patch_key).fetch1("food_patch_description")
         x, y, z = patch_coordinates[patch]
         acquisition.ExperimentFoodPatch.Position.update1(

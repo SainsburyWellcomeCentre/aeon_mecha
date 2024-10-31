@@ -12,9 +12,7 @@ def create_new_experiment():
     """Create new experiments for presocial0.1."""
     lab.Location.insert1({"lab": "SWC", "location": location}, skip_duplicates=True)
 
-    acquisition.ExperimentType.insert1(
-        {"experiment_type": experiment_type}, skip_duplicates=True
-    )
+    acquisition.ExperimentType.insert1({"experiment_type": experiment_type}, skip_duplicates=True)
 
     acquisition.Experiment.insert(
         [
@@ -49,9 +47,7 @@ def create_new_experiment():
                 "directory_type": "raw",
                 "directory_path": f"aeon/data/raw/{computer}/{experiment_type}",
             }
-            for experiment_name, computer in zip(
-                experiment_names, computers, strict=False
-            )
+            for experiment_name, computer in zip(experiment_names, computers, strict=False)
         ],
         skip_duplicates=True,
     )

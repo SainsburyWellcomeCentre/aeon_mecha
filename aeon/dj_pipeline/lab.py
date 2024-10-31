@@ -85,9 +85,7 @@ class ArenaShape(dj.Lookup):
     definition = """
     arena_shape: varchar(32)
     """
-    contents = zip(
-        ["square", "circular", "rectangular", "linear", "octagon"], strict=False
-    )
+    contents = zip(["square", "circular", "rectangular", "linear", "octagon"], strict=False)
 
 
 @schema

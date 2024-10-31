@@ -17,9 +17,7 @@ if "custom" not in dj.config:
 
 db_prefix = dj.config["custom"].get("database.prefix", _default_database_prefix)
 
-repository_config = dj.config["custom"].get(
-    "repository_config", _default_repository_config
-)
+repository_config = dj.config["custom"].get("repository_config", _default_repository_config)
 
 
 def get_schema_name(name) -> str:
@@ -44,9 +42,7 @@ def fetch_stream(query, drop_pk=True):
     """
     df = (query & "sample_count > 0").fetch(format="frame").reset_index()
     cols2explode = [
-        c
-        for c in query.heading.secondary_attributes
-        if query.heading.attributes[c].type == "longblob"
+        c for c in query.heading.secondary_attributes if query.heading.attributes[c].type == "longblob"
     ]
     df = df.explode(column=cols2explode)
     cols2drop = ["sample_count"] + (query.primary_key if drop_pk else [])

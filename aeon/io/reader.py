@@ -70,12 +70,8 @@ class Harp(Reader):
         payloadtype = _payloadtypes[data[4] & ~0x10]
         elementsize = payloadtype.itemsize
         payloadshape = (length, payloadsize // elementsize)
-        seconds = np.ndarray(
-            length, dtype=np.uint32, buffer=data, offset=5, strides=stride
-        )
-        ticks = np.ndarray(
-            length, dtype=np.uint16, buffer=data, offset=9, strides=stride
-        )
+        seconds = np.ndarray(length, dtype=np.uint32, buffer=data, offset=5, strides=stride)
+        ticks = np.ndarray(length, dtype=np.uint16, buffer=data, offset=9, strides=stride)
         seconds = ticks * _SECONDS_PER_TICK + seconds
         payload = np.ndarray(
             payloadshape,
@@ -86,9 +82,7 @@ class Harp(Reader):
         )
 
         if self.columns is not None and payloadshape[1] < len(self.columns):
-            data = pd.DataFrame(
-                payload, index=seconds, columns=self.columns[: payloadshape[1]]
-            )
+            data = pd.DataFrame(payload, index=seconds, columns=self.columns[: payloadshape[1]])
             data[self.columns[payloadshape[1] :]] = math.nan
             return data
         else:
@@ -117,17 +111,13 @@ class Metadata(Reader):
 
     def __init__(self, pattern="Metadata"):
         """Initialize the object with the specified pattern."""
-        super().__init__(
-            pattern, columns=["workflow", "commit", "metadata"], extension="yml"
-        )
+        super().__init__(pattern, columns=["workflow", "commit", "metadata"], extension="yml")
 
     def read(self, file):
         """Returns metadata for the specified epoch."""
         epoch_str = file.parts[-2]
         date_str, time_str = epoch_str.split("T")
-        time = datetime.datetime.fromisoformat(
-            date_str + "T" + time_str.replace("-", ":")
-        )
+        time = datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":"))
         with open(file) as fp:
             metadata = json.load(fp)
         workflow = metadata.pop("Workflow")
@@ -267,9 +257,7 @@ class Position(Harp):
 
     def __init__(self, pattern):
         """Initialize the object with a specified pattern and columns."""
-        super().__init__(
-            pattern, columns=["x", "y", "angle", "major", "minor", "area", "id"]
-        )
+        super().__init__(pattern, columns=["x", "y", "angle", "major", "minor", "area", "id"])
 
 
 class BitmaskEvent(Harp):
@@ -328,9 +316,7 @@ class Video(Csv):
 
     def __init__(self, pattern):
         """Initialize the object with a specified pattern."""
-        super().__init__(
-            pattern, columns=["hw_counter", "hw_timestamp", "_frame", "_path", "_epoch"]
-        )
+        super().__init__(pattern, columns=["hw_counter", "hw_timestamp", "_frame", "_path", "_epoch"])
         self._rawcolumns = ["time"] + self.columns[0:2]
 
     def read(self, file):
@@ -355,9 +341,7 @@ class Pose(Harp):
         y (float): Y-coordinate of the bodypart.
     """
 
-    def __init__(
-        self, pattern: str, model_root: str = "/ceph/aeon/aeon/data/processed"
-    ):
+    def __init__(self, pattern: str, model_root: str = "/ceph/aeon/aeon/data/processed"):
         """Pose reader constructor."""
         # `pattern` for this reader should typically be '<hpcnode>_<jobid>*'
         super().__init__(pattern, columns=None)
@@ -396,16 +380,10 @@ class Pose(Harp):
         # Drop any repeat parts.
         unique_parts, unique_idxs = np.unique(parts, return_index=True)
         repeat_idxs = np.setdiff1d(np.arange(len(parts)), unique_idxs)
-        if (
-            repeat_idxs
-        ):  # drop x, y, and likelihood cols for repeat parts (skip first 5 cols)
+        if repeat_idxs:  # drop x, y, and likelihood cols for repeat parts (skip first 5 cols)
             init_rep_part_col_idx = (repeat_idxs - 1) * 3 + 5
-            rep_part_col_idxs = np.concatenate(
-                [np.arange(i, i + 3) for i in init_rep_part_col_idx]
-            )
-            keep_part_col_idxs = np.setdiff1d(
-                np.arange(len(data.columns)), rep_part_col_idxs
-            )
+            rep_part_col_idxs = np.concatenate([np.arange(i, i + 3) for i in init_rep_part_col_idx])
+            keep_part_col_idxs = np.setdiff1d(np.arange(len(data.columns)), rep_part_col_idxs)
             data = data.iloc[:, keep_part_col_idxs]
             parts = unique_parts
 
@@ -413,25 +391,18 @@ class Pose(Harp):
         data = self.class_int2str(data, config_file)
         n_parts = len(parts)
         part_data_list = [pd.DataFrame()] * n_parts
-        new_columns = pd.Series(
-            ["identity", "identity_likelihood", "part", "x", "y", "part_likelihood"]
-        )
+        new_columns = pd.Series(["identity", "identity_likelihood", "part", "x", "y", "part_likelihood"])
         new_data = pd.DataFrame(columns=new_columns)
         for i, part in enumerate(parts):
             part_columns = (
-                columns[0 : (len(identities) + 1)]
-                if bonsai_sleap_v == BONSAI_SLEAP_V3
-                else columns[0:2]
+                columns[0 : (len(identities) + 1)] if bonsai_sleap_v == BONSAI_SLEAP_V3 else columns[0:2]
             )
             part_columns.extend([f"{part}_x", f"{part}_y", f"{part}_likelihood"])
             part_data = pd.DataFrame(data[part_columns])
             if bonsai_sleap_v == BONSAI_SLEAP_V3:
                 # combine all identity_likelihood cols into a single col as dict
                 part_data["identity_likelihood"] = part_data.apply(
-                    lambda row: {
-                        identity: row[f"{identity}_likelihood"]
-                        for identity in identities
-                    },
+                    lambda row: {identity: row[f"{identity}_likelihood"] for identity in identities},
                     axis=1,
                 )
                 part_data.drop(columns=columns[1 : (len(identities) + 1)], inplace=True)
@@ -496,14 +467,10 @@ class Pose(Harp):
         return data
 
     @classmethod
-    def get_config_file(
-        cls, config_file_dir: Path, config_file_names: None | list[str] = None
-    ) -> Path:
+    def get_config_file(cls, config_file_dir: Path, config_file_names: None | list[str] = None) -> Path:
         """Returns the config file from a model's config directory."""
         if config_file_names is None:
-            config_file_names = [
-                "confmap_config.json"
-            ]  # SLEAP (add for other trackers to this list)
+            config_file_names = ["confmap_config.json"]  # SLEAP (add for other trackers to this list)
         config_file = None
         for f in config_file_names:
             if (config_file_dir / f).exists():
@@ -522,21 +489,14 @@ def from_dict(data, pattern=None):
         return globals()[reader_type](pattern=pattern, **kwargs)
 
     return DotMap(
-        {
-            k: from_dict(v, f"{pattern}_{k}" if pattern is not None else k)
-            for k, v in data.items()
-        }
+        {k: from_dict(v, f"{pattern}_{k}" if pattern is not None else k) for k, v in data.items()}
     )
 
 
 def to_dict(dotmap):
     """Converts a DotMap object to a dictionary."""
     if isinstance(dotmap, Reader):
-        kwargs = {
-            k: v
-            for k, v in vars(dotmap).items()
-            if k not in ["pattern"] and not k.startswith("_")
-        }
+        kwargs = {k: v for k, v in vars(dotmap).items() if k not in ["pattern"] and not k.startswith("_")}
         kwargs["type"] = type(dotmap).__name__
         return kwargs
     return {k: to_dict(v) for k, v in dotmap.items()}

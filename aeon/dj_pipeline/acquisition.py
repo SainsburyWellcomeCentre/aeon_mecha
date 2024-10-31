@@ -167,10 +167,7 @@ class Experiment(dj.Manual):
         return [
             d
             for dir_type in directory_types
-            if (
-                d := cls.get_data_directory(experiment_key, dir_type, as_posix=as_posix)
-            )
-            is not None
+            if (d := cls.get_data_directory(experiment_key, dir_type, as_posix=as_posix)) is not None
         ]
 
 
@@ -198,9 +195,7 @@ class Epoch(dj.Manual):
         for i, (_, chunk) in enumerate(all_chunks.iterrows()):
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(
-                epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
-            )
+            epoch_start = datetime.datetime.strptime(epoch_dir.name, "%Y-%m-%dT%H-%M-%S")
             # --- insert to Epoch ---
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
 
@@ -219,15 +214,11 @@ class Epoch(dj.Manual):
             if i > 0:
                 previous_chunk = all_chunks.iloc[i - 1]
                 previous_chunk_path = pathlib.Path(previous_chunk.path)
-                previous_epoch_dir = pathlib.Path(
-                    previous_chunk_path.as_posix().split(device_name)[0]
-                )
+                previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
                 previous_epoch_start = datetime.datetime.strptime(
                     previous_epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
                 )
-                previous_chunk_end = previous_chunk.name + datetime.timedelta(
-                    hours=io_api.CHUNK_DURATION
-                )
+                previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=io_api.CHUNK_DURATION)
                 previous_epoch_end = min(previous_chunk_end, epoch_start)
                 previous_epoch_key = {
                     "experiment_name": experiment_name,
@@ -256,9 +247,7 @@ class Epoch(dj.Manual):
                         {
                             **previous_epoch_key,
                             "epoch_end": previous_epoch_end,
-                            "epoch_duration": (
-                                previous_epoch_end - previous_epoch_start
-                            ).total_seconds()
+                            "epoch_duration": (previous_epoch_end - previous_epoch_start).total_seconds()
                             / 3600,
                         }
                     )
@@ -331,23 +320,17 @@ class EpochConfig(dj.Imported):
         experiment_name = key["experiment_name"]
         devices_schema = getattr(
             aeon_schemas,
-            (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1(
-                "devices_schema_name"
-            ),
+            (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1("devices_schema_name"),
         )
 
         dir_type, epoch_dir = (Epoch & key).fetch1("directory_type", "epoch_dir")
         data_dir = Experiment.get_data_directory(key, dir_type)
         metadata_yml_filepath = data_dir / epoch_dir / "Metadata.yml"
 
-        epoch_config = extract_epoch_config(
-            experiment_name, devices_schema, metadata_yml_filepath
-        )
+        epoch_config = extract_epoch_config(experiment_name, devices_schema, metadata_yml_filepath)
         epoch_config = {
             **epoch_config,
-            "metadata_file_path": metadata_yml_filepath.relative_to(
-                data_dir
-            ).as_posix(),
+            "metadata_file_path": metadata_yml_filepath.relative_to(data_dir).as_posix(),
         }
 
         # Insert new entries for streams.DeviceType, streams.Device.
@@ -358,20 +341,15 @@ class EpochConfig(dj.Imported):
         # Define and instantiate new devices/stream tables under `streams` schema
         streams_maker.main()
         # Insert devices' installation/removal/settings
-        epoch_device_types = ingest_epoch_metadata(
-            experiment_name, devices_schema, metadata_yml_filepath
-        )
+        epoch_device_types = ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath)
 
         self.insert1(key)
         self.Meta.insert1(epoch_config)
-        self.DeviceType.insert(
-            key | {"device_type": n} for n in epoch_device_types or {}
-        )
+        self.DeviceType.insert(key | {"device_type": n} for n in epoch_device_types or {})
         with metadata_yml_filepath.open("r") as f:
             metadata = json.load(f)
         self.ActiveRegion.insert(
-            {**key, "region_name": k, "region_data": v}
-            for k, v in metadata["ActiveRegion"].items()
+            {**key, "region_name": k, "region_data": v} for k, v in metadata["ActiveRegion"].items()
         )
 
 
@@ -410,9 +388,7 @@ class Chunk(dj.Manual):
         for _, chunk in all_chunks.iterrows():
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(
-                epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
-            )
+            epoch_start = datetime.datetime.strptime(epoch_dir.name, "%Y-%m-%dT%H-%M-%S")
 
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
             if not (Epoch & epoch_key):
@@ -420,9 +396,7 @@ class Chunk(dj.Manual):
                 continue
 
             chunk_start = chunk.name
-            chunk_start = max(
-                chunk_start, epoch_start
-            )  # first chunk of the epoch starts at epoch_start
+            chunk_start = max(chunk_start, epoch_start)  # first chunk of the epoch starts at epoch_start
             chunk_end = chunk_start + datetime.timedelta(hours=io_api.CHUNK_DURATION)
 
             if EpochEnd & epoch_key:
@@ -442,12 +416,8 @@ class Chunk(dj.Manual):
             )
 
             chunk_starts.append(chunk_key["chunk_start"])
-            chunk_list.append(
-                {**chunk_key, **directory, "chunk_end": chunk_end, **epoch_key}
-            )
-            file_name_list.append(
-                chunk_rep_file.name
-            )  # handle duplicated files in different folders
+            chunk_list.append({**chunk_key, **directory, "chunk_end": chunk_end, **epoch_key})
+            file_name_list.append(chunk_rep_file.name)  # handle duplicated files in different folders
 
             # -- files --
             file_datetime_str = chunk_rep_file.stem.replace(f"{device_name}_", "")
@@ -564,9 +534,9 @@ class Environment(dj.Imported):
         data_dirs = Experiment.get_data_directories(key)
         devices_schema = getattr(
             aeon_schemas,
-            (
-                Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}
-            ).fetch1("devices_schema_name"),
+            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
         )
         device = devices_schema.Environment
 
@@ -626,14 +596,12 @@ class EnvironmentActiveConfiguration(dj.Imported):
         data_dirs = Experiment.get_data_directories(key)
         devices_schema = getattr(
             aeon_schemas,
-            (
-                Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}
-            ).fetch1("devices_schema_name"),
+            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
         )
         device = devices_schema.Environment
-        stream_reader = (
-            device.EnvironmentActiveConfiguration
-        )  # expecting columns: time, name, value
+        stream_reader = device.EnvironmentActiveConfiguration  # expecting columns: time, name, value
         stream_data = io_api.load(
             root=data_dirs,
             reader=stream_reader,
@@ -666,9 +634,7 @@ def _get_all_chunks(experiment_name, device_name):
     raw_data_dirs = {k: v for k, v in raw_data_dirs.items() if v}
 
     if not raw_data_dirs:
-        raise ValueError(
-            f"No raw data directory found for experiment: {experiment_name}"
-        )
+        raise ValueError(f"No raw data directory found for experiment: {experiment_name}")
 
     chunkdata = io_api.load(
         root=list(raw_data_dirs.values()),
@@ -690,9 +656,7 @@ def _match_experiment_directory(experiment_name, path, directories):
             repo_path = paths.get_repository_path(directory.pop("repository_name"))
             break
     else:
-        raise FileNotFoundError(
-            f"Unable to identify the directory" f" where this chunk is from: {path}"
-        )
+        raise FileNotFoundError(f"Unable to identify the directory" f" where this chunk is from: {path}")
 
     return raw_data_dir, directory, repo_path
 

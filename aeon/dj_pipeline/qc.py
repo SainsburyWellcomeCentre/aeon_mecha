@@ -60,9 +60,7 @@ class CameraQC(dj.Imported):
         return (
             acquisition.Chunk
             * (
-                streams.SpinnakerVideoSource.join(
-                    streams.SpinnakerVideoSource.RemovalTime, left=True
-                )
+                streams.SpinnakerVideoSource.join(streams.SpinnakerVideoSource.RemovalTime, left=True)
                 & "spinnaker_video_source_name='CameraTop'"
             )
             & "chunk_start >= spinnaker_video_source_install_time"
@@ -71,21 +69,16 @@ class CameraQC(dj.Imported):
 
     def make(self, key):
         """Perform quality control checks on the CameraTop stream."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
-            "chunk_start", "chunk_end"
-        )
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
 
-        device_name = (streams.SpinnakerVideoSource & key).fetch1(
-            "spinnaker_video_source_name"
-        )
+        device_name = (streams.SpinnakerVideoSource & key).fetch1("spinnaker_video_source_name")
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
         devices_schema = getattr(
             acquisition.aeon_schemas,
-            (
-                acquisition.Experiment.DevicesSchema
-                & {"experiment_name": key["experiment_name"]}
-            ).fetch1("devices_schema_name"),
+            (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
         )
         stream_reader = getattr(devices_schema, device_name).Video
 
@@ -112,11 +105,9 @@ class CameraQC(dj.Imported):
                 **key,
                 "drop_count": deltas.frame_offset.iloc[-1],
                 "max_harp_delta": deltas.time_delta.max().total_seconds(),
-                "max_camera_delta": deltas.hw_timestamp_delta.max()
-                / 1e9,  # convert to seconds
+                "max_camera_delta": deltas.hw_timestamp_delta.max() / 1e9,  # convert to seconds
                 "timestamps": videodata.index.values,
-                "time_delta": deltas.time_delta.values
-                / np.timedelta64(1, "s"),  # convert to seconds
+                "time_delta": deltas.time_delta.values / np.timedelta64(1, "s"),  # convert to seconds
                 "frame_delta": deltas.frame_delta.values,
                 "hw_counter_delta": deltas.hw_counter_delta.values,
                 "hw_timestamp_delta": deltas.hw_timestamp_delta.values,

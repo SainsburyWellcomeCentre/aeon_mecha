@@ -108,8 +108,7 @@ def validate():
                 target_entry_count = len(target_tbl())
                 missing_entries[orig_schema_name][source_tbl.__name__] = {
                     "entry_count_diff": source_entry_count - target_entry_count,
-                    "db_size_diff": source_tbl().size_on_disk
-                    - target_tbl().size_on_disk,
+                    "db_size_diff": source_tbl().size_on_disk - target_tbl().size_on_disk,
                 }
 
     return {
