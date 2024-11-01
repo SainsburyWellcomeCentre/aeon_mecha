@@ -73,7 +73,7 @@ def rateplot(
     :param datetime, optional end: The right bound of the time range for the continuous rate.
     :param datetime, optional smooth: The size of the smoothing kernel applied to the rate output.
     :param DateOffset, Timedelta or str, optional smooth:
-    The size of the smoothing kernel applied to the continuous rate output.
+      The size of the smoothing kernel applied to the continuous rate output.
     :param bool, optional center: Specifies whether to center the convolution kernels.
     :param Axes, optional ax: The Axes on which to draw the rate plot and raster.
     """
@@ -119,11 +119,11 @@ def colorline(
 
     :param array-like x, y: The horizontal / vertical coordinates of the data points.
     :param array-like, optional z:
-    The dynamic variable used to color each data point by indexing the color map.
+      The dynamic variable used to color each data point by indexing the color map.
     :param str or ~matplotlib.colors.Colormap, optional cmap:
-    The colormap used to map normalized data values to RGBA colors.
+      The colormap used to map normalized data values to RGBA colors.
     :param matplotlib.colors.Normalize, optional norm:
-    The normalizing object used to scale data to the range [0, 1] for indexing the color map.
+      The normalizing object used to scale data to the range [0, 1] for indexing the color map.
     :param Axes, optional ax: The Axes on which to draw the colored line.
     """
     if ax is None:
