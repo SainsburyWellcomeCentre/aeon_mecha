@@ -200,8 +200,8 @@ class BlockAnalysis(dj.Computed):
                 use_blob_position = True
 
         # Patch data - TriggerPellet, DepletionState, Encoder (distancetravelled)
-        # For wheel data, downsample to 10Hz
-        final_encoder_hz = 10
+        # For wheel data, downsample to 50Hz
+        final_encoder_hz = 50
         freq = 1 / final_encoder_hz * 1e3  # in ms
 
         maintenance_period = get_maintenance_periods(key["experiment_name"], block_start, block_end)
