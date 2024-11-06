@@ -99,10 +99,7 @@ class SubjectDetail(dj.Imported):
             }
         )
         Strain.insert1(
-            {
-                "strain_id": animal_resp["strain_id"],
-                "strain_name": animal_resp["strain_id"],
-            },
+            {"strain_id": animal_resp["strain_id"], "strain_name": animal_resp["strain_id"]},
             skip_duplicates=True,
         )
         entry = {
