@@ -1416,10 +1416,7 @@ class BlockSubjectPositionPlots(dj.Computed):
             & "attribute_name = 'Location'"
         )
         rfid_locs = dict(
-            zip(
-                *rfid_location_query.fetch("rfid_reader_name", "attribute_value"),
-                strict=True,
-            )
+            zip(*rfid_location_query.fetch("rfid_reader_name", "attribute_value"), strict=True)
         )
 
         ## Create position ethogram df
