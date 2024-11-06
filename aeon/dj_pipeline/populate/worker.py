@@ -1,11 +1,7 @@
 """This module defines the workers for the AEON pipeline."""
 
 import datajoint as dj
-from datajoint_utilities.dj_worker import (
-    DataJointWorker,
-    ErrorLog,
-    WorkerLog,
-)
+from datajoint_utilities.dj_worker import DataJointWorker, ErrorLog, WorkerLog
 from datajoint_utilities.dj_worker.worker_schema import is_djtable
 
 from aeon.dj_pipeline import acquisition, db_prefix, qc, subject, tracking
