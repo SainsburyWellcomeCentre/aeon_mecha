@@ -435,6 +435,10 @@ _pyrat_animal_attributes = [
 
 
 def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
+    """
+    Get data from PyRat API.
+    See docs at: https://swc.pyrat.cloud/api/v3/docs (production)
+    """
     base_url = "https://swc.pyrat.cloud/api/v3/"
     pyrat_system_token = os.getenv("PYRAT_SYSTEM_TOKEN")
     pyrat_user_token = os.getenv("PYRAT_USER_TOKEN")

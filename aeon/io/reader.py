@@ -11,8 +11,7 @@ import pandas as pd
 from dotmap import DotMap
 
 from aeon import util
-from aeon.io.api import aeon as aeon_time
-from aeon.io.api import chunk, chunk_key
+from aeon.io.api import chunk_key
 
 _SECONDS_PER_TICK = 32e-6
 _payloadtypes = {
@@ -76,9 +75,12 @@ class Harp(Reader):
         if self.columns is not None and payloadshape[1] < len(self.columns):
             data = pd.DataFrame(payload, index=seconds, columns=self.columns[: payloadshape[1]])
             data[self.columns[payloadshape[1] :]] = math.nan
-            return data
         else:
-            return pd.DataFrame(payload, index=seconds, columns=self.columns)
+            data = pd.DataFrame(payload, index=seconds, columns=self.columns)
+
+        # remove rows where the index is zero (why? corrupted data in harp files?)
+        data = data[data.index != 0]
+        return data
 
 
 class Chunk(Reader):
@@ -207,24 +209,6 @@ class Encoder(Harp):
     def __init__(self, pattern):
         super().__init__(pattern, columns=["angle", "intensity"])
 
-    def read(self, file, downsample=True):
-        """Reads encoder data from the specified Harp binary file.
-
-        By default the encoder data is downsampled to 50Hz. Setting downsample to
-        False or None can be used to force the raw data to be returned.
-        """
-        data = super().read(file)
-        if downsample is True:
-            # resample requires a DatetimeIndex so we convert early
-            data.index = aeon_time(data.index)
-
-            first_index = data.first_valid_index()
-            if first_index is not None:
-                # since data is absolute angular position we decimate by taking first of each bin
-                chunk_origin = chunk(first_index)
-                data = data.resample("20ms", origin=chunk_origin).first()
-        return data
-
 
 class Position(Harp):
     """Extract 2D position tracking data for a specific camera.
@@ -324,18 +308,37 @@ class Pose(Harp):
     """
 
     def __init__(self, pattern: str, model_root: str = "/ceph/aeon/aeon/data/processed"):
-        """Pose reader constructor."""
-        # `pattern` for this reader should typically be '<hpcnode>_<jobid>*'
+        """Pose reader constructor.
+
+        The pattern for this reader should typically be `<device>_<hpcnode>_<jobid>*`.
+        If a register prefix is required, the pattern should end with a trailing
+        underscore, e.g. `Camera_202_*`. Otherwise, the pattern should include a
+        common prefix for the pose model folder excluding the trailing underscore,
+        e.g. `Camera_model-dir*`.
+        """
         super().__init__(pattern, columns=None)
         self._model_root = model_root
+        self._pattern_offset = pattern.rfind("_") + 1
 
     def read(self, file: Path) -> pd.DataFrame:
         """Reads data from the Harp-binarized tracking file."""
         # Get config file from `file`, then bodyparts from config file.
-        model_dir = Path(*Path(file.stem.replace("_", "/")).parent.parts[-4:])
-        config_file_dir = Path(self._model_root) / model_dir
-        if not config_file_dir.exists():
-            raise FileNotFoundError(f"Cannot find model dir {config_file_dir}")
+        model_dir = Path(file.stem[self._pattern_offset :].replace("_", "/")).parent
+
+        # Check if model directory exists in local or shared directories.
+        # Local directory is prioritized over shared directory.
+        local_config_file_dir = file.parent / model_dir
+        shared_config_file_dir = Path(self._model_root) / model_dir
+        if local_config_file_dir.exists():
+            config_file_dir = local_config_file_dir
+        elif shared_config_file_dir.exists():
+            config_file_dir = shared_config_file_dir
+        else:
+            raise FileNotFoundError(
+                f"""Cannot find model dir in either local ({local_config_file_dir}) \
+                    or shared ({shared_config_file_dir}) directories"""
+            )
+
         config_file = self.get_config_file(config_file_dir)
         identities = self.get_class_names(config_file)
         parts = self.get_bodyparts(config_file)
@@ -370,7 +373,7 @@ class Pose(Harp):
             parts = unique_parts
 
         # Set new columns, and reformat `data`.
-        data = self.class_int2str(data, config_file)
+        data = self.class_int2str(data, identities)
         n_parts = len(parts)
         part_data_list = [pd.DataFrame()] * n_parts
         new_columns = pd.Series(["identity", "identity_likelihood", "part", "x", "y", "part_likelihood"])
@@ -427,18 +430,12 @@ class Pose(Harp):
         return parts
 
     @staticmethod
-    def class_int2str(data: pd.DataFrame, config_file: Path) -> pd.DataFrame:
+    def class_int2str(data: pd.DataFrame, classes: list[str]) -> pd.DataFrame:
         """Converts a class integer in a tracking data dataframe to its associated string (subject id)."""
-        if config_file.stem == "confmap_config":  # SLEAP
-            with open(config_file) as f:
-                config = json.load(f)
-            try:
-                heads = config["model"]["heads"]
-                classes = util.find_nested_key(heads, "classes")
-            except KeyError as err:
-                raise KeyError(f"Cannot find classes in {config_file}.") from err
-            for i, subj in enumerate(classes):
-                data.loc[data["identity"] == i, "identity"] = subj
+        if not classes:
+            raise ValueError("Classes list cannot be None or empty.")
+        identity_mapping = dict(enumerate(classes))
+        data["identity"] = data["identity"].replace(identity_mapping)
         return data
 
     @classmethod
