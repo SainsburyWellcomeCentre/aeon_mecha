@@ -188,21 +188,17 @@ class SLEAPTracking(dj.Imported):
         class_names = np.unique(pose_data.identity)
         identity_mapping = {n: i for i, n in enumerate(class_names)}
 
+        # get anchor part
+        # this logic is valid only if the different animals have the same skeleton and anchor part
+        #   which should be the case within one chunk
+        anchor_part = next(v.replace("_x", "") for v in stream_reader.columns if v.endswith("_x"))
+
         # ingest parts and classes
         pose_identity_entries, part_entries = [], []
         for identity in identity_mapping:
             identity_position = pose_data[pose_data["identity"] == identity]
             if identity_position.empty:
                 continue
-
-            # get anchor part - always the first one of all the body parts
-            # FIXME: the logic below to get "anchor_part" is not robust, it relies on the ordering of the unique parts
-            #  but if there are missing frames for the actual anchor part, it will be missed
-            #  and another part will be incorrectly chosen as "anchor_part"
-            #  (2024-10-31) - we recently discovered that the parts are not sorted in the same order across frames
-            #               - further exacerbating the flaw in the logic below
-            #  best is to find a robust way to get the anchor part info from the config file for this chunk
-            anchor_part = np.unique(identity_position.part)[0]
 
             for part in set(identity_position.part.values):
                 part_position = identity_position[identity_position.part == part]
