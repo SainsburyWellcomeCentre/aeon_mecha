@@ -54,9 +54,6 @@ def create_new_social_experiment(experiment_name):
         )
         acquisition.Experiment.Directory.insert(experiment_directories, skip_duplicates=True)
         acquisition.Experiment.DevicesSchema.insert1(
-            {
-                "experiment_name": experiment_name,
-                "devices_schema_name": exp_name.replace(".", ""),
-            },
+            {"experiment_name": experiment_name, "devices_schema_name": exp_name.replace(".", "")},
             skip_duplicates=True,
         )

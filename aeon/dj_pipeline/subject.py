@@ -99,10 +99,7 @@ class SubjectDetail(dj.Imported):
             }
         )
         Strain.insert1(
-            {
-                "strain_id": animal_resp["strain_id"],
-                "strain_name": animal_resp["strain_id"],
-            },
+            {"strain_id": animal_resp["strain_id"], "strain_name": animal_resp["strain_id"]},
             skip_duplicates=True,
         )
         entry = {
@@ -114,10 +111,7 @@ class SubjectDetail(dj.Imported):
         }
         if animal_resp["gen_bg_id"] is not None:
             GeneticBackground.insert1(
-                {
-                    "gen_bg_id": animal_resp["gen_bg_id"],
-                    "gen_bg": animal_resp["gen_bg"],
-                },
+                {"gen_bg_id": animal_resp["gen_bg_id"], "gen_bg": animal_resp["gen_bg"]},
                 skip_duplicates=True,
             )
             entry["gen_bg_id"] = animal_resp["gen_bg_id"]

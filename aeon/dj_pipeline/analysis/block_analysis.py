@@ -129,7 +129,10 @@ class BlockAnalysis(dj.Computed):
 
     @property
     def key_source(self):
-        """Ensure that the chunk ingestion has caught up with this block before processing (there exists a chunk that ends after the block end time)."""  # noqa 501
+        """Ensures chunk ingestion is complete before processing the block.
+
+        This is done by checking that there exists a chunk that ends after the block end time.
+        """
         ks = Block.aggr(acquisition.Chunk, latest_chunk_end="MAX(chunk_end)")
         ks = ks * Block & "latest_chunk_end >= block_end" & "block_end IS NOT NULL"
         return ks
@@ -164,14 +167,17 @@ class BlockAnalysis(dj.Computed):
         """
 
     def make(self, key):
-        """
-        Restrict, fetch and aggregate data from different streams to produce intermediate data products at a per-block level (for different patches and different subjects).
+        """Collates data from various streams to produce per-block intermediate data products.
+
+        The intermediate data products consist of data for each ``Patch``
+        and each ``Subject`` within the  ``Block``.
+        The steps to restrict, fetch, and aggregate data from various streams are as follows:
 
         1. Query data for all chunks within the block.
         2. Fetch streams, filter by maintenance period.
         3. Fetch subject position data (SLEAP).
         4. Aggregate and insert into the table.
-        """  # noqa 501
+        """
         block_start, block_end = (Block & key).fetch1("block_start", "block_end")
 
         chunk_restriction = acquisition.create_chunk_restriction(
@@ -383,7 +389,7 @@ class BlockSubjectAnalysis(dj.Computed):
         -> BlockAnalysis.Patch
         -> BlockAnalysis.Subject
         ---
-        in_patch_timestamps: longblob # timestamps when a subject spends time at a specific patch
+        in_patch_timestamps: longblob # timestamps when a subject is at a specific patch
         in_patch_time: float  # total seconds spent in this patch for this block
         pellet_count: int
         pellet_timestamps: longblob
@@ -947,9 +953,7 @@ class BlockPatchPlots(dj.Computed):
             patch_pref.groupby("subject_name")
             .apply(
                 lambda group: calculate_running_preference(
-                    group,
-                    "cumulative_preference_by_wheel",
-                    "running_preference_by_wheel",
+                    group, "cumulative_preference_by_wheel", "running_preference_by_wheel"
                 )
             )
             .droplevel(0)
@@ -1412,10 +1416,7 @@ class BlockSubjectPositionPlots(dj.Computed):
             & "attribute_name = 'Location'"
         )
         rfid_locs = dict(
-            zip(
-                *rfid_location_query.fetch("rfid_reader_name", "attribute_value"),
-                strict=True,
-            )
+            zip(*rfid_location_query.fetch("rfid_reader_name", "attribute_value"), strict=True)
         )
 
         ## Create position ethogram df

@@ -288,7 +288,7 @@ class EpochConfig(dj.Imported):
         -> master
         ---
         bonsai_workflow: varchar(36)
-        commit: varchar(64) # e.g., git commit hash of aeon_experiment used to generate this epoch
+        commit: varchar(64) # e.g. git commit hash of aeon_experiment used to generate this epoch
         source='': varchar(16)  # e.g. aeon_experiment or aeon_acquisition (or others)
         metadata: longblob
         metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
@@ -625,9 +625,7 @@ def _get_all_chunks(experiment_name, device_name):
     directory_types = ["quality-control", "raw"]
     raw_data_dirs = {
         dir_type: Experiment.get_data_directory(
-            experiment_key={"experiment_name": experiment_name},
-            directory_type=dir_type,
-            as_posix=False,
+            experiment_key={"experiment_name": experiment_name}, directory_type=dir_type, as_posix=False
         )
         for dir_type in directory_types
     }

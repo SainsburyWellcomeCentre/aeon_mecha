@@ -34,11 +34,11 @@ def gen_hex_grad(hex_col, vals, min_lightness=0.3):
     )
     grad = np.empty(shape=(len(vals),), dtype="<U10")  # init grad
     for i, val in enumerate(vals):
-        curl_lightness = (lightness * val) + (
+        cur_lightness = (lightness * val) + (
             min_lightness * (1 - val)
         )  # get cur lightness relative to `hex_col`
-        curl_lightness = max(min(curl_lightness, lightness), min_lightness)  # set min, max bounds
-        cur_rgb_col = hls_to_rgb(hue, curl_lightness, saturation)  # convert to rgb
+        cur_lightness = max(min(cur_lightness, lightness), min_lightness)  # set min, max bounds
+        cur_rgb_col = hls_to_rgb(hue, cur_lightness, saturation)  # convert to rgb
         cur_hex_col = "#{:02x}{:02x}{:02x}".format(
             *tuple(int(c * 255) for c in cur_rgb_col)
         )  # convert to hex
@@ -63,13 +63,16 @@ def gen_subject_colors_dict(subject_names):
 
 
 def gen_patch_style_dict(patch_names):
-    """Based on a list of patches, generates a dictionary of the following items.
+    """
+    Generates a dictionary of patch styles given a list of patch_names.
 
-    - patch_colors_dict: patch name to color
-    - patch_markers_dict: patch name to marker
-    - patch_symbols_dict: patch name to symbol
-    - patch_linestyles_dict: patch name to linestyle
+    The dictionary contains dictionaries which map patch names to their respective styles.
+    Below are the keys for each nested dictionary and their contents:
 
+    - colors: patch name to color
+    - markers: patch name to marker
+    - symbols: patch name to symbol
+    - linestyles: patch name to linestyle
     """
     return {
         "colors": dict(zip(patch_names, patch_colors, strict=False)),

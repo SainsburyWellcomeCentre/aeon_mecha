@@ -5,13 +5,7 @@ import matplotlib.path
 import numpy as np
 import pandas as pd
 
-from aeon.dj_pipeline import (
-    acquisition,
-    dict_to_uuid,
-    get_schema_name,
-    lab,
-    streams,
-)
+from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, streams
 from aeon.io import api as io_api
 from aeon.schema import schemas as aeon_schemas
 
@@ -243,7 +237,14 @@ class SLEAPTracking(dj.Imported):
 
 
 def compute_distance(position_df, target, xcol="x", ycol="y"):
-    """Compute the distance of the position data from a target coordinate (X,Y)."""
+    """Compute the distance between the position and the target.
+    
+    Args:
+        position_df (pd.DataFrame): DataFrame containing the position data.
+        target (tuple): Tuple of length 2 indicating the target x and y position.
+        xcol (str): x column name in ``position_df``. Default is 'x'.
+        ycol (str): y column name in ``position_df``. Default is 'y'.
+    """
     if len(target) != 2:  # noqa PLR2004
         raise ValueError("Target must be a list of tuple of length 2.")
     return np.sqrt(np.square(position_df[[xcol, ycol]] - target).sum(axis=1))

@@ -51,10 +51,7 @@ def fetch_stream(query, drop_pk=True):
     df.set_index("time", inplace=True)
     df.sort_index(inplace=True)
     df = df.convert_dtypes(
-        convert_string=False,
-        convert_integer=False,
-        convert_boolean=False,
-        convert_floating=False,
+        convert_string=False, convert_integer=False, convert_boolean=False, convert_floating=False
     )
     return df
 

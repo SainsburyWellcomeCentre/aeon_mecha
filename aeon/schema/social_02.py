@@ -16,10 +16,7 @@ class Environment(StreamGroup):
         def __init__(self, path):
             """Initializes the BlockState stream."""
             super().__init__(
-                _reader.Csv(
-                    f"{path}_BlockState_*",
-                    columns=["pellet_ct", "pellet_ct_thresh", "due_time"],
-                )
+                _reader.Csv(f"{path}_BlockState_*", columns=["pellet_ct", "pellet_ct_thresh", "due_time"])
             )
 
     class LightEvents(Stream):
