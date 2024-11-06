@@ -1,1 +1,0 @@
-# README # noqa D100
