@@ -177,7 +177,7 @@ class BlockAnalysis(dj.Computed):
         2. Fetch streams, filter by maintenance period.
         3. Fetch subject position data (SLEAP).
         4. Aggregate and insert into the table.
-        """  # noqa 501
+        """
         block_start, block_end = (Block & key).fetch1("block_start", "block_end")
 
         chunk_restriction = acquisition.create_chunk_restriction(
