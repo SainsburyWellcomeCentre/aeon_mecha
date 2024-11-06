@@ -953,9 +953,7 @@ class BlockPatchPlots(dj.Computed):
             patch_pref.groupby("subject_name")
             .apply(
                 lambda group: calculate_running_preference(
-                    group,
-                    "cumulative_preference_by_wheel",
-                    "running_preference_by_wheel",
+                    group, "cumulative_preference_by_wheel", "running_preference_by_wheel"
                 )
             )
             .droplevel(0)
