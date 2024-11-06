@@ -536,7 +536,7 @@ class VisitSummary(dj.Computed):
 
 @schema
 class VisitForagingBout(dj.Computed):
-    """Time period from when the animal enters to when it leaves a food patch while moving the wheel."""
+    """Time period when a subject enters a food patch, moves the wheel, and then leaves the patch."""
 
     definition = """ # Time from animal's entry to exit of a food patch while moving the wheel.
     -> Visit
