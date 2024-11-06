@@ -389,7 +389,7 @@ class BlockSubjectAnalysis(dj.Computed):
         -> BlockAnalysis.Patch
         -> BlockAnalysis.Subject
         ---
-        in_patch_timestamps: longblob # timestamps when a subject spends time at a specific patch
+        in_patch_timestamps: longblob # timestamps when a subject is at a specific patch
         in_patch_time: float  # total seconds spent in this patch for this block
         pellet_count: int
         pellet_timestamps: longblob
