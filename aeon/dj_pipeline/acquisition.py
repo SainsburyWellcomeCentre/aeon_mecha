@@ -288,7 +288,7 @@ class EpochConfig(dj.Imported):
         -> master
         ---
         bonsai_workflow: varchar(36)
-        commit: varchar(64) # e.g., git commit hash of aeon_experiment used to generate this epoch
+        commit: varchar(64) # e.g. git commit hash of aeon_experiment used to generate this epoch
         source='': varchar(16)  # e.g. aeon_experiment or aeon_acquisition (or others)
         metadata: longblob
         metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
