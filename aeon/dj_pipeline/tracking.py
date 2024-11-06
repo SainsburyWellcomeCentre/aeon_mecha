@@ -5,13 +5,7 @@ import matplotlib.path
 import numpy as np
 import pandas as pd
 
-from aeon.dj_pipeline import (
-    acquisition,
-    dict_to_uuid,
-    get_schema_name,
-    lab,
-    streams,
-)
+from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, streams
 from aeon.io import api as io_api
 from aeon.schema import schemas as aeon_schemas
 
