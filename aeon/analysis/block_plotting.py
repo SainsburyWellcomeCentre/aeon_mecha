@@ -34,11 +34,11 @@ def gen_hex_grad(hex_col, vals, min_lightness=0.3):
     )
     grad = np.empty(shape=(len(vals),), dtype="<U10")  # init grad
     for i, val in enumerate(vals):
-        curl_lightness = (lightness * val) + (
+        cur_lightness = (lightness * val) + (
             min_lightness * (1 - val)
         )  # get cur lightness relative to `hex_col`
-        curl_lightness = max(min(curl_lightness, lightness), min_lightness)  # set min, max bounds
-        cur_rgb_col = hls_to_rgb(hue, curl_lightness, saturation)  # convert to rgb
+        cur_lightness = max(min(cur_lightness, lightness), min_lightness)  # set min, max bounds
+        cur_rgb_col = hls_to_rgb(hue, cur_lightness, saturation)  # convert to rgb
         cur_hex_col = "#{:02x}{:02x}{:02x}".format(
             *tuple(int(c * 255) for c in cur_rgb_col)
         )  # convert to hex
