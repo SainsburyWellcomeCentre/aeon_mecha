@@ -92,8 +92,7 @@ class OSC(StreamGroup):
             """Initialises the Response class."""
             super().__init__(
                 _reader.Csv(
-                    f"{pattern}_response_*",
-                    columns=["typetag", "wall_id", "poke_id", "response_time"],
+                    f"{pattern}_response_*", columns=["typetag", "wall_id", "poke_id", "response_time"]
                 )
             )
 
