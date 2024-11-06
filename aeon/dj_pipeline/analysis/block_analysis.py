@@ -129,7 +129,10 @@ class BlockAnalysis(dj.Computed):
 
     @property
     def key_source(self):
-        """Ensure that the chunk ingestion has caught up with this block before processing (there exists a chunk that ends after the block end time)."""  # noqa 501
+        """Ensures chunk ingestion is complete before processing the block.
+
+        This is done by checking that there exists a chunk that ends after the block end time.
+        """
         ks = Block.aggr(acquisition.Chunk, latest_chunk_end="MAX(chunk_end)")
         ks = ks * Block & "latest_chunk_end >= block_end" & "block_end IS NOT NULL"
         return ks
