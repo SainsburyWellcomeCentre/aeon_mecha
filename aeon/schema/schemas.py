@@ -186,12 +186,4 @@ social04 = DotMap(
 )
 
 
-__all__ = [
-    "exp01",
-    "exp02",
-    "octagon01",
-    "social01",
-    "social02",
-    "social03",
-    "social04",
-]
+__all__ = ["exp01", "exp02", "octagon01", "social01", "social02", "social03", "social04"]
