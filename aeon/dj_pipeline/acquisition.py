@@ -625,9 +625,7 @@ def _get_all_chunks(experiment_name, device_name):
     directory_types = ["quality-control", "raw"]
     raw_data_dirs = {
         dir_type: Experiment.get_data_directory(
-            experiment_key={"experiment_name": experiment_name},
-            directory_type=dir_type,
-            as_posix=False,
+            experiment_key={"experiment_name": experiment_name}, directory_type=dir_type, as_posix=False
         )
         for dir_type in directory_types
     }
