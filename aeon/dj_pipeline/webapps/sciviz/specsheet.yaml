@@ -214,6 +214,50 @@ SciViz:
                 - type: attribute
                   input: Experiment Type
                   destination: experiment_type
+
+            New Experiment Timeline:
+              route: /exp_timeline_form
+              x: 0
+              y: 1.6
+              height: 0.4
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.ExperimentTimeline
+              map:
+                - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.Experiment
+                - type: attribute
+                  input: Timeline Name
+                  destination: name
+                - type: attribute
+                  input: Start Time
+                  destination: start
+                - type: attribute
+                  input: End Time
+                  destination: end
+                - type: attribute
+                  input: Note
+                  destination: note
+
+            New Timeline Subject:
+              route: /exp_timeline_subject_form
+              x: 0
+              y: 2.0
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.ExperimentTimeline.Subject
+              map:
+                - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.ExperimentTimeline
+                - type: table
+                  input: Subject participating in this timeline
+                  destination: aeon_acquisition.Experiment.Subject
+
     Subjects:
       route: /subjects
       grids:
