@@ -131,7 +131,8 @@ def ingest_environment_visits(experiment_names: list | None = None):
 
     Args:
         experiment_names (list, optional): list of names of the experiment
-        to populate into the Visit table. Defaults to None.
+            to populate into the ``Visit`` table.
+            If unspecified, defaults to ``None`` and ``['exp0.2-r0']`` is used.
     """
     if experiment_names is None:
         experiment_names = ["exp0.2-r0"]
