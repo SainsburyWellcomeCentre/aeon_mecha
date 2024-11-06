@@ -167,8 +167,11 @@ class BlockAnalysis(dj.Computed):
         """
 
     def make(self, key):
-        """
-        Restrict, fetch and aggregate data from different streams to produce intermediate data products at a per-block level (for different patches and different subjects).
+        """Collates data from various streams to produce per-block intermediate data products.
+
+        The intermediate data products consist of data for each ``Patch``
+        and each ``Subject`` within the  ``Block``.
+        The steps to restrict, fetch, and aggregate data from various streams are as follows:
 
         1. Query data for all chunks within the block.
         2. Fetch streams, filter by maintenance period.
