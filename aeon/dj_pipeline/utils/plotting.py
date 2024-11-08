@@ -304,8 +304,13 @@ def plot_foraging_bouts_count(
         fig: Figure object
 
     Examples:
-        >>> fig = plot_foraging_bouts_count(visit_key, freq="D",
-        per_food_patch=True, min_bout_duration=1, min_wheel_dist=1)
+        >>> fig = plot_foraging_bouts_count(
+        ...     visit_key,
+        ...     freq="D",
+        ...     per_food_patch=True,
+        ...     min_bout_duration=1,
+        ...     min_wheel_dist=1
+        ... )
     """
     # Get all foraging bouts for the visit
     foraging_bouts = (
@@ -464,13 +469,7 @@ def plot_foraging_bouts_distribution(
         width=700,
         height=400,
         template="simple_white",
-        legend={
-            "orientation": "h",
-            "yanchor": "bottom",
-            "y": 1,
-            "xanchor": "right",
-            "x": 1,
-        },
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1, "xanchor": "right", "x": 1},
     )
 
     return fig
@@ -539,7 +538,8 @@ def _get_region_data(visit_key, attrs=None):
     Args:
         visit_key (dict): Key from the Visit table
         attrs (list, optional): List of column names (in VisitTimeDistribution tables) to retrieve.
-        Defaults is None, which will create a new list with the desired default values inside the function.
+            If unspecified, defaults to `None` and ``["in_nest", "in_arena", "in_corridor", "in_patch"]``
+            is used.
 
     Returns:
         region (pd.DataFrame): Timestamped region info
