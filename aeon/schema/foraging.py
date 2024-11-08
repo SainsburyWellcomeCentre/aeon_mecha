@@ -54,7 +54,7 @@ class _Weight(_reader.Harp):
     """
 
     def __init__(self, pattern):
-        """Initializes  the Weight class."""
+        """Initializes the Weight class."""
         super().__init__(pattern, columns=["value", "stable"])
 
 
