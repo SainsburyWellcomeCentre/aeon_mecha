@@ -249,7 +249,14 @@ def compute_distance(position_df, target, xcol="x", ycol="y"):
 def is_position_in_patch(
     position_df, patch_position, wheel_distance_travelled, patch_radius=0.2
 ) -> pd.Series:
-    """The function returns a boolean array indicating whether the position is inside the patch."""
+    """Returns a boolean array of whether a given position is inside the patch and the wheel is moving.
+
+    Args:
+        position_df (pd.DataFrame): DataFrame containing the position data.
+        patch_position (tuple): Tuple of length 2 indicating the patch x and y position.
+        wheel_distance_travelled (pd.Series): distance travelled by the wheel.
+        patch_radius (float): Radius of the patch. Default is 0.2.
+    """
     distance_from_patch = compute_distance(position_df, patch_position)
     in_patch = distance_from_patch < patch_radius
     exit_patch = in_patch.astype(np.int8).diff() < 0
