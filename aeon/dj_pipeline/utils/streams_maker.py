@@ -34,7 +34,7 @@ class StreamType(dj.Lookup):
     definition = """ # Catalog of all stream types used across Project Aeon
     stream_type          : varchar(20)
     ---
-    stream_reader        : varchar(256)     # name of the reader class found in `aeon_mecha` package (e.g. aeon.io.reader.Video)
+    stream_reader        : varchar(256) # reader class name in aeon.io.reader (e.g. aeon.io.reader.Video)
     stream_reader_kwargs : longblob  # keyword arguments to instantiate the reader class
     stream_description='': varchar(256)
     stream_hash          : uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
