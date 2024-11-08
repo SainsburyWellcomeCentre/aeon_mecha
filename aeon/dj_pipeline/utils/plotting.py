@@ -218,12 +218,13 @@ def plot_visit_daily_summary(
         fig: Figure object
 
     Examples:
-        >>> fig = plot_visit_daily_summary(visit_key, attr='pellet_count',
-        per_food_patch=True)
-        >>> fig = plot_visit_daily_summary(visit_key,
-        attr='wheel_distance_travelled', per_food_patch=True)
-        >>> fig = plot_visit_daily_summary(visit_key,
-        attr='total_distance_travelled')
+        >>> fig = plot_visit_daily_summary(visit_key, attr='pellet_count', per_food_patch=True)
+        >>> fig = plot_visit_daily_summary(
+        ...    visit_key,
+        ...    attr="wheel_distance_travelled"
+        ...    per_food_patch=True,
+        ... )
+        >>> fig = plot_visit_daily_summary(visit_key, attr='total_distance_travelled')
     """
     per_food_patch = not attr.startswith("total")
     color = "food_patch_description" if per_food_patch else None
