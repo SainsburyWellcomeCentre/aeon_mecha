@@ -304,8 +304,13 @@ def plot_foraging_bouts_count(
         fig: Figure object
 
     Examples:
-        >>> fig = plot_foraging_bouts_count(visit_key, freq="D",
-        per_food_patch=True, min_bout_duration=1, min_wheel_dist=1)
+        >>> fig = plot_foraging_bouts_count(
+        ...     visit_key,
+        ...     freq="D",
+        ...     per_food_patch=True,
+        ...     min_bout_duration=1,
+        ...     min_wheel_dist=1
+        ... )
     """
     # Get all foraging bouts for the visit
     foraging_bouts = (
