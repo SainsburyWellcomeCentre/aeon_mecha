@@ -6,16 +6,13 @@ from datetime import time
 import datajoint as dj
 import numpy as np
 import pandas as pd
-
 from aeon.dj_pipeline import acquisition, lab, tracking
-from aeon.dj_pipeline.analysis.visit import (
-    Visit,
-    VisitEnd,
-    filter_out_maintenance_periods,
-    get_maintenance_periods,
-)
+from aeon.dj_pipeline.analysis.visit import (Visit, VisitEnd,
+                                             filter_out_maintenance_periods,
+                                             get_maintenance_periods)
 
 logger = dj.logger
+
 # schema = dj.schema(get_schema_name("analysis"))
 schema = dj.schema()
 
@@ -197,14 +194,14 @@ class VisitSubjectPosition(dj.Computed):
     def get_position(cls, visit_key=None, subject=None, start=None, end=None):
         """Retrieves a Pandas DataFrame of a subject's position data for a specified ``Visit``.
 
-        A ``Visit`` is specified by either a ``visit_key`` or 
-        a combination of ``subject``, ``start``, and ``end``. 
+        A ``Visit`` is specified by either a ``visit_key`` or
+        a combination of ``subject``, ``start``, and ``end``.
         If all four arguments are provided, the ``visit_key`` is ignored.
 
         Args:
             visit_key (dict, optional): key to a single ``Visit``.
                 Only required if ``subject``, ``start``, and ``end`` are not provided.
-            subject (str, optional): subject name. 
+            subject (str, optional): subject name.
                 Only required if ``visit_key`` is not provided.
             start (datetime): start time of the period of interest.
                 Only required if ``visit_key`` is not provided.

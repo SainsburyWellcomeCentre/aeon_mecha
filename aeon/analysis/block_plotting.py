@@ -63,8 +63,7 @@ def gen_subject_colors_dict(subject_names):
 
 
 def gen_patch_style_dict(patch_names):
-    """
-    Generates a dictionary of patch styles given a list of patch_names.
+    """Generates a dictionary of patch styles given a list of patch_names.
 
     The dictionary contains dictionaries which map patch names to their respective styles.
     Below are the keys for each nested dictionary and their contents:
