@@ -39,7 +39,7 @@ class StreamType(dj.Lookup):
     stream_description='': varchar(256)
     stream_hash          : uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
     unique index (stream_hash)
-    """  # noqa: E501
+    """
 
 
 class DeviceType(dj.Lookup):
