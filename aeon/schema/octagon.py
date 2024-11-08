@@ -19,10 +19,7 @@ class OSC(StreamGroup):
         def __init__(self, pattern):
             """Initializes the BackgroundColor stream."""
             super().__init__(
-                _reader.Csv(
-                    f"{pattern}_backgroundcolor_*",
-                    columns=["typetag", "r", "g", "b", "a"],
-                )
+                _reader.Csv(f"{pattern}_backgroundcolor_*", columns=["typetag", "r", "g", "b", "a"])
             )
 
     class ChangeSubjectState(Stream):
