@@ -101,9 +101,7 @@ def plot_wheel_travelled_distance(session_keys):
     distance_travelled_df["in_arena"] = [
         f'{subj_name}_{sess_start.strftime("%m/%d/%Y")}'
         for subj_name, sess_start in zip(
-            distance_travelled_df.subject,
-            distance_travelled_df.in_arena_start,
-            strict=False,
+            distance_travelled_df.subject, distance_travelled_df.in_arena_start, strict=False
         )
     ]
 
