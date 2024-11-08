@@ -74,11 +74,7 @@ class Harp(Reader):
         ticks = np.ndarray(length, dtype=np.uint16, buffer=data, offset=9, strides=stride)
         seconds = ticks * _SECONDS_PER_TICK + seconds
         payload = np.ndarray(
-            payloadshape,
-            dtype=payloadtype,
-            buffer=data,
-            offset=11,
-            strides=(stride, elementsize),
+            payloadshape, dtype=payloadtype, buffer=data, offset=11, strides=(stride, elementsize)
         )
 
         if self.columns is not None and payloadshape[1] < len(self.columns):
