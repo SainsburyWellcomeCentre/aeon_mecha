@@ -149,8 +149,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
 
             if not data.index.has_duplicates:
                 warnings.warn(
-                    f"data index for {reader.pattern} contains out-of-order timestamps!",
-                    stacklevel=2,
+                    f"data index for {reader.pattern} contains out-of-order timestamps!", stacklevel=2
                 )
                 data = data.sort_index()
             else:
