@@ -110,14 +110,10 @@ class TrackingParamSet(dj.Lookup):
 
 @schema
 class SLEAPTracking(dj.Imported):
-    """Tracking data from SLEAP for multi-animal experiments.
+    """Tracking data from SLEAP for multi-animal experiments."""
 
-    Tracked objects position data from a particular
-    VideoSource for multi-animal experiment using the SLEAP tracking
-    method per chunk.
-    """
-
-    definition = """
+    definition = """ # Tracked objects position data from a particular
+VideoSource for multi-animal experiment using the SLEAP tracking method per chunk.
     -> acquisition.Chunk
     -> streams.SpinnakerVideoSource
     -> TrackingParamSet
