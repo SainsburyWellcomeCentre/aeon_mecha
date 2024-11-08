@@ -127,7 +127,7 @@ def plot_wheel_travelled_distance(session_keys):
 
 
 def plot_average_time_distribution(session_keys):
-    """Plotting the average time spent in different regions."""
+    """Plots the average time spent in different regions."""
     subject_list, arena_location_list, avg_time_spent_list = [], [], []
 
     # Time spent in arena and corridor
