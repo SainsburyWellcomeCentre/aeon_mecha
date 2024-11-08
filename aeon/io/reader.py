@@ -398,8 +398,7 @@ class Pose(Harp):
             if bonsai_sleap_v == BONSAI_SLEAP_V3:
                 # combine all identity_likelihood cols into a single col as dict
                 part_data["identity_likelihood"] = part_data.apply(
-                    lambda row: {identity: row[f"{identity}_likelihood"] for identity in identities},
-                    axis=1,
+                    lambda row: {identity: row[f"{identity}_likelihood"] for identity in identities}, axis=1
                 )
                 part_data.drop(columns=columns[1 : (len(identities) + 1)], inplace=True)
                 part_data = part_data[  # reorder columns
