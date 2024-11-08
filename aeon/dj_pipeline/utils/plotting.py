@@ -469,13 +469,7 @@ def plot_foraging_bouts_distribution(
         width=700,
         height=400,
         template="simple_white",
-        legend={
-            "orientation": "h",
-            "yanchor": "bottom",
-            "y": 1,
-            "xanchor": "right",
-            "x": 1,
-        },
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1, "xanchor": "right", "x": 1},
     )
 
     return fig
