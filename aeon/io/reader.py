@@ -402,13 +402,7 @@ class Pose(Harp):
                 )
                 part_data.drop(columns=columns[1 : (len(identities) + 1)], inplace=True)
                 part_data = part_data[  # reorder columns
-                    [
-                        "identity",
-                        "identity_likelihood",
-                        f"{part}_x",
-                        f"{part}_y",
-                        f"{part}_likelihood",
-                    ]
+                    ["identity", "identity_likelihood", f"{part}_x", f"{part}_y", f"{part}_likelihood"]
                 ]
             part_data.insert(2, "part", part)
             part_data.columns = new_columns
