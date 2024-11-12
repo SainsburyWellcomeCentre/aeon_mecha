@@ -6,10 +6,14 @@ from datetime import time
 import datajoint as dj
 import numpy as np
 import pandas as pd
+
 from aeon.dj_pipeline import acquisition, lab, tracking
-from aeon.dj_pipeline.analysis.visit import (Visit, VisitEnd,
-                                             filter_out_maintenance_periods,
-                                             get_maintenance_periods)
+from aeon.dj_pipeline.analysis.visit import (
+    Visit,
+    VisitEnd,
+    filter_out_maintenance_periods,
+    get_maintenance_periods,
+)
 
 logger = dj.logger
 

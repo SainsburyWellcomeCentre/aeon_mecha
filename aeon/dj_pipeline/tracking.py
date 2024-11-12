@@ -234,7 +234,7 @@ VideoSource for multi-animal experiment using the SLEAP tracking method per chun
 
 def compute_distance(position_df, target, xcol="x", ycol="y"):
     """Compute the distance between the position and the target.
-    
+
     Args:
         position_df (pd.DataFrame): DataFrame containing the position data.
         target (tuple): Tuple of length 2 indicating the target x and y position.
