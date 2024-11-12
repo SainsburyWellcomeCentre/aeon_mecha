@@ -1,13 +1,21 @@
-import datetime
-import datajoint as dj
-import pandas as pd
-import numpy as np
+"""Module for visit-related tables in the analysis schema."""
+
 from collections import deque
+from datetime import datetime, timezone
+
+import datajoint as dj
+import numpy as np
+import pandas as pd
 
 from aeon.analysis import utils as analysis_utils
-
-from aeon.dj_pipeline import get_schema_name, fetch_stream
-from aeon.dj_pipeline import acquisition, lab, qc, tracking
+from aeon.dj_pipeline import (
+    acquisition,
+    fetch_stream,
+    get_schema_name,
+    lab,
+    qc,
+    tracking,
+)
 
 schema = dj.schema(get_schema_name("analysis"))
 
@@ -67,11 +75,13 @@ class OverlapVisit(dj.Computed):
 
     @property
     def key_source(self):
+        """Key source for OverlapVisit."""
         return dj.U("experiment_name", "place", "overlap_start") & (Visit & VisitEnd).proj(
             overlap_start="visit_start"
         )
 
     def make(self, key):
+        """Populate OverlapVisit table with overlapping visits."""
         visit_starts, visit_ends = (Visit * VisitEnd & key & {"visit_start": key["overlap_start"]}).fetch(
             "visit_start", "visit_end"
         )
@@ -113,12 +123,17 @@ class OverlapVisit(dj.Computed):
 
 
 def ingest_environment_visits(experiment_names: list | None = None):
-    """Function to populate into `Visit` and `VisitEnd` for specified experiments (default: 'exp0.2-r0'). This ingestion routine handles only those "complete" visits, not ingesting any "on-going" visits using "analyze" method: `aeon.analyze.utils.visits()`.
+    """Populates ``Visit`` and ``VisitEnd`` for the specified experiment names.
+
+    This ingestion routine includes only "complete" visits and
+    does not ingest any "on-going" visits.
+    Visits are retrieved using :func:`aeon.analysis.utils.visits`.
 
     Args:
-        experiment_names (list, optional): list of names of the experiment to populate into the Visit table. Defaults to None.
+        experiment_names (list, optional): list of names of the experiment
+            to populate into the ``Visit`` table.
+            If unspecified, defaults to ``None`` and ``['exp0.2-r0']`` is used.
     """
-
     if experiment_names is None:
         experiment_names = ["exp0.2-r0"]
     place_key = {"place": "environment"}
@@ -131,7 +146,7 @@ def ingest_environment_visits(experiment_names: list | None = None):
             .fetch("last_visit")
         )
         start = min(subjects_last_visits) if len(subjects_last_visits) else "1900-01-01"
-        end = datetime.datetime.now() if start else "2200-01-01"
+        end = datetime.now(timezone.utc) if start else "2200-01-01"
 
         enter_exit_query = (
             acquisition.SubjectEnterExit.Time * acquisition.EventType
@@ -150,7 +165,8 @@ def ingest_environment_visits(experiment_names: list | None = None):
                     "enter_exit_time",
                     "event_type",
                     order_by="enter_exit_time",
-                )
+                ),
+                strict=False,
             )
         )
         enter_exit_df.columns = ["id", "time", "event"]
@@ -187,6 +203,7 @@ def ingest_environment_visits(experiment_names: list | None = None):
 
 
 def get_maintenance_periods(experiment_name, start, end):
+    """Get maintenance periods for the specified experiment and time range."""
     # get states from acquisition.Environment.EnvironmentState
     chunk_restriction = acquisition.create_chunk_restriction(experiment_name, start, end)
     state_query = (
@@ -219,12 +236,13 @@ def get_maintenance_periods(experiment_name, start, end):
     return deque(
         [
             (pd.Timestamp(start), pd.Timestamp(end))
-            for start, end in zip(maintenance_starts, maintenance_ends)
+            for start, end in zip(maintenance_starts, maintenance_ends, strict=False)
         ]
     )  # queue object. pop out from left after use
 
 
 def filter_out_maintenance_periods(data_df, maintenance_period, end_time, dropna=False):
+    """Filter out maintenance periods from the data_df."""
     maint_period = maintenance_period.copy()
     while maint_period:
         (maintenance_start, maintenance_end) = maint_period[0]

@@ -1,9 +1,13 @@
+"""DataJoint pipeline for Aeon."""
+
 import hashlib
 import logging
 import os
 import uuid
 
 import datajoint as dj
+
+logger = dj.logger
 
 _default_database_prefix = os.getenv("DJ_DB_PREFIX") or "aeon_"
 _default_repository_config = {"ceph_aeon": "/ceph/aeon"}
@@ -68,5 +72,5 @@ except ImportError:
         from .utils import streams_maker
 
         streams = dj.VirtualModule("streams", streams_maker.schema_name)
-    except:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not import streams module: {e}")

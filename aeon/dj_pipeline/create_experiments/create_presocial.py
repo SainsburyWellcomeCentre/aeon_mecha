@@ -1,3 +1,5 @@
+"""Function to create new experiments for presocial0.1."""
+
 from aeon.dj_pipeline import acquisition, lab, subject
 
 experiment_type = "presocial0.1"
@@ -7,6 +9,7 @@ computers = ["AEON2", "AEON3", "AEON4"]
 
 
 def create_new_experiment():
+    """Create new experiments for presocial0.1."""
     lab.Location.insert1({"lab": "SWC", "location": location}, skip_duplicates=True)
 
     acquisition.ExperimentType.insert1({"experiment_type": experiment_type}, skip_duplicates=True)
@@ -44,13 +47,14 @@ def create_new_experiment():
                 "directory_type": "raw",
                 "directory_path": f"aeon/data/raw/{computer}/{experiment_type}",
             }
-            for experiment_name, computer in zip(experiment_names, computers)
+            for experiment_name, computer in zip(experiment_names, computers, strict=False)
         ],
         skip_duplicates=True,
     )
 
 
 def main():
+    """Main function to create a new experiment."""
     create_new_experiment()
 
 

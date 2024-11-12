@@ -1,3 +1,5 @@
+"""Helper functions for data analysis and visualization."""
+
 import numpy as np
 import pandas as pd
 
@@ -60,7 +62,6 @@ def visits(data, onset="Enter", offset="Exit"):
     missing_data = data.duplicated(subset=time_offset, keep="last")
     if missing_data.any():
         data.loc[missing_data, ["duration"] + [name for name in data.columns if rsuffix in name]] = pd.NA
-
     # rename columns and sort data
     data.rename({time_onset: lonset, id_onset: "id", time_offset: loffset}, axis=1, inplace=True)
     data = data[["id"] + [name for name in data.columns if "_" in name] + [lonset, loffset, "duration"]]
@@ -83,7 +84,7 @@ def rate(events, window, frequency, weight=1, start=None, end=None, smooth=None,
     :param datetime, optional end: The right bound of the time range for the continuous rate.
     :param datetime, optional smooth: The size of the smoothing kernel applied to the rate output.
     :param DateOffset, Timedelta or str, optional smooth:
-    The size of the smoothing kernel applied to the continuous rate output.
+      The size of the smoothing kernel applied to the continuous rate output.
     :param bool, optional center: Specifies whether to center the convolution kernels.
     :return: A Series containing the continuous event rate over time.
     """
@@ -101,7 +102,18 @@ def rate(events, window, frequency, weight=1, start=None, end=None, smooth=None,
 def get_events_rates(
     events, window_len_sec, frequency, unit_len_sec=60, start=None, end=None, smooth=None, center=False
 ):
-    """Computes the event rate from a sequence of events over a specified window."""
+    """Computes the event rate from a sequence of events over a specified window.
+
+    :param Series events: The discrete sequence of events, with timestamps in seconds as index.
+    :param int window_len_sec: The length of the window over which the event rate is estimated.
+    :param DateOffset, Timedelta or str frequency: The sampling frequency for the continuous rate.
+    :param int, optional unit_len_sec: The length of one sample point. Default is 60 seconds.
+    :param datetime, optional start: The left bound of the time range for the continuous rate.
+    :param datetime, optional end: The right bound of the time range for the continuous rate.
+    :param int, optional smooth: The size of the smoothing kernel applied to the continuous rate output.
+    :param bool, optional center: Specifies whether to center the convolution kernels.
+    :return: A Series containing the continuous event rate over time.
+    """
     # events is an array with the time (in seconds) of event occurence
     # window_len_sec is the size of the window over which the event rate is estimated
     # unit_len_sec is the length of one sample point

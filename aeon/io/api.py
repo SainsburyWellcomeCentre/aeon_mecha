@@ -1,3 +1,5 @@
+"""API for reading Aeon data from disk."""
+
 import bisect
 import datetime
 from os import PathLike

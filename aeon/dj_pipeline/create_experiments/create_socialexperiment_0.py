@@ -1,3 +1,5 @@
+"""Function to create new experiments for social0-r1."""
+
 import pathlib
 
 from aeon.dj_pipeline import acquisition, lab, subject
@@ -8,6 +10,7 @@ experiment_name = "social0-r1"
 
 
 def create_new_experiment():
+    """Create new experiments for social0-r1."""
     # ---------------- Subject -----------------
     subject_list = [
         {"subject": "BAA-1100704", "sex": "U", "subject_birth_date": "2021-01-01"},
@@ -79,6 +82,7 @@ def create_new_experiment():
 
 
 def add_arena_setup():
+    """Add arena setup."""
     # Arena Setup - Experiment Devices
     this_file = pathlib.Path(__file__).expanduser().absolute().resolve()
     metadata_yml_filepath = this_file.parent / "setup_yml" / "SocialExperiment0.yml"
@@ -102,6 +106,7 @@ def add_arena_setup():
 
 
 def main():
+    """Main function to create a new experiment and set up the arena."""
     create_new_experiment()
     add_arena_setup()
 
@@ -148,19 +153,21 @@ def fixID(subjid, valid_ids=None, valid_id_file=None):
     if ";" in subjid:
         subjidA, subjidB = subjid.split(";")
         return (
-            f"{fixID(subjidA.strip(), valid_ids=valid_ids)};{fixID(subjidB.strip(), valid_ids=valid_ids)}"
+            f"{fixID(subjidA.strip(), valid_ids=valid_ids)};"
+            f"{fixID(subjidB.strip(), valid_ids=valid_ids)}"
         )
 
     if "vs" in subjid:
         subjidA, tmp, subjidB = subjid.split(" ")[1:]
         return (
-            f"{fixID(subjidA.strip(), valid_ids=valid_ids)};{fixID(subjidB.strip(), valid_ids=valid_ids)}"
+            f"{fixID(subjidA.strip(), valid_ids=valid_ids)};"
+            f"{fixID(subjidB.strip(), valid_ids=valid_ids)}"
         )
 
     try:
         ld = [jl.levenshtein_distance(subjid, x[-len(subjid) :]) for x in valid_ids]
         return valid_ids[np.argmin(ld)]
-    except:
+    except ValueError:
         return subjid
 
 

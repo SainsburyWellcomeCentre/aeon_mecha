@@ -1,3 +1,5 @@
+"""Top-level package for aeon."""
+
 from importlib.metadata import PackageNotFoundError, version
 
 try:

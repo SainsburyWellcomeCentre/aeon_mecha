@@ -1,7 +1,9 @@
-from pytest import mark
+"""Tests for pipeline instantiation and experiment creation."""
+
+import pytest
 
 
-@mark.instantiation
+@pytest.mark.instantiation
 def test_pipeline_instantiation(pipeline):
     assert hasattr(pipeline["acquisition"], "FoodPatchEvent")
     assert hasattr(pipeline["lab"], "Arena")
@@ -11,16 +13,19 @@ def test_pipeline_instantiation(pipeline):
     assert hasattr(pipeline["tracking"], "CameraTracking")
 
 
-@mark.instantiation
+@pytest.mark.instantiation
 def test_experiment_creation(test_params, pipeline, experiment_creation):
     acquisition = pipeline["acquisition"]
 
     experiment_name = test_params["experiment_name"]
     assert acquisition.Experiment.fetch1("experiment_name") == experiment_name
     raw_dir = (
-        acquisition.Experiment.Directory & {"experiment_name": experiment_name, "directory_type": "raw"}
+        acquisition.Experiment.Directory
+        & {"experiment_name": experiment_name, "directory_type": "raw"}
     ).fetch1("directory_path")
     assert raw_dir == test_params["raw_dir"]
-    exp_subjects = (acquisition.Experiment.Subject & {"experiment_name": experiment_name}).fetch("subject")
+    exp_subjects = (
+        acquisition.Experiment.Subject & {"experiment_name": experiment_name}
+    ).fetch("subject")
     assert len(exp_subjects) == test_params["subject_count"]
     assert "BAA-1100701" in exp_subjects

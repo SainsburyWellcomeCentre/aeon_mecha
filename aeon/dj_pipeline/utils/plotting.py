@@ -1,3 +1,5 @@
+"""Utility functions for plotting visit data."""
+
 import datajoint as dj
 import numpy as np
 import pandas as pd
@@ -27,11 +29,12 @@ def plot_reward_rate_differences(subject_keys):
 
     Examples:
     ```
-    subject_keys = (acquisition.Experiment.Subject & 'experiment_name = "exp0.1-r0"').fetch('KEY')
+    subject_keys =
+    (acquisition.Experiment.Subject & 'experiment_name = "exp0.1-r0"').fetch('KEY')
 
     fig = plot_reward_rate_differences(subject_keys)
     ```
-    """
+    """  # noqa E501
     subj_names, sess_starts, rate_timestamps, rate_diffs = (
         analysis.InArenaRewardRate & subject_keys
     ).fetch("subject", "in_arena_start", "pellet_rate_timestamps", "patch2_patch1_rate_diff")
@@ -45,7 +48,7 @@ def plot_reward_rate_differences(subject_keys):
 
     y_labels = [
         f'{subj_name}_{sess_start.strftime("%m/%d/%Y")}'
-        for subj_name, sess_start in zip(subj_names, sess_starts)
+        for subj_name, sess_start in zip(subj_names, sess_starts, strict=False)
     ]
 
     rateDiffs_matrix = np.full((nSessions, longest_rateDiff), np.nan)
@@ -74,7 +77,7 @@ def plot_reward_rate_differences(subject_keys):
 
 
 def plot_wheel_travelled_distance(session_keys):
-    """Plotting the wheel travelled distance for different patches for all sessions specified in "session_keys".
+    """Plot wheel-travelled-distance for different patches for all sessions specified in session_keys.
 
     Examples:
     ```
@@ -98,7 +101,7 @@ def plot_wheel_travelled_distance(session_keys):
     distance_travelled_df["in_arena"] = [
         f'{subj_name}_{sess_start.strftime("%m/%d/%Y")}'
         for subj_name, sess_start in zip(
-            distance_travelled_df.subject, distance_travelled_df.in_arena_start
+            distance_travelled_df.subject, distance_travelled_df.in_arena_start, strict=False
         )
     ]
 
@@ -124,6 +127,7 @@ def plot_wheel_travelled_distance(session_keys):
 
 
 def plot_average_time_distribution(session_keys):
+    """Plots the average time spent in different regions."""
     subject_list, arena_location_list, avg_time_spent_list = [], [], []
 
     # Time spent in arena and corridor
@@ -205,15 +209,21 @@ def plot_visit_daily_summary(
 
     Args:
         visit_key (dict) : Key from the VisitSummary table
-        attr (str): Name of the attribute to plot (e.g., 'pellet_count', 'wheel_distance_travelled', 'total_distance_travelled')
-        per_food_patch (bool, optional): Separately plot results from different food patches. Defaults to False.
+        attr (str): Name of the attribute to plot (e.g., 'pellet_count',
+                    'wheel_distance_travelled', 'total_distance_travelled')
+        per_food_patch (bool, optional): Separately plot results from
+                    different food patches. Defaults to False.
 
     Returns:
         fig: Figure object
 
     Examples:
         >>> fig = plot_visit_daily_summary(visit_key, attr='pellet_count', per_food_patch=True)
-        >>> fig = plot_visit_daily_summary(visit_key, attr='wheel_distance_travelled', per_food_patch=True)
+        >>> fig = plot_visit_daily_summary(
+        ...    visit_key,
+        ...    attr="wheel_distance_travelled"
+        ...    per_food_patch=True,
+        ... )
         >>> fig = plot_visit_daily_summary(visit_key, attr='total_distance_travelled')
     """
     per_food_patch = not attr.startswith("total")
@@ -282,8 +292,10 @@ def plot_foraging_bouts_count(
 
     Args:
         visit_key (dict): Key from the Visit table
-        freq (str): Frequency level at which the visit time distribution is plotted. Corresponds to pandas freq.
-        per_food_patch (bool, optional): Separately plot results from different food patches. Defaults to False.
+        freq (str): Frequency level at which the visit time
+                    distribution is plotted. Corresponds to pandas freq.
+        per_food_patch (bool, optional): Separately plot results from
+                    different food patches. Defaults to False.
         min_bout_duration (int): Minimum foraging bout duration (in seconds)
         min_pellet_count (int): Minimum number of pellets
         min_wheel_dist (int): Minimum wheel distance travelled (in cm)
@@ -292,7 +304,13 @@ def plot_foraging_bouts_count(
         fig: Figure object
 
     Examples:
-        >>> fig = plot_foraging_bouts_count(visit_key, freq="D", per_food_patch=True, min_bout_duration=1, min_wheel_dist=1)
+        >>> fig = plot_foraging_bouts_count(
+        ...     visit_key,
+        ...     freq="D",
+        ...     per_food_patch=True,
+        ...     min_bout_duration=1,
+        ...     min_wheel_dist=1
+        ... )
     """
     # Get all foraging bouts for the visit
     foraging_bouts = (
@@ -373,8 +391,10 @@ def plot_foraging_bouts_distribution(
 
     Args:
         visit_key (dict): Key from the Visit table
-        attr (str): Options include: pellet_count, bout_duration, wheel_distance_travelled
-        per_food_patch (bool, optional): Separately plot results from different food patches. Defaults to False.
+        attr (str): Options include: pellet_count, bout_duration,
+                    wheel_distance_travelled
+        per_food_patch (bool, optional): Separately plot results from
+                    different food patches. Defaults to False.
         min_bout_duration (int): Minimum foraging bout duration (in seconds)
         min_pellet_count (int): Minimum number of pellets
         min_wheel_dist (int): Minimum wheel distance travelled (in cm)
@@ -460,7 +480,8 @@ def plot_visit_time_distribution(visit_key, freq="D"):
 
     Args:
         visit_key (dict): Key from the Visit table
-        freq (str): Frequency level at which the visit time distribution is plotted. Corresponds to pandas freq.
+        freq (str): Frequency level at which the visit time distribution
+                    is plotted. Corresponds to pandas freq.
 
     Returns:
         fig: Figure object
@@ -511,16 +532,21 @@ def plot_visit_time_distribution(visit_key, freq="D"):
     return fig
 
 
-def _get_region_data(visit_key, attrs=["in_nest", "in_arena", "in_corridor", "in_patch"]):
+def _get_region_data(visit_key, attrs=None):
     """Retrieve region data from VisitTimeDistribution tables.
 
     Args:
         visit_key (dict): Key from the Visit table
-        attrs (list, optional): List of column names (in VisitTimeDistribution tables) to retrieve. Defaults to all.
+        attrs (list, optional): List of column names (in VisitTimeDistribution tables) to retrieve.
+            If unspecified, defaults to `None` and ``["in_nest", "in_arena", "in_corridor", "in_patch"]``
+            is used.
 
     Returns:
         region (pd.DataFrame): Timestamped region info
     """
+    if attrs is None:
+        attrs = ["in_nest", "in_arena", "in_corridor", "in_patch"]
+
     visit_start, visit_end = (VisitEnd & visit_key).fetch1("visit_start", "visit_end")
     region = pd.DataFrame()
 

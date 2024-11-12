@@ -1,8 +1,11 @@
+"""DataJoint schema for the lab pipeline."""
+
 import datajoint as dj
 
 from . import get_schema_name
 
 schema = dj.schema(get_schema_name("lab"))
+logger = dj.logger
 
 
 # ------------------- GENERAL LAB INFORMATION --------------------
@@ -82,12 +85,13 @@ class ArenaShape(dj.Lookup):
     definition = """
     arena_shape: varchar(32)
     """
-    contents = zip(["square", "circular", "rectangular", "linear", "octagon"])
+    contents = zip(["square", "circular", "rectangular", "linear", "octagon"], strict=False)
 
 
 @schema
 class Arena(dj.Lookup):
-    """Coordinate frame convention:
+    """Coordinate frame convention as the following items.
+
     + x-dimension: x=0 is the left most point of the bounding box of the arena
     + y-dimension: y=0 is the top most point of the bounding box of the arena
     + z-dimension: z=0 is the lowest point of the arena (e.g. the ground)

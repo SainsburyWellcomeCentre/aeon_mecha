@@ -1,4 +1,4 @@
-from pathlib import Path
+"""DataJoint schema for tracking data."""
 
 import datajoint as dj
 import matplotlib.path
@@ -11,6 +11,7 @@ from aeon.io import api as io_api
 aeon_schemas = acquisition.aeon_schemas
 
 schema = dj.schema(get_schema_name("tracking"))
+logger = dj.logger
 
 pixel_scale = 0.00192  # 1 px = 1.92 mm
 arena_center_x, arena_center_y = 1.475, 1.075  # center
@@ -72,6 +73,7 @@ class TrackingParamSet(dj.Lookup):
         params: dict,
         tracking_paramset_id: int = None,
     ):
+        """Insert a new set of parameters for a given tracking method."""
         if tracking_paramset_id is None:
             tracking_paramset_id = (dj.U().aggr(cls, n="max(tracking_paramset_id)").fetch1("n") or 0) + 1
 
@@ -109,7 +111,10 @@ class TrackingParamSet(dj.Lookup):
 
 @schema
 class SLEAPTracking(dj.Imported):
-    definition = """  # Tracked objects position data from a particular VideoSource for multi-animal experiment using the SLEAP tracking method per chunk
+    """Tracking data from SLEAP for multi-animal experiments."""
+
+    definition = """ # Tracked objects position data from a particular
+VideoSource for multi-animal experiment using the SLEAP tracking method per chunk.
     -> acquisition.Chunk
     -> streams.SpinnakerVideoSource
     -> TrackingParamSet
@@ -139,6 +144,7 @@ class SLEAPTracking(dj.Imported):
 
     @property
     def key_source(self):
+        """Return the keys to be processed."""
         return (
             acquisition.Chunk
             * (
@@ -151,6 +157,7 @@ class SLEAPTracking(dj.Imported):
         )  # SLEAP & CameraTop
 
     def make(self, key):
+        """Ingest SLEAP tracking data for a given chunk."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
@@ -353,13 +360,30 @@ class BlobPosition(dj.Imported):
 
 
 def compute_distance(position_df, target, xcol="x", ycol="y"):
-    assert len(target) == 2
+    """Compute the distance between the position and the target.
+
+    Args:
+        position_df (pd.DataFrame): DataFrame containing the position data.
+        target (tuple): Tuple of length 2 indicating the target x and y position.
+        xcol (str): x column name in ``position_df``. Default is 'x'.
+        ycol (str): y column name in ``position_df``. Default is 'y'.
+    """
+    if len(target) != 2:  # noqa PLR2004
+        raise ValueError("Target must be a list of tuple of length 2.")
     return np.sqrt(np.square(position_df[[xcol, ycol]] - target).sum(axis=1))
 
 
 def is_position_in_patch(
     position_df, patch_position, wheel_distance_travelled, patch_radius=0.2
 ) -> pd.Series:
+    """Returns a boolean array of whether a given position is inside the patch and the wheel is moving.
+
+    Args:
+        position_df (pd.DataFrame): DataFrame containing the position data.
+        patch_position (tuple): Tuple of length 2 indicating the patch x and y position.
+        wheel_distance_travelled (pd.Series): distance travelled by the wheel.
+        patch_radius (float): Radius of the patch. Default is 0.2.
+    """
     distance_from_patch = compute_distance(position_df, patch_position)
     in_patch = distance_from_patch < patch_radius
     exit_patch = in_patch.astype(np.int8).diff() < 0
@@ -371,10 +395,17 @@ def is_position_in_patch(
 
 
 def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y") -> pd.Series:
-    """Given the session key and the position data - arrays of x and y
+    """Check if a position is inside the nest.
+
+    Notes: Given the session key and the position data - arrays of x and y
     return an array of boolean indicating whether or not a position is inside the nest.
     """
-    nest_vertices = list(zip(*(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y")))
+    nest_vertices = list(
+        zip(
+            *(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y"),
+            strict=False,
+        )
+    )
     nest_path = matplotlib.path.Path(nest_vertices)
     position_df["in_nest"] = nest_path.contains_points(position_df[[xcol, ycol]])
     return position_df["in_nest"]
@@ -392,6 +423,7 @@ def _get_position(
     attrs_to_scale: list,
     scale_factor=1.0,
 ):
+    """Get the position data for a given object between the specified time range."""
     obj_restriction = {object_attr: object_name}
 
     start_restriction = f'"{start}" BETWEEN {start_attr} AND {end_attr}'
@@ -419,7 +451,7 @@ def _get_position(
     position = pd.DataFrame(
         {
             k: np.hstack(v) * scale_factor if k in attrs_to_scale else np.hstack(v)
-            for k, v in zip(fetch_attrs, fetched_data)
+            for k, v in zip(fetch_attrs, fetched_data, strict=False)
         }
     )
     position.set_index(timestamp_attr, inplace=True)

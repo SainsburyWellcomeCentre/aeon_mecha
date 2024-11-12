@@ -1,3 +1,5 @@
+"""Module for visit analysis."""
+
 import datetime
 from datetime import time
 
@@ -5,19 +7,22 @@ import datajoint as dj
 import numpy as np
 import pandas as pd
 
-from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline import acquisition, lab, tracking
 from aeon.dj_pipeline.analysis.visit import (
     Visit,
     VisitEnd,
-    get_maintenance_periods,
     filter_out_maintenance_periods,
+    get_maintenance_periods,
 )
 
 logger = dj.logger
+
 # schema = dj.schema(get_schema_name("analysis"))
 schema = dj.schema()
 
+# Constants values
+MIN_AREA = 0
+MAX_AREA = 1000
 
 # ---------- Position Filtering Method ------------------
 
@@ -66,8 +71,7 @@ class VisitSubjectPosition(dj.Computed):
     """
 
     class TimeSlice(dj.Part):
-        definition = """
-        # A short time-slice (e.g. 10 minutes) of the recording of a given animal for a visit
+        definition = """ # A short time-slice (e.g. 10min) of the recording of a given animal for a visit
         -> master
         time_slice_start: datetime(6)   # datetime of the start of this time slice
         ---
@@ -83,7 +87,8 @@ class VisitSubjectPosition(dj.Computed):
 
     @property
     def key_source(self):
-        """Chunk for all visits:
+        """Chunk for all visits as the following conditions.
+
         + visit_start during this Chunk - i.e. first chunk of the visit
         + visit_end during this Chunk - i.e. last chunk of the visit
         + chunk starts after visit_start and ends before visit_end (or NOW() - i.e. ongoing visits).
@@ -96,20 +101,20 @@ class VisitSubjectPosition(dj.Computed):
                 "visit_end BETWEEN chunk_start AND chunk_end",
                 "chunk_start >= visit_start AND chunk_end <= visit_end",
             ]
-            & "chunk_start < chunk_end"  # in some chunks, end timestamp comes before start (timestamp error)
+            & "chunk_start < chunk_end"
+            # in some chunks, end timestamp comes before start (timestamp error)
         )
 
     def make(self, key):
+        """Populate VisitSubjectPosition for each visit."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
 
         # -- Determine the time to start time_slicing in this chunk
-        if chunk_start < key["visit_start"] < chunk_end:
-            # For chunk containing the visit_start - i.e. first chunk of this visit
-            start_time = key["visit_start"]
-        else:
-            # For chunks after the first chunk of this visit
-            start_time = chunk_start
-
+        start_time = (
+            key["visit_start"]
+            if chunk_start < key["visit_start"] < chunk_end
+            else chunk_start  # Use chunk_start if the visit has not yet started.
+        )
         # -- Determine the time to end time_slicing in this chunk
         if VisitEnd & key:  # finished visit
             visit_end = (VisitEnd & key).fetch1("visit_end")
@@ -139,7 +144,8 @@ class VisitSubjectPosition(dj.Computed):
             object_id = (tracking.CameraTracking.Object & key).fetch1("object_id")
         else:
             logger.info(
-                '"More than one unique object ID found - using animal/object mapping from AnimalObjectMapping"'
+                "More than one unique object ID found - "
+                "using animal/object mapping from AnimalObjectMapping"
             )
             if not (AnimalObjectMapping & key):
                 raise ValueError(
@@ -190,17 +196,33 @@ class VisitSubjectPosition(dj.Computed):
 
     @classmethod
     def get_position(cls, visit_key=None, subject=None, start=None, end=None):
-        """Given a key to a single Visit, return a Pandas DataFrame for the position data of the subject for the specified Visit time period."""
+        """Retrieves a Pandas DataFrame of a subject's position data for a specified ``Visit``.
+
+        A ``Visit`` is specified by either a ``visit_key`` or
+        a combination of ``subject``, ``start``, and ``end``.
+        If all four arguments are provided, the ``visit_key`` is ignored.
+
+        Args:
+            visit_key (dict, optional): key to a single ``Visit``.
+                Only required if ``subject``, ``start``, and ``end`` are not provided.
+            subject (str, optional): subject name.
+                Only required if ``visit_key`` is not provided.
+            start (datetime): start time of the period of interest.
+                Only required if ``visit_key`` is not provided.
+            end (datetime, optional): end time of the period of interest.
+                Only required if ``visit_key`` is not provided.
+        """
         if visit_key is not None:
-            assert len(Visit & visit_key) == 1
+            if len(Visit & visit_key) != 1:
+                raise ValueError("The `visit_key` must correspond to exactly one Visit.")
             start, end = (
                 Visit.join(VisitEnd, left=True).proj(visit_end="IFNULL(visit_end, NOW())") & visit_key
             ).fetch1("visit_start", "visit_end")
             subject = visit_key["subject"]
         elif all((subject, start, end)):
-            start = start
-            end = end
-            subject = subject
+            start = start  # noqa PLW0127
+            end = end  # noqa PLW0127
+            subject = subject  # noqa PLW0127
         else:
             raise ValueError(
                 'Either "visit_key" or all three "subject", "start" and "end" has to be specified'
@@ -242,7 +264,7 @@ class VisitTimeDistribution(dj.Computed):
         -> lab.ArenaNest
         ---
         time_fraction_in_nest: float  # fraction of time the animal spent in this nest in this visit
-        in_nest: longblob             # array of indices for when the animal is in this nest (index into the position data)
+        in_nest: longblob  # indices array marking when the animal is in this nest
         """
 
     class FoodPatch(dj.Part):
@@ -258,6 +280,7 @@ class VisitTimeDistribution(dj.Computed):
     key_source = Visit & (VisitEnd * VisitSubjectPosition.TimeSlice & "time_slice_end = visit_end")
 
     def make(self, key):
+        """Populate VisitTimeDistribution for each visit."""
         visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
         visit_dates = pd.date_range(
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
@@ -285,7 +308,7 @@ class VisitTimeDistribution(dj.Computed):
             position = filter_out_maintenance_periods(position, maintenance_period, day_end)
 
             # filter for objects of the correct size
-            valid_position = (position.area > 0) & (position.area < 1000)
+            valid_position = (position.area > MIN_AREA) & (position.area < MAX_AREA)
             position[~valid_position] = np.nan
             position.rename(columns={"position_x": "x", "position_y": "y"}, inplace=True)
             # in corridor
@@ -386,7 +409,7 @@ class VisitSummary(dj.Computed):
     ---
     day_duration: float                     # total duration (in hours)
     total_distance_travelled: float         # (m) total distance the animal travelled during this visit
-    total_pellet_count: int                 # total pellet delivered (triggered) for all patches during this visit
+    total_pellet_count: int                 # total pellet triggered for all patches during this visit
     total_wheel_distance_travelled: float   # total wheel travelled distance for all patches
     """
 
@@ -395,7 +418,7 @@ class VisitSummary(dj.Computed):
         -> master
         -> acquisition.ExperimentFoodPatch
         ---
-        pellet_count: int                   # number of pellets being delivered (triggered) by this patch during this visit
+        pellet_count: int                   # number of pellets delivered by this patch during this visit
         wheel_distance_travelled: float     # wheel travelled distance during this visit for this patch
         """
 
@@ -403,6 +426,7 @@ class VisitSummary(dj.Computed):
     key_source = Visit & (VisitEnd * VisitSubjectPosition.TimeSlice & "time_slice_end = visit_end")
 
     def make(self, key):
+        """Populate VisitSummary for each visit."""
         visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
         visit_dates = pd.date_range(
             start=pd.Timestamp(visit_start.date()), end=pd.Timestamp(visit_end.date())
@@ -430,7 +454,7 @@ class VisitSummary(dj.Computed):
             # filter out maintenance period based on logs
             position = filter_out_maintenance_periods(position, maintenance_period, day_end)
             # filter for objects of the correct size
-            valid_position = (position.area > 0) & (position.area < 1000)
+            valid_position = (position.area > MIN_AREA) & (position.area < MAX_AREA)
             position[~valid_position] = np.nan
             position.rename(columns={"position_x": "x", "position_y": "y"}, inplace=True)
             position_diff = np.sqrt(np.square(np.diff(position.x)) + np.square(np.diff(position.y)))
@@ -513,7 +537,9 @@ class VisitSummary(dj.Computed):
 
 @schema
 class VisitForagingBout(dj.Computed):
-    definition = """ # A time period spanning the time when the animal enters a food patch and moves the wheel to when it leaves the food patch
+    """Time period when a subject enters a food patch, moves the wheel, and then leaves the patch."""
+
+    definition = """ # Time from subject's entry to exit of a food patch to interact with the wheel.
     -> Visit
     -> acquisition.ExperimentFoodPatch
     bout_start: datetime(6)                    # start time of bout
@@ -530,6 +556,7 @@ class VisitForagingBout(dj.Computed):
     ) * acquisition.ExperimentFoodPatch
 
     def make(self, key):
+        """Populate VisitForagingBout for each visit."""
         visit_start, visit_end = (VisitEnd & key).fetch1("visit_start", "visit_end")
 
         # get in_patch timestamps

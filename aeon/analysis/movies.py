@@ -1,3 +1,5 @@
+"""Helper functions for processing video data."""
+
 import math
 
 import cv2
@@ -13,9 +15,8 @@ def gridframes(frames, width, height, shape: None | int | tuple[int, int] = None
     :param list frames: A list of frames to include in the grid layout.
     :param int width: The width of the output grid image, in pixels.
     :param int height: The height of the output grid image, in pixels.
-    :param optional shape:
-    Either the number of frames to include, or the number of rows and columns
-    in the output grid image layout.
+    :param optional shape: Either the number of frames to include,
+      or the number of rows and columns in the output grid image layout.
     :return: A new image containing the arrangement of the frames in a grid.
     """
     if shape is None:
@@ -67,13 +68,12 @@ def groupframes(frames, n, fun):
 def triggerclip(data, events, before=None, after=None):
     """Split video data around the specified sequence of event timestamps.
 
-    :param DataFrame data:
-    A pandas DataFrame where each row specifies video acquisition path and frame number.
+    :param DataFrame data: A pandas DataFrame where each row specifies
+      video acquisition path and frame number.
     :param iterable events: A sequence of timestamps to extract.
     :param Timedelta before: The left offset from each timestamp used to clip the data.
     :param Timedelta after: The right offset from each timestamp used to clip the data.
-    :return:
-    A pandas DataFrame containing the frames, clip and sequence numbers for each event timestamp.
+    :return: A pandas DataFrame containing the frames, clip and sequence numbers for each event timestamp.
     """
     if before is None:
         before = pd.Timedelta(0)
@@ -100,9 +100,8 @@ def triggerclip(data, events, before=None, after=None):
 def collatemovie(clipdata, fun):
     """Collates a set of video clips into a single movie using the specified aggregation function.
 
-    :param DataFrame clipdata:
-    A pandas DataFrame where each row specifies video path, frame number, clip and sequence number.
-    This DataFrame can be obtained from the output of the triggerclip function.
+    :param DataFrame clipdata: A pandas DataFrame where each row specifies video path, frame number,
+      clip and sequence number. This DataFrame can be obtained from the output of the triggerclip function.
     :param callable fun: The aggregation function used to process the frames in each clip.
     :return: The sequence of processed frames representing the collated movie.
     """
@@ -114,14 +113,13 @@ def collatemovie(clipdata, fun):
 def gridmovie(clipdata, width, height, shape=None):
     """Collates a set of video clips into a grid movie with the specified pixel dimensions and grid layout.
 
-    :param DataFrame clipdata:
-    A pandas DataFrame where each row specifies video path, frame number, clip and sequence number.
-    This DataFrame can be obtained from the output of the triggerclip function.
+    :param DataFrame clipdata: A pandas DataFrame where each row specifies video path, frame number,
+      clip and sequence number.
+      This DataFrame can be obtained from the output of the triggerclip function.
     :param int width: The width of the output grid movie, in pixels.
     :param int height: The height of the output grid movie, in pixels.
-    :param optional shape:
-    Either the number of frames to include, or the number of rows and columns
-    in the output grid movie layout.
+    :param optional shape: Either the number of frames to include,
+      or the number of rows and columns in the output grid movie layout.
     :return: The sequence of processed frames representing the collated grid movie.
     """
     return collatemovie(clipdata, lambda g: gridframes(g, width, height, shape))

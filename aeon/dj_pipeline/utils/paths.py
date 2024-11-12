@@ -1,3 +1,5 @@
+"""Utility functions for working with paths in the context of the DJ pipeline."""
+
 from __future__ import annotations
 
 import pathlib
@@ -44,14 +46,14 @@ def find_root_directory(
 
     Returns:
         pathlib.Path: The full path to the discovered root directory.
-    """
+    """  # noqa E501
     full_path = pathlib.Path(full_path)
 
     if not full_path.exists():
         raise FileNotFoundError(f"{full_path} does not exist!")
 
     # turn to list if only a single root directory is provided
-    if isinstance(root_directories, (str, pathlib.Path)):
+    if isinstance(root_directories, (str | pathlib.Path)):
         root_directories = [root_directories]
 
     try:
@@ -61,7 +63,7 @@ def find_root_directory(
             if pathlib.Path(root_dir) in set(full_path.parents)
         )
 
-    except StopIteration:
+    except StopIteration as err:
         raise FileNotFoundError(
             f"No valid root directory found (from {root_directories})" f" for {full_path}"
-        )
+        ) from err
