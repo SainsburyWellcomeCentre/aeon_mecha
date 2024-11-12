@@ -64,6 +64,7 @@ class SubjectDetail(dj.Imported):
             "o": 0,
             "l": 10,
             "eartag": eartag_or_id,
+            "state": ["live", "sacrificed", "exported"],
         }
         animal_resp = get_pyrat_data(endpoint="animals", params=params)
         if len(animal_resp) == 0:
@@ -105,6 +106,7 @@ class SubjectDetail(dj.Imported):
             "strain_id": animal_resp["strain_id"],
             "cage_number": animal_resp["cagenumber"],
             "lab_id": animal_resp["labid"],
+            "available": animal_resp.get("state", "") == "live",
         }
         if animal_resp["gen_bg_id"] is not None:
             GeneticBackground.insert1(
@@ -250,7 +252,10 @@ class PyratIngestion(dj.Imported):
         new_eartags = []
         for responsible_id in lab.User.fetch("responsible_id"):
             # 1 - retrieve all animals from this user
-            animal_resp = get_pyrat_data(endpoint="animals", params={"responsible_id": responsible_id})
+            animal_resp = get_pyrat_data(
+                endpoint="animals",
+                params={"responsible_id": responsible_id, "state": ["live", "sacrificed", "exported"]}
+            )
             for animal_entry in animal_resp:
                 # 2 - find animal with comment - Project Aeon
                 eartag_or_id = animal_entry["eartag_or_id"]
@@ -318,7 +323,7 @@ class PyratCommentWeightProcedure(dj.Imported):
             if e.args[0].endswith("response code: 404"):
                 SubjectDetail.update1(
                     {
-                        **key,
+                        "subject": key["subject"],
                         "available": False,
                     }
                 )
@@ -347,6 +352,21 @@ class PyratCommentWeightProcedure(dj.Imported):
             # compute/update reference weight
             SubjectReferenceWeight.get_reference_weight(eartag_or_id)
         finally:
+            # recheck for "state" to see if the animal is still available
+            animal_resp = get_pyrat_data(
+                endpoint="animals",
+                params={"k": ["labid", "state"],
+                        "eartag": eartag_or_id,
+                        "state": ["live", "sacrificed", "exported"]})
+            animal_resp = animal_resp[0]
+            SubjectDetail.update1(
+                {
+                    "subject": key["subject"],
+                    "available": animal_resp.get("state", "") == "live",
+                    "lab_id": animal_resp["labid"],
+                }
+            )
+
             completion_time = datetime.utcnow()
             self.insert1(
                 {

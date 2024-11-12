@@ -166,6 +166,24 @@ class Experiment(dj.Manual):
         ]
 
 
+@schema
+class ExperimentTimeline(dj.Manual):
+    definition = """  # different parts of an experiment timeline
+    -> Experiment
+    name: varchar(32)  # e.g. presocial, social, postsocial
+    ---
+    start: datetime
+    end: datetime
+    note='': varchar(1000)
+    """
+
+    class Subject(dj.Part):
+        definition = """  # the subjects participating in this part of the experiment timeline
+        -> master
+        -> Experiment.Subject
+        """
+
+
 # ------------------- ACQUISITION EPOCH --------------------
 
 
