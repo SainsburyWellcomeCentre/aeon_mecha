@@ -11,7 +11,8 @@ import pandas as pd
 import aeon
 from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.io import api as io_api
-from aeon.schema import schemas as aeon_schemas
+
+aeon_schemas = acquisition.aeon_schemas
 
 logger = dj.logger
 
@@ -32,13 +33,12 @@ class StreamType(dj.Lookup):
     """
 
     definition = """ # Catalog of all stream types used across Project Aeon
-    stream_type          : varchar(20)
+    stream_type          : varchar(36)
     ---
     stream_reader        : varchar(256) # reader class name in aeon.io.reader (e.g. aeon.io.reader.Video)
     stream_reader_kwargs : longblob  # keyword arguments to instantiate the reader class
     stream_description='': varchar(256)
     stream_hash          : uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
-    unique index (stream_hash)
     """
 
 
@@ -211,8 +211,8 @@ def main(create_tables=True):
                 "from uuid import UUID\n\n"
                 "import aeon\n"
                 "from aeon.dj_pipeline import acquisition, get_schema_name\n"
-                "from aeon.io import api as io_api\n"
-                "from aeon.schema import schemas as aeon_schemas\n\n"
+                "from aeon.io import api as io_api\n\n"
+                "aeon_schemas = acquisition.aeon_schemas\n\n"
                 'schema = dj.Schema(get_schema_name("streams"))\n\n\n'
             )
             f.write(imports_str)
