@@ -21,17 +21,8 @@ from aeon.analysis.block_plotting import (
     gen_subject_colors_dict,
     subject_colors,
 )
-from aeon.dj_pipeline import (
-    acquisition,
-    fetch_stream,
-    get_schema_name,
-    streams,
-    tracking,
-)
-from aeon.dj_pipeline.analysis.visit import (
-    filter_out_maintenance_periods,
-    get_maintenance_periods,
-)
+from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, tracking
+from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
 from aeon.io import api as io_api
 
 schema = dj.schema(get_schema_name("block_analysis"))
@@ -205,7 +196,9 @@ class BlockAnalysis(dj.Computed):
         if len(tracking.SLEAPTracking & chunk_keys) < len(tracking.SLEAPTracking.key_source & chunk_keys):
             if len(tracking.BlobPosition & chunk_keys) < len(tracking.BlobPosition.key_source & chunk_keys):
                 raise ValueError(
-                    f"BlockAnalysis Not Ready - SLEAPTracking (and BlobPosition) not yet fully ingested for block: {key}. Skipping (to retry later)..."
+                    "BlockAnalysis Not Ready - "
+                    f"SLEAPTracking (and BlobPosition) not yet fully ingested for block: {key}. "
+                    "Skipping (to retry later)..."
                 )
             else:
                 use_blob_position = True
@@ -325,7 +318,8 @@ class BlockAnalysis(dj.Computed):
 
         if use_blob_position and len(subject_names) > 1:
             raise ValueError(
-                f"Without SLEAPTracking, BlobPosition can only handle single-subject block. Found {len(subject_names)} subjects."
+                f"Without SLEAPTracking, BlobPosition can only handle a single-subject block. "
+                f"Found {len(subject_names)} subjects."
             )
 
         block_subject_entries = []
@@ -345,7 +339,9 @@ class BlockAnalysis(dj.Computed):
                 pos_df = fetch_stream(pos_query)[block_start:block_end]
                 pos_df["likelihood"] = np.nan
                 # keep only rows with area between 0 and 1000 - likely artifacts otherwise
-                pos_df = pos_df[(pos_df.area > 0) & (pos_df.area < 1000)]
+                MIN_AREA = 0
+                MAX_AREA = 1000
+                pos_df = pos_df[(pos_df.area > MIN_AREA) & (pos_df.area < MAX_AREA)]
             else:
                 pos_query = (
                     streams.SpinnakerVideoSource
@@ -477,15 +473,19 @@ class BlockSubjectAnalysis(dj.Computed):
 
         # Ensure wheel_timestamps are of the same length across all patches
         wheel_lens = [len(p["wheel_timestamps"]) for p in block_patches]
+        MAX_WHEEL_DIFF = 10
+
         if len(set(wheel_lens)) > 1:
             max_diff = max(wheel_lens) - min(wheel_lens)
-            if max_diff > 10:
+            if max_diff > MAX_WHEEL_DIFF:
                 # if diff is more than 10 samples, raise error, this is unexpected, some patches crash?
-                raise ValueError(f"Wheel data lengths are not consistent across patches ({max_diff} samples diff)")
+                raise ValueError(
+                    f"Inconsistent wheel data lengths across patches ({max_diff} samples diff)"
+                )
+            min_wheel_len = min(wheel_lens)
             for p in block_patches:
-                p["wheel_timestamps"] = p["wheel_timestamps"][: min(wheel_lens)]
-                p["wheel_cumsum_distance_travelled"] = p["wheel_cumsum_distance_travelled"][: min(wheel_lens)]
-
+                p["wheel_timestamps"] = p["wheel_timestamps"][:min_wheel_len]
+                p["wheel_cumsum_distance_travelled"] = p["wheel_cumsum_distance_travelled"][:min_wheel_len]
         self.insert1(key)
 
         in_patch_radius = 130  # pixels

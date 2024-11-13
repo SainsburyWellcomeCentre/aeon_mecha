@@ -6,6 +6,7 @@ import json
 import pathlib
 from collections import defaultdict
 from pathlib import Path
+
 import datajoint as dj
 import numpy as np
 from dotmap import DotMap
@@ -37,8 +38,9 @@ def insert_stream_types():
                 existing_stream = (streams.StreamType.proj(
                     "stream_reader", "stream_reader_kwargs")
                                    & {"stream_type": entry["stream_type"]}).fetch1()
-                if existing_stream["stream_reader_kwargs"].get("columns") != entry["stream_reader_kwargs"].get(
-                        "columns"):
+                existing_columns = existing_stream["stream_reader_kwargs"].get("columns")
+                entry_columns = entry["stream_reader_kwargs"].get("columns")
+                if existing_columns != entry_columns:
                     logger.warning(f"Stream type already exists:\n\t{entry}\n\t{existing_stream}")
 
 

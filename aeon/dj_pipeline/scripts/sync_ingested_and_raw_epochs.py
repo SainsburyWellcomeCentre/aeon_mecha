@@ -1,5 +1,8 @@
-import datajoint as dj
+"""Functions to find and delete orphaned epochs that have been ingested but are no longer valid."""
+
 from datetime import datetime
+
+import datajoint as dj
 
 from aeon.dj_pipeline import acquisition, streams
 from aeon.dj_pipeline.analysis import block_analysis
@@ -11,8 +14,8 @@ exp_key = {"experiment_name": "social0.3-aeon3"}
 
 
 def find_orphaned_ingested_epochs(exp_key, delete_invalid_epochs=False):
-    """
-    Find ingested epochs that are no longer valid
+    """Find ingested epochs that are no longer valid.
+
     This is due to the raw epoch/chunk files/directories being deleted for whatever reason
     (e.g. bad data, testing, etc.)
     """
