@@ -25,3 +25,6 @@ log*.txt
 scratch/
 scratch*.py
 **/*.nfs*
+
+# Test
+.coverage
