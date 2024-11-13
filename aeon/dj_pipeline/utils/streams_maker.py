@@ -123,13 +123,14 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
     stream = reader(**stream_detail["stream_reader_kwargs"])
 
-    table_definition = f""" # Raw per-chunk {stream_type} data stream from {device_type} (auto-generated with aeon_mecha-{aeon.__version__})
+    ver = aeon.__version__
+    table_definition = f""" # Raw per-chunk {stream_type} from {device_type}(auto-generated with v{ver})
     -> {device_type}
     -> acquisition.Chunk
     ---
     sample_count: int      # number of data points acquired from this stream for a given chunk
     timestamps: longblob   # (datetime) timestamps of {stream_type} data
-    """  # noqa: E501
+    """
 
     for col in stream.columns:
         if col.startswith("_"):
@@ -142,11 +143,12 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
         @property
         def key_source(self):
-            f"""Only the combination of Chunk and {device_type} with overlapping time.
+            docstring = f"""Only the combination of Chunk and {device_type} with overlapping time.
 
-            +  Chunk(s) that started after {device_type} install time and ended before {device_type} remove time
-            +  Chunk(s) that started after {device_type} install time for {device_type} that are not yet removed
-            """  # noqa B021
+            + Chunk(s) started after {device_type} install time & ended before {device_type} remove time
+            + Chunk(s) started after {device_type} install time for {device_type} and not yet removed
+            """
+            self.__doc__ = docstring
             device_type_name = dj.utils.from_camel_case(device_type)
             return (
                 acquisition.Chunk * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
