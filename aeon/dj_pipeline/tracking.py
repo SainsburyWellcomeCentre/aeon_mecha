@@ -5,7 +5,7 @@ import matplotlib.path
 import numpy as np
 import pandas as pd
 
-from aeon.dj_pipeline import acquisition, dict_to_uuid, fetch_stream, get_schema_name, lab, qc, streams
+from aeon.dj_pipeline import acquisition, dict_to_uuid, fetch_stream, get_schema_name, lab, streams
 from aeon.io import api as io_api
 
 aeon_schemas = acquisition.aeon_schemas
@@ -113,8 +113,7 @@ class TrackingParamSet(dj.Lookup):
 class SLEAPTracking(dj.Imported):
     """Tracking data from SLEAP for multi-animal experiments."""
 
-    definition = """ # Tracked objects position data from a particular
-VideoSource for multi-animal experiment using the SLEAP tracking method per chunk.
+    definition = """ # Position data from a VideoSource for multi-animal experiments using SLEAP per chunk
     -> acquisition.Chunk
     -> streams.SpinnakerVideoSource
     -> TrackingParamSet
