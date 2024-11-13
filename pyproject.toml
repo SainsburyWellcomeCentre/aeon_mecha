@@ -102,7 +102,6 @@ lint.ignore = [
   "PLR0912", 
   "PLR0913",
   "PLR0915",
-  "UP017"  # skip `datetime.UTC` alias
 ]
 extend-exclude = [
   ".git",

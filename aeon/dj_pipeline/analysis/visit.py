@@ -1,21 +1,14 @@
 """Module for visit-related tables in the analysis schema."""
 
 from collections import deque
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import datajoint as dj
 import numpy as np
 import pandas as pd
 
 from aeon.analysis import utils as analysis_utils
-from aeon.dj_pipeline import (
-    acquisition,
-    fetch_stream,
-    get_schema_name,
-    lab,
-    qc,
-    tracking,
-)
+from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name
 
 schema = dj.schema(get_schema_name("analysis"))
 
@@ -146,7 +139,7 @@ def ingest_environment_visits(experiment_names: list | None = None):
             .fetch("last_visit")
         )
         start = min(subjects_last_visits) if len(subjects_last_visits) else "1900-01-01"
-        end = datetime.now(timezone.utc) if start else "2200-01-01"
+        end = datetime.now(UTC) if start else "2200-01-01"
 
         enter_exit_query = (
             acquisition.SubjectEnterExit.Time * acquisition.EventType
@@ -161,10 +154,7 @@ def ingest_environment_visits(experiment_names: list | None = None):
         enter_exit_df = pd.DataFrame(
             zip(
                 *enter_exit_query.fetch(
-                    "subject",
-                    "enter_exit_time",
-                    "event_type",
-                    order_by="enter_exit_time",
+                    "subject", "enter_exit_time", "event_type", order_by="enter_exit_time"
                 ),
                 strict=False,
             )

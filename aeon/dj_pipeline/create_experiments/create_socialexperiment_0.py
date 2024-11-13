@@ -1,4 +1,4 @@
-"""Function to create new experiments for social0-r1."""
+"""Functions to create new experiments for social0-r1."""
 
 import pathlib
 

@@ -1,4 +1,4 @@
-"""Function to create new social experiments."""
+"""Functions to create new social experiments."""
 
 from datetime import datetime
 

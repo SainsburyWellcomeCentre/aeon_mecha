@@ -3,7 +3,7 @@
 import itertools
 import json
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import datajoint as dj
 import numpy as np
@@ -265,7 +265,7 @@ class BlockAnalysis(dj.Computed):
                     # log a note and pick the first rate to move forward
                     AnalysisNote.insert1(
                         {
-                            "note_timestamp": datetime.now(timezone.utc),
+                            "note_timestamp": datetime.now(UTC),
                             "note_type": "Multiple patch rates",
                             "note": (
                                 f"Found multiple patch rates for block {key} "
@@ -1621,18 +1621,20 @@ class AnalysisNote(dj.Manual):
 
 
 def get_threshold_associated_pellets(patch_key, start, end):
-    """Retrieve the pellet delivery timestamps associated with each patch threshold update within the specified start-end time.
+    """Gets pellet delivery timestamps for each patch threshold update within the specified time range.
 
     1. Get all patch state update timestamps (DepletionState): let's call these events "A"
-        - Remove all events within 1 second of each other
-        - Remove all events without threshold value (NaN)
+
+       - Remove all events within 1 second of each other
+       - Remove all events without threshold value (NaN)
     2. Get all pellet delivery timestamps (DeliverPellet): let's call these events "B"
-        - Find matching beam break timestamps within 1.2s after each pellet delivery
+
+       - Find matching beam break timestamps within 1.2s after each pellet delivery
     3. For each event "A", find the nearest event "B" within 100ms before or after the event "A"
-        - These are the pellet delivery events "B" associated with the previous threshold update
-        event "A"
+
+       - These are the pellet delivery events "B" associated with the previous threshold update event "A"
     4. Shift back the pellet delivery timestamps by 1 to match the pellet delivery with the
-    previous threshold update
+       previous threshold update
     5. Remove all threshold updates events "A" without a corresponding pellet delivery event "B"
 
     Args:
@@ -1642,12 +1644,13 @@ def get_threshold_associated_pellets(patch_key, start, end):
 
     Returns:
         pd.DataFrame: DataFrame with the following columns:
+
         - threshold_update_timestamp (index)
         - pellet_timestamp
         - beam_break_timestamp
         - offset
         - rate
-    """  # noqa 501
+    """
     chunk_restriction = acquisition.create_chunk_restriction(patch_key["experiment_name"], start, end)
 
     # Step 1 - fetch data
