@@ -370,7 +370,8 @@ def compute_distance(position_df, target, xcol="x", ycol="y"):
         xcol (str): x column name in ``position_df``. Default is 'x'.
         ycol (str): y column name in ``position_df``. Default is 'y'.
     """
-    if len(target) != 2:  # noqa PLR2004
+    COORDS = 2 # x, y
+    if len(target) != COORDS:
         raise ValueError("Target must be a list of tuple of length 2.")
     return np.sqrt(np.square(position_df[[xcol, ycol]] - target).sum(axis=1))
 
