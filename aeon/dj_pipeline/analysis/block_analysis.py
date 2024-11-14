@@ -1331,11 +1331,20 @@ class BlockSubjectPositionPlots(dj.Computed):
     definition = """
     -> BlockSubjectAnalysis
     ---
-    ethogram_data: longblob  # ethogram data in record array format
     position_plot: longblob  # position plot (plotly)
     position_heatmap_plot: longblob  # position heatmap plot (plotly)
     position_ethogram_plot: longblob  # position ethogram plot (plotly)
     """
+
+    class InROI(dj.Part):
+        definition = """  # time spent in each ROI for each subject
+        -> master
+        subject_name: varchar(32)
+        roi_name: varchar(32)
+        ---
+        in_roi_time: float  # total seconds spent in this ROI for this block
+        in_roi_timestamps: longblob # timestamps when a subject is at a specific ROI
+        """
 
     def make(self, key):
         """Compute and plot various block-level statistics and visualizations."""
@@ -1353,32 +1362,26 @@ class BlockSubjectPositionPlots(dj.Computed):
         # Figure 1 - Position (centroid) over time
         # ---
         # Get animal position data
-        pose_query = (
-            streams.SpinnakerVideoSource
-            * tracking.SLEAPTracking.PoseIdentity.proj(
-                "identity_name", "identity_likelihood", part_name="anchor_part"
-            )
-            * tracking.SLEAPTracking.Part
-            & {"spinnaker_video_source_name": "CameraTop"}
-            & key
-            & chunk_restriction
-        )
-        centroid_df = fetch_stream(pose_query)[block_start:block_end]
+        pos_cols = {"x": "position_x", "y": "position_y", "time": "position_timestamps"}
+        centroid_df = (BlockAnalysis.Subject.proj(**pos_cols)
+                       & key).fetch(format="frame").reset_index()
+        centroid_df.drop(columns=["experiment_name", "block_start"], inplace=True)
+        centroid_df = centroid_df.explode(column=list(pos_cols))
+        centroid_df.set_index("time", inplace=True)
         centroid_df = (
-            centroid_df.groupby("identity_name")
+            centroid_df.groupby("subject_name")
             .resample("100ms")
             .first()
-            .droplevel("identity_name")
+            .droplevel("subject_name")
             .dropna()
             .sort_index()
         )
-        centroid_df.drop(columns=["spinnaker_video_source_name"], inplace=True)
         centroid_df["x"] = centroid_df["x"].astype(np.int32)
         centroid_df["y"] = centroid_df["y"].astype(np.int32)
 
         # Plot it
         position_fig = go.Figure()
-        for id_i, (id_val, id_grp) in enumerate(centroid_df.groupby("identity_name")):
+        for id_i, (id_val, id_grp) in enumerate(centroid_df.groupby("subject_name")):
             norm_time = (
                 (id_grp.index - id_grp.index[0]) / (id_grp.index[-1] - id_grp.index[0])
             ).values.round(3)
@@ -1407,7 +1410,7 @@ class BlockSubjectPositionPlots(dj.Computed):
         # Calculate heatmaps
         max_x, max_y = int(centroid_df["x"].max()), int(centroid_df["y"].max())
         heatmaps = []
-        for id_val, id_grp in centroid_df.groupby("identity_name"):
+        for id_val, id_grp in centroid_df.groupby("subject_name"):
             # Add counts of x,y points to a grid that will be used for heatmap
             img_grid = np.zeros((max_x + 1, max_y + 1))
             points, counts = np.unique(id_grp[["x", "y"]].values, return_counts=True, axis=0)
@@ -1483,7 +1486,7 @@ class BlockSubjectPositionPlots(dj.Computed):
         pos_eth_df = pd.DataFrame(
             columns=(["Subject"] + rois), index=centroid_df.index
         )  # df to create eth fig
-        pos_eth_df["Subject"] = centroid_df["identity_name"]
+        pos_eth_df["Subject"] = centroid_df["subject_name"]
 
         # For each ROI, compute if within ROI
         for roi in rois:
@@ -1558,10 +1561,23 @@ class BlockSubjectPositionPlots(dj.Computed):
         ):
             entry[fig_name] = json.loads(fig.to_json())
 
-        melted_df.drop(columns=["Val"], inplace=True)
-        entry["ethogram_data"] = melted_df.to_records(index=False)
+        # insert into InROI
+        in_roi_entries = []
+        for subject_name, roi_name in itertools.product(set(melted_df.Subject), rois):
+            df_ = melted_df[(melted_df["Subject"] == subject_name) & (melted_df["Loc"] == roi_name)]
+
+            roi_timestamps = df_["time"].values
+            roi_time = len(roi_timestamps) * 0.1  # 100ms per timestamp
+
+            in_roi_entries.append(
+                {**key, "subject_name": subject_name,
+                 "roi_name": roi_name,
+                 "in_roi_time": roi_time,
+                 "in_roi_timestamps": roi_timestamps}
+            )
 
         self.insert1(entry)
+        self.InROI.insert(in_roi_entries)
 
 
 # ---- Foraging Bout Analysis ----
