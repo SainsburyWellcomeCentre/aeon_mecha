@@ -169,10 +169,11 @@ class Subject(Csv):
     """Extracts metadata for subjects entering and exiting the environment.
 
     Columns:
-        id (str): Unique identifier of a subject in the environment.
-        weight (float): Weight measurement of the subject on entering
-            or exiting the environment.
-        event (str): Event type. Can be one of `Enter`, `Exit` or `Remain`.
+
+    - id (str): Unique identifier of a subject in the environment.
+    - weight (float): Weight measurement of the subject on entering
+      or exiting the environment.
+    - event (str): Event type. Can be one of `Enter`, `Exit` or `Remain`.
     """
 
     def __init__(self, pattern):
@@ -184,10 +185,11 @@ class Log(Csv):
     """Extracts message log data.
 
     Columns:
-        priority (str): Priority level of the message.
-        type (str): Type of the log message.
-        message (str): Log message data. Can be structured using tab
-            separated values.
+
+    - priority (str): Priority level of the message.
+    - type (str): Type of the log message.
+    - message (str): Log message data. Can be structured using tab
+      separated values.
     """
 
     def __init__(self, pattern):
@@ -199,7 +201,8 @@ class Heartbeat(Harp):
     """Extract periodic heartbeat event data.
 
     Columns:
-        second (int): The whole second corresponding to the heartbeat, in seconds.
+
+    - second (int): The whole second corresponding to the heartbeat, in seconds.
     """
 
     def __init__(self, pattern):
@@ -211,8 +214,9 @@ class Encoder(Harp):
     """Extract magnetic encoder data.
 
     Columns:
-        angle (float): Absolute angular position, in radians, of the magnetic encoder.
-        intensity (float): Intensity of the magnetic field.
+
+    - angle (float): Absolute angular position, in radians, of the magnetic encoder.
+    - intensity (float): Intensity of the magnetic field.
     """
 
     def __init__(self, pattern):
@@ -224,15 +228,16 @@ class Position(Harp):
     """Extract 2D position tracking data for a specific camera.
 
     Columns:
-        x (float): x-coordinate of the object center of mass.
-        y (float): y-coordinate of the object center of mass.
-        angle (float): angle, in radians, of the ellipse fit to the object.
-        major (float): length, in pixels, of the major axis of the ellipse
-            fit to the object.
-        minor (float): length, in pixels, of the minor axis of the ellipse
-            fit to the object.
-        area (float): number of pixels in the object mass.
-        id (float): unique tracking ID of the object in a frame.
+
+    - x (float): x-coordinate of the object center of mass.
+    - y (float): y-coordinate of the object center of mass.
+    - angle (float): angle, in radians, of the ellipse fit to the object.
+    - major (float): length, in pixels, of the major axis of the ellipse
+      fit to the object.
+    - minor (float): length, in pixels, of the minor axis of the ellipse
+      fit to the object.
+    - area (float): number of pixels in the object mass.
+    - id (float): unique tracking ID of the object in a frame.
     """
 
     def __init__(self, pattern):
@@ -244,7 +249,8 @@ class BitmaskEvent(Harp):
     """Extracts event data matching a specific digital I/O bitmask.
 
     Columns:
-        event (str): Unique identifier for the event code.
+
+    - event (str): Unique identifier for the event code.
     """
 
     def __init__(self, pattern, value, tag):
@@ -268,7 +274,8 @@ class DigitalBitmask(Harp):
     """Extracts event data matching a specific digital I/O bitmask.
 
     Columns:
-        event (str): Unique identifier for the event code.
+
+    - event (str): Unique identifier for the event code.
     """
 
     def __init__(self, pattern, mask, columns):
@@ -290,8 +297,9 @@ class Video(Csv):
     """Extracts video frame metadata.
 
     Columns:
-        hw_counter (int): Hardware frame counter value for the current frame.
-        hw_timestamp (int): Internal camera timestamp for the current frame.
+
+    - hw_counter (int): Hardware frame counter value for the current frame.
+    - hw_timestamp (int): Internal camera timestamp for the current frame.
     """
 
     def __init__(self, pattern):
@@ -313,12 +321,13 @@ class Pose(Harp):
     """Reader for Harp-binarized tracking data given a model that outputs id, parts, and likelihoods.
 
     Columns:
-        class (int): Int ID of a subject in the environment.
-        class_likelihood (float): Likelihood of the subject's identity.
-        part (str): Bodypart on the subject.
-        part_likelihood (float): Likelihood of the specified bodypart.
-        x (float): X-coordinate of the bodypart.
-        y (float): Y-coordinate of the bodypart.
+
+    - class (int): Int ID of a subject in the environment.
+    - class_likelihood (float): Likelihood of the subject's identity.
+    - part (str): Bodypart on the subject.
+    - part_likelihood (float): Likelihood of the specified bodypart.
+    - x (float): X-coordinate of the bodypart.
+    - y (float): Y-coordinate of the bodypart.
     """
 
     def __init__(self, pattern: str, model_root: str = "/ceph/aeon/aeon/data/processed"):
@@ -401,7 +410,8 @@ class Pose(Harp):
             if bonsai_sleap_v == BONSAI_SLEAP_V3:
                 # combine all identity_likelihood cols into a single col as dict
                 part_data["identity_likelihood"] = part_data.apply(
-                    lambda row: {identity: row[f"{identity}_likelihood"] for identity in identities}, axis=1
+                    lambda row: {identity: row[f"{identity}_likelihood"] for identity in identities},
+                    axis=1,
                 )
                 part_data.drop(columns=columns[1 : (len(identities) + 1)], inplace=True)
                 part_data = part_data[  # reorder columns
