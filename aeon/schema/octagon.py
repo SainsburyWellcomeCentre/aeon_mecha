@@ -1,4 +1,4 @@
-"""Octagon schema definition."""
+"""Schema definition for octagon experiments-specific data streams."""
 
 import aeon.io.reader as _reader
 from aeon.schema.streams import Stream, StreamGroup

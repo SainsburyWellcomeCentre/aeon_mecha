@@ -1,4 +1,4 @@
-"""This module provides functions to read and write video files using OpenCV."""
+"""Module for reading and writing video files using OpenCV."""
 
 import cv2
 
