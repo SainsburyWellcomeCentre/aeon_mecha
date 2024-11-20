@@ -1,4 +1,4 @@
-"""This module defines the schema for the social_02 dataset."""
+"""Schema definition for social_02 experiments-specific data streams."""
 
 import aeon.io.reader as _reader
 from aeon.schema import core, foraging
@@ -60,14 +60,14 @@ class Pose(Stream):
 
 
 class Pose03(Stream):
-
     def __init__(self, path):
+        """Initializes the Pose stream."""
         super().__init__(_reader.Pose(f"{path}_202_*"))
 
 
 class WeightRaw(Stream):
     def __init__(self, path):
-        """Initialize the WeightRaw stream."""
+        """Initializes the WeightRaw stream."""
         super().__init__(_reader.Harp(f"{path}_200_*", ["weight(g)", "stability"]))
 
 

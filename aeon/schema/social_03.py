@@ -1,4 +1,4 @@
-"""This module contains the schema for the social_03 dataset."""
+"""Schema definition for social_03 experiments-specific data streams."""
 
 import aeon.io.reader as _reader
 from aeon.schema.streams import Stream

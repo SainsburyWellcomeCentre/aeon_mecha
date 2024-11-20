@@ -1,4 +1,4 @@
-"""Function to create new experiments for octagon1.0."""
+"""Functions to create new experiments for octagon1.0."""
 
 from aeon.dj_pipeline import acquisition, subject
 

@@ -3,7 +3,7 @@
 import itertools
 import json
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import datajoint as dj
 import numpy as np
@@ -21,17 +21,8 @@ from aeon.analysis.block_plotting import (
     gen_subject_colors_dict,
     subject_colors,
 )
-from aeon.dj_pipeline import (
-    acquisition,
-    fetch_stream,
-    get_schema_name,
-    streams,
-    tracking,
-)
-from aeon.dj_pipeline.analysis.visit import (
-    filter_out_maintenance_periods,
-    get_maintenance_periods,
-)
+from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, tracking
+from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
 from aeon.io import api as io_api
 
 schema = dj.schema(get_schema_name("block_analysis"))
@@ -205,7 +196,9 @@ class BlockAnalysis(dj.Computed):
         if len(tracking.SLEAPTracking & chunk_keys) < len(tracking.SLEAPTracking.key_source & chunk_keys):
             if len(tracking.BlobPosition & chunk_keys) < len(tracking.BlobPosition.key_source & chunk_keys):
                 raise ValueError(
-                    f"BlockAnalysis Not Ready - SLEAPTracking (and BlobPosition) not yet fully ingested for block: {key}. Skipping (to retry later)..."
+                    "BlockAnalysis Not Ready - "
+                    f"SLEAPTracking (and BlobPosition) not yet fully ingested for block: {key}. "
+                    "Skipping (to retry later)..."
                 )
             else:
                 use_blob_position = True
@@ -272,7 +265,7 @@ class BlockAnalysis(dj.Computed):
                     # log a note and pick the first rate to move forward
                     AnalysisNote.insert1(
                         {
-                            "note_timestamp": datetime.now(timezone.utc),
+                            "note_timestamp": datetime.now(UTC),
                             "note_type": "Multiple patch rates",
                             "note": (
                                 f"Found multiple patch rates for block {key} "
@@ -325,7 +318,8 @@ class BlockAnalysis(dj.Computed):
 
         if use_blob_position and len(subject_names) > 1:
             raise ValueError(
-                f"Without SLEAPTracking, BlobPosition can only handle single-subject block. Found {len(subject_names)} subjects."
+                f"Without SLEAPTracking, BlobPosition can only handle a single-subject block. "
+                f"Found {len(subject_names)} subjects."
             )
 
         block_subject_entries = []
@@ -345,7 +339,9 @@ class BlockAnalysis(dj.Computed):
                 pos_df = fetch_stream(pos_query)[block_start:block_end]
                 pos_df["likelihood"] = np.nan
                 # keep only rows with area between 0 and 1000 - likely artifacts otherwise
-                pos_df = pos_df[(pos_df.area > 0) & (pos_df.area < 1000)]
+                MIN_AREA = 0
+                MAX_AREA = 1000
+                pos_df = pos_df[(pos_df.area > MIN_AREA) & (pos_df.area < MAX_AREA)]
             else:
                 pos_query = (
                     streams.SpinnakerVideoSource
@@ -477,15 +473,19 @@ class BlockSubjectAnalysis(dj.Computed):
 
         # Ensure wheel_timestamps are of the same length across all patches
         wheel_lens = [len(p["wheel_timestamps"]) for p in block_patches]
+        MAX_WHEEL_DIFF = 10
+
         if len(set(wheel_lens)) > 1:
             max_diff = max(wheel_lens) - min(wheel_lens)
-            if max_diff > 10:
+            if max_diff > MAX_WHEEL_DIFF:
                 # if diff is more than 10 samples, raise error, this is unexpected, some patches crash?
-                raise ValueError(f"Wheel data lengths are not consistent across patches ({max_diff} samples diff)")
+                raise ValueError(
+                    f"Inconsistent wheel data lengths across patches ({max_diff} samples diff)"
+                )
+            min_wheel_len = min(wheel_lens)
             for p in block_patches:
-                p["wheel_timestamps"] = p["wheel_timestamps"][: min(wheel_lens)]
-                p["wheel_cumsum_distance_travelled"] = p["wheel_cumsum_distance_travelled"][: min(wheel_lens)]
-
+                p["wheel_timestamps"] = p["wheel_timestamps"][:min_wheel_len]
+                p["wheel_cumsum_distance_travelled"] = p["wheel_cumsum_distance_travelled"][:min_wheel_len]
         self.insert1(key)
 
         in_patch_radius = 130  # pixels
@@ -1637,18 +1637,20 @@ class AnalysisNote(dj.Manual):
 
 
 def get_threshold_associated_pellets(patch_key, start, end):
-    """Retrieve the pellet delivery timestamps associated with each patch threshold update within the specified start-end time.
+    """Gets pellet delivery timestamps for each patch threshold update within the specified time range.
 
     1. Get all patch state update timestamps (DepletionState): let's call these events "A"
-        - Remove all events within 1 second of each other
-        - Remove all events without threshold value (NaN)
+
+       - Remove all events within 1 second of each other
+       - Remove all events without threshold value (NaN)
     2. Get all pellet delivery timestamps (DeliverPellet): let's call these events "B"
-        - Find matching beam break timestamps within 1.2s after each pellet delivery
+
+       - Find matching beam break timestamps within 1.2s after each pellet delivery
     3. For each event "A", find the nearest event "B" within 100ms before or after the event "A"
-        - These are the pellet delivery events "B" associated with the previous threshold update
-        event "A"
+
+       - These are the pellet delivery events "B" associated with the previous threshold update event "A"
     4. Shift back the pellet delivery timestamps by 1 to match the pellet delivery with the
-    previous threshold update
+       previous threshold update
     5. Remove all threshold updates events "A" without a corresponding pellet delivery event "B"
 
     Args:
@@ -1658,12 +1660,13 @@ def get_threshold_associated_pellets(patch_key, start, end):
 
     Returns:
         pd.DataFrame: DataFrame with the following columns:
+
         - threshold_update_timestamp (index)
         - pellet_timestamp
         - beam_break_timestamp
         - offset
         - rate
-    """  # noqa 501
+    """
     chunk_restriction = acquisition.create_chunk_restriction(patch_key["experiment_name"], start, end)
 
     # Step 1 - fetch data

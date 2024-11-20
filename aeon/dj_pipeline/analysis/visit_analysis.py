@@ -219,15 +219,10 @@ class VisitSubjectPosition(dj.Computed):
                 Visit.join(VisitEnd, left=True).proj(visit_end="IFNULL(visit_end, NOW())") & visit_key
             ).fetch1("visit_start", "visit_end")
             subject = visit_key["subject"]
-        elif all((subject, start, end)):
-            start = start  # noqa PLW0127
-            end = end  # noqa PLW0127
-            subject = subject  # noqa PLW0127
-        else:
+        elif not all((subject, start, end)):
             raise ValueError(
-                'Either "visit_key" or all three "subject", "start" and "end" has to be specified'
-            )
-
+                'Either "visit_key" or all three "subject", "start", and "end" must be specified.'
+        )
         return tracking._get_position(
             cls.TimeSlice,
             object_attr="subject",

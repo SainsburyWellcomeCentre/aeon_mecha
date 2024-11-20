@@ -25,16 +25,17 @@ from aeon.dj_pipeline.analysis.visit_analysis import (
 
 
 def plot_reward_rate_differences(subject_keys):
-    """Plotting the reward rate differences between food patches (Patch 2 - Patch 1) for all sessions from all subjects specified in "subject_keys".
+    """Plots the reward rate differences between two food patches (Patch 2 - Patch 1).
+
+    The reward rate differences between the two food patches are plotted
+    for all sessions from all subjects in ``subject_keys``.
 
     Examples:
-    ```
-    subject_keys =
-    (acquisition.Experiment.Subject & 'experiment_name = "exp0.1-r0"').fetch('KEY')
-
-    fig = plot_reward_rate_differences(subject_keys)
-    ```
-    """  # noqa E501
+        >>> subject_keys = (
+        ...     acquisition.Experiment.Subject
+        ...     & 'experiment_name = "exp0.1-r0"').fetch('KEY')
+        >>> fig = plot_reward_rate_differences(subject_keys)
+    """
     subj_names, sess_starts, rate_timestamps, rate_diffs = (
         analysis.InArenaRewardRate & subject_keys
     ).fetch("subject", "in_arena_start", "pellet_rate_timestamps", "patch2_patch1_rate_diff")

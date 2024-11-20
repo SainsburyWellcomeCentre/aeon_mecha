@@ -1,4 +1,7 @@
+"""Functions to find and delete orphaned epochs that have been ingested but are no longer valid."""
+
 from datetime import datetime
+
 from aeon.dj_pipeline import acquisition, tracking
 
 aeon_schemas = acquisition.aeon_schemas
@@ -8,11 +11,10 @@ exp_key = {"experiment_name": "social0.2-aeon4"}
 
 
 def find_chunks_to_reingest(exp_key, delete_not_fullpose=False):
-    """
-    Find chunks with newly available full pose data to reingest.
+    """Find chunks with newly available full pose data to reingest.
+
     If available, fullpose data can be found in `processed` folder
     """
-
     device_name = "CameraTop"
 
     devices_schema = getattr(
@@ -21,13 +23,14 @@ def find_chunks_to_reingest(exp_key, delete_not_fullpose=False):
             "devices_schema_name"
         ),
     )
-    stream_reader = getattr(getattr(devices_schema, device_name), "Pose")
+    stream_reader = getattr(devices_schema, device_name).Pose
 
     # special ingestion case for social0.2 full-pose data (using Pose reader from social03)
     if exp_key["experiment_name"].startswith("social0.2"):
         from aeon.io import reader as io_reader
-        stream_reader = getattr(getattr(devices_schema, device_name), "Pose03")
-        assert isinstance(stream_reader, io_reader.Pose), "Pose03 is not a Pose reader"
+        stream_reader = getattr(devices_schema, device_name).Pose03
+        if not isinstance(stream_reader, io_reader.Pose):
+            raise TypeError("Pose03 is not a Pose reader")
 
     # find processed path for exp_key
     processed_dir = acquisition.Experiment.get_data_directory(exp_key, "processed")

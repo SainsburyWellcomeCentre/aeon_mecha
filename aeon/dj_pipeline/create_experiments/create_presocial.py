@@ -1,4 +1,4 @@
-"""Function to create new experiments for presocial0.1."""
+"""Functions to create new experiments for presocial0.1."""
 
 from aeon.dj_pipeline import acquisition, lab, subject
 

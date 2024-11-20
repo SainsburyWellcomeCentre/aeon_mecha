@@ -3,7 +3,7 @@
 import json
 import os
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import datajoint as dj
 import requests
@@ -187,7 +187,7 @@ class SubjectReferenceWeight(dj.Manual):
                 0
             ]
         else:
-            ref_date = datetime.now(timezone.utc).date()
+            ref_date = datetime.now(UTC).date()
 
         weight_query = SubjectWeight & subj_key & f"weight_time < '{ref_date}'"
         ref_weight = (
@@ -197,7 +197,7 @@ class SubjectReferenceWeight(dj.Manual):
         entry = {
             "subject": subject_name,
             "reference_weight": ref_weight,
-            "last_updated_time": datetime.now(timezone.utc),
+            "last_updated_time": datetime.now(UTC),
         }
         cls.update1(entry) if cls & {"subject": subject_name} else cls.insert1(entry)
 
@@ -240,7 +240,7 @@ class PyratIngestion(dj.Imported):
 
     def _auto_schedule(self):
         """Automatically schedule the next task."""
-        utc_now = datetime.now(timezone.utc)
+        utc_now = datetime.now(UTC)
 
         next_task_schedule_time = utc_now + timedelta(hours=self.schedule_interval)
         if (
@@ -253,7 +253,7 @@ class PyratIngestion(dj.Imported):
 
     def make(self, key):
         """Automatically import or update entries in the Subject table."""
-        execution_time = datetime.now(timezone.utc)
+        execution_time = datetime.now(UTC)
         new_eartags = []
         for responsible_id in lab.User.fetch("responsible_id"):
             # 1 - retrieve all animals from this user
@@ -288,7 +288,7 @@ class PyratIngestion(dj.Imported):
             new_entry_count += 1
 
         logger.info(f"Inserting {new_entry_count} new subject(s) from Pyrat")
-        completion_time = datetime.now(timezone.utc)
+        completion_time = datetime.now(UTC)
         self.insert1(
             {
                 **key,
@@ -319,7 +319,7 @@ class PyratCommentWeightProcedure(dj.Imported):
 
     def make(self, key):
         """Automatically import or update entries in the PyratCommentWeightProcedure table."""
-        execution_time = datetime.now(timezone.utc)
+        execution_time = datetime.now(UTC)
         logger.info("Extracting weights/comments/procedures")
 
         eartag_or_id = key["subject"]
@@ -393,7 +393,7 @@ class CreatePyratIngestionTask(dj.Computed):
 
     def make(self, key):
         """Create one new PyratIngestionTask for every newly added users."""
-        PyratIngestionTask.insert1({"pyrat_task_scheduled_time": datetime.now(timezone.utc)})
+        PyratIngestionTask.insert1({"pyrat_task_scheduled_time": datetime.now(UTC)})
         time.sleep(1)
         self.insert1(key)
 
@@ -463,8 +463,8 @@ _pyrat_animal_attributes = [
 
 
 def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
-    """
-    Get data from PyRat API.
+    """Get data from PyRat API.
+
     See docs at: https://swc.pyrat.cloud/api/v3/docs (production)
     """
     base_url = "https://swc.pyrat.cloud/api/v3/"

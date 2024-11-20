@@ -5,7 +5,7 @@ import matplotlib.path
 import numpy as np
 import pandas as pd
 
-from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, qc, streams, fetch_stream
+from aeon.dj_pipeline import acquisition, dict_to_uuid, fetch_stream, get_schema_name, lab, streams
 from aeon.io import api as io_api
 
 aeon_schemas = acquisition.aeon_schemas
@@ -113,8 +113,7 @@ class TrackingParamSet(dj.Lookup):
 class SLEAPTracking(dj.Imported):
     """Tracking data from SLEAP for multi-animal experiments."""
 
-    definition = """ # Tracked objects position data from a particular
-VideoSource for multi-animal experiment using the SLEAP tracking method per chunk.
+    definition = """ # Position data from a VideoSource for multi-animal experiments using SLEAP per chunk
     -> acquisition.Chunk
     -> streams.SpinnakerVideoSource
     -> TrackingParamSet
@@ -171,14 +170,15 @@ VideoSource for multi-animal experiment using the SLEAP tracking method per chun
             ),
         )
 
-        stream_reader = getattr(getattr(devices_schema, device_name), "Pose")
+        stream_reader = getattr(devices_schema, device_name).Pose
 
         # special ingestion case for social0.2 full-pose data (using Pose reader from social03)
         # fullpose for social0.2 has a different "pattern" for non-fullpose, hence the Pose03 reader
         if key["experiment_name"].startswith("social0.2"):
             from aeon.io import reader as io_reader
-            stream_reader = getattr(getattr(devices_schema, device_name), "Pose03")
-            assert isinstance(stream_reader, io_reader.Pose), "Pose03 is not a Pose reader"
+            stream_reader = getattr(devices_schema, device_name).Pose03
+            if not isinstance(stream_reader, io_reader.Pose):
+                raise TypeError("Pose03 is not a Pose reader")
             data_dirs = [acquisition.Experiment.get_data_directory(key, "processed")]
 
         pose_data = io_api.load(
@@ -258,7 +258,7 @@ class BlobPosition(dj.Imported):
     class Object(dj.Part):
         definition = """  # Position data of object tracked by a particular camera tracking
         -> master
-        object_id: int    # object with id = -1 means "unknown/not sure", could potentially be the same object as those with other id value
+        object_id: int    # id=-1 means "unknown"; could be the same object as those with other values
         ---
         identity_name='': varchar(16)
         sample_count:  int       # number of data points acquired from this stream for a given chunk
@@ -270,6 +270,7 @@ class BlobPosition(dj.Imported):
 
     @property
     def key_source(self):
+        """Return the keys to be processed."""
         ks = (
             acquisition.Chunk
             * (
@@ -282,6 +283,7 @@ class BlobPosition(dj.Imported):
         return ks - SLEAPTracking  # do this only when SLEAPTracking is not available
 
     def make(self, key):
+        """Ingest blob position data for a given chunk."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
@@ -368,7 +370,8 @@ def compute_distance(position_df, target, xcol="x", ycol="y"):
         xcol (str): x column name in ``position_df``. Default is 'x'.
         ycol (str): y column name in ``position_df``. Default is 'y'.
     """
-    if len(target) != 2:  # noqa PLR2004
+    COORDS = 2 # x, y
+    if len(target) != COORDS:
         raise ValueError("Target must be a list of tuple of length 2.")
     return np.sqrt(np.square(position_df[[xcol, ycol]] - target).sum(axis=1))
 

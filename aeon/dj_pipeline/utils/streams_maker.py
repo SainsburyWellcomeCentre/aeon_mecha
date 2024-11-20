@@ -75,21 +75,21 @@ def get_device_template(device_type: str):
     device_type = dj.utils.from_camel_case(device_type)
 
     class ExperimentDevice(dj.Manual):
-        definition = f""" # {device_title} placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-{aeon.__version__})
+        definition = f"""# {device_title} operation for time,location, experiment (v{aeon.__version__})
         -> acquisition.Experiment
         -> Device
-        {device_type}_install_time  : datetime(6)   # time of the {device_type} placed and started operation at this position
+        {device_type}_install_time : datetime(6)  # {device_type} time of placement and start operation
         ---
-        {device_type}_name          : varchar(36)
-        """  # noqa: E501
+        {device_type}_name         : varchar(36)
+        """
 
         class Attribute(dj.Part):
-            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
+            definition = """  # Metadata (e.g. FPS, config, calibration) for this experimental device
             -> master
             attribute_name          : varchar(32)
             ---
             attribute_value=null    : longblob
-            """  # noqa: E501
+            """
 
         class RemovalTime(dj.Part):
             definition = f"""
@@ -123,13 +123,14 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
     stream = reader(**stream_detail["stream_reader_kwargs"])
 
-    table_definition = f""" # Raw per-chunk {stream_type} data stream from {device_type} (auto-generated with aeon_mecha-{aeon.__version__})
+    ver = aeon.__version__
+    table_definition = f""" # Raw per-chunk {stream_type} from {device_type}(auto-generated with v{ver})
     -> {device_type}
     -> acquisition.Chunk
     ---
     sample_count: int      # number of data points acquired from this stream for a given chunk
     timestamps: longblob   # (datetime) timestamps of {stream_type} data
-    """  # noqa: E501
+    """
 
     for col in stream.columns:
         if col.startswith("_"):
@@ -142,11 +143,12 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
         @property
         def key_source(self):
-            f"""Only the combination of Chunk and {device_type} with overlapping time.
+            docstring = f"""Only the combination of Chunk and {device_type} with overlapping time.
 
-            +  Chunk(s) that started after {device_type} install time and ended before {device_type} remove time
-            +  Chunk(s) that started after {device_type} install time for {device_type} that are not yet removed
-            """  # noqa B021
+            + Chunk(s) started after {device_type} install time & ended before {device_type} remove time
+            + Chunk(s) started after {device_type} install time for {device_type} and not yet removed
+            """
+            self.__doc__ = docstring
             device_type_name = dj.utils.from_camel_case(device_type)
             return (
                 acquisition.Chunk * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
@@ -270,17 +272,18 @@ def main(create_tables=True):
             device_stream_table_def = inspect.getsource(table_class).lstrip()
 
             # Replace the definition
+            device_type_name = dj.utils.from_camel_case(device_type)
             replacements = {
                 "DeviceDataStream": f"{device_type}{stream_type}",
                 "ExperimentDevice": device_type,
-                'f"chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time"': (
-                    f"'chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time'"
+                'f"chunk_start >= {device_type_name}_install_time"': (
+                    f"'chunk_start >= {device_type_name}_install_time'"
                 ),
-                """f'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, "2200-01-01")'""": (  # noqa E501
-                    f"""'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time,"2200-01-01")'"""  # noqa E501
+                """f'chunk_start < IFNULL({device_type_name}_removal_time, "2200-01-01")'""": (
+                    f"""'chunk_start < IFNULL({device_type_name}_removal_time,"2200-01-01")'"""
                 ),
-                'f"{dj.utils.from_camel_case(device_type)}_name"': (
-                    f"'{dj.utils.from_camel_case(device_type)}_name'"
+                'f"{device_type_name}_name"': (
+                    f"'{device_type_name}_name'"
                 ),
                 "{device_type}": device_type,
                 "{stream_type}": stream_type,

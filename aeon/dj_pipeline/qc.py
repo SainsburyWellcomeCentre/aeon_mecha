@@ -39,7 +39,7 @@ class QCRoutine(dj.Lookup):
 
 @schema
 class CameraQC(dj.Imported):
-    definition = """ # Quality controls performed on a particular camera for a particular acquisition chunk
+    definition = """ # Quality controls performed on a particular camera for one acquisition chunk
     -> acquisition.Chunk
     -> streams.SpinnakerVideoSource
     ---
