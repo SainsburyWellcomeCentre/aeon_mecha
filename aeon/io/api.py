@@ -1,3 +1,5 @@
+"""API for reading Aeon data from disk."""
+
 import bisect
 import datetime
 from os import PathLike
@@ -73,7 +75,7 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
     :param datetime, optional end: The right bound of the time range to extract.
     :param datetime, optional time: An object or series specifying the timestamps to extract.
     :param datetime, optional tolerance:
-    The maximum distance between original and new timestamps for inexact matches.
+        The maximum distance between original and new timestamps for inexact matches.
     :param str, optional epoch: A wildcard pattern to use when searching epoch data.
     :param optional kwargs: Optional keyword arguments to forward to the reader when reading chunk data.
     :return: A pandas data frame containing epoch event metadata, sorted by time.

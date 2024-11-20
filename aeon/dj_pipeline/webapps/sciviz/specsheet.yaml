@@ -850,7 +850,7 @@ SciViz:
                 def dj_query(aeon_block_analysis):
                     aeon_analysis = aeon_block_analysis
                     return {'query': aeon_block_analysis.BlockSubjectPositionPlots(), 'fetch_args': ['position_plot']}
-                
+
 
     VideoStream:
       route: /videostream

@@ -1,6 +1,4 @@
-"""July 2022
-Upgrade all timestamps longblob fields with datajoint 0.13.7.
-"""
+"""July 2022. Upgrade all timestamps longblob fields with datajoint 0.13.7."""
 
 from datetime import datetime
 
@@ -8,7 +6,11 @@ import datajoint as dj
 import numpy as np
 from tqdm import tqdm
 
-assert dj.__version__ >= "0.13.7"
+logger = dj.logger
+
+
+if dj.__version__ < "0.13.7":
+    raise ImportError(f"DataJoint version must be at least 0.13.7, but found {dj.__version__}.")
 
 
 schema = dj.schema("u_thinh_aeonfix")
@@ -32,6 +34,7 @@ schema_names = (
 
 
 def main():
+    """Update all timestamps longblob fields in the specified schemas."""
     for schema_name in schema_names:
         vm = dj.create_virtual_module(schema_name, schema_name)
         table_names = [
@@ -54,7 +57,10 @@ def main():
                         if not len(ts) or isinstance(ts[0], np.datetime64):
                             TimestampFix.insert1(fix_key)
                             continue
-                        assert isinstance(ts[0], datetime)
+                        if not isinstance(ts[0], datetime):
+                            raise TypeError(
+                                f"Expected ts[0] to be of type 'datetime', but got {type(ts[0])}."
+                            )
                         with table.connection.transaction:
                             table.update1(
                                 {
@@ -66,6 +72,7 @@ def main():
 
 
 def get_table(schema_object, table_object_name):
+    """Get the table object from the schema object."""
     if "." in table_object_name:
         master_name, part_name = table_object_name.split(".")
         return getattr(getattr(schema_object, master_name), part_name)

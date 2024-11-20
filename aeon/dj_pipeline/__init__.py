@@ -1,9 +1,13 @@
+"""DataJoint pipeline for Aeon."""
+
 import hashlib
 import logging
 import os
 import uuid
 
 import datajoint as dj
+
+logger = dj.logger
 
 _default_database_prefix = os.getenv("DJ_DB_PREFIX") or "aeon_"
 _default_repository_config = {"ceph_aeon": "/ceph/aeon"}
@@ -53,7 +57,12 @@ def fetch_stream(query, drop_pk=True, round_microseconds=True):
     df.rename(columns={"timestamps": "time"}, inplace=True)
     df.set_index("time", inplace=True)
     df.sort_index(inplace=True)
-    df = df.convert_dtypes(convert_string=False, convert_integer=False, convert_boolean=False, convert_floating=False)
+    df = df.convert_dtypes(
+        convert_string=False,
+        convert_integer=False,
+        convert_boolean=False,
+        convert_floating=False
+    )
     if not df.empty and round_microseconds:
         logging.warning("Rounding timestamps to microseconds is now enabled by default."
                         " To disable, set round_microseconds=False.")
@@ -68,5 +77,5 @@ except ImportError:
         from .utils import streams_maker
 
         streams = dj.VirtualModule("streams", streams_maker.schema_name)
-    except:
-        pass
+    except Exception as e:
+        logger.debug(f"Could not import streams module: {e}")

@@ -1,7 +1,9 @@
-from pytest import mark
+"""Tests for the QC pipeline."""
+
+import pytest
 
 
-@mark.qc
+@pytest.mark.qc
 def test_camera_qc_ingestion(test_params, pipeline, camera_qc_ingestion):
     qc = pipeline["qc"]
 

@@ -1,3 +1,5 @@
+"""Deprecated Device class for grouping multiple Readers into a logical device."""
+
 import inspect
 
 from typing_extensions import deprecated
@@ -33,10 +35,12 @@ class Device:
     """
 
     def __init__(self, name, *args, pattern=None):
+        """Initializes the Device class."""
         self.name = name
         self.registry = compositeStream(name if pattern is None else pattern, *args)
 
     def __iter__(self):
+        """Iterates over the device registry."""
         if len(self.registry) == 1:
             singleton = self.registry.get(self.name, None)
             if singleton:

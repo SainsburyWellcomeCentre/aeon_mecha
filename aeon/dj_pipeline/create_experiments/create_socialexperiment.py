@@ -1,8 +1,9 @@
-from pathlib import Path
+"""Functions to create new social experiments."""
+
 from datetime import datetime
+
 from aeon.dj_pipeline import acquisition
 from aeon.dj_pipeline.utils.paths import get_repository_path
-
 
 # ---- Programmatic creation of a new social experiment ----
 # Infer experiment metadata from the experiment name
@@ -16,6 +17,7 @@ ceph_data_dir = ceph_dir / "aeon" / "data"
 
 
 def create_new_social_experiment(experiment_name):
+    """Create new social experiment."""
     exp_name, machine_name = experiment_name.split("-")
     raw_dir = ceph_data_dir / "raw" / machine_name.upper() / exp_name
     if not raw_dir.exists():
@@ -55,4 +57,3 @@ def create_new_social_experiment(experiment_name):
             {"experiment_name": experiment_name, "devices_schema_name": exp_name.replace(".", "")},
             skip_duplicates=True,
         )
-

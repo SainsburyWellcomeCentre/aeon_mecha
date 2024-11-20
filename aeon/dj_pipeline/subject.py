@@ -1,7 +1,9 @@
+"""DataJoint schema for animal subjects."""
+
 import json
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import datajoint as dj
 import requests
@@ -56,6 +58,7 @@ class SubjectDetail(dj.Imported):
     """
 
     def make(self, key):
+        """Automatically import and update entries in the Subject table."""
         eartag_or_id = key["subject"]
         # cage id, sex, line/strain, genetic background, dob, lab id
         params = {
@@ -175,6 +178,7 @@ class SubjectReferenceWeight(dj.Manual):
 
     @classmethod
     def get_reference_weight(cls, subject_name):
+        """Get the reference weight for the subject."""
         subj_key = {"subject": subject_name}
 
         food_restrict_query = SubjectProcedure & subj_key & "procedure_name = 'R02 - food restriction'"
@@ -183,7 +187,7 @@ class SubjectReferenceWeight(dj.Manual):
                 0
             ]
         else:
-            ref_date = datetime.now().date()
+            ref_date = datetime.now(UTC).date()
 
         weight_query = SubjectWeight & subj_key & f"weight_time < '{ref_date}'"
         ref_weight = (
@@ -193,7 +197,7 @@ class SubjectReferenceWeight(dj.Manual):
         entry = {
             "subject": subject_name,
             "reference_weight": ref_weight,
-            "last_updated_time": datetime.utcnow(),
+            "last_updated_time": datetime.now(UTC),
         }
         cls.update1(entry) if cls & {"subject": subject_name} else cls.insert1(entry)
 
@@ -235,7 +239,8 @@ class PyratIngestion(dj.Imported):
     schedule_interval = 12  # schedule interval in number of hours
 
     def _auto_schedule(self):
-        utc_now = datetime.utcnow()
+        """Automatically schedule the next task."""
+        utc_now = datetime.now(UTC)
 
         next_task_schedule_time = utc_now + timedelta(hours=self.schedule_interval)
         if (
@@ -247,8 +252,8 @@ class PyratIngestion(dj.Imported):
         PyratIngestionTask.insert1({"pyrat_task_scheduled_time": next_task_schedule_time})
 
     def make(self, key):
-        execution_time = datetime.utcnow()
         """Automatically import or update entries in the Subject table."""
+        execution_time = datetime.now(UTC)
         new_eartags = []
         for responsible_id in lab.User.fetch("responsible_id"):
             # 1 - retrieve all animals from this user
@@ -283,7 +288,7 @@ class PyratIngestion(dj.Imported):
             new_entry_count += 1
 
         logger.info(f"Inserting {new_entry_count} new subject(s) from Pyrat")
-        completion_time = datetime.utcnow()
+        completion_time = datetime.now(UTC)
         self.insert1(
             {
                 **key,
@@ -313,7 +318,8 @@ class PyratCommentWeightProcedure(dj.Imported):
     key_source = (PyratIngestion * SubjectDetail) & "available = 1"
 
     def make(self, key):
-        execution_time = datetime.utcnow()
+        """Automatically import or update entries in the PyratCommentWeightProcedure table."""
+        execution_time = datetime.now(UTC)
         logger.info("Extracting weights/comments/procedures")
 
         eartag_or_id = key["subject"]
@@ -366,8 +372,7 @@ class PyratCommentWeightProcedure(dj.Imported):
                     "lab_id": animal_resp["labid"],
                 }
             )
-
-            completion_time = datetime.utcnow()
+            completion_time = datetime.now(UTC)
             self.insert1(
                 {
                     **key,
@@ -385,7 +390,7 @@ class CreatePyratIngestionTask(dj.Computed):
 
     def make(self, key):
         """Create one new PyratIngestionTask for every newly added users."""
-        PyratIngestionTask.insert1({"pyrat_task_scheduled_time": datetime.utcnow()})
+        PyratIngestionTask.insert1({"pyrat_task_scheduled_time": datetime.now(UTC)})
         time.sleep(1)
         self.insert1(key)
 
@@ -455,8 +460,8 @@ _pyrat_animal_attributes = [
 
 
 def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
-    """
-    Get data from PyRat API.
+    """Get data from PyRat API.
+
     See docs at: https://swc.pyrat.cloud/api/v3/docs (production)
     """
     base_url = "https://swc.pyrat.cloud/api/v3/"
@@ -465,7 +470,8 @@ def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
 
     if pyrat_system_token is None or pyrat_user_token is None:
         raise ValueError(
-            "The PYRAT tokens must be defined as an environment variable named 'PYRAT_SYSTEM_TOKEN' and 'PYRAT_USER_TOKEN'"
+            "The PYRAT tokens must be defined as an environment \
+            variable named 'PYRAT_SYSTEM_TOKEN' and 'PYRAT_USER_TOKEN'"
         )
 
     session = requests.Session()
@@ -474,7 +480,7 @@ def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
     if params is not None:
         params_str_list = []
         for k, v in params.items():
-            if isinstance(v, (list, tuple)):
+            if isinstance(v, (list | tuple)):
                 for i in v:
                     params_str_list.append(f"{k}={i}")
             else:
@@ -485,7 +491,9 @@ def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
 
     response = session.get(base_url + endpoint + params_str, **kwargs)
 
-    if response.status_code != 200:
+    RESPONSE_STATUS_CODE_OK = 200
+
+    if response.status_code != RESPONSE_STATUS_CODE_OK:
         raise requests.exceptions.HTTPError(
             f"PyRat API errored out with response code: {response.status_code}"
         )

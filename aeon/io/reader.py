@@ -1,3 +1,5 @@
+"""Module for reading data from raw files in an Aeon dataset."""
+
 from __future__ import annotations
 
 import datetime
@@ -38,6 +40,7 @@ class Reader:
     """
 
     def __init__(self, pattern, columns, extension):
+        """Initialize the object with specified pattern, columns, and file extension."""
         self.pattern = pattern
         self.columns = columns
         self.extension = extension
@@ -51,6 +54,7 @@ class Harp(Reader):
     """Extracts data from raw binary files encoded using the Harp protocol."""
 
     def __init__(self, pattern, columns, extension="bin"):
+        """Initialize the object."""
         super().__init__(pattern, columns, extension)
 
     def read(self, file):
@@ -87,6 +91,7 @@ class Chunk(Reader):
     """Extracts path and epoch information from chunk files in the dataset."""
 
     def __init__(self, reader=None, pattern=None, extension=None):
+        """Initialize the object with optional reader, pattern, and file extension."""
         if isinstance(reader, Reader):
             pattern = reader.pattern
             extension = reader.extension
@@ -103,6 +108,7 @@ class Metadata(Reader):
     """Extracts metadata information from all epochs in the dataset."""
 
     def __init__(self, pattern="Metadata"):
+        """Initialize the object with the specified pattern."""
         super().__init__(pattern, columns=["workflow", "commit", "metadata"], extension="yml")
 
     def read(self, file):
@@ -125,6 +131,7 @@ class Csv(Reader):
     """
 
     def __init__(self, pattern, columns, dtype=None, extension="csv"):
+        """Initialize the object with the specified pattern, columns, and data type."""
         super().__init__(pattern, columns, extension)
         self.dtype = dtype
 
@@ -140,22 +147,21 @@ class Csv(Reader):
 
 
 class JsonList(Reader):
-    """Extracts data from json list (.jsonl) files, where the key "seconds"
-    stores the Aeon timestamp, in seconds.
-    """
+    """Extracts data from .jsonl files, where the key "seconds" stores the Aeon timestamp (s)."""
 
     def __init__(self, pattern, columns=(), root_key="value", extension="jsonl"):
+        """Initialize the object with the specified pattern, columns, and root key."""
         super().__init__(pattern, columns, extension)
         self.columns = columns
         self.root_key = root_key
 
     def read(self, file):
         """Reads data from the specified jsonl file."""
-        with open(file, "r") as f:
+        with open(file) as f:
             df = pd.read_json(f, lines=True)
         df.set_index("seconds", inplace=True)
         for column in self.columns:
-            df[column] = df[self.root_key].apply(lambda x: x[column])
+            df[column] = df[self.root_key].apply(lambda x: x[column])  # noqa B023
         return df
 
 
@@ -163,13 +169,15 @@ class Subject(Csv):
     """Extracts metadata for subjects entering and exiting the environment.
 
     Columns:
-        id (str): Unique identifier of a subject in the environment.
-        weight (float): Weight measurement of the subject on entering
-            or exiting the environment.
-        event (str): Event type. Can be one of `Enter`, `Exit` or `Remain`.
+
+    - id (str): Unique identifier of a subject in the environment.
+    - weight (float): Weight measurement of the subject on entering
+      or exiting the environment.
+    - event (str): Event type. Can be one of `Enter`, `Exit` or `Remain`.
     """
 
     def __init__(self, pattern):
+        """Initialize the object with a specified pattern."""
         super().__init__(pattern, columns=["id", "weight", "event"])
 
 
@@ -177,13 +185,15 @@ class Log(Csv):
     """Extracts message log data.
 
     Columns:
-        priority (str): Priority level of the message.
-        type (str): Type of the log message.
-        message (str): Log message data. Can be structured using tab
-            separated values.
+
+    - priority (str): Priority level of the message.
+    - type (str): Type of the log message.
+    - message (str): Log message data. Can be structured using tab
+      separated values.
     """
 
     def __init__(self, pattern):
+        """Initialize the object with a specified pattern and columns."""
         super().__init__(pattern, columns=["priority", "type", "message"])
 
 
@@ -191,10 +201,12 @@ class Heartbeat(Harp):
     """Extract periodic heartbeat event data.
 
     Columns:
-        second (int): The whole second corresponding to the heartbeat, in seconds.
+
+    - second (int): The whole second corresponding to the heartbeat, in seconds.
     """
 
     def __init__(self, pattern):
+        """Initialize the object with a specified pattern."""
         super().__init__(pattern, columns=["second"])
 
 
@@ -202,11 +214,13 @@ class Encoder(Harp):
     """Extract magnetic encoder data.
 
     Columns:
-        angle (float): Absolute angular position, in radians, of the magnetic encoder.
-        intensity (float): Intensity of the magnetic field.
+
+    - angle (float): Absolute angular position, in radians, of the magnetic encoder.
+    - intensity (float): Intensity of the magnetic field.
     """
 
     def __init__(self, pattern):
+        """Initialize the object with a specified pattern and columns."""
         super().__init__(pattern, columns=["angle", "intensity"])
 
 
@@ -214,18 +228,20 @@ class Position(Harp):
     """Extract 2D position tracking data for a specific camera.
 
     Columns:
-        x (float): x-coordinate of the object center of mass.
-        y (float): y-coordinate of the object center of mass.
-        angle (float): angle, in radians, of the ellipse fit to the object.
-        major (float): length, in pixels, of the major axis of the ellipse
-            fit to the object.
-        minor (float): length, in pixels, of the minor axis of the ellipse
-            fit to the object.
-        area (float): number of pixels in the object mass.
-        id (float): unique tracking ID of the object in a frame.
+
+    - x (float): x-coordinate of the object center of mass.
+    - y (float): y-coordinate of the object center of mass.
+    - angle (float): angle, in radians, of the ellipse fit to the object.
+    - major (float): length, in pixels, of the major axis of the ellipse
+      fit to the object.
+    - minor (float): length, in pixels, of the minor axis of the ellipse
+      fit to the object.
+    - area (float): number of pixels in the object mass.
+    - id (float): unique tracking ID of the object in a frame.
     """
 
     def __init__(self, pattern):
+        """Initialize the object with a specified pattern and columns."""
         super().__init__(pattern, columns=["x", "y", "angle", "major", "minor", "area", "id"])
 
 
@@ -233,10 +249,12 @@ class BitmaskEvent(Harp):
     """Extracts event data matching a specific digital I/O bitmask.
 
     Columns:
-        event (str): Unique identifier for the event code.
+
+    - event (str): Unique identifier for the event code.
     """
 
     def __init__(self, pattern, value, tag):
+        """Initialize the object with specified pattern, value, and tag."""
         super().__init__(pattern, columns=["event"])
         self.value = value
         self.tag = tag
@@ -256,10 +274,12 @@ class DigitalBitmask(Harp):
     """Extracts event data matching a specific digital I/O bitmask.
 
     Columns:
-        event (str): Unique identifier for the event code.
+
+    - event (str): Unique identifier for the event code.
     """
 
     def __init__(self, pattern, mask, columns):
+        """Initialize the object with specified pattern, mask, and columns."""
         super().__init__(pattern, columns)
         self.mask = mask
 
@@ -277,11 +297,13 @@ class Video(Csv):
     """Extracts video frame metadata.
 
     Columns:
-        hw_counter (int): Hardware frame counter value for the current frame.
-        hw_timestamp (int): Internal camera timestamp for the current frame.
+
+    - hw_counter (int): Hardware frame counter value for the current frame.
+    - hw_timestamp (int): Internal camera timestamp for the current frame.
     """
 
     def __init__(self, pattern):
+        """Initialize the object with a specified pattern."""
         super().__init__(pattern, columns=["hw_counter", "hw_timestamp", "_frame", "_path", "_epoch"])
         self._rawcolumns = ["time"] + self.columns[0:2]
 
@@ -299,12 +321,13 @@ class Pose(Harp):
     """Reader for Harp-binarized tracking data given a model that outputs id, parts, and likelihoods.
 
     Columns:
-        class (int): Int ID of a subject in the environment.
-        class_likelihood (float): Likelihood of the subject's identity.
-        part (str): Bodypart on the subject.
-        part_likelihood (float): Likelihood of the specified bodypart.
-        x (float): X-coordinate of the bodypart.
-        y (float): Y-coordinate of the bodypart.
+
+    - class (int): Int ID of a subject in the environment.
+    - class_likelihood (float): Likelihood of the subject's identity.
+    - part (str): Bodypart on the subject.
+    - part_likelihood (float): Likelihood of the specified bodypart.
+    - x (float): X-coordinate of the bodypart.
+    - y (float): Y-coordinate of the bodypart.
     """
 
     def __init__(self, pattern: str, model_root: str = "/ceph/aeon/aeon/data/processed"):
@@ -387,7 +410,8 @@ class Pose(Harp):
             if bonsai_sleap_v == BONSAI_SLEAP_V3:
                 # combine all identity_likelihood cols into a single col as dict
                 part_data["identity_likelihood"] = part_data.apply(
-                    lambda row: {identity: row[f"{identity}_likelihood"] for identity in identities}, axis=1
+                    lambda row: {identity: row[f"{identity}_likelihood"] for identity in identities},
+                    axis=1,
                 )
                 part_data.drop(columns=columns[1 : (len(identities) + 1)], inplace=True)
                 part_data = part_data[  # reorder columns

@@ -1,21 +1,23 @@
+"""DataJoint schema for the acquisition pipeline."""
+
 import datetime
 import json
 import pathlib
 import re
 
 import datajoint as dj
-import numpy as np
 import pandas as pd
 
-from aeon.analysis import utils as analysis_utils
 from aeon.dj_pipeline import get_schema_name, lab, subject
 from aeon.dj_pipeline.utils import paths
 from aeon.io import api as io_api
 from aeon.io import reader as io_reader
 from aeon.schema import ingestion_schemas as aeon_schemas
 
-logger = dj.logger
 schema = dj.schema(get_schema_name("acquisition"))
+
+logger = dj.logger
+
 
 # ------------------- Some Constants --------------------------
 
@@ -35,7 +37,7 @@ class ExperimentType(dj.Lookup):
     experiment_type: varchar(32)
     """
 
-    contents = zip(["foraging", "social"])
+    contents = zip(["foraging", "social"], strict=False)
 
 
 @schema
@@ -63,7 +65,7 @@ class DevicesSchema(dj.Lookup):
     devices_schema_name: varchar(32)
     """
 
-    contents = zip(aeon_schemas.__all__)
+    contents = zip(aeon_schemas.__all__, strict=False)
 
 
 # ------------------- Data repository/directory ------------------------
@@ -75,7 +77,7 @@ class PipelineRepository(dj.Lookup):
     repository_name: varchar(16)
     """
 
-    contents = zip(["ceph_aeon"])
+    contents = zip(["ceph_aeon"], strict=False)
 
 
 @schema
@@ -84,7 +86,7 @@ class DirectoryType(dj.Lookup):
     directory_type: varchar(16)
     """
 
-    contents = zip(["raw", "processed", "qc"])
+    contents = zip(["raw", "processed", "qc"], strict=False)
 
 
 # ------------------- GENERAL INFORMATION ABOUT AN EXPERIMENT --------------------
@@ -136,6 +138,7 @@ class Experiment(dj.Manual):
 
     @classmethod
     def get_data_directory(cls, experiment_key, directory_type="raw", as_posix=False):
+        """Get the data directory for the specified ``experiment_key`` and ``directory_type``."""
         try:
             repo_name, dir_path = (
                 cls.Directory & experiment_key & {"directory_type": directory_type}
@@ -145,7 +148,8 @@ class Experiment(dj.Manual):
 
         dir_path = pathlib.Path(dir_path)
         if dir_path.exists():
-            assert dir_path.is_relative_to(paths.get_repository_path(repo_name))
+            if not dir_path.is_relative_to(paths.get_repository_path(repo_name)):
+                raise ValueError(f"{dir_path} is not relative to the repository path.")
             data_directory = dir_path
         else:
             data_directory = paths.get_repository_path(repo_name) / dir_path
@@ -155,6 +159,7 @@ class Experiment(dj.Manual):
 
     @classmethod
     def get_data_directories(cls, experiment_key, directory_types=None, as_posix=False):
+        """Get the data directories for the specified ``experiment_key`` and ``directory_types``."""
         if directory_types is None:
             directory_types = (cls.Directory & experiment_key).fetch(
                 "directory_type", order_by="load_order"
@@ -241,7 +246,11 @@ class Epoch(dj.Manual):
             with cls.connection.transaction:
                 # insert new epoch
                 cls.insert1(
-                    {**epoch_key, **directory, "epoch_dir": epoch_dir.relative_to(raw_data_dir).as_posix()}
+                    {
+                        **epoch_key,
+                        **directory,
+                        "epoch_dir": epoch_dir.relative_to(raw_data_dir).as_posix(),
+                    }
                 )
                 epoch_list.append(epoch_key)
 
@@ -297,7 +306,7 @@ class EpochConfig(dj.Imported):
         -> master
         ---
         bonsai_workflow: varchar(36)
-        commit: varchar(64)   # e.g. git commit hash of aeon_experiment used to generated this particular epoch
+        commit: varchar(64) # e.g. git commit hash of aeon_experiment used to generate this epoch
         source='': varchar(16)  # e.g. aeon_experiment or aeon_acquisition (or others)
         metadata: longblob
         metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
@@ -318,6 +327,7 @@ class EpochConfig(dj.Imported):
         """
 
     def make(self, key):
+        """Ingest metadata into EpochConfig."""
         from aeon.dj_pipeline.utils import streams_maker
         from aeon.dj_pipeline.utils.load_metadata import (
             extract_epoch_config,
@@ -387,6 +397,7 @@ class Chunk(dj.Manual):
 
     @classmethod
     def ingest_chunks(cls, experiment_name):
+        """Ingest chunks for the specified ``experiment_name``."""
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
@@ -534,6 +545,7 @@ class Environment(dj.Imported):
         """
 
     def make(self, key):
+        """Ingest environment data into Environment table."""
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
 
         # Populate the part table
@@ -597,6 +609,7 @@ class EnvironmentActiveConfiguration(dj.Imported):
         """
 
     def make(self, key):
+        """Ingest active configuration data into EnvironmentActiveConfiguration table."""
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
         data_dirs = Experiment.get_data_directories(key)
         devices_schema = getattr(
@@ -626,6 +639,7 @@ class EnvironmentActiveConfiguration(dj.Imported):
 
 
 def _get_all_chunks(experiment_name, device_name):
+    """Get all chunks for the specified ``experiment_name`` and ``device_name``."""
     directory_types = ["quality-control", "raw"]
     raw_data_dirs = {
         dir_type: Experiment.get_data_directory(
@@ -647,6 +661,7 @@ def _get_all_chunks(experiment_name, device_name):
 
 
 def _match_experiment_directory(experiment_name, path, directories):
+    """Match the path to the experiment directory."""
     for k, v in directories.items():
         raw_data_dir = v
         if pathlib.Path(raw_data_dir) in list(path.parents):

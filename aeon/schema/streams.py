@@ -1,3 +1,5 @@
+"""Classes for defining data streams and devices."""
+
 import inspect
 from itertools import chain
 from warnings import warn
@@ -11,9 +13,11 @@ class Stream:
     """
 
     def __init__(self, reader):
+        """Initializes the stream with a reader."""
         self.reader = reader
 
     def __iter__(self):
+        """Yields the stream name and reader."""
         yield (self.__class__.__name__, self.reader)
 
 
@@ -26,6 +30,7 @@ class StreamGroup:
     """
 
     def __init__(self, path, *args):
+        """Initializes the stream group with a path and a list of data streams."""
         self.path = path
         self._args = args
         self._nested = (
@@ -35,6 +40,7 @@ class StreamGroup:
         )
 
     def __iter__(self):
+        """Yields the stream name and reader for each data stream in the group."""
         for factory in chain(self._nested, self._args):
             yield from iter(factory(self.path))
 
@@ -53,6 +59,7 @@ class Device:
     """
 
     def __init__(self, name, *args, path=None):
+        """Initializes the device with a name and a list of data streams."""
         if name is None:
             raise ValueError("name cannot be None.")
 
@@ -77,6 +84,7 @@ class Device:
         return streams
 
     def __iter__(self):
+        """Iterates over the device streams."""
         if len(self._streams) == 1:
             singleton = self._streams.get(self.name, None)
             if singleton:

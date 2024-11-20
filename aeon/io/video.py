@@ -1,3 +1,5 @@
+"""Module for reading and writing video files using OpenCV."""
+
 import cv2
 
 
@@ -5,10 +7,10 @@ def frames(data):
     """Extracts the raw frames corresponding to the provided video metadata.
 
     :param DataFrame data:
-    A pandas DataFrame where each row specifies video acquisition path and frame number.
+        A pandas DataFrame where each row specifies video acquisition path and frame number.
     :return:
-    An object to iterate over numpy arrays for each row in the DataFrame,
-    containing the raw video frame data.
+        An object to iterate over numpy arrays for each row in the DataFrame,
+        containing the raw video frame data.
     """
     capture = None
     filename = None
@@ -42,7 +44,7 @@ def export(frames, file, fps, fourcc=None):
     :param str file: The path to the exported video file.
     :param fps: The frame rate of the exported video.
     :param optional fourcc:
-    Specifies the four character code of the codec used to compress the frames.
+        Specifies the four character code of the codec used to compress the frames.
     """
     writer = None
     try:

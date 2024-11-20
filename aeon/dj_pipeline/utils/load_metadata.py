@@ -1,9 +1,12 @@
+"""Load metadata from the experiment and insert into streams schema."""
+
 import datetime
 import inspect
 import json
 import pathlib
 from collections import defaultdict
 from pathlib import Path
+
 import datajoint as dj
 import numpy as np
 from dotmap import DotMap
@@ -35,13 +38,16 @@ def insert_stream_types():
                 existing_stream = (streams.StreamType.proj(
                     "stream_reader", "stream_reader_kwargs")
                                    & {"stream_type": entry["stream_type"]}).fetch1()
-                if existing_stream["stream_reader_kwargs"].get("columns") != entry["stream_reader_kwargs"].get(
-                        "columns"):
+                existing_columns = existing_stream["stream_reader_kwargs"].get("columns")
+                entry_columns = entry["stream_reader_kwargs"].get("columns")
+                if existing_columns != entry_columns:
                     logger.warning(f"Stream type already exists:\n\t{entry}\n\t{existing_stream}")
 
 
 def insert_device_types(devices_schema: DotMap, metadata_yml_filepath: Path):
-    """Use aeon.schema.schemas and metadata.yml to insert into streams.DeviceType and streams.Device.
+    """Insert device types into streams.DeviceType and streams.Device.
+
+    Notes: Use aeon.schema.schemas and metadata.yml to insert into streams.DeviceType and streams.Device.
     Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml.
     It then creates new device tables under streams schema.
     """
@@ -138,13 +144,15 @@ def extract_epoch_config(experiment_name: str, devices_schema: DotMap, metadata_
     if isinstance(commit, float) and np.isnan(commit):
         commit = epoch_config["metadata"]["Revision"]
 
-    assert commit, f'Neither "Commit" nor "Revision" found in {metadata_yml_filepath}'
+    if not commit:
+        raise ValueError(f'Neither "Commit" nor "Revision" found in {metadata_yml_filepath}')
 
     devices: list[dict] = json.loads(
         json.dumps(epoch_config["metadata"]["Devices"], default=lambda x: x.__dict__, indent=4)
     )
 
-    # Maintain backward compatibility - In exp02, it is a list of dict. From presocial onward, it's a dict of dict.
+    # Maintain backward compatibility - In exp02, it is a list of dict.
+    # From presocial onward, it's a dict of dict.
     if isinstance(devices, list):
         devices: dict = {d.pop("Name"): d for d in devices}  # {deivce_name: device_config}
 
@@ -199,7 +207,9 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
 
             if not (streams.Device & device_key):
                 logger.warning(
-                    f"Device {device_name} (serial number: {device_sn}) is not yet registered in streams.Device.\nThis should not happen - check if metadata.yml and schemas dotmap are consistent. Skipping..."
+                    f"Device {device_name} (serial number: {device_sn}) is not \
+                    yet registered in streams.Device.\nThis should not happen - \
+                    check if metadata.yml and schemas dotmap are consistent. Skipping..."
                 )
                 # skip if this device (with a serial number) is not yet inserted in streams.Device
                 continue
@@ -231,7 +241,9 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
                     }
                 )
 
-            """Check if this device is currently installed. If the same device serial number is currently installed check for any changes in configuration. If not, skip this"""
+            # Check if this device is currently installed.
+            # If the same device serial number is currently installed check for changes in configuration.
+            # If not, skip this.
             current_device_query = table - table.RemovalTime & experiment_key & device_key
 
             if current_device_query:
@@ -349,6 +361,7 @@ def get_device_info(devices_schema: DotMap) -> dict[dict]:
     """
 
     def _get_class_path(obj):
+        """Returns the class path of the object."""
         return f"{obj.__class__.__module__}.{obj.__class__.__name__}"
 
     schema_json = json.dumps(devices_schema, default=lambda x: x.__dict__, indent=4)
@@ -401,7 +414,12 @@ def get_device_info(devices_schema: DotMap) -> dict[dict]:
 
 
 def get_device_mapper(devices_schema: DotMap, metadata_yml_filepath: Path):
-    """Returns a mapping dictionary between device name and device type based on the dataset schema and metadata.yml from the experiment. Store the mapper dictionary and read from it if the type info doesn't exist in Metadata.yml.
+    """Returns a mapping dictionary of device names to types based on the dataset schema and metadata.yml.
+
+    Notes: Returns a mapping dictionary between device name and device type
+    based on the dataset schema and metadata.yml from the experiment.
+    Store the mapper dictionary and read from it if the type info doesn't
+    exist in Metadata.yml.
 
     Args:
         devices_schema (DotMap): DotMap object (e.g., exp02)
@@ -441,7 +459,8 @@ def get_device_mapper(devices_schema: DotMap, metadata_yml_filepath: Path):
                 device_type_mapper[item.Name] = item.Type
                 device_sn[item.Name] = (
                     item.SerialNumber or item.PortName or None
-                )  # assign either the serial number (if it exists) or port name. If neither exists, assign None
+                )  # assign either the serial number (if it exists) or port name.
+                # If neither exists, assign None
             elif isinstance(item, str):  # presocial
                 if meta_data.Devices[item].get("Type"):
                     device_type_mapper[item] = meta_data.Devices[item].get("Type")
