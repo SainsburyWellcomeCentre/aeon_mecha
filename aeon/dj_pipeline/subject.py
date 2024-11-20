@@ -375,7 +375,7 @@ class PyratCommentWeightProcedure(dj.Imported):
 
             associate_subject_and_experiment(eartag_or_id)
 
-            completion_time = datetime.now(timezone.utc)
+            completion_time = datetime.now(UTC)
             self.insert1(
                 {
                     **key,
