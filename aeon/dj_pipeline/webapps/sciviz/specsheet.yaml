@@ -669,8 +669,14 @@ SciViz:
                     return dict(**kwargs)
               dj_query: >
                 def dj_query(aeon_block_analysis):
-                    aeon_analysis = aeon_block_analysis
-                    query = aeon_analysis.Block * aeon_analysis.BlockAnalysis
+                    block_analysis = aeon_block_analysis
+                    query = block_analysis.Block.proj() * block_analysis.BlockAnalysis
+                    query *= block_analysis.BlockAnalysis.aggr(
+                        block_analysis.BlockAnalysis.Subject, subjects="GROUP_CONCAT(subject_name)", keep_all_rows=True)
+                    query *= block_analysis.BlockAnalysis.aggr(
+                        block_analysis.BlockAnalysis.Patch.proj(patch_rate="CONCAT(patch_name, ':', patch_rate, '(', patch_offset, ')')"), patch_rates="GROUP_CONCAT(patch_rate)", keep_all_rows=True)
+                    query *= block_analysis.BlockAnalysis.aggr(
+                        block_analysis.BlockAnalysis.Patch.proj(patch_pellet="CONCAT(patch_name, ':', pellet_count)"), patch_pellets="GROUP_CONCAT(patch_pellet)", keep_all_rows=True)
                     return dict(query=query, fetch_args=[])
             comp2:
               route: /per_block_patch_stats_plot

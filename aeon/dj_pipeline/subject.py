@@ -372,6 +372,9 @@ class PyratCommentWeightProcedure(dj.Imported):
                     "lab_id": animal_resp["labid"],
                 }
             )
+
+            associate_subject_and_experiment(eartag_or_id)
+
             completion_time = datetime.now(UTC)
             self.insert1(
                 {
@@ -499,3 +502,28 @@ def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
         )
 
     return response.json()
+
+
+def associate_subject_and_experiment(subject_name):
+    """
+    Check SubjectComment for experiment name for which the animal is participating in.
+    The expected comment format is "experiment: <experiment_name>".
+    E.g. "experiment: social0.3-aeon3"
+    Note: this function many need to run repeatedly to catch all experiments/animals.
+        - an experiment is not yet added when the animal comment is added
+        - the animal comment is not yet added when the experiment is created
+    """
+    from aeon.dj_pipeline import acquisition
+
+    new_entries = []
+    for entry in (SubjectComment.proj("content")
+                  & {"subject": subject_name}
+                  & "content LIKE 'experiment:%'").fetch(as_dict=True):
+        entry.pop("comment_id")
+        entry["experiment_name"] = entry.pop("content").replace("experiment:", "").strip()
+        if acquisition.Experiment.proj() & entry:
+            if not acquisition.Experiment.Subject & entry:
+                new_entries.append(entry)
+                logger.info(f"\tNew experiment subject: {entry}")
+
+    acquisition.Experiment.Subject.insert(new_entries)
