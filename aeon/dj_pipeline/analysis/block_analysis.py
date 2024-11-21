@@ -78,7 +78,7 @@ class BlockDetection(dj.Computed):
         block_state_query = acquisition.Environment.BlockState & exp_key & chunk_restriction
         block_state_df = fetch_stream(block_state_query)
         if block_state_df.empty:
-            # self.insert1(key)
+            self.insert1(key)
             return
 
         block_state_df = block_state_df.loc[
@@ -108,7 +108,7 @@ class BlockDetection(dj.Computed):
                 )
 
         Block.insert(block_entries, skip_duplicates=True)
-        # self.insert1({**key, "execution_time": datetime.now(UTC)})
+        self.insert1({**key, "execution_time": datetime.now(UTC)})
         self.IdentifiedBlock.insert(
             {**key, "block_start": entry["block_start"]} for entry in block_entries
         )
