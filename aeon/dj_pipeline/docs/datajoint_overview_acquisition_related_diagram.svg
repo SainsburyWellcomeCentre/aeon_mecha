@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="433pt" height="457pt" viewBox="0.00 0.00 433.00 457.28">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 453.28)">
+<polygon fill="white" stroke="none" points="-4,4 -4,-453.28 429,-453.28 429,4 -4,4"/>
+<!-- Arena -->
+<g id="node1" class="node">
+<title>Arena</title>
+<g id="a_node1"><a xlink:title="arena_name           ------------------------------arena_description=&quot;&quot; → ArenaShapearena_x_dim          arena_y_dim          arena_z_dim=0        ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="168.5,-449.28 127,-449.28 127,-414.72 168.5,-414.72 168.5,-449.28"/>
+<text text-anchor="start" x="135" y="-429.5" font-family="arial" text-decoration="underline" font-size="10.00">Arena</text>
+</a>
+</g>
+</g>
+<!-- Experiment -->
+<g id="node2" class="node">
+<title>Experiment</title>
+<g id="a_node2"><a xlink:title="experiment_name      ------------------------------experiment_start_time experiment_description → Arena→ Location→ ExperimentType">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="268.12,-378.72 191.38,-378.72 191.38,-344.16 268.12,-344.16 268.12,-378.72"/>
+<text text-anchor="start" x="199.38" y="-358.17" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Experiment</text>
+</a>
+</g>
+</g>
+<!-- Arena&#45;&gt;Experiment -->
+<g id="edge1" class="edge">
+<title>Arena-&gt;Experiment</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M167.18,-414.75C180.06,-403.98 196.92,-389.89 209.89,-379.05"/>
+</g>
+<!-- Chunk -->
+<g id="node3" class="node">
+<title>Chunk</title>
+<g id="a_node3"><a xlink:title="→ Experimentchunk_start          ------------------------------chunk_end            → Experiment.Directory→ Epoch">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="233.38,-167.04 182.12,-167.04 182.12,-132.48 233.38,-132.48 233.38,-167.04"/>
+<text text-anchor="start" x="190.12" y="-146.48" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Chunk</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;Chunk -->
+<g id="edge2" class="edge">
+<title>Experiment-&gt;Chunk</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M199.79,-343.8C187.12,-335.01 173.7,-322.95 166.75,-308.16 144.06,-259.85 177.22,-197.08 196.13,-167.53"/>
+</g>
+<!-- ExperimentCamera -->
+<g id="node6" class="node">
+<title>ExperimentCamera</title>
+<g id="a_node6"><a xlink:title="→ Experiment→ Cameracamera_install_time  ------------------------------camera_description   camera_sampling_rate camera_gain=null     camera_bin=null      ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="119.5,-308.16 0,-308.16 0,-273.6 119.5,-273.6 119.5,-308.16"/>
+<text text-anchor="start" x="8" y="-287.61" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">ExperimentCamera</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;ExperimentCamera -->
+<g id="edge3" class="edge">
+<title>Experiment-&gt;ExperimentCamera</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M191.17,-344.88C164.33,-334.06 128.58,-319.64 101.14,-308.57"/>
+</g>
+<!-- Experiment.Directory -->
+<g id="node7" class="node">
+<title>Experiment.Directory</title>
+<g id="a_node7"><a xlink:title="→ Experiment→ DirectoryType------------------------------→ PipelineRepositorydirectory_path       load_order=1         ">
+<polygon fill="none" stroke="none" points="283.88,-300.88 175.62,-300.88 175.62,-280.88 283.88,-280.88 283.88,-300.88"/>
+<text text-anchor="middle" x="229.75" y="-287.38" font-family="arial" font-size="10.00">Experiment.Directory</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;Experiment.Directory -->
+<g id="edge4" class="edge">
+<title>Experiment-&gt;Experiment.Directory</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M229.75,-343.84C229.75,-330.21 229.75,-311.44 229.75,-300.59"/>
+</g>
+<!-- Epoch -->
+<g id="node11" class="node">
+<title>Epoch</title>
+<g id="a_node11"><a xlink:title="→ Experimentepoch_start          ------------------------------→ [nullable] Experiment.Directoryepoch_dir=&quot;&quot;         ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="286,-237.6 235.5,-237.6 235.5,-203.04 286,-203.04 286,-237.6"/>
+<text text-anchor="start" x="243.5" y="-217.04" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Epoch</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;Epoch -->
+<g id="edge5" class="edge">
+<title>Experiment-&gt;Epoch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M259.71,-343.8C272.38,-335.01 285.8,-322.95 292.75,-308.16 303.88,-284.45 287.87,-255.73 274.76,-237.99"/>
+</g>
+<!-- Environment -->
+<g id="node4" class="node">
+<title>Environment</title>
+<g id="a_node4"><a xlink:title="→ Chunk">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="207.75" cy="-79.2" rx="54.56" ry="17.28"/>
+<text text-anchor="middle" x="207.75" y="-74.92" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">Environment</text>
+</a>
+</g>
+</g>
+<!-- Chunk&#45;&gt;Environment -->
+<g id="edge6" class="edge">
+<title>Chunk-&gt;Environment</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M207.75,-132.16C207.75,-121.38 207.75,-107.39 207.75,-96.64"/>
+</g>
+<!-- BlockDetection -->
+<g id="node8" class="node">
+<title>BlockDetection</title>
+<g id="a_node8"><a xlink:title="→ Environment------------------------------execution_time=null  ">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="207.75" cy="-12.96" rx="12.96" ry="12.96"/>
+<text text-anchor="middle" x="207.75" y="-8.69" font-family="arial" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">BlockDetection</text>
+</a>
+</g>
+</g>
+<!-- Environment&#45;&gt;BlockDetection -->
+<g id="edge7" class="edge">
+<title>Environment-&gt;BlockDetection</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M207.75,-61.66C207.75,-50.36 207.75,-35.66 207.75,-25.58"/>
+</g>
+<!-- ExperimentType -->
+<g id="node5" class="node">
+<title>ExperimentType</title>
+<g id="a_node5"><a xlink:title="experiment_type      ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="273,-449.28 186.5,-449.28 186.5,-414.72 273,-414.72 273,-449.28"/>
+<text text-anchor="start" x="194.5" y="-429.5" font-family="arial" text-decoration="underline" font-size="10.00">ExperimentType</text>
+</a>
+</g>
+</g>
+<!-- ExperimentType&#45;&gt;Experiment -->
+<g id="edge8" class="edge">
+<title>ExperimentType-&gt;Experiment</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M229.75,-414.75C229.75,-403.98 229.75,-389.89 229.75,-379.05"/>
+</g>
+<!-- Experiment.Directory&#45;&gt;Chunk -->
+<g id="edge9" class="edge">
+<title>Experiment.Directory-&gt;Chunk</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M228.37,-281.18C224.78,-258.45 215.07,-197.04 210.37,-167.32"/>
+</g>
+<!-- Experiment.Directory&#45;&gt;Epoch -->
+<g id="edge10" class="edge">
+<title>Experiment.Directory-&gt;Epoch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M233.8,-280.92C238.73,-270.03 247.13,-251.44 253.25,-237.91"/>
+</g>
+<!-- Location -->
+<g id="node9" class="node">
+<title>Location</title>
+<g id="a_node9"><a xlink:title="→ Lablocation             ------------------------------location_description=&quot;&quot; ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="344.12,-449.28 291.38,-449.28 291.38,-414.72 344.12,-414.72 344.12,-449.28"/>
+<text text-anchor="start" x="299.38" y="-429.5" font-family="arial" text-decoration="underline" font-size="10.00">Location</text>
+</a>
+</g>
+</g>
+<!-- Location&#45;&gt;Experiment -->
+<g id="edge11" class="edge">
+<title>Location-&gt;Experiment</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M296.9,-414.75C283.07,-403.98 264.98,-389.89 251.07,-379.05"/>
+</g>
+<!-- EventType -->
+<g id="node10" class="node">
+<title>EventType</title>
+<g id="a_node10"><a xlink:title="event_code           ------------------------------event_type           ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="425,-449.28 362.5,-449.28 362.5,-414.72 425,-414.72 425,-449.28"/>
+<text text-anchor="start" x="370.5" y="-429.5" font-family="arial" text-decoration="underline" font-size="10.00">EventType</text>
+</a>
+</g>
+</g>
+<!-- Epoch&#45;&gt;Chunk -->
+<g id="edge12" class="edge">
+<title>Epoch-&gt;Chunk</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M247.92,-202.72C239.59,-191.94 228.77,-177.95 220.46,-167.2"/>
+</g>
+<!-- Camera -->
+<g id="node12" class="node">
+<title>Camera</title>
+<g id="a_node12"><a xlink:title="camera_serial_number ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="85,-378.72 34.5,-378.72 34.5,-344.16 85,-344.16 85,-378.72"/>
+<text text-anchor="start" x="42.5" y="-358.94" font-family="arial" text-decoration="underline" font-size="10.00">Camera</text>
+</a>
+</g>
+</g>
+<!-- Camera&#45;&gt;ExperimentCamera -->
+<g id="edge13" class="edge">
+<title>Camera-&gt;ExperimentCamera</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M59.75,-344.19C59.75,-333.42 59.75,-319.33 59.75,-308.49"/>
+</g>
+</g>
+</svg>

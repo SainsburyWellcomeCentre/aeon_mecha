@@ -1,0 +1,301 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="953pt" height="325pt" viewBox="0.00 0.00 953.25 324.80">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 320.8)">
+<polygon fill="white" stroke="none" points="-4,4 -4,-320.8 949.25,-320.8 949.25,4 -4,4"/>
+<!-- Experiment.Directory -->
+<g id="node1" class="node">
+<title>Experiment.Directory</title>
+<g id="a_node1"><a xlink:title="→ Experiment→ DirectoryType------------------------------→ PipelineRepositorydirectory_path       load_order=1         ">
+<polygon fill="none" stroke="none" points="355.62,-238.96 247.38,-238.96 247.38,-218.96 355.62,-218.96 355.62,-238.96"/>
+<text text-anchor="middle" x="301.5" y="-225.46" font-family="arial" font-size="10.00">Experiment.Directory</text>
+</a>
+</g>
+</g>
+<!-- Epoch -->
+<g id="node9" class="node">
+<title>Epoch</title>
+<g id="a_node9"><a xlink:title="→ Experimentepoch_start          ------------------------------→ [nullable] Experiment.Directoryepoch_dir=&quot;&quot;         ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="376.75,-175.68 326.25,-175.68 326.25,-141.12 376.75,-141.12 376.75,-175.68"/>
+<text text-anchor="middle" x="351.5" y="-154.12" font-family="arial" font-size="12.00" fill="darkgreen">Epoch</text>
+</a>
+</g>
+</g>
+<!-- Experiment.Directory&#45;&gt;Epoch -->
+<g id="edge1" class="edge">
+<title>Experiment.Directory-&gt;Epoch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M308.04,-219C315.98,-208.11 329.53,-189.52 339.4,-175.99"/>
+</g>
+<!-- Chunk -->
+<g id="node17" class="node">
+<title>Chunk</title>
+<g id="a_node17"><a xlink:title="→ Experimentchunk_start          ------------------------------chunk_end            → Experiment.Directory→ Epoch">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="324.12,-105.12 272.88,-105.12 272.88,-70.56 324.12,-70.56 324.12,-105.12"/>
+<text text-anchor="start" x="280.88" y="-84.56" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Chunk</text>
+</a>
+</g>
+</g>
+<!-- Experiment.Directory&#45;&gt;Chunk -->
+<g id="edge2" class="edge">
+<title>Experiment.Directory-&gt;Chunk</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M301.31,-219.26C300.82,-196.53 299.5,-135.12 298.86,-105.4"/>
+</g>
+<!-- SubjectDetail -->
+<g id="node2" class="node">
+<title>SubjectDetail</title>
+<g id="a_node2"><a xlink:title="→ Subject------------------------------lab_id=&quot;&quot;            responsible_fullname=&quot;&quot; → [nullable] GeneticBackground→ [nullable] Straincage_number=&quot;&quot;       available=1          ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="818.5" cy="-228.96" rx="57.5" ry="17.28"/>
+<text text-anchor="middle" x="818.5" y="-224.69" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">SubjectDetail</text>
+</a>
+</g>
+</g>
+<!-- PyratCommentWeightProcedure -->
+<g id="node19" class="node">
+<title>PyratCommentWeightProcedure</title>
+<g id="a_node19"><a xlink:title="→ PyratIngestion→ SubjectDetail------------------------------execution_time       execution_duration   ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="732.5" cy="-158.4" rx="123.17" ry="17.28"/>
+<text text-anchor="middle" x="732.5" y="-154.12" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">PyratCommentWeightProcedure</text>
+</a>
+</g>
+</g>
+<!-- SubjectDetail&#45;&gt;PyratCommentWeightProcedure -->
+<g id="edge3" class="edge">
+<title>SubjectDetail-&gt;PyratCommentWeightProcedure</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M798.99,-212.4C785.31,-201.5 767.06,-186.95 753.14,-175.85"/>
+</g>
+<!-- Subject -->
+<g id="node3" class="node">
+<title>Subject</title>
+<g id="a_node3"><a xlink:title="subject              ------------------------------sex                  subject_birth_date   subject_description=&quot;&quot; ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="739.75,-316.8 683.25,-316.8 683.25,-282.24 739.75,-282.24 739.75,-316.8"/>
+<text text-anchor="start" x="691.25" y="-296.25" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Subject</text>
+</a>
+</g>
+</g>
+<!-- Subject&#45;&gt;SubjectDetail -->
+<g id="edge4" class="edge">
+<title>Subject-&gt;SubjectDetail</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M737.68,-281.75C755.12,-270.57 777.87,-255.99 794.79,-245.16"/>
+</g>
+<!-- PyratIngestion -->
+<g id="node4" class="node">
+<title>PyratIngestion</title>
+<g id="a_node4"><a xlink:title="→ PyratIngestionTask------------------------------execution_time       execution_duration   new_pyrat_entry_count ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="682.5" cy="-228.96" rx="60.44" ry="17.28"/>
+<text text-anchor="middle" x="682.5" y="-224.69" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">PyratIngestion</text>
+</a>
+</g>
+</g>
+<!-- PyratIngestion&#45;&gt;PyratCommentWeightProcedure -->
+<g id="edge5" class="edge">
+<title>PyratIngestion-&gt;PyratCommentWeightProcedure</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M694.35,-211.71C702.2,-200.94 712.48,-186.85 720.39,-176.01"/>
+</g>
+<!-- Experiment -->
+<g id="node5" class="node">
+<title>Experiment</title>
+<g id="a_node5"><a xlink:title="experiment_name      ------------------------------experiment_start_time experiment_description → Arena→ Location→ ExperimentType">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="339.88,-316.8 263.12,-316.8 263.12,-282.24 339.88,-282.24 339.88,-316.8"/>
+<text text-anchor="start" x="271.12" y="-296.25" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Experiment</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;Experiment.Directory -->
+<g id="edge6" class="edge">
+<title>Experiment-&gt;Experiment.Directory</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M301.5,-281.92C301.5,-268.29 301.5,-249.52 301.5,-238.67"/>
+</g>
+<!-- Experiment&#45;&gt;Epoch -->
+<g id="edge7" class="edge">
+<title>Experiment-&gt;Epoch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M331.46,-281.88C344.13,-273.09 357.55,-261.03 364.5,-246.24 375.19,-223.47 366.7,-193.98 359.31,-175.89"/>
+</g>
+<!-- SpinnakerVideoSource -->
+<g id="node10" class="node">
+<title>SpinnakerVideoSource</title>
+<g id="a_node10"><a xlink:title="→ Experiment→ Devicespinnaker_video_source_install_time ------------------------------spinnaker_video_source_name ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="254.38,-105.12 114.62,-105.12 114.62,-70.56 254.38,-70.56 254.38,-105.12"/>
+<text text-anchor="start" x="122.62" y="-84.56" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">SpinnakerVideoSource</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;SpinnakerVideoSource -->
+<g id="edge8" class="edge">
+<title>Experiment-&gt;SpinnakerVideoSource</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M268.82,-281.77C254.56,-272.97 238.78,-260.92 228.5,-246.24 197.41,-201.85 188.22,-136.08 185.56,-105.54"/>
+</g>
+<!-- UndergroundFeeder -->
+<g id="node11" class="node">
+<title>UndergroundFeeder</title>
+<g id="a_node11"><a xlink:title="→ Experiment→ Deviceunderground_feeder_install_time ------------------------------underground_feeder_name ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="607.88,-105.12 483.12,-105.12 483.12,-70.56 607.88,-70.56 607.88,-105.12"/>
+<text text-anchor="start" x="491.12" y="-84.56" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">UndergroundFeeder</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;UndergroundFeeder -->
+<g id="edge9" class="edge">
+<title>Experiment-&gt;UndergroundFeeder</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M339.97,-294.85C397.55,-288.53 501.99,-273.55 526.5,-246.24 561.98,-206.7 554.76,-137.32 549.06,-105.56"/>
+</g>
+<!-- WeightScale -->
+<g id="node16" class="node">
+<title>WeightScale</title>
+<g id="a_node16"><a xlink:title="→ Experiment→ Deviceweight_scale_install_time ------------------------------weight_scale_name    ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="463.62,-105.12 379.38,-105.12 379.38,-70.56 463.62,-70.56 463.62,-105.12"/>
+<text text-anchor="start" x="387.38" y="-84.56" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">WeightScale</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;WeightScale -->
+<g id="edge10" class="edge">
+<title>Experiment-&gt;WeightScale</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M338.71,-281.86C354.03,-273.26 370.7,-261.36 381.5,-246.24 412.97,-202.19 419.74,-135.68 421.15,-105.18"/>
+</g>
+<!-- Experiment&#45;&gt;Chunk -->
+<g id="edge11" class="edge">
+<title>Experiment-&gt;Chunk</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M271.54,-281.88C258.87,-273.09 245.45,-261.03 238.5,-246.24 215,-196.21 258.91,-134.26 283.49,-105.26"/>
+</g>
+<!-- SLEAPTracking -->
+<g id="node6" class="node">
+<title>SLEAPTracking</title>
+<g id="a_node6"><a xlink:title="→ Chunk→ SpinnakerVideoSource→ TrackingParamSet">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="113.5" cy="-17.28" rx="66.32" ry="17.28"/>
+<text text-anchor="middle" x="113.5" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">SLEAPTracking</text>
+</a>
+</g>
+</g>
+<!-- GeneticBackground -->
+<g id="node7" class="node">
+<title>GeneticBackground</title>
+<g id="a_node7"><a xlink:title="gen_bg_id            ------------------------------gen_bg               ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="879.38,-316.8 757.62,-316.8 757.62,-282.24 879.38,-282.24 879.38,-316.8"/>
+<text text-anchor="start" x="765.62" y="-296.25" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">GeneticBackground</text>
+</a>
+</g>
+</g>
+<!-- GeneticBackground&#45;&gt;SubjectDetail -->
+<g id="edge12" class="edge">
+<title>GeneticBackground-&gt;SubjectDetail</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M818.5,-281.92C818.5,-271.14 818.5,-257.15 818.5,-246.4"/>
+</g>
+<!-- Strain -->
+<g id="node8" class="node">
+<title>Strain</title>
+<g id="a_node8"><a xlink:title="strain_id            ------------------------------strain_name          ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="945.25,-316.8 897.75,-316.8 897.75,-282.24 945.25,-282.24 945.25,-316.8"/>
+<text text-anchor="start" x="905.75" y="-296.25" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Strain</text>
+</a>
+</g>
+</g>
+<!-- Strain&#45;&gt;SubjectDetail -->
+<g id="edge13" class="edge">
+<title>Strain-&gt;SubjectDetail</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M897.35,-282.45C880.46,-271.21 858.05,-256.29 841.44,-245.23"/>
+</g>
+<!-- Epoch&#45;&gt;Chunk -->
+<g id="edge14" class="edge">
+<title>Epoch-&gt;Chunk</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M338.67,-140.8C330.34,-130.02 319.52,-116.03 311.21,-105.28"/>
+</g>
+<!-- SpinnakerVideoSource&#45;&gt;SLEAPTracking -->
+<g id="edge15" class="edge">
+<title>SpinnakerVideoSource-&gt;SLEAPTracking</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M167.31,-70.24C155.99,-59.31 141.23,-45.06 130.04,-34.25"/>
+</g>
+<!-- CameraQC -->
+<g id="node13" class="node">
+<title>CameraQC</title>
+<g id="a_node13"><a xlink:title="→ Chunk→ SpinnakerVideoSource------------------------------drop_count=null      max_harp_delta       max_camera_delta     timestamps           time_delta           frame_delta          hw_counter_delta     hw_timestamp_delta   frame_offset         ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="247.5" cy="-17.28" rx="50.15" ry="17.28"/>
+<text text-anchor="middle" x="247.5" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">CameraQC</text>
+</a>
+</g>
+</g>
+<!-- SpinnakerVideoSource&#45;&gt;CameraQC -->
+<g id="edge16" class="edge">
+<title>SpinnakerVideoSource-&gt;CameraQC</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M199.75,-70.24C209.8,-59.31 222.89,-45.06 232.82,-34.25"/>
+</g>
+<!-- WeightScaleWeightFiltered -->
+<g id="node12" class="node">
+<title>WeightScaleWeightFiltered</title>
+<g id="a_node12"><a xlink:title="→ WeightScale→ Chunk------------------------------sample_count         timestamps           weight               stability            ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="421.5" cy="-17.28" rx="106.02" ry="17.28"/>
+<text text-anchor="middle" x="421.5" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">WeightScaleWeightFiltered</text>
+</a>
+</g>
+</g>
+<!-- Device -->
+<g id="node14" class="node">
+<title>Device</title>
+<g id="a_node14"><a xlink:title="device_serial_number ------------------------------→ DeviceType">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="500.88,-175.68 454.12,-175.68 454.12,-141.12 500.88,-141.12 500.88,-175.68"/>
+<text text-anchor="start" x="462.12" y="-155.9" font-family="arial" text-decoration="underline" font-size="10.00">Device</text>
+</a>
+</g>
+</g>
+<!-- Device&#45;&gt;SpinnakerVideoSource -->
+<g id="edge17" class="edge">
+<title>Device-&gt;SpinnakerVideoSource</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M454.51,-152.02C412.01,-142.08 319.61,-120.45 254.79,-105.29"/>
+</g>
+<!-- Device&#45;&gt;UndergroundFeeder -->
+<g id="edge18" class="edge">
+<title>Device-&gt;UndergroundFeeder</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M493.62,-141.15C504.3,-130.38 518.27,-116.29 529.03,-105.45"/>
+</g>
+<!-- Device&#45;&gt;WeightScale -->
+<g id="edge19" class="edge">
+<title>Device-&gt;WeightScale</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M464.23,-141.15C455.43,-130.38 443.92,-116.29 435.06,-105.45"/>
+</g>
+<!-- DeviceType -->
+<g id="node15" class="node">
+<title>DeviceType</title>
+<g id="a_node15"><a xlink:title="device_type          ------------------------------device_description=&quot;&quot; ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="517.38,-246.24 449.62,-246.24 449.62,-211.68 517.38,-211.68 517.38,-246.24"/>
+<text text-anchor="start" x="457.62" y="-226.46" font-family="arial" text-decoration="underline" font-size="10.00">DeviceType</text>
+</a>
+</g>
+</g>
+<!-- DeviceType&#45;&gt;Device -->
+<g id="edge20" class="edge">
+<title>DeviceType-&gt;Device</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M482.08,-211.71C481.12,-200.78 479.87,-186.44 478.91,-175.53"/>
+</g>
+<!-- WeightScale&#45;&gt;WeightScaleWeightFiltered -->
+<g id="edge21" class="edge">
+<title>WeightScale-&gt;WeightScaleWeightFiltered</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M421.5,-70.24C421.5,-59.46 421.5,-45.47 421.5,-34.72"/>
+</g>
+<!-- Chunk&#45;&gt;SLEAPTracking -->
+<g id="edge22" class="edge">
+<title>Chunk-&gt;SLEAPTracking</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M272.63,-74.46C269.57,-73.1 266.48,-71.77 263.5,-70.56 227.08,-55.79 184.73,-41.26 154.34,-31.29"/>
+</g>
+<!-- Chunk&#45;&gt;WeightScaleWeightFiltered -->
+<g id="edge23" class="edge">
+<title>Chunk-&gt;WeightScaleWeightFiltered</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M324.59,-72.3C344.61,-61.14 372.24,-45.74 392.88,-34.24"/>
+</g>
+<!-- Chunk&#45;&gt;CameraQC -->
+<g id="edge24" class="edge">
+<title>Chunk-&gt;CameraQC</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M286.15,-70.24C278.02,-59.31 267.42,-45.06 259.38,-34.25"/>
+</g>
+<!-- TrackingParamSet -->
+<g id="node18" class="node">
+<title>TrackingParamSet</title>
+<g id="a_node18"><a xlink:title="tracking_paramset_id ------------------------------→ TrackingMethodparamset_description param_set_hash       params               UNIQUE INDEX (param_set_hash)">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="97,-105.12 0,-105.12 0,-70.56 97,-70.56 97,-105.12"/>
+<text text-anchor="start" x="8" y="-85.34" font-family="arial" text-decoration="underline" font-size="10.00">TrackingParamSet</text>
+</a>
+</g>
+</g>
+<!-- TrackingParamSet&#45;&gt;SLEAPTracking -->
+<g id="edge25" class="edge">
+<title>TrackingParamSet-&gt;SLEAPTracking</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M63.9,-70.59C74.27,-59.66 87.87,-45.32 98.21,-34.41"/>
+</g>
+</g>
+</svg>
