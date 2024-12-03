@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="298pt" height="184pt" viewBox="0.00 0.00 298.19 183.68">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 179.68)">
+<polygon fill="white" stroke="none" points="-4,4 -4,-179.68 294.19,-179.68 294.19,4 -4,4"/>
+<!-- Strain -->
+<g id="node1" class="node">
+<title>Strain</title>
+<g id="a_node1"><a xlink:title="strain_id            ------------------------------strain_name          ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="47.5,-175.68 0,-175.68 0,-141.12 47.5,-141.12 47.5,-175.68"/>
+<text text-anchor="start" x="8" y="-155.12" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Strain</text>
+</a>
+</g>
+</g>
+<!-- SubjectDetail -->
+<g id="node6" class="node">
+<title>SubjectDetail</title>
+<g id="a_node6"><a xlink:title="→ Subject------------------------------lab_id=&quot;&quot;            responsible_fullname=&quot;&quot; → [nullable] GeneticBackground→ [nullable] Straincage_number=&quot;&quot;       available=1          ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="93.75" cy="-87.84" rx="57.5" ry="17.28"/>
+<text text-anchor="middle" x="93.75" y="-83.56" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">SubjectDetail</text>
+</a>
+</g>
+</g>
+<!-- Strain&#45;&gt;SubjectDetail -->
+<g id="edge1" class="edge">
+<title>Strain-&gt;SubjectDetail</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M40.7,-140.8C51.86,-129.87 66.41,-115.62 77.44,-104.81"/>
+</g>
+<!-- PyratIngestion -->
+<g id="node2" class="node">
+<title>PyratIngestion</title>
+<g id="a_node2"><a xlink:title="→ PyratIngestionTask------------------------------execution_time       execution_duration   new_pyrat_entry_count ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="229.75" cy="-87.84" rx="60.44" ry="17.28"/>
+<text text-anchor="middle" x="229.75" y="-83.56" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">PyratIngestion</text>
+</a>
+</g>
+</g>
+<!-- PyratCommentWeightProcedure -->
+<g id="node3" class="node">
+<title>PyratCommentWeightProcedure</title>
+<g id="a_node3"><a xlink:title="→ PyratIngestion→ SubjectDetail------------------------------execution_time       execution_duration   ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="161.75" cy="-17.28" rx="123.17" ry="17.28"/>
+<text text-anchor="middle" x="161.75" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">PyratCommentWeightProcedure</text>
+</a>
+</g>
+</g>
+<!-- PyratIngestion&#45;&gt;PyratCommentWeightProcedure -->
+<g id="edge2" class="edge">
+<title>PyratIngestion-&gt;PyratCommentWeightProcedure</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M213.98,-70.94C203.15,-60.02 188.82,-45.57 177.91,-34.57"/>
+</g>
+<!-- Subject -->
+<g id="node4" class="node">
+<title>Subject</title>
+<g id="a_node4"><a xlink:title="subject              ------------------------------sex                  subject_birth_date   subject_description=&quot;&quot; ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="122,-175.68 65.5,-175.68 65.5,-141.12 122,-141.12 122,-175.68"/>
+<text text-anchor="start" x="73.5" y="-155.12" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Subject</text>
+</a>
+</g>
+</g>
+<!-- Subject&#45;&gt;SubjectDetail -->
+<g id="edge3" class="edge">
+<title>Subject-&gt;SubjectDetail</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M93.75,-140.8C93.75,-130.02 93.75,-116.03 93.75,-105.28"/>
+</g>
+<!-- GeneticBackground -->
+<g id="node5" class="node">
+<title>GeneticBackground</title>
+<g id="a_node5"><a xlink:title="gen_bg_id            ------------------------------gen_bg               ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="261.62,-175.68 139.88,-175.68 139.88,-141.12 261.62,-141.12 261.62,-175.68"/>
+<text text-anchor="start" x="147.88" y="-155.12" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">GeneticBackground</text>
+</a>
+</g>
+</g>
+<!-- GeneticBackground&#45;&gt;SubjectDetail -->
+<g id="edge4" class="edge">
+<title>GeneticBackground-&gt;SubjectDetail</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M174.57,-140.63C157.13,-129.45 134.38,-114.87 117.46,-104.04"/>
+</g>
+<!-- SubjectDetail&#45;&gt;PyratCommentWeightProcedure -->
+<g id="edge5" class="edge">
+<title>SubjectDetail-&gt;PyratCommentWeightProcedure</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M109.52,-70.94C120.35,-60.02 134.68,-45.57 145.59,-34.57"/>
+</g>
+</g>
+</svg>
