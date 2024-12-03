@@ -9,15 +9,19 @@ The following diagrams provide a high-level overview of the pipeline's component
 
 The diagram below illustrates the structure of the **acquisition-related tasks within the pipeline**, focusing on the most relevant subset of tables.
 
-![datajoint_overview_acquisition_diagram](./docs/datajoint_overview_acquisition_related_diagram.svg)
+<img src="./docs/datajoint_overview_acquisition_related_diagram.svg" width="800" height="400" />
 
 The diagram below represents the **data stream flow within the pipeline**, highlighting the subset of tables critical to understanding the process.
 
-![datajoint_overview_data_stream_diagram](./docs/datajoint_overview_data_stream_diagram.svg)
+<img src="./docs/datajoint_overview_data_stream_diagram.svg" width="12000" height="100" />  
+
+The diagram below illustrates the **Pyrat synchronization process within the pipeline**, highlighting the key tables involved in syncing data across different components.
+
+<img src="./docs/datajoint_overview_pyrat_related_diagram.svg" width="200" height="200" />
 
 The diagram below shows the **analysis portion of the pipeline**.
 
-![datajoint_analysis_pipeline](./docs/datajoint_analysis_diagram.svg)
+<img src="./docs/datajoint_analysis_diagram.svg" width="800" height="400" />
 
 
 The pipeline is structured into hierarchical layers of tables, which are depicted in the diagrams above. These layers include:
@@ -28,6 +32,7 @@ The pipeline is structured into hierarchical layers of tables, which are depicte
 + `computed`-tier tables (red): Represent results of automated computations
 
 Data flows through the pipeline in a top-down manner, driven by a combination of ingestion and computation routines. This layered organization facilitates efficient data processing and modular analysis.
+
 
 ## Core tables
 
@@ -54,13 +59,48 @@ any particular experiment (in the above `aquisition.Experiment` table). A chunk 
 
 #### Standard analyses
 
-+ `Visit` - a `Visit` is defined as a ***period of time*** during which a particular ***animal*** remains at a specific ***place***.
++ `Visit` - a `Visit` is defined as a period of time during which a particular animal remains at a specific place.
 
-+ `BlockAnalysis` - higher-level aggregation of events and metrics that occur within a defined block of time during an experiment. It integrates data from multiple subjects, positions, and interactions to enable further analysis of behavior and environmental interactions.
++ `Block` - a `Block` refers to a specific period of time, typically lasting around 3 hours, during which the reward rate for each patch is predefined to facilitate certain animal behaviors.
 
-+ `BlockSubjectAnalysis` - A detailed analysis for each subject in a given block, partitioned into the following components:
-    - `Patch`: tracks the interactions of each subject with specific patches (areas of interests)
-    - `Preference`: measures a subject's preference for specific patches using various analyses, including cumulative preferences based on time spent and distance traveled in relation to each patch.
++ `BlockAnalysis` - A higher-level aggregation of events and metrics occurring within a defined block of time during an experiment.This analysis computes patch-related and subject-related metrics separately, without combining or cross-correlating data between them. It provides an overview of behavior and environmental interactions at a broader level, integrating data from multiple subjects and patches.
+
++ `BlockSubjectAnalysis` - A detailed analysis focusing on individual subjects within a block, explicitly combining a subject's interactions with specific patches. This involves examining how a subject interacts with a particular patch, including metrics such as total interaction time and overall time spent at the patch. Key components include:
+    - `Patch`: Tracks the interactions of each subject with specific patches (areas of interests)
+    - `Preference`: Measures a subject's preference for specific patches using various analyses, including cumulative preferences based on time spent and distance traveled in relation to each patch.
 
 #### Data stream
 
++ `SpinnakerVideoSource` - Tracks the placement and operation of a Spinnaker video source at a specific location during a defined period in an experiment. This class includes metadata such as the installation time of the device, enabling the tracking of video data associated with the device.
+
++ `RfidReader` - Represents the placement and operation of an RFID reader at a specific location for a defined period in an experiment. It records the installation time of the device and facilitates the collection of RFID event data, such as RFID tag detections. The data stream includes sample counts, timestamps, and RFID tag events.
+
++ `WeightScale` - Monitors the placement and operation of a weight scale within an experiment. It records the installation time of the weight scale and other related metadata, enabling the collection of weight measurements. The data streams include sample counts, timestamps, and weight readings.
+
++ `UndergroundFeeder` - Tracks the operation of an underground feeder device in a specific experiment. It stores installation time and other metadata, such as configuration and calibration settings. The data stream includes events like beam breaks, pellet deliveries, and depletion states.
+
+## Operating the pipeline - how the auto ingestion/processing work?
+
+Some meta information about the experiment is entered - e.g. experiment name, participating
+animals, cameras, food patches setup, etc.
+
++ These information are either entered by hand, or parsed and inserted from configuration
+    yaml files.
++ For experiments these info can be inserted by running
+  + [create_experiment_01](create_experiments/create_experiment_01.py)
+  + [create_socialexperiment_0](create_experiments/create_socialexperiment_0.py)
+  + [create_experiment_02](create_experiments/create_experiment_02.py)
+  (just need to do this once)
+
+Tables in DataJoint are written with a `make()` function -
+instruction to generate and insert new records to itself, based on data from upstream tables.
+Triggering the auto ingestion and processing/computation routine is essentially
+calling the `.populate()` method for all relevant tables.
+
+These routines are prepared in this [auto-processing script](populate/process.py).
+Essentially, turning on the auto-processing routine amounts to running the
+following 2 commands (in different processing threads)
+
+    aeon_ingest high
+
+    aeon_ingest mid
