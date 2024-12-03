@@ -38,7 +38,7 @@ Data flows through the pipeline in a top-down manner, driven by a combination of
 
 #### Experiment and data acquisition
 
-+ `Experiment` - the `aquisition.Experiment` table stores meta information about the experiments
++ `Experiment` - The `aquisition.Experiment` table stores meta information about the experiments
 done in Project Aeon, with secondary information such as the lab/room the experiment is carried out,
 which animals participating, the directory storing the raw data, etc.
 
@@ -46,22 +46,24 @@ which animals participating, the directory storing the raw data, etc.
 The `aquisition.Epoch` table records all acquisition epochs and their associated configuration for
 any particular experiment (in the above `aquisition.Experiment` table).
 
-+ `Chunk` - the raw data are acquired by Bonsai and stored as
++ `Chunk` - The raw data are acquired by Bonsai and stored as
 a collection of files every one hour - we call this one-hour a time chunk.
 The `aquisition.Chunk` table records all time chunks and their associated raw data files for
 any particular experiment (in the above `aquisition.Experiment` table). A chunk must belong to one epoch.
 
 #### Position data
 
-+ `qc.CameraQC` - quality control procedure applied to each `ExperimentCamera` (e.g. missing frame, etc.)
++ `qc.CameraQC` - A quality control procedure applied to each `ExperimentCamera` (e.g. missing frame, etc.)
 
-+ `tracking.SLEAPTracking` - position tracking for object(s), from a particular `VideoSource` per chunk
++ `tracking.SLEAPTracking` - Position tracking of object(s) from a particular `VideoSource` per chunk. Key tables include:
+    - `PoseIdentity` - Identifies the Subject (i.e. Identity) and stores the name of the body part used as "anchor_part".
+    - `Part` - Contains the inferred x,y positions over time for all body parts, as derived from the SLEAP model.
 
 #### Standard analyses
 
-+ `Visit` - a `Visit` is defined as a period of time during which a particular animal remains at a specific place.
++ `Visit` - A `Visit` is defined as a period of time during which a particular animal remains at a specific place.
 
-+ `Block` - a `Block` refers to a specific period of time, typically lasting around 3 hours, during which the reward rate for each patch is predefined to facilitate certain animal behaviors.
++ `Block` - A `Block` refers to a specific period of time, typically lasting around 3 hours, during which the reward rate for each patch is predefined to facilitate certain animal behaviors.
 
 + `BlockAnalysis` - A higher-level aggregation of events and metrics occurring within a defined block of time during an experiment.This analysis computes patch-related and subject-related metrics separately, without combining or cross-correlating data between them. It provides an overview of behavior and environmental interactions at a broader level, integrating data from multiple subjects and patches.
 
