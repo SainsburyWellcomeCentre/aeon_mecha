@@ -89,9 +89,9 @@ animals, cameras, food patches setup, etc.
 + These information are either entered by hand, or parsed and inserted from configuration
     yaml files.
 + For experiments these info can be inserted by running
-  + [create_experiment_01](create_experiments/create_experiment_01.py)
   + [create_socialexperiment_0](create_experiments/create_socialexperiment_0.py)
   + [create_experiment_02](create_experiments/create_experiment_02.py)
+  + [create_socialexperiment](create_experiments/create_socialexperiment.py)
   (just need to do this once)
 
 Tables in DataJoint are written with a `make()` function -
@@ -99,10 +99,15 @@ instruction to generate and insert new records to itself, based on data from ups
 Triggering the auto ingestion and processing/computation routine is essentially
 calling the `.populate()` method for all relevant tables.
 
-These routines are prepared in this [auto-processing script](populate/process.py).
+These routines are prepared in this [auto-processing script](populate/worker.py).
 Essentially, turning on the auto-processing routine amounts to running the
-following 2 commands (in different processing threads)
+following 4 commands , either in sequence or in parallel (with different processing threads).
+Data ingestion/populate with DataJoint is idempotent, so it is safe to run the same command multiple times.
 
-    aeon_ingest high
+    aeon_ingest pyrat_worker
 
-    aeon_ingest mid
+    aeon_ingest acquisition_worker
+
+    aeon_ingest streams_worker
+
+    aeon_ingest analysis_worker
