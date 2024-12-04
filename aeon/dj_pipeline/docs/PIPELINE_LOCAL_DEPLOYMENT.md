@@ -46,7 +46,7 @@ The released data for Project Aeon can be downloaded from the data repository [h
 
 ### Installation Instructions
 
-In order to run the pipeline, follow the instruction to install this codebase in the "Local set-up" section
+In order to run the pipeline, follow the instruction to install this codebase in the [Local set-up](../../../README.md#local-set-up) section
 
 ### Configuration Instructions
 
