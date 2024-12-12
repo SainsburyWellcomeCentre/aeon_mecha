@@ -439,7 +439,7 @@ class BlockSubjectAnalysis(dj.Computed):
         ---
         in_patch_timestamps: longblob # timestamps when a subject is at a specific patch
         in_patch_time: float  # total seconds spent in this patch for this block
-        in_patch_rfid_timestamps=null: longblob  # timestamps when a subject is at a specific patch based on RFID
+        in_patch_rfid_timestamps=null: longblob  # in_patch_timestamps based on RFID
         pellet_count: int
         pellet_timestamps: longblob
         patch_threshold: longblob  # patch threshold value at each pellet delivery
@@ -528,8 +528,8 @@ class BlockSubjectAnalysis(dj.Computed):
 
         # subject-rfid mapping
         rfid2subj_map = {
-            int(l): s
-            for s, l in zip(
+            int(lab_id): subj_name
+            for subj_name, lab_id in zip(
                 *(subject.SubjectDetail.proj("lab_id") & f"subject in {tuple(subject_names)}").fetch(
                     "subject", "lab_id"
                 ),
@@ -1183,11 +1183,11 @@ class BlockPatchPlots(dj.Computed):
         pel_patches = [p for p in patch_names if "dummy" not in p.lower()]  # exclude dummy patches
         data = []
         for patch in pel_patches:
-            for subject in subject_names:
+            for subject_name in subject_names:
                 data.append(
                     {
                         "patch_name": patch,
-                        "subject_name": subject,
+                        "subject_name": subject_name,
                         "time": wheel_ts[patch],
                         "weighted_dist": np.empty_like(wheel_ts[patch]),
                     }
@@ -1287,18 +1287,18 @@ class BlockPatchPlots(dj.Computed):
         df = subj_wheel_pel_weighted_dist
         # Iterate through patches and subjects to create plots
         for i, patch in enumerate(pel_patches, start=1):
-            for j, subject in enumerate(subject_names, start=1):
+            for j, subject_name in enumerate(subject_names, start=1):
                 # Filter data for this patch and subject
-                times = df.loc[patch].loc[subject]["time"]
-                norm_values = df.loc[patch].loc[subject]["norm_value"]
-                wheel_prefs = df.loc[patch].loc[subject]["wheel_pref"]
+                times = df.loc[patch].loc[subject_name]["time"]
+                norm_values = df.loc[patch].loc[subject_name]["norm_value"]
+                wheel_prefs = df.loc[patch].loc[subject_name]["wheel_pref"]
 
                 # Add wheel_pref trace
                 weighted_patch_pref_fig.add_trace(
                     go.Scatter(
                         x=times,
                         y=wheel_prefs,
-                        name=f"{subject} - wheel_pref",
+                        name=f"{subject_name} - wheel_pref",
                         line={
                             "color": subject_colors[i - 1],
                             "dash": patch_linestyles_dict[patch],
@@ -1316,7 +1316,7 @@ class BlockPatchPlots(dj.Computed):
                     go.Scatter(
                         x=times,
                         y=norm_values,
-                        name=f"{subject} - norm_value",
+                        name=f"{subject_name} - norm_value",
                         line={
                             "color": subject_colors[i - 1],
                             "dash": patch_linestyles_dict[patch],
@@ -1846,8 +1846,8 @@ def get_foraging_bouts(
     #       - For the foraging bout end time, we need to account for the final pellet delivery time
     #   - Filter out events with < `min_pellets`
     #   - For final events, get: duration, n_pellets, cum_wheel_distance -> add to returned DF
-    for subject in subject_patch_data.index.unique("subject_name"):
-        cur_subject_data = subject_patch_data.xs(subject, level="subject_name")
+    for subject_name in subject_patch_data.index.unique("subject_name"):
+        cur_subject_data = subject_patch_data.xs(subject_name, level="subject_name")
         n_pels = sum([arr.size for arr in cur_subject_data["pellet_timestamps"].values])
         if n_pels < min_pellets:
             continue
@@ -1929,7 +1929,7 @@ def get_foraging_bouts(
                         "end": bout_starts_ends[:, 1],
                         "n_pellets": bout_pellets,
                         "cum_wheel_dist": bout_cum_wheel_dist,
-                        "subject": subject,
+                        "subject": subject_name,
                     }
                 ),
             ]

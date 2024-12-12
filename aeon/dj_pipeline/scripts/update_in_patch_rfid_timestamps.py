@@ -1,9 +1,19 @@
-from aeon.dj_pipeline.analysis.block_analysis import *
+"""Script to update in_patch_rfid_timestamps for all blocks that are missing it."""
+
+import datajoint as dj
+
+from aeon.dj_pipeline import acquisition, fetch_stream, streams, subject
+from aeon.dj_pipeline.analysis.block_analysis import Block, BlockAnalysis, BlockSubjectAnalysis
 
 logger = dj.logger
 
 
 def update_in_patch_rfid_timestamps(block_key):
+    """Update in_patch_rfid_timestamps for a given block_key.
+
+    Args:
+        block_key (dict): block key
+    """
     logger.info(f"Updating in_patch_rfid_timestamps for {block_key}")
 
     block_key = (Block & block_key).fetch1("KEY")
@@ -15,8 +25,8 @@ def update_in_patch_rfid_timestamps(block_key):
     subject_names = (BlockAnalysis.Subject & block_key).fetch("subject_name")
 
     rfid2subj_map = {
-        int(l): s
-        for s, l in zip(
+        int(lab_id): subj_name
+        for subj_name, lab_id in zip(
             *(subject.SubjectDetail.proj("lab_id") & f"subject in {tuple(subject_names)}").fetch(
                 "subject", "lab_id"
             ),
@@ -55,6 +65,7 @@ def update_in_patch_rfid_timestamps(block_key):
 
 
 def main():
+    """Update in_patch_rfid_timestamps for all blocks that are missing it."""
     block_keys = BlockSubjectAnalysis & (
         BlockSubjectAnalysis.Patch & "in_patch_rfid_timestamps IS NULL"
     ).fetch("KEY")
