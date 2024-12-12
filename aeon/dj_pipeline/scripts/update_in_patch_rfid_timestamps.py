@@ -6,6 +6,7 @@ logger = dj.logger
 def update_in_patch_rfid_timestamps(block_key):
     logger.info(f"Updating in_patch_rfid_timestamps for {block_key}")
 
+    block_key = (Block & block_key).fetch1("KEY")
     block_start, block_end = (Block & block_key).fetch1("block_start", "block_end")
     chunk_restriction = acquisition.create_chunk_restriction(
         block_key["experiment_name"], block_start, block_end
@@ -50,6 +51,7 @@ def update_in_patch_rfid_timestamps(block_key):
     with BlockSubjectAnalysis.connection.transaction:
         for e in entries:
             BlockSubjectAnalysis.Patch.update1(e)
+        logger.info(f"\tUpdated {len(entries)} entries.")
 
 
 def main():
