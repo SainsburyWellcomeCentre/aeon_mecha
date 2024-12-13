@@ -530,7 +530,8 @@ class BlockSubjectAnalysis(dj.Computed):
         rfid2subj_map = {
             int(lab_id): subj_name
             for subj_name, lab_id in zip(
-                *(subject.SubjectDetail.proj("lab_id") & f"subject in {tuple(subject_names)}").fetch(
+                *(subject.SubjectDetail.proj("lab_id")
+                  & f"subject in {tuple(list(subject_names) + [''])}").fetch(
                     "subject", "lab_id"
                 ),
                 strict=False,

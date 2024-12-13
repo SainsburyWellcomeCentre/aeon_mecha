@@ -27,7 +27,8 @@ def update_in_patch_rfid_timestamps(block_key):
     rfid2subj_map = {
         int(lab_id): subj_name
         for subj_name, lab_id in zip(
-            *(subject.SubjectDetail.proj("lab_id") & f"subject in {tuple(subject_names)}").fetch(
+            *(subject.SubjectDetail.proj("lab_id")
+              & f"subject in {tuple(list(subject_names) + [''])}").fetch(
                 "subject", "lab_id"
             ),
             strict=False,
@@ -66,8 +67,9 @@ def update_in_patch_rfid_timestamps(block_key):
 
 def main():
     """Update in_patch_rfid_timestamps for all blocks that are missing it."""
-    block_keys = BlockSubjectAnalysis & (
-        BlockSubjectAnalysis.Patch & "in_patch_rfid_timestamps IS NULL"
+    block_keys = (
+            BlockSubjectAnalysis
+            & (BlockSubjectAnalysis.Patch & "in_patch_rfid_timestamps IS NULL")
     ).fetch("KEY")
     for block_key in block_keys:
         try:
