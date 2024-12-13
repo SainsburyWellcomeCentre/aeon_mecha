@@ -21,7 +21,7 @@ from aeon.analysis.block_plotting import (
     gen_subject_colors_dict,
     subject_colors,
 )
-from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, tracking
+from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, subject, tracking
 from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
 from aeon.io import api as io_api
 
@@ -439,6 +439,7 @@ class BlockSubjectAnalysis(dj.Computed):
         ---
         in_patch_timestamps: longblob # timestamps when a subject is at a specific patch
         in_patch_time: float  # total seconds spent in this patch for this block
+        in_patch_rfid_timestamps=null: longblob  # in_patch_timestamps based on RFID
         pellet_count: int
         pellet_timestamps: longblob
         patch_threshold: longblob  # patch threshold value at each pellet delivery
@@ -464,10 +465,16 @@ class BlockSubjectAnalysis(dj.Computed):
 
     def make(self, key):
         """Compute preference scores for each subject at each patch within a block."""
+        block_start, block_end = (Block & key).fetch1("block_start", "block_end")
+        chunk_restriction = acquisition.create_chunk_restriction(
+            key["experiment_name"], block_start, block_end
+        )
+
         block_patches = (BlockAnalysis.Patch & key).fetch(as_dict=True)
         block_subjects = (BlockAnalysis.Subject & key).fetch(as_dict=True)
         subject_names = [s["subject_name"] for s in block_subjects]
         patch_names = [p["patch_name"] for p in block_patches]
+
         # Construct subject position dataframe
         subjects_positions_df = pd.concat(
             [
@@ -503,6 +510,7 @@ class BlockSubjectAnalysis(dj.Computed):
             for p in block_patches:
                 p["wheel_timestamps"] = p["wheel_timestamps"][:min_wheel_len]
                 p["wheel_cumsum_distance_travelled"] = p["wheel_cumsum_distance_travelled"][:min_wheel_len]
+
         self.insert1(key)
 
         in_patch_radius = 130  # pixels
@@ -516,6 +524,18 @@ class BlockSubjectAnalysis(dj.Computed):
         ]
         all_subj_patch_pref_dict = {
             p: {s: {a: pd.Series() for a in pref_attrs} for s in subject_names} for p in patch_names
+        }
+
+        # subject-rfid mapping
+        rfid2subj_map = {
+            int(lab_id): subj_name
+            for subj_name, lab_id in zip(
+                *(subject.SubjectDetail.proj("lab_id")
+                  & f"subject in {tuple(list(subject_names) + [''])}").fetch(
+                    "subject", "lab_id"
+                ),
+                strict=False,
+            )
         }
 
         for patch in block_patches:
@@ -601,6 +621,18 @@ class BlockSubjectAnalysis(dj.Computed):
             # In patch time
             in_patch = dist_to_patch_wheel_ts_id_df < in_patch_radius
             dt = np.median(np.diff(cum_wheel_dist.index)).astype(int) / 1e9  # s
+
+            # In patch time from RFID
+            rfid_query = (
+                streams.RfidReader.proj(rfid_name="REPLACE(rfid_reader_name, 'Rfid', '')")
+                * streams.RfidReaderRfidEvents
+                & key
+                & {"rfid_name": patch["patch_name"]}
+                & chunk_restriction
+            )
+            rfid_df = fetch_stream(rfid_query)[block_start:block_end]
+            rfid_df["subject"] = rfid_df.rfid.map(rfid2subj_map)
+
             # Fill in `all_subj_patch_pref`
             for subject_name in subject_names:
                 all_subj_patch_pref_dict[patch["patch_name"]][subject_name]["cum_dist"] = (
@@ -623,6 +655,7 @@ class BlockSubjectAnalysis(dj.Computed):
                         "subject_name": subject_name,
                         "in_patch_timestamps": subject_in_patch[in_patch[subject_name]].index.values,
                         "in_patch_time": subject_in_patch_cum_time[-1],
+                        "in_patch_rfid_timestamps": rfid_df[rfid_df.subject == subject_name].index.values,
                         "pellet_count": len(subj_pellets),
                         "pellet_timestamps": subj_pellets.index.values,
                         "patch_threshold": subj_patch_thresh,
@@ -1151,11 +1184,11 @@ class BlockPatchPlots(dj.Computed):
         pel_patches = [p for p in patch_names if "dummy" not in p.lower()]  # exclude dummy patches
         data = []
         for patch in pel_patches:
-            for subject in subject_names:
+            for subject_name in subject_names:
                 data.append(
                     {
                         "patch_name": patch,
-                        "subject_name": subject,
+                        "subject_name": subject_name,
                         "time": wheel_ts[patch],
                         "weighted_dist": np.empty_like(wheel_ts[patch]),
                     }
@@ -1255,18 +1288,18 @@ class BlockPatchPlots(dj.Computed):
         df = subj_wheel_pel_weighted_dist
         # Iterate through patches and subjects to create plots
         for i, patch in enumerate(pel_patches, start=1):
-            for j, subject in enumerate(subject_names, start=1):
+            for j, subject_name in enumerate(subject_names, start=1):
                 # Filter data for this patch and subject
-                times = df.loc[patch].loc[subject]["time"]
-                norm_values = df.loc[patch].loc[subject]["norm_value"]
-                wheel_prefs = df.loc[patch].loc[subject]["wheel_pref"]
+                times = df.loc[patch].loc[subject_name]["time"]
+                norm_values = df.loc[patch].loc[subject_name]["norm_value"]
+                wheel_prefs = df.loc[patch].loc[subject_name]["wheel_pref"]
 
                 # Add wheel_pref trace
                 weighted_patch_pref_fig.add_trace(
                     go.Scatter(
                         x=times,
                         y=wheel_prefs,
-                        name=f"{subject} - wheel_pref",
+                        name=f"{subject_name} - wheel_pref",
                         line={
                             "color": subject_colors[i - 1],
                             "dash": patch_linestyles_dict[patch],
@@ -1284,7 +1317,7 @@ class BlockPatchPlots(dj.Computed):
                     go.Scatter(
                         x=times,
                         y=norm_values,
-                        name=f"{subject} - norm_value",
+                        name=f"{subject_name} - norm_value",
                         line={
                             "color": subject_colors[i - 1],
                             "dash": patch_linestyles_dict[patch],
@@ -1814,8 +1847,8 @@ def get_foraging_bouts(
     #       - For the foraging bout end time, we need to account for the final pellet delivery time
     #   - Filter out events with < `min_pellets`
     #   - For final events, get: duration, n_pellets, cum_wheel_distance -> add to returned DF
-    for subject in subject_patch_data.index.unique("subject_name"):
-        cur_subject_data = subject_patch_data.xs(subject, level="subject_name")
+    for subject_name in subject_patch_data.index.unique("subject_name"):
+        cur_subject_data = subject_patch_data.xs(subject_name, level="subject_name")
         n_pels = sum([arr.size for arr in cur_subject_data["pellet_timestamps"].values])
         if n_pels < min_pellets:
             continue
@@ -1897,7 +1930,7 @@ def get_foraging_bouts(
                         "end": bout_starts_ends[:, 1],
                         "n_pellets": bout_pellets,
                         "cum_wheel_dist": bout_cum_wheel_dist,
-                        "subject": subject,
+                        "subject": subject_name,
                     }
                 ),
             ]
