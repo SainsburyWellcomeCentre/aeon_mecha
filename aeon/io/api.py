@@ -145,12 +145,12 @@ def load(root, reader, start=None, end=None, time=None, tolerance=None, epoch=No
         except KeyError:
             import warnings
 
-            if not data.index.has_duplicates:
+            if not data.index.is_monotonic_increasing:
                 warnings.warn(
                     f"data index for {reader.pattern} contains out-of-order timestamps!", stacklevel=2
                 )
                 data = data.sort_index()
-            else:
+            elif data.index.has_duplicates:
                 warnings.warn(f"data index for {reader.pattern} contains duplicate keys!", stacklevel=2)
                 data = data[~data.index.duplicated(keep="first")]
             return data.loc[start:end]

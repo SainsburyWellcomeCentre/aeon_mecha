@@ -361,8 +361,9 @@ class Pose(Harp):
         # Drop any repeat parts.
         unique_parts, unique_idxs = np.unique(parts, return_index=True)
         repeat_idxs = np.setdiff1d(np.arange(len(parts)), unique_idxs)
-        if repeat_idxs:  # drop x, y, and likelihood cols for repeat parts (skip first 5 cols)
-            init_rep_part_col_idx = (repeat_idxs - 1) * 3 + 5
+        if repeat_idxs:  # drop x, y, and likelihood cols for repeat parts (skip first cols)
+            num_cols_skip = 5 if bonsai_sleap_v == BONSAI_SLEAP_V2 else 6
+            init_rep_part_col_idx = (repeat_idxs - 1) * 3 + num_cols_skip
             rep_part_col_idxs = np.concatenate([np.arange(i, i + 3) for i in init_rep_part_col_idx])
             keep_part_col_idxs = np.setdiff1d(np.arange(len(data.columns)), rep_part_col_idxs)
             data = data.iloc[:, keep_part_col_idxs]
