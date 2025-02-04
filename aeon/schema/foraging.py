@@ -1,8 +1,8 @@
 """Schema definition for foraging experiments."""
 
 from enum import Enum
-import pandas as pd
 
+import pandas as pd
 from swc.aeon.io import reader
 from swc.aeon.schema import core
 from swc.aeon.schema.streams import Stream, StreamGroup

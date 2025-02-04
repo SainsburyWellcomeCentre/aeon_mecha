@@ -3,10 +3,10 @@ from os import PathLike
 
 import pandas as pd
 from dotmap import DotMap
-
 from swc.aeon.io import reader
+from swc.aeon.io.api import aeon as aeon_time
+from swc.aeon.io.api import chunk as aeon_chunk
 from swc.aeon.schema import core
-from swc.aeon.io.api import aeon as aeon_time, chunk as aeon_chunk
 from swc.aeon.schema.streams import Device, Stream, StreamGroup
 
 from aeon.schema import foraging, octagon, social_01, social_02, social_03

@@ -3,6 +3,7 @@
 from swc.aeon.io import reader
 from swc.aeon.schema.streams import Stream
 
+
 class Pose(Stream):
     def __init__(self, path):
         """Initializes the Pose stream."""
