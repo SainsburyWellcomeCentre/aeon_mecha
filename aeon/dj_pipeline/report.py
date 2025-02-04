@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from aeon.analysis import plotting as analysis_plotting
+from swc.aeon.analysis import plotting as analysis_plotting
 from aeon.dj_pipeline.analysis.visit import Visit, VisitEnd
 
 from . import acquisition, analysis

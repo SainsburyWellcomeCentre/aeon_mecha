@@ -2,22 +2,24 @@
 
 from dotmap import DotMap
 
-import aeon.schema.core as stream
+from swc.aeon.schema import core
+from swc.aeon.schema.streams import Device
+
 from aeon.schema import foraging, octagon, social_01, social_02, social_03
-from aeon.schema.streams import Device
+
 
 exp02 = DotMap(
     [
-        Device("Metadata", stream.Metadata),
-        Device("ExperimentalMetadata", stream.Environment, stream.MessageLog),
-        Device("CameraTop", stream.Video, stream.Position, foraging.Region),
-        Device("CameraEast", stream.Video),
-        Device("CameraNest", stream.Video),
-        Device("CameraNorth", stream.Video),
-        Device("CameraPatch1", stream.Video),
-        Device("CameraPatch2", stream.Video),
-        Device("CameraSouth", stream.Video),
-        Device("CameraWest", stream.Video),
+        Device("Metadata", core.Metadata),
+        Device("ExperimentalMetadata", core.Environment, core.MessageLog),
+        Device("CameraTop", core.Video, core.Position, foraging.Region),
+        Device("CameraEast", core.Video),
+        Device("CameraNest", core.Video),
+        Device("CameraNorth", core.Video),
+        Device("CameraPatch1", core.Video),
+        Device("CameraPatch2", core.Video),
+        Device("CameraSouth", core.Video),
+        Device("CameraWest", core.Video),
         Device("Nest", foraging.Weight),
         Device("Patch1", foraging.Patch),
         Device("Patch2", foraging.Patch),
@@ -27,25 +29,25 @@ exp02 = DotMap(
 exp01 = DotMap(
     [
         Device("SessionData", foraging.SessionData),
-        Device("FrameTop", stream.Video, stream.Position),
-        Device("FrameEast", stream.Video),
-        Device("FrameGate", stream.Video),
-        Device("FrameNorth", stream.Video),
-        Device("FramePatch1", stream.Video),
-        Device("FramePatch2", stream.Video),
-        Device("FrameSouth", stream.Video),
-        Device("FrameWest", stream.Video),
-        Device("Patch1", foraging.DepletionFunction, stream.Encoder, foraging.Feeder),
-        Device("Patch2", foraging.DepletionFunction, stream.Encoder, foraging.Feeder),
+        Device("FrameTop", core.Video, core.Position),
+        Device("FrameEast", core.Video),
+        Device("FrameGate", core.Video),
+        Device("FrameNorth", core.Video),
+        Device("FramePatch1", core.Video),
+        Device("FramePatch2", core.Video),
+        Device("FrameSouth", core.Video),
+        Device("FrameWest", core.Video),
+        Device("Patch1", foraging.DepletionFunction, core.Encoder, foraging.Feeder),
+        Device("Patch2", foraging.DepletionFunction, core.Encoder, foraging.Feeder),
     ]
 )
 
 octagon01 = DotMap(
     [
-        Device("Metadata", stream.Metadata),
-        Device("CameraTop", stream.Video, stream.Position),
-        Device("CameraColorTop", stream.Video),
-        Device("ExperimentalMetadata", stream.SubjectState),
+        Device("Metadata", core.Metadata),
+        Device("CameraTop", core.Video, core.Position),
+        Device("CameraColorTop", core.Video),
+        Device("ExperimentalMetadata", core.SubjectState),
         Device("Photodiode", octagon.Photodiode),
         Device("OSC", octagon.OSC),
         Device("TaskLogic", octagon.TaskLogic),
@@ -62,17 +64,17 @@ octagon01 = DotMap(
 
 social01 = DotMap(
     [
-        Device("Metadata", stream.Metadata),
+        Device("Metadata", core.Metadata),
         Device("Environment", social_02.Environment, social_02.SubjectData),
-        Device("CameraTop", stream.Video, social_01.Pose),
-        Device("CameraNorth", stream.Video),
-        Device("CameraSouth", stream.Video),
-        Device("CameraEast", stream.Video),
-        Device("CameraWest", stream.Video),
-        Device("CameraPatch1", stream.Video),
-        Device("CameraPatch2", stream.Video),
-        Device("CameraPatch3", stream.Video),
-        Device("CameraNest", stream.Video),
+        Device("CameraTop", core.Video, social_01.Pose),
+        Device("CameraNorth", core.Video),
+        Device("CameraSouth", core.Video),
+        Device("CameraEast", core.Video),
+        Device("CameraWest", core.Video),
+        Device("CameraPatch1", core.Video),
+        Device("CameraPatch2", core.Video),
+        Device("CameraPatch3", core.Video),
+        Device("CameraNest", core.Video),
         Device("Nest", social_02.WeightRaw, social_02.WeightFiltered),
         Device("Patch1", social_02.Patch),
         Device("Patch2", social_02.Patch),
@@ -89,17 +91,17 @@ social01 = DotMap(
 
 social02 = DotMap(
     [
-        Device("Metadata", stream.Metadata),
+        Device("Metadata", core.Metadata),
         Device("Environment", social_02.Environment, social_02.SubjectData),
-        Device("CameraTop", stream.Video, social_02.Pose),
-        Device("CameraNorth", stream.Video),
-        Device("CameraSouth", stream.Video),
-        Device("CameraEast", stream.Video),
-        Device("CameraWest", stream.Video),
-        Device("CameraPatch1", stream.Video),
-        Device("CameraPatch2", stream.Video),
-        Device("CameraPatch3", stream.Video),
-        Device("CameraNest", stream.Video),
+        Device("CameraTop", core.Video, social_02.Pose),
+        Device("CameraNorth", core.Video),
+        Device("CameraSouth", core.Video),
+        Device("CameraEast", core.Video),
+        Device("CameraWest", core.Video),
+        Device("CameraPatch1", core.Video),
+        Device("CameraPatch2", core.Video),
+        Device("CameraPatch3", core.Video),
+        Device("CameraNest", core.Video),
         Device("Nest", social_02.WeightRaw, social_02.WeightFiltered),
         Device("Patch1", social_02.Patch),
         Device("Patch2", social_02.Patch),
@@ -116,22 +118,22 @@ social02 = DotMap(
 
 social03 = DotMap(
     [
-        Device("Metadata", stream.Metadata),
+        Device("Metadata", core.Metadata),
         Device(
             "Environment",
             social_02.Environment,
             social_02.SubjectData,
             social_03.EnvironmentActiveConfiguration,
         ),
-        Device("CameraTop", stream.Video, social_03.Pose),
-        Device("CameraNorth", stream.Video),
-        Device("CameraSouth", stream.Video),
-        Device("CameraEast", stream.Video),
-        Device("CameraWest", stream.Video),
-        Device("CameraNest", stream.Video),
-        Device("CameraPatch1", stream.Video),
-        Device("CameraPatch2", stream.Video),
-        Device("CameraPatch3", stream.Video),
+        Device("CameraTop", core.Video, social_03.Pose),
+        Device("CameraNorth", core.Video),
+        Device("CameraSouth", core.Video),
+        Device("CameraEast", core.Video),
+        Device("CameraWest", core.Video),
+        Device("CameraNest", core.Video),
+        Device("CameraPatch1", core.Video),
+        Device("CameraPatch2", core.Video),
+        Device("CameraPatch3", core.Video),
         Device("Nest", social_02.WeightRaw, social_02.WeightFiltered),
         Device("Patch1", social_02.Patch),
         Device("Patch2", social_02.Patch),
@@ -152,22 +154,22 @@ social03 = DotMap(
 
 social04 = DotMap(
     [
-        Device("Metadata", stream.Metadata),
+        Device("Metadata", core.Metadata),
         Device(
             "Environment",
             social_02.Environment,
             social_02.SubjectData,
             social_03.EnvironmentActiveConfiguration,
         ),
-        Device("CameraTop", stream.Video, social_03.Pose),
-        Device("CameraNorth", stream.Video),
-        Device("CameraSouth", stream.Video),
-        Device("CameraEast", stream.Video),
-        Device("CameraWest", stream.Video),
-        Device("CameraNest", stream.Video),
-        Device("CameraPatch1", stream.Video),
-        Device("CameraPatch2", stream.Video),
-        Device("CameraPatch3", stream.Video),
+        Device("CameraTop", core.Video, social_03.Pose),
+        Device("CameraNorth", core.Video),
+        Device("CameraSouth", core.Video),
+        Device("CameraEast", core.Video),
+        Device("CameraWest", core.Video),
+        Device("CameraNest", core.Video),
+        Device("CameraPatch1", core.Video),
+        Device("CameraPatch2", core.Video),
+        Device("CameraPatch3", core.Video),
         Device("Nest", social_02.WeightRaw, social_02.WeightFiltered),
         Device("Patch1", social_02.Patch),
         Device("Patch2", social_02.Patch),

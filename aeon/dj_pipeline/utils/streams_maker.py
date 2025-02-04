@@ -10,7 +10,7 @@ import pandas as pd
 
 import aeon
 from aeon.dj_pipeline import acquisition, get_schema_name
-from aeon.io import api as io_api
+from swc.aeon.io import api as io_api
 
 aeon_schemas = acquisition.aeon_schemas
 
@@ -213,7 +213,7 @@ def main(create_tables=True):
                 "from uuid import UUID\n\n"
                 "import aeon\n"
                 "from aeon.dj_pipeline import acquisition, get_schema_name\n"
-                "from aeon.io import api as io_api\n\n"
+                "from swc.aeon.io import api as io_api\n\n"
                 "aeon_schemas = acquisition.aeon_schemas\n\n"
                 'schema = dj.Schema(get_schema_name("streams"))\n\n\n'
             )

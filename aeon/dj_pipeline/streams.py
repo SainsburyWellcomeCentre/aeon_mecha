@@ -8,7 +8,7 @@ from uuid import UUID
 
 import aeon
 from aeon.dj_pipeline import acquisition, get_schema_name
-from aeon.io import api as io_api
+from swc.aeon.io import api as io_api
 
 aeon_schemas = acquisition.aeon_schemas
 

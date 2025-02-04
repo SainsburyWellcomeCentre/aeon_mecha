@@ -27,7 +27,7 @@ def find_chunks_to_reingest(exp_key, delete_not_fullpose=False):
 
     # special ingestion case for social0.2 full-pose data (using Pose reader from social03)
     if exp_key["experiment_name"].startswith("social0.2"):
-        from aeon.io import reader as io_reader
+        from swc.aeon.io import reader as io_reader
         stream_reader = getattr(devices_schema, device_name).Pose03
         if not isinstance(stream_reader, io_reader.Pose):
             raise TypeError("Pose03 is not a Pose reader")
