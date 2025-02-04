@@ -5,7 +5,6 @@ from pathlib import Path
 
 import cv2
 import pandas as pd
-
 import swc.aeon.io.reader as io_reader
 from swc.aeon.io import api as io_api
 from swc.aeon.io import video as io_video

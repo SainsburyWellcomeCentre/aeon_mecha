@@ -7,11 +7,11 @@ import re
 
 import datajoint as dj
 import pandas as pd
+from swc.aeon.io import api as io_api
+from swc.aeon.io import reader as io_reader
 
 from aeon.dj_pipeline import get_schema_name, lab, subject
 from aeon.dj_pipeline.utils import paths
-from swc.aeon.io import api as io_api
-from swc.aeon.io import reader as io_reader
 from aeon.schema import ingestion_schemas as aeon_schemas
 
 schema = dj.schema(get_schema_name("acquisition"))

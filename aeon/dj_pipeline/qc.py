@@ -3,9 +3,9 @@
 import datajoint as dj
 import numpy as np
 import pandas as pd
+from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import acquisition, get_schema_name, streams
-from swc.aeon.io import api as io_api
 
 schema = dj.schema(get_schema_name("qc"))
 logger = dj.logger
