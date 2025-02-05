@@ -8,9 +8,11 @@ from pathlib import Path
 import datajoint as dj
 import pandas as pd
 
+import swc
 import aeon
 from aeon.dj_pipeline import acquisition, get_schema_name
 from swc.aeon.io import api as io_api
+from swc.aeon.io import reader as io_reader
 
 aeon_schemas = acquisition.aeon_schemas
 
@@ -113,11 +115,11 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
         & (streams_module.DeviceType.Stream & {"device_type": device_type, "stream_type": stream_type})
     ).fetch1()
 
-    reader = aeon
-    for n in stream_detail["stream_reader"].split(".")[1:]:
-        reader = getattr(reader, n)
+    reader = {"swc": swc, "aeon": aeon}
+    for idx, n in enumerate(stream_detail["stream_reader"].split(".")):
+        reader = reader[n] if idx == 0 else getattr(reader, n)
 
-    if reader is aeon.io.reader.Pose:
+    if reader is io_reader.Pose:
         logger.warning("Automatic generation of stream table for Pose reader is not supported. Skipping...")
         return None, None
 
