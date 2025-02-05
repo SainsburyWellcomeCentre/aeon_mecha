@@ -1,8 +1,7 @@
 """Schema definition for social_02 experiments-specific data streams."""
 
 from swc.aeon.io import reader
-from swc.aeon.schema import core
-from swc.aeon.schema.streams import Stream, StreamGroup
+from swc.aeon.schema import core, Stream, StreamGroup
 
 from aeon.schema import foraging
 

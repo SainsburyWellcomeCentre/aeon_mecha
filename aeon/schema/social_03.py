@@ -1,7 +1,7 @@
 """Schema definition for social_03 experiments-specific data streams."""
 
 from swc.aeon.io import reader
-from swc.aeon.schema.streams import Stream
+from swc.aeon.schema import Stream
 
 
 class Pose(Stream):

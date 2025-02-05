@@ -1,7 +1,7 @@
 """Schema definition for octagon experiments-specific data streams."""
 
 from swc.aeon.io import reader
-from swc.aeon.schema.streams import Stream, StreamGroup
+from swc.aeon.schema import Stream, StreamGroup
 
 
 class Photodiode(Stream):
