@@ -1,7 +1,7 @@
 """Schemas for different experiments."""
 
 from dotmap import DotMap
-from swc.aeon.schema import core, Device
+from swc.aeon.schema import Device, core
 
 from aeon.schema import foraging, octagon, social_01, social_02, social_03
 

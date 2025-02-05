@@ -6,7 +6,7 @@ from dotmap import DotMap
 from swc.aeon.io import reader
 from swc.aeon.io.api import aeon as aeon_time
 from swc.aeon.io.api import chunk as aeon_chunk
-from swc.aeon.schema import core, Device, Stream, StreamGroup
+from swc.aeon.schema import Device, Stream, StreamGroup, core
 
 from aeon.schema import foraging, octagon, social_01, social_02, social_03
 

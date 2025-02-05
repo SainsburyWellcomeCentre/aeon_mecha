@@ -4,7 +4,7 @@ from enum import Enum
 
 import pandas as pd
 from swc.aeon.io import reader
-from swc.aeon.schema import core, Stream, StreamGroup
+from swc.aeon.schema import Stream, StreamGroup, core
 
 
 class Area(Enum):
