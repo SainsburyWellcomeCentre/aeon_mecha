@@ -1,5 +1,5 @@
-"""
-Script to fix the anchor part of the fullpose SLEAP entries.
+"""Script to fix the anchor part of the fullpose SLEAP entries.
+
 See this commit: https://github.com/SainsburyWellcomeCentre/aeon_mecha/commit/8358ce4b6923918920efb77d09adc769721dbb9b
 
 Last run: ---
@@ -14,6 +14,7 @@ io_api = acquisition.io_api
 
 
 def update_anchor_part(key):
+    """Update the anchor part of the fullpose SLEAP entries for one SLEAPTracking `key`."""
     chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
 
     data_dirs = acquisition.Experiment.get_data_directories(key)
@@ -32,9 +33,10 @@ def update_anchor_part(key):
     # special ingestion case for social0.2 full-pose data (using Pose reader from social03)
     # fullpose for social0.2 has a different "pattern" for non-fullpose, hence the Pose03 reader
     if key["experiment_name"].startswith("social0.2"):
-        from aeon.io import reader as io_reader
+        from swc.aeon.io import reader as io_reader
         stream_reader = getattr(getattr(devices_schema, device_name), "Pose03")
-        assert isinstance(stream_reader, io_reader.Pose), "Pose03 is not a Pose reader"
+        if not isinstance(stream_reader, io_reader.Pose):
+            raise TypeError("Pose03 is not a Pose reader")
         data_dirs = [acquisition.Experiment.get_data_directory(key, "processed")]
 
     pose_data = io_api.load(
@@ -59,6 +61,7 @@ def update_anchor_part(key):
 
 
 def main():
+    """Calling `update_anchor_part` for all SLEAPTracking entries."""
     keys = tracking.SLEAPTracking.fetch("KEY")
     for key in tqdm(keys):
         update_anchor_part(key)

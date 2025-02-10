@@ -12,18 +12,18 @@ import plotly
 import plotly.express as px
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
+from swc.aeon.analysis import utils as analysis_utils
+from swc.aeon.io import api as io_api
 
-from aeon.analysis import utils as analysis_utils
-from aeon.analysis.block_plotting import (
+from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, subject, tracking
+from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
+from aeon.dj_pipeline.utils.block_plotting import (
     conv2d,
     gen_hex_grad,
     gen_patch_style_dict,
     gen_subject_colors_dict,
     subject_colors,
 )
-from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, subject, tracking
-from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
-from aeon.io import api as io_api
 
 schema = dj.schema(get_schema_name("block_analysis"))
 logger = dj.logger

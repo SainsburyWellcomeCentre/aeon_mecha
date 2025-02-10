@@ -3,10 +3,8 @@
 from enum import Enum
 
 import pandas as pd
-
-import aeon.io.reader as _reader
-import aeon.schema.core as _stream
-from aeon.schema.streams import Stream, StreamGroup
+from swc.aeon.io import reader
+from swc.aeon.schema import Stream, StreamGroup, core
 
 
 class Area(Enum):
@@ -18,7 +16,7 @@ class Area(Enum):
     Patch2 = 5
 
 
-class _RegionReader(_reader.Harp):
+class _RegionReader(reader.Harp):
     def __init__(self, pattern):
         """Initializes the RegionReader class."""
         super().__init__(pattern, columns=["region"])
@@ -30,7 +28,7 @@ class _RegionReader(_reader.Harp):
         return data
 
 
-class _PatchState(_reader.Csv):
+class _PatchState(reader.Csv):
     """Extracts patch state data for linear depletion foraging patches.
 
     Columns:
@@ -44,7 +42,7 @@ class _PatchState(_reader.Csv):
         super().__init__(pattern, columns=["threshold", "d1", "delta"])
 
 
-class _Weight(_reader.Harp):
+class _Weight(reader.Harp):
     """Extract weight measurements from an electronic weighing device.
 
     Columns:
@@ -87,7 +85,7 @@ class BeamBreak(Stream):
 
     def __init__(self, pattern):
         """Initializes the BeamBreak stream."""
-        super().__init__(_reader.BitmaskEvent(f"{pattern}_32_*", 0x22, "PelletDetected"))
+        super().__init__(reader.BitmaskEvent(f"{pattern}_32_*", 0x22, "PelletDetected"))
 
 
 class DeliverPellet(Stream):
@@ -95,7 +93,7 @@ class DeliverPellet(Stream):
 
     def __init__(self, pattern):
         """Initializes the DeliverPellet stream."""
-        super().__init__(_reader.BitmaskEvent(f"{pattern}_35_*", 0x01, "TriggerPellet"))
+        super().__init__(reader.BitmaskEvent(f"{pattern}_35_*", 0x01, "TriggerPellet"))
 
 
 class Patch(StreamGroup):
@@ -103,7 +101,7 @@ class Patch(StreamGroup):
 
     def __init__(self, pattern):
         """Initializes the Patch stream group."""
-        super().__init__(pattern, DepletionFunction, _stream.Encoder, Feeder)
+        super().__init__(pattern, DepletionFunction, core.Encoder, Feeder)
 
 
 class Weight(StreamGroup):
@@ -143,4 +141,4 @@ class SessionData(Stream):
 
     def __init__(self, pattern):
         """Initializes the SessionData stream."""
-        super().__init__(_reader.Csv(f"{pattern}_2*", columns=["id", "weight", "event"]))
+        super().__init__(reader.Csv(f"{pattern}_2*", columns=["id", "weight", "event"]))

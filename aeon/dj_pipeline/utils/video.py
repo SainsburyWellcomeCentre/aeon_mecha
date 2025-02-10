@@ -5,10 +5,9 @@ from pathlib import Path
 
 import cv2
 import pandas as pd
-
-import aeon.io.reader as io_reader
-from aeon.io import api as io_api
-from aeon.io import video as io_video
+import swc.aeon.io.reader as io_reader
+from swc.aeon.io import api as io_api
+from swc.aeon.io import video as io_video
 
 
 def retrieve_video_frames(

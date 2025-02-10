@@ -10,10 +10,10 @@ from pathlib import Path
 import datajoint as dj
 import numpy as np
 from dotmap import DotMap
+from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import dict_to_uuid
 from aeon.dj_pipeline.utils import streams_maker
-from aeon.io import api as io_api
 
 logger = dj.logger
 _weight_scale_rate = 100
@@ -431,7 +431,7 @@ def get_device_mapper(devices_schema: DotMap, metadata_yml_filepath: Path):
         device_sn (dict): {"device_name", "serial_number"}
          e.g. {'CameraTop': '21053810'}
     """
-    from aeon.io import api as io_api
+    from swc.aeon.io import api as io_api
 
     metadata_yml_filepath = Path(metadata_yml_filepath)
     meta_data = (

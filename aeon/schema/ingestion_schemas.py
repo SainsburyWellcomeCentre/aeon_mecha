@@ -3,13 +3,12 @@ from os import PathLike
 
 import pandas as pd
 from dotmap import DotMap
+from swc.aeon.io import reader
+from swc.aeon.io.api import aeon as aeon_time
+from swc.aeon.io.api import chunk as aeon_chunk
+from swc.aeon.schema import Device, Stream, StreamGroup, core
 
-import aeon.schema.core as stream
-from aeon.io import reader
-from aeon.io.api import aeon as aeon_time
-from aeon.io.api import chunk as aeon_chunk
 from aeon.schema import foraging, octagon, social_01, social_02, social_03
-from aeon.schema.streams import Device, Stream, StreamGroup
 
 
 # Define new readers
@@ -76,10 +75,10 @@ class Patch(StreamGroup):
 # Define schemas
 octagon01 = DotMap(
     [
-        Device("Metadata", stream.Metadata),
-        Device("CameraTop", Video, stream.Position),
+        Device("Metadata", core.Metadata),
+        Device("CameraTop", Video, core.Position),
         Device("CameraColorTop", Video),
-        Device("ExperimentalMetadata", stream.SubjectState),
+        Device("ExperimentalMetadata", core.SubjectState),
         Device("Photodiode", octagon.Photodiode),
         Device("OSC", octagon.OSC),
         Device("TaskLogic", octagon.TaskLogic),
@@ -97,7 +96,7 @@ octagon01 = DotMap(
 exp01 = DotMap(
     [
         Device("SessionData", foraging.SessionData),
-        Device("FrameTop", Video, stream.Position),
+        Device("FrameTop", Video, core.Position),
         Device("FrameEast", Video),
         Device("FrameGate", Video),
         Device("FrameNorth", Video),
@@ -112,9 +111,9 @@ exp01 = DotMap(
 
 exp02 = DotMap(
     [
-        Device("Metadata", stream.Metadata),
-        Device("ExperimentalMetadata", stream.Environment, stream.MessageLog),
-        Device("CameraTop", Video, stream.Position, foraging.Region),
+        Device("Metadata", core.Metadata),
+        Device("ExperimentalMetadata", core.Environment, core.MessageLog),
+        Device("CameraTop", Video, core.Position, foraging.Region),
         Device("CameraEast", Video),
         Device("CameraNest", Video),
         Device("CameraNorth", Video),
@@ -130,9 +129,9 @@ exp02 = DotMap(
 
 social01 = DotMap(
     [
-        Device("Metadata", stream.Metadata),
+        Device("Metadata", core.Metadata),
         Device("Environment", social_02.Environment, social_02.SubjectData),
-        Device("CameraTop", Video, stream.Position, social_01.Pose),
+        Device("CameraTop", Video, core.Position, social_01.Pose),
         Device("CameraNorth", Video),
         Device("CameraSouth", Video),
         Device("CameraEast", Video),
@@ -157,9 +156,9 @@ social01 = DotMap(
 
 social02 = DotMap(
     [
-        Device("Metadata", stream.Metadata),
+        Device("Metadata", core.Metadata),
         Device("Environment", social_02.Environment, social_02.SubjectData),
-        Device("CameraTop", Video, stream.Position, social_02.Pose, social_02.Pose03),
+        Device("CameraTop", Video, core.Position, social_02.Pose, social_02.Pose03),
         Device("CameraNorth", Video),
         Device("CameraSouth", Video),
         Device("CameraEast", Video),
@@ -184,9 +183,9 @@ social02 = DotMap(
 
 social03 = DotMap(
     [
-        Device("Metadata", stream.Metadata),
+        Device("Metadata", core.Metadata),
         Device("Environment", social_02.Environment, social_02.SubjectData),
-        Device("CameraTop", Video, stream.Position, social_03.Pose),
+        Device("CameraTop", Video, core.Position, social_03.Pose),
         Device("CameraNorth", Video),
         Device("CameraSouth", Video),
         Device("CameraEast", Video),
@@ -215,12 +214,12 @@ social03 = DotMap(
 
 social04 = DotMap(
     [
-        Device("Metadata", stream.Metadata),
+        Device("Metadata", core.Metadata),
         Device("Environment",
                social_02.Environment,
                social_02.SubjectData,
                social_03.EnvironmentActiveConfiguration),
-        Device("CameraTop", Video, stream.Position, social_03.Pose),
+        Device("CameraTop", Video, core.Position, social_03.Pose),
         Device("CameraNorth", Video),
         Device("CameraSouth", Video),
         Device("CameraEast", Video),

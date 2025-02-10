@@ -505,8 +505,8 @@ def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
 
 
 def associate_subject_and_experiment(subject_name):
-    """
-    Check SubjectComment for experiment name for which the animal is participating in.
+    """Check SubjectComment for experiment name for which the animal is participating in.
+
     The expected comment format is "experiment: <experiment_name>".
     E.g. "experiment: social0.3-aeon3"
     Note: this function many need to run repeatedly to catch all experiments/animals.
