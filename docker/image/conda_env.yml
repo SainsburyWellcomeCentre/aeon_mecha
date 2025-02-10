@@ -6,9 +6,4 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python>=3.11
-  - graphviz
-  - python-graphviz
-  - pydotplus
-  - nb_conda_kernels
-  - ipykernel
+  - python>=3.11,<3.13
