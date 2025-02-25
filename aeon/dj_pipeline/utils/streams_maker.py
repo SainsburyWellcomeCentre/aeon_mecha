@@ -7,12 +7,12 @@ from pathlib import Path
 
 import datajoint as dj
 import pandas as pd
-
 import swc
-import aeon
-from aeon.dj_pipeline import acquisition, get_schema_name
 from swc.aeon.io import api as io_api
 from swc.aeon.io import reader as io_reader
+
+import aeon
+from aeon.dj_pipeline import acquisition, get_schema_name
 
 aeon_schemas = acquisition.aeon_schemas
 
@@ -77,7 +77,7 @@ def get_device_template(device_type: str):
     device_type = dj.utils.from_camel_case(device_type)
 
     class ExperimentDevice(dj.Manual):
-        definition = f"""# {device_title} operation for time,location, experiment (v{aeon.__version__})
+        definition = """ # {device_title} operation for time, location, experiment (v-{aeon.__version__})
         -> acquisition.Experiment
         -> Device
         {device_type}_install_time : datetime(6)  # {device_type} time of placement and start operation
@@ -94,7 +94,7 @@ def get_device_template(device_type: str):
             """
 
         class RemovalTime(dj.Part):
-            definition = f"""
+            definition = """
             -> master
             ---
             {device_type}_removal_time: datetime(6)  # time of the {device_type} being removed
@@ -125,8 +125,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
     stream = reader(**stream_detail["stream_reader_kwargs"])
 
-    ver = aeon.__version__
-    table_definition = f""" # Raw per-chunk {stream_type} from {device_type}(auto-generated with v{ver})
+    table_definition = f""" # Raw per-chunk {stream_type} from {device_type} (v-{aeon.__version__})
     -> {device_type}
     -> acquisition.Chunk
     ---
@@ -145,17 +144,16 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
         @property
         def key_source(self):
-            docstring = f"""Only the combination of Chunk and {device_type} with overlapping time.
+            docstring = """Only the combination of Chunk and {device_type} with overlapping time.
 
             + Chunk(s) started after {device_type} install time & ended before {device_type} remove time
             + Chunk(s) started after {device_type} install time for {device_type} and not yet removed
             """
             self.__doc__ = docstring
-            device_type_name = dj.utils.from_camel_case(device_type)
             return (
                 acquisition.Chunk * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
-                & f"chunk_start >= {device_type_name}_install_time"
-                & f'chunk_start < IFNULL({device_type_name}_removal_time,"2200-01-01")'
+                & "chunk_start >= {device_type_name}_install_time"
+                & 'chunk_start < IFNULL({device_type_name}_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
@@ -163,7 +161,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (ExperimentDevice & key).fetch1(f"{dj.utils.from_camel_case(device_type)}_name")
+            device_name = (ExperimentDevice & key).fetch1("{device_type_name}_name")
 
             devices_schema = getattr(
                 aeon_schemas,
@@ -278,22 +276,12 @@ def main(create_tables=True):
             replacements = {
                 "DeviceDataStream": f"{device_type}{stream_type}",
                 "ExperimentDevice": device_type,
-                'f"chunk_start >= {device_type_name}_install_time"': (
-                    f"'chunk_start >= {device_type_name}_install_time'"
-                ),
-                """f'chunk_start < IFNULL({device_type_name}_removal_time, "2200-01-01")'""": (
-                    f"""'chunk_start < IFNULL({device_type_name}_removal_time,"2200-01-01")'"""
-                ),
-                'f"{device_type_name}_name"': (
-                    f"'{device_type_name}_name'"
-                ),
+                "{device_type_name}": device_type_name,
                 "{device_type}": device_type,
                 "{stream_type}": stream_type,
                 "{aeon.__version__}": aeon.__version__,
+                "table_definition": f'"""{table_definition}"""',
             }
-
-            replacements["table_definition"] = '"""' + table_definition + '"""'
-
             for old, new in replacements.items():
                 device_stream_table_def = device_stream_table_def.replace(old, new)
 
