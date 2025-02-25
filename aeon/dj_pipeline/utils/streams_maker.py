@@ -144,12 +144,12 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
         @property
         def key_source(self):
-            docstring = """Only the combination of Chunk and {device_type} with overlapping time.
+            """Only the combination of Chunk and {device_type} with overlapping time.
 
             + Chunk(s) started after {device_type} install time & ended before {device_type} remove time
             + Chunk(s) started after {device_type} install time for {device_type} and not yet removed
             """
-            self.__doc__ = docstring
+
             return (
                 acquisition.Chunk * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
                 & "chunk_start >= {device_type_name}_install_time"
