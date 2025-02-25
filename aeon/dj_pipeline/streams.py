@@ -17,12 +17,18 @@ schema = dj.Schema(get_schema_name("streams"))
 
 @schema 
 class StreamType(dj.Lookup):
-    """Catalog of all steam types for the different device types used across Project Aeon. One StreamType corresponds to one reader class in `aeon.io.reader`. The combination of `stream_reader` and `stream_reader_kwargs` should fully specify the data loading routine for a particular device, using the `aeon.io.utils`."""
+    """Catalog of all stream types used across Project Aeon.
 
-    definition = """  # Catalog of all stream types used across Project Aeon
+    Catalog of all stream types for the different device types used across Project Aeon.
+    One StreamType corresponds to one Reader class in :mod:`aeon.io.reader`.
+    The combination of ``stream_reader`` and ``stream_reader_kwargs`` should fully specify the data
+    loading routine for a particular device, using :func:`aeon.io.api.load`.
+    """
+
+    definition = """ # Catalog of all stream types used across Project Aeon
     stream_type          : varchar(36)
     ---
-    stream_reader        : varchar(256)     # name of the reader class found in `aeon_mecha` package (e.g. aeon.io.reader.Video)
+    stream_reader        : varchar(256) # reader class name in aeon.io.reader (e.g. aeon.io.reader.Video)
     stream_reader_kwargs : longblob  # keyword arguments to instantiate the reader class
     stream_description='': varchar(256)
     stream_hash          : uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
@@ -57,17 +63,16 @@ class Device(dj.Lookup):
 
 @schema 
 class RfidReader(dj.Manual):
-        definition = f"""
-        # rfid_reader placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
+        definition = """ # rfid_reader operation for time, location, experiment (v-unknown)
         -> acquisition.Experiment
         -> Device
-        rfid_reader_install_time  : datetime(6)   # time of the rfid_reader placed and started operation at this position
+        rfid_reader_install_time : datetime(6)  # rfid_reader time of placement and start operation
         ---
-        rfid_reader_name          : varchar(36)
+        rfid_reader_name         : varchar(36)
         """
 
         class Attribute(dj.Part):
-            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
+            definition = """  # Metadata (e.g. FPS, config, calibration) for this experimental device
             -> master
             attribute_name          : varchar(32)
             ---
@@ -75,7 +80,7 @@ class RfidReader(dj.Manual):
             """
 
         class RemovalTime(dj.Part):
-            definition = f"""
+            definition = """
             -> master
             ---
             rfid_reader_removal_time: datetime(6)  # time of the rfid_reader being removed
@@ -84,17 +89,16 @@ class RfidReader(dj.Manual):
 
 @schema 
 class SpinnakerVideoSource(dj.Manual):
-        definition = f"""
-        # spinnaker_video_source placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
+        definition = """ # spinnaker_video_source operation for time, location, experiment (v-unknown)
         -> acquisition.Experiment
         -> Device
-        spinnaker_video_source_install_time  : datetime(6)   # time of the spinnaker_video_source placed and started operation at this position
+        spinnaker_video_source_install_time : datetime(6)  # spinnaker_video_source time of placement and start operation
         ---
-        spinnaker_video_source_name          : varchar(36)
+        spinnaker_video_source_name         : varchar(36)
         """
 
         class Attribute(dj.Part):
-            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
+            definition = """  # Metadata (e.g. FPS, config, calibration) for this experimental device
             -> master
             attribute_name          : varchar(32)
             ---
@@ -102,7 +106,7 @@ class SpinnakerVideoSource(dj.Manual):
             """
 
         class RemovalTime(dj.Part):
-            definition = f"""
+            definition = """
             -> master
             ---
             spinnaker_video_source_removal_time: datetime(6)  # time of the spinnaker_video_source being removed
@@ -111,17 +115,16 @@ class SpinnakerVideoSource(dj.Manual):
 
 @schema 
 class UndergroundFeeder(dj.Manual):
-        definition = f"""
-        # underground_feeder placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
+        definition = """ # underground_feeder operation for time, location, experiment (v-unknown)
         -> acquisition.Experiment
         -> Device
-        underground_feeder_install_time  : datetime(6)   # time of the underground_feeder placed and started operation at this position
+        underground_feeder_install_time : datetime(6)  # underground_feeder time of placement and start operation
         ---
-        underground_feeder_name          : varchar(36)
+        underground_feeder_name         : varchar(36)
         """
 
         class Attribute(dj.Part):
-            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
+            definition = """  # Metadata (e.g. FPS, config, calibration) for this experimental device
             -> master
             attribute_name          : varchar(32)
             ---
@@ -129,7 +132,7 @@ class UndergroundFeeder(dj.Manual):
             """
 
         class RemovalTime(dj.Part):
-            definition = f"""
+            definition = """
             -> master
             ---
             underground_feeder_removal_time: datetime(6)  # time of the underground_feeder being removed
@@ -138,17 +141,16 @@ class UndergroundFeeder(dj.Manual):
 
 @schema 
 class WeightScale(dj.Manual):
-        definition = f"""
-        # weight_scale placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-unknown)
+        definition = """ # weight_scale operation for time, location, experiment (v-unknown)
         -> acquisition.Experiment
         -> Device
-        weight_scale_install_time  : datetime(6)   # time of the weight_scale placed and started operation at this position
+        weight_scale_install_time : datetime(6)  # weight_scale time of placement and start operation
         ---
-        weight_scale_name          : varchar(36)
+        weight_scale_name         : varchar(36)
         """
 
         class Attribute(dj.Part):
-            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
+            definition = """  # Metadata (e.g. FPS, config, calibration) for this experimental device
             -> master
             attribute_name          : varchar(32)
             ---
@@ -156,7 +158,7 @@ class WeightScale(dj.Manual):
             """
 
         class RemovalTime(dj.Part):
-            definition = f"""
+            definition = """
             -> master
             ---
             weight_scale_removal_time: datetime(6)  # time of the weight_scale being removed
@@ -165,7 +167,7 @@ class WeightScale(dj.Manual):
 
 @schema 
 class RfidReaderRfidEvents(dj.Imported):
-        definition = """  # Raw per-chunk RfidEvents data stream from RfidReader (auto-generated with aeon_mecha-unknown)
+        definition = """ # Raw per-chunk RfidEvents from RfidReader (v-unknown)
     -> RfidReader
     -> acquisition.Chunk
     ---
@@ -176,22 +178,24 @@ class RfidReaderRfidEvents(dj.Imported):
 
         @property
         def key_source(self):
-            f"""
-            Only the combination of Chunk and RfidReader with overlapping time
-            +  Chunk(s) that started after RfidReader install time and ended before RfidReader remove time
-            +  Chunk(s) that started after RfidReader install time for RfidReader that are not yet removed
+            """Only the combination of Chunk and RfidReader with overlapping time.
+
+            + Chunk(s) started after RfidReader install time & ended before RfidReader remove time
+            + Chunk(s) started after RfidReader install time for RfidReader and not yet removed
             """
+
             return (
                 acquisition.Chunk * RfidReader.join(RfidReader.RemovalTime, left=True)
-                & 'chunk_start >= rfid_reader_install_time'
-                & 'chunk_start < IFNULL(rfid_reader_removal_time, "2200-01-01")'
+                & "chunk_start >= rfid_reader_install_time"
+                & 'chunk_start < IFNULL(rfid_reader_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
+            """Load and insert the data for the RfidReaderRfidEvents table."""
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (RfidReader & key).fetch1('rfid_reader_name')
+            device_name = (RfidReader & key).fetch1("rfid_reader_name")
 
             devices_schema = getattr(
                 aeon_schemas,
@@ -225,7 +229,7 @@ class RfidReaderRfidEvents(dj.Imported):
 
 @schema 
 class SpinnakerVideoSourceVideo(dj.Imported):
-        definition = """  # Raw per-chunk Video data stream from SpinnakerVideoSource (auto-generated with aeon_mecha-unknown)
+        definition = """ # Raw per-chunk Video from SpinnakerVideoSource (v-unknown)
     -> SpinnakerVideoSource
     -> acquisition.Chunk
     ---
@@ -236,22 +240,24 @@ class SpinnakerVideoSourceVideo(dj.Imported):
 
         @property
         def key_source(self):
-            f"""
-            Only the combination of Chunk and SpinnakerVideoSource with overlapping time
-            +  Chunk(s) that started after SpinnakerVideoSource install time and ended before SpinnakerVideoSource remove time
-            +  Chunk(s) that started after SpinnakerVideoSource install time for SpinnakerVideoSource that are not yet removed
+            """Only the combination of Chunk and SpinnakerVideoSource with overlapping time.
+
+            + Chunk(s) started after SpinnakerVideoSource install time & ended before SpinnakerVideoSource remove time
+            + Chunk(s) started after SpinnakerVideoSource install time for SpinnakerVideoSource and not yet removed
             """
+
             return (
                 acquisition.Chunk * SpinnakerVideoSource.join(SpinnakerVideoSource.RemovalTime, left=True)
-                & 'chunk_start >= spinnaker_video_source_install_time'
-                & 'chunk_start < IFNULL(spinnaker_video_source_removal_time, "2200-01-01")'
+                & "chunk_start >= spinnaker_video_source_install_time"
+                & 'chunk_start < IFNULL(spinnaker_video_source_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
+            """Load and insert the data for the SpinnakerVideoSourceVideo table."""
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (SpinnakerVideoSource & key).fetch1('spinnaker_video_source_name')
+            device_name = (SpinnakerVideoSource & key).fetch1("spinnaker_video_source_name")
 
             devices_schema = getattr(
                 aeon_schemas,
@@ -285,7 +291,7 @@ class SpinnakerVideoSourceVideo(dj.Imported):
 
 @schema 
 class UndergroundFeederBeamBreak(dj.Imported):
-        definition = """  # Raw per-chunk BeamBreak data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+        definition = """ # Raw per-chunk BeamBreak from UndergroundFeeder (v-unknown)
     -> UndergroundFeeder
     -> acquisition.Chunk
     ---
@@ -296,22 +302,24 @@ class UndergroundFeederBeamBreak(dj.Imported):
 
         @property
         def key_source(self):
-            f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+            """Only the combination of Chunk and UndergroundFeeder with overlapping time.
+
+            + Chunk(s) started after UndergroundFeeder install time & ended before UndergroundFeeder remove time
+            + Chunk(s) started after UndergroundFeeder install time for UndergroundFeeder and not yet removed
             """
+
             return (
                 acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
-                & 'chunk_start >= underground_feeder_install_time'
-                & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
+                & "chunk_start >= underground_feeder_install_time"
+                & 'chunk_start < IFNULL(underground_feeder_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
+            """Load and insert the data for the UndergroundFeederBeamBreak table."""
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
+            device_name = (UndergroundFeeder & key).fetch1("underground_feeder_name")
 
             devices_schema = getattr(
                 aeon_schemas,
@@ -345,7 +353,7 @@ class UndergroundFeederBeamBreak(dj.Imported):
 
 @schema 
 class UndergroundFeederDeliverPellet(dj.Imported):
-        definition = """  # Raw per-chunk DeliverPellet data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+        definition = """ # Raw per-chunk DeliverPellet from UndergroundFeeder (v-unknown)
     -> UndergroundFeeder
     -> acquisition.Chunk
     ---
@@ -356,22 +364,24 @@ class UndergroundFeederDeliverPellet(dj.Imported):
 
         @property
         def key_source(self):
-            f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+            """Only the combination of Chunk and UndergroundFeeder with overlapping time.
+
+            + Chunk(s) started after UndergroundFeeder install time & ended before UndergroundFeeder remove time
+            + Chunk(s) started after UndergroundFeeder install time for UndergroundFeeder and not yet removed
             """
+
             return (
                 acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
-                & 'chunk_start >= underground_feeder_install_time'
-                & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
+                & "chunk_start >= underground_feeder_install_time"
+                & 'chunk_start < IFNULL(underground_feeder_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
+            """Load and insert the data for the UndergroundFeederDeliverPellet table."""
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
+            device_name = (UndergroundFeeder & key).fetch1("underground_feeder_name")
 
             devices_schema = getattr(
                 aeon_schemas,
@@ -405,7 +415,7 @@ class UndergroundFeederDeliverPellet(dj.Imported):
 
 @schema 
 class UndergroundFeederDepletionState(dj.Imported):
-        definition = """  # Raw per-chunk DepletionState data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+        definition = """ # Raw per-chunk DepletionState from UndergroundFeeder (v-unknown)
     -> UndergroundFeeder
     -> acquisition.Chunk
     ---
@@ -418,22 +428,24 @@ class UndergroundFeederDepletionState(dj.Imported):
 
         @property
         def key_source(self):
-            f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+            """Only the combination of Chunk and UndergroundFeeder with overlapping time.
+
+            + Chunk(s) started after UndergroundFeeder install time & ended before UndergroundFeeder remove time
+            + Chunk(s) started after UndergroundFeeder install time for UndergroundFeeder and not yet removed
             """
+
             return (
                 acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
-                & 'chunk_start >= underground_feeder_install_time'
-                & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
+                & "chunk_start >= underground_feeder_install_time"
+                & 'chunk_start < IFNULL(underground_feeder_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
+            """Load and insert the data for the UndergroundFeederDepletionState table."""
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
+            device_name = (UndergroundFeeder & key).fetch1("underground_feeder_name")
 
             devices_schema = getattr(
                 aeon_schemas,
@@ -467,7 +479,7 @@ class UndergroundFeederDepletionState(dj.Imported):
 
 @schema 
 class UndergroundFeederEncoder(dj.Imported):
-        definition = """  # Raw per-chunk Encoder data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+        definition = """ # Raw per-chunk Encoder from UndergroundFeeder (v-unknown)
     -> UndergroundFeeder
     -> acquisition.Chunk
     ---
@@ -479,22 +491,24 @@ class UndergroundFeederEncoder(dj.Imported):
 
         @property
         def key_source(self):
-            f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+            """Only the combination of Chunk and UndergroundFeeder with overlapping time.
+
+            + Chunk(s) started after UndergroundFeeder install time & ended before UndergroundFeeder remove time
+            + Chunk(s) started after UndergroundFeeder install time for UndergroundFeeder and not yet removed
             """
+
             return (
                 acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
-                & 'chunk_start >= underground_feeder_install_time'
-                & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
+                & "chunk_start >= underground_feeder_install_time"
+                & 'chunk_start < IFNULL(underground_feeder_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
+            """Load and insert the data for the UndergroundFeederEncoder table."""
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
+            device_name = (UndergroundFeeder & key).fetch1("underground_feeder_name")
 
             devices_schema = getattr(
                 aeon_schemas,
@@ -528,7 +542,7 @@ class UndergroundFeederEncoder(dj.Imported):
 
 @schema 
 class UndergroundFeederManualDelivery(dj.Imported):
-        definition = """  # Raw per-chunk ManualDelivery data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+        definition = """ # Raw per-chunk ManualDelivery from UndergroundFeeder (v-unknown)
     -> UndergroundFeeder
     -> acquisition.Chunk
     ---
@@ -539,22 +553,24 @@ class UndergroundFeederManualDelivery(dj.Imported):
 
         @property
         def key_source(self):
-            f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+            """Only the combination of Chunk and UndergroundFeeder with overlapping time.
+
+            + Chunk(s) started after UndergroundFeeder install time & ended before UndergroundFeeder remove time
+            + Chunk(s) started after UndergroundFeeder install time for UndergroundFeeder and not yet removed
             """
+
             return (
                 acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
-                & 'chunk_start >= underground_feeder_install_time'
-                & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
+                & "chunk_start >= underground_feeder_install_time"
+                & 'chunk_start < IFNULL(underground_feeder_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
+            """Load and insert the data for the UndergroundFeederManualDelivery table."""
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
+            device_name = (UndergroundFeeder & key).fetch1("underground_feeder_name")
 
             devices_schema = getattr(
                 aeon_schemas,
@@ -588,7 +604,7 @@ class UndergroundFeederManualDelivery(dj.Imported):
 
 @schema 
 class UndergroundFeederMissedPellet(dj.Imported):
-        definition = """  # Raw per-chunk MissedPellet data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+        definition = """ # Raw per-chunk MissedPellet from UndergroundFeeder (v-unknown)
     -> UndergroundFeeder
     -> acquisition.Chunk
     ---
@@ -599,22 +615,24 @@ class UndergroundFeederMissedPellet(dj.Imported):
 
         @property
         def key_source(self):
-            f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+            """Only the combination of Chunk and UndergroundFeeder with overlapping time.
+
+            + Chunk(s) started after UndergroundFeeder install time & ended before UndergroundFeeder remove time
+            + Chunk(s) started after UndergroundFeeder install time for UndergroundFeeder and not yet removed
             """
+
             return (
                 acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
-                & 'chunk_start >= underground_feeder_install_time'
-                & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
+                & "chunk_start >= underground_feeder_install_time"
+                & 'chunk_start < IFNULL(underground_feeder_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
+            """Load and insert the data for the UndergroundFeederMissedPellet table."""
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
+            device_name = (UndergroundFeeder & key).fetch1("underground_feeder_name")
 
             devices_schema = getattr(
                 aeon_schemas,
@@ -648,7 +666,7 @@ class UndergroundFeederMissedPellet(dj.Imported):
 
 @schema 
 class UndergroundFeederRetriedDelivery(dj.Imported):
-        definition = """  # Raw per-chunk RetriedDelivery data stream from UndergroundFeeder (auto-generated with aeon_mecha-unknown)
+        definition = """ # Raw per-chunk RetriedDelivery from UndergroundFeeder (v-unknown)
     -> UndergroundFeeder
     -> acquisition.Chunk
     ---
@@ -659,22 +677,24 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
 
         @property
         def key_source(self):
-            f"""
-            Only the combination of Chunk and UndergroundFeeder with overlapping time
-            +  Chunk(s) that started after UndergroundFeeder install time and ended before UndergroundFeeder remove time
-            +  Chunk(s) that started after UndergroundFeeder install time for UndergroundFeeder that are not yet removed
+            """Only the combination of Chunk and UndergroundFeeder with overlapping time.
+
+            + Chunk(s) started after UndergroundFeeder install time & ended before UndergroundFeeder remove time
+            + Chunk(s) started after UndergroundFeeder install time for UndergroundFeeder and not yet removed
             """
+
             return (
                 acquisition.Chunk * UndergroundFeeder.join(UndergroundFeeder.RemovalTime, left=True)
-                & 'chunk_start >= underground_feeder_install_time'
-                & 'chunk_start < IFNULL(underground_feeder_removal_time, "2200-01-01")'
+                & "chunk_start >= underground_feeder_install_time"
+                & 'chunk_start < IFNULL(underground_feeder_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
+            """Load and insert the data for the UndergroundFeederRetriedDelivery table."""
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (UndergroundFeeder & key).fetch1('underground_feeder_name')
+            device_name = (UndergroundFeeder & key).fetch1("underground_feeder_name")
 
             devices_schema = getattr(
                 aeon_schemas,
@@ -708,7 +728,7 @@ class UndergroundFeederRetriedDelivery(dj.Imported):
 
 @schema 
 class WeightScaleWeightFiltered(dj.Imported):
-        definition = """  # Raw per-chunk WeightFiltered data stream from WeightScale (auto-generated with aeon_mecha-unknown)
+        definition = """ # Raw per-chunk WeightFiltered from WeightScale (v-unknown)
     -> WeightScale
     -> acquisition.Chunk
     ---
@@ -720,22 +740,24 @@ class WeightScaleWeightFiltered(dj.Imported):
 
         @property
         def key_source(self):
-            f"""
-            Only the combination of Chunk and WeightScale with overlapping time
-            +  Chunk(s) that started after WeightScale install time and ended before WeightScale remove time
-            +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed
+            """Only the combination of Chunk and WeightScale with overlapping time.
+
+            + Chunk(s) started after WeightScale install time & ended before WeightScale remove time
+            + Chunk(s) started after WeightScale install time for WeightScale and not yet removed
             """
+
             return (
                 acquisition.Chunk * WeightScale.join(WeightScale.RemovalTime, left=True)
-                & 'chunk_start >= weight_scale_install_time'
-                & 'chunk_start < IFNULL(weight_scale_removal_time, "2200-01-01")'
+                & "chunk_start >= weight_scale_install_time"
+                & 'chunk_start < IFNULL(weight_scale_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
+            """Load and insert the data for the WeightScaleWeightFiltered table."""
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (WeightScale & key).fetch1('weight_scale_name')
+            device_name = (WeightScale & key).fetch1("weight_scale_name")
 
             devices_schema = getattr(
                 aeon_schemas,
@@ -769,7 +791,7 @@ class WeightScaleWeightFiltered(dj.Imported):
 
 @schema 
 class WeightScaleWeightRaw(dj.Imported):
-        definition = """  # Raw per-chunk WeightRaw data stream from WeightScale (auto-generated with aeon_mecha-unknown)
+        definition = """ # Raw per-chunk WeightRaw from WeightScale (v-unknown)
     -> WeightScale
     -> acquisition.Chunk
     ---
@@ -781,22 +803,24 @@ class WeightScaleWeightRaw(dj.Imported):
 
         @property
         def key_source(self):
-            f"""
-            Only the combination of Chunk and WeightScale with overlapping time
-            +  Chunk(s) that started after WeightScale install time and ended before WeightScale remove time
-            +  Chunk(s) that started after WeightScale install time for WeightScale that are not yet removed
+            """Only the combination of Chunk and WeightScale with overlapping time.
+
+            + Chunk(s) started after WeightScale install time & ended before WeightScale remove time
+            + Chunk(s) started after WeightScale install time for WeightScale and not yet removed
             """
+
             return (
                 acquisition.Chunk * WeightScale.join(WeightScale.RemovalTime, left=True)
-                & 'chunk_start >= weight_scale_install_time'
-                & 'chunk_start < IFNULL(weight_scale_removal_time, "2200-01-01")'
+                & "chunk_start >= weight_scale_install_time"
+                & 'chunk_start < IFNULL(weight_scale_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
+            """Load and insert the data for the WeightScaleWeightRaw table."""
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (WeightScale & key).fetch1('weight_scale_name')
+            device_name = (WeightScale & key).fetch1("weight_scale_name")
 
             devices_schema = getattr(
                 aeon_schemas,
