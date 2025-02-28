@@ -109,9 +109,7 @@ class BlockDetection(dj.Computed):
 
         Block.insert(block_entries, skip_duplicates=True)
         self.insert1({**key, "execution_time": datetime.now(UTC)})
-        self.IdentifiedBlock.insert(
-            {**key, "block_start": entry["block_start"]} for entry in block_entries
-        )
+        self.IdentifiedBlock.insert({**key, "block_start": entry["block_start"]} for entry in block_entries)
 
 
 # ---- Block Analysis and Visualization ----
@@ -325,10 +323,12 @@ class BlockAnalysis(dj.Computed):
                 subject_names.append(subject_name)
 
         # Check for ExperimentTimeline to validate subjects in this block
-        timeline_query = (acquisition.ExperimentTimeline
-                          & acquisition.ExperimentTimeline.Subject
-                          & key
-                          & f"start <= '{block_start}' AND end >= '{block_end}'")
+        timeline_query = (
+            acquisition.ExperimentTimeline
+            & acquisition.ExperimentTimeline.Subject
+            & key
+            & f"start <= '{block_start}' AND end >= '{block_end}'"
+        )
         timeline_subjects = (acquisition.ExperimentTimeline.Subject & timeline_query).fetch("subject")
         if len(timeline_subjects):
             subject_names = [s for s in subject_names if s in timeline_subjects]
@@ -344,14 +344,10 @@ class BlockAnalysis(dj.Computed):
             # positions - query for CameraTop, identity_name matches subject_name,
             if use_blob_position:
                 pos_query = (
-                    streams.SpinnakerVideoSource
-                    * tracking.BlobPosition.Object
+                    streams.SpinnakerVideoSource * tracking.BlobPosition.Object
                     & key
                     & chunk_restriction
-                    & {
-                        "spinnaker_video_source_name": "CameraTop",
-                        "identity_name": subject_name
-                    }
+                    & {"spinnaker_video_source_name": "CameraTop", "identity_name": subject_name}
                 )
                 pos_df = fetch_stream(pos_query)[block_start:block_end]
                 pos_df["likelihood"] = np.nan
@@ -530,10 +526,9 @@ class BlockSubjectAnalysis(dj.Computed):
         rfid2subj_map = {
             int(lab_id): subj_name
             for subj_name, lab_id in zip(
-                *(subject.SubjectDetail.proj("lab_id")
-                  & f"subject in {tuple(list(subject_names) + [''])}").fetch(
-                    "subject", "lab_id"
-                ),
+                *(
+                    subject.SubjectDetail.proj("lab_id") & f"subject in {tuple(list(subject_names) + [''])}"
+                ).fetch("subject", "lab_id"),
                 strict=False,
             )
         }
@@ -1413,8 +1408,7 @@ class BlockSubjectPositionPlots(dj.Computed):
         # ---
         # Get animal position data
         pos_cols = {"x": "position_x", "y": "position_y", "time": "position_timestamps"}
-        centroid_df = (BlockAnalysis.Subject.proj(**pos_cols)
-                       & key).fetch(format="frame").reset_index()
+        centroid_df = (BlockAnalysis.Subject.proj(**pos_cols) & key).fetch(format="frame").reset_index()
         centroid_df.drop(columns=["experiment_name", "block_start"], inplace=True)
         centroid_df = centroid_df.explode(column=list(pos_cols))
         centroid_df.set_index("time", inplace=True)
@@ -1620,10 +1614,13 @@ class BlockSubjectPositionPlots(dj.Computed):
             roi_time = len(roi_timestamps) * 0.1  # 100ms per timestamp
 
             in_roi_entries.append(
-                {**key, "subject_name": subject_name,
-                 "roi_name": roi_name,
-                 "in_roi_time": roi_time,
-                 "in_roi_timestamps": roi_timestamps}
+                {
+                    **key,
+                    "subject_name": subject_name,
+                    "roi_name": roi_name,
+                    "in_roi_time": roi_time,
+                    "in_roi_timestamps": roi_timestamps,
+                }
             )
 
         self.insert1(entry)
@@ -1776,7 +1773,7 @@ def get_threshold_associated_pellets(patch_key, start, end):
             beambreak_df.reset_index().rename(columns={"time": "beam_break_timestamp"}),
             left_on="time",
             right_on="beam_break_timestamp",
-            tolerance=pd.Timedelta("{BTB_MIN_TIME_DIFF}s"),
+            tolerance=pd.Timedelta(f"{BTB_MIN_TIME_DIFF}s"),
             direction="forward",
         )
         .set_index("time")
