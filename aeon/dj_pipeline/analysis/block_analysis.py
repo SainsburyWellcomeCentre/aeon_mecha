@@ -321,7 +321,6 @@ class BlockAnalysis(dj.Computed):
             & f'chunk_start <= "{chunk_keys[-1]["chunk_start"]}"'
         )[:block_start]
         subject_visits_df = subject_visits_df[subject_visits_df.region == "Environment"]
-        subject_visits_df = subject_visits_df[~subject_visits_df.id.str.contains("Test", case=False)]
 
         for subject_name in subject_names:
             _df = subject_visits_df[subject_visits_df.id == subject_name]
