@@ -89,7 +89,6 @@ animals, cameras, food patches setup, etc.
 + These information are either entered by hand, or parsed and inserted from configuration
     yaml files.
 + For experiments these info can be inserted by running
-  + [create_socialexperiment_0](create_experiments/create_socialexperiment_0.py)
   + [create_experiment_02](create_experiments/create_experiment_02.py)
   + [create_socialexperiment](create_experiments/create_socialexperiment.py)
   (just need to do this once)
