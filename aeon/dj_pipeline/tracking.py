@@ -206,7 +206,6 @@ class SLEAPTracking(dj.Imported):
         )
 
         stream_reader = getattr(devices_schema, device_name).Pose
-
         pose_data = io_api.load(
             root=data_dirs,
             reader=stream_reader,
