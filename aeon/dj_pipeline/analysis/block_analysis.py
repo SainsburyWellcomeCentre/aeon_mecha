@@ -312,7 +312,7 @@ class BlockAnalysis(dj.Computed):
         subject_names = (acquisition.Experiment.Subject & key).fetch("subject", order_by="subject")
         if not len(subject_names):
             raise ValueError(
-                "No subjects found in the `acquisition.Experiment.Subject`, missing a manual insert step?."
+                "No subjects found in `acquisition.Experiment.Subject`, missing a manual insert step?"
             )
 
         subject_visits_df = fetch_stream(
