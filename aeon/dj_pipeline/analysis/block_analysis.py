@@ -309,18 +309,23 @@ class BlockAnalysis(dj.Computed):
         # Get all unique subjects that visited the environment over the entire exp;
         # For each subject, see 'type' of visit most recent to start of block
         # If "Exit", this animal was not in the block.
+        subject_names = (acquisition.Experiment.Subject & key).fetch("subject", order_by="subject")
+        if not len(subject_names):
+            raise ValueError(
+                "No subjects found in `acquisition.Experiment.Subject`, missing a manual insert step?"
+            )
+
         subject_visits_df = fetch_stream(
             acquisition.Environment.SubjectVisits
             & key
             & f'chunk_start <= "{chunk_keys[-1]["chunk_start"]}"'
         )[:block_start]
-        subject_visits_df = subject_visits_df[subject_visits_df.region == "Environment"]
-        subject_visits_df = subject_visits_df[~subject_visits_df.id.str.contains("Test", case=False)]
-        subject_names = []
-        for subject_name in set(subject_visits_df.id):
-            _df = subject_visits_df[subject_visits_df.id == subject_name]
-            if _df.type.iloc[-1] != "Exit":
-                subject_names.append(subject_name)
+
+        last_environment_visit = (
+            subject_visits_df[subject_visits_df.region == "Environment"].groupby("id").tail(1)
+        )
+        environment_exit = last_environment_visit[last_environment_visit.type == "Exit"]
+        subject_names = set(subject_names) - set(environment_exit.id)
 
         # Check for ExperimentTimeline to validate subjects in this block
         timeline_query = (
