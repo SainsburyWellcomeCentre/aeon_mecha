@@ -171,16 +171,6 @@ class SLEAPTracking(dj.Imported):
         )
 
         stream_reader = getattr(devices_schema, device_name).Pose
-
-        # special ingestion case for social0.2 full-pose data (using Pose reader from social03)
-        # fullpose for social0.2 has a different "pattern" for non-fullpose, hence the Pose03 reader
-        if key["experiment_name"].startswith("social0.2"):
-            from swc.aeon.io import reader as io_reader
-            stream_reader = getattr(devices_schema, device_name).Pose03
-            if not isinstance(stream_reader, io_reader.Pose):
-                raise TypeError("Pose03 is not a Pose reader")
-            data_dirs = [acquisition.Experiment.get_data_directory(key, "processed")]
-
         pose_data = io_api.load(
             root=data_dirs,
             reader=stream_reader,

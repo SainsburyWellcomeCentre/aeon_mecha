@@ -51,21 +51,21 @@ acquisition_worker = DataJointWorker(
     "acquisition_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    max_idled_cycle=6,
-    sleep_duration=1200,
+    max_idled_cycle=1,
+    sleep_duration=5,
 )
 acquisition_worker(ingest_epochs_chunks)
 acquisition_worker(acquisition.EpochConfig)
 acquisition_worker(acquisition.Environment)
-acquisition_worker(block_analysis.BlockDetection)
+#acquisition_worker(block_analysis.BlockDetection)
 
 # configure a worker to handle pyrat sync
 pyrat_worker = DataJointWorker(
     "pyrat_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    max_idled_cycle=400,
-    sleep_duration=30,
+    max_idled_cycle=1,
+    sleep_duration=5,
 )
 
 pyrat_worker(subject.CreatePyratIngestionTask)
@@ -78,8 +78,8 @@ streams_worker = DataJointWorker(
     "streams_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    max_idled_cycle=50,
-    sleep_duration=60,
+    max_idled_cycle=1,
+    sleep_duration=5,
     autoclear_error_patterns=["%BlockAnalysis Not Ready%"],
 )
 
@@ -95,8 +95,8 @@ analysis_worker = DataJointWorker(
     "analysis_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    max_idled_cycle=20,
-    sleep_duration=60,
+    max_idled_cycle=1,
+    sleep_duration=5,
 )
 
 analysis_worker(block_analysis.BlockAnalysis, max_calls=6)
