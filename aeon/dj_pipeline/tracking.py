@@ -117,16 +117,29 @@ class SLEAPTracking(dj.Imported):
     -> acquisition.Chunk
     -> streams.SpinnakerVideoSource
     -> TrackingParamSet
+    ---
+    execution_time=null: datetime  # time of ingestion
     """
 
     class PoseIdentity(dj.Part):
-        definition = """
+        definition = """ 
         -> master
         identity_idx:           smallint
         ---
         identity_name:          varchar(16)
         identity_likelihood:    longblob
-        anchor_part:         varchar(16)  # the name of the point used as anchor node for this class
+        anchor_part:         varchar(16)  # the name of the part used as anchor node for this class
+        """
+
+    class AnchorPart(dj.Part):
+        definition = """  # Position data of the anchor part of a particular identity
+        -> master.PoseIdentity
+        ---
+        sample_count: int      # number of data points acquired from this stream for a given chunk
+        x:          longblob   # (px) x-coordinates of the anchor part
+        y:          longblob   # (px) y-coordinates of the anchor part
+        likelihood: longblob   # likelihood of the anchor part
+        timestamps: longblob   # (datetime) timestamps of the anchor part
         """
 
     class Part(dj.Part):
@@ -135,10 +148,10 @@ class SLEAPTracking(dj.Imported):
         part_name: varchar(16)
         ---
         sample_count: int      # number of data points acquired from this stream for a given chunk
-        x:          longblob
-        y:          longblob
-        likelihood: longblob
-        timestamps: longblob
+        x:          longblob   # (px) x-coordinates of the part
+        y:          longblob   # (px) y-coordinates of the part
+        likelihood: longblob   # likelihood of the part
+        timestamps: longblob   # (datetime) timestamps of the part
         """
 
     @property
@@ -196,12 +209,14 @@ class SLEAPTracking(dj.Imported):
         identity_mapping = {n: i for i, n in enumerate(class_names)}
 
         # get anchor part
-        # this logic is valid only if the different animals have the same skeleton and anchor part
-        #   which should be the case within one chunk
-        anchor_part = next(v.replace("_x", "") for v in stream_reader.columns if v.endswith("_x"))
+        # ie the body_part with the prefix "anchor_" (there should only be one)
+        anchor_part = set(part for part in pose_data.part.unique() if part.startswith("anchor_"))
+        if len(anchor_part) != 1:
+            raise ValueError(f"Anchor part not found or multiple anchor parts found: {anchor_part}")
+        anchor_part = anchor_part.pop()
 
         # ingest parts and classes
-        pose_identity_entries, part_entries = [], []
+        pose_identity_entries, anchor_part_entries, part_entries = [], [], []
         for identity in identity_mapping:
             identity_position = pose_data[pose_data["identity"] == identity]
             if identity_position.empty:
@@ -209,35 +224,55 @@ class SLEAPTracking(dj.Imported):
 
             for part in set(identity_position.part.values):
                 part_position = identity_position[identity_position.part == part]
-                part_entries.append(
-                    {
-                        **key,
-                        "identity_idx": identity_mapping[identity],
-                        "part_name": part,
-                        "timestamps": part_position.index.values,
-                        "x": part_position.x.values,
-                        "y": part_position.y.values,
-                        "likelihood": part_position.part_likelihood.values,
-                        "sample_count": len(part_position.index.values),
-                    }
-                )
                 if part == anchor_part:
                     identity_likelihood = part_position.identity_likelihood.values
                     if isinstance(identity_likelihood[0], dict):
                         identity_likelihood = np.array([v[identity] for v in identity_likelihood])
 
-            pose_identity_entries.append(
-                {
-                    **key,
-                    "identity_idx": identity_mapping[identity],
-                    "identity_name": identity,
-                    "anchor_part": anchor_part,
-                    "identity_likelihood": identity_likelihood,
-                }
-            )
+                    # assert no duplicate timestamps
+                    if len(part_position.index.values) != len(set(part_position.index.values)):
+                        raise ValueError(
+                            f"Duplicate timestamps found for identity {identity} and part {part}"
+                            f" - this should not happen - check for chunk-duplicate .bin files"
+                        )
 
-        self.insert1(key)
+                    pose_identity_entries.append(
+                        {
+                            **key,
+                            "identity_idx": identity_mapping[identity],
+                            "identity_name": identity,
+                            "anchor_part": anchor_part,
+                            "identity_likelihood": identity_likelihood,
+                        }
+                    )
+                    anchor_part_entries.append(
+                        {
+                            **key,
+                            "identity_idx": identity_mapping[identity],
+                            "x": part_position.x.values,
+                            "y": part_position.y.values,
+                            "likelihood": part_position.part_likelihood.values,
+                            "timestamps": part_position.index.values,
+                            "sample_count": len(part_position.index.values),
+                        }
+                    )
+                else:
+                    part_entries.append(
+                        {
+                            **key,
+                            "identity_idx": identity_mapping[identity],
+                            "part_name": part,
+                            "timestamps": part_position.index.values,
+                            "x": part_position.x.values,
+                            "y": part_position.y.values,
+                            "likelihood": part_position.part_likelihood.values,
+                            "sample_count": len(part_position.index.values),
+                        }
+                    )
+
+        self.insert1({**key, "execution_time": pd.Timestamp.now()})
         self.PoseIdentity.insert(pose_identity_entries)
+        self.AnchorPart.insert(anchor_part_entries)
         self.Part.insert(part_entries)
 
 

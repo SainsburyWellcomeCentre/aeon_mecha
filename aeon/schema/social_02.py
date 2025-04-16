@@ -63,7 +63,7 @@ class Pose(Stream):
 class Pose03(Stream):
     def __init__(self, path):
         """Initializes the Pose stream."""
-        super().__init__(reader.Pose(f"{path}_202_*"))
+        super().__init__(reader.Pose(f"{path}_222*"))
 
 
 class WeightRaw(Stream):

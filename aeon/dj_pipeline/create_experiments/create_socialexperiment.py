@@ -44,7 +44,7 @@ def create_new_social_experiment(experiment_name):
             .as_posix(),
             "load_order": load_order,
         }
-        for load_order, dir_type in enumerate(["processed", "raw"])
+        for load_order, dir_type in enumerate(["ingest", "raw"])
     ]
 
     with acquisition.Experiment.connection.transaction:
