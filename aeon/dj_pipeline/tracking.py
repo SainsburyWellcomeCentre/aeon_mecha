@@ -122,7 +122,7 @@ class SLEAPTracking(dj.Imported):
     """
 
     class PoseIdentity(dj.Part):
-        definition = """ 
+        definition = """
         -> master
         identity_idx:           smallint
         ---
@@ -210,7 +210,7 @@ class SLEAPTracking(dj.Imported):
 
         # get anchor part
         # ie the body_part with the prefix "anchor_" (there should only be one)
-        anchor_part = set(part for part in pose_data.part.unique() if part.startswith("anchor_"))
+        anchor_part = {part for part in pose_data.part.unique() if part.startswith("anchor_")}
         if len(anchor_part) != 1:
             raise ValueError(f"Anchor part not found or multiple anchor parts found: {anchor_part}")
         anchor_part = anchor_part.pop()

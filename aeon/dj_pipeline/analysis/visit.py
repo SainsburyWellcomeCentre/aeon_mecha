@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 import datajoint as dj
 import numpy as np
 import pandas as pd
-
 from swc.aeon.analysis import utils as analysis_utils
+
 from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name
 
 schema = dj.schema(get_schema_name("analysis"))

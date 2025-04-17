@@ -521,9 +521,8 @@ def associate_subject_and_experiment(subject_name):
                   & "content LIKE 'experiment:%'").fetch(as_dict=True):
         entry.pop("comment_id")
         entry["experiment_name"] = entry.pop("content").replace("experiment:", "").strip()
-        if acquisition.Experiment.proj() & entry:
-            if not acquisition.Experiment.Subject & entry:
-                new_entries.append(entry)
-                logger.info(f"\tNew experiment subject: {entry}")
+        if (acquisition.Experiment.proj() & entry) and (not acquisition.Experiment.Subject & entry):
+            new_entries.append(entry)
+            logger.info(f"\tNew experiment subject: {entry}")
 
     acquisition.Experiment.Subject.insert(new_entries)
