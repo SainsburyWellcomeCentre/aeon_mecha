@@ -4,6 +4,7 @@ import datajoint as dj
 import matplotlib.path
 import numpy as np
 import pandas as pd
+import gc
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import acquisition, dict_to_uuid, fetch_stream, get_schema_name, lab, streams
@@ -185,20 +186,12 @@ class SLEAPTracking(dj.Imported):
 
         stream_reader = getattr(devices_schema, device_name).Pose
 
-        # special ingestion case for social0.2 full-pose data (using Pose reader from social03)
-        # fullpose for social0.2 has a different "pattern" for non-fullpose, hence the Pose03 reader
-        if key["experiment_name"].startswith("social0.2"):
-            from swc.aeon.io import reader as io_reader
-            stream_reader = getattr(devices_schema, device_name).Pose03
-            if not isinstance(stream_reader, io_reader.Pose):
-                raise TypeError("Pose03 is not a Pose reader")
-            data_dirs = [acquisition.Experiment.get_data_directory(key, "processed")]
-
         pose_data = io_api.load(
             root=data_dirs,
             reader=stream_reader,
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),
+            include_model=False,
         )
 
         if not len(pose_data):
@@ -274,6 +267,10 @@ class SLEAPTracking(dj.Imported):
         self.PoseIdentity.insert(pose_identity_entries)
         self.AnchorPart.insert(anchor_part_entries)
         self.Part.insert(part_entries)
+
+        # explicit garbage collect `pose_data` to avoid memory build up
+        del pose_data, identity_position, part_position
+        gc.collect()
 
 
 # ---------- Blob Position Tracking ------------------
