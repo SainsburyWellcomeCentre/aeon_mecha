@@ -363,8 +363,8 @@ class BlockAnalysis(dj.Computed):
             else:
                 pos_query = (
                     streams.SpinnakerVideoSource
-                    * tracking.SLEAPTracking.PoseIdentity.proj("identity_name", part_name="anchor_part")
-                    * tracking.SLEAPTracking.Part
+                    * tracking.SLEAPTracking.PoseIdentity.proj("identity_name")
+                    * tracking.SLEAPTracking.AnchorPart
                     & key
                     & {
                         "spinnaker_video_source_name": "CameraTop",
