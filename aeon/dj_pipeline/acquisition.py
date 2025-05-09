@@ -713,6 +713,9 @@ def create_chunk_restriction(experiment_name, start_time, end_time):
     end_restriction = f'"{end_time}" BETWEEN chunk_start AND chunk_end'
     start_query = Chunk & exp_key & start_restriction
     end_query = Chunk & exp_key & end_restriction
+    if not start_query:
+        # No chunk contains the start time, so we need to find the first chunk that ends after the start time
+        start_query = Chunk & exp_key & f'chunk_start BETWEEN "{start_time}" AND "{end_time}"'
     if not end_query:
         # No chunk contains the end time, so we need to find the last chunk that starts before the end time
         end_query = Chunk & exp_key & f'chunk_end BETWEEN "{start_time}" AND "{end_time}"'
