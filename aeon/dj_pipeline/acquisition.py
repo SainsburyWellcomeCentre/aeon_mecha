@@ -397,7 +397,31 @@ class Chunk(dj.Manual):
 
     @classmethod
     def ingest_chunks(cls, experiment_name):
-        """Ingest chunks for the specified ``experiment_name``."""
+        """Ingest data chunks for a given experiment into the database.
+
+        This method processes and ingests 1-hour data acquisition chunks for a specified experiment.
+        The high-level logic follows these steps:
+        1. Get all chunks from raw data directories using the appropriate device (default: CameraTop)
+        2. For each chunk:
+           - Extract epoch information and validate against existing epochs
+           - Calculate chunk start/end times:
+             * Chunk start is the maximum of chunk name time and epoch start
+             * Chunk end is calculated by adding CHUNK_DURATION (1-hour) using timedelta
+             * Chunk end is adjusted to start of next hour (minutes/seconds/microseconds set to 0)
+             * If epoch end exists, chunk end is capped at epoch end
+           - Skip chunks that have already been ingested
+           - Collect file information for the chunk
+        3. Insert all new chunks and their associated files into the database in a single transaction
+
+        Args:
+            experiment_name (str): Name of the experiment to ingest chunks for
+
+        Note:
+            - Chunks are 1-hour recording periods
+            - Each chunk must belong to a valid epoch
+            - Chunk end times are adjusted to not exceed epoch end times
+            - Files are tracked relative to the repository path
+        """
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
@@ -415,8 +439,13 @@ class Chunk(dj.Manual):
 
             chunk_start = chunk.name
             chunk_start = max(chunk_start, epoch_start)  # first chunk of the epoch starts at epoch_start
+            
+            # Calculate chunk_end using timedelta for robust date handling
             chunk_end = chunk_start + datetime.timedelta(hours=io_api.CHUNK_DURATION)
+            # Chunk should end at the start of the next hour
+            chunk_end = chunk_end.replace(minute=0, second=0, microsecond=0)
 
+            # If there's an epoch end, use that instead
             if EpochEnd & epoch_key:
                 epoch_end = (EpochEnd & epoch_key).fetch1("epoch_end")
                 chunk_end = min(chunk_end, epoch_end)
@@ -684,6 +713,9 @@ def create_chunk_restriction(experiment_name, start_time, end_time):
     end_restriction = f'"{end_time}" BETWEEN chunk_start AND chunk_end'
     start_query = Chunk & exp_key & start_restriction
     end_query = Chunk & exp_key & end_restriction
+    if not start_query:
+        # No chunk contains the start time, so we need to find the first chunk that ends after the start time
+        start_query = Chunk & exp_key & f'chunk_start BETWEEN "{start_time}" AND "{end_time}"'
     if not end_query:
         # No chunk contains the end time, so we need to find the last chunk that starts before the end time
         end_query = Chunk & exp_key & f'chunk_end BETWEEN "{start_time}" AND "{end_time}"'
