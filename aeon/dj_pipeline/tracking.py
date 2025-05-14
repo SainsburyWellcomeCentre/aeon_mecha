@@ -1,10 +1,11 @@
 """DataJoint schema for tracking data."""
 
+import gc
+
 import datajoint as dj
 import matplotlib.path
 import numpy as np
 import pandas as pd
-import gc
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import acquisition, dict_to_uuid, fetch_stream, get_schema_name, lab, streams

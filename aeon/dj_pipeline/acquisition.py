@@ -439,7 +439,7 @@ class Chunk(dj.Manual):
 
             chunk_start = chunk.name
             chunk_start = max(chunk_start, epoch_start)  # first chunk of the epoch starts at epoch_start
-            
+
             # Calculate chunk_end using timedelta for robust date handling
             chunk_end = chunk_start + datetime.timedelta(hours=io_api.CHUNK_DURATION)
             # Chunk should end at the start of the next hour
@@ -714,10 +714,10 @@ def create_chunk_restriction(experiment_name, start_time, end_time):
     start_query = Chunk & exp_key & start_restriction
     end_query = Chunk & exp_key & end_restriction
     if not start_query:
-        # No chunk contains the start time, so we need to find the first chunk that ends after the start time
+        # No chunk contains the start time, need to find the first chunk that ends after the start time
         start_query = Chunk & exp_key & f'chunk_start BETWEEN "{start_time}" AND "{end_time}"'
     if not end_query:
-        # No chunk contains the end time, so we need to find the last chunk that starts before the end time
+        # No chunk contains the end time, need to find the last chunk that starts before the end time
         end_query = Chunk & exp_key & f'chunk_end BETWEEN "{start_time}" AND "{end_time}"'
     if not (start_query and end_query):
         raise ValueError(f"No Chunk found between {start_time} and {end_time}")
