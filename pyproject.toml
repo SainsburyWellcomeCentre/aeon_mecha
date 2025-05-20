@@ -97,6 +97,7 @@ lint.ignore = [
   "PLR0912", 
   "PLR0913",
   "PLR0915",
+  "UP038", # Deprecated and will be removed in a future release.
 ]
 extend-exclude = [
   ".git",

@@ -259,7 +259,7 @@ class PyratIngestion(dj.Imported):
             # 1 - retrieve all animals from this user
             animal_resp = get_pyrat_data(
                 endpoint="animals",
-                params={"responsible_id": responsible_id, "state": ["live", "sacrificed", "exported"]}
+                params={"responsible_id": responsible_id, "state": ["live", "sacrificed", "exported"]},
             )
             for animal_entry in animal_resp:
                 # 2 - find animal with comment - Project Aeon
@@ -361,9 +361,12 @@ class PyratCommentWeightProcedure(dj.Imported):
             # recheck for "state" to see if the animal is still available
             animal_resp = get_pyrat_data(
                 endpoint="animals",
-                params={"k": ["labid", "state"],
-                        "eartag": eartag_or_id,
-                        "state": ["live", "sacrificed", "exported"]})
+                params={
+                    "k": ["labid", "state"],
+                    "eartag": eartag_or_id,
+                    "state": ["live", "sacrificed", "exported"],
+                },
+            )
             animal_resp = animal_resp[0]
             SubjectDetail.update1(
                 {
@@ -483,7 +486,7 @@ def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
     if params is not None:
         params_str_list = []
         for k, v in params.items():
-            if isinstance(v, (list | tuple)):
+            if isinstance(v, (list, tuple)):
                 for i in v:
                     params_str_list.append(f"{k}={i}")
             else:
@@ -516,9 +519,9 @@ def associate_subject_and_experiment(subject_name):
     from aeon.dj_pipeline import acquisition
 
     new_entries = []
-    for entry in (SubjectComment.proj("content")
-                  & {"subject": subject_name}
-                  & "content LIKE 'experiment:%'").fetch(as_dict=True):
+    for entry in (
+        SubjectComment.proj("content") & {"subject": subject_name} & "content LIKE 'experiment:%'"
+    ).fetch(as_dict=True):
         entry.pop("comment_id")
         entry["experiment_name"] = entry.pop("content").replace("experiment:", "").strip()
         if (acquisition.Experiment.proj() & entry) and (not acquisition.Experiment.Subject & entry):
