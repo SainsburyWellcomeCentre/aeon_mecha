@@ -211,8 +211,8 @@ class SLEAPTracking(dj.Imported):
 
         # ingest parts and classes
         pose_identity_entries, anchor_part_entries, part_entries = [], [], []
-        for identity in identity_mapping:
-            identity_position = pose_data[pose_data["identity"] == identity]
+        for id_name, id_idx in identity_mapping.items():
+            identity_position = pose_data[pose_data["identity"] == id_name]
             if identity_position.empty:
                 continue
 
@@ -221,20 +221,20 @@ class SLEAPTracking(dj.Imported):
                 if part == anchor_part:
                     identity_likelihood = part_position.identity_likelihood.values
                     if isinstance(identity_likelihood[0], dict):
-                        identity_likelihood = np.array([v[identity] for v in identity_likelihood])
+                        identity_likelihood = np.array([v[id_name] for v in identity_likelihood])
 
                     # assert no duplicate timestamps
                     if len(part_position.index.values) != len(set(part_position.index.values)):
                         raise ValueError(
-                            f"Duplicate timestamps found for identity {identity} and part {part}"
+                            f"Duplicate timestamps found for identity {id_name} and part {part}"
                             f" - this should not happen - check for chunk-duplicate .bin files"
                         )
 
                     pose_identity_entries.append(
                         {
                             **key,
-                            "identity_idx": identity_mapping[identity],
-                            "identity_name": identity,
+                            "identity_idx": id_idx,
+                            "identity_name": id_name,
                             "anchor_part": anchor_part,
                             "identity_likelihood": identity_likelihood,
                         }
@@ -242,7 +242,7 @@ class SLEAPTracking(dj.Imported):
                     anchor_part_entries.append(
                         {
                             **key,
-                            "identity_idx": identity_mapping[identity],
+                            "identity_idx": id_idx,
                             "x": part_position.x.values,
                             "y": part_position.y.values,
                             "likelihood": part_position.part_likelihood.values,
@@ -254,7 +254,7 @@ class SLEAPTracking(dj.Imported):
                     part_entries.append(
                         {
                             **key,
-                            "identity_idx": identity_mapping[identity],
+                            "identity_idx": id_idx,
                             "part_name": part,
                             "timestamps": part_position.index.values,
                             "x": part_position.x.values,
@@ -385,9 +385,14 @@ class BlobPosition(dj.Imported):
                 }
             )
 
-        self.insert1({**key, "object_count": len(object_positions),
-                      "subject_count": len(subject_names),
-                      "subject_names": ",".join(subject_names)})
+        self.insert1(
+            {
+                **key,
+                "object_count": len(object_positions),
+                "subject_count": len(subject_names),
+                "subject_names": ",".join(subject_names),
+            }
+        )
         self.Object.insert(object_positions)
 
 
@@ -403,7 +408,7 @@ def compute_distance(position_df, target, xcol="x", ycol="y"):
         xcol (str): x column name in ``position_df``. Default is 'x'.
         ycol (str): y column name in ``position_df``. Default is 'y'.
     """
-    COORDS = 2 # x, y
+    COORDS = 2  # x, y
     if len(target) != COORDS:
         raise ValueError("Target must be a list of tuple of length 2.")
     return np.sqrt(np.square(position_df[[xcol, ycol]] - target).sum(axis=1))
