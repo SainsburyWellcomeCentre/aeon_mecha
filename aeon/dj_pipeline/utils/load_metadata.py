@@ -35,9 +35,10 @@ def insert_stream_types():
                 streams.StreamType.insert1(entry)
                 logger.info(f"New stream type created: {entry['stream_type']}")
             except dj.errors.DuplicateError:
-                existing_stream = (streams.StreamType.proj(
-                    "stream_reader", "stream_reader_kwargs")
-                                   & {"stream_type": entry["stream_type"]}).fetch1()
+                existing_stream = (
+                    streams.StreamType.proj("stream_reader", "stream_reader_kwargs")
+                    & {"stream_type": entry["stream_type"]}
+                ).fetch1()
                 existing_columns = existing_stream["stream_reader_kwargs"].get("columns")
                 entry_columns = entry["stream_reader_kwargs"].get("columns")
                 if existing_columns != entry_columns:
@@ -207,9 +208,9 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
 
             if not (streams.Device & device_key):
                 logger.warning(
-                    f"Device {device_name} (serial number: {device_sn}) is not \
-                    yet registered in streams.Device.\nThis should not happen - \
-                    check if metadata.yml and schemas dotmap are consistent. Skipping..."
+                    f"Device {device_name} (serial number: {device_sn}) is not "
+                    "yet registered in streams.Device.\nThis should not happen - "
+                    "check if metadata.yml and schemas dotmap are consistent. Skipping..."
                 )
                 # skip if this device (with a serial number) is not yet inserted in streams.Device
                 continue
@@ -383,9 +384,7 @@ def get_device_info(devices_schema: DotMap) -> dict[dict]:
                     k for k in inspect.signature(stream_obj.__init__).parameters if k != "self"
                 ]
                 pattern = schema_dict[device_name][stream_type].get("pattern")
-                schema_dict[device_name][stream_type]["pattern"] = pattern.replace(
-                    device_name, "{pattern}"
-                )
+                schema_dict[device_name][stream_type]["pattern"] = pattern.replace(device_name, "{pattern}")
 
                 kwargs = {
                     k: v for k, v in schema_dict[device_name][stream_type].items() if k in required_args
