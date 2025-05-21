@@ -476,8 +476,8 @@ def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
 
     if pyrat_system_token is None or pyrat_user_token is None:
         raise ValueError(
-            "The PYRAT tokens must be defined as an environment \
-            variable named 'PYRAT_SYSTEM_TOKEN' and 'PYRAT_USER_TOKEN'"
+            "The PYRAT tokens must be defined as an environment"
+            "variable named 'PYRAT_SYSTEM_TOKEN' and 'PYRAT_USER_TOKEN'"
         )
 
     session = requests.Session()
