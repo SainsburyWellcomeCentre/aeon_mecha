@@ -444,7 +444,6 @@ class BlockSubjectAnalysis(dj.Computed):
         pellet_count: int
         pellet_timestamps: longblob
         patch_threshold: longblob  # patch threshold value at each pellet delivery
-        patch_threshold: longblob  # patch threshold value at each pellet delivery
         wheel_cumsum_distance_travelled: longblob  # wheel's cumulative distance travelled
         """
 
