@@ -27,7 +27,7 @@ class ProbeType(dj.Lookup):
 
 @schema
 class Probe(dj.Lookup):
-    definition = """  # Represent a physical probe with unique identification
+    definition = """  # An actual physical probe with unique identification
     probe: varchar(32)  # unique identifier for this model of probe (e.g. serial number)
     ---
     -> ProbeType
@@ -37,7 +37,7 @@ class Probe(dj.Lookup):
 
 @schema
 class ElectrodeConfig(dj.Lookup):
-    definition = """  # The electrode configuration setting on a given probe
+    definition = """  # The electrode configuration on a given probe used for recording
     -> ProbeType
     electrode_config_name: varchar(32)  # e.g. "0-383"
     ---
@@ -46,7 +46,7 @@ class ElectrodeConfig(dj.Lookup):
     """
 
     class Electrode(dj.Part):
-        definition = """  # Electrodes selected for recording
+        definition = """  # Electrodes used for recording
         -> master
         -> ProbeType.Electrode
         """
@@ -75,11 +75,14 @@ class EphysChunk(dj.Manual):
 
 @schema
 class EphysBlock(dj.Manual):
+    """
+    User-defined period of time of ephys data (in HARP clock)
+    """
     definition = """  # A an arbitrary period of time of ephys data
     -> acquisition.Experiment
     -> Probe  # the probe used for this ephys recording
-    block_start: datetime(6)  # start of an ephys block (in native clock - e.g. ONIX clock)
-    block_end: datetime(6)    # end of an ephys block (in native clock - e.g. ONIX clock)
+    block_start: datetime(6)  # start of an ephys block (in synced clock - i.e. HARP clock)
+    block_end: datetime(6)    # end of an ephys block (in synced clock - i.e. HARP clock)
     """
 
 
@@ -96,6 +99,9 @@ class EphysBlockInfo(dj.Imported):
         definition = """ # the chunk(s) associated with this EphysBlock
         -> master
         -> EphysChunk
+        ---
+        start: datetime(6)  # start of the chunk (in native clock - i.e. ONIX clock)
+        end: datetime(6)    # end of the chunk (in native clock - i.e. ONIX clock)
         """
 
     class Channel(dj.Part):
@@ -110,7 +116,14 @@ class EphysBlockInfo(dj.Imported):
     def make(self, key):
         """
         - Find relevant ephys chunks for the given ephys block.
+        - For each chunk, extract the start and end times in the native clock (i.e. ONIX clock).
+            - For example: ephys block spans 3 chunks (3 hours)
+            - Start/end of block is 2025-01-01 07:00:00, 2025-01-01 10:00:00
+            - But due to the clock synchronization, there are actually 5 ephys chunks involved
+            - So the start/end of the ephys block in the native clock is:
+              2025-01-01 06:59:11 (start of first chunk), 2025-01-01 10:02:05 (end of last chunk)
         - Retrieve & confirm the electrode configuration for the given ephys block.
+            - Ensure all associated ephys chunks have the same electrode configuration.
         - Extract electrode-channel mapping
         - Extract other metadata for this ephys block.
         """
