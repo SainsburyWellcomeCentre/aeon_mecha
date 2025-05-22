@@ -169,7 +169,7 @@ class PostProcessing(dj.Computed):
 
 
 @schema
-class Sorting(dj.Imported):
+class SortedSpikes(dj.Imported):
     definition = """
     -> PostProcessing
     ---
@@ -192,7 +192,7 @@ class Sorting(dj.Imported):
 
     def make(self, key):
         """
-        From sorting output, extract units, spike times, electrode, etc.
+        From sorted spikes output, extract units, spike times, electrode, etc.
         Also, synchronize the spike times to the HARP clock.
         """
         pass
@@ -201,15 +201,15 @@ class Sorting(dj.Imported):
 @schema
 class Waveform(dj.Imported):
     definition = """
-    # A set of spike waveforms for units out of a given Sorting
-    -> Sorting
+    # A set of spike waveforms for units out of a given SortedSpikes
+    -> SortedSpikes
     """
 
     class UnitWaveform(dj.Part):
         definition = """
         # Representative waveform for a given unit
         -> master
-        -> Sorting.Unit
+        -> SortedSpikes.Unit
         ---
         unit_waveform: longblob  # (uV) mean waveform for a given unit at its representative electrode
         """
@@ -218,7 +218,7 @@ class Waveform(dj.Imported):
         definition = """
         # Spike waveforms and their mean across spikes for the given unit at the given electrode
         -> master
-        -> Sorting.Unit
+        -> SortedSpikes.Unit
         -> ephys.ElectrodeConfig.Electrode  
         --- 
         channel_waveform: longblob   # (uV) mean waveform across spikes of the given unit at the given electrode
@@ -244,13 +244,13 @@ class QualityMetric(dj.Lookup):
 @schema
 class SortingQuality(dj.Imported):
     definition = """
-    -> Sorting
+    -> SortedSpikes
     """
     
     class Metric(dj.Part):
         definition = """  # Quality metrics for a given unit
         -> master
-        -> Sorting.Unit
+        -> SortedSpikes.Unit
         -> QualityMetric
         ---
         metric_value: varchar(100)  # value of the quality metric
@@ -258,15 +258,15 @@ class SortingQuality(dj.Imported):
     
 
 @schema
-class SyncedSpikeTimes(dj.Imported):
+class SyncedSpikes(dj.Imported):
     definition = """
-    -> Sorting
+    -> SortedSpikes
     """
 
     class Unit(dj.Part):
         definition = """
         -> master
-        -> Sorting.Unit
+        -> SortedSpikes.Unit
         ---
         spike_times: longblob  # (s) synchronized spike times (i.e. in HARP clock)
         """
