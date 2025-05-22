@@ -5,6 +5,28 @@ schema = dj.schema(get_schema_name("ephys_processing"))
 logger = dj.logger
 
 
+
+@schema
+class ElectrodeGroup(dj.Manual):
+    """
+    A group of electrodes that are used for spike sorting.
+    All or subset of the electrodes from a particular electrode configuration 
+    """
+    definition = """
+    -> ephys.ElectrodeConfig
+    electrode_group: varchar(16)  # e.g. "all", "shank1", etc.
+    ---
+    electrode_group_description: varchar(1000) 
+    electrode_count: int
+    """
+
+    class Electrode(dj.Part):
+        definition = """  # Individual electrode in the group
+        -> master
+        -> ephys.ElectrodeConfig.Electrode
+        """
+
+
 @schema
 class UnitQuality(dj.Lookup):
     definition = """
@@ -22,48 +44,56 @@ class UnitQuality(dj.Lookup):
 
 
 @schema
-class ClusteringMethod(dj.Lookup):
+class SortingMethod(dj.Lookup):
     definition = """ # Method for spike sorting
-    clustering_method: varchar(16)
+    sorting_method: varchar(16)
     ---
-    clustering_method_desc: varchar(1000)
+    sorting_method_desc: varchar(1000)
     """
 
     contents = [
-        ("kilosort2", "kilosort2 clustering method"),
-        ("kilosort2.5", "kilosort2.5 clustering method"),
-        ("kilosort3", "kilosort3 clustering method"),
+        ("kilosort2", "kilosort2 sorting method"),
+        ("kilosort2.5", "kilosort2.5 sorting method"),
+        ("kilosort3", "kilosort3 sorting method"),
     ]
 
 
 @schema
-class ClusteringParamSet(dj.Lookup):
+class SortingParamSet(dj.Lookup):
     definition = """ # Parameter set for spike sorting
     paramset_id: varchar(16)
     ---
-    -> ClusteringMethod    
+    -> SortingMethod    
     paramset_description='': varchar(1000)
     params: longblob  # dictionary of all applicable parameters
     """
 
 
 @schema
-class ClusteringTask(dj.Manual):
+class SortingTask(dj.Manual):
+    """
+    A manual table for defining a sorting task ready to be run.
+    A sorting task is defined by a unique combination of:
+    - ephys block
+    - electrode group
+    - sorting parameter set
+    """
     definition = """
-    # Manual table for defining a clustering task ready to be run
-    -> ephys.EphysBlockProcessing
-    -> ClusteringParamSet
+    # Manual table for defining a sorting task ready to be run
+    -> ephys.EphysBlock
+    -> ElectrodeGroup
+    -> SortingParamSet
     """
 
 
 @schema
 class PreProcessing(dj.Computed):
     definition = """
-    -> ephys.ClusteringTask
+    -> ephys.SortingTask
     ---
     execution_time: datetime   # datetime of the start of this step
     execution_duration: float  # execution duration in hours
-    clustering_output_dir: varchar(255)  #  clustering output directory relative to the clustering root data directory
+    sorting_output_dir: varchar(255)  #  sorting output directory relative to the sorting root data directory
     """
 
     class File(dj.Part):
@@ -76,7 +106,8 @@ class PreProcessing(dj.Computed):
 
     def make(self, key):
         """ Pre-processing the ephys data, before spike sorting. E.g.:
-        - data concatenation
+        - data concatenation (based on EphysBlock)
+        - channel selection (based on ElectrodeGroup)
         - bad channel detection/removal
         - band-pass filtering
         - common average referencing
@@ -138,7 +169,7 @@ class PostProcessing(dj.Computed):
 
 
 @schema
-class Clustering(dj.Imported):
+class Sorting(dj.Imported):
     definition = """
     -> PostProcessing
     ---
@@ -161,7 +192,7 @@ class Clustering(dj.Imported):
 
     def make(self, key):
         """
-        From clustering output, extract units, spike times, electrode, etc.
+        From sorting output, extract units, spike times, electrode, etc.
         Also, synchronize the spike times to the HARP clock.
         """
         pass
@@ -170,15 +201,15 @@ class Clustering(dj.Imported):
 @schema
 class Waveform(dj.Imported):
     definition = """
-    # A set of spike waveforms for units out of a given Clustering
-    -> Clustering
+    # A set of spike waveforms for units out of a given Sorting
+    -> Sorting
     """
 
     class UnitWaveform(dj.Part):
         definition = """
         # Representative waveform for a given unit
         -> master
-        -> Clustering.Unit
+        -> Sorting.Unit
         ---
         unit_waveform: longblob  # (uV) mean waveform for a given unit at its representative electrode
         """
@@ -187,7 +218,7 @@ class Waveform(dj.Imported):
         definition = """
         # Spike waveforms and their mean across spikes for the given unit at the given electrode
         -> master
-        -> Clustering.Unit
+        -> Sorting.Unit
         -> ephys.ElectrodeConfig.Electrode  
         --- 
         channel_waveform: longblob   # (uV) mean waveform across spikes of the given unit at the given electrode
@@ -211,15 +242,15 @@ class QualityMetric(dj.Lookup):
 
 
 @schema
-class ClusteringQuality(dj.Imported):
+class SortingQuality(dj.Imported):
     definition = """
-    -> Clustering
+    -> Sorting
     """
     
     class Metric(dj.Part):
         definition = """  # Quality metrics for a given unit
         -> master
-        -> Clustering.Unit
+        -> Sorting.Unit
         -> QualityMetric
         ---
         metric_value: varchar(100)  # value of the quality metric
@@ -229,13 +260,13 @@ class ClusteringQuality(dj.Imported):
 @schema
 class SyncedSpikeTimes(dj.Imported):
     definition = """
-    -> Clustering
+    -> Sorting
     """
 
     class Unit(dj.Part):
         definition = """
         -> master
-        -> Clustering.Unit
+        -> Sorting.Unit
         ---
         spike_times: longblob  # (s) synchronized spike times (i.e. in HARP clock)
         """

@@ -66,9 +66,8 @@ class EphysChunk(dj.Manual):
     class File(dj.Part):
         definition = """
         -> master
-        file_number: int
-        ---
         file_name: varchar(128)
+        ---
         -> Experiment.Directory
         file_path: varchar(255)  # path of the file, relative to the data repository
         """
@@ -104,7 +103,7 @@ class EphysBlockInfo(dj.Imported):
         -> master
         channel_idx: int  # channel index (index of the raw data)
         ---
-        -> probe.ElectrodeConfig.Electrode
+        -> ElectrodeConfig.Electrode
         channel_name="": varchar(64)  # alias of the channel
         """
 
@@ -116,29 +115,3 @@ class EphysBlockInfo(dj.Imported):
         - Extract other metadata for this ephys block.
         """
         pass
-
-
-@schema
-class ElectrodeSelection(dj.Manual):
-    definition = """
-    -> ElectrodeConfig
-    selection_name: varchar(16)
-    ---
-    selection_description: varchar(1000)
-    electrode_count: int
-    """
-
-    class SelectedElectrode(dj.Part):
-        definition = """
-        -> master
-        -> ElectrodeConfig.Electrode
-        """
-
-
-@schema
-class EphysBlockProcessing(dj.Manual):
-    definition = """
-    -> EphysBlock
-    -> ElectrodeSelection
-    """
-
