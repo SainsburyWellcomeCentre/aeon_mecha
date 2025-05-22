@@ -62,6 +62,16 @@ class EphysChunk(dj.Manual):
     chunk_end: datetime(6)    # end of an ephys chunk (in ONIX clock)
     -> ElectrodeConfig  # the electrode configuration used for this ephys recording
     """
+
+    class File(dj.Part):
+        definition = """
+        -> master
+        file_number: int
+        ---
+        file_name: varchar(128)
+        -> Experiment.Directory
+        file_path: varchar(255)  # path of the file, relative to the data repository
+        """
     
 
 @schema
@@ -70,7 +80,6 @@ class EphysBlock(dj.Manual):
     -> acquisition.Experiment
     -> Probe  # the probe used for this ephys recording
     block_start: datetime(6)  # start of an ephys block (in native clock - e.g. ONIX clock)
-    ---
     block_end: datetime(6)    # end of an ephys block (in native clock - e.g. ONIX clock)
     """
 
@@ -107,3 +116,29 @@ class EphysBlockInfo(dj.Imported):
         - Extract other metadata for this ephys block.
         """
         pass
+
+
+@schema
+class ElectrodeSelection(dj.Manual):
+    definition = """
+    -> ElectrodeConfig
+    selection_name: varchar(16)
+    ---
+    selection_description: varchar(1000)
+    electrode_count: int
+    """
+
+    class SelectedElectrode(dj.Part):
+        definition = """
+        -> master
+        -> ElectrodeConfig.Electrode
+        """
+
+
+@schema
+class EphysBlockProcessing(dj.Manual):
+    definition = """
+    -> EphysBlock
+    -> ElectrodeSelection
+    """
+

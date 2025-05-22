@@ -51,13 +51,13 @@ class ClusteringParamSet(dj.Lookup):
 class ClusteringTask(dj.Manual):
     definition = """
     # Manual table for defining a clustering task ready to be run
-    -> ephys.EphysBlock
+    -> ephys.EphysBlockProcessing
     -> ClusteringParamSet
     """
 
 
 @schema
-class PreProcessing(dj.Imported):
+class PreProcessing(dj.Computed):
     definition = """
     -> ephys.ClusteringTask
     ---
@@ -86,7 +86,7 @@ class PreProcessing(dj.Imported):
 
 
 @schema
-class SpikeSorting(dj.Imported):
+class SpikeSorting(dj.Computed):
     definition = """
     -> PreProcessing
     ---
@@ -112,7 +112,7 @@ class SpikeSorting(dj.Imported):
 
 
 @schema
-class PostProcessing(dj.Imported):
+class PostProcessing(dj.Computed):
     definition = """
     -> SpikeSorting
     ---
