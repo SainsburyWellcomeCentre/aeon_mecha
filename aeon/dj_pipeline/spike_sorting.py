@@ -5,7 +5,6 @@ schema = dj.schema(get_schema_name("ephys_processing"))
 logger = dj.logger
 
 
-
 @schema
 class ElectrodeGroup(dj.Manual):
     """
@@ -185,7 +184,7 @@ class SortedSpikes(dj.Imported):
         -> ephys.ElectrodeConfig.Electrode  # electrode with highest waveform amplitude for this unit
         -> UnitQuality
         spike_count: int         # how many spikes in this recording for this unit
-        spike_times: longblob    # (s) array of spike times of this unit, relative to the start of the EphysBlock (in native clock)
+        spike_indices: longblob  # array of spike indices into the concatenated binary data (from preprocessing)
         spike_sites : longblob   # array of electrode associated with each spike
         spike_depths=null : longblob  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe    
         """
@@ -267,8 +266,10 @@ class SyncedSpikes(dj.Imported):
         definition = """
         -> master
         -> SortedSpikes.Unit
+        -> ephys.EphysChunk
         ---
-        spike_times: longblob  # (s) synchronized spike times (i.e. in HARP clock)
+        -> ephys.ElectrodeConfig.Electrode  # electrode associated with this unit
+        spike_times: longblob  # (s) synchronized spike times (i.e. in HARP clock) for the respective EphysChunk
         """
 
     def make(self, key):

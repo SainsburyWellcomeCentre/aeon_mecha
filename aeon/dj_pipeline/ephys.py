@@ -57,9 +57,9 @@ class EphysChunk(dj.Manual):
     definition = """  # A recording period corresponds to a 1-hour ephys data acquisition
     -> acquisition.Experiment
     -> Probe  # the probe used for this ephys recording
-    chunk_start: datetime(6)  # start of an ephys chunk (in ONIX clock)
+    chunk_start: datetime(6)  # start of an ephys chunk (in HARP clock)
     ---
-    chunk_end: datetime(6)    # end of an ephys chunk (in ONIX clock)
+    chunk_end: datetime(6)    # end of an ephys chunk (in HARP clock)
     -> ElectrodeConfig  # the electrode configuration used for this ephys recording
     """
 
@@ -71,6 +71,15 @@ class EphysChunk(dj.Manual):
         -> Experiment.Directory
         file_path: varchar(255)  # path of the file, relative to the data repository
         """
+
+    def generate(self):
+        """
+        For each ephys file:
+        1. look for start/end in ONIX
+        2. map to start/end in HARP
+        3. store the HARP start/end
+        """
+        pass
     
 
 @schema
@@ -99,9 +108,6 @@ class EphysBlockInfo(dj.Imported):
         definition = """ # the chunk(s) associated with this EphysBlock
         -> master
         -> EphysChunk
-        ---
-        start: datetime(6)  # start of the chunk (in native clock - i.e. ONIX clock)
-        end: datetime(6)    # end of the chunk (in native clock - i.e. ONIX clock)
         """
 
     class Channel(dj.Part):
