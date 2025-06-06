@@ -1,14 +1,16 @@
 """DataJoint schema for tracking data."""
 
 import gc
-
 import datajoint as dj
 import matplotlib.path
 import numpy as np
 import pandas as pd
+from datetime import datetime, timezone
+
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import acquisition, dict_to_uuid, fetch_stream, get_schema_name, lab, streams
+from aeon.dj_pipeline.utils import tracking_utils
 
 aeon_schemas = acquisition.aeon_schemas
 
@@ -108,7 +110,7 @@ class TrackingParamSet(dj.Lookup):
             cls.insert1(param_dict)
 
 
-# ---------- VideoSource  ------------------
+# ---------- SLEAP Tracking  ------------------
 
 
 @schema
@@ -394,6 +396,74 @@ class BlobPosition(dj.Imported):
             }
         )
         self.Object.insert(object_positions)
+
+
+# ---------- Processed Identity Position ------------------
+
+
+@schema
+class DenoisedTracking(dj.Computed):
+    definition = """
+    -> SLEAPTracking
+    ---
+    execution_time: datetime
+    execution_duration: float  # hours
+    """
+
+    class Subject(dj.Part):
+        definition = """
+        -> master
+        subject_name: varchar(32)
+        ---
+        sample_count: int      # number of data points acquired from this stream for a given chunk
+        x:          longblob
+        y:          longblob
+        timestamps: longblob
+        likelihood: longblob
+        """
+
+    key_source = (SLEAPTracking.aggr(SLEAPTracking.PoseIdentity, count="count(identity_idx)")
+                  & "count > 1"  # only consider chunks with more than one identity
+                  & {"experiment_name": "social0.2-aeon4"})
+
+    def make(self, key):
+        execution_time = datetime.now(timezone.utc)
+
+        query = (SLEAPTracking.PoseIdentity.proj("identity_name")
+                 * SLEAPTracking.AnchorPart
+                 & key)
+        df = fetch_stream(query)
+
+        subject_names = df.identity_name.unique()
+
+        if len(subject_names) > 1:
+            df_clean = tracking_utils.clean_swaps(df)
+        else:
+            df_clean = df
+
+        entries = []
+        for subj_name in subject_names:
+            subj_df = df_clean[df_clean.identity_name == subj_name]
+            if subj_df.empty:
+                continue
+
+            entries.append({
+                **key,
+                "subject_name": subj_name,
+                "sample_count": len(subj_df.index.values),
+                "x": subj_df.x.values,
+                "y": subj_df.y.values,
+                "timestamps": subj_df.index.values,
+                "likelihood": subj_df.likelihood.values,
+            })
+
+        exec_dur = (datetime.now(timezone.utc) - execution_time).total_seconds() / 3600
+        self.insert1({
+            **key,
+            "execution_time": execution_time,
+            "execution_duration": exec_dur,
+        })
+        self.Subject.insert(entries)
 
 
 # ---------- HELPER ------------------
