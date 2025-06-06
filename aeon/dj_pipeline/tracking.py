@@ -422,9 +422,7 @@ class DenoisedTracking(dj.Computed):
         likelihood: longblob
         """
 
-    key_source = (SLEAPTracking.aggr(SLEAPTracking.PoseIdentity, count="count(identity_idx)")
-                  & "count > 1"  # only consider chunks with more than one identity
-                  & {"experiment_name": "social0.2-aeon4"})
+    key_source = SLEAPTracking & "experiment_name in ('social0.2-aeon3', 'social0.2-aeon4')"
 
     def make(self, key):
         execution_time = datetime.now(timezone.utc)
