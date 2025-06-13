@@ -88,7 +88,7 @@ def clean_swaps(df: pd.DataFrame, region_df: pd.DataFrame) -> pd.DataFrame:
     # 1) setup data for processing
     df = df.sort_index()
     ids = df["identity_name"].unique()
-    if len(ids) == 2:
+    if len(ids) != 2:
         raise ValueError(
             "Expected exactly two identities, found: {}".format(ids)
         )
