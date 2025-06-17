@@ -4,7 +4,7 @@ from aeon.schema.streams import Stream, StreamGroup
 
 class Photodiode(Stream):
     def __init__(self, path):
-        super().__init__(_reader.Harp(f"{path}_44_*", columns=["adc", "encoder"]))
+        super().__init__(_reader.Harp(f"{path}_44_*", columns=["adc", "encoder","adc2"]))
 
 
 class OSC(StreamGroup):
@@ -31,7 +31,7 @@ class OSC(StreamGroup):
         def __init__(self, pattern):
             super().__init__(
                 _reader.Csv(
-                    f"{pattern}_octagonslice_*", columns=["typetag", "wall_id", "r", "g", "b", "a", "delay"]
+                    f"{pattern}_octagonslice_*", columns=["typetag", "wall_id", "r", "g", "b", "a", "delay","aperture_angle"]
                 )
             )
 
@@ -48,9 +48,29 @@ class OSC(StreamGroup):
                         "spatial_frequency",
                         "temporal_frequency",
                         "angle",
+                        "aperture_angle",
                         "delay",
                     ],
                 )
+            )
+
+    class CheckerboardsSlice(Stream):
+        def __init__(self, pattern):
+            super().__init__(
+                _reader.Csv(
+                f"{pattern}_octagoncheckerboardsslice_*",
+                columns=[
+                    "typetag",
+                    "wall_id",
+                    "rows",
+                    "columns",
+                    "contrast",
+                    "temporal_frequency",
+                    "angle",
+                    "aperture_angle",
+                    "delay",
+                ],
+            )
             )
 
     class Poke(Stream):
@@ -98,7 +118,32 @@ class OSC(StreamGroup):
         def __init__(self, pattern):
             super().__init__(_reader.Csv(f"{pattern}_startnewsession_*", columns=["typetag", "path"]))
 
+    class TrackingResponse(Stream):
+        def __init__(self, pattern):
+            super().__init__(
+                _reader.Csv(
+            f"{pattern}_return_tracking_response_*", columns=[
+            'typetag',
+            'id',
+            'response_position_x_1',
+            'response_position_y_1',
+            'response_theta_1',
+            'response_area_1'])
+            )
 
+    class TrackingSliceOnset(Stream):
+        def __init__(self, pattern):
+            super().__init__(
+                _reader.Csv(
+                    f"{pattern}_return_tracking_slice_onset_*", columns=[
+            'typetag',
+            'id',
+            'slice_onset_position_x_1',
+            'slice_onset_position_y_1',
+            'slice_onset_theta_1',
+            'slice_onset_area_1'])
+            )
+        
 class TaskLogic(StreamGroup):
     def __init__(self, path):
         super().__init__(path)
@@ -130,6 +175,10 @@ class TaskLogic(StreamGroup):
     class GratingsSliceOnset(Stream):
         def __init__(self, pattern):
             super().__init__(_reader.Harp(f"{pattern}_12_*", columns=["wall_id"]))
+
+    class CheckerboardSliceOnset(Stream):
+        def __init__(self, pattern):
+            super().__init__(_reader.Harp(f"{pattern}_14_*", columns=["wall_id"]))
 
 
 class Wall(StreamGroup):

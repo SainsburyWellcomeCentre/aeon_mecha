@@ -57,3 +57,21 @@ octagon01 = DotMap(
         Device("Wall8", octagon.Wall),
     ]
 )
+
+octagon02 = DotMap([
+    Device("Metadata", stream.Metadata),
+    Device("CameraTop", stream.Video, stream.Position),
+    Device("CameraColorTop", stream.Video),
+    Device("ExperimentalMetadata", stream.SubjectState),
+    Device("Photodiode", octagon.Photodiode),
+    Device("OSC", octagon.OSC),
+    Device("TaskLogic", octagon.TaskLogic),
+    Device("Wall1", octagon.Wall),
+    Device("Wall2", octagon.Wall),
+    Device("Wall3", octagon.Wall),
+    Device("Wall4", octagon.Wall),
+    Device("Wall5", octagon.Wall),
+    Device("Wall6", octagon.Wall),
+    Device("Wall7", octagon.Wall),
+    Device("Wall8", octagon.Wall)
+])
