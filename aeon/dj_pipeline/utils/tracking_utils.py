@@ -14,7 +14,7 @@ def clean_swaps(df: pd.DataFrame, region_df: pd.DataFrame) -> pd.DataFrame:
     - Pre-cleaning: removes points outside arena/nest bounds
     - Early frames: filled with raw data before first complete observation
     - Swap detection: uses frame-to-frame distance minimization
-    - Identity correction: SLEAP-style majority vote at the end
+    - Identity correction: SLEAP-style majority vote within continuous segments of cleaning
     - Swap marking: sets identity_likelihood=NaN on locally swapped frames
 
     Parameters:
@@ -98,122 +98,161 @@ def clean_swaps(df: pd.DataFrame, region_df: pd.DataFrame) -> pd.DataFrame:
     time_col = df2.columns[0]  # timestamp column name
 
     # 3) Reshape to 2×T arrays
-    wide = df2.pivot(index=time_col, columns="identity_name", values=["x", "y"])
+    wide = df2.pivot(index=time_col, columns='identity_name', values=['x', 'y'])
     times = wide.index.values
     T = len(times)
-    x_raw = np.vstack([wide["x"][ids[0]].values, wide["x"][ids[1]].values])
-    y_raw = np.vstack([wide["y"][ids[0]].values, wide["y"][ids[1]].values])
+    x_raw = np.vstack([
+        wide['x'][ids[0]].values,
+        wide['x'][ids[1]].values
+    ])
+    y_raw = np.vstack([
+        wide['y'][ids[0]].values,
+        wide['y'][ids[1]].values
+    ])
 
     # 4) Init cleaned arrays + swap tracking
     x_clean = np.full_like(x_raw, np.nan)
     y_clean = np.full_like(y_raw, np.nan)
-    swapped_flags = np.zeros(T, dtype=bool)  # Track local swaps
+    swapped_flags = np.zeros(T, dtype=bool)
 
     # 5) Find first complete frame
     valid = np.isfinite(x_raw).all(axis=0)
+    if not valid.any():
+        raise RuntimeError("No frame with both subjects present")
     first_i = np.argmax(valid)
 
-    # Fill early frames with raw data
-    if first_i > 0:
-        x_clean[:, :first_i] = x_raw[:, :first_i]
-        y_clean[:, :first_i] = y_raw[:, :first_i]
+    # Helper to flush & apply local vote
+    def _flush_segment(start, end, votes_same, votes_swap):
+        if votes_swap > votes_same:
+            x_clean[:, start:end] = x_clean[::-1, start:end]
+            y_clean[:, start:end] = y_clean[::-1, start:end]
+            swapped_flags[start:end] = ~swapped_flags[start:end]
 
-    # Start tracking from first complete frame
+    # 6) Local-segment tracking
+    seg_start = first_i
+    votes_same = 0
+    votes_swap = 0
+
+    # Initialize on first full-detect frame
     last_x = x_raw[:, first_i].copy()
     last_y = y_raw[:, first_i].copy()
     x_clean[:, first_i] = last_x
     y_clean[:, first_i] = last_y
+    votes_same += 1
 
-    # Vote counter for final identity assignment
-    track_votes = np.zeros((2, 2), dtype=np.int64)
-
-    # Count first frame if valid
-    if valid[first_i]:
-        track_votes[0, 0] += 1
-        track_votes[1, 1] += 1
-
-    # 6) Main loop: swap correction + voting
     for t in tqdm(range(first_i + 1, T), desc="Cleaning frames"):
-        # Missing data: carry forward last known positions
-        if not np.isfinite(x_raw[:, t]).all():
-            for k in (0, 1):
-                if np.isfinite(x_raw[k, t]):
-                    x_clean[k, t] = last_x[k]
-                    y_clean[k, t] = last_y[k]
+        present = np.isfinite(x_raw[:, t])
+        n_det = present.sum()
+
+        # Precompute for two detections
+        if n_det == 2:
+            inter_d = np.hypot(
+                x_raw[0, t] - x_raw[1, t],
+                y_raw[0, t] - y_raw[1, t]
+            )
+            dx = x_raw[:, t][:, None] - last_x[None, :]
+            dy = y_raw[:, t][:, None] - last_y[None, :]
+            dist = np.hypot(dx, dy)
+            d_same = dist[0, 0] + dist[1, 1]
+            d_swap = dist[0, 1] + dist[1, 0]
+            d0 = dist[0].min()
+            d1 = dist[1].min()
+
+        # Detect continuity break: blindly trusting raw or frames dropped
+        break_cond = (
+            n_det == 0 or
+            (n_det == 2 and inter_d < 100) or
+            (n_det == 2 and min(d_same, d_swap) > 90 and min(d0, d1) > 90)
+        )
+        if break_cond:
+            _flush_segment(seg_start, t, votes_same, votes_swap)
+            seg_start = t
+            votes_same = votes_swap = 0
+
+        # 6a) zero detections → drop both
+        if n_det == 0:
             continue
 
-        # Mice too close: keep original assignment
-        inter_mouse_dist = np.hypot(
-            x_raw[0, t] - x_raw[1, t], y_raw[0, t] - y_raw[1, t]
-        )
-        if inter_mouse_dist < 100:
+        # 6b) one detection → assign to closest ≤90px
+        if n_det == 1:
+            i = np.where(present)[0][0]
+            d0_ = np.hypot(
+                x_raw[i, t] - last_x[0],
+                y_raw[i, t] - last_y[0]
+            )
+            d1_ = np.hypot(
+                x_raw[i, t] - last_x[1],
+                y_raw[i, t] - last_y[1]
+            )
+            if min(d0_, d1_) <= 90:
+                j = 0 if d0_ <= d1_ else 1
+                x_clean[j, t] = x_raw[i, t]
+                y_clean[j, t] = y_raw[i, t]
+                votes_same += 1
+                last_x[j], last_y[j] = x_raw[i, t], y_raw[i, t]
+            continue
+
+        # 6c) two detections too close → trust raw
+        if inter_d < 100:
             x_clean[:, t] = x_raw[:, t]
             y_clean[:, t] = y_raw[:, t]
-            track_votes[0, 0] += 1
-            track_votes[1, 1] += 1
-            last_x = x_raw[:, t].copy()
-            last_y = y_raw[:, t].copy()
+            votes_same += 1
+            last_x[:] = x_raw[:, t]
+            last_y[:] = y_raw[:, t]
             continue
 
-        # Distance-based swap decision
-        dx = x_raw[:, t][:, None] - last_x[None, :]
-        dy = y_raw[:, t][:, None] - last_y[None, :]
-        dist = np.hypot(dx, dy)
-        d_same = dist[0, 0] + dist[1, 1]
-        d_swap = dist[0, 1] + dist[1, 0]
-
-        # Too far even with best assignment: carry forward
+        # 6d) both assignments >90px → keep only the closer detection (or drop)
         if min(d_same, d_swap) > 90:
-            x_clean[:, t] = last_x
-            y_clean[:, t] = last_y
+            if min(d0, d1) > 90:
+                continue
+            i_k = 0 if d0 <= d1 else 1
+            j = int(np.argmin(dist[i_k]))
+            x_clean[j, t] = x_raw[i_k, t]
+            y_clean[j, t] = y_raw[i_k, t]
+            votes_same += 1
+            last_x[j], last_y[j] = x_raw[i_k, t], y_raw[i_k, t]
             continue
 
-        # Assign based on shortest total distance
+        # 6e) normal same-vs-swap assignment
         if d_same <= d_swap:
             x_clean[:, t] = x_raw[:, t]
             y_clean[:, t] = y_raw[:, t]
-            track_votes[0, 0] += 1
-            track_votes[1, 1] += 1
+            votes_same += 1
         else:
             x_clean[:, t] = x_raw[::-1, t]
             y_clean[:, t] = y_raw[::-1, t]
-            track_votes[0, 1] += 1
-            track_votes[1, 0] += 1
-            swapped_flags[t] = True  # Mark local swap
+            votes_swap += 1
+            swapped_flags[t] = True
 
-        # Update reference for next frame
-        last_x = x_clean[:, t].copy()
-        last_y = y_clean[:, t].copy()
+        last_x[:] = x_clean[:, t]
+        last_y[:] = y_clean[:, t]
 
-    # 7) Global identity correction via majority vote
-    need_swap = track_votes[0, 1] > track_votes[0, 0]
-    if need_swap:
-        x_clean = x_clean[::-1, :]
-        y_clean = y_clean[::-1, :]
-        # Flip swap flags too
-        swapped_flags = swapped_flags[::-1]
+    # 7) Flush the final segment
+    _flush_segment(seg_start, T, votes_same, votes_swap)
 
-    # 8) Build output dataframe
-    cleaned = pd.DataFrame(
-        {
-            time_col: np.repeat(times, 2),
-            "identity_name": np.tile(ids, T),
-            "x": x_clean.ravel(order="F"),
-            "y": y_clean.ravel(order="F"),
-        }
-    )
+    # 8) Build cleaned DataFrame
+    cleaned = pd.DataFrame({
+        time_col: np.repeat(times, 2),
+        'identity_name': np.tile(ids, T),
+        'x': x_clean.ravel(order='F'),
+        'y': y_clean.ravel(order='F'),
+    })
 
-    # 9) Merge back with original data (drop old x,y)
-    df2_noxy = df2.drop(columns=["x", "y"])
+    # 9) Merge back with original data (drop old x, y)
+    df2_noxy = df2.drop(columns=['x', 'y'])
     result = (
-        df2_noxy.merge(cleaned, on=[time_col, "identity_name"], how="left")
+        df2_noxy
+        .merge(cleaned, on=[time_col, 'identity_name'], how='left')
         .set_index(time_col)
         .sort_index()
     )
 
     # 10) Mark swapped frames in likelihood
-    if "identity_likelihood" in result.columns:
+    if 'identity_likelihood' in result.columns:
         mask = result.index.isin(times[swapped_flags])
-        result.loc[mask, "identity_likelihood"] = np.nan
+        result.loc[mask, 'identity_likelihood'] = np.nan
+
+    # 11) Final cleanup: drop any rows where x or y is NaN
+    result = result.dropna(subset=['x', 'y'], how='any')
 
     return result
