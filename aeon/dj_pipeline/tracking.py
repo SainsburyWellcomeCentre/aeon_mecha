@@ -463,7 +463,9 @@ class DenoisedTracking(dj.Computed):
         """
 
     key_source = (
-        SLEAPTracking & "experiment_name in ('social0.2-aeon3', 'social0.2-aeon4')"
+        SLEAPTracking & "experiment_name in ('social0.2-aeon3', 'social0.2-aeon4', "
+                        "'social0.3-aeon3', 'social0.3-aeon4', "
+                        "'social0.4-aeon3', 'social0.4-aeon4')"
     )
 
     def make(self, key):
