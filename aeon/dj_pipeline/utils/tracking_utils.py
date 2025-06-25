@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 NUM_IDS = 2  # Number of identities expected in the tracking data
 MAX_DIST_BETWEEN_FRAMES = 90  # Maximum distance between frames
-MAX_INTER_SUBJ_DIST = 100  # Maximum distance between two subjects
+MIN_INTER_SUBJ_DIST = 100  # Subjects must be at least this far apart
 MAX_SWAP_COST = 100  # Maximum cost distance to consider a swap
 
 
@@ -205,7 +205,7 @@ def clean_swaps(df: pd.DataFrame, region_df: pd.DataFrame) -> pd.DataFrame:
         min_dist_id1 = dist_mat[1].min()
 
         # Define discontinuity conditions
-        break_too_close = inter_d < MAX_INTER_SUBJ_DIST  # two detections are too close
+        break_too_close = inter_d < MIN_INTER_SUBJ_DIST  # two detections are too close
         break_too_costly = min(cost_same, cost_swap) > MAX_SWAP_COST
         break_both_far = min(min_dist_id0, min_dist_id1) > MAX_DIST_BETWEEN_FRAMES  # both assignments >90px
 
