@@ -1,7 +1,12 @@
 import datajoint as dj
-from aeon.dj_pipeline import acquisition, ephys, get_schema_name
+import numpy as np
+from pathlib import Path
+from datetime import datetime, UTC
 
-schema = dj.schema(get_schema_name("ephys_processing"))
+from aeon.dj_pipeline import acquisition, ephys, get_schema_name
+from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
+
+schema = dj.schema(get_schema_name("spike_sorting"))
 logger = dj.logger
 
 
@@ -13,7 +18,7 @@ class ElectrodeGroup(dj.Manual):
     """
     definition = """
     -> ephys.ElectrodeConfig
-    electrode_group: varchar(16)  # e.g. "all", "shank1", etc.
+    electrode_group: varchar(16)  # e.g. 'all', 'shank1', etc.
     ---
     electrode_group_description: varchar(1000) 
     electrode_count: int
@@ -88,7 +93,7 @@ class SortingTask(dj.Manual):
 @schema
 class PreProcessing(dj.Computed):
     definition = """
-    -> ephys.SortingTask
+    -> SortingTask
     ---
     execution_time: datetime   # datetime of the start of this step
     execution_duration: float  # execution duration in hours
@@ -100,10 +105,65 @@ class PreProcessing(dj.Computed):
         -> master
         file_name: varchar(255)
         ---
-        file: filepath@ephys-processed
+        file: filepath@dj_store
         """
 
-    def make(self, key):
+    @classmethod
+    def infer_output_dir(cls, key, relative=False, mkdir=False):
+        sorting_root_dir = get_sorting_root_dir()
+        # Infer output directory
+        sorting_method = (SortingMethod * SortingParamSet & key).fetch1("sorting_method")
+        start_str = key["block_start"].strftime("%Y-%m-%dT%H-%M-%S")
+        end_str = key["block_end"].strftime("%Y-%m-%dT%H-%M-%S")
+
+        output_dir = (sorting_root_dir / key["experiment_name"] / "ephys_blocks"
+                      / f"{start_str}_{end_str}"
+                      / key["electrode_group"]
+                      / f"{sorting_method}_{key['paramset_id']}")
+
+        if mkdir:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"{output_dir} created!")
+
+        return output_dir.relative_to(sorting_root_dir) if relative else output_dir
+
+    def make_fetch(self, key):
+        # Infer output directory
+        output_dir = self.infer_output_dir(key, mkdir=True)
+        recording_dir = output_dir.parent / "recording"
+        recording_dir.mkdir(parents=True, exist_ok=True)
+        recording_file = recording_dir / "si_recording.pkl"
+
+        # Load ephys data
+        ephys_files, dir_types = (
+            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key)
+            & "file_name LIKE '%AmplifierData%.bin'"
+        ).fetch("file_path", "directory_type", order_by="chunk_start")
+
+        # Channels
+        electrodes_df = (
+            (
+                ephys.EphysBlockInfo.Channel
+                * ephys.ElectrodeConfig.Electrode
+                * ElectrodeGroup.Electrode
+                * ephys.ProbeType.Electrode
+                & key
+            )
+            .fetch(format="frame")
+            .reset_index()
+        )
+
+        num_channels = len(ephys.ElectrodeConfig.Electrode & key)
+        # Neuropixels 2.0 constants - TODO: read this from the metadata
+        fs_hz = 30e3
+        gain_to_uV = 3.05176
+        offset_to_uV = -2048 * gain_to_uV
+
+        return ephys_files, dir_types, electrodes_df, num_channels, fs_hz, gain_to_uV, offset_to_uV, output_dir, recording_file, recording_dir
+
+    def make_compute(self, key, ephys_files, dir_types, electrodes_df,
+             num_channels, fs_hz, gain_to_uV, offset_to_uV,
+             output_dir, recording_file, recording_dir):
         """ Pre-processing the ephys data, before spike sorting. E.g.:
         - data concatenation (based on EphysBlock)
         - channel selection (based on ElectrodeGroup)
@@ -112,7 +172,77 @@ class PreProcessing(dj.Computed):
         - common average referencing
         - etc.
         """
-        pass
+        import probeinterface as pi
+        import spikeinterface as si
+        import spikeinterface.extractors as se
+
+        execution_time = datetime.now(UTC)
+
+        # Concatenate recordings
+        si_recs = []
+        for f, d in zip(ephys_files, dir_types):
+            ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
+            si_rec = se.read_binary(
+                ephys_dir / f,
+                sampling_frequency=fs_hz,
+                dtype=np.uint16,
+                num_channels=num_channels,
+                gain_to_uV=gain_to_uV,
+                offset_to_uV=offset_to_uV)
+            si_recs.append(si_rec)
+        si_recording = si.concatenate_recordings(si_recs)
+
+        # Select channels based on the electrode group
+        in_use_chn_ids = si_recording.channel_ids[electrodes_df.channel_idx.values]
+        chn2remove = set(si_recording.channel_ids) - set(in_use_chn_ids)
+        si_recording = si_recording.remove_channels(list(chn2remove))
+        in_use_chn_ind = [si_recording.channel_ids.tolist().index(chn_id) for chn_id in in_use_chn_ids]
+        electrodes_df.channel_idx = in_use_chn_ind
+
+        # Create SI probe object
+        probe_df = electrodes_df.copy()
+        probe_df.rename(
+            columns={
+                "electrode": "contact_ids",
+                "shank": "shank_ids",
+                "x_coord": "x",
+                "y_coord": "y",
+            },
+            inplace=True,
+        )
+        probe_df["contact_shapes"] = "circle"
+        probe_df["radius"] = 10
+
+        si_probe = pi.Probe.from_dataframe(probe_df)
+        si_probe.set_device_channel_indices(electrodes_df["channel_idx"].values)
+        si_recording.set_probe(probe=si_probe, in_place=True)
+
+        # Run preprocessing and save results to output folder
+        si_recording = ephys_preproc(si_recording)
+        si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
+
+        return output_dir, execution_time, recording_dir
+
+    def make_insert(self, key, output_dir, execution_time, recording_dir):
+        self.insert1(
+            {
+                **key,
+                "sorting_output_dir": output_dir.relative_to(get_sorting_root_dir()).as_posix(),
+                "execution_time": execution_time,
+                "execution_duration": (
+                    datetime.now(UTC) - execution_time
+                ).total_seconds()
+                / 3600,
+            }
+        )
+        # Insert result files
+        self.File.insert(
+            [
+                {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
+                for f in recording_dir.rglob("*")
+                if f.is_file()
+            ]
+        )
 
 
 @schema
@@ -129,16 +259,71 @@ class SpikeSorting(dj.Computed):
         -> master
         file_name: varchar(255)
         ---
-        file: filepath@ephys-processed
+        file: filepath@dj_store
         """
 
-    def make(self, key):
-        """ Spike sorting the ephys data. E.g.:
-        - kilosort2
-        - kilosort2.5
-        - kilosort3
-        """
-        pass
+    def make_fetch(self, key):
+        sorting_root_dir = get_sorting_root_dir()
+        # Load recording object.
+        sorting_method, params = (
+                SortingTask * SortingParamSet & key
+        ).fetch1("sorting_method", "params")
+        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
+
+        recording_file = (PreProcessing.File
+                          & key & "file_name LIKE '%si_recording.pkl'").fetch1("file")
+
+        return recording_file, output_dir, params, sorting_method
+
+    def make_compute(self, key, recording_file, output_dir, params, sorting_method):
+        import spikeinterface as si
+        from spikeinterface import sorters
+
+        execution_time = datetime.now(UTC)
+
+        sorter_name = sorting_method.replace(".", "_")
+        sorting_output_dir = output_dir / "spike_sorting"
+
+        """ Run spike sorting using the specified method and parameters. """
+        si_recording: si.BaseRecording = si.load(
+            recording_file, base_folder=output_dir
+        )
+        sorting_params = params["SI_SORTING_PARAMS"]
+
+        si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
+            sorter_name=sorter_name,
+            recording=si_recording,
+            folder=sorting_output_dir,
+            remove_existing_folder=True,
+            verbose=True,
+            docker_image=sorter_name not in si.sorters.installed_sorters(),
+            **sorting_params,
+        )
+
+        # Save sorting object
+        sorting_save_path = sorting_output_dir / "si_sorting.pkl"
+        si_sorting.dump_to_pickle(sorting_save_path, relative_to=output_dir)
+
+        execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
+
+        return sorting_output_dir, execution_time, execution_duration
+
+    def make_insert(self, key, sorting_output_dir, execution_time, execution_duration):
+        self.insert1(
+            {
+                **key,
+                "execution_time": execution_time,
+                "execution_duration": execution_duration
+            }
+        )
+        # Insert result files
+        self.File.insert(
+            [
+                {**key, "file_name": f.relative_to(sorting_output_dir).as_posix(), "file": f}
+                for f in sorting_output_dir.rglob("*")
+                if f.is_file()
+            ]
+        )
 
 
 @schema
@@ -155,16 +340,98 @@ class PostProcessing(dj.Computed):
         -> master
         file_name: varchar(255)
         ---
-        file: filepath@ephys-processed
+        file: filepath@dj_store
         """
 
-    def make(self, key):
+    def make_fetch(self, key):
+        sorting_root_dir = get_sorting_root_dir()
+        # Load recording object.
+        sorting_method, params = (
+                SortingTask * SortingParamSet & key
+        ).fetch1("sorting_method", "params")
+        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
+
+        recording_file = (PreProcessing.File
+                          & key & "file_name LIKE '%si_recording.pkl'").fetch1("file")
+        sorting_file = (SpikeSorting.File
+                        & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file")
+
+        return recording_file, sorting_file, output_dir, params
+
+    def make_compute(self, key, recording_file, sorting_file, output_dir, params):
         """ Post-processing the ephys data, after spike sorting. E.g.:
         - quality assessment
         - waveform extraction
         - etc.
         """
-        pass
+        import spikeinterface as si
+        from spikeinterface import sorters
+
+        execution_time = datetime.now(UTC)
+
+        si_recording: si.BaseRecording = si.load(
+            recording_file, base_folder=output_dir
+        )
+        si_sorting: si.sorters.BaseSorter = si.load(
+            sorting_file, base_folder=output_dir
+        )
+
+        postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
+
+        job_kwargs = postprocessing_params.get(
+            "job_kwargs", {"n_jobs": -1, "chunk_duration": "1s"}
+        )
+
+        analyzer_output_dir = output_dir / "sorting_analyzer"
+
+        has_units = si_sorting.unit_ids.size > 0
+
+        # ---- run the analyzer extensions ----
+        if not has_units:
+            logger.info("No units found in sorting object. Skipping sorting analyzer.")
+            analyzer_output_dir.mkdir(parents=True, exist_ok=True)  # create empty directory anyway, for consistency
+            return
+
+        # Sorting Analyzer
+        sorting_analyzer = si.create_sorting_analyzer(
+            sorting=si_sorting,
+            recording=si_recording,
+            format="binary_folder",
+            folder=analyzer_output_dir,
+            sparse=True,
+            overwrite=True,
+        )
+
+        # The order of extension computation is drawn from sorting_analyzer.get_computable_extensions()
+        # each extension is parameterized by params specified in extensions_params dictionary (skip if not specified)
+        extensions_params = postprocessing_params.get("extensions", {})
+        extensions_to_compute = {
+            ext_name: extensions_params[ext_name]
+            for ext_name in sorting_analyzer.get_computable_extensions()
+            if ext_name in extensions_params
+        }
+
+        sorting_analyzer.compute(extensions_to_compute, **job_kwargs)
+
+        execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
+
+        return analyzer_output_dir, execution_time, execution_duration
+
+    def make_insert(self, key, analyzer_output_dir, execution_time, execution_duration):
+        self.insert1(
+            {
+                **key,
+                "execution_time": execution_time,
+                "execution_duration": execution_duration,
+            }
+        )
+        self.File.insert(
+            [
+                {**key, "file_name": f.relative_to(analyzer_output_dir).as_posix(), "file": f}
+                for f in analyzer_output_dir.rglob("*")
+                if f.is_file()
+            ]
+        )
 
 
 @schema
@@ -277,3 +544,23 @@ class SyncedSpikes(dj.Imported):
         Synchronize the spike times to the HARP clock.
         """
         pass
+
+
+# ---- Ephys preprocessing with spike interface ----
+
+def ephys_preproc(recording):
+    """
+    Basic ephys preprocessing using SpikeInterface.
+    1. Bandpass filter the recording between 300 Hz and 6000 Hz.
+    2. Common average reference the recording using median.
+    """
+    import spikeinterface as si
+    from spikeinterface import preprocessing
+
+    recording = si.preprocessing.bandpass_filter(
+        recording=recording, freq_min=300, freq_max=6000
+    )
+    recording = si.preprocessing.common_reference(
+        recording=recording, operator="median"
+    )
+    return recording

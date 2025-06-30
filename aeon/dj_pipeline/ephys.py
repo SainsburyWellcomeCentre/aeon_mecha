@@ -15,11 +15,11 @@ class ProbeType(dj.Lookup):
     class Electrode(dj.Part):
         definition = """  # Electrode site on a probe
         -> master
-        electrode: int       # electrode index, starts at 0
+        electrode: int       # electrode idx, starts at 0
         ---
-        shank: int           # shank index, starts at 0, advance left to right
-        shank_col: int       # column index, starts at 0, advance left to right
-        shank_row: int       # row index, starts at 0, advance bottom to top
+        shank: int           # shank idx, starts at 0, advance left to right
+        shank_col: int       # column idx, starts at 0, advance left to right
+        shank_row: int       # row idx, starts at 0, advance bottom to top
         x_coord=NULL: float  # (um) x coordinate of the electrode within the probe
         y_coord=NULL: float  # (um) y coordinate of the electrode within the probe
         """
@@ -39,7 +39,7 @@ class Probe(dj.Lookup):
 class ElectrodeConfig(dj.Lookup):
     definition = """  # The electrode configuration on a given probe used for recording
     -> ProbeType
-    electrode_config_name: varchar(32)  # e.g. "0-383"
+    electrode_config_name: varchar(32)  # e.g. 0-383
     ---
     electrode_config_description: varchar(4000)  # description of the electrode configuration
     electrode_config_hash: uuid  # hash of the electrode configuration
@@ -68,7 +68,7 @@ class EphysChunk(dj.Manual):
         -> master
         file_name: varchar(128)
         ---
-        -> Experiment.Directory
+        -> acquisition.Experiment.Directory
         file_path: varchar(255)  # path of the file, relative to the data repository
         """
 
@@ -78,6 +78,7 @@ class EphysChunk(dj.Manual):
         1. look for start/end in ONIX
         2. map to start/end in HARP
         3. store the HARP start/end
+        4. infer the probe type and electrode config
         """
         pass
     
@@ -113,7 +114,7 @@ class EphysBlockInfo(dj.Imported):
     class Channel(dj.Part):
         definition = """  # Electrode-channel mapping
         -> master
-        channel_idx: int  # channel index (index of the raw data)
+        channel_idx: int  # channel idx (idx of the raw data)
         ---
         -> ElectrodeConfig.Electrode
         channel_name="": varchar(64)  # alias of the channel
