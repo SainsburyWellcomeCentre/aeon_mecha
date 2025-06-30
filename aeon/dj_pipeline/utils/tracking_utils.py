@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 NUM_IDS = 2  # Number of identities expected in the tracking data
 MAX_DIST_BETWEEN_FRAMES = 90  # Maximum distance between frames
@@ -171,7 +170,7 @@ def clean_swaps(df: pd.DataFrame, region_df: pd.DataFrame) -> pd.DataFrame:
             nonlocal votes_swap
             votes_swap += 1
 
-    for t in tqdm(range(first_i + 1, T), desc="Cleaning frames"):
+    for t in range(first_i + 1, T):
         present = np.isfinite(x_raw[:, t])
         n_det = present.sum()
 
