@@ -7,7 +7,7 @@ from swc.aeon.schema import Stream
 class Pose(Stream):
     def __init__(self, path):
         """Initializes the Pose stream."""
-        super().__init__(reader.Pose(f"{path}_222*"))
+        super().__init__(reader.Pose(f"{path}_222*", "/ceph/aeon/aeon/data/ingest"))
 
 
 class EnvironmentActiveConfiguration(Stream):

@@ -17,4 +17,4 @@ class RfidEvents(Stream):
 class Pose(Stream):
     def __init__(self, path):
         """Initializes the Pose stream."""
-        super().__init__(reader.Pose(f"{path}_node-0*"))
+        super().__init__(reader.Pose(f"{path}_node-0*", "/ceph/aeon/aeon/data/processed"))
