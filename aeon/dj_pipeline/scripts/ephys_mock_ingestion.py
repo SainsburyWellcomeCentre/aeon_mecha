@@ -145,7 +145,7 @@ ephys.EphysChunk.File.insert1(
         chunk_start=pd.Timestamp('2024-06-04 13:00:00'),
         directory_type='raw',
         file_name='NeuropixelsV2Beta_ProbeA_AmplifierData_3.bin',
-        file_path='2024-06-04T10-24-07/NeuropixelsV2Beta/NeuropixelsV2Beta_ProbeA_AmplifierData_3.bin',
+        file_path='2024-06-04T10-24-07/NeuropixelsV2Beta/NeuropixelsV2Beta_ProbeA_AmplifierData_4.bin',
     )
 )
 
@@ -247,18 +247,18 @@ spike_sorting.ElectrodeGroup.Electrode.insert(
 # SortingParamSet
 
 params = {}
-params["SI_PREPROCESSING_METHOD"] = "IBLdestriping_modified"
+params["SI_PREPROCESSING_METHOD"] = "ephys_preproc"
 params["SI_SORTING_PARAMS"] = {
     "minfr_goodchannels": 0.1,
     "lam": 10,
     "AUCsplit": 0.9,
     "minFR": 0.02,
-    "momentum": [20, 400],
     "sigmaMask": 30,
     "nfilt_factor": 4,
     "ntbuff": 64,
     "scaleproc": 200,
     "nPCs": 3,
+    "keep_good_only": True
 }
 params["SI_POSTPROCESSING_PARAMS"] = {
     "extensions": {
@@ -285,8 +285,8 @@ params["SI_POSTPROCESSING_PARAMS"] = {
 spike_sorting.SortingParamSet.insert1(
     dict(
         paramset_id=0,
-        sorting_method='kilosort2.5',
-        paramset_description='Default parameter set for Kilosort2.0 with SpikeInterface',
+        sorting_method='kilosort3',
+        paramset_description='Default parameter set for Kilosort3 with SpikeInterface',
         params=params,
     )
 )

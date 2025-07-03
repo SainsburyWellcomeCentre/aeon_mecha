@@ -296,7 +296,7 @@ class SpikeSorting(dj.Computed):
             folder=sorting_output_dir,
             remove_existing_folder=True,
             verbose=True,
-            docker_image=sorter_name not in si.sorters.installed_sorters(),
+            singularity_image=sorter_name not in si.sorters.installed_sorters(),
             **sorting_params,
         )
 
@@ -557,6 +557,7 @@ def ephys_preproc(recording):
     import spikeinterface as si
     from spikeinterface import preprocessing
 
+    recording = si.preprocessing.unsigned_to_signed(recording)
     recording = si.preprocessing.bandpass_filter(
         recording=recording, freq_min=300, freq_max=6000
     )
