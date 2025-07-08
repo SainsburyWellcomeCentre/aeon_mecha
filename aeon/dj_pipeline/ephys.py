@@ -15,13 +15,12 @@ class ProbeType(dj.Lookup):
     class Electrode(dj.Part):
         definition = """  # Electrode site on a probe
         -> master
-        electrode: int       # electrode idx, starts at 0
+        electrode: int       # electrode id, starts at 0
         ---
         shank: int           # shank idx, starts at 0, advance left to right
-        shank_col: int       # column idx, starts at 0, advance left to right
-        shank_row: int       # row idx, starts at 0, advance bottom to top
-        x_coord=NULL: float  # (um) x coordinate of the electrode within the probe
-        y_coord=NULL: float  # (um) y coordinate of the electrode within the probe
+        x_coord: float  # (um) x coordinate of the electrode within the probe
+        y_coord: float  # (um) y coordinate of the electrode within the probe
+        electrode_name='': varchar(64)  # name of the electrode (e.g. "A1", "B2", etc.)
         """
 
 
@@ -135,3 +134,24 @@ class EphysBlockInfo(dj.Imported):
         - Extract other metadata for this ephys block.
         """
         pass
+
+
+def create_probe_type(probe_type: str, manufacturer: str, probe_name: str):
+    import probeinterface as pi
+
+    electrode_df = pi.get_probe(
+        manufacturer=manufacturer, probe_name=probe_name).to_dataframe()
+    electrode_df.rename(
+        columns={"contact_ids": "electrode_name",
+                 "shank_ids": "shank",
+                 "x": "x_coord",
+                 "y": "y_coord"},
+        inplace=True
+    )
+    electrode_df.shank = electrode_df.shank.apply(lambda x: x or 0)
+    electrode_df["probe_type"] = probe_type
+    electrode_df["electrode"] = electrode_df.index
+
+    with ProbeType.connection.transaction:
+        ProbeType.insert1(dict(probe_type=probe_type))
+        ProbeType.Electrode.insert(electrode_df, ignore_extra_fields=True)

@@ -1,6 +1,5 @@
 import uuid
 import pandas as pd
-import numpy as np
 from pathlib import Path
 from datetime import datetime
 from sklearn.linear_model import LinearRegression
@@ -14,27 +13,20 @@ from aeon.dj_pipeline import acquisition, ephys, spike_sorting
 # ---- insert into ephys schema
 
 # ProbeType
-probe_type = "neuropixels 2.0 - SS"
-ephys.ProbeType.insert1(
-    dict(probe_type=probe_type)
-)
-ephys.ProbeType.Electrode.insert(
-    dict(
-        probe_type=probe_type,
-        electrode=elec,
-        shank=shank,
-        shank_col=shank_col,
-        shank_row=shank_row,
-        x_coord=x,
-        y_coord=y,
-    )
-    for elec, shank, shank_col, shank_row, x, y in zip(range(960), [0]*960, [0]*960, range(960), [0]*960, range(960))
-)
+# Neuropixels 2.0 Single-Shank
+ephys.create_probe_type("neuropixels - NP2004",
+                        manufacturer="neuropixels",
+                        probe_name="NP2004")
+# Neuropixels 2.0 Multi-Shank
+ephys.create_probe_type("neuropixels - NP2014",
+                        manufacturer="neuropixels",
+                        probe_name="NP2014")
 
 # Probe
+probe_type = "neuropixels - NP2004"
 ephys.Probe.insert1(
     dict(
-        probe='npx2_ss_01',
+        probe='NP2004-001',
         probe_type=probe_type,
         probe_comment='',
     )
@@ -83,8 +75,8 @@ acquisition.Experiment.Directory.insert(
 )
 
 # Ephys Chunk
-probe_name = 'npx2_ss_01'
-probe_type = 'neuropixels 2.0 - SS'
+probe_name = 'NP2004-001'
+probe_type = 'neuropixels - NP2004'
 
 ephys.EphysChunk.insert1(
     dict(
@@ -303,7 +295,7 @@ ephys_block_dict = dict(
 electrode_group_dict = dict(
     probe_type=probe_type,
     electrode_config_name='0-383',
-    electrode_group='0-143',
+    electrode_group='all',
 )
 
 spike_sorting.SortingTask.insert1(
