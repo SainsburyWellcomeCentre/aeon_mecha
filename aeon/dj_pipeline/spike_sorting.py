@@ -481,11 +481,18 @@ class SortedSpikes(dj.Imported):
         si_sorting_: si.sorters.BaseSorter = si.load(
             sorting_file, base_folder=output_dir
         )
+
+        self.insert1(
+            {
+                **key,
+                "execution_time": execution_time,
+                "execution_duration": (datetime.now(UTC) - execution_time).total_seconds() / 3600,
+            }
+        )
         if si_sorting_.unit_ids.size == 0:
             logger.info(
                 f"No units found in {sorting_file}. Skipping Unit ingestion..."
             )
-            self.insert1(key)
             return
 
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
@@ -530,7 +537,6 @@ class SortedSpikes(dj.Imported):
                 extremum_channel_inds=extremum_channel_inds
             )
         )
-        units = []
         for unit_idx, unit_id in enumerate(si_sorting.unit_ids):
             unit_id = int(unit_id)
             unit_spikes_df = spikes_df[spikes_df.unit_index == unit_idx]
@@ -546,28 +552,18 @@ class SortedSpikes(dj.Imported):
 
             assert len(spike_indices) == len(spike_sites) == len(spike_depths)
 
-            units.append(
+            self.Unit.insert1(
                 {
                     **key,
                     **channel2electrode_map[unit_peak_channel[unit_id]],
                     "unit": unit_id,
-                    "cluster_quality_label": cluster_quality_label_map[unit_id],
+                    "unit_quality": cluster_quality_label_map[unit_id],
                     "spike_indices": spike_indices,
                     "spike_count": spike_count_dict[unit_id],
                     "spike_sites": spike_sites,
                     "spike_depths": spike_depths,
-                }
+                }, ignore_extra_fields=True
             )
-
-        execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
-        self.insert1(
-            {
-                **key,
-                "execution_time": execution_time,
-                "execution_duration": execution_duration,
-            }
-        )
-        self.Unit.insert(units, ignore_extra_fields=True)
 
 
 @schema

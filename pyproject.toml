@@ -60,7 +60,7 @@ dev = [
   "tox",
 ]
 gpu = ["cupy", "dask"]
-spike_sorting = ["spikeinterface[full] @ git+https://github.com/SpikeInterface/spikeinterface.git",
+spike_sorting = ["spikeinterface[full] @ git+https://github.com/ttngu207/spikeinterface.git@dev/fix_4032",
   "spython", "cuda-python"]
 
 [project.scripts]
