@@ -2,6 +2,7 @@ import datajoint as dj
 import numpy as np
 from pathlib import Path
 import pandas as pd
+import json
 from datetime import datetime, UTC
 
 from aeon.dj_pipeline import acquisition, ephys, get_schema_name
@@ -202,10 +203,19 @@ class PreProcessing(dj.Computed):
         electrodes_df.channel_idx = in_use_chn_ind
 
         # Create SI probe object
-        manufacturer, probe_name = key["probe_type"].split(" - ")
-        si_probe = pi.get_probe(
-            manufacturer=manufacturer, probe_name=probe_name)
-        si_probe = si_probe.get_slice(electrodes_df.electrode.values)
+        probe_df = electrodes_df.copy()
+        probe_df.rename(
+            columns={
+                "electrode": "contact_ids",
+                "shank": "shank_ids",
+                "x_coord": "x",
+                "y_coord": "y",
+            },
+            inplace=True,
+        )
+        probe_df["contact_shapes"] = "circle"
+        probe_df["radius"] = 10
+        si_probe = pi.Probe.from_dataframe(probe_df)
 
         si_probe.set_device_channel_indices(electrodes_df["channel_idx"].values)
         si_recording.set_probe(probe=si_probe, in_place=True)
@@ -464,15 +474,12 @@ class SortedSpikes(dj.Imported):
 
         # Get channel and electrode-site mapping
         electrode_query = (
-                ephys.EphysBlockInfo.Channel
+                ephys.EphysBlockInfo.Channel.proj(..., "-channel_name")
                 * ephys.ElectrodeConfig.Electrode
                 * ElectrodeGroup.Electrode
-                * ephys.ProbeType.Electrode
+                * ephys.ProbeType.Electrode.proj("electrode_name")
                 & key
         )
-        channel2electrode_map: dict[int, dict] = {
-            chn.pop("channel_idx"): chn for chn in electrode_query.fetch(as_dict=True)
-        }
 
         # Get sorter method and create output directory.
         analyzer_output_dir = output_dir / "sorting_analyzer"
@@ -512,10 +519,14 @@ class SortedSpikes(dj.Imported):
         spike_count_dict: dict[int, int] = si_sorting.count_num_spikes_per_unit()
         # {unit: spike_count}
 
-        # update channel2electrode_map to match with probe's channel index
+        # create channel2electrode_map
+        electrode_map: dict[int, dict] = {
+            elec["electrode"]: elec for elec in electrode_query.fetch(as_dict=True)
+        }
         channel2electrode_map = {
-            idx: channel2electrode_map[int(chn_idx)]
-            for idx, chn_idx in enumerate(sorting_analyzer.get_probe().contact_ids)
+            chn_idx: electrode_map[int(elec_id)]
+            for chn_idx, elec_id in zip(sorting_analyzer.get_probe().device_channel_indices,
+                                        sorting_analyzer.get_probe().contact_ids)
         }
 
         # Get unit id to quality label mapping
@@ -590,23 +601,74 @@ class Waveform(dj.Imported):
         -> ephys.ElectrodeConfig.Electrode  
         --- 
         channel_waveform: longblob   # (uV) mean waveform across spikes of the given unit at the given electrode
-        waveforms=null: longblob  # (uV) (spike x sample) waveforms of a sampling of spikes at the given electrode for the given unit
         """
         
     def make(self, key):
-        """
-        Extract waveforms for each unit and electrode.
-        """
-        pass
+        import spikeinterface as si
 
+        sorting_root_dir = get_sorting_root_dir()
+        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
-@schema
-class QualityMetric(dj.Lookup):
-    definition = """
-    quality_metric: varchar(100)  # quality metric type - e.g. 'isi_violation', 'amplitude_violation', etc.
-    ---
-    quality_metric_description='':  varchar(4000)
-    """
+        # Get channel and electrode-site mapping
+        electrode_query = (
+                ephys.EphysBlockInfo.Channel.proj(..., "-channel_name")
+                * ephys.ElectrodeConfig.Electrode
+                * ElectrodeGroup.Electrode
+                * ephys.ProbeType.Electrode.proj("electrode_name")
+                & key
+        )
+
+        # Get sorter method and create output directory.
+        analyzer_output_dir = output_dir / "sorting_analyzer"
+        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
+
+        self.insert1(key)
+
+        # Find representative channel for each unit
+        unit_peak_channel: dict[int, np.ndarray] = (
+            si.ChannelSparsity.from_best_channels(
+                sorting_analyzer, 1
+            ).unit_id_to_channel_indices
+        )  # {unit: peak_channel_index}
+        unit_peak_channel = {u: chn[0] for u, chn in unit_peak_channel.items()}
+
+        # create channel2electrode_map
+        electrode_map: dict[int, dict] = {
+            elec["electrode"]: elec for elec in electrode_query.fetch(as_dict=True)
+        }
+        channel2electrode_map = {
+            chn_idx: electrode_map[int(elec_id)]
+            for chn_idx, elec_id in zip(sorting_analyzer.get_probe().device_channel_indices,
+                                        sorting_analyzer.get_probe().contact_ids)
+        }
+
+        templates = sorting_analyzer.get_extension("templates")
+
+        for unit in (SortedSpikes.Unit & key).fetch(
+                "KEY", order_by="unit"
+        ):
+            # Get mean waveform for this unit from all channels - (sample x channel)
+            unit_waveforms = templates.get_unit_template(
+                unit_id=unit["unit"], operator="average"
+            )
+            unit_peak_waveform = {
+                **unit,
+                "unit_waveform": unit_waveforms[
+                                           :, unit_peak_channel[unit["unit"]]
+                                           ],
+            }
+
+            unit_electrode_waveforms = [
+                {
+                    **unit,
+                    **channel2electrode_map[chn_idx],
+                    "channel_waveform": unit_waveforms[:, chn_idx],
+                }
+                for chn_idx in channel2electrode_map
+            ]
+
+            self.UnitWaveform.insert1(unit_peak_waveform, ignore_extra_fields=True)
+            self.ChannelWaveform.insert(unit_electrode_waveforms, ignore_extra_fields=True)
 
 
 @schema
@@ -619,11 +681,34 @@ class SortingQuality(dj.Imported):
         definition = """  # Quality metrics for a given unit
         -> master
         -> SortedSpikes.Unit
-        -> QualityMetric
         ---
-        metric_value: varchar(100)  # value of the quality metric
+        qc_metrics: JSON
         """
-    
+
+    def make(self, key):
+        import spikeinterface as si
+
+        sorting_root_dir = get_sorting_root_dir()
+        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
+
+        # Get sorter method and create output directory.
+        analyzer_output_dir = output_dir / "sorting_analyzer"
+        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
+
+        self.insert1(key)
+
+        qc_metrics = sorting_analyzer.get_extension("quality_metrics").get_data()
+        template_metrics = sorting_analyzer.get_extension(
+            "template_metrics"
+        ).get_data()
+        metrics_df = pd.concat([qc_metrics, template_metrics], axis=1)
+
+        for unit_key in (SortedSpikes.Unit & key).fetch("KEY"):
+            unit_qc = metrics_df.loc[unit_key["unit"]].to_dict()
+            self.Metric.insert1(
+                {**unit_key, "qc_metrics": json.dumps(unit_qc, default=str)}
+            )
+
 
 @schema
 class SyncedSpikes(dj.Imported):
@@ -666,7 +751,7 @@ def ephys_preproc(recording):
     recording = si.preprocessing.common_reference(
         recording=recording, operator="median"
     )
-    recording = recording.frame_slice(0, 9000000)  # cut to 300 seconds for testing
+    recording = recording.frame_slice(0, 18000000)  # cut to 300 seconds for testing
     return recording
 
 

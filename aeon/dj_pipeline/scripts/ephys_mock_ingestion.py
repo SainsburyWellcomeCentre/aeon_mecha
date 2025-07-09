@@ -236,6 +236,27 @@ spike_sorting.ElectrodeGroup.Electrode.insert(
     for elec in range(120, 264)
 )
 
+# ElectrodeGroup - electrode 0 - 299
+
+spike_sorting.ElectrodeGroup.insert1(
+    dict(
+        probe_type=probe_type,
+        electrode_config_name='0-383',
+        electrode_group='0-299',
+        electrode_group_description='electrode 0 - 299',
+        electrode_count=300,
+    )
+)
+spike_sorting.ElectrodeGroup.Electrode.insert(
+    dict(
+        probe_type=probe_type,
+        electrode_config_name='0-383',
+        electrode_group='0-299',
+        electrode=elec,
+    )
+    for elec in range(0, 299)
+)
+
 # SortingParamSet
 
 params = {}
@@ -338,14 +359,14 @@ ephys_block_dict = dict(
 electrode_group_dict = dict(
     probe_type=probe_type,
     electrode_config_name='0-383',
-    electrode_group='0-143',
+    electrode_group='120-263',
 )
 
 spike_sorting.SortingTask.insert1(
     dict(
         **ephys_block_dict,
         **electrode_group_dict,
-        paramset_id=300,
+        paramset_id=0,
     )
 )
 
