@@ -1,6 +1,7 @@
 import datajoint as dj
 import numpy as np
 from pathlib import Path
+import pandas as pd
 from datetime import datetime, UTC
 
 from aeon.dj_pipeline import acquisition, ephys, get_schema_name
@@ -59,6 +60,7 @@ class SortingMethod(dj.Lookup):
         ("kilosort2", "kilosort2 sorting method"),
         ("kilosort2.5", "kilosort2.5 sorting method"),
         ("kilosort3", "kilosort3 sorting method"),
+        ("kilosort4", "kilosort4 sorting method")
     ]
 
 
@@ -200,20 +202,11 @@ class PreProcessing(dj.Computed):
         electrodes_df.channel_idx = in_use_chn_ind
 
         # Create SI probe object
-        probe_df = electrodes_df.copy()
-        probe_df.rename(
-            columns={
-                "electrode": "contact_ids",
-                "shank": "shank_ids",
-                "x_coord": "x",
-                "y_coord": "y",
-            },
-            inplace=True,
-        )
-        probe_df["contact_shapes"] = "circle"
-        probe_df["radius"] = 10
+        manufacturer, probe_name = key["probe_type"].split(" - ")
+        si_probe = pi.get_probe(
+            manufacturer=manufacturer, probe_name=probe_name)
+        si_probe = si_probe.get_slice(electrodes_df.electrode.values)
 
-        si_probe = pi.Probe.from_dataframe(probe_df)
         si_probe.set_device_channel_indices(electrodes_df["channel_idx"].values)
         si_recording.set_probe(probe=si_probe, in_place=True)
 
@@ -461,7 +454,120 @@ class SortedSpikes(dj.Imported):
         From sorted spikes output, extract units, spike times, electrode, etc.
         Also, synchronize the spike times to the HARP clock.
         """
-        pass
+        import spikeinterface as si
+        from spikeinterface import sorters
+
+        execution_time = datetime.now(UTC)
+
+        sorting_root_dir = get_sorting_root_dir()
+        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
+
+        # Get channel and electrode-site mapping
+        electrode_query = (
+                ephys.EphysBlockInfo.Channel
+                * ephys.ElectrodeConfig.Electrode
+                * ElectrodeGroup.Electrode
+                * ephys.ProbeType.Electrode
+                & key
+        )
+        channel2electrode_map: dict[int, dict] = {
+            chn.pop("channel_idx"): chn for chn in electrode_query.fetch(as_dict=True)
+        }
+
+        # Get sorter method and create output directory.
+        analyzer_output_dir = output_dir / "sorting_analyzer"
+
+        sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
+        si_sorting_: si.sorters.BaseSorter = si.load(
+            sorting_file, base_folder=output_dir
+        )
+        if si_sorting_.unit_ids.size == 0:
+            logger.info(
+                f"No units found in {sorting_file}. Skipping Unit ingestion..."
+            )
+            self.insert1(key)
+            return
+
+        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
+        si_sorting = sorting_analyzer.sorting
+
+        # Find representative channel for each unit
+        unit_peak_channel: dict[int, np.ndarray] = (
+            si.ChannelSparsity.from_best_channels(
+                sorting_analyzer,
+                1,
+            ).unit_id_to_channel_indices
+        )
+        unit_peak_channel: dict[int, int] = {
+            u: chn[0] for u, chn in unit_peak_channel.items()
+        }
+
+        spike_count_dict: dict[int, int] = si_sorting.count_num_spikes_per_unit()
+        # {unit: spike_count}
+
+        # update channel2electrode_map to match with probe's channel index
+        channel2electrode_map = {
+            idx: channel2electrode_map[int(chn_idx)]
+            for idx, chn_idx in enumerate(sorting_analyzer.get_probe().contact_ids)
+        }
+
+        # Get unit id to quality label mapping
+        cluster_quality_label_map = {
+            int(unit_id): (
+                si_sorting.get_unit_property(unit_id, "KSLabel")
+                if "KSLabel" in si_sorting.get_property_keys()
+                else "n.a."
+            )
+            for unit_id in si_sorting.unit_ids
+        }
+
+        spike_locations = sorting_analyzer.get_extension("spike_locations")
+        extremum_channel_inds = si.template_tools.get_template_extremum_channel(
+            sorting_analyzer, outputs="index"
+        )
+        spikes_df = pd.DataFrame(
+            sorting_analyzer.sorting.to_spike_vector(
+                extremum_channel_inds=extremum_channel_inds
+            )
+        )
+        units = []
+        for unit_idx, unit_id in enumerate(si_sorting.unit_ids):
+            unit_id = int(unit_id)
+            unit_spikes_df = spikes_df[spikes_df.unit_index == unit_idx]
+            spike_sites = np.array(
+                [
+                    channel2electrode_map[chn_idx]["electrode"]
+                    for chn_idx in unit_spikes_df.channel_index
+                ]
+            )
+            unit_spikes_loc = spike_locations.get_data()[unit_spikes_df.index]
+            _, spike_depths = zip(*unit_spikes_loc)  # x-coordinates, y-coordinates
+            spike_indices = si_sorting.get_unit_spike_train(unit_id)
+
+            assert len(spike_indices) == len(spike_sites) == len(spike_depths)
+
+            units.append(
+                {
+                    **key,
+                    **channel2electrode_map[unit_peak_channel[unit_id]],
+                    "unit": unit_id,
+                    "cluster_quality_label": cluster_quality_label_map[unit_id],
+                    "spike_indices": spike_indices,
+                    "spike_count": spike_count_dict[unit_id],
+                    "spike_sites": spike_sites,
+                    "spike_depths": spike_depths,
+                }
+            )
+
+        execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
+        self.insert1(
+            {
+                **key,
+                "execution_time": execution_time,
+                "execution_duration": execution_duration,
+            }
+        )
+        self.Unit.insert(units, ignore_extra_fields=True)
 
 
 @schema
@@ -564,4 +670,103 @@ def ephys_preproc(recording):
     recording = si.preprocessing.common_reference(
         recording=recording, operator="median"
     )
+    recording = recording.frame_slice(0, 9000000)  # cut to 300 seconds for testing
     return recording
+
+
+# --- test write binary ---
+def test_write_binary():
+    import probeinterface as pi
+    import spikeinterface as si
+    import spikeinterface.extractors as se
+    from spikeinterface.core import write_binary_recording
+
+    from pathlib import Path
+
+    key = {'experiment_name': 'social-ephys0.1-aeon3',
+           'probe': 'npx2_ss_01',
+           'block_start': datetime(2024, 6, 4, 11, 0),
+           'block_end': datetime(2024, 6, 4, 13, 0),
+           'probe_type': 'neuropixels 2.0 - SS',
+           'electrode_config_name': '0-383',
+           'electrode_group': '0-143',
+           'paramset_id': '0'}
+
+    # Load ephys data
+    ephys_files, dir_types = (
+            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key)
+            & "file_name LIKE '%AmplifierData%.bin'"
+    ).fetch("file_path", "directory_type", order_by="chunk_start")
+
+    # Channels
+    electrodes_df = (
+        (
+                ephys.EphysBlockInfo.Channel
+                * ephys.ElectrodeConfig.Electrode
+                * ephys.ProbeType.Electrode
+                & key
+        )
+        .fetch(format="frame")
+        .reset_index()
+    )
+
+    num_channels = len(ephys.ElectrodeConfig.Electrode & key)
+    # Neuropixels 2.0 constants - TODO: read this from the metadata
+    fs_hz = 30e3
+    gain_to_uV = 3.05176
+    offset_to_uV = -2048 * gain_to_uV
+
+    # Concatenate recordings
+    si_recs = []
+    for f, d in zip(ephys_files, dir_types):
+        ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
+        si_rec = se.read_binary(
+            ephys_dir / f,
+            sampling_frequency=fs_hz,
+            dtype=np.uint16,
+            num_channels=num_channels,
+            gain_to_uV=gain_to_uV,
+            offset_to_uV=offset_to_uV)
+        si_recs.append(si_rec)
+    si_recording = si.concatenate_recordings(si_recs)
+
+    # Select channels based on the electrode group
+    in_use_chn_ids = si_recording.channel_ids[electrodes_df.channel_idx.values]
+    chn2remove = set(si_recording.channel_ids) - set(in_use_chn_ids)
+    si_recording = si_recording.remove_channels(list(chn2remove))
+    in_use_chn_ind = [si_recording.channel_ids.tolist().index(chn_id) for chn_id in in_use_chn_ids]
+    electrodes_df.channel_idx = in_use_chn_ind
+
+    # Create SI probe object
+    probe_df = electrodes_df.copy()
+    probe_df.rename(
+        columns={
+            "electrode": "contact_ids",
+            "shank": "shank_ids",
+            "x_coord": "x",
+            "y_coord": "y",
+        },
+        inplace=True,
+    )
+    probe_df["contact_shapes"] = "circle"
+    probe_df["radius"] = 10
+
+    si_probe = pi.Probe.from_dataframe(probe_df)
+    si_probe.set_device_channel_indices(electrodes_df["channel_idx"].values)
+    si_recording.set_probe(probe=si_probe, in_place=True)
+
+    # Run preprocessing and save results to output folder
+    si_recording = ephys_preproc(si_recording)
+
+    rec = si_recording.frame_slice(0, 900000)
+    tempdata = Path("tempdata").absolute()
+    tempdata.mkdir(parents=True, exist_ok=True)
+    binary_file_path = tempdata / "temp_recording144.dat"
+    jobs_kwargs = {"n_jobs": 0.8, "chunk_duration": "1s"}
+
+    write_binary_recording(
+        recording=rec,
+        file_paths=[binary_file_path],
+        dtype="int16",
+        **jobs_kwargs
+    )

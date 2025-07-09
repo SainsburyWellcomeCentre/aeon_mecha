@@ -250,6 +250,7 @@ params["SI_SORTING_PARAMS"] = {
     "ntbuff": 64,
     "scaleproc": 200,
     "nPCs": 3,
+    'do_correction': False,  # disable Drift Correction
     "keep_good_only": True
 }
 params["SI_POSTPROCESSING_PARAMS"] = {
@@ -270,18 +271,60 @@ params["SI_POSTPROCESSING_PARAMS"] = {
         "quality_metrics": {},
     },
     "job_kwargs": {"n_jobs": 0.8, "chunk_duration": "1s"},
-    "export_to_phy": True,
+    "export_to_phy": False,
     "export_report": True,
 }
 
 spike_sorting.SortingParamSet.insert1(
     dict(
-        paramset_id=0,
+        paramset_id=300,
         sorting_method='kilosort3',
-        paramset_description='Default parameter set for Kilosort3 with SpikeInterface',
+        paramset_description='Kilosort3 - Drift Correction disabled',
         params=params,
     )
 )
+
+# kilosort 4
+params = {}
+params["SI_PREPROCESSING_METHOD"] = "ephys_preproc"
+params["SI_SORTING_PARAMS"] = {
+    "n_pcs": 3,
+    "do_CAR": False,
+    "skip_kilosort_preprocessing": True,
+    "keep_good_only": True,
+    "use_binary_file": True,
+}
+params["SI_POSTPROCESSING_PARAMS"] = {
+    "extensions": {
+        "random_spikes": {},
+        "waveforms": {},
+        "templates": {},
+        "noise_levels": {},
+        # "amplitude_scalings": {},
+        "correlograms": {},
+        "isi_histograms": {},
+        "principal_components": {"n_components": 5, "mode": "by_channel_local"},
+        "spike_amplitudes": {},
+        "spike_locations": {},
+        "template_metrics": {"include_multi_channel_metrics": True},
+        "template_similarity": {},
+        "unit_locations": {},
+        "quality_metrics": {},
+    },
+    "job_kwargs": {"n_jobs": 0.8, "chunk_duration": "1s"},
+    "export_to_phy": False,
+    "export_report": True,
+}
+
+spike_sorting.SortingParamSet.insert1(
+    dict(
+        paramset_id=400,
+        sorting_method='kilosort4',
+        paramset_description='Default parameter set for Kilosort4 with SpikeInterface',
+        params=params,
+    )
+)
+
 
 # ---- A new SortingTask ----
 
@@ -295,14 +338,14 @@ ephys_block_dict = dict(
 electrode_group_dict = dict(
     probe_type=probe_type,
     electrode_config_name='0-383',
-    electrode_group='all',
+    electrode_group='0-143',
 )
 
 spike_sorting.SortingTask.insert1(
     dict(
         **ephys_block_dict,
         **electrode_group_dict,
-        paramset_id=0,
+        paramset_id=300,
     )
 )
 
