@@ -57,13 +57,13 @@ class SubjectData(StreamGroup):
 class Pose(Stream):
     def __init__(self, path):
         """Initializes the Pose stream."""
-        super().__init__(reader.Pose(f"{path}_test-node1*"))
+        super().__init__(reader.Pose(f"{path}_test-node1*", "/ceph/aeon/aeon/data/processed"))
 
 
 class Pose03(Stream):
     def __init__(self, path):
         """Initializes the Pose stream."""
-        super().__init__(reader.Pose(f"{path}_222*"))
+        super().__init__(reader.Pose(f"{path}_222*", "/ceph/aeon/aeon/data/ingest"))
 
 
 class WeightRaw(Stream):
