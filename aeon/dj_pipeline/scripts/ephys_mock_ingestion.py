@@ -258,7 +258,7 @@ spike_sorting.ElectrodeGroup.Electrode.insert(
 )
 
 # SortingParamSet
-
+# kilosort 2.5
 params = {}
 params["SI_PREPROCESSING_METHOD"] = "ephys_preproc"
 params["SI_SORTING_PARAMS"] = {
@@ -271,7 +271,54 @@ params["SI_SORTING_PARAMS"] = {
     "ntbuff": 64,
     "scaleproc": 200,
     "nPCs": 3,
-    'do_correction': False,  # disable Drift Correction
+    'do_correction': True,  # disable Drift Correction
+    "keep_good_only": True
+}
+params["SI_POSTPROCESSING_PARAMS"] = {
+    "extensions": {
+        "random_spikes": {},
+        "waveforms": {},
+        "templates": {},
+        "noise_levels": {},
+        # "amplitude_scalings": {},
+        "correlograms": {},
+        "isi_histograms": {},
+        "principal_components": {"n_components": 5, "mode": "by_channel_local"},
+        "spike_amplitudes": {},
+        "spike_locations": {},
+        "template_metrics": {"include_multi_channel_metrics": True},
+        "template_similarity": {},
+        "unit_locations": {},
+        "quality_metrics": {},
+    },
+    "job_kwargs": {"n_jobs": 0.8, "chunk_duration": "1s"},
+    "export_to_phy": False,
+    "export_report": True,
+}
+
+spike_sorting.SortingParamSet.insert1(
+    dict(
+        paramset_id=250,
+        sorting_method='kilosort3',
+        paramset_description='Kilosort3 - Drift Correction disabled',
+        params=params,
+    )
+)
+
+# kilosort 3
+params = {}
+params["SI_PREPROCESSING_METHOD"] = "ephys_preproc"
+params["SI_SORTING_PARAMS"] = {
+    "minfr_goodchannels": 0.1,
+    "lam": 10,
+    "AUCsplit": 0.9,
+    "minFR": 0.02,
+    "sigmaMask": 30,
+    "nfilt_factor": 4,
+    "ntbuff": 64,
+    "scaleproc": 200,
+    "nPCs": 3,
+    'do_correction': True,  # disable Drift Correction
     "keep_good_only": True
 }
 params["SI_POSTPROCESSING_PARAMS"] = {
@@ -366,7 +413,7 @@ spike_sorting.SortingTask.insert1(
     dict(
         **ephys_block_dict,
         **electrode_group_dict,
-        paramset_id=0,
+        paramset_id=250,
     )
 )
 
