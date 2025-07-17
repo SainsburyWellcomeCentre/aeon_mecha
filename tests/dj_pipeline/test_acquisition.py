@@ -3,8 +3,9 @@
 import pytest
 
 
-@pytest.mark.ingestion
-def test_epoch_chunk_ingestion(test_params, pipeline, epoch_chunk_ingestion):
+@pytest.mark.ingestion()
+@pytest.mark.usefixtures("_epoch_chunk_ingestion")
+def test_epoch_chunk_ingestion(test_params, pipeline):
     acquisition = pipeline["acquisition"]
 
     assert (
@@ -17,10 +18,9 @@ def test_epoch_chunk_ingestion(test_params, pipeline, epoch_chunk_ingestion):
     )
 
 
-@pytest.mark.ingestion
-def test_experimentlog_ingestion(
-    test_params, pipeline, epoch_chunk_ingestion, experimentlog_ingestion
-):
+@pytest.mark.ingestion()
+@pytest.mark.usefixtures("_epoch_chunk_ingestion", "_experimentlog_ingestion")
+def test_experimentlog_ingestion(test_params, pipeline):
     acquisition = pipeline["acquisition"]
 
     assert (
