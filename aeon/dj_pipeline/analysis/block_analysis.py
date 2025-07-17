@@ -1180,7 +1180,7 @@ class BlockPatchPlots(dj.Computed):
         # Figure 8 - Weighted patch preference: weighted by 'wheel_dist_spun : pel_ct' ratio
         # ---
         # Create multi-indexed dataframe with weighted distance for each subject-patch pair
-        pel_patches = [p for p in patch_names if "dummy" not in p.lower()]  # exclude dummy patches
+        pel_patches = [p for p in patch_names if "base" not in p.lower()]  # exclude base patches
         data = []
         for patch in pel_patches:
             for subject_name in subject_names:
