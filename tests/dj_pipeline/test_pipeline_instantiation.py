@@ -3,7 +3,7 @@
 import pytest
 
 
-@pytest.mark.instantiation()
+@pytest.mark.instantiation
 def test_pipeline_instantiation(pipeline):
     assert hasattr(pipeline["acquisition"], "FoodPatchEvent")
     assert hasattr(pipeline["lab"], "Arena")
@@ -13,7 +13,7 @@ def test_pipeline_instantiation(pipeline):
     assert hasattr(pipeline["tracking"], "CameraTracking")
 
 
-@pytest.mark.instantiation()
+@pytest.mark.instantiation
 @pytest.mark.usefixtures("_experiment_creation")
 def test_experiment_creation(test_params, pipeline):
     acquisition = pipeline["acquisition"]

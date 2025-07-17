@@ -121,6 +121,10 @@ extend-exclude = [
   "D106",    # skip adding docstrings for nested streams
   "S324",    # skip hashlib insecure hash function (md5) warning
   "F401",    # skip incorrectly detecting `aeon.dj_pipeline` dependencies as unused
+  "PLC0415", # skip checking `import` at the top-level of a file
+]
+"tests/dj_pipeline/*" = [
+  "PLC0415", # skip checking `import` at the top-level of a file
 ]
 
 [tool.ruff.lint.pydocstyle]
