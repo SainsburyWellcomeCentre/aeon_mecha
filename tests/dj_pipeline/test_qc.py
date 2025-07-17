@@ -3,8 +3,9 @@
 import pytest
 
 
-@pytest.mark.qc
-def test_camera_qc_ingestion(test_params, pipeline, camera_qc_ingestion):
+@pytest.mark.qc()
+@pytest.mark.usefixtures("_camera_qc_ingestion")
+def test_camera_qc_ingestion(test_params, pipeline):
     qc = pipeline["qc"]
 
     assert len(qc.CameraQC()) == test_params["camera_qc_count"]

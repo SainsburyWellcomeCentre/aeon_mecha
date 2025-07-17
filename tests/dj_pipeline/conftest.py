@@ -46,7 +46,7 @@ def test_params():
 
 
 @pytest.fixture(autouse=True, scope="session")
-def dj_config():
+def _dj_config():
     """Configures DataJoint connection and loads custom settings.
 
     This fixture sets up the DataJoint configuration using the
@@ -101,7 +101,7 @@ def drop_schema():
 
 
 @pytest.fixture(autouse=True, scope="session")
-def pipeline(dj_config):
+def pipeline(_dj_config):
     _pipeline = load_pipeline()
 
     yield _pipeline
@@ -111,7 +111,7 @@ def pipeline(dj_config):
 
 
 @pytest.fixture(autouse=True, scope="session")
-def experiment_creation(test_params, pipeline):
+def _experiment_creation(test_params, pipeline):
     from aeon.dj_pipeline.create_experiments import create_experiment_02
 
     create_experiment_02.main()
@@ -139,7 +139,7 @@ def experiment_creation(test_params, pipeline):
 
 
 @pytest.fixture(scope="session")
-def epoch_chunk_ingestion(test_params, pipeline, experiment_creation):
+def _epoch_chunk_ingestion(test_params, pipeline, _experiment_creation):
     acquisition = pipeline["acquisition"]
 
     test_params["experiment_name"]
@@ -154,7 +154,7 @@ def epoch_chunk_ingestion(test_params, pipeline, experiment_creation):
 
 
 @pytest.fixture(scope="session")
-def experimentlog_ingestion(pipeline):
+def _experimentlog_ingestion(pipeline):
     acquisition = pipeline["acquisition"]
     if not len(acquisition.Chunk()):
         raise Exception("Chunk table is empty!")
@@ -164,12 +164,12 @@ def experimentlog_ingestion(pipeline):
 
 
 @pytest.fixture(scope="session")
-def camera_qc_ingestion(pipeline, epoch_chunk_ingestion):
+def _camera_qc_ingestion(pipeline, _epoch_chunk_ingestion):
     qc = pipeline["qc"]
     qc.CameraQC.populate(**_populate_settings)
 
 
 @pytest.fixture(scope="session")
-def camera_tracking_ingestion(pipeline, camera_qc_ingestion):
+def _camera_tracking_ingestion(pipeline, _camera_qc_ingestion):
     tracking = pipeline["tracking"]
     tracking.CameraTracking.populate(**_populate_settings)
