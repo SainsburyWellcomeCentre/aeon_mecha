@@ -271,7 +271,7 @@ params["SI_SORTING_PARAMS"] = {
     "ntbuff": 64,
     "scaleproc": 200,
     "nPCs": 3,
-    'do_correction': True,  # disable Drift Correction
+    'do_correction': True,
     "keep_good_only": True
 }
 params["SI_POSTPROCESSING_PARAMS"] = {
@@ -299,8 +299,8 @@ params["SI_POSTPROCESSING_PARAMS"] = {
 spike_sorting.SortingParamSet.insert1(
     dict(
         paramset_id=250,
-        sorting_method='kilosort3',
-        paramset_description='Kilosort3 - Drift Correction disabled',
+        sorting_method='kilosort2.5',
+        paramset_description='Kilosort2.5 - default params',
         params=params,
     )
 )
@@ -406,7 +406,7 @@ ephys_block_dict = dict(
 electrode_group_dict = dict(
     probe_type=probe_type,
     electrode_config_name='0-383',
-    electrode_group='120-263',
+    electrode_group='0-143',
 )
 
 spike_sorting.SortingTask.insert1(
