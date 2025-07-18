@@ -1,8 +1,12 @@
 """Start an Aeon ingestion process.
 
-This script defines auto-processing routines to operate the DataJoint pipeline for the Aeon project. Three separate "process" functions are defined to call `populate()` for different groups of tables, depending on their priority in the ingestion routines (high, mid, low).
+This script defines auto-processing routines to operate the DataJoint pipeline
+for the Aeon project. Three separate "process" functions are defined to call
+`populate()` for different groups of tables, depending on their priority in
+the ingestion routines (high, mid, low).
 
-Each process function is run in a while-loop with the total run-duration configurable via command line argument '--duration' (if not set, runs perpetually)
+Each process function is run in a while-loop with the total run-duration configurable
+via command line argument '--duration' (if not set, runs perpetually)
     - the loop will not begin a new cycle after this period of time (in seconds)
     - the loop will run perpetually if duration<0 or if duration==None
     - the script will not be killed _at_ this limit, it will keep executing,
@@ -22,7 +26,8 @@ Usage as a script:
 
 Usage from python:
 
-    `from aeon.dj_pipeline.populate.process import run; run(worker_name='high_priority', duration=20, sleep=5)`
+    `from aeon.dj_pipeline.populate.process import run
+    run(worker_name='high_priority', duration=20, sleep=5)`
 
 """
 
@@ -33,10 +38,10 @@ from datajoint_utilities.dj_worker import parse_args
 
 from aeon.dj_pipeline.populate.worker import (
     acquisition_worker,
-    logger,
     analysis_worker,
-    streams_worker,
+    logger,
     pyrat_worker,
+    streams_worker,
 )
 
 # ---- some wrappers to support execution as script or CLI

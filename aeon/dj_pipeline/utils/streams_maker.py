@@ -1,3 +1,5 @@
+"""Module for stream-related tables in the analysis schema."""
+
 import importlib
 import inspect
 import re
@@ -5,11 +7,14 @@ from pathlib import Path
 
 import datajoint as dj
 import pandas as pd
+import swc
+from swc.aeon.io import api as io_api
+from swc.aeon.io import reader as io_reader
 
 import aeon
 from aeon.dj_pipeline import acquisition, get_schema_name
-from aeon.io import api as io_api
-from aeon.schema import schemas as aeon_schemas
+
+aeon_schemas = acquisition.aeon_schemas
 
 logger = dj.logger
 
@@ -21,16 +26,21 @@ _STREAMS_MODULE_FILE = Path(__file__).parent.parent / "streams.py"
 
 
 class StreamType(dj.Lookup):
-    """Catalog of all steam types for the different device types used across Project Aeon. One StreamType corresponds to one reader class in `aeon.io.reader`. The combination of `stream_reader` and `stream_reader_kwargs` should fully specify the data loading routine for a particular device, using the `aeon.io.utils`."""
+    """Catalog of all stream types used across Project Aeon.
 
-    definition = """  # Catalog of all stream types used across Project Aeon
-    stream_type          : varchar(20)
+    Catalog of all stream types for the different device types used across Project Aeon.
+    One StreamType corresponds to one Reader class in :mod:`aeon.io.reader`.
+    The combination of ``stream_reader`` and ``stream_reader_kwargs`` should fully specify the data
+    loading routine for a particular device, using :func:`aeon.io.api.load`.
+    """
+
+    definition = """ # Catalog of all stream types used across Project Aeon
+    stream_type          : varchar(36)
     ---
-    stream_reader        : varchar(256)     # name of the reader class found in `aeon_mecha` package (e.g. aeon.io.reader.Video)
+    stream_reader        : varchar(256) # reader class name in aeon.io.reader (e.g. aeon.io.reader.Video)
     stream_reader_kwargs : longblob  # keyword arguments to instantiate the reader class
     stream_description='': varchar(256)
     stream_hash          : uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
-    unique index (stream_hash)
     """
 
 
@@ -67,17 +77,16 @@ def get_device_template(device_type: str):
     device_type = dj.utils.from_camel_case(device_type)
 
     class ExperimentDevice(dj.Manual):
-        definition = f"""
-        # {device_title} placement and operation for a particular time period, at a certain location, for a given experiment (auto-generated with aeon_mecha-{aeon.__version__})
+        definition = """ # {device_title} operation for time, location, experiment (v-{aeon.__version__})
         -> acquisition.Experiment
         -> Device
-        {device_type}_install_time  : datetime(6)   # time of the {device_type} placed and started operation at this position
+        {device_type}_install_time : datetime(6)  # {device_type} time of placement and start operation
         ---
-        {device_type}_name          : varchar(36)
+        {device_type}_name         : varchar(36)
         """
 
         class Attribute(dj.Part):
-            definition = """  # metadata/attributes (e.g. FPS, config, calibration, etc.) associated with this experimental device
+            definition = """  # Metadata (e.g. FPS, config, calibration) for this experimental device
             -> master
             attribute_name          : varchar(32)
             ---
@@ -85,7 +94,7 @@ def get_device_template(device_type: str):
             """
 
         class RemovalTime(dj.Part):
-            definition = f"""
+            definition = """
             -> master
             ---
             {device_type}_removal_time: datetime(6)  # time of the {device_type} being removed
@@ -106,16 +115,17 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
         & (streams_module.DeviceType.Stream & {"device_type": device_type, "stream_type": stream_type})
     ).fetch1()
 
-    for i, n in enumerate(stream_detail["stream_reader"].split(".")):
-        reader = aeon if i == 0 else getattr(reader, n)
+    reader = {"swc": swc, "aeon": aeon}
+    for idx, n in enumerate(stream_detail["stream_reader"].split(".")):
+        reader = reader[n] if idx == 0 else getattr(reader, n)
 
-    if reader is aeon.io.reader.Pose:
+    if reader is io_reader.Pose:
         logger.warning("Automatic generation of stream table for Pose reader is not supported. Skipping...")
         return None, None
 
     stream = reader(**stream_detail["stream_reader_kwargs"])
 
-    table_definition = f"""  # Raw per-chunk {stream_type} data stream from {device_type} (auto-generated with aeon_mecha-{aeon.__version__})
+    table_definition = f""" # Raw per-chunk {stream_type} from {device_type} (v-{aeon.__version__})
     -> {device_type}
     -> acquisition.Chunk
     ---
@@ -134,22 +144,23 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
         @property
         def key_source(self):
-            f"""
-            Only the combination of Chunk and {device_type} with overlapping time
-            +  Chunk(s) that started after {device_type} install time and ended before {device_type} remove time
-            +  Chunk(s) that started after {device_type} install time for {device_type} that are not yet removed
+            """Only the combination of Chunk and {device_type} with overlapping time.
+
+            + Chunk(s) started after {device_type} install time & ended before {device_type} remove time
+            + Chunk(s) started after {device_type} install time for {device_type} and not yet removed
             """
             return (
                 acquisition.Chunk * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
-                & f"chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time"
-                & f'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, "2200-01-01")'
+                & "chunk_start >= {device_type_name}_install_time"
+                & 'chunk_start < IFNULL({device_type_name}_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
+            """Load and insert the data for the DeviceDataStream table."""
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (ExperimentDevice & key).fetch1(f"{dj.utils.from_camel_case(device_type)}_name")
+            device_name = (ExperimentDevice & key).fetch1("{device_type_name}_name")
 
             devices_schema = getattr(
                 aeon_schemas,
@@ -189,6 +200,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
 
 def main(create_tables=True):
+    """Main function to create and update stream-related tables in the analysis schema."""
     if not _STREAMS_MODULE_FILE.exists():
         with open(_STREAMS_MODULE_FILE, "w") as f:
             imports_str = (
@@ -200,8 +212,8 @@ def main(create_tables=True):
                 "from uuid import UUID\n\n"
                 "import aeon\n"
                 "from aeon.dj_pipeline import acquisition, get_schema_name\n"
-                "from aeon.io import api as io_api\n"
-                "from aeon.schema import schemas as aeon_schemas\n\n"
+                "from swc.aeon.io import api as io_api\n\n"
+                "aeon_schemas = acquisition.aeon_schemas\n\n"
                 'schema = dj.Schema(get_schema_name("streams"))\n\n\n'
             )
             f.write(imports_str)
@@ -259,19 +271,16 @@ def main(create_tables=True):
             device_stream_table_def = inspect.getsource(table_class).lstrip()
 
             # Replace the definition
+            device_type_name = dj.utils.from_camel_case(device_type)
             replacements = {
                 "DeviceDataStream": f"{device_type}{stream_type}",
                 "ExperimentDevice": device_type,
-                'f"chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time"': f"'chunk_start >= {dj.utils.from_camel_case(device_type)}_install_time'",
-                """f'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, "2200-01-01")'""": f"""'chunk_start < IFNULL({dj.utils.from_camel_case(device_type)}_removal_time, "2200-01-01")'""",
-                'f"{dj.utils.from_camel_case(device_type)}_name"': f"'{dj.utils.from_camel_case(device_type)}_name'",
+                "{device_type_name}": device_type_name,
                 "{device_type}": device_type,
                 "{stream_type}": stream_type,
                 "{aeon.__version__}": aeon.__version__,
+                "table_definition": f'"""{table_definition}"""',
             }
-
-            replacements["table_definition"] = '"""' + table_definition + '"""'
-
             for old, new in replacements.items():
                 device_stream_table_def = device_stream_table_def.replace(old, new)
 

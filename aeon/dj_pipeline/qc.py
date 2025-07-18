@@ -1,13 +1,14 @@
+"""DataJoint schema for the quality control pipeline."""
+
 import datajoint as dj
 import numpy as np
 import pandas as pd
+from swc.aeon.io import api as io_api
 
-from aeon.io import api as io_api
-
-from aeon.dj_pipeline import get_schema_name
-from aeon.dj_pipeline import acquisition, streams
+from aeon.dj_pipeline import acquisition, get_schema_name, streams
 
 schema = dj.schema(get_schema_name("qc"))
+logger = dj.logger
 
 # -------------- Quality Control ---------------------
 
@@ -28,7 +29,7 @@ class QCRoutine(dj.Lookup):
     ---
     qc_routine_order: int    # the order in which this qc routine is executed
     qc_routine_description: varchar(255)  # description of this QC routine
-    qc_module: varchar(64)     # the module where the qc_function can be imported from - e.g. aeon.analysis.quality_control
+    qc_module: varchar(64)     # module path, e.g., aeon.analysis.quality_control
     qc_function: varchar(64)   # the function used to evaluate this QC - e.g. check_drop_frame
     """
 
@@ -38,7 +39,7 @@ class QCRoutine(dj.Lookup):
 
 @schema
 class CameraQC(dj.Imported):
-    definition = """ # Quality controls performed on a particular camera for a particular acquisition chunk
+    definition = """ # Quality controls performed on a particular camera for one acquisition chunk
     -> acquisition.Chunk
     -> streams.SpinnakerVideoSource
     ---
@@ -55,6 +56,7 @@ class CameraQC(dj.Imported):
 
     @property
     def key_source(self):
+        """Return the keys for the CameraQC table."""
         return (
             acquisition.Chunk
             * (
@@ -66,6 +68,7 @@ class CameraQC(dj.Imported):
         )  # CameraTop
 
     def make(self, key):
+        """Perform quality control checks on the CameraTop stream."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
 
         device_name = (streams.SpinnakerVideoSource & key).fetch1("spinnaker_video_source_name")
