@@ -67,3 +67,11 @@ def find_root_directory(
         raise FileNotFoundError(
             f"No valid root directory found (from {root_directories}) for {full_path}"
         ) from err
+
+
+def get_sorting_root_dir(repository_name="ceph_aeon") -> pathlib.Path:
+    repo_path = get_repository_path(repository_name)
+    sorting_dir = repo_path / "aeon" / "dj_store"
+    if not sorting_dir.exists():
+        raise FileNotFoundError(f"Processed directory does not exist: {sorting_dir}")
+    return sorting_dir / "ephys-processed"

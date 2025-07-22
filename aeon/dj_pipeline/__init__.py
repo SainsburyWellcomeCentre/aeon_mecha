@@ -12,6 +12,8 @@ logger = dj.logger
 _default_database_prefix = os.getenv("DJ_DB_PREFIX") or "aeon_"
 _default_repository_config = {"ceph_aeon": "/ceph/aeon"}
 
+os.environ["DJ_SUPPORT_FILEPATH_MANAGEMENT"] = "TRUE"
+
 # safe-guard in case `custom` is not provided
 if "custom" not in dj.config:
     dj.config["custom"] = {}

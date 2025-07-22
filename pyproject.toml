@@ -60,6 +60,8 @@ dev = [
   "tox",
 ]
 gpu = ["cupy", "dask"]
+spike_sorting = ["spikeinterface[full] @ git+https://github.com/SpikeInterface/spikeinterface.git",
+  "spython", "cuda-python"]
 
 [project.scripts]
 aeon_ingest = "aeon.dj_pipeline.populate.process:cli"
