@@ -4,9 +4,14 @@ from pathlib import Path
 import pandas as pd
 import json
 from datetime import datetime, UTC
+import joblib
+import tempfile
 
 from aeon.dj_pipeline import acquisition, ephys, get_schema_name
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
+
+from swc.aeon.io import api as io_api
+from aeon.schema.ephys import social_ephys
 
 schema = dj.schema(get_schema_name("spike_sorting"))
 logger = dj.logger
@@ -781,7 +786,7 @@ class SyncedSpikes(dj.Imported):
         -> SortedSpikes.Unit
         -> ephys.EphysChunk
         ---
-        -> ephys.ElectrodeConfig.Electrode  # electrode associated with this unit
+        spike_count: int       # how many spikes in this recording for this unit
         spike_times: longblob  # (s) synchronized spike times (i.e. in HARP clock) for the respective EphysChunk
         """
 
@@ -789,7 +794,65 @@ class SyncedSpikes(dj.Imported):
         """
         Synchronize the spike times to the HARP clock.
         """
-        pass
+        # Load ephys sync models
+        sync_models = {}
+        with tempfile.TemporaryDirectory() as tempdir:
+            sync_ = (ephys.EphysChunk.SyncModel & (ephys.EphysBlockInfo.Chunk & key)).fetch(
+                "onix_ts_start", "onix_ts_end", "sync_model",
+                download_path=tempdir, order_by="onix_ts_start"
+            )
+            for s, e, m in zip(*sync_):
+                sync_models[(s, e)] = joblib.load(m)
+
+        # Load ephys onix times
+        ephys_file_keys, ephys_files, dir_types = (
+            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key)
+            & "file_name LIKE '%Clock%.bin'"
+        ).fetch("KEY", "file_path", "directory_type", order_by="chunk_start")
+
+        onix_times = []
+        for f, d in zip(ephys_files, dir_types):
+            ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
+            onix_ts = np.memmap(ephys_dir / f, mode="r", dtype=np.uint64)
+            onix_times.append(onix_ts)
+        onix_lengths = np.cumsum([len(s) for s in onix_times])
+
+        def indices2syncedtimes(spike_indices):
+            # loop through the onix_times and index the spikes within bound of each onix_times
+            # the nested loop - seemingly inefficient - is to make use of `memmap` to avoid memory issues
+            for idx, onix_bound in enumerate(onix_lengths):
+                if idx == 0:
+                    spk_ind = spike_indices[spike_indices <= onix_bound]
+                else:
+                    spk_ind = spike_indices[(spike_indices > onix_lengths[idx - 1]) & (spike_indices <= onix_bound)]
+                spk_ind -= spk_ind[0]  # make the spike indices relative to the start of the onix_times
+                spk_times = onix_times[idx][spk_ind]
+                # sync the spike times to the HARP clock
+                synced_ts = []
+                for (start, end), model in sync_models.items():
+                    ind = np.logical_and(spk_times >= start, spk_times <= end)
+                    if not np.any(ind):
+                        continue
+                    sync_t = model.predict(spk_times[ind].reshape(-1, 1))
+                    synced_ts.extend(sync_t.flatten())
+
+                synced_ts = io_api.to_datetime(synced_ts).values
+                chunk_key = ephys_file_keys[idx]
+                chunk_key.pop("file_name", None)
+                yield chunk_key, synced_ts
+
+        self.insert1(key)
+        for unit_data in (SortedSpikes.Unit.proj("spike_indices") & key).fetch(as_dict=True):
+            spike_indices = unit_data.pop("spike_indices")
+            for ephys_chunk_key, synced_times in indices2syncedtimes(spike_indices):
+                self.Unit.insert1(
+                    {
+                        **unit_data,
+                        **ephys_chunk_key,
+                        "spike_count": len(synced_times),
+                        "spike_times": synced_times,
+                    }
+                )
 
 
 # ---- Ephys preprocessing with spike interface ----
