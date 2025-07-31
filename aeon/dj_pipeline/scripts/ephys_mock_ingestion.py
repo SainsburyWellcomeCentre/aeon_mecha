@@ -78,70 +78,51 @@ acquisition.Experiment.Directory.insert(
 probe_name = 'NP2004-001'
 probe_type = 'neuropixels - NP2004'
 
-ephys.EphysChunk.insert1(
-    dict(
-        experiment_name=experiment_name,
-        probe=probe_name,
-        chunk_start=pd.Timestamp('2024-06-04 11:00:00'),
-        chunk_end=pd.Timestamp('2024-06-04 12:00:00'),
-        probe_type=probe_type,
-        electrode_config_name='0-383',
-    )
-)
-ephys.EphysChunk.File.insert1(
-    dict(
-        experiment_name=experiment_name,
-        probe=probe_name,
-        chunk_start=pd.Timestamp('2024-06-04 11:00:00'),
-        directory_type='raw',
-        file_name='NeuropixelsV2Beta_ProbeA_AmplifierData_2.bin',
-        file_path='2024-06-04T10-24-07/NeuropixelsV2Beta/NeuropixelsV2Beta_ProbeA_AmplifierData_2.bin',
-    )
-)
+raw_dir = Path('/ceph/aeon/aeon/data/raw/AEONX1/social-ephys0.1')
+ephys_data_dir = raw_dir / "2024-06-04T10-24-07" / "NeuropixelsV2Beta"
+ephys_files = sorted(list(ephys_data_dir.glob("*ProbeA_AmplifierData*.bin")),
+                     key=lambda x: int(x.stem.split("_")[-1]))
+epoch_start = pd.Timestamp('2024-06-04 11:00:00')
+file_index_start = 2  # start from the 3rd file (index 2) to skip the first two files
 
-ephys.EphysChunk.insert1(
-    dict(
-        experiment_name=experiment_name,
-        probe=probe_name,
-        chunk_start=pd.Timestamp('2024-06-04 12:00:00'),
-        chunk_end=pd.Timestamp('2024-06-04 13:00:00'),
-        probe_type=probe_type,
-        electrode_config_name='0-383',
+for idx, ephys_file in enumerate(ephys_files):
+    if idx < file_index_start:
+        continue
+    chunk_start = epoch_start + pd.Timedelta(hours=idx - file_index_start)
+    chunk_end = chunk_start + pd.Timedelta(hours=1)
+    ephys.EphysChunk.insert1(
+        dict(
+            experiment_name=experiment_name,
+            probe=probe_name,
+            chunk_start=chunk_start,
+            chunk_end=chunk_end,
+            probe_type=probe_type,
+            electrode_config_name='0-383',
+        ), skip_duplicates=True
     )
-)
-ephys.EphysChunk.File.insert1(
-    dict(
-        experiment_name=experiment_name,
-        probe=probe_name,
-        chunk_start=pd.Timestamp('2024-06-04 12:00:00'),
-        directory_type='raw',
-        file_name='NeuropixelsV2Beta_ProbeA_AmplifierData_3.bin',
-        file_path='2024-06-04T10-24-07/NeuropixelsV2Beta/NeuropixelsV2Beta_ProbeA_AmplifierData_3.bin',
+    ephys.EphysChunk.File.insert1(
+        dict(
+            experiment_name=experiment_name,
+            probe=probe_name,
+            chunk_start=chunk_start,
+            directory_type='raw',
+            file_name=ephys_file.name,
+            file_path=ephys_file.relative_to(raw_dir).as_posix(),
+        ), skip_duplicates=True
     )
-)
+    clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
+    ephys.EphysChunk.File.insert1(
+        dict(
+            experiment_name=experiment_name,
+            probe=probe_name,
+            chunk_start=chunk_start,
+            directory_type='raw',
+            file_name=clock_file.name,
+            file_path=clock_file.relative_to(raw_dir).as_posix(),
+        ), skip_duplicates=True
+    )
 
-ephys.EphysChunk.insert1(
-    dict(
-        experiment_name=experiment_name,
-        probe=probe_name,
-        chunk_start=pd.Timestamp('2024-06-04 13:00:00'),
-        chunk_end=pd.Timestamp('2024-06-04 14:00:00'),
-        probe_type=probe_type,
-        electrode_config_name='0-383',
-    )
-)
-ephys.EphysChunk.File.insert1(
-    dict(
-        experiment_name=experiment_name,
-        probe=probe_name,
-        chunk_start=pd.Timestamp('2024-06-04 13:00:00'),
-        directory_type='raw',
-        file_name='NeuropixelsV2Beta_ProbeA_AmplifierData_3.bin',
-        file_path='2024-06-04T10-24-07/NeuropixelsV2Beta/NeuropixelsV2Beta_ProbeA_AmplifierData_4.bin',
-    )
-)
-
-# Ephys Block
+# Ephys Block - 2 hour
 ephys.EphysBlock.insert1(
     dict(
         experiment_name=experiment_name,
@@ -172,6 +153,16 @@ ephys.EphysBlockInfo.Channel.insert(
      for ch_idx, ch_key in enumerate(electrode_df)),
     allow_direct_insert=True
 )
+
+# Ephys Block - 24 hour
+eblock = dict(
+    experiment_name=experiment_name,
+    probe=probe_name,
+    block_start=pd.Timestamp('2024-06-04 11:00:00'),
+    block_end=pd.Timestamp('2024-06-05 13:00:00'),
+)
+ephys.EphysBlock.insert1(eblock)
+ephys.EphysBlockInfo.populate(eblock)
 
 # ElectrodeGroup - all electrodes
 
@@ -400,7 +391,7 @@ ephys_block_dict = dict(
     experiment_name=experiment_name,
     probe=probe_name,
     block_start=pd.Timestamp('2024-06-04 11:00:00'),
-    block_end=pd.Timestamp('2024-06-04 13:00:00'),
+    block_end=pd.Timestamp('2024-06-05 13:00:00'),
 )
 
 electrode_group_dict = dict(
