@@ -1,4 +1,5 @@
 """This module defines the workers for the AEON pipeline."""
+import os
 
 import datajoint as dj
 from datajoint_utilities.dj_worker import DataJointWorker, ErrorLog, WorkerLog
@@ -27,6 +28,8 @@ logger = dj.logger
 org_name, workflow_name, *_ = db_prefix.split("_")
 worker_schema_name = f"{org_name}_support_{workflow_name}_" + "worker"
 
+WORKER_MAX_IDLED_CYCLE = int(os.environ.get("WORKER_MAX_IDLED_CYCLE", 3))
+
 # ---- Manage experiments for automated ingestion ----
 
 schema = dj.Schema(worker_schema_name)
@@ -53,10 +56,10 @@ acquisition_worker = DataJointWorker(
     "acquisition_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    max_idled_cycle=6,
-    sleep_duration=1200,
+    max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
+    sleep_duration=10,
 )
-acquisition_worker(ingest_epochs_chunks)
+# acquisition_worker(ingest_epochs_chunks)
 acquisition_worker(acquisition.EpochConfig)
 acquisition_worker(acquisition.Environment)
 acquisition_worker(block_analysis.BlockDetection)
@@ -66,8 +69,8 @@ pyrat_worker = DataJointWorker(
     "pyrat_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    max_idled_cycle=400,
-    sleep_duration=30,
+    max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
+    sleep_duration=10,
 )
 
 pyrat_worker(subject.CreatePyratIngestionTask)
@@ -80,13 +83,16 @@ streams_worker = DataJointWorker(
     "streams_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    max_idled_cycle=50,
-    sleep_duration=60,
+    max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
+    sleep_duration=10,
     autoclear_error_patterns=["%BlockAnalysis Not Ready%"],
 )
 
 for attr in vars(streams).values():
     if is_djtable(attr, dj.user_tables.AutoPopulate):
+        if attr().class_name == "SpinnakerVideoSourceVideo":
+            # skip the SpinnakerVideoSourceVideo, large volume and not critical
+            continue
         streams_worker(attr, max_calls=10)
 
 streams_worker(qc.CameraQC, max_calls=10)
@@ -97,8 +103,8 @@ analysis_worker = DataJointWorker(
     "analysis_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    max_idled_cycle=20,
-    sleep_duration=60,
+    max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
+    sleep_duration=10,
 )
 
 analysis_worker(block_analysis.BlockAnalysis, max_calls=6)

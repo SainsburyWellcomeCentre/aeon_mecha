@@ -8,6 +8,9 @@ on:
         type: choice
         options:
           - standard
+          - acquisition
+          - analysis
+          - streams
       staging:
         description: "Staging"
         required: true

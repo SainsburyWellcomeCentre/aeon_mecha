@@ -17,6 +17,7 @@ on:
         default: 'standard'
         options:
           - standard
+          - acquisition
 
 jobs:
   get_meta:

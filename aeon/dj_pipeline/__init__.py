@@ -7,6 +7,8 @@ import uuid
 
 import datajoint as dj
 
+logger = dj.logger
+
 _default_database_prefix = os.getenv("DATABASE_PREFIX", "aeon_")
 _default_repository_config = {"ceph_aeon": os.getenv("RAW_ROOT_DATA_DIR", "/ceph/aeon")}
 
