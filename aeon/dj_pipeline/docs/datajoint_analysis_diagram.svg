@@ -1,222 +1,254 @@
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="487pt" height="302pt" viewBox="0.00 0.00 486.62 302.00">
-<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 298)">
-<polygon fill="white" stroke="transparent" points="-4,4 -4,-298 482.62,-298 482.62,4 -4,4"/>
-<!-- VisitSummary -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1014pt" height="308pt" viewBox="0.00 0.00 1013.62 307.52">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 303.52)">
+<polygon fill="white" stroke="none" points="-4,4 -4,-303.52 1009.62,-303.52 1009.62,4 -4,4"/>
+<!-- BlockAnalysis.Subject -->
 <g id="node1" class="node">
-<title>VisitSummary</title>
-<g id="a_node1"><a xlink:title="→ Visit
-visit_date           
-------------------------------
-day_duration         
-total_distance_travelled
-total_pellet_count   
-total_wheel_distance_travelled
-">
-<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="289.62" cy="-68" rx="13" ry="13"/>
-<text text-anchor="start" x="252.62" y="-65.9" font-family="arial" text-decoration="underline" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">VisitSummary</text>
+<title>BlockAnalysis.Subject</title>
+<g id="a_node1"><a xlink:title="→ BlockAnalysissubject_name         ------------------------------weights              weight_timestamps    position_x           position_y           position_likelihood  position_timestamps  cumsum_distance_travelled ">
+<polygon fill="none" stroke="none" points="442.88,-84.88 328.62,-84.88 328.62,-64.88 442.88,-64.88 442.88,-84.88"/>
+<text text-anchor="start" x="336.62" y="-72.38" font-family="arial" text-decoration="underline" font-size="10.00">BlockAnalysis.Subject</text>
 </a>
 </g>
 </g>
-<!-- VisitSubjectPosition -->
-<g id="node2" class="node">
-<title>VisitSubjectPosition</title>
-<g id="a_node2"><a xlink:title="→ Visit
-→ Chunk
-">
-<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="164.62" cy="-68" rx="13" ry="13"/>
-<text text-anchor="middle" x="164.62" y="-64.9" font-family="arial" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">VisitSubjectPosition</text>
-</a>
-</g>
-</g>
-<!-- VisitSubjectPosition.TimeSlice -->
-<g id="node10" class="node">
-<title>VisitSubjectPosition.TimeSlice</title>
-<g id="a_node10"><a xlink:title="→ VisitSubjectPosition
-time_slice_start     
-------------------------------
-time_slice_end       
-timestamps           
-position_x           
-position_y           
-position_z=null      
-">
-<polygon fill="transparent" stroke="transparent" points="240.12,-19 89.12,-19 89.12,0 240.12,0 240.12,-19"/>
-<text text-anchor="start" x="97.12" y="-8" font-family="arial" text-decoration="underline" font-size="10.00">VisitSubjectPosition.TimeSlice</text>
-</a>
-</g>
-</g>
-<!-- VisitSubjectPosition&#45;&gt;VisitSubjectPosition.TimeSlice -->
-<g id="edge1" class="edge">
-<title>VisitSubjectPosition-&gt;VisitSubjectPosition.TimeSlice</title>
-<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M164.62,-54.74C164.62,-43.97 164.62,-28.56 164.62,-19.06"/>
-</g>
-<!-- VisitTimeDistribution -->
-<g id="node3" class="node">
-<title>VisitTimeDistribution</title>
-<g id="a_node3"><a xlink:title="→ Visit
-visit_date           
-------------------------------
-day_duration         
-time_fraction_in_corridor
-in_corridor          
-time_fraction_in_arena
-in_arena             
-">
-<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="415.62" cy="-68" rx="13" ry="13"/>
-<text text-anchor="start" x="360.62" y="-65.9" font-family="arial" text-decoration="underline" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">VisitTimeDistribution</text>
-</a>
-</g>
-</g>
-<!-- ExperimentCamera -->
-<g id="node4" class="node">
-<title>ExperimentCamera</title>
-<g id="a_node4"><a xlink:title="→ Experiment
-→ Camera
-camera_install_time  
-------------------------------
-camera_description   
-camera_sampling_rate
-camera_gain=null     
-camera_bin=null      
-">
-<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="120.62,-223 0.63,-223 0.63,-188 120.62,-188 120.62,-223"/>
-<text text-anchor="middle" x="60.62" y="-202.4" font-family="arial" font-size="12.00" fill="darkgreen">ExperimentCamera</text>
-</a>
-</g>
-</g>
-<!-- CameraTracking -->
+<!-- BlockSubjectAnalysis.Preference -->
 <g id="node8" class="node">
-<title>CameraTracking</title>
-<g id="a_node8"><a xlink:title="→ Chunk
-→ ExperimentCamera
-→ TrackingParamSet
-">
-<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="65.62" cy="-134.5" rx="65.75" ry="17.5"/>
-<text text-anchor="middle" x="65.62" y="-131.4" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">CameraTracking</text>
+<title>BlockSubjectAnalysis.Preference</title>
+<g id="a_node8"><a xlink:title="→ BlockSubjectAnalysis→ BlockAnalysis.Patch→ BlockAnalysis.Subject------------------------------cumulative_preference_by_wheel cumulative_preference_by_time running_preference_by_time=null running_preference_by_wheel=null final_preference_by_wheel=null final_preference_by_time=null ">
+<polygon fill="none" stroke="none" points="438.5,-22.96 277,-22.96 277,-2.96 438.5,-2.96 438.5,-22.96"/>
+<text text-anchor="middle" x="357.75" y="-9.46" font-family="arial" font-size="10.00">BlockSubjectAnalysis.Preference</text>
 </a>
 </g>
 </g>
-<!-- ExperimentCamera&#45;&gt;CameraTracking -->
+<!-- BlockAnalysis.Subject&#45;&gt;BlockSubjectAnalysis.Preference -->
+<g id="edge1" class="edge">
+<title>BlockAnalysis.Subject-&gt;BlockSubjectAnalysis.Preference</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M381.62,-65.04C376.32,-53.71 367.2,-34.18 361.9,-22.84"/>
+</g>
+<!-- BlockSubjectAnalysis.Patch -->
+<g id="node15" class="node">
+<title>BlockSubjectAnalysis.Patch</title>
+<g id="a_node15"><a xlink:title="→ BlockSubjectAnalysis→ BlockAnalysis.Patch→ BlockAnalysis.Subject------------------------------in_patch_timestamps  in_patch_time        pellet_count         pellet_timestamps    patch_threshold=null wheel_cumsum_distance_travelled ">
+<polygon fill="none" stroke="none" points="596.62,-22.96 456.88,-22.96 456.88,-2.96 596.62,-2.96 596.62,-22.96"/>
+<text text-anchor="middle" x="526.75" y="-9.46" font-family="arial" font-size="10.00">BlockSubjectAnalysis.Patch</text>
+</a>
+</g>
+</g>
+<!-- BlockAnalysis.Subject&#45;&gt;BlockSubjectAnalysis.Patch -->
 <g id="edge2" class="edge">
-<title>ExperimentCamera-&gt;CameraTracking</title>
-<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M61.84,-187.8C62.62,-176.95 63.64,-162.87 64.43,-152.05"/>
-</g>
-<!-- Visit -->
-<g id="node5" class="node">
-<title>Visit</title>
-<g id="a_node5"><a xlink:title="→ Experiment.Subject
-→ Place
-visit_start          
-">
-<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="309.12,-152 270.12,-152 270.12,-117 309.12,-117 309.12,-152"/>
-<text text-anchor="start" x="278.12" y="-132.4" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Visit</text>
-</a>
-</g>
-</g>
-<!-- Visit&#45;&gt;VisitSummary -->
-<g id="edge3" class="edge">
-<title>Visit-&gt;VisitSummary</title>
-<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M289.62,-116.89C289.62,-105.69 289.62,-91.17 289.62,-81.07"/>
-</g>
-<!-- Visit&#45;&gt;VisitSubjectPosition -->
-<g id="edge4" class="edge">
-<title>Visit-&gt;VisitSubjectPosition</title>
-<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M270.09,-123.42C243.59,-109.75 197.1,-85.76 175.83,-74.78"/>
-</g>
-<!-- Visit&#45;&gt;VisitTimeDistribution -->
-<g id="edge5" class="edge">
-<title>Visit-&gt;VisitTimeDistribution</title>
-<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M309.31,-123.42C336.03,-109.75 382.89,-85.76 404.33,-74.78"/>
+<title>BlockAnalysis.Subject-&gt;BlockSubjectAnalysis.Patch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M406.86,-64.91C433.59,-53.55 479.37,-34.09 505.96,-22.8"/>
 </g>
 <!-- Place -->
-<g id="node6" class="node">
+<g id="node2" class="node">
 <title>Place</title>
-<g id="a_node6"><a xlink:title="place                
-------------------------------
-place_description    
-">
-<polygon fill="#000000" fill-opacity="0.125490" stroke="transparent" points="370.12,-223 329.12,-223 329.12,-188 370.12,-188 370.12,-223"/>
-<text text-anchor="start" x="337.12" y="-204" font-family="arial" text-decoration="underline" font-size="10.00">Place</text>
+<g id="a_node2"><a xlink:title="place                ------------------------------place_description    ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="160.12,-228.96 119.38,-228.96 119.38,-194.4 160.12,-194.4 160.12,-228.96"/>
+<text text-anchor="start" x="127.38" y="-209.18" font-family="arial" text-decoration="underline" font-size="10.00">Place</text>
+</a>
+</g>
+</g>
+<!-- OverlapVisit -->
+<g id="node7" class="node">
+<title>OverlapVisit</title>
+<g id="a_node7"><a xlink:title="→ Experiment→ Placeoverlap_start        ------------------------------overlap_end          overlap_duration     subject_count        ">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="139.75" cy="-141.12" rx="12.96" ry="12.96"/>
+<text text-anchor="start" x="107.5" y="-137.84" font-family="arial" text-decoration="underline" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">OverlapVisit</text>
+</a>
+</g>
+</g>
+<!-- Place&#45;&gt;OverlapVisit -->
+<g id="edge3" class="edge">
+<title>Place-&gt;OverlapVisit</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M139.75,-194.43C139.75,-181.92 139.75,-164.93 139.75,-153.75"/>
+</g>
+<!-- Visit -->
+<g id="node11" class="node">
+<title>Visit</title>
+<g id="a_node11"><a xlink:title="→ Experiment.Subject→ Placevisit_start          ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="81,-158.4 42.5,-158.4 42.5,-123.84 81,-123.84 81,-158.4"/>
+<text text-anchor="start" x="50.5" y="-137.84" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Visit</text>
 </a>
 </g>
 </g>
 <!-- Place&#45;&gt;Visit -->
-<g id="edge6" class="edge">
+<g id="edge4" class="edge">
 <title>Place-&gt;Visit</title>
-<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M335.1,-187.8C325.67,-176.95 313.42,-162.87 304.02,-152.05"/>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M121.27,-194.43C109.01,-183.66 92.98,-169.57 80.64,-158.73"/>
 </g>
-<!-- Chunk -->
-<g id="node7" class="node">
-<title>Chunk</title>
-<g id="a_node7"><a xlink:title="→ Experiment
-chunk_start          
-------------------------------
-chunk_end            
-→ Experiment.Directory
-→ [nullable] Epoch
-">
-<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="190.62,-223 138.62,-223 138.62,-188 190.62,-188 190.62,-223"/>
-<text text-anchor="middle" x="164.62" y="-202.4" font-family="arial" font-size="12.00" fill="darkgreen">Chunk</text>
+<!-- BlockAnalysis -->
+<g id="node3" class="node">
+<title>BlockAnalysis</title>
+<g id="a_node3"><a xlink:title="→ Block------------------------------block_duration       patch_count=null     subject_count=null   ">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="320.75" cy="-141.12" rx="12.96" ry="12.96"/>
+<text text-anchor="middle" x="320.75" y="-136.84" font-family="arial" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">BlockAnalysis</text>
 </a>
 </g>
 </g>
-<!-- Chunk&#45;&gt;VisitSubjectPosition -->
-<g id="edge7" class="edge">
-<title>Chunk-&gt;VisitSubjectPosition</title>
-<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M164.62,-187.89C164.62,-160.32 164.62,-105.77 164.62,-81.34"/>
+<!-- BlockAnalysis&#45;&gt;BlockAnalysis.Subject -->
+<g id="edge5" class="edge">
+<title>BlockAnalysis-&gt;BlockAnalysis.Subject</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M329.25,-131.72C341.64,-119.48 364.54,-96.84 377.04,-84.49"/>
 </g>
-<!-- Chunk&#45;&gt;CameraTracking -->
-<g id="edge8" class="edge">
-<title>Chunk-&gt;CameraTracking</title>
-<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M140.91,-187.97C124.9,-176.81 103.88,-162.16 88.12,-151.18"/>
+<!-- BlockAnalysis.Patch -->
+<g id="node10" class="node">
+<title>BlockAnalysis.Patch</title>
+<g id="a_node10"><a xlink:title="→ BlockAnalysispatch_name           ------------------------------pellet_count         pellet_timestamps    wheel_cumsum_distance_travelled wheel_timestamps     patch_threshold      patch_threshold_timestamps patch_rate=null      patch_offset=null    ">
+<polygon fill="none" stroke="none" points="310.12,-84.88 203.38,-84.88 203.38,-64.88 310.12,-64.88 310.12,-84.88"/>
+<text text-anchor="start" x="211.38" y="-72.38" font-family="arial" text-decoration="underline" font-size="10.00">BlockAnalysis.Patch</text>
+</a>
+</g>
+</g>
+<!-- BlockAnalysis&#45;&gt;BlockAnalysis.Patch -->
+<g id="edge6" class="edge">
+<title>BlockAnalysis-&gt;BlockAnalysis.Patch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M312.12,-131.46C299.97,-119.26 277.95,-97.16 265.66,-84.82"/>
+</g>
+<!-- BlockSubjectAnalysis -->
+<g id="node13" class="node">
+<title>BlockSubjectAnalysis</title>
+<g id="a_node13"><a xlink:title="→ BlockAnalysis">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="526.75" cy="-74.88" rx="12.96" ry="12.96"/>
+<text text-anchor="middle" x="526.75" y="-70.6" font-family="arial" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">BlockSubjectAnalysis</text>
+</a>
+</g>
+</g>
+<!-- BlockAnalysis&#45;&gt;BlockSubjectAnalysis -->
+<g id="edge7" class="edge">
+<title>BlockAnalysis-&gt;BlockSubjectAnalysis</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M332.72,-136.39C369.12,-125.03 478.3,-90.99 514.75,-79.62"/>
+</g>
+<!-- BlockPatchPlots -->
+<g id="node4" class="node">
+<title>BlockPatchPlots</title>
+<g id="a_node4"><a xlink:title="→ BlockSubjectAnalysis------------------------------patch_stats_plot     weights_block_plot   cum_pel_by_patch_plot cum_pel_per_subject_plot cum_wheel_dist_plot  running_pref_by_wheel_dist_plot running_pref_by_patch_plot weighted_patch_pref_plot ">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="953.75" cy="-12.96" rx="12.96" ry="12.96"/>
+<text text-anchor="middle" x="953.75" y="-8.69" font-family="arial" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">BlockPatchPlots</text>
+</a>
+</g>
 </g>
 <!-- Experiment -->
-<g id="node9" class="node">
+<g id="node5" class="node">
 <title>Experiment</title>
-<g id="a_node9"><a xlink:title="experiment_name      
-------------------------------
-experiment_start_time
-experiment_description
-→ Arena
-→ Location
-experiment_type=&quot;foraging&quot;
-INDEX (experiment_type)
-">
-<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="298.12,-294 221.12,-294 221.12,-259 298.12,-259 298.12,-294"/>
-<text text-anchor="start" x="229.12" y="-274.4" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Experiment</text>
+<g id="a_node5"><a xlink:title="experiment_name      ------------------------------experiment_start_time experiment_description → Arena→ Location→ ExperimentType">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="89.12,-299.52 12.38,-299.52 12.38,-264.96 89.12,-264.96 89.12,-299.52"/>
+<text text-anchor="start" x="20.38" y="-278.97" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Experiment</text>
 </a>
 </g>
 </g>
-<!-- Experiment&#45;&gt;ExperimentCamera -->
-<g id="edge9" class="edge">
-<title>Experiment-&gt;ExperimentCamera</title>
-<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M220.78,-262.03C188.66,-250.89 142.9,-235.03 108.51,-223.1"/>
+<!-- Experiment&#45;&gt;OverlapVisit -->
+<g id="edge8" class="edge">
+<title>Experiment-&gt;OverlapVisit</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M89.5,-275.3C116.75,-268.89 151.34,-255.72 168.75,-228.96 185.31,-203.51 161.02,-167.7 147.61,-151.15"/>
 </g>
-<!-- Experiment&#45;&gt;Chunk -->
-<g id="edge10" class="edge">
-<title>Experiment-&gt;Chunk</title>
-<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M236.63,-258.8C221.69,-247.95 202.3,-233.87 187.41,-223.05"/>
+<!-- Block -->
+<g id="node14" class="node">
+<title>Block</title>
+<g id="a_node14"><a xlink:title="→ Experimentblock_start          ------------------------------block_end=null       block_duration_hr=null ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="302.75,-228.96 256.75,-228.96 256.75,-194.4 302.75,-194.4 302.75,-228.96"/>
+<text text-anchor="start" x="264.75" y="-208.41" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Block</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;Block -->
+<g id="edge9" class="edge">
+<title>Experiment-&gt;Block</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M89.6,-269.61C137.45,-255.28 217.21,-231.4 256.47,-219.65"/>
 </g>
 <!-- Experiment.Subject -->
-<g id="node11" class="node">
+<g id="node16" class="node">
 <title>Experiment.Subject</title>
-<g id="a_node11"><a xlink:title="→ Experiment
-→ Subject
-">
-<polygon fill="transparent" stroke="transparent" points="310.62,-215 208.62,-215 208.62,-196 310.62,-196 310.62,-215"/>
-<text text-anchor="middle" x="259.62" y="-203" font-family="arial" font-size="10.00">Experiment.Subject</text>
+<g id="a_node16"><a xlink:title="→ Experiment→ Subject">
+<polygon fill="none" stroke="none" points="101.5,-221.68 0,-221.68 0,-201.68 101.5,-201.68 101.5,-221.68"/>
+<text text-anchor="middle" x="50.75" y="-208.18" font-family="arial" font-size="10.00">Experiment.Subject</text>
 </a>
 </g>
 </g>
 <!-- Experiment&#45;&gt;Experiment.Subject -->
-<g id="edge11" class="edge">
+<g id="edge10" class="edge">
 <title>Experiment-&gt;Experiment.Subject</title>
-<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M259.62,-258.8C259.62,-245.08 259.62,-226.19 259.62,-215.27"/>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M50.75,-264.64C50.75,-251.01 50.75,-232.24 50.75,-221.39"/>
+</g>
+<!-- OverlapVisit.Visit -->
+<g id="node6" class="node">
+<title>OverlapVisit.Visit</title>
+<g id="a_node6"><a xlink:title="→ OverlapVisit→ Visit">
+<polygon fill="none" stroke="none" points="185.62,-84.88 93.88,-84.88 93.88,-64.88 185.62,-64.88 185.62,-84.88"/>
+<text text-anchor="middle" x="139.75" y="-71.38" font-family="arial" font-size="10.00">OverlapVisit.Visit</text>
+</a>
+</g>
+</g>
+<!-- OverlapVisit&#45;&gt;OverlapVisit.Visit -->
+<g id="edge11" class="edge">
+<title>OverlapVisit-&gt;OverlapVisit.Visit</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M139.75,-128.34C139.75,-115.73 139.75,-96.03 139.75,-84.7"/>
+</g>
+<!-- BlockForaging -->
+<g id="node9" class="node">
+<title>BlockForaging</title>
+<g id="a_node9"><a xlink:title="→ BlockSubjectAnalysis------------------------------bout_count           ">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="661.75" cy="-12.96" rx="12.96" ry="12.96"/>
+<text text-anchor="middle" x="661.75" y="-8.69" font-family="arial" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">BlockForaging</text>
+</a>
+</g>
+</g>
+<!-- BlockAnalysis.Patch&#45;&gt;BlockSubjectAnalysis.Preference -->
+<g id="edge12" class="edge">
+<title>BlockAnalysis.Patch-&gt;BlockSubjectAnalysis.Preference</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M271.65,-65.04C290.75,-53.71 323.66,-34.18 342.79,-22.84"/>
+</g>
+<!-- BlockAnalysis.Patch&#45;&gt;BlockSubjectAnalysis.Patch -->
+<g id="edge13" class="edge">
+<title>BlockAnalysis.Patch-&gt;BlockSubjectAnalysis.Patch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M297.17,-64.91C348.22,-53.58 435.52,-34.21 486.49,-22.89"/>
+</g>
+<!-- Visit&#45;&gt;OverlapVisit.Visit -->
+<g id="edge14" class="edge">
+<title>Visit-&gt;OverlapVisit.Visit</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M81.43,-123.91C96.6,-111.42 116.97,-94.64 129.19,-84.58"/>
+</g>
+<!-- BlockSubjectPositionPlots -->
+<g id="node12" class="node">
+<title>BlockSubjectPositionPlots</title>
+<g id="a_node12"><a xlink:title="→ BlockSubjectAnalysis------------------------------ethogram_data        position_plot        position_heatmap_plot position_ethogram_plot ">
+<ellipse fill="#ff0000" fill-opacity="0.125490" stroke="#ff0000" stroke-opacity="0.125490" cx="805.75" cy="-12.96" rx="12.96" ry="12.96"/>
+<text text-anchor="middle" x="805.75" y="-8.69" font-family="arial" font-size="12.00" fill="#7f0000" fill-opacity="0.627451">BlockSubjectPositionPlots</text>
+</a>
+</g>
+</g>
+<!-- BlockSubjectAnalysis&#45;&gt;BlockPatchPlots -->
+<g id="edge15" class="edge">
+<title>BlockSubjectAnalysis-&gt;BlockPatchPlots</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M539.47,-72.53C586.58,-67.46 755.53,-48.7 893.75,-25.92 910.31,-23.19 929.28,-19.27 941.38,-16.68"/>
+</g>
+<!-- BlockSubjectAnalysis&#45;&gt;BlockSubjectAnalysis.Preference -->
+<g id="edge16" class="edge">
+<title>BlockSubjectAnalysis-&gt;BlockSubjectAnalysis.Preference</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M515.13,-69.76C488.06,-60.16 420.27,-36.13 383.1,-22.95"/>
+</g>
+<!-- BlockSubjectAnalysis&#45;&gt;BlockForaging -->
+<g id="edge17" class="edge">
+<title>BlockSubjectAnalysis-&gt;BlockForaging</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M537.8,-68.98C563.11,-57.74 625.09,-30.23 650.55,-18.93"/>
+</g>
+<!-- BlockSubjectAnalysis&#45;&gt;BlockSubjectPositionPlots -->
+<g id="edge18" class="edge">
+<title>BlockSubjectAnalysis-&gt;BlockSubjectPositionPlots</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M539.1,-71.23C585.29,-61.31 747.59,-26.45 793.54,-16.58"/>
+</g>
+<!-- BlockSubjectAnalysis&#45;&gt;BlockSubjectAnalysis.Patch -->
+<g id="edge19" class="edge">
+<title>BlockSubjectAnalysis-&gt;BlockSubjectAnalysis.Patch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M526.75,-62.04C526.75,-50.45 526.75,-33.05 526.75,-22.67"/>
+</g>
+<!-- Block&#45;&gt;BlockAnalysis -->
+<g id="edge20" class="edge">
+<title>Block-&gt;BlockAnalysis</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M289.67,-194.08C297.45,-181.08 308.02,-163.41 314.61,-152.39"/>
 </g>
 <!-- Experiment.Subject&#45;&gt;Visit -->
-<g id="edge12" class="edge">
+<g id="edge21" class="edge">
 <title>Experiment.Subject-&gt;Visit</title>
-<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M263.42,-195.76C268.19,-184.81 276.45,-165.81 282.42,-152.07"/>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M52.19,-201.72C53.94,-190.83 56.92,-172.24 59.09,-158.71"/>
 </g>
 </g>
 </svg>

@@ -1,0 +1,407 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="2778pt" height="325pt" viewBox="0.00 0.00 2778.33 324.80">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 320.8)">
+<polygon fill="white" stroke="none" points="-4,4 -4,-320.8 2774.33,-320.8 2774.33,4 -4,4"/>
+<!-- UndergroundFeederDepletionState -->
+<g id="node1" class="node">
+<title>UndergroundFeederDepletionState</title>
+<g id="a_node1"><a xlink:title="→ UndergroundFeeder→ Chunk------------------------------sample_count         timestamps           threshold            offset               rate                 ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="1256.91" cy="-17.28" rx="133.46" ry="17.28"/>
+<text text-anchor="middle" x="1256.91" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">UndergroundFeederDepletionState</text>
+</a>
+</g>
+</g>
+<!-- UndergroundFeederEncoder -->
+<g id="node2" class="node">
+<title>UndergroundFeederEncoder</title>
+<g id="a_node2"><a xlink:title="→ UndergroundFeeder→ Chunk------------------------------sample_count         timestamps           angle                intensity            ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="1518.91" cy="-17.28" rx="110.92" ry="17.28"/>
+<text text-anchor="middle" x="1518.91" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">UndergroundFeederEncoder</text>
+</a>
+</g>
+</g>
+<!-- StreamType -->
+<g id="node3" class="node">
+<title>StreamType</title>
+<g id="a_node3"><a xlink:title="stream_type          ------------------------------stream_reader        stream_reader_kwargs stream_description=&quot;&quot; stream_hash          ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="2162.16,-246.24 2093.66,-246.24 2093.66,-211.68 2162.16,-211.68 2162.16,-246.24"/>
+<text text-anchor="start" x="2101.66" y="-226.46" font-family="arial" text-decoration="underline" font-size="10.00">StreamType</text>
+</a>
+</g>
+</g>
+<!-- DeviceType.Stream -->
+<g id="node13" class="node">
+<title>DeviceType.Stream</title>
+<g id="a_node13"><a xlink:title="→ DeviceType→ StreamType">
+<polygon fill="none" stroke="none" points="2162.04,-168.4 2059.79,-168.4 2059.79,-148.4 2162.04,-148.4 2162.04,-168.4"/>
+<text text-anchor="middle" x="2110.91" y="-154.9" font-family="arial" font-size="10.00">DeviceType.Stream</text>
+</a>
+</g>
+</g>
+<!-- StreamType&#45;&gt;DeviceType.Stream -->
+<g id="edge1" class="edge">
+<title>StreamType-&gt;DeviceType.Stream</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M2123.89,-211.71C2120.51,-198.09 2115.81,-179.16 2113.1,-168.2"/>
+</g>
+<!-- Experiment -->
+<g id="node4" class="node">
+<title>Experiment</title>
+<g id="a_node4"><a xlink:title="experiment_name      ------------------------------experiment_start_time experiment_description → Arena→ Location→ ExperimentType">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="1885.29,-316.8 1808.54,-316.8 1808.54,-282.24 1885.29,-282.24 1885.29,-316.8"/>
+<text text-anchor="start" x="1816.54" y="-296.25" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Experiment</text>
+</a>
+</g>
+</g>
+<!-- Chunk -->
+<g id="node8" class="node">
+<title>Chunk</title>
+<g id="a_node8"><a xlink:title="→ Experimentchunk_start          ------------------------------chunk_end            → Experiment.Directory→ Epoch">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="1793.54,-105.12 1742.29,-105.12 1742.29,-70.56 1793.54,-70.56 1793.54,-105.12"/>
+<text text-anchor="middle" x="1767.91" y="-83.56" font-family="arial" font-size="12.00" fill="darkgreen">Chunk</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;Chunk -->
+<g id="edge2" class="edge">
+<title>Experiment-&gt;Chunk</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1817.96,-281.77C1805.33,-272.89 1791.67,-260.79 1783.91,-246.24 1759.24,-199.94 1762.48,-135.11 1765.71,-105.18"/>
+</g>
+<!-- Epoch -->
+<g id="node10" class="node">
+<title>Epoch</title>
+<g id="a_node10"><a xlink:title="→ Experimentepoch_start          ------------------------------→ [nullable] Experiment.Directoryepoch_dir=&quot;&quot;         ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="1881.16,-175.68 1830.66,-175.68 1830.66,-141.12 1881.16,-141.12 1881.16,-175.68"/>
+<text text-anchor="start" x="1838.66" y="-155.12" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Epoch</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;Epoch -->
+<g id="edge3" class="edge">
+<title>Experiment-&gt;Epoch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1876.87,-281.88C1889.55,-273.09 1902.97,-261.03 1909.91,-246.24 1916.44,-232.34 1915.91,-225.82 1909.91,-211.68 1903.86,-197.38 1891.76,-185.08 1880.55,-176.01"/>
+</g>
+<!-- WeightScale -->
+<g id="node11" class="node">
+<title>WeightScale</title>
+<g id="a_node11"><a xlink:title="→ Experiment→ Deviceweight_scale_install_time ------------------------------weight_scale_name    ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="2060.04,-105.12 1975.79,-105.12 1975.79,-70.56 2060.04,-70.56 2060.04,-105.12"/>
+<text text-anchor="start" x="1983.79" y="-84.56" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">WeightScale</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;WeightScale -->
+<g id="edge4" class="edge">
+<title>Experiment-&gt;WeightScale</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1879.08,-281.9C1894.53,-272.83 1912.54,-260.53 1925.91,-246.24 1962.68,-206.97 1958.54,-187.43 1985.91,-141.12 1993.06,-129.03 2001.35,-115.51 2007.7,-105.24"/>
+</g>
+<!-- UndergroundFeeder -->
+<g id="node12" class="node">
+<title>UndergroundFeeder</title>
+<g id="a_node12"><a xlink:title="→ Experiment→ Deviceunderground_feeder_install_time ------------------------------underground_feeder_name ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="1319.29,-105.12 1194.54,-105.12 1194.54,-70.56 1319.29,-70.56 1319.29,-105.12"/>
+<text text-anchor="start" x="1202.54" y="-84.56" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">UndergroundFeeder</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;UndergroundFeeder -->
+<g id="edge5" class="edge">
+<title>Experiment-&gt;UndergroundFeeder</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1808.2,-284.76C1703.86,-247.68 1417.05,-145.75 1303.8,-105.5"/>
+</g>
+<!-- Experiment.Directory -->
+<g id="node15" class="node">
+<title>Experiment.Directory</title>
+<g id="a_node15"><a xlink:title="→ Experiment→ DirectoryType------------------------------→ PipelineRepositorydirectory_path       load_order=1         ">
+<polygon fill="none" stroke="none" points="1901.04,-238.96 1792.79,-238.96 1792.79,-218.96 1901.04,-218.96 1901.04,-238.96"/>
+<text text-anchor="middle" x="1846.91" y="-225.46" font-family="arial" font-size="10.00">Experiment.Directory</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;Experiment.Directory -->
+<g id="edge6" class="edge">
+<title>Experiment-&gt;Experiment.Directory</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1846.91,-281.92C1846.91,-268.29 1846.91,-249.52 1846.91,-238.67"/>
+</g>
+<!-- RfidReader -->
+<g id="node20" class="node">
+<title>RfidReader</title>
+<g id="a_node20"><a xlink:title="→ Experiment→ Devicerfid_reader_install_time ------------------------------rfid_reader_name     ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="2191.66,-105.12 2114.16,-105.12 2114.16,-70.56 2191.66,-70.56 2191.66,-105.12"/>
+<text text-anchor="start" x="2122.16" y="-84.56" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">RfidReader</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;RfidReader -->
+<g id="edge7" class="edge">
+<title>Experiment-&gt;RfidReader</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1885.7,-298.26C1963.59,-296.83 2134.67,-288.81 2170.91,-246.24 2205.33,-205.82 2177.62,-136.89 2161.9,-105.4"/>
+</g>
+<!-- SpinnakerVideoSource -->
+<g id="node22" class="node">
+<title>SpinnakerVideoSource</title>
+<g id="a_node22"><a xlink:title="→ Experiment→ Devicespinnaker_video_source_install_time ------------------------------spinnaker_video_source_name ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="2349.79,-105.12 2210.04,-105.12 2210.04,-70.56 2349.79,-70.56 2349.79,-105.12"/>
+<text text-anchor="start" x="2218.04" y="-84.56" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">SpinnakerVideoSource</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;SpinnakerVideoSource -->
+<g id="edge8" class="edge">
+<title>Experiment-&gt;SpinnakerVideoSource</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1885.63,-296.88C1965,-292.86 2142.86,-280.21 2191.91,-246.24 2242.1,-211.48 2266.89,-138.35 2275.86,-105.47"/>
+</g>
+<!-- WeightScaleWeightRaw -->
+<g id="node5" class="node">
+<title>WeightScaleWeightRaw</title>
+<g id="a_node5"><a xlink:title="→ WeightScale→ Chunk------------------------------sample_count         timestamps           weight               stability            ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="2237.91" cy="-17.28" rx="95.73" ry="17.28"/>
+<text text-anchor="middle" x="2237.91" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">WeightScaleWeightRaw</text>
+</a>
+</g>
+</g>
+<!-- UndergroundFeederBeamBreak -->
+<g id="node6" class="node">
+<title>UndergroundFeederBeamBreak</title>
+<g id="a_node6"><a xlink:title="→ UndergroundFeeder→ Chunk------------------------------sample_count         timestamps           event                ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="1770.91" cy="-17.28" rx="122.68" ry="17.28"/>
+<text text-anchor="middle" x="1770.91" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">UndergroundFeederBeamBreak</text>
+</a>
+</g>
+</g>
+<!-- UndergroundFeederRetriedDelivery -->
+<g id="node7" class="node">
+<title>UndergroundFeederRetriedDelivery</title>
+<g id="a_node7"><a xlink:title="→ UndergroundFeeder→ Chunk------------------------------sample_count         timestamps           retried_delivery     ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="135.91" cy="-17.28" rx="135.91" ry="17.28"/>
+<text text-anchor="middle" x="135.91" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">UndergroundFeederRetriedDelivery</text>
+</a>
+</g>
+</g>
+<!-- Chunk&#45;&gt;UndergroundFeederDepletionState -->
+<g id="edge9" class="edge">
+<title>Chunk-&gt;UndergroundFeederDepletionState</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1741.87,-83.35C1670.03,-73.71 1466.47,-46.4 1347.15,-30.39"/>
+</g>
+<!-- Chunk&#45;&gt;UndergroundFeederEncoder -->
+<g id="edge10" class="edge">
+<title>Chunk-&gt;UndergroundFeederEncoder</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1742.2,-79.76C1702.19,-68.74 1624.19,-47.27 1571.81,-32.84"/>
+</g>
+<!-- Chunk&#45;&gt;WeightScaleWeightRaw -->
+<g id="edge11" class="edge">
+<title>Chunk-&gt;WeightScaleWeightRaw</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1793.6,-83.27C1853.22,-74.94 2005.65,-53.54 2132.91,-34.56 2144.04,-32.9 2155.83,-31.11 2167.33,-29.34"/>
+</g>
+<!-- Chunk&#45;&gt;UndergroundFeederBeamBreak -->
+<g id="edge12" class="edge">
+<title>Chunk-&gt;UndergroundFeederBeamBreak</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1768.64,-70.24C1769.11,-59.46 1769.72,-45.47 1770.19,-34.72"/>
+</g>
+<!-- Chunk&#45;&gt;UndergroundFeederRetriedDelivery -->
+<g id="edge13" class="edge">
+<title>Chunk-&gt;UndergroundFeederRetriedDelivery</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1741.88,-85.85C1673.84,-83.28 1485.09,-76.17 1327.91,-70.56 862.6,-53.95 745.28,-68.56 280.91,-34.56 264.75,-33.38 247.6,-31.77 230.97,-30.02"/>
+</g>
+<!-- RfidReaderRfidEvents -->
+<g id="node9" class="node">
+<title>RfidReaderRfidEvents</title>
+<g id="a_node9"><a xlink:title="→ RfidReader→ Chunk------------------------------sample_count         timestamps           rfid                 ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="2440.91" cy="-17.28" rx="88.87" ry="17.28"/>
+<text text-anchor="middle" x="2440.91" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">RfidReaderRfidEvents</text>
+</a>
+</g>
+</g>
+<!-- Chunk&#45;&gt;RfidReaderRfidEvents -->
+<g id="edge14" class="edge">
+<title>Chunk-&gt;RfidReaderRfidEvents</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1793.99,-84.73C1891.43,-76.79 2234.17,-48.52 2342.91,-34.56 2353.86,-33.15 2365.46,-31.43 2376.7,-29.65"/>
+</g>
+<!-- SpinnakerVideoSourceVideo -->
+<g id="node14" class="node">
+<title>SpinnakerVideoSourceVideo</title>
+<g id="a_node14"><a xlink:title="→ SpinnakerVideoSource→ Chunk------------------------------sample_count         timestamps           hw_timestamp         ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="2658.91" cy="-17.28" rx="111.41" ry="17.28"/>
+<text text-anchor="middle" x="2658.91" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">SpinnakerVideoSourceVideo</text>
+</a>
+</g>
+</g>
+<!-- Chunk&#45;&gt;SpinnakerVideoSourceVideo -->
+<g id="edge15" class="edge">
+<title>Chunk-&gt;SpinnakerVideoSourceVideo</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1793.98,-84.55C1831.99,-81.25 1904.85,-75.05 1966.91,-70.56 2220.98,-52.17 2285.43,-59.7 2538.91,-34.56 2552.2,-33.24 2566.28,-31.58 2579.94,-29.82"/>
+</g>
+<!-- WeightScaleWeightFiltered -->
+<g id="node17" class="node">
+<title>WeightScaleWeightFiltered</title>
+<g id="a_node17"><a xlink:title="→ WeightScale→ Chunk------------------------------sample_count         timestamps           weight               stability            ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="2017.91" cy="-17.28" rx="106.02" ry="17.28"/>
+<text text-anchor="middle" x="2017.91" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">WeightScaleWeightFiltered</text>
+</a>
+</g>
+</g>
+<!-- Chunk&#45;&gt;WeightScaleWeightFiltered -->
+<g id="edge16" class="edge">
+<title>Chunk-&gt;WeightScaleWeightFiltered</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1793.73,-79.76C1834.02,-68.71 1912.7,-47.13 1965.29,-32.71"/>
+</g>
+<!-- UndergroundFeederMissedPellet -->
+<g id="node18" class="node">
+<title>UndergroundFeederMissedPellet</title>
+<g id="a_node18"><a xlink:title="→ UndergroundFeeder→ Chunk------------------------------sample_count         timestamps           missed_pellet        ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="416.91" cy="-17.28" rx="126.6" ry="17.28"/>
+<text text-anchor="middle" x="416.91" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">UndergroundFeederMissedPellet</text>
+</a>
+</g>
+</g>
+<!-- Chunk&#45;&gt;UndergroundFeederMissedPellet -->
+<g id="edge17" class="edge">
+<title>Chunk-&gt;UndergroundFeederMissedPellet</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1741.9,-85.84C1576.57,-79.47 675.17,-44.49 552.91,-34.56 537.75,-33.33 521.66,-31.69 506.07,-29.94"/>
+</g>
+<!-- UndergroundFeederManualDelivery -->
+<g id="node21" class="node">
+<title>UndergroundFeederManualDelivery</title>
+<g id="a_node21"><a xlink:title="→ UndergroundFeeder→ Chunk------------------------------sample_count         timestamps           manual_delivery      ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="697.91" cy="-17.28" rx="136.4" ry="17.28"/>
+<text text-anchor="middle" x="697.91" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">UndergroundFeederManualDelivery</text>
+</a>
+</g>
+</g>
+<!-- Chunk&#45;&gt;UndergroundFeederManualDelivery -->
+<g id="edge18" class="edge">
+<title>Chunk-&gt;UndergroundFeederManualDelivery</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1742.13,-85.91C1633.04,-81.85 1198.73,-64.57 842.91,-34.56 827.14,-33.23 810.42,-31.58 794.17,-29.84"/>
+</g>
+<!-- UndergroundFeederDeliverPellet -->
+<g id="node23" class="node">
+<title>UndergroundFeederDeliverPellet</title>
+<g id="a_node23"><a xlink:title="→ UndergroundFeeder→ Chunk------------------------------sample_count         timestamps           event                ">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="978.91" cy="-17.28" rx="126.6" ry="17.28"/>
+<text text-anchor="middle" x="978.91" y="-13.01" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">UndergroundFeederDeliverPellet</text>
+</a>
+</g>
+</g>
+<!-- Chunk&#45;&gt;UndergroundFeederDeliverPellet -->
+<g id="edge19" class="edge">
+<title>Chunk-&gt;UndergroundFeederDeliverPellet</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1742.06,-85.14C1654.12,-79.26 1358.51,-58.88 1114.91,-34.56 1100.36,-33.11 1084.95,-31.41 1069.94,-29.68"/>
+</g>
+<!-- Epoch&#45;&gt;Chunk -->
+<g id="edge20" class="edge">
+<title>Epoch-&gt;Chunk</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M1834.61,-140.8C1820.88,-130.1 1803.08,-116.24 1789.33,-105.52"/>
+</g>
+<!-- WeightScale&#45;&gt;WeightScaleWeightRaw -->
+<g id="edge21" class="edge">
+<title>WeightScale-&gt;WeightScaleWeightRaw</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M2060.33,-73.62C2097.92,-61.91 2152.68,-44.84 2191.44,-32.76"/>
+</g>
+<!-- WeightScale&#45;&gt;WeightScaleWeightFiltered -->
+<g id="edge22" class="edge">
+<title>WeightScale-&gt;WeightScaleWeightFiltered</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M2017.91,-70.24C2017.91,-59.46 2017.91,-45.47 2017.91,-34.72"/>
+</g>
+<!-- UndergroundFeeder&#45;&gt;UndergroundFeederDepletionState -->
+<g id="edge23" class="edge">
+<title>UndergroundFeeder-&gt;UndergroundFeederDepletionState</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1256.91,-70.24C1256.91,-59.46 1256.91,-45.47 1256.91,-34.72"/>
+</g>
+<!-- UndergroundFeeder&#45;&gt;UndergroundFeederEncoder -->
+<g id="edge24" class="edge">
+<title>UndergroundFeeder-&gt;UndergroundFeederEncoder</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1319.67,-70.42C1363.57,-58.93 1421.66,-43.73 1463.78,-32.71"/>
+</g>
+<!-- UndergroundFeeder&#45;&gt;UndergroundFeederBeamBreak -->
+<g id="edge25" class="edge">
+<title>UndergroundFeeder-&gt;UndergroundFeederBeamBreak</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1319.68,-78.47C1411.01,-66.29 1580.84,-43.63 1684.1,-29.86"/>
+</g>
+<!-- UndergroundFeeder&#45;&gt;UndergroundFeederRetriedDelivery -->
+<g id="edge26" class="edge">
+<title>UndergroundFeeder-&gt;UndergroundFeederRetriedDelivery</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1194.31,-84.75C1039.31,-79.31 625.26,-63.09 280.91,-34.56 265.01,-33.24 248.15,-31.59 231.77,-29.84"/>
+</g>
+<!-- UndergroundFeeder&#45;&gt;UndergroundFeederMissedPellet -->
+<g id="edge27" class="edge">
+<title>UndergroundFeeder-&gt;UndergroundFeederMissedPellet</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1194.2,-83.13C1071.11,-75.65 789.26,-57.47 552.91,-34.56 538.24,-33.14 522.7,-31.45 507.57,-29.71"/>
+</g>
+<!-- UndergroundFeeder&#45;&gt;UndergroundFeederManualDelivery -->
+<g id="edge28" class="edge">
+<title>UndergroundFeeder-&gt;UndergroundFeederManualDelivery</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1194.15,-79.14C1096.6,-67.18 907.96,-44.04 793.45,-30"/>
+</g>
+<!-- UndergroundFeeder&#45;&gt;UndergroundFeederDeliverPellet -->
+<g id="edge29" class="edge">
+<title>UndergroundFeeder-&gt;UndergroundFeederDeliverPellet</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1194.18,-71.37C1147.42,-59.84 1083.98,-44.19 1038.09,-32.87"/>
+</g>
+<!-- Experiment.Directory&#45;&gt;Chunk -->
+<g id="edge30" class="edge">
+<title>Experiment.Directory-&gt;Chunk</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M1841.97,-219.26C1829.07,-196.53 1794.2,-135.12 1777.32,-105.4"/>
+</g>
+<!-- Experiment.Directory&#45;&gt;Epoch -->
+<g id="edge31" class="edge">
+<title>Experiment.Directory-&gt;Epoch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M1848.09,-219C1849.52,-208.11 1851.96,-189.52 1853.74,-175.99"/>
+</g>
+<!-- Device -->
+<g id="node16" class="node">
+<title>Device</title>
+<g id="a_node16"><a xlink:title="device_serial_number ------------------------------→ DeviceType">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="2041.29,-175.68 1994.54,-175.68 1994.54,-141.12 2041.29,-141.12 2041.29,-175.68"/>
+<text text-anchor="start" x="2002.54" y="-155.9" font-family="arial" text-decoration="underline" font-size="10.00">Device</text>
+</a>
+</g>
+</g>
+<!-- Device&#45;&gt;WeightScale -->
+<g id="edge32" class="edge">
+<title>Device-&gt;WeightScale</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M2017.91,-141.15C2017.91,-130.38 2017.91,-116.29 2017.91,-105.45"/>
+</g>
+<!-- Device&#45;&gt;UndergroundFeeder -->
+<g id="edge33" class="edge">
+<title>Device-&gt;UndergroundFeeder</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M1994.83,-154.15C1969.22,-150.62 1926.68,-144.97 1889.91,-141.12 1681.27,-119.25 1433.14,-101.01 1319.44,-93.09"/>
+</g>
+<!-- Device&#45;&gt;RfidReader -->
+<g id="edge34" class="edge">
+<title>Device-&gt;RfidReader</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M2041.12,-145.61C2062.83,-134.59 2095.49,-118 2119.91,-105.6"/>
+</g>
+<!-- Device&#45;&gt;SpinnakerVideoSource -->
+<g id="edge35" class="edge">
+<title>Device-&gt;SpinnakerVideoSource</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M2041.06,-145.14C2044.32,-143.67 2047.66,-142.27 2050.91,-141.12 2065.92,-135.79 2147.92,-117.49 2209.54,-104.04"/>
+</g>
+<!-- DeviceType -->
+<g id="node19" class="node">
+<title>DeviceType</title>
+<g id="a_node19"><a xlink:title="device_type          ------------------------------device_description=&quot;&quot; ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="2075.79,-246.24 2008.04,-246.24 2008.04,-211.68 2075.79,-211.68 2075.79,-246.24"/>
+<text text-anchor="start" x="2016.04" y="-226.46" font-family="arial" text-decoration="underline" font-size="10.00">DeviceType</text>
+</a>
+</g>
+</g>
+<!-- DeviceType&#45;&gt;DeviceType.Stream -->
+<g id="edge36" class="edge">
+<title>DeviceType-&gt;DeviceType.Stream</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M2058.27,-211.71C2071.98,-198.09 2091.03,-179.16 2102.06,-168.2"/>
+</g>
+<!-- DeviceType&#45;&gt;Device -->
+<g id="edge37" class="edge">
+<title>DeviceType-&gt;Device</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M2036.23,-211.71C2032.4,-200.78 2027.38,-186.44 2023.56,-175.53"/>
+</g>
+<!-- RfidReader&#45;&gt;RfidReaderRfidEvents -->
+<g id="edge38" class="edge">
+<title>RfidReader-&gt;RfidReaderRfidEvents</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M2192.1,-73.15C2195.07,-72.23 2198.03,-71.36 2200.91,-70.56 2260.5,-54.02 2329.58,-39.45 2378.28,-29.92"/>
+</g>
+<!-- SpinnakerVideoSource&#45;&gt;SpinnakerVideoSourceVideo -->
+<g id="edge39" class="edge">
+<title>SpinnakerVideoSource-&gt;SpinnakerVideoSourceVideo</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M2349.87,-74.19C2417.78,-61.9 2520.31,-43.35 2588.4,-31.04"/>
+</g>
+</g>
+</svg>

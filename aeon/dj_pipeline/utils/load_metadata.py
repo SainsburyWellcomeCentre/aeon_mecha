@@ -1,3 +1,5 @@
+"""Load metadata from the experiment and insert into streams schema."""
+
 import datetime
 import inspect
 import json
@@ -8,43 +10,45 @@ from pathlib import Path
 import datajoint as dj
 import numpy as np
 from dotmap import DotMap
+from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import dict_to_uuid
 from aeon.dj_pipeline.utils import streams_maker
-from aeon.io import api as io_api
 
 logger = dj.logger
 _weight_scale_rate = 100
 _weight_scale_nest = 1
-_aeon_schemas = ["social01", "social02"]
 
 
 def insert_stream_types():
     """Insert into streams.streamType table all streams in the aeon schemas."""
-    from aeon.schema import schemas as aeon_schemas
+    from aeon.schema import ingestion_schemas as aeon_schemas
 
     streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
-    schemas = [getattr(aeon_schemas, aeon_schema) for aeon_schema in _aeon_schemas]
-    for schema in schemas:
-        stream_entries = get_stream_entries(schema)
+    for devices_schema_name in aeon_schemas.__all__:
+        devices_schema = getattr(aeon_schemas, devices_schema_name)
+        stream_entries = get_stream_entries(devices_schema)
 
         for entry in stream_entries:
-            q_param = streams.StreamType & {"stream_hash": entry["stream_hash"]}
-            if q_param:  # If the specified stream type already exists
-                pname = q_param.fetch1("stream_type")
-                if pname == entry["stream_type"]:
-                    continue
-                else:
-                    # If the existed stream type does not have the same name:
-                    # human error, trying to add the same content with different name
-                    raise dj.DataJointError(f"The specified stream type already exists - name: {pname}")
-            else:
-                streams.StreamType.insert1(entry, skip_duplicates=True)
+            try:
+                streams.StreamType.insert1(entry)
+                logger.info(f"New stream type created: {entry['stream_type']}")
+            except dj.errors.DuplicateError:
+                existing_stream = (
+                    streams.StreamType.proj("stream_reader", "stream_reader_kwargs")
+                    & {"stream_type": entry["stream_type"]}
+                ).fetch1()
+                existing_columns = existing_stream["stream_reader_kwargs"].get("columns")
+                entry_columns = entry["stream_reader_kwargs"].get("columns")
+                if existing_columns != entry_columns:
+                    logger.warning(f"Stream type already exists:\n\t{entry}\n\t{existing_stream}")
 
 
 def insert_device_types(devices_schema: DotMap, metadata_yml_filepath: Path):
-    """Use aeon.schema.schemas and metadata.yml to insert into streams.DeviceType and streams.Device.
+    """Insert device types into streams.DeviceType and streams.Device.
+
+    Notes: Use aeon.schema.schemas and metadata.yml to insert into streams.DeviceType and streams.Device.
     Only insert device types that were defined both in the device schema (e.g., exp02) and Metadata.yml.
     It then creates new device tables under streams schema.
     """
@@ -141,13 +145,15 @@ def extract_epoch_config(experiment_name: str, devices_schema: DotMap, metadata_
     if isinstance(commit, float) and np.isnan(commit):
         commit = epoch_config["metadata"]["Revision"]
 
-    assert commit, f'Neither "Commit" nor "Revision" found in {metadata_yml_filepath}'
+    if not commit:
+        raise ValueError(f'Neither "Commit" nor "Revision" found in {metadata_yml_filepath}')
 
     devices: list[dict] = json.loads(
         json.dumps(epoch_config["metadata"]["Devices"], default=lambda x: x.__dict__, indent=4)
     )
 
-    # Maintain backward compatibility - In exp02, it is a list of dict. From presocial onward, it's a dict of dict.
+    # Maintain backward compatibility - In exp02, it is a list of dict.
+    # From presocial onward, it's a dict of dict.
     if isinstance(devices, list):
         devices: dict = {d.pop("Name"): d for d in devices}  # {deivce_name: device_config}
 
@@ -202,7 +208,9 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
 
             if not (streams.Device & device_key):
                 logger.warning(
-                    f"Device {device_name} (serial number: {device_sn}) is not yet registered in streams.Device.\nThis should not happen - check if metadata.yml and schemas dotmap are consistent. Skipping..."
+                    f"Device {device_name} (serial number: {device_sn}) is not "
+                    "yet registered in streams.Device.\nThis should not happen - "
+                    "check if metadata.yml and schemas dotmap are consistent. Skipping..."
                 )
                 # skip if this device (with a serial number) is not yet inserted in streams.Device
                 continue
@@ -234,7 +242,9 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
                     }
                 )
 
-            """Check if this device is currently installed. If the same device serial number is currently installed check for any changes in configuration. If not, skip this"""
+            # Check if this device is currently installed.
+            # If the same device serial number is currently installed check for changes in configuration.
+            # If not, skip this.
             current_device_query = table - table.RemovalTime & experiment_key & device_key
 
             if current_device_query:
@@ -294,7 +304,7 @@ def ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath
     return set(epoch_device_types)
 
 
-# region Get stream & device information
+# Get stream & device information
 def get_stream_entries(devices_schema: DotMap) -> list[dict]:
     """Returns a list of dictionaries containing the stream entries for a given device.
 
@@ -352,6 +362,7 @@ def get_device_info(devices_schema: DotMap) -> dict[dict]:
     """
 
     def _get_class_path(obj):
+        """Returns the class path of the object."""
         return f"{obj.__class__.__module__}.{obj.__class__.__name__}"
 
     schema_json = json.dumps(devices_schema, default=lambda x: x.__dict__, indent=4)
@@ -366,31 +377,23 @@ def get_device_info(devices_schema: DotMap) -> dict[dict]:
 
         if isinstance(device, DotMap):
             for stream_type, stream_obj in device.items():
-                if stream_obj.__class__.__module__ in [
-                    "aeon.io.reader",
-                    "aeon.schema.foraging",
-                    "aeon.schema.octagon",
-                    "aeon.schema.social",
-                ]:
-                    device_info[device_name]["stream_type"].append(stream_type)
-                    device_info[device_name]["stream_reader"].append(_get_class_path(stream_obj))
+                device_info[device_name]["stream_type"].append(stream_type)
+                device_info[device_name]["stream_reader"].append(_get_class_path(stream_obj))
 
-                    required_args = [
-                        k for k in inspect.signature(stream_obj.__init__).parameters if k != "self"
-                    ]
-                    pattern = schema_dict[device_name][stream_type].get("pattern")
-                    schema_dict[device_name][stream_type]["pattern"] = pattern.replace(
-                        device_name, "{pattern}"
-                    )
+                required_args = [
+                    k for k in inspect.signature(stream_obj.__init__).parameters if k != "self"
+                ]
+                pattern = schema_dict[device_name][stream_type].get("pattern")
+                schema_dict[device_name][stream_type]["pattern"] = pattern.replace(device_name, "{pattern}")
 
-                    kwargs = {
-                        k: v for k, v in schema_dict[device_name][stream_type].items() if k in required_args
-                    }
-                    device_info[device_name]["stream_reader_kwargs"].append(kwargs)
-                    # Add hash
-                    device_info[device_name]["stream_hash"].append(
-                        dict_to_uuid({**kwargs, "stream_reader": _get_class_path(stream_obj)})
-                    )
+                kwargs = {
+                    k: v for k, v in schema_dict[device_name][stream_type].items() if k in required_args
+                }
+                device_info[device_name]["stream_reader_kwargs"].append(kwargs)
+                # Add hash
+                device_info[device_name]["stream_hash"].append(
+                    dict_to_uuid({**kwargs, "stream_reader": _get_class_path(stream_obj)})
+                )
         else:
             stream_type = device.__class__.__name__
             device_info[device_name]["stream_type"].append(stream_type)
@@ -410,7 +413,12 @@ def get_device_info(devices_schema: DotMap) -> dict[dict]:
 
 
 def get_device_mapper(devices_schema: DotMap, metadata_yml_filepath: Path):
-    """Returns a mapping dictionary between device name and device type based on the dataset schema and metadata.yml from the experiment. Store the mapper dictionary and read from it if the type info doesn't exist in Metadata.yml.
+    """Returns a mapping dictionary of device names to types based on the dataset schema and metadata.yml.
+
+    Notes: Returns a mapping dictionary between device name and device type
+    based on the dataset schema and metadata.yml from the experiment.
+    Store the mapper dictionary and read from it if the type info doesn't
+    exist in Metadata.yml.
 
     Args:
         devices_schema (DotMap): DotMap object (e.g., exp02)
@@ -422,7 +430,7 @@ def get_device_mapper(devices_schema: DotMap, metadata_yml_filepath: Path):
         device_sn (dict): {"device_name", "serial_number"}
          e.g. {'CameraTop': '21053810'}
     """
-    from aeon.io import api as io_api
+    from swc.aeon.io import api as io_api
 
     metadata_yml_filepath = Path(metadata_yml_filepath)
     meta_data = (
@@ -450,7 +458,8 @@ def get_device_mapper(devices_schema: DotMap, metadata_yml_filepath: Path):
                 device_type_mapper[item.Name] = item.Type
                 device_sn[item.Name] = (
                     item.SerialNumber or item.PortName or None
-                )  # assign either the serial number (if it exists) or port name. If neither exists, assign None
+                )  # assign either the serial number (if it exists) or port name.
+                # If neither exists, assign None
             elif isinstance(item, str):  # presocial
                 if meta_data.Devices[item].get("Type"):
                     device_type_mapper[item] = meta_data.Devices[item].get("Type")
@@ -501,6 +510,3 @@ def ingest_epoch_metadata_octagon(experiment_name, metadata_yml_filepath):
         experiment_table = getattr(streams, f"Experiment{device_type}")
         if not (experiment_table & {"experiment_name": experiment_name, "device_serial_number": device_sn}):
             experiment_table.insert1((experiment_name, device_sn, epoch_start, device_name))
-
-
-# endregion

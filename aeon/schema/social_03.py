@@ -1,15 +1,16 @@
-import json
-import pandas as pd
-import aeon.io.reader as _reader
-from aeon.schema.streams import Stream
+"""Schema definition for social_03 experiments-specific data streams."""
+
+from swc.aeon.io import reader
+from swc.aeon.schema import Stream
 
 
 class Pose(Stream):
     def __init__(self, path):
-        super().__init__(_reader.Pose(f"{path}_202_*"))
+        """Initializes the Pose stream."""
+        super().__init__(reader.Pose(f"{path}_222*", "/ceph/aeon/aeon/data/ingest"))
 
 
 class EnvironmentActiveConfiguration(Stream):
-
     def __init__(self, path):
-        super().__init__(_reader.JsonList(f"{path}_ActiveConfiguration_*", columns=["name"]))
+        """Initializes the EnvironmentActiveConfiguration stream."""
+        super().__init__(reader.JsonList(f"{path}_ActiveConfiguration_*", columns=["name"]))

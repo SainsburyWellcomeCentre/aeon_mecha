@@ -1,0 +1,18 @@
+{
+  "database.host": "localhost",
+  "database.user": "******",
+  "database.password": "******",
+  "database.port": 3306,
+  "connection.init_function": null,
+  "database.reconnect": true,
+  "enable_python_native_blobs": true,
+  "loglevel": "INFO",
+  "safemode": true,
+  "display.limit": 20,
+  "display.width": 40,
+  "display.show_tuple_count": true,
+  "custom": {
+      "database.prefix": "aeon_",
+      "repository_config": {"ceph_aeon": "/ceph/aeon"}
+    }
+}

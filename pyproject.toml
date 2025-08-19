@@ -24,18 +24,14 @@ dependencies = [
   "bottleneck>=1.2.1,<2",
   "datajoint>=0.13.7",
   "datajoint-utilities @ git+https://github.com/datajoint-company/datajoint-utilities",
-  "dotmap",
+  "swc-aeon @ git+https://github.com/SainsburyWellcomeCentre/aeon_api.git",
   "fastparquet",
   "graphviz",
   "ipykernel",
   "jupyter",
   "jupyterlab",
-  "matplotlib",
   "numba>=0.46.0, <1",
   "numexpr>=2.6.8, <3",
-  "numpy>=1.21.0, <2",
-  "opencv-python",
-  "pandas>=1.3",
   "pillow",
   "plotly",
   "pyarrow",
@@ -97,22 +93,11 @@ lint.select = [
 ]
 line-length = 108
 lint.ignore = [
-  "D100",    # skip adding docstrings for module
-  "D104",    # ignore missing docstring in public package
-  "D105",    # skip adding docstrings for magic methods
-  "D107",    # skip adding docstrings for __init__
-  "E201",
-  "E202",
-  "E203",
-  "E231",
   "E731",
-  "E702",
-  "S101",
-  "PT004",  # Rule `PT004` is deprecated and will be removed in a future release.
-  "PT013",
-  "PLR0912",
+  "PLR0912", 
   "PLR0913",
   "PLR0915",
+  "UP038", # Deprecated and will be removed in a future release.
 ]
 extend-exclude = [
   ".git",
@@ -124,39 +109,22 @@ extend-exclude = [
 ]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
-  "D103",    # skip adding docstrings for public functions
+  "D103",    # skip adding docstrings for public functions  
+  "S101",    # skip using assert
 ]
 "aeon/schema/*" = [
   "D101",    # skip adding docstrings for schema classes
   "D106",    # skip adding docstrings for nested streams
 ]
 "aeon/dj_pipeline/*" = [
-  "B006",
-  "B021",
-  "D101",    # skip adding docstrings for table class since it is added inside definition
-  "D102",    # skip adding docstrings for make function
-  "D103",    # skip adding docstrings for public functions
-  "D106",    # skip adding docstrings for Part tables
-  "E501",
-  "F401",    # ignore unused import errors
-  "B905",    # ignore unused import errors
-  "E999",
-  "S324",
-  "E722",
-  "S110",
-  "F821",
-  "B904",
-  "UP038",
-  "S607",
-  "S605",
-  "D205",
-  "D202",
-  "F403",
-  "PLR2004",
-  "SIM108",
-  "PLW0127",
-  "PLR2004",
-  "I001",
+  "D101",    # skip adding docstrings for schema classes
+  "D106",    # skip adding docstrings for nested streams
+  "S324",    # skip hashlib insecure hash function (md5) warning
+  "F401",    # skip incorrectly detecting `aeon.dj_pipeline` dependencies as unused
+  "PLC0415", # skip checking `import` at the top-level of a file
+]
+"tests/dj_pipeline/*" = [
+  "PLC0415", # skip checking `import` at the top-level of a file
 ]
 
 [tool.ruff.lint.pydocstyle]

@@ -1,7 +1,9 @@
+"""Module for block analysis."""
+
 import itertools
 import json
 from collections import defaultdict
-from datetime import datetime
+from datetime import UTC, datetime
 
 import datajoint as dj
 import numpy as np
@@ -10,27 +12,18 @@ import plotly
 import plotly.express as px
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
+from swc.aeon.analysis import utils as analysis_utils
+from swc.aeon.io import api as io_api
 
-from aeon.analysis import utils as analysis_utils
-from aeon.analysis.block_plotting import (
+from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, subject, tracking
+from aeon.dj_pipeline.analysis.visit import filter_out_maintenance_periods, get_maintenance_periods
+from aeon.dj_pipeline.utils.block_plotting import (
     conv2d,
     gen_hex_grad,
     gen_patch_style_dict,
     gen_subject_colors_dict,
     subject_colors,
 )
-from aeon.dj_pipeline import (
-    acquisition,
-    fetch_stream,
-    get_schema_name,
-    streams,
-    tracking,
-)
-from aeon.dj_pipeline.analysis.visit import (
-    filter_out_maintenance_periods,
-    get_maintenance_periods,
-)
-from aeon.io import api as io_api
 
 schema = dj.schema(get_schema_name("block_analysis"))
 logger = dj.logger
@@ -49,9 +42,19 @@ class Block(dj.Manual):
 
 @schema
 class BlockDetection(dj.Computed):
-    definition = """
+    definition = """  # Detecting new block(s) for each new Chunk
     -> acquisition.Environment
+    ---
+    execution_time=null: datetime
     """
+
+    class IdentifiedBlock(dj.Part):
+        definition = """ # the block(s) identified in this BlockDetection
+        -> master
+        -> Block
+        """
+
+    key_source = acquisition.Environment - {"experiment_name": "social0.1-aeon3"}
 
     def make(self, key):
         """On a per-chunk basis, check for the presence of new block, insert into Block table.
@@ -78,9 +81,6 @@ class BlockDetection(dj.Computed):
             self.insert1(key)
             return
 
-        block_state_df.index = block_state_df.index.round(
-            "us"
-        )  # timestamp precision in DJ is only at microseconds
         block_state_df = block_state_df.loc[
             (block_state_df.index > chunk_start) & (block_state_df.index <= chunk_end)
         ]
@@ -88,8 +88,7 @@ class BlockDetection(dj.Computed):
         blocks_df = block_state_df[block_state_df.pellet_ct == 0]
         # account for the double 0s - find any 0s that are within 1 second of each other, remove the 2nd one
         double_0s = blocks_df.index.to_series().diff().dt.total_seconds() < 1
-        # find the indices of the 2nd 0s and remove
-        double_0s = double_0s.shift(-1).fillna(False)
+        # keep the first 0s
         blocks_df = blocks_df[~double_0s]
 
         block_entries = []
@@ -109,7 +108,8 @@ class BlockDetection(dj.Computed):
                 )
 
         Block.insert(block_entries, skip_duplicates=True)
-        self.insert1(key)
+        self.insert1({**key, "execution_time": datetime.now(UTC)})
+        self.IdentifiedBlock.insert({**key, "block_start": entry["block_start"]} for entry in block_entries)
 
 
 # ---- Block Analysis and Visualization ----
@@ -127,8 +127,10 @@ class BlockAnalysis(dj.Computed):
 
     @property
     def key_source(self):
-        # Ensure that the chunk ingestion has caught up with this block before processing
-        # (there exists a chunk that ends after the block end time)
+        """Ensures chunk ingestion is complete before processing the block.
+
+        This is done by checking that there exists a chunk that ends after the block end time.
+        """
         ks = Block.aggr(acquisition.Chunk, latest_chunk_end="MAX(chunk_end)")
         ks = ks * Block & "latest_chunk_end >= block_end" & "block_end IS NOT NULL"
         return ks
@@ -144,8 +146,8 @@ class BlockAnalysis(dj.Computed):
         wheel_timestamps: longblob
         patch_threshold: longblob
         patch_threshold_timestamps: longblob
-        patch_rate: float
-        patch_offset: float
+        patch_rate=null: float
+        patch_offset=null: float
         """
 
     class Subject(dj.Part):
@@ -163,7 +165,12 @@ class BlockAnalysis(dj.Computed):
         """
 
     def make(self, key):
-        """Restrict, fetch and aggregate data from different streams to produce intermediate data products at a per-block level (for different patches and different subjects).
+        """Collates data from various streams to produce per-block intermediate data products.
+
+        The intermediate data products consist of data for each ``Patch``
+        and each ``Subject`` within the  ``Block``.
+        The steps to restrict, fetch, and aggregate data from various streams are as follows:
+
         1. Query data for all chunks within the block.
         2. Fetch streams, filter by maintenance period.
         3. Fetch subject position data (SLEAP).
@@ -181,17 +188,31 @@ class BlockAnalysis(dj.Computed):
             streams.UndergroundFeederDepletionState,
             streams.UndergroundFeederDeliverPellet,
             streams.UndergroundFeederEncoder,
-            tracking.SLEAPTracking,
         )
         for streams_table in streams_tables:
             if len(streams_table & chunk_keys) < len(streams_table.key_source & chunk_keys):
                 raise ValueError(
-                    f"BlockAnalysis Not Ready - {streams_table.__name__} not yet fully ingested for block: {key}. Skipping (to retry later)..."
+                    f"BlockAnalysis Not Ready - {streams_table.__name__}"
+                    f"not yet fully ingested for block: {key}."
+                    f"Skipping (to retry later)..."
                 )
 
+        # Check if SLEAPTracking is ready, if not, see if BlobPosition can be used instead
+        use_blob_position = False
+        if len(tracking.SLEAPTracking & chunk_keys) < len(tracking.SLEAPTracking.key_source & chunk_keys):
+            if len(tracking.BlobPosition & chunk_keys) < len(tracking.BlobPosition.key_source & chunk_keys):
+                raise ValueError(
+                    "BlockAnalysis Not Ready - "
+                    f"SLEAPTracking (and BlobPosition) not yet fully ingested for block: {key}. "
+                    "Skipping (to retry later)..."
+                )
+            else:
+                use_blob_position = True
+
         # Patch data - TriggerPellet, DepletionState, Encoder (distancetravelled)
-        # For wheel data, downsample to 10Hz
-        final_encoder_fs = 10
+        # For wheel data, downsample to 50Hz
+        final_encoder_hz = 50
+        freq = 1 / final_encoder_hz * 1e3  # in ms
 
         maintenance_period = get_maintenance_periods(key["experiment_name"], block_start, block_end)
 
@@ -204,7 +225,7 @@ class BlockAnalysis(dj.Computed):
         patch_keys, patch_names = patch_query.fetch("KEY", "underground_feeder_name")
 
         block_patch_entries = []
-        for patch_key, patch_name in zip(patch_keys, patch_names):
+        for patch_key, patch_name in zip(patch_keys, patch_names, strict=False):
             # pellet delivery and patch threshold data
             depletion_state_df = fetch_stream(
                 streams.UndergroundFeederDepletionState & patch_key & chunk_restriction
@@ -233,30 +254,41 @@ class BlockAnalysis(dj.Computed):
                 encoder_df, maintenance_period, block_end, dropna=True
             )
 
-            if depletion_state_df.empty:
-                raise ValueError(f"No depletion state data found for block {key} - patch: {patch_name}")
+            # if all dataframes are empty, skip
+            if pellet_ts_threshold_df.empty and depletion_state_df.empty and encoder_df.empty:
+                continue
 
-            encoder_df["distance_travelled"] = -1 * analysis_utils.distancetravelled(encoder_df.angle)
+            if encoder_df.empty:
+                encoder_df["distance_travelled"] = 0
+            else:
+                # -1 is for placement of magnetic encoder, where wheel movement actually decreases encoder
+                encoder_df["distance_travelled"] = -1 * analysis_utils.distancetravelled(encoder_df.angle)
+                encoder_df = encoder_df.resample(f"{freq}ms").first()
 
-            if len(depletion_state_df.rate.unique()) > 1:
-                # multiple patch rates per block is unexpected, log a note and pick the first rate to move forward
-                AnalysisNote.insert1(
-                    {
-                        "note_timestamp": datetime.utcnow(),
-                        "note_type": "Multiple patch rates",
-                        "note": f"Found multiple patch rates for block {key} - patch: {patch_name} - rates: {depletion_state_df.rate.unique()}",
-                    }
-                )
+            if not depletion_state_df.empty:
+                if len(depletion_state_df.rate.unique()) > 1:
+                    # multiple patch rates per block is unexpected
+                    # log a note and pick the first rate to move forward
+                    AnalysisNote.insert1(
+                        {
+                            "note_timestamp": datetime.now(UTC),
+                            "note_type": "Multiple patch rates",
+                            "note": (
+                                f"Found multiple patch rates for block {key} "
+                                f"- patch: {patch_name} "
+                                f"- rates: {depletion_state_df.rate.unique()}"
+                            ),
+                        }
+                    )
 
-            patch_rate = depletion_state_df.rate.iloc[0]
-            patch_offset = depletion_state_df.offset.iloc[0]
-            # handles patch rate value being INF
-            patch_rate = 999999999 if np.isinf(patch_rate) else patch_rate
-
-            encoder_fs = (
-                1 / encoder_df.index.to_series().diff().dt.total_seconds().median()
-            )  # mean or median?
-            wheel_downsampling_factor = int(encoder_fs / final_encoder_fs)
+                patch_rate = depletion_state_df.rate.iloc[0]
+                patch_offset = depletion_state_df.offset.iloc[0]
+                # handles patch rate value being INF
+                patch_rate = 999999999 if np.isinf(patch_rate) else patch_rate
+            else:
+                logger.warning(f"No depletion state data found for block {key} - patch: {patch_name}")
+                patch_rate = None
+                patch_offset = None
 
             block_patch_entries.append(
                 {
@@ -264,10 +296,8 @@ class BlockAnalysis(dj.Computed):
                     "patch_name": patch_name,
                     "pellet_count": len(pellet_ts_threshold_df),
                     "pellet_timestamps": pellet_ts_threshold_df.pellet_timestamp.values,
-                    "wheel_cumsum_distance_travelled": encoder_df.distance_travelled.values[
-                        ::wheel_downsampling_factor
-                    ],
-                    "wheel_timestamps": encoder_df.index.values[::wheel_downsampling_factor],
+                    "wheel_cumsum_distance_travelled": encoder_df.distance_travelled.values,
+                    "wheel_timestamps": encoder_df.index.values,
                     "patch_threshold": pellet_ts_threshold_df.threshold.values,
                     "patch_threshold_timestamps": pellet_ts_threshold_df.index.values,
                     "patch_rate": patch_rate,
@@ -275,28 +305,75 @@ class BlockAnalysis(dj.Computed):
                 }
             )
 
-            # update block_end if last timestamp of encoder_df is before the current block_end
-            block_end = min(encoder_df.index[-1], block_end)
-
         # Subject data
-        # Get all unique "pose_identity" found from SLEAP data for all chunks in this block
-        subject_names = set((tracking.SLEAPTracking.PoseIdentity & key & chunk_restriction).fetch("identity_name"))
+        # Get all unique subjects that visited the environment over the entire exp;
+        # For each subject, see 'type' of visit most recent to start of block
+        # If "Exit", this animal was not in the block.
+        subject_names = (acquisition.Experiment.Subject & key).fetch("subject", order_by="subject")
+        if not len(subject_names):
+            raise ValueError(
+                "No subjects found in `acquisition.Experiment.Subject`, missing a manual insert step?"
+            )
+
+        subject_visits_df = fetch_stream(
+            acquisition.Environment.SubjectVisits
+            & key
+            & f'chunk_start <= "{chunk_keys[-1]["chunk_start"]}"'
+        )[:block_start]
+
+        last_environment_visit = (
+            subject_visits_df[subject_visits_df.region == "Environment"].groupby("id").tail(1)
+        )
+        environment_exit = last_environment_visit[last_environment_visit.type == "Exit"]
+        subject_names = set(subject_names) - set(environment_exit.id)
+
+        # Check for ExperimentTimeline to validate subjects in this block
+        timeline_query = (
+            acquisition.ExperimentTimeline
+            & acquisition.ExperimentTimeline.Subject
+            & key
+            & f"start <= '{block_start}' AND end >= '{block_end}'"
+        )
+        timeline_subjects = (acquisition.ExperimentTimeline.Subject & timeline_query).fetch("subject")
+        if len(timeline_subjects):
+            subject_names = [s for s in subject_names if s in timeline_subjects]
+
+        if use_blob_position and len(subject_names) > 1:
+            raise ValueError(
+                f"Without SLEAPTracking, BlobPosition can only handle a single-subject block. "
+                f"Found {len(subject_names)} subjects."
+            )
 
         block_subject_entries = []
         for subject_name in subject_names:
             # positions - query for CameraTop, identity_name matches subject_name,
-            pos_query = (
-                streams.SpinnakerVideoSource
-                * tracking.SLEAPTracking.PoseIdentity.proj("identity_name", part_name="anchor_part")
-                * tracking.SLEAPTracking.Part
-                & key
-                & {
-                    "spinnaker_video_source_name": "CameraTop",
-                    "identity_name": subject_name,
-                }
-                & chunk_restriction
-            )
-            pos_df = fetch_stream(pos_query)[block_start:block_end]
+            if use_blob_position:
+                pos_query = (
+                    streams.SpinnakerVideoSource * tracking.BlobPosition.Object
+                    & key
+                    & chunk_restriction
+                    & {"spinnaker_video_source_name": "CameraTop", "identity_name": subject_name}
+                )
+                pos_df = fetch_stream(pos_query)[block_start:block_end]
+                pos_df["likelihood"] = np.nan
+                # keep only rows with area between 0 and 1000 - likely artifacts otherwise
+                MIN_AREA = 0
+                MAX_AREA = 1000
+                pos_df = pos_df[(pos_df.area > MIN_AREA) & (pos_df.area < MAX_AREA)]
+            else:
+                pos_query = (
+                    streams.SpinnakerVideoSource
+                    * tracking.SLEAPTracking.PoseIdentity.proj("identity_name")
+                    * tracking.SLEAPTracking.AnchorPart
+                    & key
+                    & {
+                        "spinnaker_video_source_name": "CameraTop",
+                        "identity_name": subject_name,
+                    }
+                    & chunk_restriction
+                )
+                pos_df = fetch_stream(pos_query)[block_start:block_end]
+
             pos_df = filter_out_maintenance_periods(pos_df, maintenance_period, block_end)
 
             if pos_df.empty:
@@ -333,8 +410,8 @@ class BlockAnalysis(dj.Computed):
             {
                 **key,
                 "block_duration": (block_end - block_start).total_seconds() / 3600,
-                "patch_count": len(patch_keys),
-                "subject_count": len(subject_names),
+                "patch_count": len(block_patch_entries),
+                "subject_count": len(block_subject_entries),
             }
         )
         self.Patch.insert(block_patch_entries)
@@ -361,11 +438,11 @@ class BlockSubjectAnalysis(dj.Computed):
         -> BlockAnalysis.Patch
         -> BlockAnalysis.Subject
         ---
-        in_patch_timestamps: longblob  # timestamps in which a particular subject is spending time at a particular patch
+        in_patch_timestamps: longblob # timestamps when a subject is at a specific patch
         in_patch_time: float  # total seconds spent in this patch for this block
+        in_patch_rfid_timestamps=null: longblob  # in_patch_timestamps based on RFID
         pellet_count: int
         pellet_timestamps: longblob
-        patch_threshold: longblob  # patch threshold value at each pellet delivery
         patch_threshold: longblob  # patch threshold value at each pellet delivery
         wheel_cumsum_distance_travelled: longblob  # wheel's cumulative distance travelled
         """
@@ -387,10 +464,17 @@ class BlockSubjectAnalysis(dj.Computed):
     key_source = BlockAnalysis & BlockAnalysis.Patch & BlockAnalysis.Subject
 
     def make(self, key):
+        """Compute preference scores for each subject at each patch within a block."""
+        block_start, block_end = (Block & key).fetch1("block_start", "block_end")
+        chunk_restriction = acquisition.create_chunk_restriction(
+            key["experiment_name"], block_start, block_end
+        )
+
         block_patches = (BlockAnalysis.Patch & key).fetch(as_dict=True)
         block_subjects = (BlockAnalysis.Subject & key).fetch(as_dict=True)
         subject_names = [s["subject_name"] for s in block_subjects]
         patch_names = [p["patch_name"] for p in block_patches]
+
         # Construct subject position dataframe
         subjects_positions_df = pd.concat(
             [
@@ -411,6 +495,22 @@ class BlockSubjectAnalysis(dj.Computed):
         )
         subjects_positions_df.set_index("position_timestamps", inplace=True)
 
+        # Ensure wheel_timestamps are of the same length across all patches
+        wheel_lens = [len(p["wheel_timestamps"]) for p in block_patches]
+        MAX_WHEEL_DIFF = 10
+
+        if len(set(wheel_lens)) > 1:
+            max_diff = max(wheel_lens) - min(wheel_lens)
+            if max_diff > MAX_WHEEL_DIFF:
+                # if diff is more than 10 samples, raise error, this is unexpected, some patches crash?
+                raise ValueError(
+                    f"Inconsistent wheel data lengths across patches ({max_diff} samples diff)"
+                )
+            min_wheel_len = min(wheel_lens)
+            for p in block_patches:
+                p["wheel_timestamps"] = p["wheel_timestamps"][:min_wheel_len]
+                p["wheel_cumsum_distance_travelled"] = p["wheel_cumsum_distance_travelled"][:min_wheel_len]
+
         self.insert1(key)
 
         in_patch_radius = 130  # pixels
@@ -424,6 +524,17 @@ class BlockSubjectAnalysis(dj.Computed):
         ]
         all_subj_patch_pref_dict = {
             p: {s: {a: pd.Series() for a in pref_attrs} for s in subject_names} for p in patch_names
+        }
+
+        # subject-rfid mapping
+        rfid2subj_map = {
+            int(lab_id): subj_name
+            for subj_name, lab_id in zip(
+                *(
+                    subject.SubjectDetail.proj("lab_id") & f"subject in {tuple(list(subject_names) + [''])}"
+                ).fetch("subject", "lab_id"),
+                strict=False,
+            )
         }
 
         for patch in block_patches:
@@ -509,6 +620,18 @@ class BlockSubjectAnalysis(dj.Computed):
             # In patch time
             in_patch = dist_to_patch_wheel_ts_id_df < in_patch_radius
             dt = np.median(np.diff(cum_wheel_dist.index)).astype(int) / 1e9  # s
+
+            # In patch time from RFID
+            rfid_query = (
+                streams.RfidReader.proj(rfid_name="REPLACE(rfid_reader_name, 'Rfid', '')")
+                * streams.RfidReaderRfidEvents
+                & key
+                & {"rfid_name": patch["patch_name"]}
+                & chunk_restriction
+            )
+            rfid_df = fetch_stream(rfid_query)[block_start:block_end]
+            rfid_df["subject"] = rfid_df.rfid.map(rfid2subj_map)
+
             # Fill in `all_subj_patch_pref`
             for subject_name in subject_names:
                 all_subj_patch_pref_dict[patch["patch_name"]][subject_name]["cum_dist"] = (
@@ -529,8 +652,9 @@ class BlockSubjectAnalysis(dj.Computed):
                     | {
                         "patch_name": patch["patch_name"],
                         "subject_name": subject_name,
-                        "in_patch_timestamps": subject_in_patch.index.values,
+                        "in_patch_timestamps": subject_in_patch[in_patch[subject_name]].index.values,
                         "in_patch_time": subject_in_patch_cum_time[-1],
+                        "in_patch_rfid_timestamps": rfid_df[rfid_df.subject == subject_name].index.values,
                         "pellet_count": len(subj_pellets),
                         "pellet_timestamps": subj_pellets.index.values,
                         "patch_threshold": subj_patch_thresh,
@@ -548,11 +672,14 @@ class BlockSubjectAnalysis(dj.Computed):
             all_cum_time = np.sum(
                 [all_subj_patch_pref_dict[p][subject_name]["cum_time"][-1] for p in patch_names]
             )
+
+            CUM_PREF_DIST_MIN = 1e-3
+
             for patch_name in patch_names:
                 cum_pref_dist = (
                     all_subj_patch_pref_dict[patch_name][subject_name]["cum_dist"] / all_cum_dist
                 )
-                cum_pref_dist = np.where(cum_pref_dist < 1e-3, 0, cum_pref_dist)
+                cum_pref_dist = np.where(cum_pref_dist < CUM_PREF_DIST_MIN, 0, cum_pref_dist)
                 all_subj_patch_pref_dict[patch_name][subject_name]["cum_pref_dist"] = cum_pref_dist
 
                 cum_pref_time = (
@@ -621,6 +748,7 @@ class BlockPatchPlots(dj.Computed):
     """
 
     def make(self, key):
+        """Compute and plot various block-level statistics and visualizations."""
         # Define subject colors and patch styling for plotting
         exp_subject_names = (acquisition.Experiment.Subject & key).fetch("subject", order_by="subject")
         if not len(exp_subject_names):
@@ -1052,14 +1180,14 @@ class BlockPatchPlots(dj.Computed):
         # Figure 8 - Weighted patch preference: weighted by 'wheel_dist_spun : pel_ct' ratio
         # ---
         # Create multi-indexed dataframe with weighted distance for each subject-patch pair
-        pel_patches = [p for p in patch_names if "dummy" not in p.lower()]  # exclude dummy patches
+        pel_patches = [p for p in patch_names if "base" not in p.lower()]  # exclude base patches
         data = []
         for patch in pel_patches:
-            for subject in subject_names:
+            for subject_name in subject_names:
                 data.append(
                     {
                         "patch_name": patch,
-                        "subject_name": subject,
+                        "subject_name": subject_name,
                         "time": wheel_ts[patch],
                         "weighted_dist": np.empty_like(wheel_ts[patch]),
                     }
@@ -1159,18 +1287,18 @@ class BlockPatchPlots(dj.Computed):
         df = subj_wheel_pel_weighted_dist
         # Iterate through patches and subjects to create plots
         for i, patch in enumerate(pel_patches, start=1):
-            for j, subject in enumerate(subject_names, start=1):
+            for j, subject_name in enumerate(subject_names, start=1):
                 # Filter data for this patch and subject
-                times = df.loc[patch].loc[subject]["time"]
-                norm_values = df.loc[patch].loc[subject]["norm_value"]
-                wheel_prefs = df.loc[patch].loc[subject]["wheel_pref"]
+                times = df.loc[patch].loc[subject_name]["time"]
+                norm_values = df.loc[patch].loc[subject_name]["norm_value"]
+                wheel_prefs = df.loc[patch].loc[subject_name]["wheel_pref"]
 
                 # Add wheel_pref trace
                 weighted_patch_pref_fig.add_trace(
                     go.Scatter(
                         x=times,
                         y=wheel_prefs,
-                        name=f"{subject} - wheel_pref",
+                        name=f"{subject_name} - wheel_pref",
                         line={
                             "color": subject_colors[i - 1],
                             "dash": patch_linestyles_dict[patch],
@@ -1188,7 +1316,7 @@ class BlockPatchPlots(dj.Computed):
                     go.Scatter(
                         x=times,
                         y=norm_values,
-                        name=f"{subject} - norm_value",
+                        name=f"{subject_name} - norm_value",
                         line={
                             "color": subject_colors[i - 1],
                             "dash": patch_linestyles_dict[patch],
@@ -1252,13 +1380,23 @@ class BlockSubjectPositionPlots(dj.Computed):
     definition = """
     -> BlockSubjectAnalysis
     ---
-    ethogram_data: longblob  # ethogram data in record array format
     position_plot: longblob  # position plot (plotly)
     position_heatmap_plot: longblob  # position heatmap plot (plotly)
     position_ethogram_plot: longblob  # position ethogram plot (plotly)
     """
 
+    class InROI(dj.Part):
+        definition = """  # time spent in each ROI for each subject
+        -> master
+        subject_name: varchar(32)
+        roi_name: varchar(32)
+        ---
+        in_roi_time: float  # total seconds spent in this ROI for this block
+        in_roi_timestamps: longblob # timestamps when a subject is at a specific ROI
+        """
+
     def make(self, key):
+        """Compute and plot various block-level statistics and visualizations."""
         # Get some block info
         block_start, block_end = (Block & key).fetch1("block_start", "block_end")
         chunk_restriction = acquisition.create_chunk_restriction(
@@ -1273,32 +1411,25 @@ class BlockSubjectPositionPlots(dj.Computed):
         # Figure 1 - Position (centroid) over time
         # ---
         # Get animal position data
-        pose_query = (
-            streams.SpinnakerVideoSource
-            * tracking.SLEAPTracking.PoseIdentity.proj(
-                "identity_name", "identity_likelihood", part_name="anchor_part"
-            )
-            * tracking.SLEAPTracking.Part
-            & {"spinnaker_video_source_name": "CameraTop"}
-            & key
-            & chunk_restriction
-        )
-        centroid_df = fetch_stream(pose_query)[block_start:block_end]
+        pos_cols = {"x": "position_x", "y": "position_y", "time": "position_timestamps"}
+        centroid_df = (BlockAnalysis.Subject.proj(**pos_cols) & key).fetch(format="frame").reset_index()
+        centroid_df.drop(columns=["experiment_name", "block_start"], inplace=True)
+        centroid_df = centroid_df.explode(column=list(pos_cols))
+        centroid_df.set_index("time", inplace=True)
         centroid_df = (
-            centroid_df.groupby("identity_name")
+            centroid_df.groupby("subject_name")
             .resample("100ms")
             .first()
-            .droplevel("identity_name")
+            .droplevel("subject_name")
             .dropna()
             .sort_index()
         )
-        centroid_df.drop(columns=["spinnaker_video_source_name"], inplace=True)
         centroid_df["x"] = centroid_df["x"].astype(np.int32)
         centroid_df["y"] = centroid_df["y"].astype(np.int32)
 
         # Plot it
         position_fig = go.Figure()
-        for id_i, (id_val, id_grp) in enumerate(centroid_df.groupby("identity_name")):
+        for id_i, (id_val, id_grp) in enumerate(centroid_df.groupby("subject_name")):
             norm_time = (
                 (id_grp.index - id_grp.index[0]) / (id_grp.index[-1] - id_grp.index[0])
             ).values.round(3)
@@ -1327,7 +1458,7 @@ class BlockSubjectPositionPlots(dj.Computed):
         # Calculate heatmaps
         max_x, max_y = int(centroid_df["x"].max()), int(centroid_df["y"].max())
         heatmaps = []
-        for id_val, id_grp in centroid_df.groupby("identity_name"):
+        for id_val, id_grp in centroid_df.groupby("subject_name"):
             # Add counts of x,y points to a grid that will be used for heatmap
             img_grid = np.zeros((max_x + 1, max_y + 1))
             points, counts = np.unique(id_grp[["x", "y"]].values, return_counts=True, axis=0)
@@ -1399,11 +1530,11 @@ class BlockSubjectPositionPlots(dj.Computed):
             "Corridor",
         ]  # ROIs: patches, nest, gate, corridor
         roi_colors = plotly.colors.qualitative.Dark2
-        roi_colors_dict = dict(zip(rois, roi_colors))
+        roi_colors_dict = dict(zip(rois, roi_colors, strict=False))
         pos_eth_df = pd.DataFrame(
             columns=(["Subject"] + rois), index=centroid_df.index
         )  # df to create eth fig
-        pos_eth_df["Subject"] = centroid_df["identity_name"]
+        pos_eth_df["Subject"] = centroid_df["subject_name"]
 
         # For each ROI, compute if within ROI
         for roi in rois:
@@ -1478,10 +1609,66 @@ class BlockSubjectPositionPlots(dj.Computed):
         ):
             entry[fig_name] = json.loads(fig.to_json())
 
-        melted_df.drop(columns=["Val"], inplace=True)
-        entry["ethogram_data"] = melted_df.to_records(index=False)
+        # insert into InROI
+        in_roi_entries = []
+        for subject_name, roi_name in itertools.product(set(melted_df.Subject), rois):
+            df_ = melted_df[(melted_df["Subject"] == subject_name) & (melted_df["Loc"] == roi_name)]
+
+            roi_timestamps = df_["time"].values
+            roi_time = len(roi_timestamps) * 0.1  # 100ms per timestamp
+
+            in_roi_entries.append(
+                {
+                    **key,
+                    "subject_name": subject_name,
+                    "roi_name": roi_name,
+                    "in_roi_time": roi_time,
+                    "in_roi_timestamps": roi_timestamps,
+                }
+            )
 
         self.insert1(entry)
+        self.InROI.insert(in_roi_entries)
+
+
+# ---- Foraging Bout Analysis ----
+
+
+@schema
+class BlockForaging(dj.Computed):
+    definition = """
+    -> BlockSubjectAnalysis
+    ---
+    bout_count: int  # number of foraging bouts in the block
+    """
+
+    class Bout(dj.Part):
+        definition = """
+        -> master
+        -> BlockAnalysis.Subject
+        bout_start: datetime(6)
+        ---
+        bout_end: datetime(6)
+        pellet_count: int  # number of pellets consumed during the bout
+        cum_wheel_dist: float  # cumulative distance travelled during the bout
+        """
+
+    def make(self, key):
+        """Compute and store foraging bouts for each subject in the block."""
+        foraging_bout_df = get_foraging_bouts(key)
+        foraging_bout_df.rename(
+            columns={
+                "subject": "subject_name",
+                "start": "bout_start",
+                "end": "bout_end",
+                "n_pellets": "pellet_count",
+                "cum_wheel_dist": "cum_wheel_dist",
+            },
+            inplace=True,
+        )
+
+        self.insert1({**key, "bout_count": len(foraging_bout_df)})
+        self.Bout.insert({**key, **row} for _, row in foraging_bout_df.iterrows())
 
 
 # ---- AnalysisNote ----
@@ -1490,7 +1677,7 @@ class BlockSubjectPositionPlots(dj.Computed):
 @schema
 class AnalysisNote(dj.Manual):
     definition = """  # Generic table to catch all notes generated during analysis
-    note_timestamp: datetime
+    note_timestamp: datetime(6)
     ---
     note_type='': varchar(64)
     note: varchar(3000)
@@ -1501,23 +1688,30 @@ class AnalysisNote(dj.Manual):
 
 
 def get_threshold_associated_pellets(patch_key, start, end):
-    """Retrieve the pellet delivery timestamps associated with each patch threshold update within the specified start-end time.
+    """Gets pellet delivery timestamps for each patch threshold update within the specified time range.
 
     1. Get all patch state update timestamps (DepletionState): let's call these events "A"
-        - Remove all events within 1 second of each other
-        - Remove all events without threshold value (NaN)
+
+       - Remove all events within 1 second of each other
+       - Remove all events without threshold value (NaN)
     2. Get all pellet delivery timestamps (DeliverPellet): let's call these events "B"
-        - Find matching beam break timestamps within 1.2s after each pellet delivery
+
+       - Find matching beam break timestamps within 1.2s after each pellet delivery
     3. For each event "A", find the nearest event "B" within 100ms before or after the event "A"
-        - These are the pellet delivery events "B" associated with the previous threshold update event "A"
-    4. Shift back the pellet delivery timestamps by 1 to match the pellet delivery with the previous threshold update
+
+       - These are the pellet delivery events "B" associated with the previous threshold update event "A"
+    4. Shift back the pellet delivery timestamps by 1 to match the pellet delivery with the
+       previous threshold update
     5. Remove all threshold updates events "A" without a corresponding pellet delivery event "B"
+
     Args:
         patch_key (dict): primary key for the patch
         start (datetime): start timestamp
         end (datetime): end timestamp
+
     Returns:
         pd.DataFrame: DataFrame with the following columns:
+
         - threshold_update_timestamp (index)
         - pellet_timestamp
         - beam_break_timestamp
@@ -1551,19 +1745,22 @@ def get_threshold_associated_pellets(patch_key, start, end):
         )
 
     # Step 2 - Remove invalid rows (back-to-back events)
-    # pellet delivery trigger - time difference is less than 1.2 seconds
-    invalid_rows = delivered_pellet_df.index.to_series().diff().dt.total_seconds() < 1.2
+    BTB_MIN_TIME_DIFF = 1.2  # pellet delivery trigger - time diff is less than 1.2 seconds
+    BB_MIN_TIME_DIFF = 1.0  # beambreak - time difference is less than 1 seconds
+    PT_MIN_TIME_DIFF = 1.0  # patch threshold - time difference is less than 1 seconds
+
+    invalid_rows = delivered_pellet_df.index.to_series().diff().dt.total_seconds() < BTB_MIN_TIME_DIFF
     delivered_pellet_df = delivered_pellet_df[~invalid_rows]
     # exclude manual deliveries
     delivered_pellet_df = delivered_pellet_df.loc[
         delivered_pellet_df.index.difference(manual_delivery_df.index)
     ]
-    # beambreak - time difference is less than 1 seconds
-    invalid_rows = beambreak_df.index.to_series().diff().dt.total_seconds() < 1
+
+    invalid_rows = beambreak_df.index.to_series().diff().dt.total_seconds() < BB_MIN_TIME_DIFF
     beambreak_df = beambreak_df[~invalid_rows]
-    # patch threshold - time difference is less than 1 seconds
+
     depletion_state_df = depletion_state_df.dropna(subset=["threshold"])
-    invalid_rows = depletion_state_df.index.to_series().diff().dt.total_seconds() < 1
+    invalid_rows = depletion_state_df.index.to_series().diff().dt.total_seconds() < PT_MIN_TIME_DIFF
     depletion_state_df = depletion_state_df[~invalid_rows]
 
     # Return empty if no data
@@ -1580,7 +1777,7 @@ def get_threshold_associated_pellets(patch_key, start, end):
             beambreak_df.reset_index().rename(columns={"time": "beam_break_timestamp"}),
             left_on="time",
             right_on="beam_break_timestamp",
-            tolerance=pd.Timedelta("1.2s"),
+            tolerance=pd.Timedelta(f"{BTB_MIN_TIME_DIFF}s"),
             direction="forward",
         )
         .set_index("time")
@@ -1651,8 +1848,8 @@ def get_foraging_bouts(
     #       - For the foraging bout end time, we need to account for the final pellet delivery time
     #   - Filter out events with < `min_pellets`
     #   - For final events, get: duration, n_pellets, cum_wheel_distance -> add to returned DF
-    for subject in subject_patch_data.index.unique("subject_name"):
-        cur_subject_data = subject_patch_data.xs(subject, level="subject_name")
+    for subject_name in subject_patch_data.index.unique("subject_name"):
+        cur_subject_data = subject_patch_data.xs(subject_name, level="subject_name")
         n_pels = sum([arr.size for arr in cur_subject_data["pellet_timestamps"].values])
         if n_pels < min_pellets:
             continue
@@ -1673,7 +1870,8 @@ def get_foraging_bouts(
         spun_indices = np.where(diffs > wheel_spun_thresh)
         patch_spun[spun_indices[1]] = patch_names[spun_indices[0]]
         patch_spun_df = pd.DataFrame(
-            {"cum_wheel_dist": comb_cum_wheel_dist, "patch_spun": patch_spun}, index=wheel_ts
+            {"cum_wheel_dist": comb_cum_wheel_dist, "patch_spun": patch_spun},
+            index=wheel_ts,
         )
         wheel_s_r = pd.Timedelta(wheel_ts[1] - wheel_ts[0], unit="ns")
         max_inactive_win_len = int(max_inactive_time / wheel_s_r)
@@ -1693,7 +1891,8 @@ def get_foraging_bouts(
         if bout_start_indxs[-1] >= len(wheel_ts):
             bout_start_indxs = bout_start_indxs[:-1]
             bout_end_indxs = bout_end_indxs[:-1]
-        assert len(bout_start_indxs) == len(bout_end_indxs)
+        if len(bout_start_indxs) != len(bout_end_indxs):
+            raise ValueError("Mismatch between the lengths of bout_start_indxs and bout_end_indxs.")
         bout_durations = (wheel_ts[bout_end_indxs] - wheel_ts[bout_start_indxs]).astype(  # in seconds
             "timedelta64[ns]"
         ).astype(float) / 1e9
@@ -1732,7 +1931,7 @@ def get_foraging_bouts(
                         "end": bout_starts_ends[:, 1],
                         "n_pellets": bout_pellets,
                         "cum_wheel_dist": bout_cum_wheel_dist,
-                        "subject": subject,
+                        "subject": subject_name,
                     }
                 ),
             ]

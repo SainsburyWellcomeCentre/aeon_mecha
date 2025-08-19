@@ -1,8 +1,11 @@
-from pytest import mark
+"""Tests for the acquisition pipeline."""
+
+import pytest
 
 
-@mark.ingestion
-def test_epoch_chunk_ingestion(test_params, pipeline, epoch_chunk_ingestion):
+@pytest.mark.ingestion
+@pytest.mark.usefixtures("_epoch_chunk_ingestion")
+def test_epoch_chunk_ingestion(test_params, pipeline):
     acquisition = pipeline["acquisition"]
 
     assert (
@@ -15,19 +18,29 @@ def test_epoch_chunk_ingestion(test_params, pipeline, epoch_chunk_ingestion):
     )
 
 
-@mark.ingestion
-def test_experimentlog_ingestion(test_params, pipeline, epoch_chunk_ingestion, experimentlog_ingestion):
+@pytest.mark.ingestion
+@pytest.mark.usefixtures("_epoch_chunk_ingestion", "_experimentlog_ingestion")
+def test_experimentlog_ingestion(test_params, pipeline):
     acquisition = pipeline["acquisition"]
 
     assert (
-        len(acquisition.ExperimentLog.Message & {"experiment_name": test_params["experiment_name"]})
+        len(
+            acquisition.ExperimentLog.Message
+            & {"experiment_name": test_params["experiment_name"]}
+        )
         == test_params["experiment_log_message_count"]
     )
     assert (
-        len(acquisition.SubjectEnterExit.Time & {"experiment_name": test_params["experiment_name"]})
+        len(
+            acquisition.SubjectEnterExit.Time
+            & {"experiment_name": test_params["experiment_name"]}
+        )
         == test_params["subject_enter_exit_count"]
     )
     assert (
-        len(acquisition.SubjectWeight.WeightTime & {"experiment_name": test_params["experiment_name"]})
+        len(
+            acquisition.SubjectWeight.WeightTime
+            & {"experiment_name": test_params["experiment_name"]}
+        )
         == test_params["subject_weight_time_count"]
     )

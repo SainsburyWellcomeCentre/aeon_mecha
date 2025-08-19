@@ -1,0 +1,243 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1043pt" height="381pt" viewBox="0.00 0.00 1042.50 380.80">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 376.8)">
+<polygon fill="white" stroke="none" points="-4,4 -4,-376.8 1038.5,-376.8 1038.5,4 -4,4"/>
+<!-- Environment.SubjectVisits -->
+<g id="node1" class="node">
+<title>Environment.SubjectVisits</title>
+<g id="a_node1"><a xlink:title="→ Environment------------------------------sample_count         timestamps           id                   type                 region               ">
+<polygon fill="none" stroke="none" points="131.5,-20 0,-20 0,0 131.5,0 131.5,-20"/>
+<text text-anchor="middle" x="65.75" y="-6.5" font-family="arial" font-size="10.00">Environment.SubjectVisits</text>
+</a>
+</g>
+</g>
+<!-- EpochConfig -->
+<g id="node2" class="node">
+<title>EpochConfig</title>
+<g id="a_node2"><a xlink:title="→ Epoch">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="434.75" cy="-143.84" rx="56.03" ry="17.28"/>
+<text text-anchor="middle" x="434.75" y="-139.56" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">EpochConfig</text>
+</a>
+</g>
+</g>
+<!-- Environment.EnvironmentState -->
+<g id="node3" class="node">
+<title>Environment.EnvironmentState</title>
+<g id="a_node3"><a xlink:title="→ Environment------------------------------sample_count         timestamps           state                ">
+<polygon fill="none" stroke="none" points="301.62,-20 149.88,-20 149.88,0 301.62,0 301.62,-20"/>
+<text text-anchor="middle" x="225.75" y="-6.5" font-family="arial" font-size="10.00">Environment.EnvironmentState</text>
+</a>
+</g>
+</g>
+<!-- Location -->
+<g id="node4" class="node">
+<title>Location</title>
+<g id="a_node4"><a xlink:title="→ Lablocation             ------------------------------location_description=&quot;&quot; ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="392.12,-372.8 339.38,-372.8 339.38,-338.24 392.12,-338.24 392.12,-372.8"/>
+<text text-anchor="start" x="347.38" y="-353.02" font-family="arial" text-decoration="underline" font-size="10.00">Location</text>
+</a>
+</g>
+</g>
+<!-- Experiment -->
+<g id="node6" class="node">
+<title>Experiment</title>
+<g id="a_node6"><a xlink:title="experiment_name      ------------------------------experiment_start_time experiment_description → Arena→ Location→ ExperimentType">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="469.12,-302.24 392.38,-302.24 392.38,-267.68 469.12,-267.68 469.12,-302.24"/>
+<text text-anchor="middle" x="430.75" y="-280.69" font-family="arial" font-size="12.00" fill="darkgreen">Experiment</text>
+</a>
+</g>
+</g>
+<!-- Location&#45;&gt;Experiment -->
+<g id="edge1" class="edge">
+<title>Location-&gt;Experiment</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M381.15,-338.27C391.37,-327.5 404.72,-313.41 415,-302.57"/>
+</g>
+<!-- Arena -->
+<g id="node5" class="node">
+<title>Arena</title>
+<g id="a_node5"><a xlink:title="arena_name           ------------------------------arena_description=&quot;&quot; → ArenaShapearena_x_dim          arena_y_dim          arena_z_dim=0        ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="451.5,-372.8 410,-372.8 410,-338.24 451.5,-338.24 451.5,-372.8"/>
+<text text-anchor="start" x="418" y="-353.02" font-family="arial" text-decoration="underline" font-size="10.00">Arena</text>
+</a>
+</g>
+</g>
+<!-- Arena&#45;&gt;Experiment -->
+<g id="edge2" class="edge">
+<title>Arena-&gt;Experiment</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M430.75,-338.27C430.75,-327.5 430.75,-313.41 430.75,-302.57"/>
+</g>
+<!-- Epoch -->
+<g id="node9" class="node">
+<title>Epoch</title>
+<g id="a_node9"><a xlink:title="→ Experimentepoch_start          ------------------------------→ [nullable] Experiment.Directoryepoch_dir=&quot;&quot;         ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="507,-231.68 456.5,-231.68 456.5,-197.12 507,-197.12 507,-231.68"/>
+<text text-anchor="start" x="464.5" y="-211.12" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Epoch</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;Epoch -->
+<g id="edge3" class="edge">
+<title>Experiment-&gt;Epoch</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M443.1,-267.36C451.11,-256.58 461.52,-242.59 469.52,-231.84"/>
+</g>
+<!-- Chunk -->
+<g id="node11" class="node">
+<title>Chunk</title>
+<g id="a_node11"><a xlink:title="→ Experimentchunk_start          ------------------------------chunk_end            → Experiment.Directory→ Epoch">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="560.38,-161.12 509.12,-161.12 509.12,-126.56 560.38,-126.56 560.38,-161.12"/>
+<text text-anchor="start" x="517.12" y="-140.56" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Chunk</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;Chunk -->
+<g id="edge4" class="edge">
+<title>Experiment-&gt;Chunk</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M469.21,-268.64C485.89,-260.13 504.22,-247.93 515.75,-231.68 530.67,-210.66 534.21,-180.11 534.87,-161.41"/>
+</g>
+<!-- Experiment.Subject -->
+<g id="node13" class="node">
+<title>Experiment.Subject</title>
+<g id="a_node13"><a xlink:title="→ Experiment→ Subject">
+<polygon fill="none" stroke="none" points="438.5,-224.4 337,-224.4 337,-204.4 438.5,-204.4 438.5,-224.4"/>
+<text text-anchor="middle" x="387.75" y="-210.9" font-family="arial" font-size="10.00">Experiment.Subject</text>
+</a>
+</g>
+</g>
+<!-- Experiment&#45;&gt;Experiment.Subject -->
+<g id="edge5" class="edge">
+<title>Experiment-&gt;Experiment.Subject</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M420.34,-267.36C411.79,-253.73 400.02,-234.96 393.21,-224.11"/>
+</g>
+<!-- Environment.SubjectWeight -->
+<g id="node7" class="node">
+<title>Environment.SubjectWeight</title>
+<g id="a_node7"><a xlink:title="→ Environment------------------------------sample_count         timestamps           weight               confidence           subject_id           int_id               ">
+<polygon fill="none" stroke="none" points="456.12,-20 319.38,-20 319.38,0 456.12,0 456.12,-20"/>
+<text text-anchor="middle" x="387.75" y="-6.5" font-family="arial" font-size="10.00">Environment.SubjectWeight</text>
+</a>
+</g>
+</g>
+<!-- Subject -->
+<g id="node8" class="node">
+<title>Subject</title>
+<g id="a_node8"><a xlink:title="subject              ------------------------------sex                  subject_birth_date   subject_description=&quot;&quot; ">
+<polygon fill="#00ff00" fill-opacity="0.188235" stroke="#00ff00" stroke-opacity="0.188235" points="374,-302.24 317.5,-302.24 317.5,-267.68 374,-267.68 374,-302.24"/>
+<text text-anchor="start" x="325.5" y="-281.69" font-family="arial" text-decoration="underline" font-size="12.00" fill="darkgreen">Subject</text>
+</a>
+</g>
+</g>
+<!-- Subject&#45;&gt;Experiment.Subject -->
+<g id="edge6" class="edge">
+<title>Subject-&gt;Experiment.Subject</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-opacity="0.250980" d="M355.92,-267.36C364.27,-253.73 375.77,-234.96 382.41,-224.11"/>
+</g>
+<!-- Epoch&#45;&gt;EpochConfig -->
+<g id="edge7" class="edge">
+<title>Epoch-&gt;EpochConfig</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M470.37,-196.8C462.87,-185.87 453.11,-171.62 445.7,-160.81"/>
+</g>
+<!-- Epoch&#45;&gt;Chunk -->
+<g id="edge8" class="edge">
+<title>Epoch-&gt;Chunk</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M494.58,-196.8C502.91,-186.02 513.73,-172.03 522.04,-161.28"/>
+</g>
+<!-- Environment.BlockState -->
+<g id="node10" class="node">
+<title>Environment.BlockState</title>
+<g id="a_node10"><a xlink:title="→ Environment------------------------------sample_count         timestamps           pellet_ct            pellet_ct_thresh     due_time             ">
+<polygon fill="none" stroke="none" points="595.62,-20 473.88,-20 473.88,0 595.62,0 595.62,-20"/>
+<text text-anchor="middle" x="534.75" y="-6.5" font-family="arial" font-size="10.00">Environment.BlockState</text>
+</a>
+</g>
+</g>
+<!-- Environment -->
+<g id="node16" class="node">
+<title>Environment</title>
+<g id="a_node16"><a xlink:title="→ Chunk">
+<ellipse fill="#00007f" fill-opacity="0.250980" stroke="#00007f" stroke-opacity="0.250980" cx="534.75" cy="-73.28" rx="54.56" ry="17.28"/>
+<text text-anchor="middle" x="534.75" y="-69" font-family="arial" font-size="12.00" fill="#00007f" fill-opacity="0.627451">Environment</text>
+</a>
+</g>
+</g>
+<!-- Chunk&#45;&gt;Environment -->
+<g id="edge9" class="edge">
+<title>Chunk-&gt;Environment</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M534.75,-126.24C534.75,-115.46 534.75,-101.47 534.75,-90.72"/>
+</g>
+<!-- Environment.SubjectState -->
+<g id="node12" class="node">
+<title>Environment.SubjectState</title>
+<g id="a_node12"><a xlink:title="→ Environment------------------------------sample_count         timestamps           id                   weight               type                 ">
+<polygon fill="none" stroke="none" points="743.75,-20 613.75,-20 613.75,0 743.75,0 743.75,-20"/>
+<text text-anchor="middle" x="678.75" y="-6.5" font-family="arial" font-size="10.00">Environment.SubjectState</text>
+</a>
+</g>
+</g>
+<!-- ExperimentType -->
+<g id="node14" class="node">
+<title>ExperimentType</title>
+<g id="a_node14"><a xlink:title="experiment_type      ">
+<polygon fill="#000000" fill-opacity="0.125490" stroke="none" points="556,-372.8 469.5,-372.8 469.5,-338.24 556,-338.24 556,-372.8"/>
+<text text-anchor="start" x="477.5" y="-353.02" font-family="arial" text-decoration="underline" font-size="10.00">ExperimentType</text>
+</a>
+</g>
+</g>
+<!-- ExperimentType&#45;&gt;Experiment -->
+<g id="edge10" class="edge">
+<title>ExperimentType-&gt;Experiment</title>
+<path fill="none" stroke="#000000" stroke-width="0.75" stroke-dasharray="5,2" stroke-opacity="0.250980" d="M493.32,-338.27C480.44,-327.5 463.58,-313.41 450.61,-302.57"/>
+</g>
+<!-- Environment.MessageLog -->
+<g id="node15" class="node">
+<title>Environment.MessageLog</title>
+<g id="a_node15"><a xlink:title="→ Environment------------------------------sample_count         timestamps           priority             type                 message              ">
+<polygon fill="none" stroke="none" points="891.38,-20 762.12,-20 762.12,0 891.38,0 891.38,-20"/>
+<text text-anchor="middle" x="826.75" y="-6.5" font-family="arial" font-size="10.00">Environment.MessageLog</text>
+</a>
+</g>
+</g>
+<!-- Environment&#45;&gt;Environment.SubjectVisits -->
+<g id="edge11" class="edge">
+<title>Environment-&gt;Environment.SubjectVisits</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M485,-65.78C399.9,-54.66 226.38,-31.99 131.43,-19.58"/>
+</g>
+<!-- Environment&#45;&gt;Environment.EnvironmentState -->
+<g id="edge12" class="edge">
+<title>Environment-&gt;Environment.EnvironmentState</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M489.49,-63.3C430.9,-51.68 329.41,-31.56 270.88,-19.95"/>
+</g>
+<!-- Environment&#45;&gt;Environment.SubjectWeight -->
+<g id="edge13" class="edge">
+<title>Environment-&gt;Environment.SubjectWeight</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M502.85,-58.98C474.48,-47.16 433.78,-30.19 409.14,-19.92"/>
+</g>
+<!-- Environment&#45;&gt;Environment.BlockState -->
+<g id="edge14" class="edge">
+<title>Environment-&gt;Environment.BlockState</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M534.75,-55.53C534.75,-44.05 534.75,-29.27 534.75,-19.96"/>
+</g>
+<!-- Environment&#45;&gt;Environment.SubjectState -->
+<g id="edge15" class="edge">
+<title>Environment-&gt;Environment.SubjectState</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M566.35,-58.83C594.17,-46.99 633.88,-30.09 657.9,-19.87"/>
+</g>
+<!-- Environment&#45;&gt;Environment.MessageLog -->
+<g id="edge16" class="edge">
+<title>Environment-&gt;Environment.MessageLog</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M579.42,-62.91C635.01,-51.24 729.3,-31.45 783.99,-19.97"/>
+</g>
+<!-- Environment.LightEvents -->
+<g id="node17" class="node">
+<title>Environment.LightEvents</title>
+<g id="a_node17"><a xlink:title="→ Environment------------------------------sample_count         timestamps           channel              value                ">
+<polygon fill="none" stroke="none" points="1034.5,-20 909,-20 909,0 1034.5,0 1034.5,-20"/>
+<text text-anchor="middle" x="971.75" y="-6.5" font-family="arial" font-size="10.00">Environment.LightEvents</text>
+</a>
+</g>
+</g>
+<!-- Environment&#45;&gt;Environment.LightEvents -->
+<g id="edge17" class="edge">
+<title>Environment-&gt;Environment.LightEvents</title>
+<path fill="none" stroke="#000000" stroke-width="2" stroke-opacity="0.250980" d="M584.03,-65.37C663.94,-54.16 821.66,-32.05 909.31,-19.76"/>
+</g>
+</g>
+</svg>
