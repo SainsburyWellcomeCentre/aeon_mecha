@@ -1,7 +1,7 @@
 # docker compose --env-file=../../.env  -f docker-compose-acquisition_worker.yaml -p ucl-swc_aeon build
 version: '2.4'
 services:
-  standard_worker:
+  acquisition_worker:
     build:
       # only necessary if rebuilding image
       context: ../../
