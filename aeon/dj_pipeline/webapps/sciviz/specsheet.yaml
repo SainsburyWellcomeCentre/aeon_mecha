@@ -214,6 +214,50 @@ SciViz:
                 - type: attribute
                   input: Experiment Type
                   destination: experiment_type
+
+            New Experiment Timeline:
+              route: /exp_timeline_form
+              x: 0
+              y: 1.6
+              height: 0.4
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.ExperimentTimeline
+              map:
+                - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.Experiment
+                - type: attribute
+                  input: Timeline Name
+                  destination: name
+                - type: attribute
+                  input: Start Time
+                  destination: start
+                - type: attribute
+                  input: End Time
+                  destination: end
+                - type: attribute
+                  input: Note
+                  destination: note
+
+            New Timeline Subject:
+              route: /exp_timeline_subject_form
+              x: 0
+              y: 2.0
+              height: 0.3
+              width: 1
+              type: form
+              tables:
+                - aeon_acquisition.ExperimentTimeline.Subject
+              map:
+                - type: table
+                  input: Experiment Name
+                  destination: aeon_acquisition.ExperimentTimeline
+                - type: table
+                  input: Subject participating in this timeline
+                  destination: aeon_acquisition.Experiment.Subject
+
     Subjects:
       route: /subjects
       grids:
@@ -599,7 +643,9 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_block_analysis):
                     aeon_analysis = aeon_block_analysis
-                    return {'query': aeon_analysis.Block * aeon_analysis.BlockAnalysis, 'fetch_args': {'order_by': 'block_end DESC'}}
+                    query = aeon_analysis.Block * aeon_analysis.BlockAnalysis
+                    query = query.join(aeon_analysis.BlockPatchPlots, left=True).proj("block_end", "block_duration", has_plots="NOT ISNULL(patch_stats_plot)")
+                    return {'query': query, 'fetch_args': {'order_by': 'has_plots DESC, block_end DESC'}}
 
     PerBlockReport:
       hidden: true
@@ -623,11 +669,17 @@ SciViz:
                     return dict(**kwargs)
               dj_query: >
                 def dj_query(aeon_block_analysis):
-                    aeon_analysis = aeon_block_analysis
-                    query = aeon_analysis.Block * aeon_analysis.BlockAnalysis
+                    block_analysis = aeon_block_analysis
+                    query = block_analysis.Block.proj() * block_analysis.BlockAnalysis
+                    query *= block_analysis.BlockAnalysis.aggr(
+                        block_analysis.BlockAnalysis.Subject, subjects="GROUP_CONCAT(subject_name)", keep_all_rows=True)
+                    query *= block_analysis.BlockAnalysis.aggr(
+                        block_analysis.BlockAnalysis.Patch.proj(patch_rate="CONCAT(patch_name, ':', patch_rate, '(', patch_offset, ')')"), patch_rates="GROUP_CONCAT(patch_rate)", keep_all_rows=True)
+                    query *= block_analysis.BlockAnalysis.aggr(
+                        block_analysis.BlockAnalysis.Patch.proj(patch_pellet="CONCAT(patch_name, ':', pellet_count)"), patch_pellets="GROUP_CONCAT(patch_pellet)", keep_all_rows=True)
                     return dict(query=query, fetch_args=[])
             comp2:
-              route: /subject_positions_plot
+              route: /per_block_patch_stats_plot
               x: 0
               y: 0.2
               height: 0.5
@@ -639,9 +691,9 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_block_analysis):
                     aeon_analysis = aeon_block_analysis
-                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['subject_positions_plot']}
+                    return {'query': aeon_block_analysis.BlockPatchPlots(), 'fetch_args': ['patch_stats_plot']}
             comp3:
-              route: /subject_weights_plot
+              route: /per_block_weights_block_plot
               x: 0
               y: 0.7
               height: 0.5
@@ -653,10 +705,10 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_block_analysis):
                     aeon_analysis = aeon_block_analysis
-                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['subject_weights_plot']}
+                    return {'query': aeon_block_analysis.BlockPatchPlots(), 'fetch_args': ['weights_block_plot']}
 
             comp4:
-              route: /patch_distance_travelled_plot
+              route: /per_block_cum_pl_by_patch_plot
               x: 0
               y: 1.2
               height: 0.5
@@ -668,10 +720,10 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_block_analysis):
                     aeon_analysis = aeon_block_analysis
-                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['patch_distance_travelled_plot']}
+                    return {'query': aeon_block_analysis.BlockPatchPlots(), 'fetch_args': ['cum_pl_by_patch_plot']}
 
             comp5:
-              route: /patch_rate_plot
+              route: /per_block_cum_pl_per_subject_plot
               x: 0
               y: 1.7
               height: 0.4
@@ -683,10 +735,10 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_block_analysis):
                     aeon_analysis = aeon_block_analysis
-                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['patch_rate_plot']}
+                    return {'query': aeon_block_analysis.BlockPatchPlots(), 'fetch_args': ['cum_pl_per_subject_plot']}
 
             comp6:
-              route: /cumulative_pellet_plot
+              route: /per_block_pellet_delivery_plot
               x: 0
               y: 2.1
               height: 0.4
@@ -698,10 +750,10 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_block_analysis):
                     aeon_analysis = aeon_block_analysis
-                    return {'query': aeon_block_analysis.BlockPlots(), 'fetch_args': ['cumulative_pellet_plot']}
+                    return {'query': aeon_block_analysis.BlockPatchPlots(), 'fetch_args': ['pellet_delivery_plot']}
 
             comp7:
-              route: /dist_pref_plot
+              route: /per_block_pellet_threshold_plot
               x: 0
               y: 2.5
               height: 0.4
@@ -713,10 +765,10 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_block_analysis):
                     aeon_analysis = aeon_block_analysis
-                    return {'query': aeon_block_analysis.BlockSubjectPlots(), 'fetch_args': ['dist_pref_plot']}
+                    return {'query': aeon_block_analysis.BlockPatchPlots(), 'fetch_args': ['pellet_threshold_plot']}
 
             comp8:
-              route: /time_pref_plot
+              route: /per_block_cum_wheel_dist_plot
               x: 0
               y: 2.9
               height: 0.4
@@ -728,7 +780,83 @@ SciViz:
               dj_query: >
                 def dj_query(aeon_block_analysis):
                     aeon_analysis = aeon_block_analysis
-                    return {'query': aeon_block_analysis.BlockSubjectPlots(), 'fetch_args': ['time_pref_plot']}
+                    return {'query': aeon_block_analysis.BlockPatchPlots(), 'fetch_args': ['cum_wheel_dist_plot']}
+
+            comp9:
+              route: /per_block_running_pref_by_wheel_dist_plot
+              x: 0
+              y: 3.3
+              height: 0.4
+              width: 0.6
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockPatchPlots(), 'fetch_args': ['running_pref_by_wheel_dist_plot']}
+
+            comp10:
+              route: /per_block_running_pref_by_patch_plot
+              x: 0
+              y: 3.7
+              height: 0.4
+              width: 0.6
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockPatchPlots(), 'fetch_args': ['running_pref_by_patch_plot']}
+
+            comp11:
+              route: /per_block_position_ethogram_plot
+              x: 0
+              y: 4.1
+              height: 0.4
+              width: 0.6
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockSubjectPositionPlots(), 'fetch_args': ['position_ethogram_plot']}
+
+            comp12:
+              route: /per_block_position_heatmap_plot
+              x: 0
+              y: 4.5
+              height: 0.4
+              width: 0.6
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockSubjectPositionPlots(), 'fetch_args': ['position_heatmap_plot']}
+
+            comp13:
+              route: /per_block_position_plot
+              x: 0
+              y: 4.9
+              height: 0.4
+              width: 0.6
+              type: plot:plotly:stored_json
+              restriction: >
+                def restriction(**kwargs):
+                    return dict(**kwargs)
+              dj_query: >
+                def dj_query(aeon_block_analysis):
+                    aeon_analysis = aeon_block_analysis
+                    return {'query': aeon_block_analysis.BlockSubjectPositionPlots(), 'fetch_args': ['position_plot']}
+
 
     VideoStream:
       route: /videostream

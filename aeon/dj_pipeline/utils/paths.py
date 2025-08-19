@@ -1,3 +1,5 @@
+"""Utility functions for working with paths in the context of the DJ pipeline."""
+
 from __future__ import annotations
 
 import pathlib
@@ -30,12 +32,12 @@ def get_repository_path(repository_name: str) -> pathlib.Path:
 
 
 def find_root_directory(
-    root_directories: str | pathlib.Path, full_path: str | pathlib.Path
+    root_directories: str | pathlib.Path | list[str | pathlib.Path], full_path: str | pathlib.Path
 ) -> pathlib.Path:
-    """Given multiple potential root directories and a full-path, search and return one directory that is the parent of the given path.
+    """Finds the parent directory of a given full path among multiple potential root directories.
 
     Args:
-        root_directories (str | pathlib.Path): A list of potential root directories.
+        root_directories (str | pathlib.Path | list[str | pathlib.Path]): Potential root directories.
         full_path (str | pathlib.Path): The full path to search for the root directory.
 
     Raises:
@@ -61,7 +63,7 @@ def find_root_directory(
             if pathlib.Path(root_dir) in set(full_path.parents)
         )
 
-    except StopIteration:
+    except StopIteration as err:
         raise FileNotFoundError(
-            f"No valid root directory found (from {root_directories})" f" for {full_path}"
-        )
+            f"No valid root directory found (from {root_directories}) for {full_path}"
+        ) from err
