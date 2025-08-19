@@ -11,8 +11,22 @@ on:
       staging:
         required: true
         type: string
+      runner_timeout:
+        required: false
+        type: number
+        default: 180
     secrets:
       RUNNER_PAT:
+        required: true
+      RUNNER_REGION:
+        required: true
+      RUNNER_TYPE:
+        required: true
+      RUNNER_AMI_ID:
+        required: true
+      RUNNER_SUBNET_ID:
+        required: true
+      RUNNER_SG_ID:
         required: true
       RUNNER_AWS_ACCESS_KEY_ID:
         required: true
@@ -35,7 +49,7 @@ on:
       DOCKER_REGISTRY_HOST:
         required: true
       DOCKER_REGISTRY_REPO:
-        required: true  
+        required: true
       DOCKER_REGISTRY_USERNAME:
         required: true
       DOCKER_REGISTRY_PASSWORD:
@@ -44,25 +58,25 @@ on:
 jobs:
   start-runner:
     timeout-minutes: 5              # normally it only takes 1-2 minutes
-    name: Start self-hosted EC2 runner   
+    name: Start self-hosted EC2 runner
     runs-on: ubuntu-latest
     permissions:
-      actions: write        
-    steps:  
+      actions: write
+    steps:
       - name: Start EC2 runner
         id: start-ec2-runner
         uses: NextChapterSoftware/ec2-action-builder@main
         with:
-          github_token: ${{ secrets.RUNNER_PAT}}
+          github_token: ${{ secrets.RUNNER_PAT }}
           aws_access_key_id: ${{ secrets.RUNNER_AWS_ACCESS_KEY_ID }}
           aws_secret_access_key: ${{ secrets.RUNNER_AWS_SECRET_ACCESS_KEY }}
-          aws_region: "us-east-2"
-          ec2_instance_type: t3a.medium
-          ec2_ami_id: ami-0172431f1b2be4fc6
-          ec2_subnet_id: "subnet-0a602071414b8b2eb"
-          ec2_security_group_id: "sg-02810c38b0dcb2462"
-          ec2_instance_ttl: 180                # Optional (default is 60 minutes)
-          ec2_spot_instance_strategy: BestEffort    # Other options are: SpotOnly, BestEffort, MaxPerformance 
+          aws_region: ${{ secrets.RUNNER_REGION }}
+          ec2_instance_type: ${{ secrets.RUNNER_TYPE }}
+          ec2_ami_id: ${{ secrets.RUNNER_AMI_ID }}
+          ec2_subnet_id: ${{ secrets.RUNNER_SUBNET_ID }}
+          ec2_security_group_id: ${{ secrets.RUNNER_SG_ID }}
+          ec2_instance_ttl: ${{ inputs.runner_timeout }}  # Optional (default is 60 minutes)
+          ec2_spot_instance_strategy: BestEffort    # Other options are: SpotOnly, BestEffort, MaxPerformance
           ec2_instance_tags: >
             [
               {"Key": "Scope", "Value": "Works"}, 
@@ -75,10 +89,10 @@ jobs:
   build_worker_ami:
     needs:
       - start-runner
-    runs-on: ${{ github.run_id }}   
+    runs-on: ${{ github.run_id }}
     env:
-      HOME: /root       
-    steps:              
+      HOME: /root
+    steps:
       - name: Checkout packer build repo
         uses: actions/checkout@v4
         with:
@@ -117,6 +131,7 @@ jobs:
           DOCKER_REGISTRY_USERNAME: ${{ secrets.DOCKER_REGISTRY_USERNAME }}
           DOCKER_REGISTRY_PASSWORD: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
         run: |
+          set -euo pipefail
           # Set up deploy SSH key
           echo -n "${{ secrets.DEPLOY_SSH_KEY_BASE64 }}" | base64 -d > ${GITHUB_WORKSPACE}/dj-gitops/infrastructures/packer/worker_ami/keys/${REPO_NAME}-deploy.pem
           cd ${GITHUB_WORKSPACE}/dj-gitops/infrastructures/packer/worker_ami
@@ -139,4 +154,3 @@ jobs:
         run: |
           cd ${GITHUB_WORKSPACE}/dj-gitops/infrastructures/packer/worker_ami/outputs/
           python insert_ami_meta.py
-          

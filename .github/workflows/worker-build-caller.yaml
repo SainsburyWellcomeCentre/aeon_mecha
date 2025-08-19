@@ -1,4 +1,4 @@
-name: worker-build-caller
+name: worker-build
 on:
   workflow_dispatch:
     inputs:
@@ -27,19 +27,25 @@ jobs:
         name: Get build metadata
         run: |
           ## Get workflow version as codebook env image version
-          echo "workflow_version=$(cat $(find . -name "version.py" -o -name "pyproject.toml" ) | grep version | head -n 1 | grep -oP '\d+\.\d+\.[a-z0-9]+')" >> $GITHUB_OUTPUT
+          echo "workflow_version=$(cat $(find . -name "version.py" | head -n 1) | grep -oP '\d+\.\d+\.[a-z0-9]+')" >> $GITHUB_OUTPUT
     outputs:
       workflow_version: ${{steps.get_version.outputs.workflow_version}}
   call-worker-ami-build:
     needs: [get_meta]
-    uses: ./.github/workflows/worker-ami-build.yaml
+    uses: dj-sciops/.github/.github/workflows/worker-ami-build-1.0.0.yaml@main
     # uses: yambottle/dj-sciops.github/.github/workflows/worker-ami-build.yaml@main
     with:
       worker_type: ${{github.event.inputs.worker_type}}
       workflow_version: ${{needs.get_meta.outputs.workflow_version}}
       staging: ${{github.event.inputs.staging}}
+      runner_timeout: 180 # default, optional
     secrets:
       RUNNER_PAT: ${{secrets.RUNNER_PAT}}
+      RUNNER_REGION: ${{secrets.RUNNER_REGION}}
+      RUNNER_TYPE: ${{secrets.RUNNER_TYPE}}
+      RUNNER_AMI_ID: ${{secrets.RUNNER_AMI_ID}}
+      RUNNER_SUBNET_ID: ${{secrets.RUNNER_SUBNET_ID}}
+      RUNNER_SG_ID: ${{secrets.RUNNER_SG_ID}}
       RUNNER_AWS_ACCESS_KEY_ID: ${{secrets.RUNNER_AWS_ACCESS_KEY_ID}}
       RUNNER_AWS_SECRET_ACCESS_KEY: ${{secrets.RUNNER_AWS_SECRET_ACCESS_KEY}}
       DJ_HOST: ${{secrets.DJ_HOST}}

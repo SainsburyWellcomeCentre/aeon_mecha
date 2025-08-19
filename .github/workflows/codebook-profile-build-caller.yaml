@@ -1,20 +1,20 @@
-name: codebook-profile-build-caller
+name: codebook-profile-build
 on:
   workflow_dispatch:
     inputs:
       jhub_ver:
-        description: "JupyterHub version"
+        description: 'JupyterHub version'
         required: true
-        default: "4.0.2"
+        default: '4.0.2'
       py_ver:
-        description: "Python version"
+        description: 'Python version'
         required: true
-        default: "3.11"
+        default: '3.10'
       worker_type:
-        description: "Use worker image as codebook profile image"
+        description: 'Use worker image as codebook profile image'
         required: true
         type: choice
-        default: "standard"
+        default: 'standard'
         options:
           - standard
 
@@ -27,20 +27,26 @@ jobs:
         name: Get build metadata
         run: |
           ## Get workflow version as codebook env image version
-          echo "workflow_version=$(cat $(find . -name "version.py" -o -name "pyproject.toml" ) | grep version | head -n 1 | grep -oP '\d+\.\d+\.[a-z0-9]+')" >> $GITHUB_OUTPUT
+          echo "workflow_version=$(cat $(find . -name "version.py" | head -n 1) | grep -oP '\d+\.\d+\.[a-z0-9]+')" >> $GITHUB_OUTPUT
     outputs:
       workflow_version: ${{steps.get_version.outputs.workflow_version}}
   call_sciops_docker_image_debian:
     needs: [get_meta]
-    uses: ./.github/workflows/codebook-profile-build.yaml
+    uses: dj-sciops/.github/.github/workflows/codebook-profile-build.yaml@main
     # uses: yambottle/dj-sciops.github/.github/workflows/codebook-profile-build.yaml@main
     with:
       jhub_ver: ${{ inputs.jhub_ver }}
       py_ver: ${{ inputs.py_ver }}
       worker_type: ${{ inputs.worker_type }}
       workflow_version: ${{needs.get_meta.outputs.workflow_version}}
+      runner_timeout: 180 # default, optional
     secrets:
       RUNNER_PAT: ${{secrets.RUNNER_PAT}}
+      RUNNER_REGION: ${{secrets.RUNNER_REGION}}
+      RUNNER_TYPE: ${{secrets.RUNNER_TYPE}}
+      RUNNER_AMI_ID: ${{secrets.RUNNER_AMI_ID}}
+      RUNNER_SUBNET_ID: ${{secrets.RUNNER_SUBNET_ID}}
+      RUNNER_SG_ID: ${{secrets.RUNNER_SG_ID}}
       RUNNER_AWS_ACCESS_KEY_ID: ${{secrets.RUNNER_AWS_ACCESS_KEY_ID}}
       RUNNER_AWS_SECRET_ACCESS_KEY: ${{secrets.RUNNER_AWS_SECRET_ACCESS_KEY}}
       DEPLOY_SSH_KEY_BASE64: ${{secrets.DEPLOY_SSH_KEY_BASE64}}
