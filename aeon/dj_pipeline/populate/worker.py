@@ -26,7 +26,7 @@ __all__ = [
 logger = dj.logger
 
 org_name, workflow_name, *_ = db_prefix.split("_")
-worker_schema_name = f"{org_name}_support_{workflow_name}_" + "worker"
+worker_schema_name = f"{org_name}_support_{workflow_name}_" + "workerlog"
 
 WORKER_MAX_IDLED_CYCLE = int(os.environ.get("WORKER_MAX_IDLED_CYCLE", 3))
 
