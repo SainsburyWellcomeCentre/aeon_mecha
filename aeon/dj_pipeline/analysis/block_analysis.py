@@ -1270,6 +1270,7 @@ class BlockPatchPlots(dj.Computed):
             subj_wheel_pel_weighted_dist.groupby("subject_name")
             .apply(norm_inv_norm)
             .reset_index(level=0, drop=True)
+            .iloc[0]
         )
         subj_wheel_pel_weighted_dist["wheel_pref"] = patch_pref["running_preference_by_wheel"]
 
@@ -1370,7 +1371,7 @@ class BlockPatchPlots(dj.Computed):
             ],
             strict=True,
         ):
-            entry[fig_name] = json.loads(fig.to_json())
+            entry[fig_name] = fig.to_json()
 
         self.insert1(entry)
 
@@ -1607,7 +1608,7 @@ class BlockSubjectPositionPlots(dj.Computed):
             ["position_plot", "position_heatmap_plot", "position_ethogram_plot"],
             strict=True,
         ):
-            entry[fig_name] = json.loads(fig.to_json())
+            entry[fig_name] = fig.to_json()
 
         # insert into InROI
         in_roi_entries = []
