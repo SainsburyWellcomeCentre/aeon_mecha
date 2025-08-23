@@ -156,6 +156,10 @@ class TaskLogic(StreamGroup):
             """Initializes the GratingsSliceOnset stream."""
             super().__init__(reader.Harp(f"{pattern}_12_*", columns=["wall_id"]))
 
+    @staticmethod
+    def checkerboard_slice_onset(pattern):
+        return {"CheckerboardSliceOnset": _reader.Harp(f"{pattern}_14_*", columns=["wall_id"])}
+
 
 class Wall(StreamGroup):
     def __init__(self, path):
