@@ -37,4 +37,4 @@ services:
       - /bin/bash
       - -c
       - |
-        run_workflow acquisition_worker
+        uv run run_workflow acquisition_worker

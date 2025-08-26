@@ -26,5 +26,10 @@ ARG REPO_OWNER
 ARG REPO_NAME
 ARG REPO_BRANCH
 WORKDIR $HOME
-RUN git clone -b ${REPO_BRANCH} git@github.com:${REPO_OWNER}/${REPO_NAME}.git && \
-    pip install ./${REPO_NAME}
+RUN git clone -b ${REPO_BRANCH} git@github.com:${REPO_OWNER}/${REPO_NAME}.git
+
+# Install the repo via pip for codebook image
+RUN pip install ./${REPO_NAME}
+
+WORKDIR $HOME/${REPO_NAME}
+RUN uv sync
