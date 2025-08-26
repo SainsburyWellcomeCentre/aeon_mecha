@@ -1272,8 +1272,24 @@ class BlockPatchPlots(dj.Computed):
                            index=group.index, name="norm_value")
 
         # Apply the normalization and properly align the results
-        norm_results = subj_wheel_pel_weighted_dist.groupby("subject_name").apply(norm_inv_norm)
-        subj_wheel_pel_weighted_dist["norm_value"] = norm_results.values
+        # Apply normalization uniformly for both single and multi-subject cases
+        # Create a mapping from (patch, subject) to normalized values
+        norm_value_dict = {}
+        
+        for subject_name in subject_names:
+            # Get data for this subject
+            subject_data = subj_wheel_pel_weighted_dist.xs(subject_name, level="subject_name")
+            # Apply normalization function
+            subject_norm_values = norm_inv_norm(subject_data)
+            # Store results for each patch
+            for patch_name in pel_patches:
+                norm_value_dict[(patch_name, subject_name)] = subject_norm_values[patch_name]
+        
+        # Assign normalized values back to DataFrame in the correct order
+        subj_wheel_pel_weighted_dist["norm_value"] = [
+            norm_value_dict.get((patch, subj), []) 
+            for patch, subj in subj_wheel_pel_weighted_dist.index
+        ]
         subj_wheel_pel_weighted_dist["wheel_pref"] = patch_pref["running_preference_by_wheel"]
 
         # Plot it
