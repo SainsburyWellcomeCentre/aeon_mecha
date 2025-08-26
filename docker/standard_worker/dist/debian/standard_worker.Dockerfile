@@ -16,6 +16,10 @@ CMD /usr/local/bin/bootstrap-kernel.sh
 # Additional packages
 RUN apt install -y graphviz libsm6 libxext6 libgl1 libegl1-mesa
 
+# Install uv package manager
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin/:$PATH"
+
 USER jovyan
 ARG DEPLOY_KEY
 COPY --chown=jovyan $DEPLOY_KEY $HOME/.ssh/id_ed25519
