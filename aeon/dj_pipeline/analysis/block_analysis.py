@@ -1266,15 +1266,14 @@ class BlockPatchPlots(dj.Computed):
             norm_dist = each_weighted_dist / np.sum(each_weighted_dist, axis=0)
             inv_norm_dist = 1 / norm_dist
             inv_norm_dist = inv_norm_dist / (np.sum(inv_norm_dist, axis=0))
-            # Map each inv_norm_dist back to patch name.
-            return pd.Series(inv_norm_dist.tolist(), index=group.index, name="norm_value")
+            # Return a Series with the same length as the group index
+            # Each patch gets its corresponding normalized values
+            return pd.Series([inv_norm_dist[i, :].tolist() for i in range(len(group.index))], 
+                           index=group.index, name="norm_value")
 
-        subj_wheel_pel_weighted_dist["norm_value"] = (
-            subj_wheel_pel_weighted_dist.groupby("subject_name")
-            .apply(norm_inv_norm)
-            .reset_index(level=0, drop=True)
-            .iloc[0]
-        )
+        # Apply the normalization and properly align the results
+        norm_results = subj_wheel_pel_weighted_dist.groupby("subject_name").apply(norm_inv_norm)
+        subj_wheel_pel_weighted_dist["norm_value"] = norm_results.values
         subj_wheel_pel_weighted_dist["wheel_pref"] = patch_pref["running_preference_by_wheel"]
 
         # Plot it

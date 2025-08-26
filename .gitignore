@@ -134,6 +134,9 @@ run.env
 .github/.test/*
 !.github/.test/README.md
 
+# cursor IDE
+.cursor/
+
 # Mac
 .DS_Store
 **/.DS_Store
