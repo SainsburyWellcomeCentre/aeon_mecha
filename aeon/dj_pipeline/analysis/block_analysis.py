@@ -1,10 +1,13 @@
 """Module for block analysis."""
 
 import itertools
+import os
+import tempfile
 from collections import defaultdict
 from datetime import UTC, datetime
 
 import datajoint as dj
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly
@@ -12,6 +15,7 @@ import plotly.express as px
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 from swc.aeon.analysis import utils as analysis_utils
+from swc.aeon.analysis import plotting as analysis_plotting
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, subject, tracking
@@ -1382,6 +1386,7 @@ class BlockSubjectPositionPlots(dj.Computed):
     ---
     position_plot: longblob  # position plot (plotly)
     position_heatmap_plot: longblob  # position heatmap plot (plotly)
+    position_heatmap_png: attach  # position heatmap plot (png)
     position_ethogram_plot: longblob  # position ethogram plot (plotly)
     """
 
@@ -1608,6 +1613,22 @@ class BlockSubjectPositionPlots(dj.Computed):
             strict=True,
         ):
             entry[fig_name] = fig.to_json()
+        
+        # Generate PNG version of position heatmap for static image storage
+        # This creates a non-interactive version that can be easily shared or embedded
+        unique_filename = f"position_heatmap_{key['experiment_name']}_{key['block_start'].strftime('%Y%m%d_%H%M%S')}.png"
+        fig, ax = plt.subplots(figsize=(10, 8))
+        # Use the heatmap function from swc.aeon.analysis.plotting
+        analysis_plotting.heatmap(centroid_df[["x", "y"]], frequency=10, ax=ax, bins=100, alpha=0.7)
+        ax.set_title(f"Position Heatmap - {key['experiment_name'].upper()} - {key['block_start'].strftime('%Y%m%d_%H%M%S')}")
+        ax.set_xlabel("X Coordinate (pixels)")
+        ax.set_ylabel("Y Coordinate (pixels)")
+        # Save PNG file to system temp directory
+        png_path = os.path.join(tempfile.gettempdir(), unique_filename)
+        plt.savefig(png_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+        
+        entry["position_heatmap_png"] = png_path
 
         # insert into InROI
         in_roi_entries = []
