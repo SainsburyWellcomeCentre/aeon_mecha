@@ -1,7 +1,6 @@
 """Module for block analysis."""
 
 import itertools
-import json
 from collections import defaultdict
 from datetime import UTC, datetime
 
@@ -888,8 +887,8 @@ class BlockPatchPlots(dj.Computed):
             # Add lines by subject
             cum_pel_by_patch_fig.add_trace(
                 go.Scatter(
-                    x=id_grp["time"],
-                    y=id_grp["counter"],
+                    x=id_grp["time"].values,
+                    y=id_grp["counter"].values,
                     mode="lines",
                     line={"width": 2, "color": subject_colors_dict[id_val]},
                     name=id_val,
@@ -899,8 +898,8 @@ class BlockPatchPlots(dj.Computed):
             # Add markers by patch
             cum_pel_by_patch_fig.add_trace(
                 go.Scatter(
-                    x=patch_grp["time"],
-                    y=patch_grp["counter"],
+                    x=patch_grp["time"].values,
+                    y=patch_grp["counter"].values,
                     mode="markers",
                     marker={
                         "symbol": patch_markers_dict[patch_grp["patch"].iloc[0]],
@@ -908,7 +907,7 @@ class BlockPatchPlots(dj.Computed):
                         "size": 8,
                     },
                     name=patch_val,
-                    customdata=np.stack((patch_grp["threshold"],), axis=-1),
+                    customdata=np.stack((patch_grp["threshold"].values,), axis=-1),
                     hovertemplate="Threshold: %{customdata[0]:.2f} cm",
                 )
             )
@@ -927,25 +926,25 @@ class BlockPatchPlots(dj.Computed):
                 cur_p_mean = patch_means[patch_means["patch"] == patch_val]["mean_thresh"].values[0]
                 cur_p = patch_val.replace("Patch", "P")
                 cum_pel_per_subject_fig.add_trace(
-                    go.Scatter(
-                        x=patch_grp["time"],
-                        y=np.arange(1, (len(patch_grp) + 1)),
-                        mode="lines+markers",
-                        line={
-                            "width": 2,
-                            "color": subject_colors_dict[id_val],
-                            "dash": patch_linestyles_dict[patch_val],
-                        },
-                        # line=dict(width=2, color=subject_colors_dict[id_val]),
-                        marker={
-                            "symbol": patch_markers_dict[patch_val],
-                            "color": gen_hex_grad(pel_mrkr_col, patch_grp["norm_thresh_val"]),
-                            "size": 8,
-                        },
-                        name=f"{id_val} - {cur_p} - μ: {cur_p_mean}",
-                        customdata=np.stack((patch_grp["threshold"],), axis=-1),
-                        hovertemplate="Threshold: %{customdata[0]:.2f} cm",
-                    )
+                go.Scatter(
+                    x=patch_grp["time"].values,
+                    y=np.arange(1, (len(patch_grp) + 1)),
+                    mode="lines+markers",
+                    line={
+                        "width": 2,
+                        "color": subject_colors_dict[id_val],
+                        "dash": patch_linestyles_dict[patch_val],
+                    },
+                    # line=dict(width=2, color=subject_colors_dict[id_val]),
+                    marker={
+                        "symbol": patch_markers_dict[patch_val],
+                        "color": gen_hex_grad(pel_mrkr_col, patch_grp["norm_thresh_val"]),
+                        "size": 8,
+                    },
+                    name=f"{id_val} - {cur_p} - μ: {cur_p_mean}",
+                    customdata=np.stack((patch_grp["threshold"].values,), axis=-1),
+                    hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                )
                 )
         cum_pel_per_subject_fig.update_layout(
             title="Cumulative Pellet Count per Subject-Patch",
@@ -1006,19 +1005,19 @@ class BlockPatchPlots(dj.Computed):
                 )
                 if not cur_cum_pel_ct.empty:
                     cum_wheel_dist_fig.add_trace(
-                        go.Scatter(
-                            x=cur_cum_pel_ct["time"],
-                            y=cur_cum_pel_ct["cum_wheel_dist"],
-                            mode="markers",
-                            marker={
-                                "symbol": patch_markers_dict[patch_name],
-                                "color": gen_hex_grad(pel_mrkr_col, cur_cum_pel_ct["norm_thresh_val"]),
-                                "size": 8,
-                            },
-                            name=f"{subj} - {cur_p} pellets",
-                            customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
-                            hovertemplate="Threshold: %{customdata[0]:.2f} cm",
-                        )
+                    go.Scatter(
+                        x=cur_cum_pel_ct["time"].values,
+                        y=cur_cum_pel_ct["cum_wheel_dist"].values,
+                        mode="markers",
+                        marker={
+                            "symbol": patch_markers_dict[patch_name],
+                            "color": gen_hex_grad(pel_mrkr_col, cur_cum_pel_ct["norm_thresh_val"]),
+                            "size": 8,
+                        },
+                        name=f"{subj} - {cur_p} pellets",
+                        customdata=np.stack((cur_cum_pel_ct["threshold"].values,), axis=-1),
+                        hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                    )
                     )
         cum_wheel_dist_fig.update_layout(
             title="Cumulative Wheel Distance",
@@ -1099,19 +1098,19 @@ class BlockPatchPlots(dj.Computed):
                 )
                 if not cur_cum_pel_ct.empty:
                     running_pref_by_wheel_plot.add_trace(
-                        go.Scatter(
-                            x=cur_cum_pel_ct["time"],
-                            y=cur_cum_pel_ct["run_wheel_pref"],
-                            mode="markers",
-                            marker={
-                                "symbol": patch_markers_dict[patch_name],
-                                "color": gen_hex_grad(pel_mrkr_col, cur_cum_pel_ct["norm_thresh_val"]),
-                                "size": 8,
-                            },
-                            name=f"{subj} - {cur_p} pellets",
-                            customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
-                            hovertemplate="Threshold: %{customdata[0]:.2f} cm",
-                        )
+                    go.Scatter(
+                        x=cur_cum_pel_ct["time"].values,
+                        y=cur_cum_pel_ct["run_wheel_pref"].values,
+                        mode="markers",
+                        marker={
+                            "symbol": patch_markers_dict[patch_name],
+                            "color": gen_hex_grad(pel_mrkr_col, cur_cum_pel_ct["norm_thresh_val"]),
+                            "size": 8,
+                        },
+                        name=f"{subj} - {cur_p} pellets",
+                        customdata=np.stack((cur_cum_pel_ct["threshold"].values,), axis=-1),
+                        hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                    )
                     )
         running_pref_by_wheel_plot.update_layout(
             title="Running Patch Preference - Wheel Distance",
@@ -1156,19 +1155,19 @@ class BlockPatchPlots(dj.Computed):
                 )
                 if not cur_cum_pel_ct.empty:
                     running_pref_by_patch_fig.add_trace(
-                        go.Scatter(
-                            x=cur_cum_pel_ct["time"],
-                            y=cur_cum_pel_ct["run_time_pref"],
-                            mode="markers",
-                            marker={
-                                "symbol": patch_markers_dict[patch_name],
-                                "color": gen_hex_grad(pel_mrkr_col, cur_cum_pel_ct["norm_thresh_val"]),
-                                "size": 8,
-                            },
-                            name=f"{subj} - {cur_p} pellets",
-                            customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
-                            hovertemplate="Threshold: %{customdata[0]:.2f} cm",
-                        )
+                    go.Scatter(
+                        x=cur_cum_pel_ct["time"].values,
+                        y=cur_cum_pel_ct["run_time_pref"].values,
+                        mode="markers",
+                        marker={
+                            "symbol": patch_markers_dict[patch_name],
+                            "color": gen_hex_grad(pel_mrkr_col, cur_cum_pel_ct["norm_thresh_val"]),
+                            "size": 8,
+                        },
+                        name=f"{subj} - {cur_p} pellets",
+                        customdata=np.stack((cur_cum_pel_ct["threshold"].values,), axis=-1),
+                        hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                    )
                     )
         running_pref_by_patch_fig.update_layout(
             title="Running Patch Preference - Time in Patch",
@@ -1437,8 +1436,8 @@ class BlockSubjectPositionPlots(dj.Computed):
             colors = gen_hex_grad(subject_colors[id_i], norm_time)
             position_fig.add_trace(
                 go.Scatter(
-                    x=id_grp["x"],
-                    y=id_grp["y"],
+                    x=id_grp["x"].values,
+                    y=id_grp["y"].values,
                     mode="markers",
                     name=id_val,
                     marker={
