@@ -3,7 +3,7 @@ FROM jupyter/docker-stacks-foundation:python-${PY_VER}
 
 USER root
 RUN apt update && \
-    apt install -y ssh git && \
+    apt install -y curl ssh git && \
     pip install --upgrade pip && \
     pip install gateway_provisioners && \
     jupyter image-bootstrap install --languages python && \
@@ -11,7 +11,6 @@ RUN apt update && \
     chmod 0755 /usr/local/bin/bootstrap-kernel.sh && \
     chown -R jovyan:users /usr/local/bin/kernel-launchers
 CMD /usr/local/bin/bootstrap-kernel.sh
-
 
 # Additional packages
 RUN apt install -y graphviz libsm6 libxext6 libgl1 libegl1-mesa
