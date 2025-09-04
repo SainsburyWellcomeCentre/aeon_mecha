@@ -12,7 +12,7 @@ from aeon.dj_pipeline import acquisition, ephys, spike_sorting
 key = {'experiment_name': 'social-ephys0.1-aeon3',
        'probe': 'NP2004-001',
        'block_start': "2024-06-04 11:00:00",
-       'block_end': "2024-06-05 13:00:00",
+       'block_end': "2024-06-10 12:00:00",
        'probe_type': 'neuropixels - NP2004',
        'electrode_config_name': '0-383',
        'electrode_group': '0-143',

@@ -154,12 +154,12 @@ ephys.EphysBlockInfo.Channel.insert(
     allow_direct_insert=True
 )
 
-# Ephys Block - 24 hour
+# Ephys Block - 7 days
 eblock = dict(
     experiment_name=experiment_name,
     probe=probe_name,
     block_start=pd.Timestamp('2024-06-04 11:00:00'),
-    block_end=pd.Timestamp('2024-06-05 13:00:00'),
+    block_end=pd.Timestamp('2024-06-10 12:00:00'),
 )
 ephys.EphysBlock.insert1(eblock)
 ephys.EphysBlockInfo.populate(eblock)
@@ -391,7 +391,7 @@ ephys_block_dict = dict(
     experiment_name=experiment_name,
     probe=probe_name,
     block_start=pd.Timestamp('2024-06-04 11:00:00'),
-    block_end=pd.Timestamp('2024-06-05 13:00:00'),
+    block_end=pd.Timestamp('2024-06-10 12:00:00'),
 )
 
 electrode_group_dict = dict(
