@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --job-name=aeon-spike-sorting         # job name
-#SBATCH --partition=gpu                       # partition (queue)
+#SBATCH --partition=gpu                       # partition (queue) gpu_branco
 #SBATCH --gres=gpu:a100:1                     # request specific gpu type
 #SBATCH --nodes=1                             # node count
 #SBATCH --ntasks=1                            # total number of tasks across all nodes
@@ -22,15 +22,13 @@ echo "Working Directory: $(pwd)"
 echo "Start Time: $(date)"
 echo "================================"
 
-# Change to project directory (update according to your directory structure!)
-cd aeon_mecha
-
 # Create output directory
 mkdir -p slurm_output
 
 # Load modules and activate environment (update according to your conda environment name!)
 echo "Loading modules..."
 module load miniconda
+source "$(conda info --base)/etc/profile.d/conda.sh"
 
 echo "Activating conda environment..."
 if ! conda activate aeon_env; then
