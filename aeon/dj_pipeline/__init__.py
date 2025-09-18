@@ -9,10 +9,10 @@ import datajoint as dj
 
 logger = dj.logger
 
-_default_database_prefix = os.getenv("DATABASE_PREFIX", "aeon_")
-_default_repository_config = {"ceph_aeon": os.getenv("RAW_ROOT_DATA_DIR", "/ceph/aeon")}
+_default_database_prefix = os.getenv("DJ_DB_PREFIX") or "aeon_"
+_default_repository_config = {"ceph_aeon": "/ceph/aeon"}
 
-# safeguard in case `custom` is not provided
+# safe-guard in case `custom` is not provided
 if "custom" not in dj.config:
     dj.config["custom"] = {}
 

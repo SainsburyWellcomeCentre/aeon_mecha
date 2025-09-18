@@ -1,13 +1,11 @@
 """Module for block analysis."""
 
 import itertools
-import os
-import tempfile
+import json
 from collections import defaultdict
 from datetime import UTC, datetime
 
 import datajoint as dj
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly
@@ -15,7 +13,6 @@ import plotly.express as px
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 from swc.aeon.analysis import utils as analysis_utils
-from swc.aeon.analysis import plotting as analysis_plotting
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import acquisition, fetch_stream, get_schema_name, streams, subject, tracking
@@ -891,8 +888,8 @@ class BlockPatchPlots(dj.Computed):
             # Add lines by subject
             cum_pel_by_patch_fig.add_trace(
                 go.Scatter(
-                    x=id_grp["time"].values,
-                    y=id_grp["counter"].values,
+                    x=id_grp["time"],
+                    y=id_grp["counter"],
                     mode="lines",
                     line={"width": 2, "color": subject_colors_dict[id_val]},
                     name=id_val,
@@ -902,8 +899,8 @@ class BlockPatchPlots(dj.Computed):
             # Add markers by patch
             cum_pel_by_patch_fig.add_trace(
                 go.Scatter(
-                    x=patch_grp["time"].values,
-                    y=patch_grp["counter"].values,
+                    x=patch_grp["time"],
+                    y=patch_grp["counter"],
                     mode="markers",
                     marker={
                         "symbol": patch_markers_dict[patch_grp["patch"].iloc[0]],
@@ -911,7 +908,7 @@ class BlockPatchPlots(dj.Computed):
                         "size": 8,
                     },
                     name=patch_val,
-                    customdata=np.stack((patch_grp["threshold"].values,), axis=-1),
+                    customdata=np.stack((patch_grp["threshold"],), axis=-1),
                     hovertemplate="Threshold: %{customdata[0]:.2f} cm",
                 )
             )
@@ -930,25 +927,25 @@ class BlockPatchPlots(dj.Computed):
                 cur_p_mean = patch_means[patch_means["patch"] == patch_val]["mean_thresh"].values[0]
                 cur_p = patch_val.replace("Patch", "P")
                 cum_pel_per_subject_fig.add_trace(
-                go.Scatter(
-                    x=patch_grp["time"].values,
-                    y=np.arange(1, (len(patch_grp) + 1)),
-                    mode="lines+markers",
-                    line={
-                        "width": 2,
-                        "color": subject_colors_dict[id_val],
-                        "dash": patch_linestyles_dict[patch_val],
-                    },
-                    # line=dict(width=2, color=subject_colors_dict[id_val]),
-                    marker={
-                        "symbol": patch_markers_dict[patch_val],
-                        "color": gen_hex_grad(pel_mrkr_col, patch_grp["norm_thresh_val"]),
-                        "size": 8,
-                    },
-                    name=f"{id_val} - {cur_p} - μ: {cur_p_mean}",
-                    customdata=np.stack((patch_grp["threshold"].values,), axis=-1),
-                    hovertemplate="Threshold: %{customdata[0]:.2f} cm",
-                )
+                    go.Scatter(
+                        x=patch_grp["time"],
+                        y=np.arange(1, (len(patch_grp) + 1)),
+                        mode="lines+markers",
+                        line={
+                            "width": 2,
+                            "color": subject_colors_dict[id_val],
+                            "dash": patch_linestyles_dict[patch_val],
+                        },
+                        # line=dict(width=2, color=subject_colors_dict[id_val]),
+                        marker={
+                            "symbol": patch_markers_dict[patch_val],
+                            "color": gen_hex_grad(pel_mrkr_col, patch_grp["norm_thresh_val"]),
+                            "size": 8,
+                        },
+                        name=f"{id_val} - {cur_p} - μ: {cur_p_mean}",
+                        customdata=np.stack((patch_grp["threshold"],), axis=-1),
+                        hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                    )
                 )
         cum_pel_per_subject_fig.update_layout(
             title="Cumulative Pellet Count per Subject-Patch",
@@ -1009,19 +1006,19 @@ class BlockPatchPlots(dj.Computed):
                 )
                 if not cur_cum_pel_ct.empty:
                     cum_wheel_dist_fig.add_trace(
-                    go.Scatter(
-                        x=cur_cum_pel_ct["time"].values,
-                        y=cur_cum_pel_ct["cum_wheel_dist"].values,
-                        mode="markers",
-                        marker={
-                            "symbol": patch_markers_dict[patch_name],
-                            "color": gen_hex_grad(pel_mrkr_col, cur_cum_pel_ct["norm_thresh_val"]),
-                            "size": 8,
-                        },
-                        name=f"{subj} - {cur_p} pellets",
-                        customdata=np.stack((cur_cum_pel_ct["threshold"].values,), axis=-1),
-                        hovertemplate="Threshold: %{customdata[0]:.2f} cm",
-                    )
+                        go.Scatter(
+                            x=cur_cum_pel_ct["time"],
+                            y=cur_cum_pel_ct["cum_wheel_dist"],
+                            mode="markers",
+                            marker={
+                                "symbol": patch_markers_dict[patch_name],
+                                "color": gen_hex_grad(pel_mrkr_col, cur_cum_pel_ct["norm_thresh_val"]),
+                                "size": 8,
+                            },
+                            name=f"{subj} - {cur_p} pellets",
+                            customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
+                            hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                        )
                     )
         cum_wheel_dist_fig.update_layout(
             title="Cumulative Wheel Distance",
@@ -1102,19 +1099,19 @@ class BlockPatchPlots(dj.Computed):
                 )
                 if not cur_cum_pel_ct.empty:
                     running_pref_by_wheel_plot.add_trace(
-                    go.Scatter(
-                        x=cur_cum_pel_ct["time"].values,
-                        y=cur_cum_pel_ct["run_wheel_pref"].values,
-                        mode="markers",
-                        marker={
-                            "symbol": patch_markers_dict[patch_name],
-                            "color": gen_hex_grad(pel_mrkr_col, cur_cum_pel_ct["norm_thresh_val"]),
-                            "size": 8,
-                        },
-                        name=f"{subj} - {cur_p} pellets",
-                        customdata=np.stack((cur_cum_pel_ct["threshold"].values,), axis=-1),
-                        hovertemplate="Threshold: %{customdata[0]:.2f} cm",
-                    )
+                        go.Scatter(
+                            x=cur_cum_pel_ct["time"],
+                            y=cur_cum_pel_ct["run_wheel_pref"],
+                            mode="markers",
+                            marker={
+                                "symbol": patch_markers_dict[patch_name],
+                                "color": gen_hex_grad(pel_mrkr_col, cur_cum_pel_ct["norm_thresh_val"]),
+                                "size": 8,
+                            },
+                            name=f"{subj} - {cur_p} pellets",
+                            customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
+                            hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                        )
                     )
         running_pref_by_wheel_plot.update_layout(
             title="Running Patch Preference - Wheel Distance",
@@ -1159,19 +1156,19 @@ class BlockPatchPlots(dj.Computed):
                 )
                 if not cur_cum_pel_ct.empty:
                     running_pref_by_patch_fig.add_trace(
-                    go.Scatter(
-                        x=cur_cum_pel_ct["time"].values,
-                        y=cur_cum_pel_ct["run_time_pref"].values,
-                        mode="markers",
-                        marker={
-                            "symbol": patch_markers_dict[patch_name],
-                            "color": gen_hex_grad(pel_mrkr_col, cur_cum_pel_ct["norm_thresh_val"]),
-                            "size": 8,
-                        },
-                        name=f"{subj} - {cur_p} pellets",
-                        customdata=np.stack((cur_cum_pel_ct["threshold"].values,), axis=-1),
-                        hovertemplate="Threshold: %{customdata[0]:.2f} cm",
-                    )
+                        go.Scatter(
+                            x=cur_cum_pel_ct["time"],
+                            y=cur_cum_pel_ct["run_time_pref"],
+                            mode="markers",
+                            marker={
+                                "symbol": patch_markers_dict[patch_name],
+                                "color": gen_hex_grad(pel_mrkr_col, cur_cum_pel_ct["norm_thresh_val"]),
+                                "size": 8,
+                            },
+                            name=f"{subj} - {cur_p} pellets",
+                            customdata=np.stack((cur_cum_pel_ct["threshold"],), axis=-1),
+                            hovertemplate="Threshold: %{customdata[0]:.2f} cm",
+                        )
                     )
         running_pref_by_patch_fig.update_layout(
             title="Running Patch Preference - Time in Patch",
@@ -1266,30 +1263,14 @@ class BlockPatchPlots(dj.Computed):
             norm_dist = each_weighted_dist / np.sum(each_weighted_dist, axis=0)
             inv_norm_dist = 1 / norm_dist
             inv_norm_dist = inv_norm_dist / (np.sum(inv_norm_dist, axis=0))
-            # Return a Series with the same length as the group index
-            # Each patch gets its corresponding normalized values
-            return pd.Series([inv_norm_dist[i, :].tolist() for i in range(len(group.index))], 
-                           index=group.index, name="norm_value")
+            # Map each inv_norm_dist back to patch name.
+            return pd.Series(inv_norm_dist.tolist(), index=group.index, name="norm_value")
 
-        # Apply the normalization and properly align the results
-        # Apply normalization uniformly for both single and multi-subject cases
-        # Create a mapping from (patch, subject) to normalized values
-        norm_value_dict = {}
-        
-        for subject_name in subject_names:
-            # Get data for this subject
-            subject_data = subj_wheel_pel_weighted_dist.xs(subject_name, level="subject_name")
-            # Apply normalization function
-            subject_norm_values = norm_inv_norm(subject_data)
-            # Store results for each patch
-            for patch_name in pel_patches:
-                norm_value_dict[(patch_name, subject_name)] = subject_norm_values[patch_name]
-        
-        # Assign normalized values back to DataFrame in the correct order
-        subj_wheel_pel_weighted_dist["norm_value"] = [
-            norm_value_dict.get((patch, subj), []) 
-            for patch, subj in subj_wheel_pel_weighted_dist.index
-        ]
+        subj_wheel_pel_weighted_dist["norm_value"] = (
+            subj_wheel_pel_weighted_dist.groupby("subject_name")
+            .apply(norm_inv_norm)
+            .reset_index(level=0, drop=True)
+        )
         subj_wheel_pel_weighted_dist["wheel_pref"] = patch_pref["running_preference_by_wheel"]
 
         # Plot it
@@ -1389,7 +1370,7 @@ class BlockPatchPlots(dj.Computed):
             ],
             strict=True,
         ):
-            entry[fig_name] = fig.to_json()
+            entry[fig_name] = json.loads(fig.to_json())
 
         self.insert1(entry)
 
@@ -1401,7 +1382,6 @@ class BlockSubjectPositionPlots(dj.Computed):
     ---
     position_plot: longblob  # position plot (plotly)
     position_heatmap_plot: longblob  # position heatmap plot (plotly)
-    position_heatmap_png: attach  # position heatmap plot (png)
     position_ethogram_plot: longblob  # position ethogram plot (plotly)
     """
 
@@ -1456,8 +1436,8 @@ class BlockSubjectPositionPlots(dj.Computed):
             colors = gen_hex_grad(subject_colors[id_i], norm_time)
             position_fig.add_trace(
                 go.Scatter(
-                    x=id_grp["x"].values,
-                    y=id_grp["y"].values,
+                    x=id_grp["x"],
+                    y=id_grp["y"],
                     mode="markers",
                     name=id_val,
                     marker={
@@ -1627,23 +1607,7 @@ class BlockSubjectPositionPlots(dj.Computed):
             ["position_plot", "position_heatmap_plot", "position_ethogram_plot"],
             strict=True,
         ):
-            entry[fig_name] = fig.to_json()
-        
-        # Generate PNG version of position heatmap for static image storage
-        # This creates a non-interactive version that can be easily shared or embedded
-        unique_filename = f"position_heatmap_{key['experiment_name']}_{key['block_start'].strftime('%Y%m%d_%H%M%S')}.png"
-        fig, ax = plt.subplots(figsize=(10, 8))
-        # Use the heatmap function from swc.aeon.analysis.plotting
-        analysis_plotting.heatmap(centroid_df[["x", "y"]], frequency=10, ax=ax, bins=100, alpha=0.7)
-        ax.set_title(f"Position Heatmap - {key['experiment_name'].upper()} - {key['block_start'].strftime('%Y%m%d_%H%M%S')}")
-        ax.set_xlabel("X Coordinate (pixels)")
-        ax.set_ylabel("Y Coordinate (pixels)")
-        # Save PNG file to system temp directory
-        png_path = os.path.join(tempfile.gettempdir(), unique_filename)
-        plt.savefig(png_path, dpi=150, bbox_inches='tight')
-        plt.close(fig)
-        
-        entry["position_heatmap_png"] = png_path
+            entry[fig_name] = json.loads(fig.to_json())
 
         # insert into InROI
         in_roi_entries = []

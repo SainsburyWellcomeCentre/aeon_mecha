@@ -1,5 +1,4 @@
 """This module defines the workers for the AEON pipeline."""
-import os
 
 import datajoint as dj
 from datajoint_utilities.dj_worker import DataJointWorker, ErrorLog, WorkerLog
@@ -24,12 +23,7 @@ __all__ = [
 
 # ---- Some constants ----
 logger = dj.logger
-
-org_name, workflow_name, *_ = db_prefix.split("_")
-worker_schema_name = f"{org_name}_support_{workflow_name}_" + "workerlog"
-
-WORKER_MAX_IDLED_CYCLE = int(os.environ.get("WORKER_MAX_IDLED_CYCLE", 3))
-MAX_RUN_DURATION = int(os.environ.get("MAX_RUN_DURATION", 60 * 60 * 8))  # 8 hours
+worker_schema_name = db_prefix + "worker"
 
 # ---- Manage experiments for automated ingestion ----
 
@@ -57,22 +51,21 @@ acquisition_worker = DataJointWorker(
     "acquisition_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    run_duration=MAX_RUN_DURATION,
-    max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
-    sleep_duration=10,)
-# acquisition_worker(ingest_epochs_chunks)
+    max_idled_cycle=1,
+    sleep_duration=5,
+)
+acquisition_worker(ingest_epochs_chunks)
 acquisition_worker(acquisition.EpochConfig)
 acquisition_worker(acquisition.Environment)
-acquisition_worker(block_analysis.BlockDetection)
+#acquisition_worker(block_analysis.BlockDetection)
 
 # configure a worker to handle pyrat sync
 pyrat_worker = DataJointWorker(
     "pyrat_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    run_duration=MAX_RUN_DURATION,
-    max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
-    sleep_duration=10,
+    max_idled_cycle=1,
+    sleep_duration=5,
 )
 
 pyrat_worker(subject.CreatePyratIngestionTask)
@@ -85,20 +78,16 @@ streams_worker = DataJointWorker(
     "streams_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    run_duration=MAX_RUN_DURATION,
-    max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
-    sleep_duration=10,
+    max_idled_cycle=1,
+    sleep_duration=5,
     autoclear_error_patterns=["%BlockAnalysis Not Ready%"],
 )
 
 for attr in vars(streams).values():
     if is_djtable(attr, dj.user_tables.AutoPopulate):
-        if attr().class_name in ("SpinnakerVideoSourceVideo", "SpinnakerVideoSourcePosition"):
-            # skip the SpinnakerVideoSourceVideo, large volume and not critical
-            continue
         streams_worker(attr, max_calls=10)
 
-# streams_worker(qc.CameraQC, max_calls=10)
+streams_worker(qc.CameraQC, max_calls=10)
 streams_worker(tracking.SLEAPTracking, max_calls=10)
 
 # configure a worker to run the analysis tables
@@ -106,9 +95,8 @@ analysis_worker = DataJointWorker(
     "analysis_worker",
     worker_schema_name=worker_schema_name,
     db_prefix=db_prefix,
-    run_duration=MAX_RUN_DURATION,
-    max_idled_cycle=WORKER_MAX_IDLED_CYCLE,
-    sleep_duration=10,
+    max_idled_cycle=1,
+    sleep_duration=5,
 )
 
 analysis_worker(block_analysis.BlockAnalysis, max_calls=6)

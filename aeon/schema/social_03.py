@@ -2,17 +2,12 @@
 
 from swc.aeon.io import reader
 from swc.aeon.schema import Stream
-from aeon.dj_pipeline.utils import paths
 
 
 class Pose(Stream):
     def __init__(self, path):
         """Initializes the Pose stream."""
-        try:
-            model_root = (paths.get_repository_path('ceph_aeon') / "aeon" / "data" / "ingest").as_posix()
-        except Exception:
-            model_root = "ceph/aeon/aeon/data/ingest"
-        super().__init__(reader.Pose(f"{path}_222*", model_root=model_root))
+        super().__init__(reader.Pose(f"{path}_222*", "/ceph/aeon/aeon/data/ingest"))
 
 
 class EnvironmentActiveConfiguration(Stream):
