@@ -825,6 +825,10 @@ class SyncedSpikes(dj.Imported):
                     spk_ind = spike_indices[spike_indices <= onix_bound]
                 else:
                     spk_ind = spike_indices[(spike_indices > onix_lengths[idx - 1]) & (spike_indices <= onix_bound)]
+
+                if not len(spk_ind):  # no spikes in this chunk
+                    continue
+
                 spk_ind -= spk_ind[0]  # make the spike indices relative to the start of the onix_times
                 spk_times = onix_times[idx][spk_ind]
                 # sync the spike times to the HARP clock
