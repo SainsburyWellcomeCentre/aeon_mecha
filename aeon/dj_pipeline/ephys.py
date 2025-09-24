@@ -138,10 +138,12 @@ class EphysChunk(dj.Manual):
                     chunk_start = r.model.predict(
                         np.array(onix_ts[0]).reshape(-1, 1)
                     ).flatten()[0]
+                    chunk_start = io_api.to_datetime(chunk_start)
                 if idx == len(matched_sync) - 1:
                     chunk_end = r.model.predict(
                         np.array(onix_ts[-1]).reshape(-1, 1)
                     ).flatten()[0]
+                    chunk_end = io_api.to_datetime(chunk_end)
 
                 model_path = Path(tmpdir.name) / (
                     ephys_file.stem + f"_{r.clock_start}.joblib"
