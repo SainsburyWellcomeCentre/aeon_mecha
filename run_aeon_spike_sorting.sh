@@ -6,7 +6,7 @@
 #SBATCH --nodes=1                             # node count
 #SBATCH --ntasks=1                            # total number of tasks across all nodes
 #SBATCH --mem=128G                            # total memory per node
-#SBATCH --time=3-00:00:00                     # total run time limit (DD-HH:MM:SS)
+#SBATCH --time=0-01:00:00                     # total run time limit (DD-HH:MM:SS)
 #SBATCH --output=slurm_output/%N_%j.out       # output file path
 #SBATCH --error=slurm_output/%N_%j.err        # error file path
 
@@ -36,6 +36,11 @@ if ! conda activate aeon_env; then
     exit 1
 fi
 
+# Start resource profiler in the background
+echo "Starting resource profiler..."
+python ./aeon/dj_pipeline/scripts/start_resource_profiler.py -o ./slurm_output/resource_use.csv & PROFILER_PID=$!
+echo "Resource profiler started with PID: $PROFILER_PID"
+
 # Verify Python script exists
 SCRIPT_PATH="./aeon/dj_pipeline/scripts/run_aeon_spike_sorting.py"
 if [ ! -f "$SCRIPT_PATH" ]; then
@@ -46,6 +51,10 @@ fi
 # Run the spike sorting script
 echo "Starting spike sorting..."
 python "$SCRIPT_PATH"
+
+# Stop the profiler
+echo "Stopping resource profiler..."
+kill $PROFILER_PID
 
 # Check exit status
 if [ $? -eq 0 ]; then
