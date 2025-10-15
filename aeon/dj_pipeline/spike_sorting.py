@@ -149,17 +149,15 @@ class PreProcessing(dj.Computed):
         ).fetch("file_path", "directory_type", order_by="chunk_start")
 
         # Channels
-        electrodes_df = (
-            (
+        electrodes_query = (
                 ephys.EphysBlockInfo.Channel
                 * ephys.ElectrodeConfig.Electrode
                 * ElectrodeGroup.Electrode
                 * ephys.ProbeType.Electrode
                 & key
             )
-            .fetch(format="frame")
-            .reset_index()
-        )
+        electrodes_df = electrodes_query.fetch(format="frame").reset_index()
+        electrodes_df.drop(columns=list(key), inplace=True, errors="ignore")
 
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         # Neuropixels 2.0 constants - TODO: read this from the metadata
@@ -183,6 +181,7 @@ class PreProcessing(dj.Computed):
         import probeinterface as pi
         import spikeinterface as si
         import spikeinterface.extractors as se
+        from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
 
@@ -228,6 +227,23 @@ class PreProcessing(dj.Computed):
         # Run preprocessing and save results to output folder
         si_recording = ephys_preproc(si_recording)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
+
+        # write binary into recording.dat
+        job_kwargs = {"n_jobs": 0.8, "chunk_duration": "2s"}
+        binary_file_path = recording_file.parent / "recording.dat"
+        if binary_file_path.exists():
+            load_and_verify_binary_file(
+                binary_file_path=binary_file_path,
+                se_recording_obj=si_recording)
+            logger.info(f"{binary_file_path} already exists. Skipping writing binary file.")
+        else:
+            logger.info(f"Writing binary recording to {binary_file_path}...")
+            si.core.write_binary_recording(
+                    recording=si_recording,
+                    file_paths=[binary_file_path],
+                    dtype="int16",
+                    **sorters.basesorter.get_job_kwargs(job_kwargs, True),
+                )
 
         return output_dir, execution_time, recording_dir
 
@@ -296,11 +312,20 @@ class SpikeSorting(dj.Computed):
         si_recording: si.BaseRecording = si.load(
             recording_file, base_folder=output_dir
         )
+        # load the pre-generated binary file - recording.dat
+        binary_rec = load_and_verify_binary_file(
+            binary_file_path=Path(recording_file).parent / "recording.dat",
+            se_recording_obj=si_recording)
+
         sorting_params = params["SI_SORTING_PARAMS"]
+
+        # explicitly set `skip_kilosort_preprocessing` to False
+        # to avoid SpikeInterface rerunning the `write_binary_recording` step
+        sorting_params["skip_kilosort_preprocessing"] = False
 
         si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
             sorter_name=sorter_name,
-            recording=si_recording,
+            recording=binary_rec,
             folder=sorting_output_dir,
             remove_existing_folder=True,
             verbose=True,
@@ -878,3 +903,22 @@ def ephys_preproc(recording):
         recording=recording, operator="median"
     )
     return recording
+
+
+def load_and_verify_binary_file(binary_file_path, se_recording_obj):
+    import spikeinterface.extractors as se
+
+    binary_rec = se.read_binary(
+        binary_file_path,
+        sampling_frequency=se_recording_obj.get_sampling_frequency(),
+        dtype=np.uint16,
+        num_channels=se_recording_obj.get_num_channels(),
+        gain_to_uV=se_recording_obj.get_channel_gains()[0])
+    if binary_rec.get_num_samples() != se_recording_obj.get_num_samples():
+        raise ValueError(f"Number of samples in binary file ({binary_rec.get_num_samples()})"
+                         f" does not match the original recording ({se_recording_obj.get_num_samples()}).")
+
+    binary_rec.set_probe(probe=se_recording_obj.get_probe(), in_place=True)
+    # force rename channel_ids?
+    # binary_rec._main_ids = se_recording_obj.get_channel_ids()
+    return binary_rec
