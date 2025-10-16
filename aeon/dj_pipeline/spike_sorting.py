@@ -264,7 +264,7 @@ class PreProcessing(dj.Computed):
             [
                 {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
                 for f in recording_dir.rglob("*")
-                if f.is_file()
+                if f.is_file() and not f.name == "recording.dat"  # exclude the large binary file (too long for hashing)
             ]
         )
 
