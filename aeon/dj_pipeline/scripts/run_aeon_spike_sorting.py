@@ -17,7 +17,7 @@ key = {'experiment_name': 'social-ephys0.1-aeon3',
        'electrode_config_name': '0-383',
        'electrode_group': '0-143',
        'paramset_id': '250'}
-_CLEAR_JOB = False
+_CLEAR_JOB = True
 
 
 def clear_job():
@@ -25,7 +25,7 @@ def clear_job():
     Clear this `key` from the jobs table (if any) to allow re-running the job 
     E.g. if this job previously failed with `error` status
     """
-    (spike_sorting.schema.jobs & {"key_hash": dj.key_hash(key)}).delete()
+    (spike_sorting.schema.jobs & {"key_hash": dj.key_hash(key), "status": "error"}).delete()
 
 
 def main():

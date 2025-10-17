@@ -3,7 +3,7 @@
 import pytest
 
 
-@pytest.mark.qc()
+@pytest.mark.qc
 @pytest.mark.usefixtures("_camera_qc_ingestion")
 def test_camera_qc_ingestion(test_params, pipeline):
     qc = pipeline["qc"]

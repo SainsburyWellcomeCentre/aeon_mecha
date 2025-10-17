@@ -42,8 +42,8 @@ def save_test_data(pipeline, test_params):
     return test_file
 
 
-@pytest.mark.ingestion()
-@pytest.mark.tracking()
+@pytest.mark.ingestion
+@pytest.mark.tracking
 @pytest.mark.usefixtures("_camera_tracking_ingestion")
 def test_camera_tracking_ingestion(test_params, pipeline):
     tracking = pipeline["tracking"]
