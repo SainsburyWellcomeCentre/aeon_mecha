@@ -22,6 +22,7 @@ key = {'experiment_name': 'social-ephys0.1-aeon3',
        'paramset_id': '250'}
 _CLEAR_JOB = True  # Whether to clear any existing 'error' job for this key before populating
 
+
 def clear_job(dj_table):
     """
     Clear this `key` from the jobs table (if any) to allow re-running the job 

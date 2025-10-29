@@ -46,7 +46,7 @@ fi
 
 # Start resource profiler in the background
 echo "Starting resource profiler..."
-python ./aeon/dj_pipeline/scripts/start_resource_profiler.py -o ./slurm_output/resource_use.csv & PROFILER_PID=$!
+python ./aeon/dj_pipeline/scripts/start_resource_profiler.py -o "./slurm_output/resource_use_${SLURM_JOB_ID}.csv" & PROFILER_PID=$!
 echo "Resource profiler started with PID: $PROFILER_PID"
 
 # Verify Python script exists
