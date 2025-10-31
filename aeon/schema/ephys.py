@@ -74,6 +74,22 @@ class Bno055(StreamGroup):
         def __init__(self, pattern):
             super().__init__(f"{pattern}_Bno055_Clock_*")
 
+    class Bno055Euler(Stream):
+        def __init__(self, pattern):
+            super().__init__(Binary(f"{pattern}_Bno055_Euler_*", dtype=np.float32, columns=['x', 'y', 'z']))
+
+    class Bno055GravityVector(Stream):
+        def __init__(self, pattern):
+            super().__init__(Binary(f"{pattern}_Bno055_GravityVector_*", dtype=np.float32, columns=['x', 'y', 'z']))
+
+    class Bno055LinearAcceleration(Stream):
+        def __init__(self, pattern):
+            super().__init__(Binary(f"{pattern}_Bno055_LinearAcceleration_*", dtype=np.float32, columns=['x', 'y', 'z']))
+
+    class Bno055Quaternion(Stream):
+        def __init__(self, pattern):
+            super().__init__(Binary(f"{pattern}_Bno055_Quaternion_*", dtype=np.float32, columns=['w', 'x', 'y', 'z']))
+
 
 class NeuropixelsV2Beta(StreamGroup):
     def __init__(self, path):
