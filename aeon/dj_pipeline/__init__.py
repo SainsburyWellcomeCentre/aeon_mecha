@@ -13,6 +13,7 @@ _default_database_prefix = os.getenv("DJ_DB_PREFIX") or "aeon_"
 _default_repository_config = {"ceph_aeon": "/ceph/aeon"}
 
 os.environ["DJ_SUPPORT_FILEPATH_MANAGEMENT"] = "TRUE"
+dj.config["filepath_checksum_size_limit"] = 500 * 1024**2  # Skip checksum for files > 500 MB
 
 # safe-guard in case `custom` is not provided
 if "custom" not in dj.config:

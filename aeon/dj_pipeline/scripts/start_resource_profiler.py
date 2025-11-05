@@ -44,15 +44,19 @@ def get_usage_sample(prev_net=None):
         delta_sent = net.bytes_sent - prev_net.bytes_sent
         delta_recv = net.bytes_recv - prev_net.bytes_recv
     
-    # GPU
-    gpu_stats = subprocess.check_output(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw",
-                    "--format=csv,noheader,nounits",
-                ],
-                text=True,
-            ).strip().split(', ')   # returns e.g. ['0', '0', '40536', '25', '48.29']
+    # GPU - handle gracefully if nvidia-smi not available
+    try:
+        gpu_stats = subprocess.check_output(
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw",
+                        "--format=csv,noheader,nounits",
+                    ],
+                    text=True,
+                ).strip().split(', ')   # returns e.g. ['0', '0', '40536', '25', '48.29']
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        # No GPU or nvidia-smi not available - set all GPU stats to 0
+        gpu_stats = ['0', '0', '0', '0', '0']
 
     # Create comma-separated row
     row = [
@@ -133,6 +137,7 @@ def main():
                     
     except KeyboardInterrupt:
         print("\nScript stopped manually.")
+
 
 if __name__ == "__main__":
     main()

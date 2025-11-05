@@ -3,6 +3,8 @@ import numpy as np
 from pathlib import Path
 import joblib
 import tempfile
+from typing import Dict, List, Tuple, Any
+from datetime import datetime
 
 from swc.aeon.io import api as io_api
 from aeon.schema.ephys import social_ephys
@@ -89,13 +91,17 @@ class EphysChunk(dj.Manual):
         """
 
     @classmethod
-    def ingest_chunks(cls, experiment_name):
-        """
+    def ingest_chunks(cls, experiment_name: str) -> None:
+        """Ingest ephys recording chunks with clock synchronization.
+        
         For each ephys file:
-        1. look for start/end in ONIX
-        2. map to start/end in HARP
-        3. store the HARP start/end
-        4. infer the probe type and electrode config
+        1. Extract ONIX timestamps from clock files
+        2. Map to HARP timestamps using sync models
+        3. Store chunk metadata and sync models
+        4. Infer probe type and electrode configuration
+        
+        Args:
+            experiment_name: Name of the experiment to process
         """
         key = {"experiment_name": experiment_name}
         raw_dir = acquisition.Experiment.get_data_directory(key, directory_type="raw")
@@ -105,8 +111,13 @@ class EphysChunk(dj.Manual):
         )
         sync_models = {}
 
-        def ephys_chunk_from_file(ephys_file):
-            # hardcoded probe/electrode info here, should be retrieved from the file metadata
+        def ephys_chunk_from_file(ephys_file: Path) -> None:
+            """Process a single ephys file into a chunk entry.
+            
+            Args:
+                ephys_file: Path to the ephys amplifier data file
+            """
+            # TODO: Retrieve probe/electrode info from file metadata instead of hardcoding
             probe_name = "NP2004-001"
             probe_type = "neuropixels - NP2004"
             electrode_config_name = "0-383"
@@ -138,10 +149,12 @@ class EphysChunk(dj.Manual):
                     chunk_start = r.model.predict(
                         np.array(onix_ts[0]).reshape(-1, 1)
                     ).flatten()[0]
+                    chunk_start = io_api.to_datetime(chunk_start)
                 if idx == len(matched_sync) - 1:
                     chunk_end = r.model.predict(
                         np.array(onix_ts[-1]).reshape(-1, 1)
                     ).flatten()[0]
+                    chunk_end = io_api.to_datetime(chunk_end)
 
                 model_path = Path(tmpdir.name) / (
                     ephys_file.stem + f"_{r.clock_start}.joblib"
@@ -233,23 +246,29 @@ class EphysBlockInfo(dj.Imported):
         channel_name="": varchar(64)  # alias of the channel
         """
 
-    def make(self, key):
-        """
-        - Find relevant ephys chunks for the given ephys block.
-        - For each chunk, extract the start and end times in the native clock (i.e. ONIX clock).
-            - For example: ephys block spans 3 chunks (3 hours)
-            - Start/end of block is 2025-01-01 07:00:00, 2025-01-01 10:00:00
-            - But due to the clock synchronization, there are actually 5 ephys chunks involved
-            - So the start/end of the ephys block in the native clock is:
-              2025-01-01 06:59:11 (start of first chunk), 2025-01-01 10:02:05 (end of last chunk)
-        - Retrieve & confirm the electrode configuration for the given ephys block.
-            - Ensure all associated ephys chunks have the same electrode configuration.
-        - Extract electrode-channel mapping
-        - Extract other metadata for this ephys block.
+    def make(self, key: Dict[str, Any]) -> None:
+        """Compute ephys block metadata and channel mappings.
+        
+        Finds relevant ephys chunks for the given block and extracts:
+        - Chunk associations (may span more chunks due to clock sync)
+        - Electrode configuration validation
+        - Channel-to-electrode mappings
+        - Block duration calculations
+        
+        Args:
+            key: Dictionary containing experiment_name, probe, block_start, block_end
         """
 
-        def create_ephys_chunk_restriction(start_time, end_time):
-            """Create a time restriction string for the chunks between the specified "start" and "end" times."""
+        def create_ephys_chunk_restriction(start_time: datetime, end_time: datetime) -> str:
+            """Create SQL restriction for chunks overlapping the time window.
+            
+            Args:
+                start_time: Block start time
+                end_time: Block end time
+                
+            Returns:
+                SQL WHERE clause string for chunk filtering
+            """
             start_restriction = f'"{start_time}" BETWEEN chunk_start AND chunk_end'
             end_restriction = f'"{end_time}" BETWEEN chunk_start AND chunk_end'
             start_query = EphysChunk & key & start_restriction
@@ -322,7 +341,14 @@ class EphysBlockInfo(dj.Imported):
         )
 
 
-def create_probe_type(probe_type: str, manufacturer: str, probe_name: str):
+def create_probe_type(probe_type: str, manufacturer: str, probe_name: str) -> None:
+    """Create a new probe type with electrode geometry from probeinterface.
+    
+    Args:
+        probe_type: Unique identifier for the probe type
+        manufacturer: Probe manufacturer (e.g., "neuropixels")
+        probe_name: Specific probe model name (e.g., "NP2004")
+    """
     import probeinterface as pi
 
     electrode_df = pi.get_probe(

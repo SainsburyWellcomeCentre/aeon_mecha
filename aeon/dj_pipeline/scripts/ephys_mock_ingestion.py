@@ -349,7 +349,6 @@ params["SI_PREPROCESSING_METHOD"] = "ephys_preproc"
 params["SI_SORTING_PARAMS"] = {
     "n_pcs": 3,
     "do_CAR": False,
-    "skip_kilosort_preprocessing": True,
     "keep_good_only": True,
     "use_binary_file": True,
 }

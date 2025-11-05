@@ -1,12 +1,18 @@
 #!/bin/bash
 
+# =============================================================================
+# AEON Spike Sorting SLURM Script
+# =============================================================================
+# Usage:  sbatch run_aeon_spike_sorting.sh
+# =============================================================================
+
 #SBATCH --job-name=aeon-spike-sorting         # job name
-#SBATCH --partition=gpu                       # partition (queue) gpu_branco
-#SBATCH --gres=gpu:a100:1                     # request specific gpu type
+#SBATCH --partition=gpu                       # Change to 'cpu' for CPU-only mode
+#SBATCH --gres=gpu:p5000:1                    # Remove this line for CPU-only mode
 #SBATCH --nodes=1                             # node count
 #SBATCH --ntasks=1                            # total number of tasks across all nodes
 #SBATCH --mem=128G                            # total memory per node
-#SBATCH --time=0-01:00:00                     # total run time limit (DD-HH:MM:SS)
+#SBATCH --time=7-01:00:00                     # total run time limit (DD-HH:MM:SS)
 #SBATCH --output=slurm_output/%N_%j.out       # output file path
 #SBATCH --error=slurm_output/%N_%j.err        # error file path
 
@@ -38,7 +44,7 @@ fi
 
 # Start resource profiler in the background
 echo "Starting resource profiler..."
-python ./aeon/dj_pipeline/scripts/start_resource_profiler.py -o ./slurm_output/resource_use.csv & PROFILER_PID=$!
+python ./aeon/dj_pipeline/scripts/start_resource_profiler.py -o "./slurm_output/resource_use_${SLURM_JOB_ID}.csv" & PROFILER_PID=$!
 echo "Resource profiler started with PID: $PROFILER_PID"
 
 # Verify Python script exists

@@ -9,6 +9,9 @@ Change the value of `key` below if you want to run spike sorting on a different 
 import datajoint as dj
 from aeon.dj_pipeline import acquisition, ephys, spike_sorting
 
+# Specify which table to populate: "PreProcessing", "SpikeSorting", or "PostProcessing"
+table_name = "PreProcessing"
+# Specify the key to be populated
 key = {'experiment_name': 'social-ephys0.1-aeon3',
        'probe': 'NP2004-001',
        'block_start': "2024-06-04 11:00:00",
@@ -17,21 +20,30 @@ key = {'experiment_name': 'social-ephys0.1-aeon3',
        'electrode_config_name': '0-383',
        'electrode_group': '0-143',
        'paramset_id': '250'}
-_CLEAR_JOB = True
+_CLEAR_JOB = True  # Whether to clear any existing 'error' job for this key before populating
 
 
-def clear_job():
+def clear_job(dj_table):
     """
     Clear this `key` from the jobs table (if any) to allow re-running the job 
     E.g. if this job previously failed with `error` status
     """
-    (spike_sorting.schema.jobs & {"key_hash": dj.key_hash(key), "status": "error"}).delete()
+    (spike_sorting.schema.jobs & {
+        "table_name": dj_table.table_name,
+        "key_hash": dj.key_hash(key),
+        "status": "error"}).delete()
 
 
 def main():
+    populate_table = {
+        "PreProcessing": spike_sorting.PreProcessing,
+        "SpikeSorting": spike_sorting.SpikeSorting,
+        "PostProcessing": spike_sorting.PostProcessing,
+    }[table_name]
+
     if _CLEAR_JOB:
-        clear_job()
-    spike_sorting.SpikeSorting.populate(key, reserve_jobs=True, display_progress=True)
+        clear_job(populate_table)
+    populate_table.populate(key, reserve_jobs=True, display_progress=True)
 
 
 if __name__ == '__main__':

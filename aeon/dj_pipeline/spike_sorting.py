@@ -6,6 +6,7 @@ import json
 from datetime import datetime, UTC
 import joblib
 import tempfile
+from typing import Dict, List, Tuple, Any, Optional
 
 from aeon.dj_pipeline import acquisition, ephys, get_schema_name
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
@@ -117,9 +118,18 @@ class PreProcessing(dj.Computed):
         """
 
     @classmethod
-    def infer_output_dir(cls, key, relative=False, mkdir=False):
+    def infer_output_dir(cls, key: Dict[str, Any], relative: bool = False, mkdir: bool = False) -> Path:
+        """Generate standardized output directory path for sorting results.
+        
+        Args:
+            key: Sorting task key with experiment, block, and parameter info
+            relative: Return path relative to sorting root directory
+            mkdir: Create directory if it doesn't exist
+            
+        Returns:
+            Path to the sorting output directory
+        """
         sorting_root_dir = get_sorting_root_dir()
-        # Infer output directory
         sorting_method = (SortingMethod * SortingParamSet & key).fetch1("sorting_method")
         start_str = key["block_start"].strftime("%Y-%m-%dT%H-%M-%S")
         end_str = key["block_end"].strftime("%Y-%m-%dT%H-%M-%S")
@@ -149,17 +159,15 @@ class PreProcessing(dj.Computed):
         ).fetch("file_path", "directory_type", order_by="chunk_start")
 
         # Channels
-        electrodes_df = (
-            (
+        electrodes_query = (
                 ephys.EphysBlockInfo.Channel
                 * ephys.ElectrodeConfig.Electrode
                 * ElectrodeGroup.Electrode
                 * ephys.ProbeType.Electrode
                 & key
             )
-            .fetch(format="frame")
-            .reset_index()
-        )
+        electrodes_df = electrodes_query.fetch(format="frame").reset_index()
+        electrodes_df.drop(columns=list(key), inplace=True, errors="ignore")
 
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         # Neuropixels 2.0 constants - TODO: read this from the metadata
@@ -169,20 +177,34 @@ class PreProcessing(dj.Computed):
 
         return ephys_files, dir_types, electrodes_df, num_channels, fs_hz, gain_to_uV, offset_to_uV, output_dir, recording_file, recording_dir
 
-    def make_compute(self, key, ephys_files, dir_types, electrodes_df,
-             num_channels, fs_hz, gain_to_uV, offset_to_uV,
-             output_dir, recording_file, recording_dir):
-        """ Pre-processing the ephys data, before spike sorting. E.g.:
-        - data concatenation (based on EphysBlock)
-        - channel selection (based on ElectrodeGroup)
-        - bad channel detection/removal
-        - band-pass filtering
-        - common average referencing
-        - etc.
+    def make_compute(self, key: Dict[str, Any], ephys_files: List[str], dir_types: List[str], 
+                     electrodes_df: pd.DataFrame, num_channels: int, fs_hz: float, 
+                     gain_to_uV: float, offset_to_uV: float, output_dir: Path, 
+                     recording_file: Path, recording_dir: Path) -> Tuple[Path, datetime, Path]:
+        """Preprocess ephys data for spike sorting.
+        
+        Performs data concatenation, channel selection, filtering, and probe setup.
+        
+        Args:
+            key: Sorting task key
+            ephys_files: List of ephys file paths
+            dir_types: Directory types for each file
+            electrodes_df: Electrode configuration dataframe
+            num_channels: Total number of channels
+            fs_hz: Sampling frequency
+            gain_to_uV: Gain conversion factor
+            offset_to_uV: Offset conversion factor
+            output_dir: Output directory path
+            recording_file: Path to save recording object
+            recording_dir: Directory for recording files
+            
+        Returns:
+            Tuple of (output_dir, execution_time, recording_dir)
         """
         import probeinterface as pi
         import spikeinterface as si
         import spikeinterface.extractors as se
+        from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
 
@@ -229,6 +251,23 @@ class PreProcessing(dj.Computed):
         si_recording = ephys_preproc(si_recording)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
+        # write binary into recording.dat
+        job_kwargs = {"n_jobs": 0.8, "chunk_duration": "2s"}
+        binary_file_path = recording_file.parent / "recording.dat"
+        if binary_file_path.exists():
+            load_and_verify_binary_file(
+                binary_file_path=binary_file_path,
+                se_recording_obj=si_recording)
+            logger.info(f"{binary_file_path} already exists. Skipping writing binary file.")
+        else:
+            logger.info(f"Writing binary recording to {binary_file_path}...")
+            si.core.write_binary_recording(
+                    recording=si_recording,
+                    file_paths=[binary_file_path],
+                    dtype="int16",
+                    **sorters.basesorter.get_job_kwargs(job_kwargs, True),
+                )
+
         return output_dir, execution_time, recording_dir
 
     def make_insert(self, key, output_dir, execution_time, recording_dir):
@@ -248,7 +287,7 @@ class PreProcessing(dj.Computed):
             [
                 {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
                 for f in recording_dir.rglob("*")
-                if f.is_file()
+                if f.is_file() and f.name != "recording.dat"  # exclude the large binary file (too long for hashing)
             ]
         )
 
@@ -283,24 +322,44 @@ class SpikeSorting(dj.Computed):
 
         return recording_file, output_dir, params, sorting_method
 
-    def make_compute(self, key, recording_file, output_dir, params, sorting_method):
+    def make_compute(self, key: Dict[str, Any], recording_file: Path, output_dir: Path, 
+                     params: Dict[str, Any], sorting_method: str) -> Tuple[Path, datetime, float]:
+        """Run spike sorting using specified algorithm and parameters.
+        
+        Args:
+            key: Sorting task key
+            recording_file: Path to preprocessed recording
+            output_dir: Base output directory
+            params: Sorting parameters dictionary
+            sorting_method: Name of sorting algorithm (e.g., kilosort2)
+            
+        Returns:
+            Tuple of (sorting_output_dir, execution_time, execution_duration)
+        """
         import spikeinterface as si
         from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
-
         sorter_name = sorting_method.replace(".", "_")
         sorting_output_dir = output_dir / "spike_sorting"
-
-        """ Run spike sorting using the specified method and parameters. """
         si_recording: si.BaseRecording = si.load(
             recording_file, base_folder=output_dir
         )
+        # load the pre-generated binary file - recording.dat
+        binary_rec = load_and_verify_binary_file(
+            binary_file_path=Path(recording_file).parent / "recording.dat",
+            se_recording_obj=si_recording)
+
         sorting_params = params["SI_SORTING_PARAMS"]
+
+        # explicitly set `skip_kilosort_preprocessing` to False
+        # to avoid SpikeInterface rerunning the `write_binary_recording` step
+        # https://github.com/SpikeInterface/spikeinterface/blob/813d9640eed6e4e28a411e37efaef67026b790e3/src/spikeinterface/sorters/external/kilosortbase.py#L131
+        sorting_params["skip_kilosort_preprocessing"] = False
 
         si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
             sorter_name=sorter_name,
-            recording=si_recording,
+            recording=binary_rec,
             folder=sorting_output_dir,
             remove_existing_folder=True,
             verbose=True,
@@ -366,11 +425,21 @@ class PostProcessing(dj.Computed):
 
         return recording_file, sorting_file, output_dir, params
 
-    def make_compute(self, key, recording_file, sorting_file, output_dir, params):
-        """ Post-processing the ephys data, after spike sorting. E.g.:
-        - quality assessment
-        - waveform extraction
-        - etc.
+    def make_compute(self, key: Dict[str, Any], recording_file: Path, sorting_file: Path, 
+                     output_dir: Path, params: Dict[str, Any]) -> Tuple[Path, datetime, float]:
+        """Post-process spike sorting results with quality assessment.
+        
+        Runs SpikeInterface sorting analyzer to compute quality metrics and extensions.
+        
+        Args:
+            key: Sorting task key
+            recording_file: Path to recording object
+            sorting_file: Path to sorting results
+            output_dir: Base output directory
+            params: Post-processing parameters
+            
+        Returns:
+            Tuple of (analyzer_output_dir, execution_time, execution_duration)
         """
         import spikeinterface as si
         from spikeinterface import sorters
@@ -790,9 +859,23 @@ class SyncedSpikes(dj.Imported):
         spike_times: longblob  # (s) synchronized spike times (i.e. in HARP clock) for the respective EphysChunk
         """
 
-    def make(self, key):
-        """
-        Synchronize the spike times to the HARP clock.
+    def make(self, key: Dict[str, Any]) -> None:
+        """Synchronize spike indices to HARP timestamps and organize by ephys chunks.
+        
+        This method performs the critical step of converting spike indices (from concatenated
+        binary data) back to actual timestamps synchronized to the HARP clock system.
+        
+        Process:
+        1. Load sync models for ONIX→HARP timestamp conversion
+        2. Load ONIX clock data from all ephys chunks in the block
+        3. For each unit's spike indices:
+           - Map indices to corresponding ephys chunks
+           - Convert indices to ONIX timestamps using clock data
+           - Apply sync models to convert ONIX→HARP timestamps
+           - Group results by ephys chunk for downstream analysis
+        
+        Args:
+            key: Dictionary containing sorting task identifiers
         """
         # Load ephys sync models
         sync_models = {}
@@ -817,22 +900,40 @@ class SyncedSpikes(dj.Imported):
             onix_times.append(onix_ts)
         onix_lengths = np.cumsum([len(s) for s in onix_times])
 
-        def indices2syncedtimes(spike_indices):
-            # loop through the onix_times and index the spikes within bound of each onix_times
-            # the nested loop - seemingly inefficient - is to make use of `memmap` to avoid memory issues
+        def indices2syncedtimes(spike_indices: np.ndarray) -> Tuple[Dict[str, Any], np.ndarray]:
+            """Convert spike indices to HARP-synchronized timestamps by ephys chunk.
+            
+            Maps spike indices (from concatenated binary data) back to their original
+            ephys chunks and converts to HARP timestamps using sync models.
+            
+            Args:
+                spike_indices: Array of spike indices in concatenated recording
+                
+            Yields:
+                Tuple of (chunk_key, synced_timestamps) for each ephys chunk
+            """
             for idx, onix_bound in enumerate(onix_lengths):
+                # Find spikes belonging to this ephys chunk
                 if idx == 0:
                     spk_ind = spike_indices[spike_indices <= onix_bound]
                 else:
                     spk_ind = spike_indices[(spike_indices > onix_lengths[idx - 1]) & (spike_indices <= onix_bound)]
-                spk_ind -= spk_ind[0]  # make the spike indices relative to the start of the onix_times
-                spk_times = onix_times[idx][spk_ind]
-                # sync the spike times to the HARP clock
+
+                if not len(spk_ind):  # no spikes in this chunk
+                    continue
+
+                # Convert absolute indices to relative indices within this chunk
+                spk_ind -= spk_ind[0]  # make relative to chunk start
+                spk_times = onix_times[idx][spk_ind]  # get ONIX timestamps
+                
+                # Apply sync models to convert ONIX→HARP timestamps
                 synced_ts = []
                 for (start, end), model in sync_models.items():
+                    # Find spikes within this sync model's time window
                     ind = np.logical_and(spk_times >= start, spk_times <= end)
                     if not np.any(ind):
                         continue
+                    # Convert ONIX timestamps to HARP timestamps
                     sync_t = model.predict(spk_times[ind].reshape(-1, 1))
                     synced_ts.extend(sync_t.flatten())
 
@@ -857,11 +958,17 @@ class SyncedSpikes(dj.Imported):
 
 # ---- Ephys preprocessing with spike interface ----
 
-def ephys_preproc(recording):
-    """
-    Basic ephys preprocessing using SpikeInterface.
-    1. Bandpass filter the recording between 300 Hz and 6000 Hz.
-    2. Common average reference the recording using median.
+def ephys_preproc(recording) -> Any:
+    """Apply standard ephys preprocessing pipeline.
+    
+    Performs unsigned-to-signed conversion, bandpass filtering (300-6000 Hz),
+    and common average referencing using median.
+    
+    Args:
+        recording: SpikeInterface recording object
+        
+    Returns:
+        Preprocessed recording object
     """
     import spikeinterface as si
     from spikeinterface import preprocessing
@@ -874,3 +981,34 @@ def ephys_preproc(recording):
         recording=recording, operator="median"
     )
     return recording
+
+
+def load_and_verify_binary_file(binary_file_path: Path, se_recording_obj: Any) -> Any:
+    """Load and verify binary recording file matches original recording.
+    
+    Args:
+        binary_file_path: Path to binary recording file
+        se_recording_obj: Original SpikeInterface recording object
+        
+    Returns:
+        Binary recording object with probe geometry
+        
+    Raises:
+        ValueError: If sample counts don't match between files
+    """
+    import spikeinterface.extractors as se
+
+    binary_rec = se.read_binary(
+        binary_file_path,
+        sampling_frequency=se_recording_obj.get_sampling_frequency(),
+        dtype=np.uint16,
+        num_channels=se_recording_obj.get_num_channels(),
+        gain_to_uV=se_recording_obj.get_channel_gains()[0])
+    if binary_rec.get_num_samples() != se_recording_obj.get_num_samples():
+        raise ValueError(f"Number of samples in binary file ({binary_rec.get_num_samples()})"
+                         f" does not match the original recording ({se_recording_obj.get_num_samples()}).")
+
+    binary_rec.set_probe(probe=se_recording_obj.get_probe(), in_place=True)
+    # force rename channel_ids?
+    # binary_rec._main_ids = se_recording_obj.get_channel_ids()
+    return binary_rec
