@@ -3,14 +3,12 @@
 # =============================================================================
 # AEON Spike Sorting SLURM Script
 # =============================================================================
-# Usage:
-#   GPU mode:    sbatch run_aeon_spike_sorting.sh
-#   CPU mode:    sbatch --partition=cpu run_aeon_spike_sorting.sh
-#   Custom GPU:  sbatch --gres=gpu:a100:1 run_aeon_spike_sorting.sh
+# Usage:  sbatch run_aeon_spike_sorting.sh
 # =============================================================================
 
 #SBATCH --job-name=aeon-spike-sorting         # job name
-#SBATCH --partition=cpu                       # Change to 'cpu' for CPU-only mode
+#SBATCH --partition=gpu                       # Change to 'cpu' for CPU-only mode
+#SBATCH --gres=gpu:p5000:1                    # Remove this line for CPU-only mode
 #SBATCH --nodes=1                             # node count
 #SBATCH --ntasks=1                            # total number of tasks across all nodes
 #SBATCH --mem=128G                            # total memory per node
