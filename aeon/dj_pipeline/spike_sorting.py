@@ -577,6 +577,7 @@ class SortedSpikes(dj.Imported):
     ---
     execution_time: datetime   # datetime of the start of this step
     execution_duration: float  # execution duration in hours
+    curation_id=-1: int        # if -1, this is the raw spike sorting result without manual curation
     """
 
     class Unit(dj.Part):
