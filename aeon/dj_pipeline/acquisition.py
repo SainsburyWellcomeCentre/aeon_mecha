@@ -86,7 +86,7 @@ class DirectoryType(dj.Lookup):
     directory_type: varchar(16)
     """
 
-    contents = zip(["raw", "processed", "qc"], strict=False)
+    contents = zip(["raw", "processed", "qc", "ingest"], strict=False)
 
 
 # ------------------- GENERAL INFORMATION ABOUT AN EXPERIMENT --------------------
@@ -329,10 +329,11 @@ class EpochConfig(dj.Imported):
     def make(self, key):
         """Ingest metadata into EpochConfig."""
         from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_metadata import (
+        from aeon.dj_pipeline.utils.load_new_metadata import (
             extract_epoch_config,
             ingest_epoch_metadata,
             insert_device_types,
+            extract_active_regions,
         )
 
         experiment_name = key["experiment_name"]
@@ -343,31 +344,32 @@ class EpochConfig(dj.Imported):
 
         dir_type, epoch_dir = (Epoch & key).fetch1("directory_type", "epoch_dir")
         data_dir = Experiment.get_data_directory(key, dir_type)
-        metadata_yml_filepath = data_dir / epoch_dir / "Metadata.yml"
+        metadata_filepath = data_dir / epoch_dir / "Metadata.json"  # / "Metadata.yml"
 
-        epoch_config = extract_epoch_config(experiment_name, devices_schema, metadata_yml_filepath)
+        epoch_config = extract_epoch_config(experiment_name, devices_schema, metadata_filepath)
+        rig_config = epoch_config.pop("rig_config")
         epoch_config = {
             **epoch_config,
-            "metadata_file_path": metadata_yml_filepath.relative_to(data_dir).as_posix(),
+            "metadata_file_path": metadata_filepath.relative_to(data_dir).as_posix(),
         }
 
         # Insert new entries for streams.DeviceType, streams.Device.
         insert_device_types(
             devices_schema,
-            metadata_yml_filepath,
+            metadata_filepath,
         )
         # Define and instantiate new devices/stream tables under `streams` schema
         streams_maker.main()
         # Insert devices' installation/removal/settings
-        epoch_device_types = ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath)
+        epoch_device_types = ingest_epoch_metadata(experiment_name, devices_schema, metadata_filepath)
+        # Extract active regions
+        active_region = extract_active_regions(rig_config)
 
         self.insert1(key)
         self.Meta.insert1(epoch_config)
         self.DeviceType.insert(key | {"device_type": n} for n in epoch_device_types or {})
-        with metadata_yml_filepath.open("r") as f:
-            metadata = json.load(f)
         self.ActiveRegion.insert(
-            {**key, "region_name": k, "region_data": v} for k, v in metadata["ActiveRegion"].items()
+            {**key, "region_name": k, "region_data": v} for k, v in active_region.items()
         )
 
 
