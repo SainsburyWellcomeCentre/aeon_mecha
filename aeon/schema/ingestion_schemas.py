@@ -3,12 +3,13 @@ from os import PathLike
 
 import pandas as pd
 from dotmap import DotMap
+
 from swc.aeon.io import reader
 from swc.aeon.io.api import aeon as aeon_time
 from swc.aeon.io.api import chunk as aeon_chunk
 from swc.aeon.schema import Device, Stream, StreamGroup, core
 
-from aeon.schema import foraging, octagon, social_01, social_02, social_03
+from aeon.schema import (foraging, octagon, social_01, social_02, social_03, foragingabc)
 
 
 # Define new readers
@@ -245,5 +246,48 @@ social04 = DotMap(
     ]
 )
 
+
+# --- Foraging ABC Behavior Experiment Schema ---
+
+
+class Metadata(Stream):
+    """Metadata for acquisition epochs."""
+
+    def __init__(self, pattern):
+        """Initializes the Metadata stream."""
+        super().__init__(foragingabc.Metadata(pattern))
+
+
+abcBehav01 = DotMap(
+    [
+        Device("Metadata", Metadata),
+        Device("Environment",
+               social_02.Environment,
+               social_02.SubjectData,
+               social_03.EnvironmentActiveConfiguration),
+        Device("CameraTop", Video, core.Position, social_03.Pose),
+        Device("CameraNest", Video),
+        Device("CameraNorth", Video),
+        Device("CameraEast", Video),
+        Device("CameraSouth", Video),
+        Device("CameraWest", Video),
+        Device("CameraLightMonitor", Video),
+        Device("CameraPatch1", Video),
+        Device("CameraPatch2", Video),
+        Device("CameraPatch3", Video),
+        Device("CameraPatch4", Video),
+        Device("CameraPatch5", Video),
+        Device("CameraPatch6", Video),
+        Device("Nest", social_02.WeightRaw, social_02.WeightFiltered),
+        Device("Feeder1", Patch),
+        Device("Feeder2", Patch),
+        Device("Feeder3", Patch),
+        Device("Feeder4", Patch),
+        Device("Feeder5", Patch),
+        Device("Feeder6", Patch),
+    ]
+)
+
+
 # __all__ = ["octagon01", "exp01", "exp02", "social01", "social02", "social03", "social04"]
-__all__ = ["social02", "social03", "social04"]
+__all__ = ["abcBehav01"]
