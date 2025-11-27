@@ -8,7 +8,7 @@ from aeon.dj_pipeline.utils.paths import get_repository_path
 # ---- Programmatic creation of a new social experiment ----
 # Infer experiment metadata from the experiment name
 # User-specified "experiment_name" (everything else should be automatically inferred)
-experiment_name = "social0.4-aeon3"
+experiment_name = "abcBehav01-aeon3"
 
 
 # Find paths
