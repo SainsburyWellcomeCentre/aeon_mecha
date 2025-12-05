@@ -398,7 +398,7 @@ class Chunk(dj.Manual):
         """
 
     @classmethod
-    def ingest_chunks(cls, experiment_name):
+    def ingest_chunks(cls, experiment_name, enforce_hour_completed=False):
         """Ingest data chunks for a given experiment into the database.
 
         This method processes and ingests 1-hour data acquisition chunks for a specified experiment.
@@ -412,12 +412,16 @@ class Chunk(dj.Manual):
              * Chunk end is adjusted to start of next hour (minutes/seconds/microseconds set to 0)
              * If epoch end exists, chunk end is capped at epoch end
            - Skip chunks that have already been ingested
+           - If `enforce_hour_completed` is True, ingest only chunks from more than one hour ago, this
+             avoids to ingest incomplete chunks that have been transferred by robocopy but are still
+             being written to.
            - Collect file information for the chunk
         3. Insert all new chunks and their associated files into the database in a single transaction
 
         Args:
             experiment_name (str): Name of the experiment to ingest chunks for
-
+            enforce_hour_completed (bool): If True, check that one hour has passed since chunk start
+        
         Note:
             - Chunks are 1-hour recording periods
             - Each chunk must belong to a valid epoch
@@ -442,6 +446,15 @@ class Chunk(dj.Manual):
             chunk_start = chunk.name
             chunk_start = max(chunk_start, epoch_start)  # first chunk of the epoch starts at epoch_start
 
+            if enforce_hour_completed:
+                # chunks are recorded in UCT time (London, no summer time)
+                time_now = datetime.datetime.now(datetime.timezone.utc)
+                chunk_start_utc = chunk.name.tz_localize('UTC')
+                if (time_now - chunk_start_utc) < datetime.timedelta(hours=1, minutes=5):
+                    # skip over chunks recently started chunks to avoid incomplete hour chunks
+                    # note: this requires that robocopy copies the files within 5 minutes after the hour
+                    continue
+                
             # Calculate chunk_end using timedelta for robust date handling
             chunk_end = chunk_start + datetime.timedelta(hours=io_api.CHUNK_DURATION)
             # Chunk should end at the start of the next hour
