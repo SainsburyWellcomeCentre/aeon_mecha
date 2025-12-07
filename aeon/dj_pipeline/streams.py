@@ -877,7 +877,9 @@ class SpinnakerVideoSourcePosition(dj.Imported):
             + Chunk(s) started after SpinnakerVideoSource install time for SpinnakerVideoSource and not yet removed
             """
             return (
-                acquisition.Chunk * SpinnakerVideoSource.join(SpinnakerVideoSource.RemovalTime, left=True)
+                acquisition.Chunk * (
+                    SpinnakerVideoSource.join(SpinnakerVideoSource.RemovalTime, left=True)
+                    & "spinnaker_video_source_name='CameraTop'" )
                 & "chunk_start >= spinnaker_video_source_install_time"
                 & 'chunk_start < IFNULL(spinnaker_video_source_removal_time,"2200-01-01")'
             )
