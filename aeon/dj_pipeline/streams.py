@@ -852,3 +852,70 @@ class WeightScaleWeightRaw(dj.Imported):
             )
 
 
+@schema 
+class SpinnakerVideoSourcePosition(dj.Imported):
+        definition = """ # Raw per-chunk Position from SpinnakerVideoSource (v-unknown)
+    -> SpinnakerVideoSource
+    -> acquisition.Chunk
+    ---
+    sample_count: int      # number of data points acquired from this stream for a given chunk
+    timestamps: longblob   # (datetime) timestamps of Position data
+    x: longblob
+    y: longblob
+    angle: longblob
+    major: longblob
+    minor: longblob
+    area: longblob
+    id: longblob
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and SpinnakerVideoSource with overlapping time.
+
+            + Chunk(s) started after SpinnakerVideoSource install time & ended before SpinnakerVideoSource remove time
+            + Chunk(s) started after SpinnakerVideoSource install time for SpinnakerVideoSource and not yet removed
+            """
+            return (
+                acquisition.Chunk * SpinnakerVideoSource.join(SpinnakerVideoSource.RemovalTime, left=True)
+                & "chunk_start >= spinnaker_video_source_install_time"
+                & 'chunk_start < IFNULL(spinnaker_video_source_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load and insert the data for the SpinnakerVideoSourcePosition table."""
+            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+
+            device_name = (SpinnakerVideoSource & key).fetch1("spinnaker_video_source_name")
+
+            devices_schema = getattr(
+                aeon_schemas,
+                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                    "devices_schema_name"
+                ),
+            )
+            stream_reader = getattr(getattr(devices_schema, device_name), "Position")
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": len(stream_data),
+                    "timestamps": stream_data.index.values,
+                    **{
+                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
+                        for c in stream_reader.columns
+                        if not c.startswith("_")
+                    },
+                },
+                ignore_extra_fields=True,
+            )
+
+
