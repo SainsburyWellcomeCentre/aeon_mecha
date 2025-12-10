@@ -10,7 +10,7 @@ import datajoint as dj
 from aeon.dj_pipeline import acquisition, ephys, spike_sorting
 
 # Specify which table to populate: "PreProcessing", "SpikeSorting", or "PostProcessing"
-table_name = "PreProcessing"
+table_name = "SpikeSorting"
 # Specify the key to be populated
 key = {'experiment_name': 'social-ephys0.1-aeon3',
        'probe': 'NP2004-001',

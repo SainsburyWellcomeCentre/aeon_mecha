@@ -204,7 +204,7 @@ class PreProcessing(dj.Computed):
         import probeinterface as pi
         import spikeinterface as si
         import spikeinterface.extractors as se
-        from spikeinterface import sorters
+        from spikeinterface import sorters, preprocessing
 
         execution_time = datetime.now(UTC)
 
@@ -248,6 +248,7 @@ class PreProcessing(dj.Computed):
         si_recording.set_probe(probe=si_probe, in_place=True)
 
         # Run preprocessing and save results to output folder
+        si_recording = si.preprocessing.unsigned_to_signed(si_recording)
         si_recording = ephys_preproc(si_recording)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
@@ -346,16 +347,19 @@ class SpikeSorting(dj.Computed):
             recording_file, base_folder=output_dir
         )
         # load the pre-generated binary file - recording.dat
+        binary_file_path = Path(recording_file).parent / "recording.dat"
         binary_rec = load_and_verify_binary_file(
-            binary_file_path=Path(recording_file).parent / "recording.dat",
+            binary_file_path=binary_file_path,
             se_recording_obj=si_recording)
 
         sorting_params = params["SI_SORTING_PARAMS"]
 
         # explicitly set `skip_kilosort_preprocessing` to False
         # to avoid SpikeInterface rerunning the `write_binary_recording` step
-        # https://github.com/SpikeInterface/spikeinterface/blob/813d9640eed6e4e28a411e37efaef67026b790e3/src/spikeinterface/sorters/external/kilosortbase.py#L131
+        # https://github.com/SpikeInterface/spikeinterface/blob/705c9320c854f2a192fa200fe7866cec5a8ffca7/src/spikeinterface/sorters/external/kilosortbase.py#L124
         sorting_params["skip_kilosort_preprocessing"] = False
+        if not binary_rec.binary_compatible_with(dtype="int16", time_axis=0, file_paths_length=1):
+            raise ValueError(f"Incompatible binary file for spike sorting: {binary_file_path}")
 
         si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
             sorter_name=sorter_name,
@@ -577,6 +581,7 @@ class SortedSpikes(dj.Imported):
     ---
     execution_time: datetime   # datetime of the start of this step
     execution_duration: float  # execution duration in hours
+    curation_id=-1: int        # if -1, this is the raw spike sorting result without manual curation
     """
 
     class Unit(dj.Part):
@@ -973,7 +978,6 @@ def ephys_preproc(recording) -> Any:
     import spikeinterface as si
     from spikeinterface import preprocessing
 
-    recording = si.preprocessing.unsigned_to_signed(recording)
     recording = si.preprocessing.bandpass_filter(
         recording=recording, freq_min=300, freq_max=6000
     )
@@ -1001,7 +1005,7 @@ def load_and_verify_binary_file(binary_file_path: Path, se_recording_obj: Any) -
     binary_rec = se.read_binary(
         binary_file_path,
         sampling_frequency=se_recording_obj.get_sampling_frequency(),
-        dtype=np.uint16,
+        dtype=se_recording_obj.dtype,
         num_channels=se_recording_obj.get_num_channels(),
         gain_to_uV=se_recording_obj.get_channel_gains()[0])
     if binary_rec.get_num_samples() != se_recording_obj.get_num_samples():
