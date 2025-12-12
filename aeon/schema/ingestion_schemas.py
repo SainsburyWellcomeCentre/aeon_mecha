@@ -258,6 +258,24 @@ class Metadata(Stream):
         super().__init__(foragingabc.Metadata(pattern))
 
 
+# read in encoder data at 500Hz
+class Encoder500Hz(Stream):
+    """Wheel magnetic encoder data."""
+
+    def __init__(self, pattern):
+        super().__init__(reader.Encoder(f"{pattern}_90_*"))
+
+
+class Patch500Hz(StreamGroup):
+    """Data streams for a patch."""
+
+    def __init__(self, path):
+        super().__init__(path)
+
+    p = social_02.Patch
+    e = Encoder500Hz
+    
+
 abcBehav01 = DotMap(
     [
         Device("Metadata", Metadata),
@@ -279,12 +297,12 @@ abcBehav01 = DotMap(
         Device("CameraPatch5", Video),
         Device("CameraPatch6", Video),
         Device("Nest", social_02.WeightRaw, social_02.WeightFiltered),
-        Device("Feeder1", Patch),
-        Device("Feeder2", Patch),
-        Device("Feeder3", Patch),
-        Device("Feeder4", Patch),
-        Device("Feeder5", Patch),
-        Device("Feeder6", Patch),
+        Device("Feeder1", Patch500Hz),
+        Device("Feeder2", Patch500Hz),
+        Device("Feeder3", Patch500Hz),
+        Device("Feeder4", Patch500Hz),
+        Device("Feeder5", Patch500Hz),
+        Device("Feeder6", Patch500Hz),
     ]
 )
 
@@ -309,12 +327,12 @@ abcBehav02 = DotMap(
         Device("CameraPatch5", Video),
         Device("CameraPatch6", Video),
         Device("Nest", social_02.WeightRaw, social_02.WeightFiltered),
-        Device("Feeder1", Patch),
-        Device("Feeder2", Patch),
-        Device("Feeder3", Patch),
-        Device("Feeder4", Patch),
-        Device("Feeder5", Patch),
-        Device("Feeder6", Patch),
+        Device("Feeder1", Patch500Hz),
+        Device("Feeder2", Patch500Hz),
+        Device("Feeder3", Patch500Hz),
+        Device("Feeder4", Patch500Hz),
+        Device("Feeder5", Patch500Hz),
+        Device("Feeder6", Patch500Hz),
     ]
 )
 
