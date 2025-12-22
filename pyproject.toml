@@ -24,7 +24,7 @@ dependencies = [
   "bottleneck>=1.2.1,<2",
   "datajoint>=0.13.7",
   "datajoint-utilities @ git+https://github.com/datajoint-company/datajoint-utilities",
-  "swc-aeon @ git+https://github.com/SainsburyWellcomeCentre/aeon_api.git",
+  "swc-aeon>=0.1.0",
   "fastparquet",
   "graphviz",
   "ipykernel",
@@ -157,3 +157,6 @@ venv = ".venv"
 exclude = ["aeon/dj_pipeline/*", ".venv/*"]
 [tool.pytest.ini_options]
 markers = ["api"]
+
+[tool.uv.sources]
+swc-aeon = { git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git", branch = "pydantic-schema" }
