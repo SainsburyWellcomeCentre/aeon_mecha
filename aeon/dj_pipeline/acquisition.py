@@ -333,33 +333,59 @@ class EpochConfig(dj.Imported):
             extract_epoch_config,
             ingest_epoch_metadata,
             insert_device_types,
+            extract_active_regions,
+            _flatten_rig_devices,
+        )
+        from aeon.dj_pipeline.utils.load_new_metadata import (
+            get_experiment_class,
+            extract_rig_from_metadata,
         )
 
         experiment_name = key["experiment_name"]
-        devices_schema = getattr(
-            aeon_schemas,
-            (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1("devices_schema_name"),
+        
+        # Get schema name (must be Experiment class path, e.g., "swc.aeon.exp.foragingABC.experiment.ForagingABC")
+        schema_name = (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1(
+            "devices_schema_name"
         )
-
+        
         dir_type, epoch_dir = (Epoch & key).fetch1("directory_type", "epoch_dir")
         data_dir = Experiment.get_data_directory(key, dir_type)
-        metadata_yml_filepath = data_dir / epoch_dir / "Metadata.yml"
+        metadata_filepath = data_dir / epoch_dir / "Metadata.json"
 
-        epoch_config = extract_epoch_config(experiment_name, devices_schema, metadata_yml_filepath)
+        # Get Experiment class and extract Rig
+        experiment_class = get_experiment_class(schema_name)
+        rig = extract_rig_from_metadata(experiment_class, metadata_filepath)
+        
+        # Load metadata directly for epoch_config (extract_epoch_config and ingest_epoch_metadata still use DotMap)
+        metadata = json.loads(metadata_filepath.read_text())
+        epoch_start = datetime.datetime.strptime(metadata_filepath.parent.name, "%Y-%m-%dT%H-%M-%S")
+        rig_config = metadata.get("metadata", {}).get("rig", {})
+        epoch_config = {
+            "experiment_name": experiment_name,
+            "epoch_start": epoch_start,
+            "bonsai_workflow": metadata.get("workflow", ""),
+            "commit": metadata.get("commit") or metadata.get("metadata", {}).get("Revision", ""),
+            "metadata": _flatten_rig_devices(rig_config) if rig_config else {},
+            "rig_config": rig_config,
+        }
+        
+        # Insert new entries for streams.DeviceType, streams.Device using Rig
+        insert_device_types(rig, metadata_filepath)
+        
         epoch_config = {
             **epoch_config,
             "metadata_file_path": metadata_yml_filepath.relative_to(data_dir).as_posix(),
         }
-
-        # Insert new entries for streams.DeviceType, streams.Device.
-        insert_device_types(
-            devices_schema,
-            metadata_yml_filepath,
-        )
+        
         # Define and instantiate new devices/stream tables under `streams` schema
         streams_maker.main()
-        # Insert devices' installation/removal/settings
-        epoch_device_types = ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath)
+        
+        # Insert devices' installation/removal/settings using Rig
+        from aeon.dj_pipeline.utils.load_new_metadata import ingest_epoch_metadata_from_rig
+        epoch_device_types = ingest_epoch_metadata_from_rig(experiment_name, rig, epoch_config, metadata_filepath)
+        
+        # Extract active regions
+        active_region = extract_active_regions(rig_config)
 
         self.insert1(key)
         self.Meta.insert1(epoch_config)
