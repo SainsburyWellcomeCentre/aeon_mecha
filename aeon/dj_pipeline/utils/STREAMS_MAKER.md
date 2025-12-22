@@ -294,20 +294,6 @@ ingest_epoch_metadata_from_rig(...)  # Inserts device installations
 - Direct: `from aeon.dj_pipeline import streams`
 - Fallback: Uses `VirtualModule` if import fails
 
-## Design Notes
-
-**Strengths**:
-- Dynamic table generation from database catalogs
-- Idempotent: checks for existing tables before generating
-- Handles reader instantiation to infer columns automatically
-- Type-safe: uses Pydantic models for validation
-- Pattern resolution: automatic file path resolution based on device hierarchy
-
-**Limitations**:
-- String replacement for placeholders (fragile)
-- File I/O in generation loop (reads entire file for duplicate checks)
-- Special case: `Pose` reader not auto-generated (skipped)
-- No validation that generated code is syntactically correct
 
 ## Example: Complete Flow
 
@@ -352,14 +338,3 @@ ingest_epoch_metadata_from_rig(...)  # Inserts device installations
    streams.SpinnakerCamera.insert1({...})  # Manual entry
    streams.SpinnakerCameraVideo.populate()  # Auto-populate from files
    ```
-
-## Migration from DotMap
-
-The system has been migrated from DotMap-based schemas to Pydantic models. Key changes:
-
-- **Device Definition**: Devices are now Pydantic classes with `device_type` attributes
-- **Stream Definition**: Streams are `@data_reader` methods instead of DotMap entries
-- **Pattern Resolution**: Automatic via `_resolve_pattern_prefix()` instead of hardcoded paths
-- **Type Safety**: Full Pydantic validation instead of runtime attribute access
-- **Naming**: Stream names use PascalCase in catalogs (converted from snake_case method names)
-
