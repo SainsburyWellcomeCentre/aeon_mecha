@@ -229,6 +229,66 @@ def save_and_make_official(
     make_official_curation(key, curation_id, local_root_dir)
 
 
+def restore_raw_sorting(key: Dict[str, Any]) -> None:
+    """
+    Restore raw (uncurated) sorting by removing official curation and re-populating tables.
+
+    This function:
+    1. Deletes the OfficialCuration entry (which cascades to ApplyOfficialCuration)
+    2. Deletes the curated SortedSpikes entry (which cascades to downstream tables)
+    3. Re-populates SortedSpikes (will use raw analyzer since no official curation exists)
+    4. Re-populates downstream tables (Waveform, SortingQuality, SyncedSpikes)
+
+    Args:
+        key: Dictionary key identifying the sorting task. Must contain:
+            - experiment_name
+            - block_start (datetime or string)
+            - block_end (datetime or string)
+            - electrode_group
+            - paramset_id
+    """
+    # Check if there's an official curation
+    official_curation = spike_sorting_curation.OfficialCuration & key
+    if not official_curation:
+        print("No official curation found for this session. Nothing to restore.")
+        return
+
+    curation_id = official_curation.fetch1("curation_id")
+    print(f"Restoring raw sorting (removing official curation_id={curation_id})...")
+
+    # Delete OfficialCuration entry (this will cascade to ApplyOfficialCuration)
+    print("Deleting OfficialCuration entry...")
+    official_curation.delete()
+    print("OfficialCuration and ApplyOfficialCuration entries deleted.")
+
+    # Delete the SortedSpikes entry (this will cascade to downstream tables)
+    # This should exist if OfficialCuration existed, but check to be safe
+    sorted_spikes_entry = spike_sorting.SortedSpikes & key
+    if sorted_spikes_entry:
+        print("Deleting SortedSpikes entry and downstream tables...")
+        sorted_spikes_entry.delete()
+        print("SortedSpikes and downstream tables deleted.")
+    else:
+        print("Warning: No SortedSpikes entry found to delete. Proceeding with re-population.")
+
+    # Re-populate SortedSpikes (will now use raw analyzer since no official curation exists)
+    print("Re-populating SortedSpikes with raw (uncurated) data...")
+    spike_sorting.SortedSpikes.populate(key)
+    print("SortedSpikes re-populated.")
+
+    # Re-populate downstream tables
+    print("Re-populating downstream tables...")
+    print("Populating Waveform...")
+    spike_sorting.Waveform.populate(key)
+    print("Populating SortingQuality...")
+    spike_sorting.SortingQuality.populate(key)
+    print("Populating SyncedSpikes...")
+    spike_sorting.SyncedSpikes.populate(key)
+    print("Downstream tables re-populated.")
+
+    print(f"Successfully restored raw sorting. All tables now use uncurated data.")
+
+
 if __name__ == "__main__":
     # Example key - modify these values for your session
     key = {
@@ -257,3 +317,7 @@ if __name__ == "__main__":
     # Option 3: Save curation and immediately make it official and apply it
     # Uncomment the line below to use this option:
     # save_and_make_official(key, local_root_dir, description=description)
+
+    # Option 4: Restore raw (uncurated) sorting
+    # Uncomment the line below to use this option:
+    # restore_raw_sorting(key)
