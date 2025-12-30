@@ -16,7 +16,7 @@ from aeon.dj_pipeline import spike_sorting, spike_sorting_curation
 
 def save_curation(
     key: Dict[str, Any], local_root_dir: Path, description: str = ""
-) -> None:
+) -> int:
     """
     Save manual curation results from SpikeInterface GUI to the database.
 
@@ -134,6 +134,100 @@ def save_curation(
     print(f"Successfully saved curation with curation_id={next_curation_id}")
     print(f"Curation file saved as: {curated_file_path}")
 
+    return next_curation_id
+
+
+def make_official_curation(
+    key: Dict[str, Any], curation_id: int, local_root_dir: Path
+) -> None:
+    """
+    Designate an existing curation as official and apply it to update the database.
+
+    Args:
+        key: Dictionary key identifying the sorting task. Must contain:
+            - experiment_name
+            - block_start (datetime or string)
+            - block_end (datetime or string)
+            - electrode_group
+            - paramset_id
+        curation_id: The curation_id of the ManualCuration entry to make official.
+        local_root_dir: Path to the local mount of the server volume where
+            the sorting data is stored. This should point to the root directory
+            that contains experiment folders. Can be a string or Path object.
+    """
+    # Get the SpikeSorting key
+    spike_sorting_key = (spike_sorting.SpikeSorting & key).fetch1("KEY")
+
+    # Verify the curation exists
+    curation_key = {**spike_sorting_key, "curation_id": curation_id}
+    if not (spike_sorting_curation.ManualCuration & curation_key):
+        raise ValueError(
+            f"Curation with curation_id={curation_id} not found for this sorting task."
+        )
+
+    # Get the SortedSpikes key (need to find the one with curation_id=-1, the raw sorting)
+    sorted_spikes_key = (spike_sorting.SortedSpikes & key & {"curation_id": -1}).fetch1(
+        "KEY"
+    )
+
+    # Check if OfficialCuration already exists for this SortedSpikes
+    if spike_sorting_curation.OfficialCuration & sorted_spikes_key:
+        existing_curation = (
+            spike_sorting_curation.OfficialCuration & sorted_spikes_key
+        ).fetch1()
+        if existing_curation["curation_id"] != curation_id:
+            raise ValueError(
+                f"An official curation already exists for this session "
+                f"(curation_id={existing_curation['curation_id']}). "
+                f"Please remove it first if you want to set a different one."
+            )
+        else:
+            print(f"Official curation with curation_id={curation_id} already exists.")
+            print("Triggering ApplyOfficialCuration.populate()...")
+            spike_sorting_curation.ApplyOfficialCuration.populate(sorted_spikes_key)
+            return
+
+    # Create OfficialCuration entry
+    official_curation_entry = {
+        **sorted_spikes_key,
+        **spike_sorting_key,
+        "curation_id": curation_id,
+    }
+    spike_sorting_curation.OfficialCuration.insert1(
+        official_curation_entry, skip_duplicates=True
+    )
+
+    print(f"Created OfficialCuration entry for curation_id={curation_id}")
+    print("Triggering ApplyOfficialCuration.populate()...")
+
+    # Trigger the application
+    spike_sorting_curation.ApplyOfficialCuration.populate(sorted_spikes_key)
+
+
+def save_and_make_official(
+    key: Dict[str, Any], local_root_dir: Path, description: str = ""
+) -> None:
+    """
+    Save curation and immediately make it official and apply it.
+
+    Args:
+        key: Dictionary key identifying the sorting task. Must contain:
+            - experiment_name
+            - block_start (datetime or string)
+            - block_end (datetime or string)
+            - electrode_group
+            - paramset_id
+        local_root_dir: Path to the local mount of the server volume where
+            the sorting data is stored. This should point to the root directory
+            that contains experiment folders. Can be a string or Path object.
+        description: Optional description/note for this curation.
+    """
+    # Save the curation first
+    curation_id = save_curation(key, local_root_dir, description=description)
+
+    # Make it official and apply it
+    make_official_curation(key, curation_id, local_root_dir)
+
 
 if __name__ == "__main__":
     # Example key - modify these values for your session
@@ -151,4 +245,15 @@ if __name__ == "__main__":
     # Optional description for this curation
     description = ""
 
-    save_curation(key, local_root_dir, description=description)
+    # Option 1: Save curation only (without making it official)
+    # Uncomment the line below to use this option:
+    # save_curation(key, local_root_dir, description=description)
+
+    # Option 2: Make an existing curation official and apply it
+    # Uncomment the lines below to use this option:
+    # curation_id = 1  # The curation_id of the ManualCuration entry to make official
+    # make_official_curation(key, curation_id, local_root_dir)
+
+    # Option 3: Save curation and immediately make it official and apply it
+    # Uncomment the line below to use this option:
+    # save_and_make_official(key, local_root_dir, description=description)
