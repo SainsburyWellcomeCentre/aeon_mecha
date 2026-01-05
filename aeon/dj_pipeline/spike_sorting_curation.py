@@ -176,7 +176,7 @@ class ApplyOfficialCuration(dj.Imported):
             logger.info(
                 "Deleting old SortedSpikes (curation_id=-1) and downstream tables..."
             )
-            (spike_sorting.SortedSpikes & key).delete()
+            (spike_sorting.SortedSpikes & key).delete(safemode=False)
             logger.info(
                 "Deleted SortedSpikes (downstream tables auto-deleted by DataJoint)"
             )
@@ -517,7 +517,7 @@ def restore_raw_sorting(key: dict) -> None:
 
     # Delete OfficialCuration entry (this will cascade to ApplyOfficialCuration)
     logger.info("Deleting OfficialCuration entry...")
-    official_curation.delete()
+    official_curation.delete(safemode=False)
     logger.info("OfficialCuration and ApplyOfficialCuration entries deleted.")
 
     # Delete the SortedSpikes entry (this will cascade to downstream tables)
@@ -525,7 +525,7 @@ def restore_raw_sorting(key: dict) -> None:
     sorted_spikes_entry = spike_sorting.SortedSpikes & key
     if sorted_spikes_entry:
         logger.info("Deleting SortedSpikes entry and downstream tables...")
-        sorted_spikes_entry.delete()
+        sorted_spikes_entry.delete(safemode=False)
         logger.info("SortedSpikes and downstream tables deleted.")
     else:
         logger.warning("No SortedSpikes entry found to delete.")
