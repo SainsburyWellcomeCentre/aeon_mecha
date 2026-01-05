@@ -273,6 +273,7 @@ def launch_spikeinterface_gui(
     gui_dir = analyzer_dir / "spikeinterface_gui"
     gui_dir.mkdir(parents=True, exist_ok=True)
     curation_data_file = gui_dir / "curation_data.json"
+    metadata_file = gui_dir / "curation_metadata.json"
 
     if parent_curation_id is not None:
         # Get the SpikeSorting key to query ManualCuration
@@ -311,6 +312,18 @@ def launch_spikeinterface_gui(
         logger.info(f"Loading parent curation (curation_id={parent_curation_id})...")
         shutil.copy2(parent_file, curation_data_file)
         logger.info(f"Copied parent curation to: {curation_data_file}")
+
+        # Save parent_curation_id to metadata file for later use in save_manual_curation()
+        with open(metadata_file, "w") as f:
+            json.dump({"parent_curation_id": parent_curation_id}, f)
+        logger.info(f"Saved parent curation metadata to: {metadata_file}")
+
+    # Handle metadata file when parent_curation_id is None
+    if parent_curation_id is None:
+        # Delete metadata file if it exists (clearing any previous parent)
+        if metadata_file.exists():
+            metadata_file.unlink()
+            logger.info("Cleared previous parent curation metadata (starting from raw)")
 
     # Check for existing curation_data.json file (if not loading from parent)
     if curation_data_file.exists() and parent_curation_id is None:
@@ -409,13 +422,29 @@ def save_manual_curation(key: dict, description: str = "") -> int:
     curation_data_file.unlink()
     logger.info(f"Deleted original curation_data.json (saved as {curated_file_name})")
 
+    # Read parent_curation_id from metadata file if it exists
+    metadata_file = curation_data_file.parent / "curation_metadata.json"
+    parent_curation_id = -1  # Default: based on raw sorting results
+    if metadata_file.exists():
+        try:
+            with open(metadata_file, "r") as f:
+                metadata = json.load(f)
+                parent_curation_id = metadata.get("parent_curation_id", -1)
+            logger.info(f"Using parent_curation_id={parent_curation_id} from metadata file")
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(
+                f"Failed to read parent_curation_id from metadata file: {e}. "
+                "Using default parent_curation_id=-1"
+            )
+            parent_curation_id = -1
+
     # Prepare ManualCuration entry
     curation_datetime = datetime.now(UTC)
     curation_entry = {
         **spike_sorting_key,
         "curation_id": next_curation_id,
         "curation_datetime": curation_datetime,
-        "parent_curation_id": -1,  # Based on raw sorting results
+        "parent_curation_id": parent_curation_id,
         "curation_method": "SpikeInterface",
         "description": description,
     }
@@ -431,6 +460,11 @@ def save_manual_curation(key: dict, description: str = "") -> int:
         "file": curated_file_path,
     }
     ManualCuration.File.insert1(file_entry)
+
+    # Clean up metadata file after successful save (metadata is now in database)
+    if metadata_file.exists():
+        metadata_file.unlink()
+        logger.info("Deleted curation metadata file (metadata now in database)")
 
     logger.info(f"Successfully saved curation with curation_id={next_curation_id}")
     logger.info(f"Curation file saved as: {curated_file_path}")
