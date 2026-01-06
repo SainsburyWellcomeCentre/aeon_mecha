@@ -634,8 +634,13 @@ class SortedSpikes(dj.Imported):
             official_curation = spike_sorting_curation_module.OfficialCuration & key
             if official_curation:
                 curation_id = official_curation.fetch1("curation_id")
-                analyzer_output_dir = (
-                    output_dir / f"sorting_analyzer_curated_id{curation_id}"
+                # Fetch applied analyzer path from database
+                analyzer_output_dir = Path(
+                    (
+                        spike_sorting_curation_module.ManualCuration.File
+                        & key
+                        & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
+                    ).fetch1("file")
                 )
                 logger.info(
                     f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
@@ -785,8 +790,17 @@ class Waveform(dj.Imported):
         # Get curation_id from SortedSpikes to determine which analyzer to use
         curation_id = (SortedSpikes & key).fetch1("curation_id")
         if curation_id != -1:
-            analyzer_output_dir = (
-                output_dir / f"sorting_analyzer_curated_id{curation_id}"
+            # Fetch applied analyzer path from database
+            import importlib
+            spike_sorting_curation_module = importlib.import_module(
+                "aeon.dj_pipeline.spike_sorting_curation"
+            )
+            analyzer_output_dir = Path(
+                (
+                    spike_sorting_curation_module.ManualCuration.File
+                    & key
+                    & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
+                ).fetch1("file")
             )
             logger.info(
                 f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
@@ -869,8 +883,17 @@ class SortingQuality(dj.Imported):
         # Get curation_id from SortedSpikes to determine which analyzer to use
         curation_id = (SortedSpikes & key).fetch1("curation_id")
         if curation_id != -1:
-            analyzer_output_dir = (
-                output_dir / f"sorting_analyzer_curated_id{curation_id}"
+            # Fetch applied analyzer path from database
+            import importlib
+            spike_sorting_curation_module = importlib.import_module(
+                "aeon.dj_pipeline.spike_sorting_curation"
+            )
+            analyzer_output_dir = Path(
+                (
+                    spike_sorting_curation_module.ManualCuration.File
+                    & key
+                    & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
+                ).fetch1("file")
             )
             logger.info(
                 f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"

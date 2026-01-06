@@ -92,6 +92,8 @@ The table includes several important attributes. The `curation_datetime` field s
 
 The `ManualCuration.File` part table stores the file path information for each curation. It includes a `file_name` field storing the filename (e.g., "curation_data_id1.json") and a `file` field that uses DataJoint's filepath storage to reference the actual curation JSON file on disk. This separation allows the system to track file locations while keeping the main table focused on curation metadata.
 
+When an official curation is applied (via `ApplyOfficialCuration`), the system also stores the path to the curated analyzer directory in `ManualCuration.File` with `file_name="curation_applied_analyzer"`. This allows the system to fetch the applied analyzer directory path from the database instead of relying on naming conventions, making the system more maintainable and flexible.
+
 #### `OfficialCuration` (Manual Table)
 
 The `OfficialCuration` table designates which manual curation should be considered the "official" version for a given session. This table has a simple structure: its primary key inherits from `spike_sorting.SortedSpikes`, ensuring a one-to-one relationship with sorted spike data, and it contains a single attribute `curation_id` that references the `ManualCuration` table. This design enforces the constraint that only one curation can be official at a time for any given sorting session.
@@ -151,7 +153,7 @@ The sorting root directory is retrieved using the `get_sorting_root_dir()` funct
 
 The output directory for a specific sorting session is stored in the `PreProcessing` table's `sorting_output_dir` field as a relative path. The system retrieves this path using `sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")`, combining the root directory with the session-specific relative path. This design allows the system to work with data stored in various locations while maintaining a consistent interface.
 
-The analyzer directories follow a predictable pattern. The raw analyzer is always located at `output_dir / "sorting_analyzer"`, while curated analyzers are stored at `output_dir / f"sorting_analyzer_curated_id{curation_id}"`. This naming convention makes it easy to identify which analyzer is which and allows the system to automatically construct paths based on the `curation_id` stored in the database.
+The analyzer directories follow a predictable pattern. The raw analyzer is always located at `output_dir / "sorting_analyzer"`, while curated analyzers are stored at `output_dir / f"sorting_analyzer_curated_id{curation_id}"`. When an official curation is applied, the system stores the curated analyzer directory path in `ManualCuration.File` with `file_name="curation_applied_analyzer"`, allowing the system to fetch the path from the database instead of constructing it from a naming convention. This provides a single source of truth and makes the system more maintainable.
 
 ### File Lifecycle and Naming Conventions
 
@@ -163,7 +165,7 @@ The `curation_metadata.json` file is another temporary file that tracks the `par
 
 Saved curation files follow the pattern `curation_data_id{curation_id}.json` and are permanent storage files. These files are created when a curation is saved to the database and are never automatically deleted by the system. They serve as the source of truth for what changes were made in each curation and are referenced by the database through the `ManualCuration.File` table. The naming convention makes it easy to identify which curation a file represents and ensures that multiple curations can coexist in the same directory.
 
-Curated analyzer folders are created when an official curation is applied and follow the pattern `sorting_analyzer_curated_id{curation_id}`. These folders contain complete `SortingAnalyzer` objects with the curation applied and all extensions recomputed. They are permanent storage that remains on disk even if the curation is later replaced or the raw sorting is restored, allowing researchers to access historical curated versions if needed.
+Curated analyzer folders are created when an official curation is applied and follow the pattern `sorting_analyzer_curated_id{curation_id}`. These folders contain complete `SortingAnalyzer` objects with the curation applied and all extensions recomputed. They are permanent storage that remains on disk even if the curation is later replaced or the raw sorting is restored, allowing researchers to access historical curated versions if needed. The path to each curated analyzer directory is stored in `ManualCuration.File` with `file_name="curation_applied_analyzer"`, providing a database-backed source of truth for the directory location.
 
 ---
 
@@ -267,7 +269,7 @@ The method loads the curation dictionary from the JSON file and retrieves the ou
 
 The actual curation application is performed using SpikeInterface's `apply_curation()` function. This function takes the sorting analyzer and curation dictionary as inputs and uses "soft" merging mode, which enables lazy recomputation of extensions. This means that only units affected by the curation have their metrics recomputed, while unchanged units retain their existing computed values. This approach is much more efficient than full recalculation, especially for large datasets. The function returns a new `SortingAnalyzer` object in memory with the curation applied.
 
-After applying the curation, the method tracks how many new units were created (through splits or merges) and how many were removed. It then saves the curated analyzer to a new directory named `sorting_analyzer_curated_id{curation_id}`. This separation ensures that the raw analyzer in `sorting_analyzer` remains untouched.
+After applying the curation, the method tracks how many new units were created (through splits or merges) and how many were removed. It then saves the curated analyzer to a new directory named `sorting_analyzer_curated_id{curation_id}` and stores the directory path in `ManualCuration.File` with `file_name="curation_applied_analyzer"`. This separation ensures that the raw analyzer in `sorting_analyzer` remains untouched, and the database provides a reliable source of truth for the curated analyzer location.
 
 Before proceeding with database updates, the method checks the current curation state in `SortedSpikes`. If the `curation_id` in `SortedSpikes` already matches the curation being applied, it logs an informational message and returns, making the operation idempotent. If a different curation is currently applied, it raises a `ValueError` with instructions to restore the raw sorting first. This validation prevents inconsistent states and ensures that curations are applied in a controlled manner.
 
@@ -353,9 +355,9 @@ spike_sorting_curation.make_curation_official(key, curation_id)
 
 This function creates an entry in the `OfficialCuration` table, which triggers the worker manager to detect that `ApplyOfficialCuration` needs to be populated. The worker manager then calls `ApplyOfficialCuration.populate(key)`, which in turn calls `ApplyOfficialCuration.make(key)`.
 
-The `make()` method performs the actual application of the curation. It loads the curation JSON file, loads the raw sorting analyzer, and applies the curation using SpikeInterface's `apply_curation()` function with soft merging mode for efficient lazy recomputation. It saves the curated analyzer to `sorting_analyzer_curated_id{curation_id}/` and deletes the old `SortedSpikes` entry (which cascades to all downstream tables). The worker manager then automatically re-populates `SortedSpikes` and all downstream tables (`Waveform`, `SortingQuality`, `SyncedSpikes`) using the curated analyzer.
+The `make()` method performs the actual application of the curation. It loads the curation JSON file, loads the raw sorting analyzer, and applies the curation using SpikeInterface's `apply_curation()` function with soft merging mode for efficient lazy recomputation. It saves the curated analyzer to `sorting_analyzer_curated_id{curation_id}/` and stores the path in `ManualCuration.File` with `file_name="curation_applied_analyzer"`. It then deletes the old `SortedSpikes` entry (which cascades to all downstream tables). The worker manager then automatically re-populates `SortedSpikes` and all downstream tables (`Waveform`, `SortingQuality`, `SyncedSpikes`) using the curated analyzer, which is located by fetching the path from the database.
 
-The result is that `SortedSpikes` now has `curation_id={curation_id}` instead of -1, indicating that curated data is being used. All downstream tables automatically use the curated analyzer because they read the `curation_id` from `SortedSpikes` and select the appropriate analyzer directory. The raw analyzer remains untouched in `sorting_analyzer/`, and the curated analyzer is available in `sorting_analyzer_curated_id{curation_id}/`.
+The result is that `SortedSpikes` now has `curation_id={curation_id}` instead of -1, indicating that curated data is being used. All downstream tables automatically use the curated analyzer because they read the `curation_id` from `SortedSpikes` and fetch the analyzer directory path from `ManualCuration.File`. The raw analyzer remains untouched in `sorting_analyzer/`, and the curated analyzer is available in `sorting_analyzer_curated_id{curation_id}/`.
 
 ---
 
@@ -425,7 +427,7 @@ The curation system integrates with the existing spike sorting pipeline through 
 
 The `SortedSpikes` table was modified to include a `curation_id` attribute (not part of the primary key) that indicates which curation is currently applied. This attribute defaults to -1, indicating raw (uncurated) sorting. When an official curation is applied, this attribute is set to the `curation_id` of the official curation.
 
-The `SortedSpikes.make()` method was modified to check for an `OfficialCuration` entry when determining which analyzer to load. If an official curation exists, it uses the curated analyzer from `sorting_analyzer_curated_id{curation_id}/`; otherwise, it uses the raw analyzer from `sorting_analyzer/`. The method stores the `curation_id` in the `SortedSpikes` entry, making it available for downstream tables.
+The `SortedSpikes.make()` method was modified to check for an `OfficialCuration` entry when determining which analyzer to load. If an official curation exists, it fetches the curated analyzer directory path from `ManualCuration.File` with `file_name="curation_applied_analyzer"`; otherwise, it uses the raw analyzer from `sorting_analyzer/`. The method stores the `curation_id` in the `SortedSpikes` entry, making it available for downstream tables.
 
 Downstream tables like `Waveform` and `SortingQuality` were modified to read the `curation_id` from `SortedSpikes` and use it to determine which analyzer directory to use. This ensures that all downstream processing uses consistent data sources. The `SyncedSpikes` table automatically uses the correct analyzer because it depends on `SortedSpikes` and inherits the curation context.
 

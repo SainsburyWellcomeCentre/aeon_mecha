@@ -141,6 +141,17 @@ class ApplyOfficialCuration(dj.Imported):
         curated_analyzer_dir = output_dir / f"sorting_analyzer_curated_id{curation_id}"
         logger.info(f"Saving curated analyzer to: {curated_analyzer_dir}")
         curated_analyzer.save(folder=curated_analyzer_dir, overwrite=True)
+        
+        # Store the applied analyzer directory path in ManualCuration.File
+        analyzer_file_entry = {
+            **key,
+            "curation_id": curation_id,
+            "file_name": "curation_applied_analyzer",
+            "file": curated_analyzer_dir,
+        }
+        # Insert or replace (can happen if user applies, reverts, then re-applies same curation)
+        ManualCuration.File.insert1(analyzer_file_entry, replace=True)
+        logger.debug(f"Stored applied analyzer path in database for curation_id={curation_id}")
 
         # Check current curation state in SortedSpikes
         # There can only be one SortedSpikes entry per primary key (curation_id is an attribute, not part of PK)
@@ -276,11 +287,8 @@ def launch_spikeinterface_gui(
     metadata_file = gui_dir / "curation_metadata.json"
 
     if parent_curation_id is not None:
-        # Get the SpikeSorting key to query ManualCuration
-        spike_sorting_key = (spike_sorting.SpikeSorting & key).fetch1("KEY")
-
         # Get the parent curation file
-        parent_curation_key = {**spike_sorting_key, "curation_id": parent_curation_id}
+        parent_curation_key = {**key, "curation_id": parent_curation_id}
         if not (ManualCuration & parent_curation_key):
             raise ValueError(
                 f"Parent curation with curation_id={parent_curation_id} not found "
@@ -388,11 +396,8 @@ def save_manual_curation(key: dict, description: str = "") -> int:
             f"Please ensure you have saved your curation in the SI GUI using the 'Save in analyzer' button."
         )
 
-    # Get the SpikeSorting key
-    spike_sorting_key = (spike_sorting.SpikeSorting & key).fetch1("KEY")
-
     # Find the next available curation_id
-    existing_ids = (ManualCuration & spike_sorting_key).fetch("curation_id")
+    existing_ids = (ManualCuration & key).fetch("curation_id")
     next_curation_id = max(existing_ids) + 1 if len(existing_ids) > 0 else 1
 
     # Copy curation_data.json with curation_id suffix
@@ -441,7 +446,7 @@ def save_manual_curation(key: dict, description: str = "") -> int:
     # Prepare ManualCuration entry
     curation_datetime = datetime.now(UTC)
     curation_entry = {
-        **spike_sorting_key,
+        **key,
         "curation_id": next_curation_id,
         "curation_datetime": curation_datetime,
         "parent_curation_id": parent_curation_id,
@@ -454,7 +459,7 @@ def save_manual_curation(key: dict, description: str = "") -> int:
 
     # Insert the curated file into ManualCuration.File
     file_entry = {
-        **spike_sorting_key,
+        **key,
         "curation_id": next_curation_id,
         "file_name": curated_file_name,
         "file": curated_file_path,
@@ -485,11 +490,8 @@ def make_curation_official(key: dict, curation_id: int) -> None:
             - paramset_id
         curation_id: The curation_id of the ManualCuration entry to make official.
     """
-    # Get the SpikeSorting key
-    spike_sorting_key = (spike_sorting.SpikeSorting & key).fetch1("KEY")
-
     # Verify the curation exists
-    curation_key = {**spike_sorting_key, "curation_id": curation_id}
+    curation_key = {**key, "curation_id": curation_id}
     if not (ManualCuration & curation_key):
         raise ValueError(
             f"Curation with curation_id={curation_id} not found for this sorting task."
@@ -514,9 +516,9 @@ def make_curation_official(key: dict, curation_id: int) -> None:
             return
 
     # Create OfficialCuration entry
+    # sorted_spikes_key already contains SpikeSorting fields (through inheritance)
     official_curation_entry = {
         **sorted_spikes_key,
-        **spike_sorting_key,
         "curation_id": curation_id,
     }
     OfficialCuration.insert1(official_curation_entry, skip_duplicates=True)
