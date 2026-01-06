@@ -21,6 +21,41 @@ The system is designed around a flexible curation model that supports multiple m
 
 The architecture separates concerns cleanly: user-facing scripts in the `scripts` folder provide simple interfaces for common operations, while the core logic resides in the pipeline module (`spike_sorting_curation.py`), ensuring that all curation operations are properly integrated with the DataJoint database schema. This design allows the system to automatically track curation lineage, manage file storage, and coordinate with the worker manager for asynchronous processing.
 
+### Workflow Overview
+
+The following diagram provides a high-level overview of the curation workflow:
+
+```mermaid
+flowchart TD
+    Raw["Raw Sorting<br/>• curation_id = -1<br/>• Automated results"] -->|"launch_spikeinterface_gui()<br/>Load raw analyzer"| Edit["Edit in SpikeInterface GUI<br/>• User makes manual changes<br/>• Merge/split units, label quality"]
+    Edit -->|"save_manual_curation()<br/>Assigns curation_id"| Manual["ManualCuration Table<br/>• curation_id: 1, 2, 3...<br/>• Multiple curations allowed per session<br/>• Stored in database"]
+    Manual -->|"make_curation_official()<br/>Designate as authoritative"| Official["OfficialCuration Table<br/>• One official curation per session<br/>• Triggers worker manager"]
+    Official -->|"ApplyOfficialCuration.make()<br/>Apply curation to analyzer"| Applied["SortedSpikes Table<br/>• curation_id: N<br/>• Uses curated analyzer<br/>• Replaces raw data"]
+    Applied --> Downstream["Downstream Tables<br/>• Waveform<br/>• SortingQuality<br/>• SyncedSpikes<br/>• All use curated data"]
+    
+    Manual -.->|"launch_spikeinterface_gui()<br/>with parent_curation_id<br/>Load parent curation"| Edit
+    
+    Official -->|"restore_raw_sorting()<br/>Revert to raw state<br/>Delete official curation"| Raw
+    
+    RawFile["File: sorting_analyzer/<br/>• Raw analyzer directory<br/>• Never modified"] -.->|"Source data"| Raw
+    ManualFile["File: curation_data_id1.json<br/>(id1, id2, id3...)<br/>• Stored in spikeinterface_gui/<br/>• Permanent curation file"] -.->|"Saved as"| Manual
+    AppliedFile["File: sorting_analyzer_curated_id1/<br/>(id1, id2, id3...)<br/>• Curated analyzer directory<br/>• Created when made official"] -.->|"Used by"| Applied
+    
+    classDef raw fill:#e0f2fe,stroke:#0ea5e9,stroke-width:2.5px
+    classDef user fill:#e0f2fe,stroke:#0284c7,stroke-width:2.5px
+    classDef manual fill:#faf5ff,stroke:#a855f7,stroke-width:2.5px
+    classDef official fill:#fff7ed,stroke:#f97316,stroke-width:2.5px
+    classDef applied fill:#f0fdf4,stroke:#22c55e,stroke-width:2.5px
+    classDef file fill:#fafaf9,stroke:#a8a29e,stroke-width:1.5px
+    
+    class Raw raw
+    class Edit user
+    class Manual manual
+    class Official official
+    class Applied,Downstream applied
+    class RawFile,ManualFile,AppliedFile file
+```
+
 ### Key Concepts
 
 Understanding the curation system requires familiarity with several key concepts. **Raw sorting** refers to the initial automated spike sorting results before any manual intervention. These results are never modified by the curation system, ensuring that the original data remains available for comparison or re-analysis.
