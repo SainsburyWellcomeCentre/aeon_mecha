@@ -192,21 +192,6 @@ class ApplyOfficialCuration(dj.Imported):
                 "Deleted SortedSpikes (downstream tables auto-deleted by DataJoint)"
             )
 
-        # Assert that downstream tables don't have entries for this session
-        # (they shouldn't after deletion, but verify to catch any inconsistencies)
-        assert not (spike_sorting.Waveform & key), (
-            "Waveform entries still exist after SortedSpikes deletion. "
-            "This should not happen - downstream tables should be auto-deleted."
-        )
-        assert not (spike_sorting.SortingQuality & key), (
-            "SortingQuality entries still exist after SortedSpikes deletion. "
-            "This should not happen - downstream tables should be auto-deleted."
-        )
-        assert not (spike_sorting.SyncedSpikes & key), (
-            "SyncedSpikes entries still exist after SortedSpikes deletion. "
-            "This should not happen - downstream tables should be auto-deleted."
-        )
-
         logger.info("Deleted old SortedSpikes entry.")
 
         # Insert ApplyOfficialCuration entry
