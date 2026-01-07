@@ -28,34 +28,16 @@ Example usage:
     Or import and call: launch_si_gui(key, parent_curation_id=None)
 """
 
-from typing import Dict, Any, Optional
 from aeon.dj_pipeline import spike_sorting_curation
-
-
-def launch_si_gui(
-    key: Dict[str, Any], parent_curation_id: Optional[int] = None
-) -> None:
-    """
-    Launch SpikeInterface GUI for manual spike sorting curation.
-
-    This is a wrapper around spike_sorting_curation.launch_spikeinterface_gui().
-
-    Args:
-        key: Dictionary key identifying the sorting task. Must contain:
-            - experiment_name
-            - block_start (datetime or string)
-            - block_end (datetime or string)
-            - electrode_group
-            - paramset_id
-        parent_curation_id: Optional curation_id to base this curation on. If provided,
-            the curation_data.json file will be initialized from the specified curation.
-            If None, starts from the raw sorting results.
-    """
-    spike_sorting_curation.launch_spikeinterface_gui(key, parent_curation_id)
-
 
 if __name__ == "__main__":
     # Example key - modify these values for your session
+    # The key must contain:
+    #   - experiment_name: Your experiment identifier
+    #   - block_start: Start datetime of the block (string or datetime)
+    #   - block_end: End datetime of the block (string or datetime)
+    #   - electrode_group: Electrode group identifier (e.g., "0-143")
+    #   - paramset_id: Parameter set ID (e.g., "250")
     key = {
         "experiment_name": "social-ephys0.1-aeon3",
         "block_start": "2024-06-04 11:00:00",
@@ -64,7 +46,13 @@ if __name__ == "__main__":
         "paramset_id": "250",
     }
 
-    launch_si_gui(key)
+    # Optional: parent_curation_id to base this curation on an existing curation.
+    # If provided, the curation_data.json file will be initialized from the specified curation.
+    # If None, starts from the raw sorting results.
+    parent_curation_id = None
+
+    # Launch SpikeInterface GUI for manual curation
+    spike_sorting_curation.launch_spikeinterface_gui(key, parent_curation_id)
 
     # IMPORTANT: While using the SpikeInterface GUI for manual curation,
     # remember to periodically click the "Save in analyzer" button to save your work.
