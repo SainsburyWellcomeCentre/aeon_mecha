@@ -192,8 +192,6 @@ class ApplyOfficialCuration(dj.Imported):
                 "Deleted SortedSpikes (downstream tables auto-deleted by DataJoint)"
             )
 
-        logger.info("Deleted old SortedSpikes entry.")
-
         # Insert ApplyOfficialCuration entry
         self.insert1(
             {
@@ -211,6 +209,8 @@ class ApplyOfficialCuration(dj.Imported):
             f"  Curated analyzer saved to: {curated_analyzer_dir}\n"
             f"  Raw analyzer remains in: {output_dir / 'sorting_analyzer'}"
         )
+
+        logger.info("Run .populate() on spike_sorting.SortedSpikes and downstream tables to load the curated sorting results into the pipeline.")
 
 
 # Helper functions for curation workflows
@@ -509,6 +509,7 @@ def make_curation_official(key: dict, curation_id: int) -> None:
     OfficialCuration.insert1(official_curation_entry, skip_duplicates=True)
 
     logger.info(f"Created OfficialCuration entry for curation_id={curation_id}")
+    logger.info("Run ApplyOfficialCuration.populate() to apply the curation to the analyzer.")
 
 
 def restore_raw_sorting(key: dict) -> None:
@@ -530,7 +531,7 @@ def restore_raw_sorting(key: dict) -> None:
     # Check if there's an official curation
     official_curation = OfficialCuration & key
     if not official_curation:
-        logger.info("No official curation found for this session. Nothing to restore.")
+        logger.info("No official curation found. Data is already in uncurated form.")
         return
 
     curation_id = official_curation.fetch1("curation_id")
@@ -542,13 +543,11 @@ def restore_raw_sorting(key: dict) -> None:
     logger.info("OfficialCuration and ApplyOfficialCuration entries deleted.")
 
     # Delete the SortedSpikes entry (this will cascade to downstream tables)
-    # This should exist if OfficialCuration existed, but check to be safe
+    # Delete SortedSpikes entry if it exists (it should if OfficialCuration existed)
     sorted_spikes_entry = spike_sorting.SortedSpikes & key
     if sorted_spikes_entry:
         logger.info("Deleting SortedSpikes entry and downstream tables...")
         sorted_spikes_entry.delete(safemode=False)
-        logger.info("SortedSpikes and downstream tables deleted.")
+        logger.info("SortedSpikes and downstream tables deleted. Run populate to load the raw sorting results back into the pipeline.")
     else:
-        logger.warning("No SortedSpikes entry found to delete.")
-
-    logger.info("Successfully initiated restoration to raw sorting.")
+        logger.info("No SortedSpikes entry found (run populate to load the raw sorting results back into the pipeline).")
