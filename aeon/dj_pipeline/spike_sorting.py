@@ -619,8 +619,37 @@ class SortedSpikes(dj.Imported):
                 & key
         )
 
-        # Get sorter method and create output directory.
+        # Check if there's an official curation for this session
+        # If so, use the curated analyzer; otherwise use the raw analyzer
+        # Use lazy import to avoid circular dependency
+        curation_id = -1
         analyzer_output_dir = output_dir / "sorting_analyzer"
+        try:
+            # Lazy import to avoid circular dependency
+            import importlib
+
+            spike_sorting_curation_module = importlib.import_module(
+                "aeon.dj_pipeline.spike_sorting_curation"
+            )
+            official_curation = spike_sorting_curation_module.OfficialCuration & key
+            if official_curation:
+                curation_id = official_curation.fetch1("curation_id")
+                # Fetch applied analyzer path from database
+                analyzer_output_dir = Path(
+                    (
+                        spike_sorting_curation_module.ManualCuration.File
+                        & key
+                        & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
+                    ).fetch1("file")
+                )
+                logger.info(
+                    f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
+                )
+            else:
+                logger.info("Using raw analyzer (no official curation found)")
+        except Exception as e:
+            # If curation module not available or no official curation, use raw analyzer
+            logger.info(f"Using raw analyzer (curation check failed: {e})")
 
         sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
         si_sorting_: si.sorters.BaseSorter = si.load(
@@ -631,13 +660,15 @@ class SortedSpikes(dj.Imported):
             {
                 **key,
                 "execution_time": execution_time,
-                "execution_duration": (datetime.now(UTC) - execution_time).total_seconds() / 3600,
+                "execution_duration": (
+                    datetime.now(UTC) - execution_time
+                ).total_seconds()
+                / 3600,
+                "curation_id": curation_id,
             }
         )
         if si_sorting_.unit_ids.size == 0:
-            logger.info(
-                f"No units found in {sorting_file}. Skipping Unit ingestion..."
-            )
+            logger.info(f"No units found in {sorting_file}. Skipping Unit ingestion...")
             return
 
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
@@ -756,8 +787,28 @@ class Waveform(dj.Imported):
                 & key
         )
 
-        # Get sorter method and create output directory.
-        analyzer_output_dir = output_dir / "sorting_analyzer"
+        # Get curation_id from SortedSpikes to determine which analyzer to use
+        curation_id = (SortedSpikes & key).fetch1("curation_id")
+        if curation_id != -1:
+            # Fetch applied analyzer path from database
+            import importlib
+            spike_sorting_curation_module = importlib.import_module(
+                "aeon.dj_pipeline.spike_sorting_curation"
+            )
+            analyzer_output_dir = Path(
+                (
+                    spike_sorting_curation_module.ManualCuration.File
+                    & key
+                    & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
+                ).fetch1("file")
+            )
+            logger.info(
+                f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
+            )
+        else:
+            analyzer_output_dir = output_dir / "sorting_analyzer"
+            logger.info("Using raw analyzer (curation_id=-1)")
+
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
 
         self.insert1(key)
@@ -829,8 +880,28 @@ class SortingQuality(dj.Imported):
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
-        # Get sorter method and create output directory.
-        analyzer_output_dir = output_dir / "sorting_analyzer"
+        # Get curation_id from SortedSpikes to determine which analyzer to use
+        curation_id = (SortedSpikes & key).fetch1("curation_id")
+        if curation_id != -1:
+            # Fetch applied analyzer path from database
+            import importlib
+            spike_sorting_curation_module = importlib.import_module(
+                "aeon.dj_pipeline.spike_sorting_curation"
+            )
+            analyzer_output_dir = Path(
+                (
+                    spike_sorting_curation_module.ManualCuration.File
+                    & key
+                    & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
+                ).fetch1("file")
+            )
+            logger.info(
+                f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
+            )
+        else:
+            analyzer_output_dir = output_dir / "sorting_analyzer"
+            logger.info("Using raw analyzer (curation_id=-1)")
+
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
 
         self.insert1(key)
