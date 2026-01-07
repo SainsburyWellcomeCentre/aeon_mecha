@@ -1,8 +1,32 @@
 """
 Script to save manual curation results from SpikeInterface GUI to the database.
 
-This script demonstrates how to use the helper functions from the spike_sorting_curation module
-to save curations, make them official, and restore raw sorting.
+================================================================================
+IMPORTANT: THIS SCRIPT IS DESIGNED TO BE MODIFIED BEFORE RUNNING
+================================================================================
+
+This script is intended for interactive use. Before running:
+
+1. Open this file in your IDE/editor
+2. Modify the 'key' dictionary in the __main__ section (lines ~90-96) with your
+   specific session parameters:
+   - experiment_name: Your experiment identifier
+   - block_start: Start datetime of the block (string or datetime)
+   - block_end: End datetime of the block (string or datetime)
+   - electrode_group: Electrode group identifier (e.g., "0-143")
+   - paramset_id: Parameter set ID (e.g., "250")
+3. Uncomment and configure the desired operation (save, make official, restore, etc.)
+4. Run the script from your IDE (not from command line)
+
+This workflow is designed for interactive, exploratory use where you modify the
+parameters for each session you want to work with. For automated/scripted use,
+consider calling the helper functions directly from your own code.
+
+Available operations (uncomment the one you need):
+    - save_curation(): Save curation without making it official
+    - make_official_curation(): Make an existing curation official
+    - save_and_make_official(): Save and immediately make official
+    - restore_raw_sorting(): Restore raw (uncurated) sorting
 """
 
 from typing import Dict, Any

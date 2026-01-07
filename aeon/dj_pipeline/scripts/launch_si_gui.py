@@ -1,8 +1,31 @@
 """
 Script to launch SpikeInterface GUI for manual spike sorting curation.
 
-This script demonstrates how to use the launch_spikeinterface_gui helper function
-from the spike_sorting_curation module.
+================================================================================
+IMPORTANT: THIS SCRIPT IS DESIGNED TO BE MODIFIED BEFORE RUNNING
+================================================================================
+
+This script is intended for interactive use. Before running:
+
+1. Open this file in your IDE/editor
+2. Modify the 'key' dictionary in the __main__ section (lines ~36-42) with your
+   specific session parameters:
+   - experiment_name: Your experiment identifier
+   - block_start: Start datetime of the block (string or datetime)
+   - block_end: End datetime of the block (string or datetime)
+   - electrode_group: Electrode group identifier (e.g., "0-143")
+   - paramset_id: Parameter set ID (e.g., "250")
+3. Optionally modify parent_curation_id if you want to base curation on an
+   existing curation
+4. Run the script from your IDE (not from command line)
+
+This workflow is designed for interactive, exploratory use where you modify the
+parameters for each session you want to curate. For automated/scripted use,
+consider calling launch_spikeinterface_gui() directly from your own code.
+
+Example usage:
+    Modify the key dictionary below, then run: python launch_si_gui.py
+    Or import and call: launch_si_gui(key, parent_curation_id=None)
 """
 
 from typing import Dict, Any, Optional
