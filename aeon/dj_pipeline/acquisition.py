@@ -329,16 +329,13 @@ class EpochConfig(dj.Imported):
     def make(self, key):
         """Ingest metadata into EpochConfig."""
         from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_metadata import (
-            extract_epoch_config,
-            ingest_epoch_metadata,
-            insert_device_types,
-            extract_active_regions,
-            _flatten_rig_devices,
-        )
         from aeon.dj_pipeline.utils.load_new_metadata import (
             get_experiment_class,
             extract_rig_from_metadata,
+            ingest_epoch_metadata_from_rig,
+            insert_device_types,
+            extract_active_regions,
+            _flatten_rig_devices,
         )
 
         experiment_name = key["experiment_name"]
@@ -374,14 +371,13 @@ class EpochConfig(dj.Imported):
         
         epoch_config = {
             **epoch_config,
-            "metadata_file_path": metadata_yml_filepath.relative_to(data_dir).as_posix(),
+            "metadata_file_path": metadata_filepath.relative_to(data_dir).as_posix(),
         }
         
         # Define and instantiate new devices/stream tables under `streams` schema
         streams_maker.main()
         
         # Insert devices' installation/removal/settings using Rig
-        from aeon.dj_pipeline.utils.load_new_metadata import ingest_epoch_metadata_from_rig
         epoch_device_types = ingest_epoch_metadata_from_rig(experiment_name, rig, epoch_config, metadata_filepath)
         
         # Extract active regions
@@ -390,12 +386,9 @@ class EpochConfig(dj.Imported):
         self.insert1(key)
         self.Meta.insert1(epoch_config)
         self.DeviceType.insert(key | {"device_type": n} for n in epoch_device_types or {})
-        with metadata_yml_filepath.open("r") as f:
-            metadata = json.load(f)
         self.ActiveRegion.insert(
-            {**key, "region_name": k, "region_data": v} for k, v in metadata["ActiveRegion"].items()
+            {**key, "region_name": k, "region_data": v} for k, v in active_region.items()
         )
-
 
 # ------------------- ACQUISITION CHUNK --------------------
 
