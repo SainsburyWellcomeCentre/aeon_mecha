@@ -6,6 +6,30 @@ Auto-generates DataJoint table definitions for device and stream data based on P
 
 `streams_maker.py` bridges declarative Pydantic schema definitions (Experiment classes with Rig objects) and executable DataJoint tables (`streams.py`). It reads catalog entries from the database (`StreamType`, `DeviceType`, `Device`) and generates Python table classes dynamically.
 
+## Package Dependencies
+
+```
+swc.aeon.rigs (aeon_swc_rigs)          swc.aeon.schema (aeon_api)
+├── BaseSchema                          ├── BaseSchema (extends rigs)
+├── Device (config only)                ├── DataSchema (adds @data_reader support)
+├── SpinnakerCamera                     ├── data_reader decorator
+├── UndergroundFeeder                   └── Reader classes (Video, Position, Encoder)
+└── HarpDevices                                │
+                                               ▼
+                            Experiment packages (e.g., aeon_exp_foragingABC)
+                            ├── Extend device classes with @data_reader methods
+                            └── Define experiment-specific Rig(DataSchema)
+```
+
+**Key imports** (in experiment package):
+```python
+from swc.aeon.schema import BaseSchema, DataSchema, data_reader
+from swc.aeon.schema.core import Video, Position, Encoder
+from swc.aeon.schema.video import SpinnakerCamera
+from swc.aeon.schema.foraging import UndergroundFeeder
+from swc.aeon.io import reader
+```
+
 ## Architecture Flow
 
 ```
@@ -23,7 +47,8 @@ Auto-generates DataJoint table definitions for device and stream data based on P
 │ • extract_rig_from_metadata()    │
 │ • get_device_info()              │
 │ • get_device_mapper_from_rig()   │
-│ • insert_device_types()          │
+│ • insert_stream_types()          │ ← Populates StreamType (FK dependency)
+│ • insert_device_types()          │ ← Populates DeviceType, DeviceType.Stream, Device
 │ • ingest_epoch_metadata_from_rig()│
 └──────────────┬──────────────────┘
                │
@@ -55,13 +80,13 @@ Auto-generates DataJoint table definitions for device and stream data based on P
 
 ### Rig
 
-A Pydantic model representing the hardware configuration of an experiment. Contains device collections organized by category:
+A Pydantic model representing the hardware configuration of an experiment. Extends `DataSchema` (not `BaseSchema`) to enable `@data_reader` support. Contains device collections organized by category:
 
 ```python
-class Rig(BaseSchema):
-    cameras: dict[str, Camera]  # e.g., {"top": Camera(...), "side": Camera(...)}
-    feeders: dict[str, Feeder]   # e.g., {"feeder1": Feeder(...)}
-    nest: Nest                   # Single device instance
+class Rig(DataSchema):  # DataSchema enables @data_reader on child devices
+    cameras: Dict[CameraName, Camera]   # e.g., 13 cameras keyed by enum
+    feeders: Dict[FeederName, Feeder]   # e.g., 6 feeders keyed by enum
+    nest: Dict[NestName, WeightScale]   # Weight scale(s)
 ```
 
 ### Device
@@ -76,24 +101,24 @@ A physical or logical hardware unit. Each device:
 A data collection channel from a device, defined as a `@data_reader` method on the Device class:
 
 ```python
-class Camera(Device):
-    device_type = "SpinnakerCamera"
-    
+class Camera(SpinnakerCamera):
+    device_type: Literal["SpinnakerCamera"] = "SpinnakerCamera"
+
     @data_reader
-    def video(self, pattern: str) -> Video:
+    def video(self, pattern) -> reader.Video:
         """Video stream from camera."""
-        return Video(pattern=pattern)
-    
+        return Video(f"{pattern}").reader  # Note: returns .reader attribute
+
     @data_reader
-    def position(self, pattern: str) -> Position:
+    def position(self, pattern) -> reader.Position:
         """Position tracking stream."""
-        return Position(pattern=pattern)
+        return Position(f"{pattern}").reader
 ```
 
 The `@data_reader` decorator:
 - Creates a cached property on the device instance
 - Resolves file patterns using `_resolve_pattern_prefix()` based on device hierarchy
-- Returns a reader instance configured for that device's data location
+- Returns a **reader instance** (via `.reader` attribute) configured for that device's data location
 
 ### Pattern Resolution
 
@@ -142,10 +167,14 @@ This allows devices to reference their data files without hardcoding paths.
 - Uses `device.device_type` directly (no hardcoded inference)
 - Handles both dict collections and single device instances
 
+**`insert_stream_types(rig)`** *(must be called first or handled internally)*
+- Populates `StreamType` table with stream reader info
+- Required before `DeviceType.Stream` can be inserted (FK constraint)
+
 **`insert_device_types(rig, metadata_filepath)`**
 - Populates catalog tables (`DeviceType`, `DeviceType.Stream`, `Device`)
 - Only inserts devices that exist in both Rig and metadata file
-- Triggers table generation via `streams_maker.main()`
+- **Note**: Should call `insert_stream_types()` internally or rely on caller to do so
 
 **`ingest_epoch_metadata_from_rig(experiment_name, rig, epoch_config, metadata_filepath)`**
 - Inserts device installation/removal records
@@ -170,25 +199,27 @@ This allows devices to reference their data files without hardcoding paths.
 ### Pydantic Schema Definition
 
 ```python
-# Multi-stream device
-class Camera(Device):
-    device_type = "SpinnakerCamera"
-    
-    @data_reader
-    def video(self, pattern: str) -> Video:
-        return Video(pattern=pattern)
-    
-    @data_reader
-    def position(self, pattern: str) -> Position:
-        return Position(pattern=pattern)
+# Multi-stream device (extends base from swc.aeon.schema.video)
+class Camera(SpinnakerCamera):
+    trigger: TriggerName = Field(default=TriggerName.TRIGGER0)
 
-# Single-stream device
-class Nest(Device):
-    device_type = "Nest"
-    
     @data_reader
-    def weight_raw(self, pattern: str) -> WeightRaw:
-        return WeightRaw(pattern=pattern)
+    def video(self, pattern) -> reader.Video:
+        return Video(f"{pattern}").reader
+
+    @data_reader
+    def position(self, pattern) -> reader.Position:
+        return Position(f"{pattern}").reader
+
+# Multi-stream device (extends base from swc.aeon.schema.foraging)
+class Feeder(UndergroundFeeder):
+    @data_reader
+    def beam_break(self, pattern) -> reader.BitmaskEvent:
+        return BeamBreak(f"{pattern}").reader
+
+    @data_reader
+    def encoder(self, pattern) -> reader.Encoder:
+        return Encoder(f"{pattern}").reader
 ```
 
 ### Parsing Logic
@@ -279,62 +310,109 @@ This conversion is handled by `to_pascal_case()` in `load_new_metadata.py`.
 
 ## Integration Points
 
-**Called from `acquisition.py`**:
+**Called from `acquisition.py:EpochConfig.make()`**:
 ```python
-# In EpochConfig.make()
+# 1. Load experiment schema and extract Rig
 experiment_class = get_experiment_class(schema_name)
 rig = extract_rig_from_metadata(experiment_class, metadata_filepath)
 
-insert_device_types(rig, metadata_filepath)  # Populates catalog tables
-streams_maker.main()  # Generates new tables based on catalogs
-ingest_epoch_metadata_from_rig(...)  # Inserts device installations
+# 2. Insert device types (handles StreamType internally via try/except or explicit call)
+insert_device_types(rig, metadata_filepath)
+
+# 3. Generate DataJoint tables from catalog
+streams_maker.main()
+
+# 4. Insert device installation records
+ingest_epoch_metadata_from_rig(experiment_name, rig, epoch_config, metadata_filepath)
 ```
+
+**StreamType handling**: `DeviceType.Stream` has FK to `StreamType`. Options:
+1. `insert_device_types()` calls `insert_stream_types()` internally when needed (legacy pattern uses try/except)
+2. Caller explicitly calls `insert_stream_types(rig)` before `insert_device_types()`
 
 **Generated `streams.py` is imported**:
 - Direct: `from aeon.dj_pipeline import streams`
 - Fallback: Uses `VirtualModule` if import fails
 
 
-## Example: Complete Flow
+## Example: ForagingABC Complete Flow
 
-1. **Schema Definition** (Pydantic):
-   ```python
-   class ForagingABC(BaseSchema):
-       experiment: Experiment
-       
-   class Experiment(BaseSchema):
-       rig: Rig
-       
-   class Rig(BaseSchema):
-       cameras: dict[str, Camera]
-       
-   class Camera(Device):
-       device_type = "SpinnakerCamera"
-       
-       @data_reader
-       def video(self, pattern: str) -> Video:
-           return Video(pattern=pattern)
-   ```
+### 1. Schema Definition (from `aeon_exp_foragingABC/rig.py`)
 
-2. **Metadata Loading** (`load_new_metadata.py`):
-   - `get_experiment_class()` loads ForagingABC class
-   - `extract_rig_from_metadata()` extracts Rig instance from Metadata.json
-   - `get_device_info(rig)` extracts: `device_type="SpinnakerCamera"`, streams: `["Video"]`
-   - `insert_device_types()` inserts into `DeviceType` and `DeviceType.Stream` tables
+```python
+from swc.aeon.schema import BaseSchema, DataSchema, data_reader
+from swc.aeon.schema.video import SpinnakerCamera
+from swc.aeon.schema.foraging import UndergroundFeeder
+from swc.aeon.io import reader
 
-3. **Table Generation** (`streams_maker.py`):
-   - Creates `SpinnakerCamera` device table (dj.Manual)
-   - Creates `SpinnakerCameraVideo` stream table (dj.Imported)
-   - Writes to `streams.py`
+class Camera(SpinnakerCamera):
+    trigger: TriggerName = Field(default=TriggerName.TRIGGER0)
+    camera_tracking: Tracking | None = Field(default=None)
 
-4. **Device Installation** (`ingest_epoch_metadata_from_rig()`):
-   - Inserts device installation record with install time
-   - Inserts device attributes (settings/configurations)
-   - Tracks device removal time if applicable
+    @data_reader
+    def video(self, pattern) -> reader.Video:
+        return Video(f"{pattern}").reader
 
-5. **Usage**:
-   ```python
-   from aeon.dj_pipeline import streams
-   streams.SpinnakerCamera.insert1({...})  # Manual entry
-   streams.SpinnakerCameraVideo.populate()  # Auto-populate from files
-   ```
+    @data_reader
+    def position(self, pattern) -> reader.Position:
+        if self.camera_tracking is None:
+            raise ValueError(f"No tracking defined for {pattern}")
+        return Position(f"{pattern}").reader
+
+
+class Feeder(UndergroundFeeder):
+    @data_reader
+    def beam_break(self, pattern) -> reader.BitmaskEvent:
+        return BeamBreak(f"{pattern}").reader
+
+    @data_reader
+    def encoder(self, pattern) -> reader.Encoder:
+        return Encoder(f"{pattern}").reader
+
+
+class Rig(DataSchema):
+    cameras: Dict[CameraName, Camera]           # 13 cameras
+    feeders: Dict[FeederName, Feeder]           # 6 feeders
+    nest: Dict[NestName, ActivityWeightScale]   # Weight scale
+```
+
+### 2. Metadata Loading (`load_new_metadata.py`)
+
+- `get_experiment_class("swc.aeon.exp.foragingABC.experiment.ForagingABC")` → loads class
+- `extract_rig_from_metadata(ForagingABC, metadata_filepath)` → Rig instance
+- `get_device_info(rig)` extracts:
+  - Camera: `device_type="SpinnakerCamera"`, streams: `["Video", "Position"]`
+  - Feeder: `device_type="UndergroundFeeder"`, streams: `["BeamBreak", "Encoder", ...]`
+- `insert_device_types(rig, ...)` → populates `StreamType`, `DeviceType`, `DeviceType.Stream`, `Device`
+  - Handles `StreamType` insertion internally (FK dependency)
+
+### 3. Table Generation (`streams_maker.py`)
+
+Creates DataJoint tables based on catalog entries:
+- `SpinnakerCamera` (dj.Manual) - device installation tracking
+- `SpinnakerCameraVideo` (dj.Imported) - video stream data per chunk
+- `SpinnakerCameraPosition` (dj.Imported) - position tracking data
+- `UndergroundFeeder` (dj.Manual) - feeder installation tracking
+- `UndergroundFeederBeamBreak` (dj.Imported) - beam break events
+- `UndergroundFeederEncoder` (dj.Imported) - wheel encoder data
+
+### 4. Device Installation (`ingest_epoch_metadata_from_rig()`)
+
+- Inserts device installation records with `install_time`
+- Stores device attributes (serial_number, exposure_time, gain, etc.)
+- Tracks device removal times for configuration changes
+
+### 5. Usage
+
+```python
+from aeon.dj_pipeline import streams
+
+# Query installed cameras
+streams.SpinnakerCamera & {"experiment_name": "foraging-abc"}
+
+# Populate video data for all chunks
+streams.SpinnakerCameraVideo.populate()
+
+# Query encoder data
+streams.UndergroundFeederEncoder & {"experiment_name": "foraging-abc"}
+```
