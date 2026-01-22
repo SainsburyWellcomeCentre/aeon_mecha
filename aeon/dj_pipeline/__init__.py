@@ -1,11 +1,12 @@
 """DataJoint pipeline for Aeon."""
 
-import hashlib
 import logging
 import os
-import uuid
 
 import datajoint as dj
+
+# Import dict_to_uuid from utils for backward compatibility
+from aeon.dj_pipeline.utils import dict_to_uuid
 
 logger = dj.logger
 
@@ -24,15 +25,6 @@ repository_config = dj.config["custom"].get("repository_config", _default_reposi
 def get_schema_name(name) -> str:
     """Return a schema name."""
     return db_prefix + name
-
-
-def dict_to_uuid(key) -> uuid.UUID:
-    """Given a dictionary `key`, returns a hash string as UUID."""
-    hashed = hashlib.md5()
-    for k, v in sorted(key.items()):
-        hashed.update(str(k).encode())
-        hashed.update(str(v).encode())
-    return uuid.UUID(hex=hashed.hexdigest())
 
 
 def fetch_stream(query, drop_pk=True, round_microseconds=True):
