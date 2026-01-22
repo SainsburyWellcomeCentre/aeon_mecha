@@ -3,7 +3,6 @@
 import datetime
 import json
 import pathlib
-import re
 
 import datajoint as dj
 import pandas as pd
@@ -12,7 +11,6 @@ from swc.aeon.io import reader as io_reader
 
 from aeon.dj_pipeline import get_schema_name, lab, subject
 from aeon.dj_pipeline.utils import paths
-from aeon.schema import ingestion_schemas as aeon_schemas
 
 schema = dj.schema(get_schema_name("acquisition"))
 
@@ -61,11 +59,11 @@ class EventType(dj.Lookup):
 
 @schema
 class DevicesSchema(dj.Lookup):
-    definition = """
-    devices_schema_name: varchar(32)
-    """
+    """Lookup table for experiment device schemas (Pydantic Experiment class paths)."""
 
-    contents = zip(aeon_schemas.__all__, strict=False)
+    definition = """
+    devices_schema_name: varchar(128)  # Full class path, e.g., "swc.aeon.exp.foragingABC.experiment.ForagingABC"
+    """
 
 
 # ------------------- Data repository/directory ------------------------
@@ -506,181 +504,6 @@ class Chunk(dj.Manual):
         with cls.connection.transaction:
             cls.insert(chunk_list)
             cls.File.insert(file_list)
-
-
-# ------------------- ENVIRONMENT --------------------
-
-
-@schema
-class Environment(dj.Imported):
-    definition = """  # Experiment environments
-    -> Chunk
-    """
-
-    class EnvironmentState(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) timestamps
-        state: longblob
-        """
-
-    class BlockState(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) timestamps
-        pellet_ct: longblob
-        pellet_ct_thresh: longblob
-        due_time: longblob
-        """
-
-    class LightEvents(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) timestamps
-        channel: longblob
-        value: longblob
-        """
-
-    class MessageLog(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime)
-        priority: longblob
-        type: longblob
-        message: longblob
-        """
-
-    class SubjectState(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) timestamps
-        id: longblob
-        weight: longblob
-        type: longblob
-        """
-
-    class SubjectVisits(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) timestamps
-        id: longblob
-        type: longblob
-        region: longblob
-        """
-
-    class SubjectWeight(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) timestamps
-        weight: longblob
-        confidence: longblob
-        subject_id: longblob
-        int_id: longblob
-        """
-
-    def make(self, key):
-        """Ingest environment data into Environment table."""
-        chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
-
-        # Populate the part table
-        data_dirs = Experiment.get_data_directories(key)
-        devices_schema = getattr(
-            aeon_schemas,
-            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
-        )
-        device = devices_schema.Environment
-
-        self.insert1(key)
-
-        for stream_type, part_table in [
-            ("EnvironmentState", self.EnvironmentState),
-            ("BlockState", self.BlockState),
-            ("LightEvents", self.LightEvents),
-            ("MessageLog", self.MessageLog),
-            ("SubjectState", self.SubjectState),
-            ("SubjectVisits", self.SubjectVisits),
-            ("SubjectWeight", self.SubjectWeight),
-        ]:
-            stream_reader = getattr(device, stream_type)
-
-            stream_data = io_api.load(
-                root=data_dirs,
-                reader=stream_reader,
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
-
-            part_table.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
-
-
-@schema
-class EnvironmentActiveConfiguration(dj.Imported):
-    definition = """  # Environment Active Configuration
-    -> Chunk
-    """
-
-    class Name(dj.Part):
-        definition = """
-        -> master
-        time: datetime(6)  # time when the configuration is applied to the environment
-        ---
-        name: varchar(32)  # name of the environment configuration
-        value: longblob    # dictionary of the configuration
-        """
-
-    def make(self, key):
-        """Ingest active configuration data into EnvironmentActiveConfiguration table."""
-        chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
-        data_dirs = Experiment.get_data_directories(key)
-        devices_schema = getattr(
-            aeon_schemas,
-            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
-        )
-        device = devices_schema.Environment
-        stream_reader = device.EnvironmentActiveConfiguration  # expecting columns: time, name, value
-        stream_data = io_api.load(
-            root=data_dirs,
-            reader=stream_reader,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
-
-        stream_data.reset_index(inplace=True)
-        for k, v in key.items():
-            stream_data[k] = v
-
-        self.insert1(key)
-        self.Name.insert(stream_data)
 
 
 # ---- HELPERS ----

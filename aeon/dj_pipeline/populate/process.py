@@ -38,7 +38,6 @@ from datajoint_utilities.dj_worker import parse_args
 
 from aeon.dj_pipeline.populate.worker import (
     acquisition_worker,
-    analysis_worker,
     logger,
     pyrat_worker,
     streams_worker,
@@ -48,7 +47,6 @@ from aeon.dj_pipeline.populate.worker import (
 
 configured_workers = {
     "acquisition_worker": acquisition_worker,
-    "analysis_worker": analysis_worker,
     "streams_worker": streams_worker,
     "pyrat_worker": pyrat_worker,
 }
