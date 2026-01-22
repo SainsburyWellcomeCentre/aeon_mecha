@@ -19,7 +19,7 @@ import numpy as np
 from dotmap import DotMap
 from swc.aeon.io import api as io_api
 
-from aeon.dj_pipeline import dict_to_uuid
+from aeon.dj_pipeline.utils import dict_to_uuid
 from aeon.dj_pipeline.utils import streams_maker
 
 if TYPE_CHECKING:
@@ -69,6 +69,39 @@ def extract_rig_from_metadata(experiment_class: type, metadata_filepath: Path):
         return experiment.rig
     else:
         raise ValueError(f"No rig found in {experiment_class}")
+
+
+def insert_stream_types(rig: "BaseSchema") -> None:
+    """Insert stream types into streams.StreamType from Rig.
+
+    Extracts all unique stream types from device @data_reader methods and inserts
+    them into StreamType catalog table. Called automatically by insert_device_types()
+    when FK constraint failures indicate missing StreamType entries.
+
+    Args:
+        rig: Rig instance (Pydantic BaseSchema) containing device collections
+    """
+    streams = dj.VirtualModule("streams", streams_maker.schema_name)
+    stream_entries = get_stream_entries(rig)
+
+    # Deduplicate by stream_hash (same stream type may appear on multiple devices)
+    seen_hashes = set()
+    for entry in stream_entries:
+        if entry["stream_hash"] in seen_hashes:
+            continue
+        seen_hashes.add(entry["stream_hash"])
+
+        stream_type_entry = {
+            "stream_type": entry["stream_type"],
+            "stream_reader": entry["stream_reader"],
+            "stream_reader_kwargs": entry["stream_reader_kwargs"],
+            "stream_hash": entry["stream_hash"],
+        }
+        # Use skip_duplicates to handle race conditions
+        streams.StreamType.insert1(stream_type_entry, skip_duplicates=True)
+
+    if seen_hashes:
+        logger.debug(f"Processed {len(seen_hashes)} unique StreamType entries")
 
 
 def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
@@ -138,8 +171,19 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
     if new_device_types:
         streams.DeviceType.insert(new_device_types)
 
-        if new_device_stream_types:
+    # Note: DeviceType.Stream may need insertion even without new DeviceTypes
+    # (when existing device types get new stream types)
+    if new_device_stream_types:
+        try:
             streams.DeviceType.Stream.insert(new_device_stream_types)
+        except dj.DataJointError as e:
+            # Only handle FK constraint violations (MySQL error 1452)
+            if "foreign key constraint fails" in str(e).lower() or "1452" in str(e):
+                logger.info("FK constraint failed on DeviceType.Stream, inserting missing StreamType entries")
+                insert_stream_types(rig)
+                streams.DeviceType.Stream.insert(new_device_stream_types)
+            else:
+                raise  # Re-raise unexpected errors
 
     if new_devices:
         streams.Device.insert(new_devices)
@@ -382,39 +426,6 @@ def _extract_device_mapper_from_rig(rig_config: dict) -> tuple[dict[str, str], d
         device_sn["LightCycle"] = None  # Light cycle doesn't have serial/port
 
     return device_type_mapper, device_sn
-
-
-def ingest_epoch_metadata(experiment_name: str, devices_schema: DotMap, metadata_filepath: str) -> set[str]:
-    """Make entries into device tables.
-
-    Args:
-        experiment_name: Name of the experiment.
-        devices_schema: DotMap object containing device schema definitions.
-        metadata_filepath: Path to metadata file.
-
-    Returns:
-        Set of device type names that were processed.
-    """
-    from aeon.dj_pipeline import acquisition
-
-    streams = dj.VirtualModule("streams", streams_maker.schema_name)
-
-    experiment_key = {"experiment_name": experiment_name}
-    metadata_filepath = pathlib.Path(metadata_filepath)
-    epoch_config = extract_epoch_config(experiment_name, devices_schema, metadata_filepath)
-
-    previous_epoch = (acquisition.Experiment & experiment_key).aggr(
-        acquisition.Epoch & f'epoch_start < "{epoch_config["epoch_start"]}"',
-        epoch_start="MAX(epoch_start)",
-    )
-    if len(acquisition.EpochConfig.Meta & previous_epoch) and epoch_config["commit"] == (
-        acquisition.EpochConfig.Meta & previous_epoch
-    ).fetch1("commit"):
-        # if identical commit -> no changes
-        return set()
-
-    device_type_mapper, _ = _extract_device_mapper_from_rig(epoch_config["rig_config"])
-    rig_config = epoch_config["rig_config"]
 
 
 def ingest_epoch_metadata_from_rig(
@@ -738,13 +749,14 @@ def ingest_epoch_metadata(experiment_name: str, devices_schema: DotMap, metadata
 
 def extract_stream_types_from_device(device_class: type) -> list[str]:
     """Extract @data_reader method names from Device class.
-    
+
     @data_reader methods are defined directly on Device classes and are cached_property
-    objects with a function that takes (self, pattern) as parameters.
-    
+    objects. The real @data_reader decorator wraps the original function in a closure,
+    so we check both the direct func signature and the closure for (self, pattern).
+
     Args:
         device_class: Device class type
-        
+
     Returns:
         List of @data_reader method names (snake_case)
     """
@@ -753,11 +765,28 @@ def extract_stream_types_from_device(device_class: type) -> list[str]:
         if isinstance(attr, cached_property):
             func = getattr(attr, 'func', None)
             if func:
+                # Check direct signature first
                 sig = inspect.signature(func)
                 params = list(sig.parameters.keys())
-                # @data_reader methods have (self, pattern) signature
                 if len(params) == 2 and params[1] == 'pattern':
                     stream_types.append(name)
+                    continue
+
+                # Check closure for original function (real @data_reader wraps in closure)
+                closure = getattr(func, '__closure__', None)
+                if closure:
+                    for cell in closure:
+                        try:
+                            orig_func = cell.cell_contents
+                            if callable(orig_func):
+                                orig_sig = inspect.signature(orig_func)
+                                orig_params = list(orig_sig.parameters.keys())
+                                if len(orig_params) == 2 and orig_params[1] == 'pattern':
+                                    stream_types.append(name)
+                                    break
+                        except ValueError:
+                            # Empty cell
+                            continue
     return stream_types
 
 
