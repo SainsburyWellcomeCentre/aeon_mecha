@@ -230,6 +230,12 @@ def streams_schema(dj_config_integration):
 
     # Get schema name with test prefix
     schema_name = dj_config_integration["custom"]["database.prefix"] + "streams"
+
+    # Drop existing schema if it exists (ensures clean state with new table definitions)
+    existing_schema = dj.Schema(schema_name)
+    if existing_schema.is_activated():
+        existing_schema.drop(force=True)
+
     schema = dj.Schema(schema_name)
 
     # Register catalog tables
