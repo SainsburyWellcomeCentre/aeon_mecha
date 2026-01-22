@@ -1,4 +1,9 @@
-"""Module for stream-related tables in the analysis schema."""
+"""Module for stream-related tables in the analysis schema.
+
+This module provides utilities for auto-generating DataJoint stream tables
+based on device types and their associated streams. It uses the Pydantic-based
+approach where stream readers are defined via @data_reader methods on Device classes.
+"""
 
 import importlib
 import inspect
@@ -7,17 +12,9 @@ from pathlib import Path
 
 import datajoint as dj
 import pandas as pd
-import swc
-from swc.aeon.io import api as io_api
-from swc.aeon.io import reader as io_reader
 
 import aeon
 from aeon.dj_pipeline import acquisition, get_schema_name
-
-# TODO: Refactor to use Pydantic-based approach instead of legacy DotMap schemas
-# The generated stream tables' make() methods need updating to use _get_stream_reader() pattern
-# See tracking.py for reference implementation
-aeon_schemas = None  # Legacy: was acquisition.aeon_schemas
 
 logger = dj.logger
 
@@ -29,21 +26,22 @@ _STREAMS_MODULE_FILE = Path(__file__).parent.parent / "streams.py"
 
 
 class StreamType(dj.Lookup):
-    """Catalog of all stream types used across Project Aeon.
+    """Catalog of unique stream types used across Project Aeon.
 
-    Catalog of all stream types for the different device types used across Project Aeon.
-    One StreamType corresponds to one Reader class in :mod:`aeon.io.reader`.
-    The combination of ``stream_reader`` and ``stream_reader_kwargs`` should fully specify the data
-    loading routine for a particular device, using :func:`aeon.io.api.load`.
+    Each entry represents a unique combination of stream_type name and reader class.
+    The stream reader is resolved at runtime via the Pydantic Device class hierarchy,
+    using @data_reader decorated methods. The stream_hash uniquely identifies each
+    (stream_type, stream_reader) combination to handle cases where different experiments
+    define the same stream_type name with different underlying readers.
     """
 
-    definition = """ # Catalog of all stream types used across Project Aeon
-    stream_type          : varchar(36)
+    definition = """ # Catalog of unique stream types used across Project Aeon
+    stream_hash: uuid  # hash(stream_type, stream_reader) - unique identifier
     ---
-    stream_reader        : varchar(256) # reader class name in aeon.io.reader (e.g. aeon.io.reader.Video)
-    stream_reader_kwargs : longblob  # keyword arguments to instantiate the reader class
+    stream_type: varchar(36)  # stream type name, e.g., "Video", "BeamBreak"
+    stream_reader: varchar(256)  # reader class path for documentation, e.g., "swc.aeon.io.reader.Video"
     stream_description='': varchar(256)
-    stream_hash          : uuid    # hash of dict(stream_reader_kwargs, stream_reader=stream_reader)
+    unique index(stream_type, stream_reader)
     """
 
 
@@ -57,6 +55,14 @@ class DeviceType(dj.Lookup):
     """
 
     class Stream(dj.Part):
+        """Links device types to their associated stream types.
+
+        Each entry specifies which StreamType (identified by stream_hash) is
+        associated with a given device type. This allows the same device type
+        to have multiple streams, and handles cases where different experiments
+        use the same stream_type name with different reader implementations.
+        """
+
         definition = """  # Data stream(s) associated with a particular device type
         -> master
         -> StreamType
@@ -109,24 +115,56 @@ def get_device_template(device_type: str):
 
 
 def get_device_stream_template(device_type: str, stream_type: str, streams_module):
-    """Returns table class template for DeviceDataStream."""
-    ExperimentDevice = getattr(streams_module, device_type)
+    """Returns table class template for DeviceDataStream.
 
-    # DeviceDataStream table(s)
+    Uses the Pydantic-based approach to get stream reader columns by reconstructing
+    the Rig from stored metadata and accessing the @data_reader decorated method.
+    """
+    from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+
+    ExperimentDevice = getattr(streams_module, device_type)
+    device_type_snake = dj.utils.from_camel_case(device_type)
+
+    # Get stream_reader path for Pose check
     stream_detail = (
         streams_module.StreamType
         & (streams_module.DeviceType.Stream & {"device_type": device_type, "stream_type": stream_type})
     ).fetch1()
 
-    reader = {"swc": swc, "aeon": aeon}
-    for idx, n in enumerate(stream_detail["stream_reader"].split(".")):
-        reader = reader[n] if idx == 0 else getattr(reader, n)
-
-    if reader is io_reader.Pose:
+    # Skip Pose reader - automatic generation not supported
+    if "Pose" in stream_detail["stream_reader"]:
         logger.warning("Automatic generation of stream table for Pose reader is not supported. Skipping...")
         return None, None
 
-    stream = reader(**stream_detail["stream_reader_kwargs"])
+    # Get columns by finding an experiment with this device type and reconstructing the reader
+    # Find an experiment entry that has this device installed
+    experiment_device_query = ExperimentDevice()
+
+    if not experiment_device_query:
+        logger.warning(f"No experiments found with device type {device_type}. Skipping stream table.")
+        return None, None
+
+    sample_entry = experiment_device_query.fetch(as_dict=True, limit=1)[0]
+    experiment_name = sample_entry["experiment_name"]
+    device_name = sample_entry[f"{device_type_snake}_name"]
+    install_time = sample_entry[f"{device_type_snake}_install_time"]
+
+    # Get the epoch that contains this device installation
+    epoch_query = (
+        acquisition.Epoch & {"experiment_name": experiment_name} & f"epoch_start <= '{install_time}'"
+    )
+    if not epoch_query:
+        logger.warning(f"No epoch found for device {device_name} installation. Skipping stream table.")
+        return None, None
+
+    epoch_start = epoch_query.fetch("epoch_start", order_by="epoch_start DESC", limit=1)[0]
+
+    # Get the stream reader using the Pydantic approach
+    try:
+        stream_reader = get_stream_reader_for_epoch(experiment_name, device_name, stream_type, epoch_start)
+    except Exception as e:
+        logger.warning(f"Could not get stream reader for {device_type}.{stream_type}: {e}")
+        return None, None
 
     table_definition = f""" # Raw per-chunk {stream_type} from {device_type} (v-{aeon.__version__})
     -> {device_type}
@@ -136,7 +174,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
     timestamps: longblob   # (datetime) timestamps of {stream_type} data
     """
 
-    for col in stream.columns:
+    for col in stream_reader.columns:
         if col.startswith("_"):
             continue
         new_col = re.sub(r"\([^)]*\)", "", col)
@@ -160,18 +198,19 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
         def make(self, key):
             """Load and insert the data for the DeviceDataStream table."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+
             chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (ExperimentDevice & key).fetch1("{device_type_name}_name")
 
-            devices_schema = getattr(
-                aeon_schemas,
-                (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                    "devices_schema_name"
-                ),
+            # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "{stream_type}", key["epoch_start"]
             )
-            stream_reader = getattr(getattr(devices_schema, device_name), "{stream_type}")
 
             stream_data = io_api.load(
                 root=data_dirs,
@@ -216,9 +255,6 @@ def main(create_tables=True):
                 "import aeon\n"
                 "from aeon.dj_pipeline import acquisition, get_schema_name\n"
                 "from swc.aeon.io import api as io_api\n\n"
-                "# TODO: Refactor stream table make() methods to use Pydantic-based approach\n"
-                "# See tracking._get_stream_reader() for reference implementation\n"
-                "aeon_schemas = None  # Legacy: was acquisition.aeon_schemas\n\n"
                 'schema = dj.Schema(get_schema_name("streams"))\n\n\n'
             )
             f.write(imports_str)
