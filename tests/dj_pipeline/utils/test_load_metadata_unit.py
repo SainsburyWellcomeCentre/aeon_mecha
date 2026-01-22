@@ -1,8 +1,8 @@
-"""Unit tests for load_new_metadata.py - pure functions, no database required."""
+"""Unit tests for load_metadata.py - pure functions, no database required."""
 
 import pytest
 
-from aeon.dj_pipeline.utils.load_new_metadata import (
+from aeon.dj_pipeline.utils.load_metadata import (
     to_pascal_case,
     _flatten_rig_devices,
     _infer_device_type_from_rig,

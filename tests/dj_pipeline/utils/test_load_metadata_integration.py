@@ -1,4 +1,4 @@
-"""Integration tests for load_new_metadata.py - requires MySQL via testcontainers.
+"""Integration tests for load_metadata.py - requires MySQL via testcontainers.
 
 These tests verify database operations against real DataJoint tables:
 - StreamType catalog population
@@ -22,13 +22,13 @@ class TestExtractStreamTypesFromDevice:
     """Test @data_reader method extraction with real Pydantic classes."""
 
     def test_extracts_video_stream(self, mock_device_class, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_new_metadata import extract_stream_types_from_device
+        from aeon.dj_pipeline.utils.load_metadata import extract_stream_types_from_device
 
         stream_types = extract_stream_types_from_device(mock_device_class)
         assert "video" in stream_types
 
     def test_extracts_position_stream(self, mock_device_class, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_new_metadata import extract_stream_types_from_device
+        from aeon.dj_pipeline.utils.load_metadata import extract_stream_types_from_device
 
         stream_types = extract_stream_types_from_device(mock_device_class)
         assert "position" in stream_types
@@ -40,7 +40,7 @@ class TestExtractStreamTypesFromDevice:
         assert issubclass(mock_device_class, SpinnakerCamera)
 
     def test_returns_snake_case_names(self, mock_device_class, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_new_metadata import extract_stream_types_from_device
+        from aeon.dj_pipeline.utils.load_metadata import extract_stream_types_from_device
 
         stream_types = extract_stream_types_from_device(mock_device_class)
         # All names should be snake_case (no uppercase)
@@ -53,21 +53,21 @@ class TestGetDeviceInfo:
     """Test Rig parsing for device/stream info extraction."""
 
     def test_extracts_all_cameras(self, test_rig, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_new_metadata import get_device_info
+        from aeon.dj_pipeline.utils.load_metadata import get_device_info
 
         device_info = get_device_info(test_rig)
         assert "CameraTop" in device_info
         assert "CameraSide" in device_info
 
     def test_extracts_all_feeders(self, test_rig, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_new_metadata import get_device_info
+        from aeon.dj_pipeline.utils.load_metadata import get_device_info
 
         device_info = get_device_info(test_rig)
         assert "Feeder1" in device_info
         assert "Feeder2" in device_info
 
     def test_device_info_structure(self, test_rig, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_new_metadata import get_device_info
+        from aeon.dj_pipeline.utils.load_metadata import get_device_info
 
         device_info = get_device_info(test_rig)
         camera_info = device_info["CameraTop"]
@@ -77,7 +77,7 @@ class TestGetDeviceInfo:
         assert "stream_hash" in camera_info
 
     def test_stream_type_is_pascal_case(self, test_rig, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_new_metadata import get_device_info
+        from aeon.dj_pipeline.utils.load_metadata import get_device_info
 
         device_info = get_device_info(test_rig)
         camera_info = device_info["CameraTop"]
@@ -85,7 +85,7 @@ class TestGetDeviceInfo:
         assert "Video" in camera_info["stream_type"]
 
     def test_stream_reader_is_class_path(self, test_rig, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_new_metadata import get_device_info
+        from aeon.dj_pipeline.utils.load_metadata import get_device_info
 
         device_info = get_device_info(test_rig)
         camera_info = device_info["CameraTop"]
@@ -94,7 +94,7 @@ class TestGetDeviceInfo:
             assert "." in reader_path
 
     def test_stream_hash_is_uuid(self, test_rig, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_new_metadata import get_device_info
+        from aeon.dj_pipeline.utils.load_metadata import get_device_info
 
         device_info = get_device_info(test_rig)
         camera_info = device_info["CameraTop"]
@@ -107,14 +107,14 @@ class TestGetStreamEntries:
     """Test stream entry generation from Rig."""
 
     def test_returns_list_of_dicts(self, test_rig, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_new_metadata import get_stream_entries
+        from aeon.dj_pipeline.utils.load_metadata import get_stream_entries
 
         entries = get_stream_entries(test_rig)
         assert isinstance(entries, list)
         assert all(isinstance(e, dict) for e in entries)
 
     def test_entry_has_required_keys(self, test_rig, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_new_metadata import get_stream_entries
+        from aeon.dj_pipeline.utils.load_metadata import get_stream_entries
 
         entries = get_stream_entries(test_rig)
         required_keys = {"stream_type", "stream_reader", "stream_reader_kwargs", "stream_hash"}
@@ -122,14 +122,14 @@ class TestGetStreamEntries:
             assert required_keys <= set(entry.keys())
 
     def test_stream_reader_kwargs_has_pattern(self, test_rig, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_new_metadata import get_stream_entries
+        from aeon.dj_pipeline.utils.load_metadata import get_stream_entries
 
         entries = get_stream_entries(test_rig)
         for entry in entries:
             assert "pattern" in entry["stream_reader_kwargs"]
 
     def test_multiple_devices_produce_entries(self, test_rig, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_new_metadata import get_stream_entries
+        from aeon.dj_pipeline.utils.load_metadata import get_stream_entries
 
         entries = get_stream_entries(test_rig)
         # 2 cameras x 2 streams + 2 feeders x 2 streams = 8 entries
@@ -142,7 +142,7 @@ class TestInsertStreamTypes:
 
     def test_inserts_stream_types(self, pipeline_integration, test_rig, monkeypatch):
         from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_new_metadata import insert_stream_types
+        from aeon.dj_pipeline.utils.load_metadata import insert_stream_types
 
         # Monkeypatch schema_name to use test schema
         monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
@@ -156,7 +156,7 @@ class TestInsertStreamTypes:
 
     def test_handles_duplicates(self, pipeline_integration, test_rig, monkeypatch):
         from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_new_metadata import insert_stream_types
+        from aeon.dj_pipeline.utils.load_metadata import insert_stream_types
 
         monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
 
@@ -172,7 +172,7 @@ class TestInsertStreamTypes:
 
     def test_stream_type_queryable(self, pipeline_integration, test_rig, monkeypatch):
         from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_new_metadata import insert_stream_types
+        from aeon.dj_pipeline.utils.load_metadata import insert_stream_types
 
         monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
 
@@ -190,7 +190,7 @@ class TestInsertDeviceTypes:
 
     def test_inserts_device_types(self, pipeline_integration, test_rig, tmp_path, monkeypatch):
         from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_new_metadata import insert_device_types, insert_stream_types
+        from aeon.dj_pipeline.utils.load_metadata import insert_device_types, insert_stream_types
 
         monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
 
@@ -208,7 +208,7 @@ class TestInsertDeviceTypes:
 
     def test_inserts_device_type_streams(self, pipeline_integration, test_rig, tmp_path, monkeypatch):
         from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_new_metadata import insert_device_types, insert_stream_types
+        from aeon.dj_pipeline.utils.load_metadata import insert_device_types, insert_stream_types
 
         monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
 
@@ -224,7 +224,7 @@ class TestInsertDeviceTypes:
 
     def test_inserts_devices(self, pipeline_integration, test_rig, tmp_path, monkeypatch):
         from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_new_metadata import insert_device_types, insert_stream_types
+        from aeon.dj_pipeline.utils.load_metadata import insert_device_types, insert_stream_types
 
         monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
 
@@ -242,7 +242,7 @@ class TestInsertDeviceTypes:
 
     def test_handles_existing_device_types(self, pipeline_integration, test_rig, tmp_path, monkeypatch):
         from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_new_metadata import insert_device_types, insert_stream_types
+        from aeon.dj_pipeline.utils.load_metadata import insert_device_types, insert_stream_types
 
         monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
 
@@ -269,7 +269,7 @@ class TestInsertDeviceTypesFKHandling:
     ):
         """Verify FK failure triggers automatic insert_stream_types()."""
         from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_new_metadata import insert_device_types
+        from aeon.dj_pipeline.utils.load_metadata import insert_device_types
 
         monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
 
@@ -291,8 +291,8 @@ class TestInsertDeviceTypesFKHandling:
         """Verify non-FK DataJointErrors are re-raised."""
         import datajoint as dj
 
-        from aeon.dj_pipeline.utils import load_new_metadata, streams_maker
-        from aeon.dj_pipeline.utils.load_new_metadata import (
+        from aeon.dj_pipeline.utils import load_metadata, streams_maker
+        from aeon.dj_pipeline.utils.load_metadata import (
             get_device_mapper_from_rig,
             insert_device_types,
             insert_stream_types,
@@ -318,8 +318,8 @@ class TestInsertDeviceTypesFKHandling:
 
         monkeypatch.setattr(streams.DeviceType.Stream, "insert", mock_insert)
 
-        # Patch dj.VirtualModule in load_new_metadata to return our pre-patched streams
-        monkeypatch.setattr(load_new_metadata, "dj", type("MockDJ", (), {
+        # Patch dj.VirtualModule in load_metadata to return our pre-patched streams
+        monkeypatch.setattr(load_metadata, "dj", type("MockDJ", (), {
             "VirtualModule": lambda *args, **kwargs: streams,
             "DataJointError": dj.DataJointError,
             "logger": dj.logger,
@@ -333,7 +333,7 @@ class TestInsertDeviceTypesFKHandling:
     ):
         """Verify DeviceType.Stream insertion succeeds after FK recovery."""
         from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_new_metadata import insert_device_types
+        from aeon.dj_pipeline.utils.load_metadata import insert_device_types
 
         monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
 
