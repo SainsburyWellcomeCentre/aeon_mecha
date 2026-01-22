@@ -329,7 +329,7 @@ class EpochConfig(dj.Imported):
     def make(self, key):
         """Ingest metadata into EpochConfig."""
         from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_new_metadata import (
+        from aeon.dj_pipeline.utils.load_metadata import (
             get_experiment_class,
             extract_rig_from_metadata,
             ingest_epoch_metadata_from_rig,
