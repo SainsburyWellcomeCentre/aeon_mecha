@@ -1,4 +1,4 @@
-"""Fixtures for load_new_metadata tests.
+"""Fixtures for load_metadata tests.
 
 Uses real @data_reader decorator and Pydantic base classes from swc.aeon.schema (swc-aeon).
 These are the same classes used in production (e.g., aeon_exp_foragingABC/rig.py).
