@@ -5,6 +5,9 @@ These are the same classes used in production (e.g., aeon_exp_foragingABC/rig.py
 No mocking of decorator behavior - tests run against actual production patterns.
 """
 
+import json
+from pathlib import Path
+
 import pytest
 
 # Real Reader classes from swc-aeon (aeon_api)
@@ -15,6 +18,10 @@ from swc.aeon.io.reader import Csv, Harp, Video
 from swc.aeon.schema import BaseSchema, data_reader
 from swc.aeon.schema.foraging import UndergroundFeeder
 from swc.aeon.schema.video import SpinnakerCamera
+
+# Path to test fixtures
+FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures"
+METADATA_FIXTURES_DIR = FIXTURES_DIR / "metadata"
 
 
 class TestCamera(SpinnakerCamera):
@@ -93,3 +100,25 @@ def test_rig():
             "Feeder2": TestFeeder(port_name="COM4"),
         },
     )
+
+
+# -----------------------------------------------------------------------------
+# Sample Metadata Fixtures (small config files checked into git)
+# -----------------------------------------------------------------------------
+
+@pytest.fixture
+def foraging_abc_metadata_path():
+    """Path to sample ForagingABC metadata fixture file."""
+    return METADATA_FIXTURES_DIR / "ForagingABC_Metadata.json"
+
+
+@pytest.fixture
+def foraging_abc_metadata(foraging_abc_metadata_path):
+    """Load sample ForagingABC metadata as a dict."""
+    return json.loads(foraging_abc_metadata_path.read_text())
+
+
+@pytest.fixture
+def foraging_abc_rig_config(foraging_abc_metadata):
+    """Extract the rig config section from ForagingABC sample metadata."""
+    return foraging_abc_metadata["rig"]
