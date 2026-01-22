@@ -14,7 +14,10 @@ from swc.aeon.io import reader as io_reader
 import aeon
 from aeon.dj_pipeline import acquisition, get_schema_name
 
-aeon_schemas = acquisition.aeon_schemas
+# TODO: Refactor to use Pydantic-based approach instead of legacy DotMap schemas
+# The generated stream tables' make() methods need updating to use _get_stream_reader() pattern
+# See tracking.py for reference implementation
+aeon_schemas = None  # Legacy: was acquisition.aeon_schemas
 
 logger = dj.logger
 
@@ -213,7 +216,9 @@ def main(create_tables=True):
                 "import aeon\n"
                 "from aeon.dj_pipeline import acquisition, get_schema_name\n"
                 "from swc.aeon.io import api as io_api\n\n"
-                "aeon_schemas = acquisition.aeon_schemas\n\n"
+                "# TODO: Refactor stream table make() methods to use Pydantic-based approach\n"
+                "# See tracking._get_stream_reader() for reference implementation\n"
+                "aeon_schemas = None  # Legacy: was acquisition.aeon_schemas\n\n"
                 'schema = dj.Schema(get_schema_name("streams"))\n\n\n'
             )
             f.write(imports_str)
@@ -300,4 +305,8 @@ def main(create_tables=True):
     return streams
 
 
-streams = main()
+try:
+    streams = main()
+except Exception as e:
+    logger.debug(f"Could not initialize streams module: {e}")
+    streams = None

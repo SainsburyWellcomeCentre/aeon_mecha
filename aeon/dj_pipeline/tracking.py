@@ -1,7 +1,6 @@
 """DataJoint schema for tracking data."""
 
 import gc
-from datetime import UTC, datetime, timezone
 
 import datajoint as dj
 import matplotlib.path
@@ -9,25 +8,45 @@ import numpy as np
 import pandas as pd
 from swc.aeon.io import api as io_api
 
-from aeon.dj_pipeline import (
-    acquisition,
-    dict_to_uuid,
-    fetch_stream,
-    get_schema_name,
-    lab,
-    streams,
-)
-from aeon.dj_pipeline.utils import tracking_utils
-
-aeon_schemas = acquisition.aeon_schemas
+from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, streams
+from aeon.dj_pipeline.utils.load_metadata import extract_rig_from_metadata, get_experiment_class
 
 schema = dj.schema(get_schema_name("tracking"))
 logger = dj.logger
 
-pixel_scale = 0.00192  # 1 px = 1.92 mm
-arena_center_x, arena_center_y = 1.475, 1.075  # center
-arena_inner_radius = 0.93  # inner
-arena_outer_radius = 0.97  # outer
+
+# ---- Helper to get stream reader from Pydantic rig ----
+
+
+def _get_stream_reader(key: dict, device_name: str, stream_name: str):
+    """Get stream reader from Pydantic rig for a given experiment/epoch.
+
+    Args:
+        key: Dictionary containing experiment_name and epoch_start
+        device_name: Name of the device (e.g., "CameraTop")
+        stream_name: Name of the stream (e.g., "Pose", "Video")
+
+    Returns:
+        Stream reader instance configured for the device
+    """
+    # Get experiment class path from Experiment.DevicesSchema
+    schema_name = (
+        acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}
+    ).fetch1("devices_schema_name")
+    experiment_class = get_experiment_class(schema_name)
+
+    # Get metadata file path from EpochConfig.Meta
+    epoch_key = {"experiment_name": key["experiment_name"], "epoch_start": key["epoch_start"]}
+    metadata_file_path = (acquisition.EpochConfig.Meta & epoch_key).fetch1("metadata_file_path")
+
+    # Reconstruct full path
+    dir_type = (acquisition.Chunk & key).fetch1("directory_type")
+    data_dir = acquisition.Experiment.get_data_directory(key, dir_type)
+    metadata_filepath = data_dir / metadata_file_path
+
+    # Extract rig and get stream reader
+    rig = extract_rig_from_metadata(experiment_class, metadata_filepath)
+    return getattr(getattr(rig, device_name), stream_name)
 
 
 # ---------- Tracking Method ------------------
@@ -197,15 +216,8 @@ class SLEAPTracking(dj.Imported):
             "spinnaker_video_source_name"
         )
 
-        devices_schema = getattr(
-            aeon_schemas,
-            (
-                acquisition.Experiment.DevicesSchema
-                & {"experiment_name": key["experiment_name"]}
-            ).fetch1("devices_schema_name"),
-        )
-
-        stream_reader = getattr(devices_schema, device_name).Pose
+        # Get Pose stream reader via Pydantic rig
+        stream_reader = _get_stream_reader(key, device_name, "Pose")
 
         pose_data = io_api.load(
             root=data_dirs,
@@ -302,224 +314,6 @@ class SLEAPTracking(dj.Imported):
         # explicit garbage collect `pose_data` to avoid memory build up
         del pose_data, identity_position, part_position
         gc.collect()
-
-
-# ---------- Blob Position Tracking ------------------
-
-
-@schema
-class BlobPosition(dj.Imported):
-    definition = """  # Blob object position tracking from a particular camera, for a particular chunk
-    -> acquisition.Chunk
-    -> streams.SpinnakerVideoSource
-    ---
-    object_count: int  # number of objects tracked in this chunk
-    subject_count: int  # number of subjects present in the arena during this chunk
-    subject_names: varchar(256)  # names of subjects present in arena during this chunk
-    """
-
-    class Object(dj.Part):
-        definition = """  # Position data of object tracked by a particular camera tracking
-        -> master
-        object_id: int    # id=-1 means "unknown"; could be the same object as those with other values
-        ---
-        identity_name='': varchar(16)
-        sample_count:  int       # number of data points acquired from this stream for a given chunk
-        x:             longblob  # (px) object's x-position, in the arena's coordinate frame
-        y:             longblob  # (px) object's y-position, in the arena's coordinate frame
-        timestamps:    longblob  # (datetime) timestamps of the position data
-        area=null:     longblob  # (px^2) object's size detected in the camera
-        """
-
-    @property
-    def key_source(self):
-        """Return the keys to be processed."""
-        ks = (
-            acquisition.Chunk
-            * (
-                streams.SpinnakerVideoSource.join(
-                    streams.SpinnakerVideoSource.RemovalTime, left=True
-                )
-                & "spinnaker_video_source_name='CameraTop'"
-            )
-            & "chunk_start >= spinnaker_video_source_install_time"
-            & 'chunk_start < IFNULL(spinnaker_video_source_removal_time, "2200-01-01")'
-        )
-        return ks - SLEAPTracking  # do this only when SLEAPTracking is not available
-
-    def make(self, key):
-        """Ingest blob position data for a given chunk."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
-            "chunk_start", "chunk_end"
-        )
-
-        data_dirs = acquisition.Experiment.get_data_directories(key)
-
-        device_name = (streams.SpinnakerVideoSource & key).fetch1(
-            "spinnaker_video_source_name"
-        )
-
-        devices_schema = getattr(
-            aeon_schemas,
-            (
-                acquisition.Experiment.DevicesSchema
-                & {"experiment_name": key["experiment_name"]}
-            ).fetch1("devices_schema_name"),
-        )
-
-        stream_reader = devices_schema.CameraTop.Position
-
-        positiondata = io_api.load(
-            root=data_dirs,
-            reader=stream_reader,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
-
-        if not len(positiondata):
-            raise ValueError(
-                f"No Blob position data found for {key['experiment_name']} - {device_name}"
-            )
-
-        # replace id=NaN with -1
-        positiondata.fillna({"id": -1}, inplace=True)
-        positiondata["identity_name"] = ""
-
-        # Find animal(s) in the arena during the chunk
-        # Get all unique subjects that visited the environment over the entire exp;
-        # For each subject, see 'type' of visit most recent to start of block
-        # If "Exit", this animal was not in the block.
-        subject_visits_df = fetch_stream(
-            acquisition.Environment.SubjectVisits
-            & {"experiment_name": key["experiment_name"]}
-            & f'chunk_start <= "{chunk_start}"'
-        )[:chunk_end]
-        subject_visits_df = subject_visits_df[subject_visits_df.region == "Environment"]
-        subject_visits_df = subject_visits_df[
-            ~subject_visits_df.id.str.contains("Test", case=False)
-        ]
-        subject_names = []
-        for subject_name in set(subject_visits_df.id):
-            _df = subject_visits_df[subject_visits_df.id == subject_name]
-            if _df.type.iloc[-1] != "Exit":
-                subject_names.append(subject_name)
-
-        if len(subject_names) == 1:
-            # if there is only one known subject, replace all object ids with the subject name
-            positiondata["id"] = [0] * len(positiondata)
-            positiondata["identity_name"] = subject_names[0]
-
-        object_positions = []
-        for obj_id in set(positiondata.id.values):
-            obj_position = positiondata[positiondata.id == obj_id]
-
-            object_positions.append(
-                {
-                    **key,
-                    "object_id": obj_id,
-                    "identity_name": obj_position.identity_name.values[0],
-                    "sample_count": len(obj_position.index.values),
-                    "timestamps": obj_position.index.values,
-                    "x": obj_position.x.values,
-                    "y": obj_position.y.values,
-                    "area": obj_position.area.values,
-                }
-            )
-
-        self.insert1(
-            {
-                **key,
-                "object_count": len(object_positions),
-                "subject_count": len(subject_names),
-                "subject_names": ",".join(subject_names),
-            }
-        )
-        self.Object.insert(object_positions)
-
-
-# ---------- Processed Identity Position ------------------
-
-
-@schema
-class DenoisedTracking(dj.Computed):
-    definition = """
-    -> SLEAPTracking
-    ---
-    execution_time: datetime
-    execution_duration: float  # hours
-    """
-
-    class Subject(dj.Part):
-        definition = """
-        -> master
-        subject_name: varchar(32)
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        subject_likelihood: longblob  # likelihood of the subject being identified correctly
-        x:          longblob
-        y:          longblob
-        timestamps: longblob
-        likelihood: longblob  # likelihood of the positions (x,y) being identified correctly
-        """
-
-    key_source = (
-        SLEAPTracking & "experiment_name in ('social0.2-aeon3', 'social0.2-aeon4', "
-                        "'social0.3-aeon3', 'social0.3-aeon4', "
-                        "'social0.4-aeon3', 'social0.4-aeon4')"
-    )
-
-    def make(self, key):
-        """Processing of SLEAPTracking data to denoise and clean identity swaps."""
-        execution_time = datetime.now(UTC)
-
-        query = (
-            SLEAPTracking.PoseIdentity.proj("identity_name", "identity_likelihood")
-            * SLEAPTracking.AnchorPart
-            & key
-        )
-        df = fetch_stream(query)
-
-        subject_names = df.identity_name.unique()
-
-        if len(subject_names) > 1:
-            # Get arena bounds from database
-            active_region_query = acquisition.EpochConfig.ActiveRegion & (
-                acquisition.Chunk & key
-            )
-            df_clean = tracking_utils.clean_swaps(
-                df, region_df=active_region_query.fetch(format="frame")
-            )
-        else:
-            df_clean = df
-
-        entries = []
-        for subj_name in subject_names:
-            subj_df = df_clean[df_clean.identity_name == subj_name]
-            if subj_df.empty:
-                continue
-
-            entries.append(
-                {
-                    **key,
-                    "subject_name": subj_name,
-                    "sample_count": len(subj_df.index.values),
-                    "subject_likelihood": subj_df.identity_likelihood.values,
-                    "x": subj_df.x.values,
-                    "y": subj_df.y.values,
-                    "timestamps": subj_df.index.values,
-                    "likelihood": subj_df.likelihood.values,
-                }
-            )
-
-        exec_dur = (datetime.now(UTC) - execution_time).total_seconds() / 3600
-        self.insert1(
-            {
-                **key,
-                "execution_time": execution_time,
-                "execution_duration": exec_dur,
-            }
-        )
-        self.Subject.insert(entries)
 
 
 # ---------- HELPER ------------------
