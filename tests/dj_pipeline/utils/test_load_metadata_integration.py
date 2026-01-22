@@ -56,6 +56,7 @@ class TestGetDeviceInfo:
         from aeon.dj_pipeline.utils.load_metadata import get_device_info
 
         device_info = get_device_info(test_rig)
+        # Keys are device names
         assert "CameraTop" in device_info
         assert "CameraSide" in device_info
 
@@ -63,6 +64,7 @@ class TestGetDeviceInfo:
         from aeon.dj_pipeline.utils.load_metadata import get_device_info
 
         device_info = get_device_info(test_rig)
+        # Keys are device names
         assert "Feeder1" in device_info
         assert "Feeder2" in device_info
 
@@ -71,10 +73,12 @@ class TestGetDeviceInfo:
 
         device_info = get_device_info(test_rig)
         camera_info = device_info["CameraTop"]
+        # Structure: flat lists of stream_type, stream_reader, stream_hash (no kwargs)
         assert "stream_type" in camera_info
         assert "stream_reader" in camera_info
-        assert "stream_reader_kwargs" in camera_info
         assert "stream_hash" in camera_info
+        # No stream_reader_kwargs in new schema
+        assert "stream_reader_kwargs" not in camera_info
 
     def test_stream_type_is_pascal_case(self, test_rig, pipeline_integration):
         from aeon.dj_pipeline.utils.load_metadata import get_device_info
@@ -117,16 +121,19 @@ class TestGetStreamEntries:
         from aeon.dj_pipeline.utils.load_metadata import get_stream_entries
 
         entries = get_stream_entries(test_rig)
-        required_keys = {"stream_type", "stream_reader", "stream_reader_kwargs", "stream_hash"}
+        # New schema: no stream_reader_kwargs
+        required_keys = {"stream_type", "stream_reader", "stream_hash"}
         for entry in entries:
             assert required_keys <= set(entry.keys())
 
-    def test_stream_reader_kwargs_has_pattern(self, test_rig, pipeline_integration):
+    def test_stream_reader_is_valid_class_path(self, test_rig, pipeline_integration):
         from aeon.dj_pipeline.utils.load_metadata import get_stream_entries
 
         entries = get_stream_entries(test_rig)
         for entry in entries:
-            assert "pattern" in entry["stream_reader_kwargs"]
+            # stream_reader should be a fully qualified class path
+            assert "." in entry["stream_reader"]
+            assert entry["stream_reader"].startswith("swc.aeon.io.reader.")
 
     def test_multiple_devices_produce_entries(self, test_rig, pipeline_integration):
         from aeon.dj_pipeline.utils.load_metadata import get_stream_entries
@@ -349,7 +356,7 @@ class TestInsertDeviceTypesFKHandling:
         device_type_streams = streams.DeviceType.Stream().fetch(as_dict=True)
         assert len(device_type_streams) > 0
 
-        # Verify the structure is correct (device_type + stream_type pairs)
+        # Verify the structure is correct (device_type + stream_hash pairs)
         for entry in device_type_streams:
             assert "device_type" in entry
-            assert "stream_type" in entry
+            assert "stream_hash" in entry
