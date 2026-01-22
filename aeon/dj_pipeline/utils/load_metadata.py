@@ -12,15 +12,14 @@ import pathlib
 from collections import defaultdict
 from functools import cached_property
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import datajoint as dj
 import numpy as np
 from dotmap import DotMap
 from swc.aeon.io import api as io_api
 
-from aeon.dj_pipeline.utils import dict_to_uuid
-from aeon.dj_pipeline.utils import streams_maker
+from aeon.dj_pipeline.utils import dict_to_uuid, streams_maker
 
 if TYPE_CHECKING:
     from swc.aeon.schema import BaseSchema, Device
@@ -30,13 +29,13 @@ logger = dj.logger
 
 def get_experiment_class(schema_name: str) -> type["BaseSchema"]:
     """Get Experiment class from schema name.
-    
+
     Schema name is a class path like 'swc.aeon.exp.foragingABC.experiment.ForagingABC'
     or 'swc.aeon.exp.foragingABC.experiment.Experiment'.
-    
+
     Args:
         schema_name: Full class path (module.path.ClassName)
-        
+
     Returns:
         Experiment class type
     """
@@ -47,21 +46,21 @@ def get_experiment_class(schema_name: str) -> type["BaseSchema"]:
 
 def extract_rig_from_metadata(experiment_class: type, metadata_filepath: Path):
     """Extract Rig instance from metadata file.
-    
+
     Handles both structures:
     - experiment.experiment.rig (ForagingABC -> Experiment -> Rig)
     - experiment.rig (Experiment -> Rig)
-    
+
     Args:
         experiment_class: Experiment class type
         metadata_filepath: Path to Metadata.json file
-        
+
     Returns:
         Rig instance with device hierarchy intact
     """
     metadata = json.loads(metadata_filepath.read_text())
     experiment = experiment_class.model_validate(metadata)
-    
+
     # Navigate to Rig - try nested structure first
     if hasattr(experiment, 'experiment') and hasattr(experiment.experiment, 'rig'):
         return experiment.experiment.rig
@@ -69,6 +68,124 @@ def extract_rig_from_metadata(experiment_class: type, metadata_filepath: Path):
         return experiment.rig
     else:
         raise ValueError(f"No rig found in {experiment_class}")
+
+
+def extract_rig_from_metadata_dict(experiment_class: type, rig_metadata: dict):
+    """Extract Rig instance from rig metadata dictionary.
+
+    This is used to reconstruct the Rig from metadata stored in EpochConfig.Meta,
+    avoiding file I/O.
+
+    Handles both structures:
+    - experiment.experiment.rig (ForagingABC -> Experiment -> Rig)
+    - experiment.rig (Experiment -> Rig)
+
+    Args:
+        experiment_class: Experiment class type
+        rig_metadata: Rig configuration dict (from EpochConfig.Meta.metadata)
+
+    Returns:
+        Rig instance with device hierarchy intact
+    """
+    # Wrap rig_metadata in the expected structure for model_validate
+    full_metadata = {"rig": rig_metadata}
+    experiment = experiment_class.model_validate(full_metadata)
+
+    # Navigate to Rig - try nested structure first
+    if hasattr(experiment, 'experiment') and hasattr(experiment.experiment, 'rig'):
+        return experiment.experiment.rig
+    elif hasattr(experiment, 'rig'):
+        return experiment.rig
+    else:
+        raise ValueError(f"No rig found in {experiment_class}")
+
+
+def to_snake_case(pascal_str: str) -> str:
+    """Convert PascalCase to snake_case.
+
+    Args:
+        pascal_str: PascalCase string (e.g., "BeamBreak", "Video")
+
+    Returns:
+        snake_case string (e.g., "beam_break", "video")
+    """
+    import re
+    result = re.sub(r'(?<!^)(?=[A-Z])', '_', pascal_str).lower()
+    return result
+
+
+def _find_device_in_rig(rig, device_name: str):
+    """Find a device by name in the Rig hierarchy.
+
+    Searches through all device collections (cameras, feeders, nest, etc.)
+    to find the device with the matching name.
+
+    Args:
+        rig: Rig instance
+        device_name: Name of the device to find
+
+    Returns:
+        Device instance
+
+    Raises:
+        ValueError: If device not found in Rig
+    """
+    for field_name in rig.model_fields:
+        field_value = getattr(rig, field_name)
+
+        # Handle Dict[Name, Device] collections
+        if isinstance(field_value, dict):
+            if device_name in field_value:
+                return field_value[device_name]
+
+        # Handle single device fields
+        elif hasattr(field_value, 'device_type'):
+            if field_name == device_name or getattr(field_value, '_container_prefix', None) == device_name:
+                return field_value
+
+    raise ValueError(f"Device '{device_name}' not found in Rig")
+
+
+def get_stream_reader_for_epoch(
+    experiment_name: str,
+    device_name: str,
+    stream_type: str,
+    epoch_start,
+):
+    """Get stream reader for a specific epoch.
+
+    Reconstructs the Rig from metadata stored in EpochConfig.Meta (avoiding file I/O)
+    and navigates to the device to access the @data_reader property.
+
+    Args:
+        experiment_name: Name of the experiment
+        device_name: Name of device instance (e.g., "CameraTop")
+        stream_type: Type of stream in PascalCase (e.g., "Video")
+        epoch_start: Start time of the epoch
+
+    Returns:
+        Reader instance configured for the device/stream
+    """
+    from aeon.dj_pipeline import acquisition
+
+    # Get experiment class path from DevicesSchema
+    schema_name = (
+        acquisition.Experiment.DevicesSchema
+        & {"experiment_name": experiment_name}
+    ).fetch1("devices_schema_name")
+
+    # Get rig metadata for the specific epoch
+    epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
+    rig_metadata = (acquisition.EpochConfig.Meta & epoch_key).fetch1("metadata")
+
+    # Reconstruct Rig from metadata
+    experiment_class = get_experiment_class(schema_name)
+    rig = extract_rig_from_metadata_dict(experiment_class, rig_metadata)
+
+    # Find device in Rig and access stream reader
+    device = _find_device_in_rig(rig, device_name)
+    stream_method = to_snake_case(stream_type)  # "Video" → "video"
+    return getattr(device, stream_method)
 
 
 def insert_stream_types(rig: "BaseSchema") -> None:
@@ -92,10 +209,9 @@ def insert_stream_types(rig: "BaseSchema") -> None:
         seen_hashes.add(entry["stream_hash"])
 
         stream_type_entry = {
+            "stream_hash": entry["stream_hash"],
             "stream_type": entry["stream_type"],
             "stream_reader": entry["stream_reader"],
-            "stream_reader_kwargs": entry["stream_reader_kwargs"],
-            "stream_hash": entry["stream_hash"],
         }
         # Use skip_duplicates to handle race conditions
         streams.StreamType.insert1(stream_type_entry, skip_duplicates=True)
@@ -110,7 +226,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
     Notes: Use Pydantic Rig and metadata file to insert into streams.DeviceType and streams.Device.
     Only insert device types that were defined both in the Rig and metadata file.
     It then creates new device tables under streams schema.
-    
+
     Args:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
         metadata_filepath: Path to metadata file
@@ -130,19 +246,21 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         if device_type_mapper.get(device_name) and device_sn.get(device_name)
     }
 
-    # Create a map of device_type to stream_type.
-    device_stream_map: dict[str, list] = {}
+    # Create a map of device_type to (stream_type, stream_hash) pairs
+    device_stream_map: dict[str, list[tuple[str, str]]] = {}
 
     for device_config in device_info.values():
         device_type = device_config["device_type"]
         stream_types = device_config["stream_type"]
+        stream_hashes = device_config["stream_hash"]
 
         if device_type not in device_stream_map:
             device_stream_map[device_type] = []
 
-        for stream_type in stream_types:
-            if stream_type not in device_stream_map[device_type]:
-                device_stream_map[device_type].append(stream_type)
+        for stream_type, stream_hash in zip(stream_types, stream_hashes, strict=True):
+            pair = (stream_type, stream_hash)
+            if pair not in device_stream_map[device_type]:
+                device_stream_map[device_type].append(pair)
 
     # List only new device & stream types that need to be inserted & created.
     new_device_types = [
@@ -152,10 +270,10 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
     ]
 
     new_device_stream_types = [
-        {"device_type": device_type, "stream_type": stream_type}
+        {"device_type": device_type, "stream_hash": stream_hash}
         for device_type, stream_list in device_stream_map.items()
-        for stream_type in stream_list
-        if not streams.DeviceType.Stream & {"device_type": device_type, "stream_type": stream_type}
+        for stream_type, stream_hash in stream_list
+        if not streams.DeviceType.Stream & {"device_type": device_type, "stream_hash": stream_hash}
     ]
 
     new_devices = [
@@ -179,7 +297,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         except dj.DataJointError as e:
             # Only handle FK constraint violations (MySQL error 1452)
             if "foreign key constraint fails" in str(e).lower() or "1452" in str(e):
-                logger.info("FK constraint failed on DeviceType.Stream, inserting missing StreamType entries")
+                logger.info("FK constraint on DeviceType.Stream, inserting missing StreamType")
                 insert_stream_types(rig)
                 streams.DeviceType.Stream.insert(new_device_stream_types)
             else:
@@ -189,7 +307,9 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         streams.Device.insert(new_devices)
 
 
-def extract_epoch_config(experiment_name: str, devices_schema: DotMap, metadata_filepath: str) -> dict[str, Any]:
+def extract_epoch_config(
+    experiment_name: str, devices_schema: DotMap, metadata_filepath: str
+) -> dict[str, Any]:
     """Parse experiment metadata file and extract epoch configuration.
 
     Args:
@@ -229,7 +349,7 @@ def extract_epoch_config(experiment_name: str, devices_schema: DotMap, metadata_
     if not rig_config:
         raise ValueError(f'"rig" configuration not found in {metadata_filepath}')
 
-    # Flatten nested device structure into flat dict for compatibility with downstream code
+    # Flatten nested device structure for device iteration during ingestion
     devices = _flatten_rig_devices(rig_config)
 
     return {
@@ -237,8 +357,8 @@ def extract_epoch_config(experiment_name: str, devices_schema: DotMap, metadata_
         "epoch_start": epoch_start,
         "bonsai_workflow": workflow,
         "commit": commit,
-        "metadata": devices,
-        "rig_config": rig_config,  # Keep original rig config for trigger lookups
+        "metadata": rig_config,  # Store original nested JSON for Pydantic reconstruction
+        "devices": devices,  # Flattened structure for device iteration (not stored in DB)
         "metadata_file_path": metadata_filepath,
     }
 
@@ -459,7 +579,7 @@ def ingest_epoch_metadata_from_rig(
         return set()
 
     device_type_mapper, _ = get_device_mapper_from_rig(rig, metadata_filepath)
-    rig_config = epoch_config["rig_config"]
+    rig_config = epoch_config["metadata"]
 
     # Extract trigger frequencies from camera synchronizer
     camera_synchronizer = rig_config.get("cameraSynchronizer", {})
@@ -473,7 +593,7 @@ def ingest_epoch_metadata_from_rig(
     device_list = []
     device_removal_list = []
 
-    for device_name, device_config in epoch_config["metadata"].items():
+    for device_name, device_config in epoch_config["devices"].items():
         if table := getattr(streams, device_type_mapper.get(device_name) or "", None):
             # Extract serial number or port name
             device_sn = device_config.get("serialNumber") or device_config.get("portName")
@@ -617,8 +737,8 @@ def ingest_epoch_metadata(experiment_name: str, devices_schema: DotMap, metadata
         # if identical commit -> no changes
         return set()
 
-    device_type_mapper, _ = _extract_device_mapper_from_rig(epoch_config["rig_config"])
-    rig_config = epoch_config["rig_config"]
+    device_type_mapper, _ = _extract_device_mapper_from_rig(epoch_config["metadata"])
+    rig_config = epoch_config["metadata"]
 
     # Extract trigger frequencies from camera synchronizer
     camera_synchronizer = rig_config.get("cameraSynchronizer", {})
@@ -632,7 +752,7 @@ def ingest_epoch_metadata(experiment_name: str, devices_schema: DotMap, metadata
     device_list = []
     device_removal_list = []
 
-    for device_name, device_config in epoch_config["metadata"].items():
+    for device_name, device_config in epoch_config["devices"].items():
         if table := getattr(streams, device_type_mapper.get(device_name) or "", None):
             # Extract serial number or port name
             device_sn = device_config.get("serialNumber") or device_config.get("portName")
@@ -792,15 +912,15 @@ def extract_stream_types_from_device(device_class: type) -> list[str]:
 
 def to_pascal_case(snake_str: str) -> str:
     """Convert snake_case to PascalCase for stream_type.
-    
+
     Examples:
         "video" → "Video"
         "weight_raw" → "WeightRaw"
         "beam_break" → "BeamBreak"
-        
+
     Args:
         snake_str: snake_case string
-        
+
     Returns:
         PascalCase string
     """
@@ -810,21 +930,19 @@ def to_pascal_case(snake_str: str) -> str:
 
 def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
     """Parse Rig to extract device/stream info.
-    
+
     Streams are defined as @data_reader methods directly on Device classes.
     Uses actual device instances from Rig to ensure pattern resolution works correctly.
-    
+
     Args:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
-        
+
     Returns:
         dict[str, dict]: A dictionary of device information, keyed by device_name.
-        Same structure as legacy function for compatibility:
         {
             "device_name": {
                 "stream_type": [...],
                 "stream_reader": [...],
-                "stream_reader_kwargs": [...],
                 "stream_hash": [...]
             }
         }
@@ -832,26 +950,26 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
     def _get_class_path(obj) -> str:
         """Returns the class path of the object."""
         return f"{obj.__class__.__module__}.{obj.__class__.__name__}"
-    
+
     device_info: dict[str, dict] = {}
-    
+
     # Iterate over Rig fields to find Device collections
     for field_name in rig.model_fields:
         field_value = getattr(rig, field_name)
-        
+
         # Handle Dict[Name, Device] - e.g., cameras, feeders, nest
         if isinstance(field_value, dict):
             for device_name, device in field_value.items():
                 # Check if it's a Device instance (BaseSchema with device_type)
                 if not hasattr(device, 'device_type'):
                     continue
-                
+
                 if device_name not in device_info:
                     device_info[device_name] = defaultdict(list)
-                
+
                 # Extract @data_reader methods from Device class
                 stream_method_names = extract_stream_types_from_device(device.__class__)
-                
+
                 for stream_method_name in stream_method_names:
                     # Access @data_reader property on actual device instance
                     # This ensures pattern resolution works via _resolve_pattern_prefix()
@@ -862,42 +980,35 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
                             f"Failed to access {stream_method_name} on {device_name}: {e}. Skipping..."
                         )
                         continue
-                    
+
                     # Convert snake_case method name to PascalCase stream_type
                     stream_type = to_pascal_case(stream_method_name)  # "video" → "Video"
-                    
-                    # Extract info (same format as legacy)
+
+                    # Extract info
+                    stream_reader_class = _get_class_path(reader)
                     device_info[device_name]["stream_type"].append(stream_type)
-                    device_info[device_name]["stream_reader"].append(_get_class_path(reader))
-                    
-                    # Extract reader kwargs - pattern is already resolved from device hierarchy
-                    stream_reader_kwargs = {
-                        "pattern": reader.pattern,
-                        "columns": list(reader.columns) if reader.columns else None,
-                        "extension": reader.extension,
-                    }
-                    device_info[device_name]["stream_reader_kwargs"].append(stream_reader_kwargs)
-                    
-                    # Add hash
+                    device_info[device_name]["stream_reader"].append(stream_reader_class)
+
+                    # Add hash based on (stream_type, stream_reader) only
                     device_info[device_name]["stream_hash"].append(
                         dict_to_uuid({
-                            **stream_reader_kwargs,
-                            "stream_reader": _get_class_path(reader),
+                            "stream_type": stream_type,
+                            "stream_reader": stream_reader_class,
                         })
                     )
-        
+
         # Handle single Device instance (if any)
         elif hasattr(field_value, 'device_type'):
             # For single devices, use field_name as device_name
             device_name = field_name
             device = field_value
-            
+
             if device_name not in device_info:
                 device_info[device_name] = defaultdict(list)
-            
+
             # Same extraction logic as above
             stream_method_names = extract_stream_types_from_device(device.__class__)
-            
+
             for stream_method_name in stream_method_names:
                 try:
                     reader = getattr(device, stream_method_name)
@@ -906,58 +1017,54 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
                         f"Failed to access {stream_method_name} on {device_name}: {e}. Skipping..."
                     )
                     continue
-                
+
                 stream_type = to_pascal_case(stream_method_name)
+                stream_reader_class = _get_class_path(reader)
                 device_info[device_name]["stream_type"].append(stream_type)
-                device_info[device_name]["stream_reader"].append(_get_class_path(reader))
-                
-                stream_reader_kwargs = {
-                    "pattern": reader.pattern,
-                    "columns": list(reader.columns) if reader.columns else None,
-                    "extension": reader.extension,
-                }
-                device_info[device_name]["stream_reader_kwargs"].append(stream_reader_kwargs)
+                device_info[device_name]["stream_reader"].append(stream_reader_class)
+
+                # Add hash based on (stream_type, stream_reader) only
                 device_info[device_name]["stream_hash"].append(
                     dict_to_uuid({
-                        **stream_reader_kwargs,
-                        "stream_reader": _get_class_path(reader),
+                        "stream_type": stream_type,
+                        "stream_reader": stream_reader_class,
                     })
                 )
-    
+
     return device_info
 
 
 def get_stream_entries(rig: "BaseSchema") -> list[dict]:
-    """Returns a list of dictionaries containing the stream entries for a given device.
+    """Returns a list of dictionaries containing the stream entries for StreamType table.
 
     Args:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
 
     Returns:
-        list[dict]: List of dictionaries containing the stream entries for a given device.
+        list[dict]: List of dictionaries with stream_hash, stream_type, stream_reader.
     """
     device_info = get_device_info(rig)
     return [
         {
+            "stream_hash": stream_hash,
             "stream_type": stream_type,
             "stream_reader": stream_reader,
-            "stream_reader_kwargs": stream_reader_kwargs,
-            "stream_hash": stream_hash,
         }
         for stream_info in device_info.values()
-        for stream_type, stream_reader, stream_reader_kwargs, stream_hash in zip(
+        for stream_type, stream_reader, stream_hash in zip(
             stream_info["stream_type"],
             stream_info["stream_reader"],
-            stream_info["stream_reader_kwargs"],
             stream_info["stream_hash"],
             strict=True,
         )
     ]
 
 
-def get_device_mapper_from_rig(rig: "BaseSchema", metadata_filepath: Path) -> tuple[dict[str, str], dict[str, str]]:
+def get_device_mapper_from_rig(
+    rig: "BaseSchema", metadata_filepath: Path
+) -> tuple[dict[str, str], dict[str, str]]:
     """Extract device type mapper and serial numbers from Pydantic Rig.
-    
+
     Device types are extracted directly from device.device_type field.
     Serial numbers/port names are extracted from device attributes.
 
@@ -972,18 +1079,18 @@ def get_device_mapper_from_rig(rig: "BaseSchema", metadata_filepath: Path) -> tu
     """
     device_type_mapper: dict[str, str] = {}
     device_sn: dict[str, str] = {}
-    
+
     # Iterate over Rig fields to find Device collections
     for field_name in rig.model_fields:
         field_value = getattr(rig, field_name)
-        
+
         # Handle Dict[Name, Device] - e.g., cameras, feeders, nest
         if isinstance(field_value, dict):
             for device_name, device in field_value.items():
                 # Check if it's a Device instance (BaseSchema with device_type)
                 if not hasattr(device, 'device_type'):
                     continue
-                
+
                 device_type_mapper[device_name] = device.device_type
                 # Extract serial number or port name
                 device_sn[device_name] = (
@@ -991,7 +1098,7 @@ def get_device_mapper_from_rig(rig: "BaseSchema", metadata_filepath: Path) -> tu
                     getattr(device, 'port_name', None) or
                     None
                 )
-        
+
         # Handle single Device instance (if any)
         elif hasattr(field_value, 'device_type'):
             device_name = field_name
@@ -1002,6 +1109,6 @@ def get_device_mapper_from_rig(rig: "BaseSchema", metadata_filepath: Path) -> tu
                 getattr(device, 'port_name', None) or
                 None
             )
-    
+
     return device_type_mapper, device_sn
 

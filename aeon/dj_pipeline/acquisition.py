@@ -308,7 +308,7 @@ class EpochConfig(dj.Imported):
         bonsai_workflow: varchar(36)
         commit: varchar(64) # e.g. git commit hash of aeon_experiment used to generate this epoch
         source='': varchar(16)  # e.g. aeon_experiment or aeon_acquisition (or others)
-        metadata: longblob
+        metadata: json  # Rig configuration JSON for Pydantic reconstruction
         metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
         """
 
@@ -330,21 +330,20 @@ class EpochConfig(dj.Imported):
         """Ingest metadata into EpochConfig."""
         from aeon.dj_pipeline.utils import streams_maker
         from aeon.dj_pipeline.utils.load_metadata import (
-            get_experiment_class,
+            extract_active_regions,
             extract_rig_from_metadata,
+            get_experiment_class,
             ingest_epoch_metadata_from_rig,
             insert_device_types,
-            extract_active_regions,
-            _flatten_rig_devices,
         )
 
         experiment_name = key["experiment_name"]
-        
-        # Get schema name (must be Experiment class path, e.g., "swc.aeon.exp.foragingABC.experiment.ForagingABC")
+
+        # Get schema name (Experiment class path, e.g., "swc.aeon.exp.foragingABC...")
         schema_name = (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1(
             "devices_schema_name"
         )
-        
+
         dir_type, epoch_dir = (Epoch & key).fetch1("directory_type", "epoch_dir")
         data_dir = Experiment.get_data_directory(key, dir_type)
         metadata_filepath = data_dir / epoch_dir / "Metadata.json"
@@ -352,8 +351,8 @@ class EpochConfig(dj.Imported):
         # Get Experiment class and extract Rig
         experiment_class = get_experiment_class(schema_name)
         rig = extract_rig_from_metadata(experiment_class, metadata_filepath)
-        
-        # Load metadata directly for epoch_config (extract_epoch_config and ingest_epoch_metadata still use DotMap)
+
+        # Load metadata for epoch_config - store original rig_config as JSON
         metadata = json.loads(metadata_filepath.read_text())
         epoch_start = datetime.datetime.strptime(metadata_filepath.parent.name, "%Y-%m-%dT%H-%M-%S")
         rig_config = metadata.get("metadata", {}).get("rig", {})
@@ -362,24 +361,21 @@ class EpochConfig(dj.Imported):
             "epoch_start": epoch_start,
             "bonsai_workflow": metadata.get("workflow", ""),
             "commit": metadata.get("commit") or metadata.get("metadata", {}).get("Revision", ""),
-            "metadata": _flatten_rig_devices(rig_config) if rig_config else {},
-            "rig_config": rig_config,
-        }
-        
-        # Insert new entries for streams.DeviceType, streams.Device using Rig
-        insert_device_types(rig, metadata_filepath)
-        
-        epoch_config = {
-            **epoch_config,
+            "metadata": rig_config,  # Store original nested JSON for Pydantic reconstruction
             "metadata_file_path": metadata_filepath.relative_to(data_dir).as_posix(),
         }
-        
+
+        # Insert new entries for streams.DeviceType, streams.Device using Rig
+        insert_device_types(rig, metadata_filepath)
+
         # Define and instantiate new devices/stream tables under `streams` schema
         streams_maker.main()
-        
+
         # Insert devices' installation/removal/settings using Rig
-        epoch_device_types = ingest_epoch_metadata_from_rig(experiment_name, rig, epoch_config, metadata_filepath)
-        
+        epoch_device_types = ingest_epoch_metadata_from_rig(
+            experiment_name, rig, epoch_config, metadata_filepath
+        )
+
         # Extract active regions
         active_region = extract_active_regions(rig_config)
 
