@@ -47,17 +47,19 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "bandit",
-  "gh",
   "ipdb",
   "pre-commit",
-  "pyan3 @ git+https://github.com/Technologicat/pyan.git",
   "pydantic",
   "pyright",
-  "pytest",
-  "pytest-cov",
-  "sphinx",
   "ruff",
-  "tox",
+]
+test = [
+  "pytest>=7.0",
+  "pytest-cov",
+  "testcontainers[mysql]>=3.7",
+]
+docs = [
+  "sphinx",
 ]
 gpu = ["cupy", "dask"]
 spike_sorting = [
@@ -164,7 +166,13 @@ venvPath = "."
 venv = ".venv"
 exclude = ["aeon/dj_pipeline/*", ".venv/*"]
 [tool.pytest.ini_options]
-markers = ["api"]
+testpaths = ["tests"]
+markers = [
+  "unit: Unit tests (no database required)",
+  "integration: Integration tests (DB via testcontainers, no populate)",
+  "specialized: Specialized tests (DB + populate, golden datasets)",
+]
 
 [tool.uv.sources]
-swc-aeon = { git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git", branch = "pydantic-schema" }
+swc-aeon = { git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git", branch = "main" }
+swc-aeon-rigs = { git = "https://github.com/SainsburyWellcomeCentre/aeon_swc_rigs.git", branch = "main" }
