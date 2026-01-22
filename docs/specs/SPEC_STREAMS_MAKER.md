@@ -202,15 +202,16 @@ The `metadata` field stores the **original nested rig configuration** as JSON, e
 - For each device, extracts:
   - `device_type` from `device.device_type` attribute
   - Stream types from `@data_reader` methods on the device class
-- Returns dict mapping device types to their stream entries:
+- Returns dict mapping device names to their stream info (flat lists):
 ```python
 {
-    "SpinnakerCamera": {
-        "streams": [
-            {"stream_hash": UUID, "stream_type": "Video", "stream_reader": "swc.aeon.io.reader.Video"},
-            {"stream_hash": UUID, "stream_type": "Position", "stream_reader": "swc.aeon.io.reader.Position"}
-        ]
-    }
+    "CameraTop": {
+        "stream_type": ["Video", "Position"],
+        "stream_reader": ["swc.aeon.io.reader.Video", "swc.aeon.io.reader.Harp"],
+        "stream_hash": [UUID(...), UUID(...)]
+    },
+    "CameraSide": {...},
+    "Feeder1": {...}
 }
 ```
 
