@@ -36,15 +36,14 @@ from swc.aeon.io import reader
 ┌─────────────────────────────────┐
 │ Experiment Class                │
 │ (Pydantic BaseSchema)           │
-│ • ForagingABC                   │
-│ • Experiment.rig                │
+│ • "module.path:Experiment"      │
+│ • Experiment.rig → Rig          │
 └──────────────┬──────────────────┘
                │
                ▼
 ┌─────────────────────────────────┐
 │ load_metadata.py                │
-│ • get_experiment_class()        │
-│ • extract_rig_from_metadata()   │
+│ • get_experiment_pydantic()     │ ← Loads Experiment class from "module:Class" path
 │ • get_device_info()             │
 │ • get_device_mapper_from_rig()  │
 │ • insert_stream_types()         │ ← Populates StreamType (FK dependency)
@@ -188,14 +187,10 @@ The `metadata` field stores the **original nested rig configuration** as JSON, e
 
 ### Parsing Functions
 
-**`get_experiment_class(schema_name)`**
+**`get_experiment_pydantic(schema_name)`**
 - Dynamically imports Experiment class from module path
-- Example: `"swc.aeon.exp.foragingABC.experiment.ForagingABC"` → class
-
-**`extract_rig_from_metadata(experiment_class, metadata_filepath)`**
-- Loads metadata JSON and validates with Pydantic
-- Navigates to Rig (handles both `experiment.experiment.rig` and `experiment.rig` structures)
-- Returns Rig instance with full device hierarchy
+- Uses colon separator format: `"module.path:ClassName"`
+- Example: `"swc.aeon.exp.foragingABC.experiment:Experiment"` → Experiment class
 
 **`get_device_info(rig)`**
 - Iterates over Rig model fields to find device collections
@@ -233,11 +228,13 @@ The `metadata` field stores the **original nested rig configuration** as JSON, e
 **`get_stream_reader_for_epoch(experiment_name, device_name, stream_type, epoch_start)`**
 - **Runtime stream reader resolution** - the core of the Pydantic approach
 - Process:
-  1. Fetch `rig_config` JSON from `EpochConfig.Meta`
-  2. Get experiment class from `Experiment.DevicesSchema`
-  3. Reconstruct Rig using `model_validate({"rig": rig_config})`
-  4. Find device by name in Rig hierarchy
-  5. Call `@data_reader` method to get configured stream reader
+  1. Get Experiment class path from `Experiment.DevicesSchema` (e.g., `"swc...experiment:Experiment"`)
+  2. Fetch `rig_config` JSON from `EpochConfig.Meta`
+  3. Load Experiment class using `get_experiment_pydantic()`
+  4. Reconstruct Experiment using `model_validate({"rig": rig_config})`
+  5. Access `experiment.rig` to get Rig instance
+  6. Find device by name in Rig hierarchy
+  7. Call `@data_reader` method to get configured stream reader
 - Returns reader instance ready for `io_api.load()`
 
 **`ingest_epoch_metadata_from_rig(experiment_name, rig, epoch_config, metadata_filepath)`**
@@ -355,14 +352,18 @@ graph TD
 1. Query `DeviceType.Stream` to find device/stream combination
 2. Find a sample experiment that has this device type installed
 3. Get the epoch containing the device installation time
-4. Fetch `rig_config` JSON from `EpochConfig.Meta`
-5. Reconstruct Rig using `experiment_class.model_validate({"rig": rig_config})`
-6. Find device in Rig hierarchy by name
-7. Call `@data_reader` method to get configured reader instance
-8. Extract `reader.columns` (e.g., `["hw_counter", "hw_timestamp", "_frame"]`)
-9. Filter: skip columns starting with `"_"` (metadata)
-10. Normalize: remove type annotations from names (e.g., `"x (float)"` → `"x"`)
-11. Generate table definition with all columns as `longblob`
+4. Call `get_stream_reader_for_epoch()` which:
+   - Fetches Experiment class path from `Experiment.DevicesSchema`
+   - Fetches `rig_config` JSON from `EpochConfig.Meta`
+   - Loads Experiment class using `get_experiment_pydantic()`
+   - Reconstructs via `Experiment.model_validate({"rig": rig_config})`
+   - Accesses `experiment.rig` to get Rig instance
+   - Finds device in Rig hierarchy by name
+   - Calls `@data_reader` method to get configured reader instance
+5. Extract `reader.columns` (e.g., `["hw_counter", "hw_timestamp", "_frame"]`)
+6. Filter: skip columns starting with `"_"` (metadata)
+7. Normalize: remove type annotations from names (e.g., `"x (float)"` → `"x"`)
+8. Generate table definition with all columns as `longblob`
 
 **Example**:
 ```python
@@ -428,27 +429,34 @@ This conversion is handled by `to_pascal_case()` in `load_metadata.py`.
 **Called from `acquisition.py:EpochConfig.make()`**:
 ```python
 def make(self, key):
-    # 1. Load experiment schema and extract Rig
-    experiment_class = get_experiment_class(schema_name)
-    rig = extract_rig_from_metadata(experiment_class, metadata_filepath)
+    # 1. Get Experiment class path (e.g., "swc.aeon.exp.foragingABC.experiment:Experiment")
+    schema_name = (Experiment.DevicesSchema & key).fetch1("devices_schema_name")
 
-    # 2. Store original rig_config in EpochConfig.Meta (as JSON)
+    # 2. Load metadata file and extract rig_config
+    metadata = json.loads(metadata_filepath.read_text())
     rig_config = metadata.get("metadata", {}).get("rig", {})
+
+    # 3. Validate and construct Experiment/Rig from rig_config
+    experiment_class = get_experiment_pydantic(schema_name)
+    experiment = experiment_class.model_validate({"rig": rig_config})
+    rig = experiment.rig
+
+    # 4. Store original rig_config in EpochConfig.Meta (as JSON)
     epoch_config = {
         ...
-        "metadata": rig_config,  # Original nested JSON for Pydantic reconstruction
+        "metadata": rig_config,  # Stored without wrapper for compactness
     }
 
-    # 3. Insert device types (handles StreamType internally via try/except)
+    # 5. Insert device types (handles StreamType internally via try/except)
     insert_device_types(rig, metadata_filepath)
 
-    # 4. Generate DataJoint tables from catalog
+    # 6. Generate DataJoint tables from catalog
     streams_maker.main()
 
-    # 5. Insert device installation records
+    # 7. Insert device installation records
     ingest_epoch_metadata_from_rig(experiment_name, rig, epoch_config, metadata_filepath)
 
-    # 6. Insert epoch config with metadata
+    # 8. Insert epoch config with metadata
     self.Meta.insert1(epoch_config)
 ```
 
@@ -514,8 +522,9 @@ class Rig(DataSchema):
 
 ### 2. Metadata Loading (`load_metadata.py`)
 
-- `get_experiment_class("swc.aeon.exp.foragingABC.experiment.ForagingABC")` → loads class
-- `extract_rig_from_metadata(ForagingABC, metadata_filepath)` → Rig instance
+- `get_experiment_pydantic("swc.aeon.exp.foragingABC.experiment:Experiment")` → loads Experiment class
+- `Experiment.model_validate({"rig": rig_config})` → Experiment instance
+- `experiment.rig` → Rig instance
 - `get_device_info(rig)` extracts:
   - Camera: `device_type="SpinnakerCamera"`, streams with hashes
   - Feeder: `device_type="UndergroundFeeder"`, streams with hashes
@@ -553,12 +562,16 @@ Creates DataJoint tables based on catalog entries:
 When `SpinnakerCameraVideo.populate()` is called:
 1. `key_source` returns Chunk × SpinnakerCamera combinations
 2. For each key, `make()` is called
-3. `get_stream_reader_for_epoch()` fetches `rig_config` from `EpochConfig.Meta`
-4. Rig is reconstructed via `model_validate()`
-5. Camera device is found in `rig.cameras[device_name]`
-6. `camera.video` property returns configured Video reader
-7. `io_api.load()` reads data using the reader
-8. Data is inserted into the stream table
+3. `get_stream_reader_for_epoch()` is called which:
+   - Fetches Experiment class path from `Experiment.DevicesSchema`
+   - Fetches `rig_config` from `EpochConfig.Meta`
+   - Loads Experiment class using `get_experiment_pydantic()`
+   - Reconstructs via `Experiment.model_validate({"rig": rig_config})`
+   - Accesses `experiment.rig` to get Rig instance
+4. Camera device is found in `rig.cameras[device_name]`
+5. `camera.video` property returns configured Video reader
+6. `io_api.load()` reads data using the reader
+7. Data is inserted into the stream table
 
 ### 6. Usage
 
@@ -594,3 +607,18 @@ The previous approach stored reader initialization kwargs in `StreamType`. This 
 1. Kwargs vary by device instance (different patterns, serial numbers)
 2. Readers are now instantiated via `@data_reader` methods, not direct construction
 3. The Pydantic approach handles all reader configuration through the Rig hierarchy
+
+### Why Use `module.path:ClassName` Format?
+
+The `devices_schema_name` uses colon separator (`module.path:ClassName`) instead of dot notation for clarity:
+- **Explicit separation**: Clearly distinguishes module path from class name
+- **Python convention**: Aligns with entry point syntax (e.g., `console_scripts`)
+- **Simpler parsing**: `rsplit(':', 1)` reliably separates module from class
+- Example: `"swc.aeon.exp.foragingABC.experiment:Experiment"`
+
+### Why Point to Experiment Class Instead of Rig?
+
+The schema path points to the `Experiment` class (which has `rig: Rig`) rather than the `Rig` class directly because:
+1. **Pydantic validation**: `Experiment.model_validate({"rig": rig_config})` validates the full structure
+2. **Future extensibility**: Experiment may contain other metadata (e.g., `meta_controller`)
+3. **Consistent hierarchy**: Maintains the `Experiment.rig` relationship as defined in the schema

@@ -27,77 +27,21 @@ if TYPE_CHECKING:
 logger = dj.logger
 
 
-def get_experiment_class(schema_name: str) -> type["BaseSchema"]:
-    """Get Experiment class from schema name.
+def get_experiment_pydantic(schema_name: str) -> type["BaseSchema"]:
+    """Get Pydantic Experiment class from schema name.
 
-    Schema name is a class path like 'swc.aeon.exp.foragingABC.experiment.ForagingABC'
-    or 'swc.aeon.exp.foragingABC.experiment.Experiment'.
+    Schema name is a class path like 'swc.aeon.exp.foragingABC.experiment:Experiment'.
+    The format is 'module.path:ClassName' where ':' separates module from class.
 
     Args:
-        schema_name: Full class path (module.path.ClassName)
+        schema_name: Full class path (module.path:ClassName)
 
     Returns:
-        Experiment class type
+        Pydantic Experiment class type
     """
-    module_path, class_name = schema_name.rsplit('.', 1)
+    module_path, class_name = schema_name.rsplit(':', 1)
     module = importlib.import_module(module_path)
     return getattr(module, class_name)
-
-
-def extract_rig_from_metadata(experiment_class: type, metadata_filepath: Path):
-    """Extract Rig instance from metadata file.
-
-    Handles both structures:
-    - experiment.experiment.rig (ForagingABC -> Experiment -> Rig)
-    - experiment.rig (Experiment -> Rig)
-
-    Args:
-        experiment_class: Experiment class type
-        metadata_filepath: Path to Metadata.json file
-
-    Returns:
-        Rig instance with device hierarchy intact
-    """
-    metadata = json.loads(metadata_filepath.read_text())
-    experiment = experiment_class.model_validate(metadata)
-
-    # Navigate to Rig - try nested structure first
-    if hasattr(experiment, 'experiment') and hasattr(experiment.experiment, 'rig'):
-        return experiment.experiment.rig
-    elif hasattr(experiment, 'rig'):
-        return experiment.rig
-    else:
-        raise ValueError(f"No rig found in {experiment_class}")
-
-
-def extract_rig_from_metadata_dict(experiment_class: type, rig_metadata: dict):
-    """Extract Rig instance from rig metadata dictionary.
-
-    This is used to reconstruct the Rig from metadata stored in EpochConfig.Meta,
-    avoiding file I/O.
-
-    Handles both structures:
-    - experiment.experiment.rig (ForagingABC -> Experiment -> Rig)
-    - experiment.rig (Experiment -> Rig)
-
-    Args:
-        experiment_class: Experiment class type
-        rig_metadata: Rig configuration dict (from EpochConfig.Meta.metadata)
-
-    Returns:
-        Rig instance with device hierarchy intact
-    """
-    # Wrap rig_metadata in the expected structure for model_validate
-    full_metadata = {"rig": rig_metadata}
-    experiment = experiment_class.model_validate(full_metadata)
-
-    # Navigate to Rig - try nested structure first
-    if hasattr(experiment, 'experiment') and hasattr(experiment.experiment, 'rig'):
-        return experiment.experiment.rig
-    elif hasattr(experiment, 'rig'):
-        return experiment.rig
-    else:
-        raise ValueError(f"No rig found in {experiment_class}")
 
 
 def to_snake_case(pascal_str: str) -> str:
@@ -155,7 +99,7 @@ def get_stream_reader_for_epoch(
     """Get stream reader for a specific epoch.
 
     Reconstructs the Rig from metadata stored in EpochConfig.Meta (avoiding file I/O)
-    and navigates to the device to access the @data_reader property.
+    and accesses the device's @data_reader property.
 
     Args:
         experiment_name: Name of the experiment
@@ -168,7 +112,7 @@ def get_stream_reader_for_epoch(
     """
     from aeon.dj_pipeline import acquisition
 
-    # Get experiment class path from DevicesSchema
+    # Get Experiment class path (e.g., "swc.aeon.exp.foragingABC.experiment:Experiment")
     schema_name = (
         acquisition.Experiment.DevicesSchema
         & {"experiment_name": experiment_name}
@@ -178,9 +122,10 @@ def get_stream_reader_for_epoch(
     epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
     rig_metadata = (acquisition.EpochConfig.Meta & epoch_key).fetch1("metadata")
 
-    # Reconstruct Rig from metadata
-    experiment_class = get_experiment_class(schema_name)
-    rig = extract_rig_from_metadata_dict(experiment_class, rig_metadata)
+    # Reconstruct Experiment and access Rig
+    experiment_class = get_experiment_pydantic(schema_name)
+    experiment = experiment_class.model_validate({"rig": rig_metadata})
+    rig = experiment.rig
 
     # Find device in Rig and access stream reader
     device = _find_device_in_rig(rig, device_name)

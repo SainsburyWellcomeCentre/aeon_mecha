@@ -59,10 +59,14 @@ class EventType(dj.Lookup):
 
 @schema
 class DevicesSchema(dj.Lookup):
-    """Lookup table for experiment device schemas (Pydantic Experiment class paths)."""
+    """Lookup table for experiment device schemas (Pydantic Experiment class paths).
+
+    The devices_schema_name should be a full class path to the Experiment class using
+    the format 'module.path:ClassName', e.g., 'swc.aeon.exp.foragingABC.experiment:Experiment'.
+    """
 
     definition = """
-    devices_schema_name: varchar(128)  # Full class path, e.g., "swc.aeon.exp.foragingABC.experiment.ForagingABC"
+    devices_schema_name: varchar(128)  # Experiment class path (module.path:ClassName format)
     """
 
 
@@ -329,15 +333,14 @@ class EpochConfig(dj.Imported):
         from aeon.dj_pipeline.utils import streams_maker
         from aeon.dj_pipeline.utils.load_metadata import (
             extract_active_regions,
-            extract_rig_from_metadata,
-            get_experiment_class,
+            get_experiment_pydantic,
             ingest_epoch_metadata_from_rig,
             insert_device_types,
         )
 
         experiment_name = key["experiment_name"]
 
-        # Get schema name (Experiment class path, e.g., "swc.aeon.exp.foragingABC...")
+        # Get Experiment class path (e.g., "swc.aeon.exp.foragingABC.experiment:Experiment")
         schema_name = (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1(
             "devices_schema_name"
         )
@@ -346,14 +349,17 @@ class EpochConfig(dj.Imported):
         data_dir = Experiment.get_data_directory(key, dir_type)
         metadata_filepath = data_dir / epoch_dir / "Metadata.json"
 
-        # Get Experiment class and extract Rig
-        experiment_class = get_experiment_class(schema_name)
-        rig = extract_rig_from_metadata(experiment_class, metadata_filepath)
-
-        # Load metadata for epoch_config - store original rig_config as JSON
+        # Load metadata and extract rig_config
         metadata = json.loads(metadata_filepath.read_text())
         epoch_start = datetime.datetime.strptime(metadata_filepath.parent.name, "%Y-%m-%dT%H-%M-%S")
         rig_config = metadata.get("metadata", {}).get("rig", {})
+
+        # Validate and construct Experiment/Rig from rig_config
+        # Store as {"rig": rig_config} so Experiment.model_validate() works directly
+        experiment_class = get_experiment_pydantic(schema_name)
+        experiment_metadata = {"rig": rig_config}
+        experiment = experiment_class.model_validate(experiment_metadata)
+        rig = experiment.rig
         epoch_config = {
             "experiment_name": experiment_name,
             "epoch_start": epoch_start,
