@@ -9,44 +9,10 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, streams
-from aeon.dj_pipeline.utils.load_metadata import extract_rig_from_metadata, get_experiment_class
+from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
 schema = dj.schema(get_schema_name("tracking"))
 logger = dj.logger
-
-
-# ---- Helper to get stream reader from Pydantic rig ----
-
-
-def _get_stream_reader(key: dict, device_name: str, stream_name: str):
-    """Get stream reader from Pydantic rig for a given experiment/epoch.
-
-    Args:
-        key: Dictionary containing experiment_name and epoch_start
-        device_name: Name of the device (e.g., "CameraTop")
-        stream_name: Name of the stream (e.g., "Pose", "Video")
-
-    Returns:
-        Stream reader instance configured for the device
-    """
-    # Get experiment class path from Experiment.DevicesSchema
-    schema_name = (
-        acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}
-    ).fetch1("devices_schema_name")
-    experiment_class = get_experiment_class(schema_name)
-
-    # Get metadata file path from EpochConfig.Meta
-    epoch_key = {"experiment_name": key["experiment_name"], "epoch_start": key["epoch_start"]}
-    metadata_file_path = (acquisition.EpochConfig.Meta & epoch_key).fetch1("metadata_file_path")
-
-    # Reconstruct full path
-    dir_type = (acquisition.Chunk & key).fetch1("directory_type")
-    data_dir = acquisition.Experiment.get_data_directory(key, dir_type)
-    metadata_filepath = data_dir / metadata_file_path
-
-    # Extract rig and get stream reader
-    rig = extract_rig_from_metadata(experiment_class, metadata_filepath)
-    return getattr(getattr(rig, device_name), stream_name)
 
 
 # ---------- Tracking Method ------------------
@@ -216,8 +182,10 @@ class SLEAPTracking(dj.Imported):
             "spinnaker_video_source_name"
         )
 
-        # Get Pose stream reader via Pydantic rig
-        stream_reader = _get_stream_reader(key, device_name, "Pose")
+        # Get Pose stream reader via Pydantic rig (from EpochConfig.Meta)
+        stream_reader = get_stream_reader_for_epoch(
+            key["experiment_name"], device_name, "Pose", key["epoch_start"]
+        )
 
         pose_data = io_api.load(
             root=data_dirs,
