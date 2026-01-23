@@ -10,10 +10,6 @@ import aeon
 from aeon.dj_pipeline import acquisition, get_schema_name
 from swc.aeon.io import api as io_api
 
-# TODO: Refactor stream table make() methods to use Pydantic-based approach
-# See tracking._get_stream_reader() for reference implementation
-aeon_schemas = None  # Legacy: was acquisition.aeon_schemas
-
 schema = dj.Schema(get_schema_name("streams"))
 
 
