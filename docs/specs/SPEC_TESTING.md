@@ -2,6 +2,8 @@
 
 Testing strategy for the Pydantic-based metadata loading and DataJoint table generation pipeline.
 
+**Last Updated:** 2025-01-27
+
 ---
 
 ## Architecture
@@ -52,10 +54,10 @@ Integration tests verify that components work together correctly. They require e
 |----------|--------------|-------------|--------|
 | Unit tests | Pure functions | Synthetic | ✅ Implemented |
 | Integration (schema) | `insert_stream_types()`, FK handling | Synthetic Pydantic | ✅ Implemented |
-| Integration (ingestion) | `Chunk.populate()`, `streams.*.populate()` | Golden datasets | ❌ Not yet |
+| Integration (ingestion) | `EpochConfig.make()`, `Chunk.populate()`, `streams.*.populate()` | Golden datasets | 🔄 In Progress |
 | Specialized | SLEAP/DLC tracking | Golden datasets | ❌ Needs GPU |
 
-**Note:** Current tests in `test_load_metadata_integration.py` test schema/catalog operations with synthetic data. Tests for `populate()` will require golden datasets.
+**Note:** Current tests in `test_load_metadata_integration.py` test schema/catalog operations with synthetic data. Golden dataset tests in `test_ingestion_golden.py` test full `populate()` flow.
 
 ---
 
@@ -596,3 +598,240 @@ def extract_stream_types_from_device(device_class: type) -> list[str]:
                     stream_types.append(name)
                     break
 ```
+
+---
+
+## Golden Dataset Integration Tests
+
+This section details integration tests that validate the full ingestion pipeline using golden datasets.
+
+### Overview
+
+Golden dataset tests validate:
+1. `EpochConfig.make()` - Parse real Metadata.json with experiment-specific Pydantic schema
+2. `Chunk.ingest_chunks()` - Detect and ingest chunk files from filesystem
+3. `DeviceDataStream.make()` - Load ALL stream types with `populate(limit=10)`
+
+### Golden Dataset Registry
+
+Datasets are configured via a registry pattern to support multiple datasets:
+
+```python
+# tests/dj_pipeline/conftest.py
+
+from dataclasses import dataclass
+from pathlib import Path
+
+@dataclass
+class GoldenDataset:
+    """Configuration for a golden dataset."""
+    name: str                    # e.g., "foraging_abc_2025_11_18"
+    experiment_name: str         # e.g., "abcBehav0-aeon3"
+    experiment_path: str         # e.g., "AEON3/abcBehav0" (relative to raw/)
+    epoch_dir: str               # e.g., "2025-11-18T10-13-15"
+    devices_schema: str          # e.g., "swc.aeon.exp.foragingABC.experiment:Experiment"
+    arena: str                   # e.g., "arena-aeon3"
+    required_files: list[str]    # Files to validate before running tests
+
+    # Expected values for assertions
+    expected_camera_count: int = 0
+    expected_feeder_count: int = 0
+
+
+# Registry of available golden datasets
+GOLDEN_DATASETS: dict[str, GoldenDataset] = {
+    "foraging_abc_2025_11_18": GoldenDataset(
+        name="foraging_abc_2025_11_18",
+        experiment_name="abcBehav0-aeon3",
+        experiment_path="AEON3/abcBehav0",
+        epoch_dir="2025-11-18T10-13-15",
+        devices_schema="swc.aeon.exp.foragingABC.experiment:Experiment",
+        arena="arena-aeon3",
+        required_files=[
+            "Metadata.json",
+            "CameraTop/CameraTop_2025-11-18T10-00-00.csv",
+            "Feeder1/Feeder1_32_2025-11-18T10-00-00.bin",
+        ],
+        expected_camera_count=13,
+        expected_feeder_count=6,
+    ),
+    # Future datasets added here
+}
+
+DEFAULT_GOLDEN_DATA_ROOT = Path.home() / "sciops-data/project_aeon/aeon/data"
+```
+
+### Path Configuration
+
+Golden dataset tests use aeon_mecha's existing `repository_config` pattern:
+
+```python
+# In fixture - configure dj.config the same way production does
+dj.config["custom"]["repository_config"] = {
+    "ceph_aeon": str(golden_data_root)
+}
+
+# In production code (unchanged)
+from aeon.dj_pipeline.utils.paths import get_repository_path
+repo_path = get_repository_path("ceph_aeon")
+```
+
+This maintains consistency with how paths are configured in `dj_local_conf.json` for production deployments.
+
+### Key Fixtures
+
+| Fixture | Scope | Purpose |
+|---------|-------|---------|
+| `golden_dataset_config` | session | Active dataset configuration from registry |
+| `dj_config_with_golden_data` | session | Configure `repository_config` for golden data |
+| `require_golden_data` | session | Skip tests if data unavailable, validate files |
+| `full_pipeline` | session | All schema modules (lab, subject, acquisition, streams) |
+| `test_experiment` | session | Insert experiment from config |
+| `test_epoch` | session | Insert epoch from config |
+
+### Test Classes
+
+| Class | Tests | Description |
+|-------|-------|-------------|
+| `TestEpochConfigMake` | 4 | `EpochConfig.populate()` with metadata assertions |
+| `TestChunkIngestion` | 2 | `Chunk.ingest_chunks()` file detection |
+| `TestStreamDataIngestion` | 3 | ALL streams with `populate(limit=10)` |
+
+### Stream Testing Strategy
+
+**Key insight:** Test ALL stream types, but limit entries per stream.
+
+```python
+POPULATE_LIMIT = 10
+
+def test_all_stream_tables_populate(self, ...):
+    """Verify ALL stream tables can populate with limit."""
+    stream_tables = [...]  # All DeviceDataStream tables
+
+    for table in stream_tables:
+        table.populate(limit=POPULATE_LIMIT, display_progress=False)
+
+    # Assert at least some tables have data
+    populated = [t for t in stream_tables if len(t) > 0]
+    assert len(populated) > 0
+```
+
+This validates:
+- Every `DeviceDataStream` table can be created
+- Every reader can parse its file format
+- FK relationships are correct
+
+Without:
+- Ingesting gigabytes of data
+- Long test execution times
+
+### Directory Structure (Updated)
+
+```
+tests/
+├── conftest.py                              # Root: testcontainers, markers
+├── dj_pipeline/
+│   ├── conftest.py                          # Golden dataset fixtures + DB fixtures
+│   ├── test_ingestion_golden.py             # Golden dataset integration tests
+│   ├── test_pipeline_instantiation.py       # Existing
+│   ├── test_acquisition.py                  # Existing
+│   └── utils/
+│       ├── conftest.py                      # Test Rig fixtures
+│       ├── test_load_metadata_unit.py       # Unit tests
+│       └── test_load_metadata_integration.py # Schema integration tests
+└── fixtures/
+    └── metadata/                            # Sample fixtures (in git)
+```
+
+### Adding New Golden Datasets
+
+1. **Copy data** to golden data root:
+   ```bash
+   rsync -avP aeon-hpc:/ceph/aeon/aeon/data/raw/EXPERIMENT/epoch/ \
+       ~/sciops-data/project_aeon/aeon/data/raw/EXPERIMENT/epoch/
+   ```
+
+2. **Add to registry** in `tests/dj_pipeline/conftest.py`:
+   ```python
+   GOLDEN_DATASETS["new_dataset_name"] = GoldenDataset(
+       name="new_dataset_name",
+       experiment_name="expName-aeonN",
+       experiment_path="AEONN/expName",
+       epoch_dir="YYYY-MM-DDTHH-MM-SS",
+       devices_schema="swc.aeon.exp.expName.experiment:Experiment",
+       arena="arena-aeonN",
+       required_files=["Metadata.json", ...],
+       expected_camera_count=N,
+       expected_feeder_count=N,
+   )
+   ```
+
+3. **Update active dataset** (optional) or **parametrize** to test multiple:
+   ```python
+   @pytest.mark.parametrize("dataset_name", list(GOLDEN_DATASETS.keys()))
+   def test_with_all_datasets(dataset_name, ...):
+       cfg = GOLDEN_DATASETS[dataset_name]
+   ```
+
+### CI Strategy (Golden Datasets)
+
+| Event | Unit | Integration (Schema) | Integration (Golden) |
+|-------|------|---------------------|---------------------|
+| PR | Yes | Yes | Skip (no data) |
+| Merge to main | Yes | Yes | Skip (no data) |
+| Scheduled (weekly) | Yes | Yes | Yes (mounted data) |
+| Local dev | Yes | Yes | Yes (if available) |
+
+Golden dataset tests gracefully skip with clear messages when data is unavailable.
+
+### Implementation Phases
+
+#### Phase 3.1: Infrastructure
+
+1. Add `aeon_exp_foragingABC` as test dependency in `pyproject.toml`
+2. Add `GoldenDataset` dataclass and registry to `tests/dj_pipeline/conftest.py`
+3. Add `dj_config_with_golden_data` and `require_golden_data` fixtures
+
+#### Phase 3.2: Experiment Setup
+
+1. Add `full_pipeline` fixture with all schemas
+2. Add `test_experiment` fixture (generic, from config)
+3. Add `test_epoch` fixture (generic, from config)
+
+#### Phase 3.3: Core Tests
+
+1. Create `tests/dj_pipeline/test_ingestion_golden.py`
+2. Implement `TestEpochConfigMake` (4 tests)
+3. Implement `TestChunkIngestion` (2 tests)
+4. Implement `TestStreamDataIngestion` (3 tests, uses `populate(limit=10)`)
+
+### Dependencies (Additional)
+
+Add to `pyproject.toml`:
+
+```toml
+[tool.uv.sources]
+swc-aeon-exp-foragingabc = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git", branch = "data-api" }
+```
+
+### Commands (Golden Dataset Tests)
+
+```bash
+# Run golden dataset tests (skips if data unavailable)
+uv run pytest tests/dj_pipeline/test_ingestion_golden.py -v
+
+# Run all integration tests
+uv run pytest -m integration -v
+
+# Skip slow stream tests
+uv run pytest tests/dj_pipeline/test_ingestion_golden.py -m "not slow" -v
+```
+
+### Success Criteria
+
+- [ ] `EpochConfig.make()` completes with golden Metadata.json
+- [ ] `Chunk.ingest_chunks()` detects and ingests chunk
+- [ ] ALL stream tables can `populate(limit=10)`
+- [ ] Tests skip gracefully when data unavailable
+- [ ] No modification to production `streams.py`
+- [ ] Existing tests still pass
