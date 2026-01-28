@@ -1,7 +1,12 @@
-"""Load metadata from the experiment and insert into streams schema.
+"""Metadata loading and catalog population for streams schema.
 
-This module handles the Pydantic-based metadata format where devices are organized
-in Rig objects with device collections like 'cameras', 'feeders', 'nest', etc.
+This module provides functions for:
+- Extracting device and stream information from Pydantic Experiment/Rig classes
+- Populating catalog tables (StreamType, DeviceType, Device)
+- Ingesting epoch-specific device configurations into stream tables
+
+Devices are organized in Rig objects with collections (cameras, feeders, nest, etc.).
+Stream readers are defined via @data_reader decorated methods on Device classes.
 """
 
 import datetime
@@ -15,9 +20,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import datajoint as dj
-import numpy as np
-from dotmap import DotMap
-from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline.utils import dict_to_uuid, streams_maker
 
@@ -27,7 +29,7 @@ if TYPE_CHECKING:
 logger = dj.logger
 
 
-# region Step 1: Catalog Population Functions
+# region Catalog Population Functions
 
 
 def get_device_class_from_field(field_info) -> type["Device"] | None:
@@ -72,8 +74,9 @@ def get_device_class_from_field(field_info) -> type["Device"] | None:
 def get_data_reader_methods(device_class: type) -> list[tuple[str, Any]]:
     """Get @data_reader methods from Device class.
 
-    @data_reader methods are cached_property objects that take (self, pattern) args.
-    Uses the same detection logic as extract_stream_types_from_device().
+    @data_reader methods are cached_property objects with signature (self, pattern).
+    The decorator wraps the original function in a closure, so we check both the
+    direct func signature and the closure for the pattern parameter.
 
     Args:
         device_class: Device class type
@@ -244,14 +247,11 @@ def get_reader_kwargs_from_device_class(device_class: type, method_name: str) ->
 
 
 def populate_catalog_from_pydantic(experiment_class: type["BaseSchema"]) -> None:
-    """Populate catalog tables from Pydantic Experiment class (Step 1).
+    """Populate catalog tables (StreamType, DeviceType) from Pydantic Experiment class.
 
     Extracts DeviceType, StreamType, and their relationships from the Pydantic
     class hierarchy. Also extracts reader constructor kwargs for readers that
-    require additional arguments (e.g., BitmaskEvent, Harp with columns).
-
-    Columns are NOT stored - they are extracted on-demand in Step 2 by importing
-    the reader class and instantiating with the stored kwargs.
+    require additional arguments (e.g., BitmaskEvent needs value/tag).
 
     This function is idempotent - safe to call multiple times.
 
@@ -606,62 +606,6 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         streams.Device.insert(new_devices)
 
 
-def extract_epoch_config(
-    experiment_name: str, devices_schema: DotMap, metadata_filepath: str
-) -> dict[str, Any]:
-    """Parse experiment metadata file and extract epoch configuration.
-
-    Args:
-        experiment_name: Name of the experiment.
-        devices_schema: DotMap object containing device schema definitions.
-        metadata_filepath: Path to the metadata file.
-
-    Returns:
-        dict: epoch_config containing experiment metadata and device configurations.
-    """
-    metadata_filepath = pathlib.Path(metadata_filepath)
-    epoch_start = datetime.datetime.strptime(metadata_filepath.parent.name, "%Y-%m-%dT%H-%M-%S")
-
-    # Load metadata using io_api
-    epoch_config: dict = (
-        io_api.load(
-            metadata_filepath.parent.as_posix(),
-            devices_schema.Metadata,
-        )
-        .reset_index()
-        .to_dict("records")[0]
-    )
-
-    commit = epoch_config.get("commit")
-    if isinstance(commit, float) and np.isnan(commit):
-        commit = epoch_config.get("metadata", {}).get("Revision")
-
-    if not commit:
-        raise ValueError(f'Neither "commit" nor "Revision" found in {metadata_filepath}')
-
-    workflow = epoch_config.get("workflow")
-    if not workflow:
-        raise ValueError(f'"workflow" not found in {metadata_filepath}')
-
-    # Extract rig configuration (nested structure)
-    rig_config = epoch_config['metadata'].get("rig", {})
-    if not rig_config:
-        raise ValueError(f'"rig" configuration not found in {metadata_filepath}')
-
-    # Flatten nested device structure for device iteration during ingestion
-    devices = _flatten_rig_devices(rig_config)
-
-    return {
-        "experiment_name": experiment_name,
-        "epoch_start": epoch_start,
-        "bonsai_workflow": workflow,
-        "commit": commit,
-        "metadata": rig_config,  # Store original nested JSON for Pydantic reconstruction
-        "devices": devices,  # Flattened structure for device iteration (not stored in DB)
-        "metadata_file_path": metadata_filepath,
-    }
-
-
 def _flatten_rig_devices(rig_config: dict) -> dict[str, dict]:
     """Flatten nested rig device structure into flat device dict.
 
@@ -749,46 +693,6 @@ def extract_active_regions(rig_config: dict) -> dict[str, Any]:
         active_regions["ActivityCenter"] = activity_center
 
     return active_regions
-
-
-def _infer_device_type_from_rig(device_name: str, rig_config: dict) -> str | None:
-    """Infer device type from location in rig structure.
-
-    Device types are deterministically inferred from where they appear in the rig structure.
-    This is the source of truth - no cache needed.
-
-    Args:
-        device_name: Name of the device.
-        rig_config: Nested rig configuration dict.
-
-    Returns:
-        Device type string, or None if device not found in rig structure.
-    """
-    # Check cameras
-    if device_name in rig_config.get("cameras", {}):
-        return "SpinnakerVideoSource"
-
-    # Check feeders
-    if device_name in rig_config.get("feeders", {}):
-        return "UndergroundFeeder"
-
-    # Check nest
-    if device_name == "Nest" and "Nest" in rig_config.get("nest", {}):
-        return "WeightScale"
-
-    # Check camera synchronizer
-    if device_name == "CameraSynchronizer" and rig_config.get("cameraSynchronizer"):
-        return "CameraController"
-
-    # Check clock synchronizer
-    if device_name == "ClockSynchronizer" and rig_config.get("clockSynchronizer"):
-        return "TimestampGenerator"
-
-    # Check light cycle
-    if device_name == "LightCycle" and rig_config.get("lightCycle"):
-        return "EnvironmentCondition"
-
-    return None
 
 
 def _extract_device_mapper_from_rig(rig_config: dict) -> tuple[dict[str, str], dict[str, str]]:
@@ -1007,208 +911,6 @@ def ingest_epoch_metadata_from_rig(
     return set(epoch_device_types)
 
 
-def ingest_epoch_metadata(experiment_name: str, devices_schema: DotMap, metadata_filepath: str) -> set[str]:
-    """Make entries into device tables (legacy DotMap version).
-
-    Args:
-        experiment_name: Name of the experiment.
-        devices_schema: DotMap object containing device schema definitions.
-        metadata_filepath: Path to metadata file.
-
-    Returns:
-        Set of device type names that were processed.
-    """
-    from aeon.dj_pipeline import acquisition
-
-    streams = dj.VirtualModule("streams", streams_maker.schema_name)
-
-    experiment_key = {"experiment_name": experiment_name}
-    metadata_filepath = pathlib.Path(metadata_filepath)
-    epoch_config = extract_epoch_config(experiment_name, devices_schema, metadata_filepath)
-
-    previous_epoch = (acquisition.Experiment & experiment_key).aggr(
-        acquisition.Epoch & f'epoch_start < "{epoch_config["epoch_start"]}"',
-        epoch_start="MAX(epoch_start)",
-    )
-    if len(acquisition.EpochConfig.Meta & previous_epoch) and epoch_config["commit"] == (
-        acquisition.EpochConfig.Meta & previous_epoch
-    ).fetch1("commit"):
-        # if identical commit -> no changes
-        return set()
-
-    device_type_mapper, _ = _extract_device_mapper_from_rig(epoch_config["metadata"])
-    rig_config = epoch_config["metadata"]
-
-    # Extract trigger frequencies from camera synchronizer
-    camera_synchronizer = rig_config.get("cameraSynchronizer", {})
-    trigger_frequencies = {}
-    if camera_synchronizer and "triggers" in camera_synchronizer:
-        for trigger_name, trigger_config in camera_synchronizer["triggers"].items():
-            trigger_frequencies[trigger_name] = trigger_config.get("frequency")
-
-    # Insert into each device table
-    epoch_device_types = []
-    device_list = []
-    device_removal_list = []
-
-    for device_name, device_config in epoch_config["devices"].items():
-        if table := getattr(streams, device_type_mapper.get(device_name) or "", None):
-            # Extract serial number or port name
-            device_sn = device_config.get("serialNumber") or device_config.get("portName")
-            device_key = {"device_serial_number": device_sn}
-
-            if not device_sn:
-                logger.warning(
-                    f"Device {device_name} has no serial number or port name. Skipping..."
-                )
-                continue
-
-            if not (streams.Device & device_key):
-                logger.warning(
-                    f"Device {device_name} (serial number: {device_sn}) is not "
-                    "yet registered in streams.Device.\nThis should not happen - "
-                    "check if metadata file and schemas dotmap are consistent. Skipping..."
-                )
-                continue
-
-            device_list.append(device_key)
-            epoch_device_types.append(table.__name__)
-
-            table_entry = {
-                "experiment_name": experiment_name,
-                **device_key,
-                f"{dj.utils.from_camel_case(table.__name__)}_install_time": epoch_config["epoch_start"],
-                f"{dj.utils.from_camel_case(table.__name__)}_name": device_name,
-            }
-
-            # Convert device config to attribute entries
-            table_attribute_entry = []
-            for attr_name, attr_value in device_config.items():
-                # Skip nested structures and internal fields
-                if isinstance(attr_value, (dict, list)):
-                    continue
-                table_attribute_entry.append(
-                    {
-                        **table_entry,
-                        "attribute_name": attr_name,
-                        "attribute_value": attr_value,
-                    }
-                )
-
-            # Add trigger frequency if camera has trigger reference
-            if "trigger" in device_config and device_config["trigger"] in trigger_frequencies:
-                table_attribute_entry.append(
-                    {
-                        **table_entry,
-                        "attribute_name": "SamplingFrequency",
-                        "attribute_value": trigger_frequencies[device_config["trigger"]],
-                    }
-                )
-
-            # Check if this device is currently installed.
-            # If the same device serial number is currently installed check for changes in configuration.
-            current_device_query = table - table.RemovalTime & experiment_key & device_key
-
-            if current_device_query:
-                current_device_config: list[dict] = (table.Attribute & current_device_query).fetch(
-                    "experiment_name",
-                    "device_serial_number",
-                    "attribute_name",
-                    "attribute_value",
-                    as_dict=True,
-                )
-                new_device_config: list[dict] = [
-                    {k: v for k, v in entry.items() if dj.utils.from_camel_case(table.__name__) not in k}
-                    for entry in table_attribute_entry
-                ]
-
-                if dict_to_uuid(
-                    {
-                        config["attribute_name"]: config["attribute_value"]
-                        for config in current_device_config
-                    }
-                ) == dict_to_uuid(
-                    {config["attribute_name"]: config["attribute_value"] for config in new_device_config}
-                ):  # Skip if none of the configuration has changed.
-                    continue
-
-                # Remove old device
-                device_removal_list.append(
-                    {
-                        **current_device_query.fetch1("KEY"),
-                        f"{dj.utils.from_camel_case(table.__name__)}_removal_time": epoch_config[
-                            "epoch_start"
-                        ],
-                    }
-                )
-                epoch_device_types.remove(table.__name__)
-
-            # Insert into table.
-            table.insert1(table_entry, skip_duplicates=True)
-            table.Attribute.insert(table_attribute_entry, ignore_extra_fields=True)
-
-    # Remove the currently installed devices that are absent in this config
-    device_removal = lambda device_type, device_entry: any(
-        dj.utils.from_camel_case(device_type) in k for k in device_entry
-    )  # returns True if the device type is found in the attribute name
-
-    for device_type in streams.DeviceType.fetch("device_type"):
-        table = getattr(streams, device_type)
-
-        device_removal_list.extend(
-            (table - table.RemovalTime - device_list & experiment_key).fetch("KEY")
-        )
-
-        for device_entry in device_removal_list:
-            if device_removal(device_type, device_entry):
-                table.RemovalTime.insert1(device_entry)
-
-    return set(epoch_device_types)
-
-
-def extract_stream_types_from_device(device_class: type) -> list[str]:
-    """Extract @data_reader method names from Device class.
-
-    @data_reader methods are defined directly on Device classes and are cached_property
-    objects. The real @data_reader decorator wraps the original function in a closure,
-    so we check both the direct func signature and the closure for (self, pattern).
-
-    Args:
-        device_class: Device class type
-
-    Returns:
-        List of @data_reader method names (snake_case)
-    """
-    stream_types = []
-    for name, attr in inspect.getmembers(device_class):
-        if isinstance(attr, cached_property):
-            func = getattr(attr, 'func', None)
-            if func:
-                # Check direct signature first
-                sig = inspect.signature(func)
-                params = list(sig.parameters.keys())
-                if len(params) == 2 and params[1] == 'pattern':
-                    stream_types.append(name)
-                    continue
-
-                # Check closure for original function (real @data_reader wraps in closure)
-                closure = getattr(func, '__closure__', None)
-                if closure:
-                    for cell in closure:
-                        try:
-                            orig_func = cell.cell_contents
-                            if callable(orig_func):
-                                orig_sig = inspect.signature(orig_func)
-                                orig_params = list(orig_sig.parameters.keys())
-                                if len(orig_params) == 2 and orig_params[1] == 'pattern':
-                                    stream_types.append(name)
-                                    break
-                        except ValueError:
-                            # Empty cell
-                            continue
-    return stream_types
-
-
 def to_pascal_case(snake_str: str) -> str:
     """Convert snake_case to PascalCase for stream_type.
 
@@ -1238,105 +940,46 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
 
     Returns:
-        dict[str, dict]: A dictionary of device information, keyed by device_name.
-        {
-            "device_name": {
-                "stream_type": [...],
-                "stream_reader": [...],
-                "stream_hash": [...],
-                "stream_reader_kwargs": [...]
-            }
-        }
+        dict[str, dict]: Device info keyed by device_name with stream_type, stream_reader,
+            stream_hash, and stream_reader_kwargs lists.
     """
-    def _get_class_path(obj) -> str:
-        """Returns the class path of the object."""
-        return f"{obj.__class__.__module__}.{obj.__class__.__name__}"
-
     device_info: dict[str, dict] = {}
 
-    # Iterate over Rig fields to find Device collections
+    # Collect all (device_name, device) pairs from Rig fields
+    devices: list[tuple[str, Any]] = []
     for field_name in rig.model_fields:
         field_value = getattr(rig, field_name)
-
-        # Handle Dict[Name, Device] - e.g., cameras, feeders, nest
         if isinstance(field_value, dict):
-            for device_name, device in field_value.items():
-                # Check if it's a Device instance (BaseSchema with device_type)
-                if not hasattr(device, 'device_type'):
-                    continue
-
-                if device_name not in device_info:
-                    device_info[device_name] = defaultdict(list)
-
-                # Extract @data_reader methods from Device class
-                stream_method_names = extract_stream_types_from_device(device.__class__)
-
-                for stream_method_name in stream_method_names:
-                    # Access @data_reader property on actual device instance
-                    # This ensures pattern resolution works via _resolve_pattern_prefix()
-                    try:
-                        reader = getattr(device, stream_method_name)
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to access {stream_method_name} on {device_name}: {e}. Skipping..."
-                        )
-                        continue
-
-                    # Convert snake_case method name to PascalCase stream_type
-                    stream_type = to_pascal_case(stream_method_name)  # "video" → "Video"
-
-                    # Extract info
-                    stream_reader_class = _get_class_path(reader)
-                    stream_reader_kwargs = _extract_kwargs_from_reader(reader)
-
-                    device_info[device_name]["stream_type"].append(stream_type)
-                    device_info[device_name]["stream_reader"].append(stream_reader_class)
-                    device_info[device_name]["stream_reader_kwargs"].append(stream_reader_kwargs)
-
-                    # Add hash based on (stream_type, stream_reader) only
-                    device_info[device_name]["stream_hash"].append(
-                        dict_to_uuid({
-                            "stream_type": stream_type,
-                            "stream_reader": stream_reader_class,
-                        })
-                    )
-
-        # Handle single Device instance (if any)
+            # Dict[Name, Device] collection (cameras, feeders, nest)
+            for name, dev in field_value.items():
+                if hasattr(dev, 'device_type'):
+                    devices.append((name, dev))
         elif hasattr(field_value, 'device_type'):
-            # For single devices, use field_name as device_name
-            device_name = field_name
-            device = field_value
+            # Single Device field
+            devices.append((field_name, field_value))
 
-            if device_name not in device_info:
-                device_info[device_name] = defaultdict(list)
+    # Extract stream info from each device
+    for device_name, device in devices:
+        if device_name not in device_info:
+            device_info[device_name] = defaultdict(list)
 
-            # Same extraction logic as above
-            stream_method_names = extract_stream_types_from_device(device.__class__)
+        for method_name, _ in get_data_reader_methods(device.__class__):
+            try:
+                reader = getattr(device, method_name)
+            except Exception as e:
+                logger.warning(f"Failed to access {method_name} on {device_name}: {e}. Skipping...")
+                continue
 
-            for stream_method_name in stream_method_names:
-                try:
-                    reader = getattr(device, stream_method_name)
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to access {stream_method_name} on {device_name}: {e}. Skipping..."
-                    )
-                    continue
+            stream_type = to_pascal_case(method_name)
+            stream_reader_class = f"{reader.__class__.__module__}.{reader.__class__.__name__}"
+            stream_reader_kwargs = _extract_kwargs_from_reader(reader)
 
-                stream_type = to_pascal_case(stream_method_name)
-                stream_reader_class = _get_class_path(reader)
-                stream_reader_kwargs = _extract_kwargs_from_reader(reader)
-
-                device_info[device_name]["stream_type"].append(stream_type)
-                device_info[device_name]["stream_reader"].append(stream_reader_class)
-                device_info[device_name]["stream_reader_kwargs"].append(stream_reader_kwargs)
-
-                # Add hash based on (stream_type, stream_reader) only
-                device_info[device_name]["stream_hash"].append(
-                    dict_to_uuid({
-                        "stream_type": stream_type,
-                        "stream_reader": stream_reader_class,
-                    })
-                )
+            device_info[device_name]["stream_type"].append(stream_type)
+            device_info[device_name]["stream_reader"].append(stream_reader_class)
+            device_info[device_name]["stream_reader_kwargs"].append(stream_reader_kwargs)
+            device_info[device_name]["stream_hash"].append(
+                dict_to_uuid({"stream_type": stream_type, "stream_reader": stream_reader_class})
+            )
 
     return device_info
 
