@@ -40,6 +40,7 @@ class StreamType(dj.Lookup):
     ---
     stream_type: varchar(36)  # stream type name, e.g., "Video", "BeamBreak"
     stream_reader: varchar(256)  # reader class path for documentation, e.g., "swc.aeon.io.reader.Video"
+    stream_reader_kwargs=null: longblob  # JSON dict of reader constructor kwargs (value, tag, columns, etc.)
     stream_description='': varchar(256)
     unique index(stream_type, stream_reader)
     """
@@ -117,57 +118,64 @@ def get_device_template(device_type: str):
 def get_device_stream_template(device_type: str, stream_type: str, streams_module):
     """Returns table class template for DeviceDataStream.
 
-    Uses the Pydantic-based approach to get stream reader columns by reconstructing
-    the Rig from stored metadata and accessing the @data_reader decorated method.
+    Extracts columns on-demand by importing the reader class directly from the
+    stream_reader path stored in StreamType. Uses stream_reader_kwargs for readers
+    that require additional constructor arguments (e.g., BitmaskEvent, Harp).
     """
-    from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
-
     ExperimentDevice = getattr(streams_module, device_type)
-    device_type_snake = dj.utils.from_camel_case(device_type)
 
-    # Get stream_reader path for Pose check
+    # Get stream_reader path and kwargs from catalog
+    # Join DeviceType.Stream (has device_type, stream_hash) with StreamType (has stream_type)
     stream_detail = (
-        streams_module.StreamType
-        & (streams_module.DeviceType.Stream & {"device_type": device_type, "stream_type": stream_type})
+        streams_module.StreamType & {"stream_type": stream_type}
+        & (streams_module.DeviceType.Stream & {"device_type": device_type})
     ).fetch1()
 
+    stream_reader_path = stream_detail["stream_reader"]
+    stream_reader_kwargs = stream_detail.get("stream_reader_kwargs") or {}
+
     # Skip Pose reader - automatic generation not supported
-    if "Pose" in stream_detail["stream_reader"]:
+    if "Pose" in stream_reader_path:
         logger.warning("Automatic generation of stream table for Pose reader is not supported. Skipping...")
         return None, None
 
-    # Get columns by finding an experiment with this device type and reconstructing the reader
-    # Find an experiment entry that has this device installed
-    experiment_device_query = ExperimentDevice()
-
-    if not experiment_device_query:
-        logger.warning(f"No experiments found with device type {device_type}. Skipping stream table.")
-        return None, None
-
-    sample_entry = experiment_device_query.fetch(as_dict=True, limit=1)[0]
-    experiment_name = sample_entry["experiment_name"]
-    device_name = sample_entry[f"{device_type_snake}_name"]
-    install_time = sample_entry[f"{device_type_snake}_install_time"]
-
-    # Get the epoch that contains this device installation
-    epoch_query = (
-        acquisition.Epoch
-        & {"experiment_name": experiment_name}
-        & f"epoch_start <= '{install_time}'"
-    )
-    if not epoch_query:
-        logger.warning(f"No epoch found for device {device_name} installation. Skipping stream table.")
-        return None, None
-
-    epoch_start = epoch_query.fetch("epoch_start", order_by="epoch_start DESC", limit=1)[0]
-
-    # Get the stream reader using the Pydantic approach
+    # Extract columns on-demand by importing the reader class
+    # Columns are class-level information, not instance-specific
     try:
-        stream_reader = get_stream_reader_for_epoch(
-            experiment_name, device_name, stream_type, epoch_start
-        )
+        module_path, class_name = stream_reader_path.rsplit(".", 1)
+        reader_module = importlib.import_module(module_path)
+        reader_class = getattr(reader_module, class_name)
+
+        # Instantiate with dummy pattern and stored kwargs
+        # (columns are instance attributes set in __init__, not class attributes)
+        reader_instance = reader_class("_dummy_pattern_", **stream_reader_kwargs)
+
+        if not hasattr(reader_instance, 'columns'):
+            logger.error(
+                f"Reader {stream_reader_path} has no 'columns' attribute. "
+                "Cannot generate table definition."
+            )
+            return None, None
+
+        columns = reader_instance.columns
+        if columns is None:
+            logger.warning(
+                f"Reader {stream_reader_path} has None columns. "
+                "Table will only have timestamps."
+            )
+            columns = []
+
+    except (ImportError, ModuleNotFoundError) as e:
+        logger.error(f"Cannot import reader module for {device_type}.{stream_type}: {e}")
+        return None, None
+    except AttributeError as e:
+        logger.error(f"Reader class {stream_reader_path} not found: {e}")
+        return None, None
     except Exception as e:
-        logger.warning(f"Could not get stream reader for {device_type}.{stream_type}: {e}")
+        logger.warning(
+            f"Could not extract columns for {device_type}.{stream_type} "
+            f"from {stream_reader_path}: {e}"
+        )
         return None, None
 
     table_definition = f""" # Raw per-chunk {stream_type} from {device_type} (v-{aeon.__version__})
@@ -178,7 +186,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
     timestamps: longblob   # (datetime) timestamps of {stream_type} data
     """
 
-    for col in stream_reader.columns:
+    for col in columns:
         if col.startswith("_"):
             continue
         new_col = re.sub(r"\([^)]*\)", "", col)
@@ -206,14 +214,17 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
 
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-            chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+            # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
             device_name = (ExperimentDevice & key).fetch1("{device_type_name}_name")
 
             # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
-                key["experiment_name"], device_name, "{stream_type}", key["epoch_start"]
+                key["experiment_name"], device_name, "{stream_type}", epoch_start
             )
 
             stream_data = io_api.load(
@@ -298,7 +309,8 @@ def main(create_tables=True):
                 f.write(full_def)
 
         # Create DeviceDataStream tables.
-        for device_info in streams.DeviceType.Stream.fetch(as_dict=True):
+        # Join with StreamType to get stream_type (DeviceType.Stream only has stream_hash FK)
+        for device_info in (streams.DeviceType.Stream * streams.StreamType).fetch(as_dict=True):
             device_type = device_info["device_type"]
             stream_type = device_info["stream_type"]
             table_name = f"{device_type}{stream_type}"

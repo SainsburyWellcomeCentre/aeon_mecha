@@ -57,6 +57,7 @@ test = [
   "pytest>=7.0",
   "pytest-cov",
   "testcontainers[mysql]>=3.7",
+  "swc-aeon-rigs-foragingabc",
 ]
 docs = [
   "sphinx",
@@ -168,3 +169,4 @@ markers = [
 [tool.uv.sources]
 swc-aeon = { git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git", branch = "main" }
 swc-aeon-rigs = { git = "https://github.com/SainsburyWellcomeCentre/aeon_swc_rigs.git", branch = "main" }
+swc-aeon-rigs-foragingabc = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git", branch = "tn/data-api-updated" }

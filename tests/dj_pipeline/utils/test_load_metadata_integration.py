@@ -73,12 +73,11 @@ class TestGetDeviceInfo:
 
         device_info = get_device_info(test_rig)
         camera_info = device_info["CameraTop"]
-        # Structure: flat lists of stream_type, stream_reader, stream_hash (no kwargs)
+        # Structure: flat lists of stream_type, stream_reader, stream_hash, stream_reader_kwargs
         assert "stream_type" in camera_info
         assert "stream_reader" in camera_info
         assert "stream_hash" in camera_info
-        # No stream_reader_kwargs in new schema
-        assert "stream_reader_kwargs" not in camera_info
+        assert "stream_reader_kwargs" in camera_info
 
     def test_stream_type_is_pascal_case(self, test_rig, pipeline_integration):
         from aeon.dj_pipeline.utils.load_metadata import get_device_info
@@ -360,3 +359,49 @@ class TestInsertDeviceTypesFKHandling:
         for entry in device_type_streams:
             assert "device_type" in entry
             assert "stream_hash" in entry
+
+
+@pytest.mark.integration
+class TestPopulateCatalogFromPydantic:
+    """Test Step 1 catalog population from Pydantic class hierarchy."""
+
+    def test_populates_catalog_tables(self, pipeline_integration, monkeypatch, clean_streams_tables):
+        """Should populate StreamType, DeviceType, and DeviceType.Stream."""
+        from aeon.dj_pipeline.utils import streams_maker
+        from aeon.dj_pipeline.utils.load_metadata import (
+            get_experiment_pydantic,
+            populate_catalog_from_pydantic,
+        )
+
+        monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
+        streams = pipeline_integration["streams"]
+
+        # Use real ForagingABC Experiment class
+        experiment_class = get_experiment_pydantic("swc.aeon.exp.foragingABC.experiment:Experiment")
+        populate_catalog_from_pydantic(experiment_class)
+
+        # All three catalog tables should be populated
+        assert len(streams.StreamType()) > 0
+        assert len(streams.DeviceType()) > 0
+        assert len(streams.DeviceType.Stream()) > 0
+
+    def test_idempotent(self, pipeline_integration, monkeypatch, clean_streams_tables):
+        """Calling twice should not create duplicates."""
+        from aeon.dj_pipeline.utils import streams_maker
+        from aeon.dj_pipeline.utils.load_metadata import (
+            get_experiment_pydantic,
+            populate_catalog_from_pydantic,
+        )
+
+        monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
+        streams = pipeline_integration["streams"]
+
+        experiment_class = get_experiment_pydantic("swc.aeon.exp.foragingABC.experiment:Experiment")
+
+        populate_catalog_from_pydantic(experiment_class)
+        first_count = len(streams.StreamType())
+
+        populate_catalog_from_pydantic(experiment_class)
+        second_count = len(streams.StreamType())
+
+        assert second_count == first_count

@@ -329,9 +329,13 @@ class EpochConfig(dj.Imported):
         """
 
     def make(self, key):
-        """Ingest metadata into EpochConfig."""
-        from aeon.dj_pipeline.utils import streams_maker
+        """Ingest metadata into EpochConfig.
+
+        Note: Stream tables (ExperimentDevice, DeviceDataStream) are pre-created at
+        worker startup. This method only performs DML (inserts), no DDL (table creation).
+        """
         from aeon.dj_pipeline.utils.load_metadata import (
+            _flatten_rig_devices,
             extract_active_regions,
             get_experiment_pydantic,
             ingest_epoch_metadata_from_rig,
@@ -352,13 +356,19 @@ class EpochConfig(dj.Imported):
         # Load metadata and extract rig_config
         metadata = json.loads(metadata_filepath.read_text())
         epoch_start = datetime.datetime.strptime(metadata_filepath.parent.name, "%Y-%m-%dT%H-%M-%S")
-        rig_config = metadata.get("metadata", {}).get("rig", {})
+        rig_config = metadata.get("rig", {})
 
-        # Validate and construct Experiment/Rig from rig_config
-        # Store as {"rig": rig_config} so Experiment.model_validate() works directly
+        if not rig_config:
+            raise ValueError(f"No 'rig' configuration found in {metadata_filepath}")
+
+        # Validate and construct Experiment/Rig from full metadata
+        # Experiment model expects workflow, commit, repository_url, rig, etc.
+        # Note: We validate full metadata but only store rig_config in EpochConfig.Meta
         experiment_class = get_experiment_pydantic(schema_name)
-        experiment_metadata = {"rig": rig_config}
-        experiment = experiment_class.model_validate(experiment_metadata)
+        try:
+            experiment = experiment_class.model_validate(metadata)
+        except Exception as e:
+            raise ValueError(f"Failed to validate metadata for {key}: {e}") from e
         rig = experiment.rig
         epoch_config = {
             "experiment_name": experiment_name,
@@ -367,15 +377,15 @@ class EpochConfig(dj.Imported):
             "commit": metadata.get("commit") or metadata.get("metadata", {}).get("Revision", ""),
             "metadata": rig_config,  # Store original nested JSON for Pydantic reconstruction
             "metadata_file_path": metadata_filepath.relative_to(data_dir).as_posix(),
+            "devices": _flatten_rig_devices(rig_config),  # Flat device dict for ingest_epoch_metadata_from_rig
         }
 
         # Insert new entries for streams.DeviceType, streams.Device using Rig
+        # Note: StreamType and DeviceType catalog populated at worker startup
+        # ExperimentDevice and DeviceDataStream tables created at worker startup
         insert_device_types(rig, metadata_filepath)
 
-        # Define and instantiate new devices/stream tables under `streams` schema
-        streams_maker.main()
-
-        # Insert devices' installation/removal/settings using Rig
+        # Insert devices' installation/removal/settings into ExperimentDevice tables
         epoch_device_types = ingest_epoch_metadata_from_rig(
             experiment_name, rig, epoch_config, metadata_filepath
         )
@@ -383,8 +393,14 @@ class EpochConfig(dj.Imported):
         # Extract active regions
         active_region = extract_active_regions(rig_config)
 
+        # Remove devices key before inserting - it was only needed for ingest_epoch_metadata_from_rig
+        epoch_config.pop("devices", None)
+
+        # Insert EpochConfig entries (stores rig_config JSON for runtime reader resolution)
         self.insert1(key)
         self.Meta.insert1(epoch_config)
+
+        # Insert remaining entries
         self.DeviceType.insert(key | {"device_type": n} for n in epoch_device_types or {})
         self.ActiveRegion.insert(
             {**key, "region_name": k, "region_data": v} for k, v in active_region.items()
