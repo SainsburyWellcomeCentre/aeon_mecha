@@ -173,7 +173,6 @@ Pure function tests - no database, no external packages required:
 |----------|------------|
 | `to_pascal_case()` | `"video"` → `"Video"`, `"beam_break"` → `"BeamBreak"` |
 | `_flatten_rig_devices()` | Flatten nested rig config to device dict |
-| `_infer_device_type_from_rig()` | Infer device type from rig structure position |
 | `_extract_device_mapper_from_rig()` | Extract device type mapper and serial numbers |
 | `extract_active_regions()` | Extract ActiveRegion data from rig config |
 
@@ -213,7 +212,7 @@ Database operations using real Pydantic classes with real `@data_reader` decorat
 
 | Function | Test Cases |
 |----------|------------|
-| `extract_stream_types_from_device()` | Extract from Device class with real @data_reader |
+| `get_data_reader_methods()` | Extract @data_reader methods from Device class |
 | `get_device_info()` | Extract device/stream info from test Rig |
 | `get_stream_entries()` | Generate StreamType entries from test Rig |
 | `get_device_mapper_from_rig()` | Extract device type and serial number mappings |
@@ -564,39 +563,25 @@ test = [
 
 ---
 
-## Bug Fixes During Implementation
+## Implementation Notes
 
-### `extract_stream_types_from_device()` closure handling
+### `get_data_reader_methods()` closure handling
 
-The `@data_reader` decorator wraps the original function in a closure:
-
-```python
-# Original function has (self, pattern) signature
-@data_reader
-def video(self, pattern) -> Video:
-    return Video(f"{pattern}")
-
-# After decoration, cached_property.func is the wrapper with (self) signature
-# The original function is in func.__closure__[0].cell_contents
-```
-
-The detection logic was updated to check both direct signature AND closure contents:
+The `@data_reader` decorator wraps the original function in a closure. The `get_data_reader_methods()` function checks both the direct signature AND closure contents to detect @data_reader methods:
 
 ```python
-def extract_stream_types_from_device(device_class: type) -> list[str]:
-    # ... check direct signature first ...
-
-    # Check closure for original function (real @data_reader wraps in closure)
-    closure = getattr(func, '__closure__', None)
-    if closure:
-        for cell in closure:
-            orig_func = cell.cell_contents
-            if callable(orig_func):
-                orig_sig = inspect.signature(orig_func)
-                orig_params = list(orig_sig.parameters.keys())
-                if len(orig_params) == 2 and orig_params[1] == 'pattern':
-                    stream_types.append(name)
-                    break
+# After decoration, cached_property.func is the wrapper
+# The original function with (self, pattern) signature is in func.__closure__
+closure = getattr(func, '__closure__', None)
+if closure:
+    for cell in closure:
+        orig_func = cell.cell_contents
+        if callable(orig_func):
+            orig_sig = inspect.signature(orig_func)
+            orig_params = list(orig_sig.parameters.keys())
+            if len(orig_params) == 2 and orig_params[1] == 'pattern':
+                # Found @data_reader method
+                break
 ```
 
 ---

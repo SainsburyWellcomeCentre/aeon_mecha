@@ -65,31 +65,6 @@ class TestFlattenRigDevices:
 
 
 @pytest.mark.unit
-class TestInferDeviceTypeFromRig:
-    """Test device type inference from rig structure."""
-
-    def test_camera_type(self, sample_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import _infer_device_type_from_rig
-
-        assert _infer_device_type_from_rig("CameraTop", sample_rig_config) == "SpinnakerVideoSource"
-
-    def test_feeder_type(self, sample_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import _infer_device_type_from_rig
-
-        assert _infer_device_type_from_rig("Feeder1", sample_rig_config) == "UndergroundFeeder"
-
-    def test_nest_type(self, sample_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import _infer_device_type_from_rig
-
-        assert _infer_device_type_from_rig("Nest", sample_rig_config) == "WeightScale"
-
-    def test_unknown_device(self, sample_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import _infer_device_type_from_rig
-
-        assert _infer_device_type_from_rig("UnknownDevice", sample_rig_config) is None
-
-
-@pytest.mark.unit
 class TestExtractDeviceMapperFromRig:
     """Test device type mapper extraction."""
 
@@ -109,25 +84,26 @@ class TestExtractDeviceMapperFromRig:
 
 
 @pytest.mark.unit
-class TestExtractStreamTypesFromDevice:
+class TestGetDataReaderMethods:
     """Test @data_reader method extraction from Device class."""
 
     def test_extracts_data_reader_methods(self, mock_device_class):
-        from aeon.dj_pipeline.utils.load_metadata import extract_stream_types_from_device
+        from aeon.dj_pipeline.utils.load_metadata import get_data_reader_methods
 
-        stream_types = extract_stream_types_from_device(mock_device_class)
-        assert "video" in stream_types
-        assert "position" in stream_types
+        methods = get_data_reader_methods(mock_device_class)
+        method_names = [name for name, _ in methods]
+        assert "video" in method_names
+        assert "position" in method_names
 
-    def test_returns_list(self, mock_device_class):
-        from aeon.dj_pipeline.utils.load_metadata import extract_stream_types_from_device
+    def test_returns_list_of_tuples(self, mock_device_class):
+        from aeon.dj_pipeline.utils.load_metadata import get_data_reader_methods
 
-        result = extract_stream_types_from_device(mock_device_class)
+        result = get_data_reader_methods(mock_device_class)
         assert isinstance(result, list)
+        assert all(isinstance(item, tuple) and len(item) == 2 for item in result)
 
     def test_uses_real_pydantic_base(self, mock_device_class):
         """Verify fixture uses real SpinnakerCamera base class."""
-        # Import from swc.aeon.schema (swc-aeon) which has @data_reader support
         from swc.aeon.schema.video import SpinnakerCamera
 
         assert issubclass(mock_device_class, SpinnakerCamera)
