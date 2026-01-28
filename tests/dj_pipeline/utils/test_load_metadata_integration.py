@@ -18,33 +18,34 @@ import pytest
 
 
 @pytest.mark.integration
-class TestExtractStreamTypesFromDevice:
+class TestGetDataReaderMethods:
     """Test @data_reader method extraction with real Pydantic classes."""
 
     def test_extracts_video_stream(self, mock_device_class, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_metadata import extract_stream_types_from_device
+        from aeon.dj_pipeline.utils.load_metadata import get_data_reader_methods
 
-        stream_types = extract_stream_types_from_device(mock_device_class)
-        assert "video" in stream_types
+        methods = get_data_reader_methods(mock_device_class)
+        method_names = [name for name, _ in methods]
+        assert "video" in method_names
 
     def test_extracts_position_stream(self, mock_device_class, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_metadata import extract_stream_types_from_device
+        from aeon.dj_pipeline.utils.load_metadata import get_data_reader_methods
 
-        stream_types = extract_stream_types_from_device(mock_device_class)
-        assert "position" in stream_types
+        methods = get_data_reader_methods(mock_device_class)
+        method_names = [name for name, _ in methods]
+        assert "position" in method_names
 
     def test_uses_real_spinnaker_base(self, mock_device_class, pipeline_integration):
-        # Import from swc.aeon.schema (swc-aeon) which has @data_reader support
         from swc.aeon.schema.video import SpinnakerCamera
 
         assert issubclass(mock_device_class, SpinnakerCamera)
 
     def test_returns_snake_case_names(self, mock_device_class, pipeline_integration):
-        from aeon.dj_pipeline.utils.load_metadata import extract_stream_types_from_device
+        from aeon.dj_pipeline.utils.load_metadata import get_data_reader_methods
 
-        stream_types = extract_stream_types_from_device(mock_device_class)
-        # All names should be snake_case (no uppercase)
-        for name in stream_types:
+        methods = get_data_reader_methods(mock_device_class)
+        # All method names should be snake_case (no uppercase)
+        for name, _ in methods:
             assert name == name.lower(), f"Expected snake_case, got: {name}"
 
 

@@ -85,17 +85,9 @@ The `pattern` argument affects WHERE data is loaded from, not WHAT columns exist
 
 ### Why This Separation Matters
 
-**Problem with the old design**: `streams_maker.main()` was called inside `EpochConfig.make()`, which runs inside a DataJoint transaction. MySQL forbids DDL (`CREATE TABLE`) inside transactions.
+MySQL forbids DDL (`CREATE TABLE`) inside transactions. Since `dj.Imported.populate()` wraps `make()` in a transaction, table creation must happen at worker startup (outside transactions), not during `EpochConfig.make()`.
 
-**The old flow had a circular dependency**:
-1. `get_device_stream_template()` needed reader columns
-2. To get columns, it queried `EpochConfig.Meta` for `rig_config`
-3. But `EpochConfig.Meta` wasn't populated until AFTER `streams_maker.main()`
-
-**The new design breaks this dependency**:
-1. `StreamType` stores `stream_reader` path (e.g., `"swc.aeon.io.reader.BitmaskEvent"`)
-2. `get_device_stream_template()` imports the reader class directly and extracts columns on-demand
-3. No `EpochConfig.Meta` query needed - `EpochConfig.make()` only does DML (inserts)
+Columns are extracted on-demand by importing the reader class directly from `StreamType.stream_reader`, avoiding any dependency on `EpochConfig.Meta` during table creation.
 
 ## Architecture Flow
 
@@ -452,8 +444,6 @@ graph TD
     R --> S[Create table class]
 ```
 
-**Key difference from old design**: Columns are extracted **on-demand** during Step 2 (table creation) by importing the reader class directly. No `EpochConfig.Meta` query needed - just import from the `stream_reader` path stored in `StreamType`.
-
 **Process**:
 1. At worker startup, `populate_catalog_from_pydantic()` is called for each registered Experiment
 2. For each device type in the Rig class:
@@ -601,12 +591,9 @@ def make(self, key):
     # 7. Insert epoch config with metadata
     self.Meta.insert1(epoch_config)
 
-    # ⚠️ NO streams_maker.main() call!
-    # Tables were created at worker startup (Step 2)
+    # Tables already exist (created at worker startup)
     # This method only does DML (inserts), no DDL (table creation)
 ```
-
-**Key change**: `streams_maker.main()` is NO LONGER called inside `EpochConfig.make()`. Tables are pre-created at worker startup.
 
 **StreamType handling**: `DeviceType.Stream` has FK to `StreamType`. The `populate_catalog_from_pydantic()` function handles this by inserting `StreamType` entries before `DeviceType.Stream`.
 
@@ -662,7 +649,7 @@ The `get_device_info()` function extracts streams from `@data_reader` methods:
 ```python
 # For each device in Rig
 device_class = type(device)
-stream_types = extract_stream_types_from_device(device_class)
+stream_types = [name for name, _ in get_data_reader_methods(device_class)]
 # Returns: ["video", "position"] (snake_case method names)
 
 # Convert to PascalCase for StreamType catalog
@@ -838,15 +825,9 @@ The separation into three steps solves a fundamental constraint: **MySQL forbids
 
 ### Why Extract Columns On-Demand?
 
-The old design queried `EpochConfig.Meta` to get columns, creating a circular dependency:
-- `streams_maker` needed columns → queried `EpochConfig.Meta`
-- `EpochConfig.Meta` needed tables → needed `streams_maker`
-
-The new design extracts columns on-demand by importing the reader class:
-- `StreamType` stores `stream_reader` path (e.g., `"swc.aeon.io.reader.BitmaskEvent"`)
-- `get_device_stream_template()` imports the reader class directly
-- Instantiates with dummy pattern to get columns (columns are instance attributes)
-- No `EpochConfig.Meta` query needed - circular dependency eliminated
+Columns are extracted on-demand by importing the reader class from `StreamType.stream_reader`:
+- Import the reader class directly (e.g., `"swc.aeon.io.reader.BitmaskEvent"`)
+- Instantiate with dummy pattern to get columns (columns are instance attributes)
 - No need to store columns in database - they're always available from the class
 
 ### Why `stream_hash` as Primary Key?
@@ -889,21 +870,7 @@ The `pattern` affects WHERE data is read from, not WHAT columns exist. This insi
 
 ## Handling Readers with Constructor Kwargs
 
-### The Problem
-
-Some readers require additional constructor arguments beyond `pattern`. When `get_device_stream_template()` tries to instantiate these readers with just a dummy pattern, it fails:
-
-```python
-# Simple case - works fine:
-reader_instance = reader.Video("_dummy_")  # ✓
-
-# Complex cases - FAIL:
-reader_instance = reader.BitmaskEvent("_dummy_")
-# Error: missing required args 'value' and 'tag'
-
-reader_instance = reader.Harp("_dummy_")
-# Error: missing required arg 'columns'
-```
+Some readers require additional constructor arguments beyond `pattern`:
 
 **Affected readers and their required kwargs:**
 
