@@ -6,7 +6,28 @@ from datajoint_utilities.dj_worker.worker_schema import is_djtable
 
 from aeon.dj_pipeline import acquisition, db_prefix, qc, subject, tracking
 from aeon.dj_pipeline.utils import streams_maker
+from aeon.dj_pipeline.utils.load_metadata import (
+    get_experiment_pydantic,
+    populate_catalog_from_pydantic,
+)
 
+# STEP 1: Populate catalog from all registered Experiment classes
+# This must happen BEFORE streams_maker.main() creates tables
+for exp in acquisition.Experiment.DevicesSchema.fetch(as_dict=True):
+    devices_schema_name = exp["devices_schema_name"]
+    try:
+        experiment_class = get_experiment_pydantic(devices_schema_name)
+        populate_catalog_from_pydantic(experiment_class)
+    except (ImportError, ModuleNotFoundError) as e:
+        dj.logger.error(
+            f"Failed to import Experiment class '{devices_schema_name}': {e}. "
+            "Check if the package is installed."
+        )
+        raise  # Re-raise to fail fast on missing dependencies
+    except Exception as e:
+        dj.logger.warning(f"Could not populate catalog for {devices_schema_name}: {e}")
+
+# STEP 2: Create tables (MUST be outside transaction)
 streams = streams_maker.main()
 
 __all__ = [

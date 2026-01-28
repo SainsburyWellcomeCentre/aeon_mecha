@@ -27,6 +27,351 @@ if TYPE_CHECKING:
 logger = dj.logger
 
 
+# region Step 1: Catalog Population Functions
+
+
+def get_device_class_from_field(field_info) -> type["Device"] | None:
+    """Extract Device class from Pydantic field annotation.
+
+    Handles both Dict[Name, Device] and single Device field types.
+
+    Args:
+        field_info: Pydantic FieldInfo from model_fields
+
+    Returns:
+        Device class type, or None if not a device field
+    """
+    import typing
+
+    annotation = field_info.annotation
+    origin = typing.get_origin(annotation)
+
+    def is_device_class(cls) -> bool:
+        """Check if class is a Device with device_type field."""
+        return (
+            hasattr(cls, 'model_fields')
+            and 'device_type' in cls.model_fields
+        )
+
+    # Handle Dict[Name, Device] - e.g., Dict[CameraName, Camera]
+    if origin is dict:
+        args = typing.get_args(annotation)
+        if len(args) == 2:
+            # args[1] is the value type (Device class)
+            device_class = args[1]
+            if is_device_class(device_class):
+                return device_class
+
+    # Handle single Device field
+    elif is_device_class(annotation):
+        return annotation
+
+    return None
+
+
+def get_data_reader_methods(device_class: type) -> list[tuple[str, Any]]:
+    """Get @data_reader methods from Device class.
+
+    @data_reader methods are cached_property objects that take (self, pattern) args.
+    Uses the same detection logic as extract_stream_types_from_device().
+
+    Args:
+        device_class: Device class type
+
+    Returns:
+        List of (method_name, method_func) tuples for @data_reader methods
+    """
+    data_reader_methods = []
+    for name, attr in inspect.getmembers(device_class):
+        if isinstance(attr, cached_property):
+            func = getattr(attr, 'func', None)
+            if func:
+                # Check direct signature first
+                sig = inspect.signature(func)
+                params = list(sig.parameters.keys())
+                if len(params) == 2 and params[1] == 'pattern':
+                    data_reader_methods.append((name, func))
+                    continue
+
+                # Check closure for original function (real @data_reader wraps in closure)
+                closure = getattr(func, '__closure__', None)
+                if closure:
+                    for cell in closure:
+                        try:
+                            orig_func = cell.cell_contents
+                            if callable(orig_func):
+                                orig_sig = inspect.signature(orig_func)
+                                orig_params = list(orig_sig.parameters.keys())
+                                if len(orig_params) == 2 and orig_params[1] == 'pattern':
+                                    data_reader_methods.append((name, func))
+                                    break
+                        except ValueError:
+                            # Empty cell
+                            continue
+    return data_reader_methods
+
+
+def get_reader_path_from_annotation(func) -> str | None:
+    """Extract reader class path from @data_reader method return type annotation.
+
+    The return type annotation specifies the reader class, e.g.:
+        def video(self, pattern) -> reader.Video:
+            ...
+
+    The @data_reader decorator wraps the original function, so we need to
+    check the closure for the original function with concrete type annotations.
+
+    Args:
+        func: The @data_reader decorated method function (may be wrapper)
+
+    Returns:
+        Fully-qualified class path (e.g., "swc.aeon.io.reader.Video"), or None.
+        Returns None for TypeVar annotations (base class placeholders).
+    """
+    import typing
+
+    def _get_return_type(f) -> type | None:
+        """Get return type from function, handling TypeVar."""
+        try:
+            hints = typing.get_type_hints(f)
+        except (NameError, TypeError):
+            return None
+
+        return_type = hints.get('return')
+        if return_type is None or isinstance(return_type, typing.TypeVar):
+            return None
+        return return_type
+
+    # First try the function directly
+    return_type = _get_return_type(func)
+
+    # If TypeVar or None, check closure for original function
+    # (The @data_reader decorator wraps the original function in a closure)
+    if return_type is None:
+        closure = getattr(func, '__closure__', None)
+        if closure:
+            for cell in closure:
+                try:
+                    orig_func = cell.cell_contents
+                    if callable(orig_func):
+                        return_type = _get_return_type(orig_func)
+                        if return_type is not None:
+                            break
+                except ValueError:
+                    continue
+
+    if return_type is None:
+        return None
+
+    # Get the fully-qualified path
+    module = getattr(return_type, '__module__', None)
+    name = getattr(return_type, '__name__', None)
+
+    if module and name:
+        return f"{module}.{name}"
+
+    return None
+
+
+def _extract_kwargs_from_reader(reader) -> dict | None:
+    """Extract constructor kwargs from reader instance.
+
+    Uses inspect.signature to determine what kwargs the reader's __init__ accepts,
+    then extracts those values from the instance attributes.
+
+    Args:
+        reader: Reader instance from @data_reader method
+
+    Returns:
+        Dict of kwargs (excluding 'pattern'), or None if no special kwargs
+    """
+    reader_class = reader.__class__
+    sig = inspect.signature(reader_class.__init__)
+
+    kwargs = {}
+    for param_name, param in sig.parameters.items():
+        # Skip 'self' and 'pattern' (the required positional args)
+        if param_name in ('self', 'pattern'):
+            continue
+
+        # Get the value from the instance
+        if hasattr(reader, param_name):
+            value = getattr(reader, param_name)
+            if value is not None:
+                # Handle numpy arrays, tuples -> list for JSON serialization
+                if hasattr(value, 'tolist'):
+                    value = value.tolist()
+                elif isinstance(value, tuple):
+                    value = list(value)
+                kwargs[param_name] = value
+
+    return kwargs if kwargs else None
+
+
+def get_reader_kwargs_from_device_class(device_class: type, method_name: str) -> dict | None:
+    """Extract reader constructor kwargs by executing @data_reader method.
+
+    Creates a minimal device instance using model_construct() (bypasses validation)
+    and executes the @data_reader method to get the configured reader.
+    Returns the kwargs dict or None.
+
+    Args:
+        device_class: Device class type (Pydantic BaseSchema)
+        method_name: Name of the @data_reader method (snake_case)
+
+    Returns:
+        Dict of kwargs (excluding 'pattern'), or None if extraction fails
+    """
+    try:
+        # Create minimal device instance bypassing validation
+        # model_construct() allows creating instance without required fields
+        device = device_class.model_construct()
+
+        # Get the @data_reader property (returns reader instance)
+        try:
+            reader = getattr(device, method_name)
+        except (ValueError, AttributeError, TypeError) as e:
+            # Method raised error (e.g., camera_tracking is None for position)
+            logger.debug(f"Could not execute {method_name} on {device_class.__name__}: {e}")
+            return None
+
+        # Extract kwargs from reader instance
+        return _extract_kwargs_from_reader(reader)
+
+    except Exception as e:
+        logger.debug(f"Failed to extract kwargs for {device_class.__name__}.{method_name}: {e}")
+        return None
+
+
+def populate_catalog_from_pydantic(experiment_class: type["BaseSchema"]) -> None:
+    """Populate catalog tables from Pydantic Experiment class (Step 1).
+
+    Extracts DeviceType, StreamType, and their relationships from the Pydantic
+    class hierarchy. Also extracts reader constructor kwargs for readers that
+    require additional arguments (e.g., BitmaskEvent, Harp with columns).
+
+    Columns are NOT stored - they are extracted on-demand in Step 2 by importing
+    the reader class and instantiating with the stored kwargs.
+
+    This function is idempotent - safe to call multiple times.
+
+    Args:
+        experiment_class: Pydantic Experiment class with rig field
+    """
+    streams = dj.VirtualModule("streams", streams_maker.schema_name)
+
+    # Get Rig class from Experiment.rig field
+    rig_field = experiment_class.model_fields.get("rig")
+    if rig_field is None:
+        logger.warning(f"Experiment class {experiment_class} has no 'rig' field. Skipping catalog population.")
+        return
+
+    rig_class = rig_field.annotation
+
+    # Track entries to insert
+    device_type_entries = []
+    stream_type_entries = []
+    device_stream_entries = []
+
+    # Iterate over Rig fields to find Device classes
+    for field_name, field_info in rig_class.model_fields.items():
+        device_class = get_device_class_from_field(field_info)
+        if device_class is None:
+            continue
+
+        # Get device_type from class field default
+        device_type_field = device_class.model_fields.get("device_type")
+        if device_type_field is None:
+            logger.debug(f"Device class {device_class} has no 'device_type' field. Skipping.")
+            continue
+
+        device_type = device_type_field.default
+        if device_type is None:
+            logger.debug(f"Device class {device_class} has no default device_type. Skipping.")
+            continue
+
+        device_type_entries.append({"device_type": device_type})
+
+        # Extract @data_reader methods
+        data_reader_methods = get_data_reader_methods(device_class)
+
+        for stream_name, func in data_reader_methods:
+            # Get reader class path from return type annotation
+            stream_reader_path = get_reader_path_from_annotation(func)
+            if stream_reader_path is None:
+                logger.debug(f"Could not get reader path for {device_class}.{stream_name}. Skipping.")
+                continue
+
+            # Extract reader constructor kwargs by executing @data_reader method
+            stream_reader_kwargs = get_reader_kwargs_from_device_class(device_class, stream_name)
+
+            # Convert snake_case to PascalCase
+            stream_type = to_pascal_case(stream_name)
+
+            # Compute hash for (stream_type, stream_reader) combination
+            stream_hash = dict_to_uuid({
+                "stream_type": stream_type,
+                "stream_reader": stream_reader_path,
+            })
+
+            stream_type_entries.append({
+                "stream_hash": stream_hash,
+                "stream_type": stream_type,
+                "stream_reader": stream_reader_path,
+                "stream_reader_kwargs": stream_reader_kwargs,
+            })
+
+            device_stream_entries.append({
+                "device_type": device_type,
+                "stream_hash": stream_hash,
+            })
+
+    # Insert entries (using skip_duplicates for idempotency)
+    # Deduplicate before inserting
+    seen_device_types = set()
+    unique_device_types = []
+    for entry in device_type_entries:
+        if entry["device_type"] not in seen_device_types:
+            seen_device_types.add(entry["device_type"])
+            unique_device_types.append(entry)
+
+    seen_stream_hashes = set()
+    unique_stream_types = []
+    for entry in stream_type_entries:
+        if entry["stream_hash"] not in seen_stream_hashes:
+            seen_stream_hashes.add(entry["stream_hash"])
+            unique_stream_types.append(entry)
+
+    seen_device_streams = set()
+    unique_device_streams = []
+    for entry in device_stream_entries:
+        key = (entry["device_type"], entry["stream_hash"])
+        if key not in seen_device_streams:
+            seen_device_streams.add(key)
+            unique_device_streams.append(entry)
+
+    # Insert in correct order (StreamType before DeviceType.Stream due to FK)
+    # Wrap in transaction to prevent race conditions with multiple workers
+    with dj.conn().transaction:
+        for entry in unique_stream_types:
+            streams.StreamType.insert1(entry, skip_duplicates=True)
+
+        for entry in unique_device_types:
+            streams.DeviceType.insert1(entry, skip_duplicates=True)
+
+        for entry in unique_device_streams:
+            streams.DeviceType.Stream.insert1(entry, skip_duplicates=True)
+
+    if unique_device_types or unique_stream_types:
+        logger.debug(
+            f"Catalog population: {len(unique_device_types)} device types, "
+            f"{len(unique_stream_types)} stream types, {len(unique_device_streams)} device-stream links"
+        )
+
+
+# endregion
+
+
 def get_experiment_pydantic(schema_name: str) -> type["BaseSchema"]:
     """Get Pydantic Experiment class from schema name.
 
@@ -122,10 +467,10 @@ def get_stream_reader_for_epoch(
     epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
     rig_metadata = (acquisition.EpochConfig.Meta & epoch_key).fetch1("metadata")
 
-    # Reconstruct Experiment and access Rig
+    # Get Rig class from Experiment class and reconstruct directly
     experiment_class = get_experiment_pydantic(schema_name)
-    experiment = experiment_class.model_validate({"rig": rig_metadata})
-    rig = experiment.rig
+    rig_class = experiment_class.model_fields["rig"].annotation
+    rig = rig_class.model_validate(rig_metadata)
 
     # Find device in Rig and access stream reader
     device = _find_device_in_rig(rig, device_name)
@@ -137,8 +482,11 @@ def insert_stream_types(rig: "BaseSchema") -> None:
     """Insert stream types into streams.StreamType from Rig.
 
     Extracts all unique stream types from device @data_reader methods and inserts
-    them into StreamType catalog table. Called automatically by insert_device_types()
-    when FK constraint failures indicate missing StreamType entries.
+    them into StreamType catalog table. Also extracts reader constructor kwargs
+    for readers that require additional arguments.
+
+    Called automatically by insert_device_types() when FK constraint failures
+    indicate missing StreamType entries.
 
     Args:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
@@ -157,6 +505,7 @@ def insert_stream_types(rig: "BaseSchema") -> None:
             "stream_hash": entry["stream_hash"],
             "stream_type": entry["stream_type"],
             "stream_reader": entry["stream_reader"],
+            "stream_reader_kwargs": entry.get("stream_reader_kwargs"),
         }
         # Use skip_duplicates to handle race conditions
         streams.StreamType.insert1(stream_type_entry, skip_duplicates=True)
@@ -181,14 +530,19 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
     device_info: dict[str, dict] = get_device_info(rig)
     device_type_mapper, device_sn = get_device_mapper_from_rig(rig, metadata_filepath)
 
-    # Add device type to device_info. Only add if device types that are defined in metadata file
+    # Add device type to device_info. Only include devices that:
+    # 1. Have a device_type defined in metadata
+    # 2. Have a serial number/port name
+    # 3. Have at least one stream (skip infrastructure devices like clock_synchronizer)
     device_info = {
         device_name: {
             "device_type": device_type_mapper.get(device_name),
             **device_info[device_name],
         }
         for device_name in device_info
-        if device_type_mapper.get(device_name) and device_sn.get(device_name)
+        if device_type_mapper.get(device_name)
+        and device_sn.get(device_name)
+        and device_info[device_name].get("stream_type")
     }
 
     # Create a map of device_type to (stream_type, stream_hash) pairs
@@ -878,6 +1232,7 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
 
     Streams are defined as @data_reader methods directly on Device classes.
     Uses actual device instances from Rig to ensure pattern resolution works correctly.
+    Also extracts reader constructor kwargs for readers that need additional arguments.
 
     Args:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
@@ -888,7 +1243,8 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
             "device_name": {
                 "stream_type": [...],
                 "stream_reader": [...],
-                "stream_hash": [...]
+                "stream_hash": [...],
+                "stream_reader_kwargs": [...]
             }
         }
     """
@@ -931,8 +1287,11 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
 
                     # Extract info
                     stream_reader_class = _get_class_path(reader)
+                    stream_reader_kwargs = _extract_kwargs_from_reader(reader)
+
                     device_info[device_name]["stream_type"].append(stream_type)
                     device_info[device_name]["stream_reader"].append(stream_reader_class)
+                    device_info[device_name]["stream_reader_kwargs"].append(stream_reader_kwargs)
 
                     # Add hash based on (stream_type, stream_reader) only
                     device_info[device_name]["stream_hash"].append(
@@ -965,8 +1324,11 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
 
                 stream_type = to_pascal_case(stream_method_name)
                 stream_reader_class = _get_class_path(reader)
+                stream_reader_kwargs = _extract_kwargs_from_reader(reader)
+
                 device_info[device_name]["stream_type"].append(stream_type)
                 device_info[device_name]["stream_reader"].append(stream_reader_class)
+                device_info[device_name]["stream_reader_kwargs"].append(stream_reader_kwargs)
 
                 # Add hash based on (stream_type, stream_reader) only
                 device_info[device_name]["stream_hash"].append(
@@ -986,7 +1348,7 @@ def get_stream_entries(rig: "BaseSchema") -> list[dict]:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
 
     Returns:
-        list[dict]: List of dictionaries with stream_hash, stream_type, stream_reader.
+        list[dict]: List of dictionaries with stream_hash, stream_type, stream_reader, stream_reader_kwargs.
     """
     device_info = get_device_info(rig)
     return [
@@ -994,12 +1356,14 @@ def get_stream_entries(rig: "BaseSchema") -> list[dict]:
             "stream_hash": stream_hash,
             "stream_type": stream_type,
             "stream_reader": stream_reader,
+            "stream_reader_kwargs": stream_reader_kwargs,
         }
         for stream_info in device_info.values()
-        for stream_type, stream_reader, stream_hash in zip(
+        for stream_type, stream_reader, stream_hash, stream_reader_kwargs in zip(
             stream_info["stream_type"],
             stream_info["stream_reader"],
             stream_info["stream_hash"],
+            stream_info["stream_reader_kwargs"],
             strict=True,
         )
     ]
