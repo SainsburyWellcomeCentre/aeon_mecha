@@ -57,7 +57,7 @@ Integration tests verify that components work together correctly. They require e
 | Integration (ingestion) | `EpochConfig.make()`, `Chunk.populate()`, `streams.*.populate()` | Golden datasets | 🔄 In Progress |
 | Specialized | SLEAP/DLC tracking | Golden datasets | ❌ Needs GPU |
 
-**Note:** Current tests in `test_load_metadata_integration.py` test schema/catalog operations with synthetic data. Golden dataset tests in `test_ingestion_golden.py` test full `populate()` flow.
+**Note:** Current tests in `test_load_metadata_integration.py` test schema/catalog operations with synthetic data. Golden dataset tests in `test_full_ingestion.py` test full `populate()` flow.
 
 ---
 
@@ -148,17 +148,14 @@ Unlike synthetic test data or sample fixtures, golden datasets:
 tests/
 ├── conftest.py                           # Root: testcontainers, markers
 ├── dj_pipeline/
-│   ├── conftest.py                       # DB fixtures, pipeline loading
-│   ├── test_pipeline_instantiation.py   # Existing: schema instantiation
-│   ├── test_acquisition.py              # Existing: epoch/chunk ingestion
-│   ├── test_qc.py                        # Existing: QC tables
-│   ├── test_tracking.py                  # Existing: tracking tables
+│   ├── conftest.py                       # Golden dataset registry, DB fixtures
+│   ├── test_full_ingestion.py            # Golden dataset integration tests
 │   └── utils/
 │       ├── conftest.py                   # Fixtures for load_metadata tests
 │       ├── test_load_metadata_unit.py    # Unit tests (no DB)
 │       └── test_load_metadata_integration.py  # Integration tests (DB)
 └── fixtures/
-    └── metadata/                         # Sample Metadata.json files (optional)
+    └── metadata/                         # Sample Metadata.json files
 ```
 
 ---
@@ -426,7 +423,6 @@ Register in `pyproject.toml`:
 markers = [
     "unit: Unit tests (no database required)",
     "integration: Integration tests (requires MySQL via testcontainers)",
-    "slow: Tests that take >10 seconds",
 ]
 testpaths = ["tests"]
 ```
@@ -710,16 +706,14 @@ Without:
 - Ingesting gigabytes of data
 - Long test execution times
 
-### Directory Structure (Updated)
+### Directory Structure
 
 ```
 tests/
 ├── conftest.py                              # Root: testcontainers, markers
 ├── dj_pipeline/
-│   ├── conftest.py                          # Golden dataset fixtures + DB fixtures
-│   ├── test_ingestion_golden.py             # Golden dataset integration tests
-│   ├── test_pipeline_instantiation.py       # Existing
-│   ├── test_acquisition.py                  # Existing
+│   ├── conftest.py                          # Golden dataset registry + DB fixtures
+│   ├── test_full_ingestion.py               # Golden dataset integration tests
 │   └── utils/
 │       ├── conftest.py                      # Test Rig fixtures
 │       ├── test_load_metadata_unit.py       # Unit tests
@@ -785,7 +779,7 @@ Golden dataset tests gracefully skip with clear messages when data is unavailabl
 
 #### Phase 3.3: Core Tests
 
-1. Create `tests/dj_pipeline/test_ingestion_golden.py`
+1. Create `tests/dj_pipeline/test_full_ingestion.py`
 2. Implement `TestEpochConfigMake` (4 tests)
 3. Implement `TestChunkIngestion` (2 tests)
 4. Implement `TestStreamDataIngestion` (3 tests, uses `populate(limit=10)`)
@@ -803,13 +797,10 @@ swc-aeon-exp-foragingabc = { git = "https://github.com/SainsburyWellcomeCentre/a
 
 ```bash
 # Run golden dataset tests (skips if data unavailable)
-uv run pytest tests/dj_pipeline/test_ingestion_golden.py -v
+uv run pytest tests/dj_pipeline/test_full_ingestion.py -v
 
 # Run all integration tests
 uv run pytest -m integration -v
-
-# Skip slow stream tests
-uv run pytest tests/dj_pipeline/test_ingestion_golden.py -m "not slow" -v
 ```
 
 ### Success Criteria
