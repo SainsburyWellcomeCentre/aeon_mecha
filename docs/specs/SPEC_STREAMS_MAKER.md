@@ -921,7 +921,7 @@ Extend the `StreamType` table to store reader constructor kwargs:
 ```python
 class StreamType(dj.Lookup):
     definition = """ # Catalog of unique stream types used across Project Aeon
-    stream_hash: uuid  # hash(stream_type, stream_reader, stream_reader_kwargs)
+    stream_hash: uuid  # hash(stream_type, stream_reader) - unique identifier
     ---
     stream_type: varchar(36)
     stream_reader: varchar(256)
@@ -936,48 +936,73 @@ class StreamType(dj.Lookup):
 During Step 1 (`populate_catalog_from_pydantic()`), extract kwargs by executing `@data_reader` methods:
 
 ```python
-def get_reader_kwargs_from_method(device_class: type, method_name: str) -> dict | None:
+def _extract_kwargs_from_reader(reader) -> dict | None:
+    """Extract constructor kwargs from reader instance.
+
+    Uses inspect.signature to determine what kwargs the reader's __init__ accepts,
+    then extracts those values from the instance attributes. This dynamic approach
+    handles any reader class without hardcoding specific attribute names.
+
+    Args:
+        reader: Reader instance from @data_reader method
+
+    Returns:
+        Dict of kwargs (excluding 'pattern'), or None if no special kwargs
+    """
+    reader_class = reader.__class__
+    sig = inspect.signature(reader_class.__init__)
+
+    kwargs = {}
+    for param_name, param in sig.parameters.items():
+        # Skip 'self' and 'pattern' (the required positional args)
+        if param_name in ('self', 'pattern'):
+            continue
+
+        # Get the value from the instance
+        if hasattr(reader, param_name):
+            value = getattr(reader, param_name)
+            if value is not None:
+                # Handle numpy arrays, tuples -> list for JSON serialization
+                if hasattr(value, 'tolist'):
+                    value = value.tolist()
+                elif isinstance(value, tuple):
+                    value = list(value)
+                kwargs[param_name] = value
+
+    return kwargs if kwargs else None
+
+
+def get_reader_kwargs_from_device_class(device_class: type, method_name: str) -> dict | None:
     """Extract reader constructor kwargs by executing @data_reader method.
 
-    Creates a minimal device instance and executes the method with a dummy
-    pattern to get the configured reader. Returns kwargs dict or None.
+    Creates a minimal device instance using model_construct() (bypasses validation)
+    and executes the @data_reader method to get the configured reader.
+
+    Args:
+        device_class: Device class type (Pydantic BaseSchema)
+        method_name: Name of the @data_reader method (snake_case)
+
+    Returns:
+        Dict of kwargs (excluding 'pattern'), or None if extraction fails
     """
     try:
         # Create minimal device instance bypassing validation
         device = device_class.model_construct()
 
         # Get the @data_reader property (returns reader instance)
-        reader = getattr(device, method_name)
+        try:
+            reader = getattr(device, method_name)
+        except (ValueError, AttributeError, TypeError) as e:
+            # Method raised error (e.g., camera_tracking is None for position)
+            logger.debug(f"Could not execute {method_name} on {device_class.__name__}: {e}")
+            return None
 
-        # Extract kwargs from reader instance attributes
+        # Extract kwargs from reader instance
         return _extract_kwargs_from_reader(reader)
+
     except Exception as e:
-        # Method raised error (e.g., camera_tracking is None)
-        logger.debug(f"Could not extract kwargs for {device_class}.{method_name}: {e}")
+        logger.debug(f"Failed to extract kwargs for {device_class.__name__}.{method_name}: {e}")
         return None
-
-
-def _extract_kwargs_from_reader(reader) -> dict | None:
-    """Extract constructor kwargs from reader instance.
-
-    Different readers store kwargs as instance attributes:
-    - Harp: self.columns
-    - BitmaskEvent: self.value, self.tag
-    - DigitalBitmask: self.mask, self.columns
-    """
-    kwargs = {}
-
-    # Check for common kwargs attributes
-    if hasattr(reader, 'columns') and reader.columns:
-        kwargs['columns'] = list(reader.columns)
-    if hasattr(reader, 'value'):
-        kwargs['value'] = reader.value
-    if hasattr(reader, 'tag'):
-        kwargs['tag'] = reader.tag
-    if hasattr(reader, 'mask'):
-        kwargs['mask'] = reader.mask
-
-    return kwargs if kwargs else None
 ```
 
 ### Usage in Table Creation (Step 2)
@@ -1069,5 +1094,6 @@ def position(self, pattern) -> reader.Position:
 
 **3. Kwargs changes between experiments:**
 - Different experiments may use same stream_type with different kwargs
-- The `stream_hash` should include kwargs in computation for uniqueness
-- Each unique (stream_type, stream_reader, kwargs) combination gets its own entry
+- The `stream_hash` does NOT include kwargs (only stream_type + stream_reader)
+- Same (stream_type, stream_reader) combination shares one entry regardless of kwargs
+- This works because columns are determined by the reader class, not kwargs values
