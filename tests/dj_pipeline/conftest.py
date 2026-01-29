@@ -86,13 +86,14 @@ def streams_schema(dj_config_integration):
     Creates catalog tables:
     - StreamType
     - DeviceType (with DeviceType.Stream part table)
+    - DeviceName
     - Device
 
     Session-scoped to avoid repeated schema creation.
     """
     import datajoint as dj
 
-    from aeon.dj_pipeline.utils.streams_maker import Device, DeviceType, StreamType
+    from aeon.dj_pipeline.utils.streams_maker import Device, DeviceName, DeviceType, StreamType
 
     # Get schema name with test prefix
     schema_name = dj_config_integration["custom"]["database.prefix"] + "streams"
@@ -107,11 +108,13 @@ def streams_schema(dj_config_integration):
     # Register catalog tables
     schema(StreamType)
     schema(DeviceType)
+    schema(DeviceName)
     schema(Device)
 
     yield {
         "StreamType": StreamType,
         "DeviceType": DeviceType,
+        "DeviceName": DeviceName,
         "Device": Device,
         "schema": schema,
         "schema_name": schema_name,
@@ -151,9 +154,10 @@ def clean_streams_tables(pipeline_integration):
     streams = pipeline_integration["streams"]
 
     # Pre-test cleanup (order matters due to FK constraints)
-    # Device references DeviceType, so delete Device first
+    # Device references DeviceType, DeviceName references DeviceType
     # DeviceType.Stream is a Part table - deleted automatically with DeviceType
     streams.Device().delete()
+    streams.DeviceName().delete()
     streams.DeviceType().delete()
     streams.StreamType().delete()
 
@@ -161,6 +165,7 @@ def clean_streams_tables(pipeline_integration):
 
     # Post-test cleanup (same order)
     streams.Device().delete()
+    streams.DeviceName().delete()
     streams.DeviceType().delete()
     streams.StreamType().delete()
 
