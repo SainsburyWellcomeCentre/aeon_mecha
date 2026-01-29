@@ -229,6 +229,27 @@ class TestInsertDeviceTypes:
         # Should have associations between DeviceType and StreamType
         assert len(streams.DeviceType.Stream()) > 0
 
+    def test_inserts_device_names(self, pipeline_integration, test_rig, tmp_path, monkeypatch):
+        from aeon.dj_pipeline.utils import streams_maker
+        from aeon.dj_pipeline.utils.load_metadata import insert_device_types, insert_stream_types
+
+        monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
+
+        streams = pipeline_integration["streams"]
+        metadata_filepath = tmp_path / "Metadata.json"
+        metadata_filepath.write_text("{}")
+
+        insert_stream_types(test_rig)
+        insert_device_types(test_rig, metadata_filepath)
+
+        # DeviceName should be populated with device instance names
+        device_names = streams.DeviceName().fetch(as_dict=True)
+        names = [d["device_name"] for d in device_names]
+        assert "CameraTop" in names
+        assert "CameraSide" in names
+        assert "Feeder1" in names
+        assert "Feeder2" in names
+
     def test_inserts_devices(self, pipeline_integration, test_rig, tmp_path, monkeypatch):
         from aeon.dj_pipeline.utils import streams_maker
         from aeon.dj_pipeline.utils.load_metadata import insert_device_types, insert_stream_types
@@ -242,7 +263,7 @@ class TestInsertDeviceTypes:
         insert_stream_types(test_rig)
         insert_device_types(test_rig, metadata_filepath)
 
-        # Cameras have serial_number, feeders have port_name
+        # Cameras have serial_number, feeders have port_name (optional hardware tracking)
         devices = streams.Device().fetch(as_dict=True)
         serial_numbers = [d["device_serial_number"] for d in devices]
         assert "21053810" in serial_numbers  # CameraTop serial
