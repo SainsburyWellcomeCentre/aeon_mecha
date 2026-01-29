@@ -515,11 +515,13 @@ def insert_stream_types(rig: "BaseSchema") -> None:
 
 
 def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
-    """Insert device types into streams.DeviceType and streams.Device.
+    """Insert device types, device names, and devices into streams schema.
 
-    Notes: Use Pydantic Rig and metadata file to insert into streams.DeviceType and streams.Device.
-    Only insert device types that were defined both in the Rig and metadata file.
-    It then creates new device tables under streams schema.
+    Populates:
+    - streams.DeviceType: Catalog of device types (e.g., "SpinnakerCamera")
+    - streams.DeviceType.Stream: Links device types to stream types
+    - streams.DeviceName: Catalog of device instance names (e.g., "CameraTop")
+    - streams.Device: Physical devices with serial numbers (optional)
 
     Args:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
@@ -532,8 +534,8 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
 
     # Add device type to device_info. Only include devices that:
     # 1. Have a device_type defined in metadata
-    # 2. Have a serial number/port name
-    # 3. Have at least one stream (skip infrastructure devices like clock_synchronizer)
+    # 2. Have at least one stream (skip infrastructure devices like clock_synchronizer)
+    # Note: serial number is NOT required - DeviceName is the primary key now
     device_info = {
         device_name: {
             "device_type": device_type_mapper.get(device_name),
@@ -541,7 +543,6 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         }
         for device_name in device_info
         if device_type_mapper.get(device_name)
-        and device_sn.get(device_name)
         and device_info[device_name].get("stream_type")
     }
 
@@ -575,13 +576,21 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         if not streams.DeviceType.Stream & {"device_type": device_type, "stream_hash": stream_hash}
     ]
 
+    # DeviceName entries - device_name is now the primary key for ExperimentDevice tables
+    new_device_names = [
+        {"device_name": device_name, "device_type": device_config["device_type"]}
+        for device_name, device_config in device_info.items()
+        if not streams.DeviceName & {"device_name": device_name}
+    ]
+
+    # Device entries - only for devices with serial numbers (optional hardware tracking)
     new_devices = [
         {
             "device_serial_number": device_sn[device_name],
             "device_type": device_config["device_type"],
         }
         for device_name, device_config in device_info.items()
-        if device_sn[device_name] and not streams.Device & {"device_serial_number": device_sn[device_name]}
+        if device_sn.get(device_name) and not streams.Device & {"device_serial_number": device_sn[device_name]}
     ]
 
     # Insert new entries.
@@ -602,6 +611,11 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
             else:
                 raise  # Re-raise unexpected errors
 
+    # Insert DeviceName entries (must be after DeviceType due to FK)
+    if new_device_names:
+        streams.DeviceName.insert(new_device_names)
+
+    # Insert Device entries (optional, for hardware tracking)
     if new_devices:
         streams.Device.insert(new_devices)
 
@@ -798,32 +812,28 @@ def ingest_epoch_metadata_from_rig(
 
     for device_name, device_config in epoch_config["devices"].items():
         if table := getattr(streams, device_type_mapper.get(device_name) or "", None):
-            # Extract serial number or port name
-            device_sn = device_config.get("serialNumber") or device_config.get("portName")
-            device_key = {"device_serial_number": device_sn}
+            # device_name is now the primary key
+            device_key = {"device_name": device_name}
 
-            if not device_sn:
+            # Check DeviceName exists (should have been inserted by insert_device_types)
+            if not (streams.DeviceName & device_key):
                 logger.warning(
-                    f"Device {device_name} has no serial number or port name. Skipping..."
-                )
-                continue
-
-            if not (streams.Device & device_key):
-                logger.warning(
-                    f"Device {device_name} (serial number: {device_sn}) is not "
-                    "yet registered in streams.Device.\nThis should not happen - "
-                    "check if metadata file and schemas dotmap are consistent. Skipping..."
+                    f"Device name '{device_name}' not registered in streams.DeviceName. "
+                    "This should not happen - check if metadata file and Rig schema are consistent. Skipping..."
                 )
                 continue
 
             device_list.append(device_key)
             epoch_device_types.append(table.__name__)
 
+            # Serial number is now optional attribute (for hardware tracking)
+            device_sn = device_config.get("serialNumber") or device_config.get("portName")
+
             table_entry = {
                 "experiment_name": experiment_name,
                 **device_key,
                 f"{dj.utils.from_camel_case(table.__name__)}_install_time": epoch_config["epoch_start"],
-                f"{dj.utils.from_camel_case(table.__name__)}_name": device_name,
+                "device_serial_number": device_sn,  # Optional, can be None
             }
 
             # Convert device config to attribute entries
@@ -851,13 +861,13 @@ def ingest_epoch_metadata_from_rig(
                 )
 
             # Check if this device is currently installed.
-            # If the same device serial number is currently installed check for changes in configuration.
+            # If the same device_name is currently installed, check for changes in configuration.
             current_device_query = table - table.RemovalTime & experiment_key & device_key
 
             if current_device_query:
                 current_device_config: list[dict] = (table.Attribute & current_device_query).fetch(
                     "experiment_name",
-                    "device_serial_number",
+                    "device_name",
                     "attribute_name",
                     "attribute_value",
                     as_dict=True,
