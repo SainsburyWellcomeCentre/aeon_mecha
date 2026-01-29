@@ -70,8 +70,16 @@ class DeviceType(dj.Lookup):
         """
 
 
+class DeviceName(dj.Lookup):
+    definition = """  # Catalog of device instance names
+    device_name: varchar(36)
+    ---
+    -> DeviceType
+    """
+
+
 class Device(dj.Lookup):
-    definition = """  # Physical devices, of a particular type, identified by unique serial number
+    definition = """  # Physical devices identified by serial number or port
     device_serial_number: varchar(12)
     ---
     -> DeviceType
@@ -82,17 +90,22 @@ class Device(dj.Lookup):
 
 
 def get_device_template(device_type: str):
-    """Returns table class template for ExperimentDevice."""
+    """Returns table class template for ExperimentDevice.
+
+    The template uses DeviceName (device_name) as primary key instead of Device,
+    making queries more intuitive (e.g., & {"device_name": "CameraTop"}).
+    Device serial number is stored as an optional attribute for hardware tracking.
+    """
     device_title = device_type
     device_type = dj.utils.from_camel_case(device_type)
 
     class ExperimentDevice(dj.Manual):
         definition = """ # {device_title} operation for time, location, experiment (v-{aeon.__version__})
         -> acquisition.Experiment
-        -> Device
+        -> DeviceName
         {device_type}_install_time : datetime(6)  # {device_type} time of placement and start operation
         ---
-        {device_type}_name         : varchar(36)
+        device_serial_number=null : varchar(12)  # Optional: physical device serial/port
         """
 
         class Attribute(dj.Part):
@@ -220,7 +233,8 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             )
             data_dirs = acquisition.Experiment.get_data_directories(key)
 
-            device_name = (ExperimentDevice & key).fetch1("{device_type_name}_name")
+            # device_name is now part of the key (PK), no need to fetch from attribute
+            device_name = key["device_name"]
 
             # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
@@ -273,7 +287,7 @@ def main(create_tables=True):
                 'schema = dj.Schema(get_schema_name("streams"))\n\n\n'
             )
             f.write(imports_str)
-            for table_class in (StreamType, DeviceType, Device):
+            for table_class in (StreamType, DeviceType, DeviceName, Device):
                 device_table_def = inspect.getsource(table_class).lstrip()
                 full_def = "@schema \n" + device_table_def + "\n\n"
                 f.write(full_def)
