@@ -205,7 +205,7 @@ class PreProcessing(dj.Computed):
         import probeinterface as pi
         import spikeinterface as si
         import spikeinterface.extractors as se
-        from spikeinterface import sorters
+        from spikeinterface import sorters, preprocessing
 
         execution_time = datetime.now(UTC)
 
@@ -249,6 +249,7 @@ class PreProcessing(dj.Computed):
         si_recording.set_probe(probe=si_probe, in_place=True)
 
         # Run preprocessing and save results to output folder
+        si_recording = si.preprocessing.unsigned_to_signed(si_recording)
         si_recording = ephys_preproc(si_recording)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
@@ -356,15 +357,16 @@ class SpikeSorting(dj.Computed):
             recording_file, base_folder=output_dir
         )
         # load the pre-generated binary file - recording.dat
+        binary_file_path = Path(recording_file).parent / "recording.dat"
         binary_rec = load_and_verify_binary_file(
-            binary_file_path=Path(recording_file).parent / "recording.dat",
+            binary_file_path=binary_file_path,
             se_recording_obj=si_recording)
 
         sorting_params = params["SI_SORTING_PARAMS"].copy()
 
         # explicitly set `skip_kilosort_preprocessing` to False
         # to avoid SpikeInterface rerunning the `write_binary_recording` step
-        # https://github.com/SpikeInterface/spikeinterface/blob/813d9640eed6e4e28a411e37efaef67026b790e3/src/spikeinterface/sorters/external/kilosortbase.py#L131
+        # https://github.com/SpikeInterface/spikeinterface/blob/705c9320c854f2a192fa200fe7866cec5a8ffca7/src/spikeinterface/sorters/external/kilosortbase.py#L124
         sorting_params["skip_kilosort_preprocessing"] = False
         
         # Add Kilosort4 memory optimization parameters to reduce GPU memory usage
@@ -373,6 +375,9 @@ class SpikeSorting(dj.Computed):
         if sorting_method == "kilosort4":
             if "clear_cache" not in sorting_params:
                 sorting_params["clear_cache"] = True
+                
+        if not binary_rec.binary_compatible_with(dtype="int16", time_axis=0, file_paths_length=1):
+            raise ValueError(f"Incompatible binary file for spike sorting: {binary_file_path}")
 
         si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
             sorter_name=sorter_name,
@@ -594,6 +599,7 @@ class SortedSpikes(dj.Imported):
     ---
     execution_time: datetime   # datetime of the start of this step
     execution_duration: float  # execution duration in hours
+    curation_id=-1: int        # if -1, this is the raw spike sorting result without manual curation
     """
 
     class Unit(dj.Part):
@@ -631,8 +637,37 @@ class SortedSpikes(dj.Imported):
                 & key
         )
 
-        # Get sorter method and create output directory.
+        # Check if there's an official curation for this session
+        # If so, use the curated analyzer; otherwise use the raw analyzer
+        # Use lazy import to avoid circular dependency
+        curation_id = -1
         analyzer_output_dir = output_dir / "sorting_analyzer"
+        try:
+            # Lazy import to avoid circular dependency
+            import importlib
+
+            spike_sorting_curation_module = importlib.import_module(
+                "aeon.dj_pipeline.spike_sorting_curation"
+            )
+            official_curation = spike_sorting_curation_module.OfficialCuration & key
+            if official_curation:
+                curation_id = official_curation.fetch1("curation_id")
+                # Fetch applied analyzer path from database
+                analyzer_output_dir = Path(
+                    (
+                        spike_sorting_curation_module.ManualCuration.File
+                        & key
+                        & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
+                    ).fetch1("file")
+                )
+                logger.info(
+                    f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
+                )
+            else:
+                logger.info("Using raw analyzer (no official curation found)")
+        except Exception as e:
+            # If curation module not available or no official curation, use raw analyzer
+            logger.info(f"Using raw analyzer (curation check failed: {e})")
 
         sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
         si_sorting_: si.sorters.BaseSorter = si.load(
@@ -643,13 +678,15 @@ class SortedSpikes(dj.Imported):
             {
                 **key,
                 "execution_time": execution_time,
-                "execution_duration": (datetime.now(UTC) - execution_time).total_seconds() / 3600,
+                "execution_duration": (
+                    datetime.now(UTC) - execution_time
+                ).total_seconds()
+                / 3600,
+                "curation_id": curation_id,
             }
         )
         if si_sorting_.unit_ids.size == 0:
-            logger.info(
-                f"No units found in {sorting_file}. Skipping Unit ingestion..."
-            )
+            logger.info(f"No units found in {sorting_file}. Skipping Unit ingestion...")
             return
 
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
@@ -768,8 +805,28 @@ class Waveform(dj.Imported):
                 & key
         )
 
-        # Get sorter method and create output directory.
-        analyzer_output_dir = output_dir / "sorting_analyzer"
+        # Get curation_id from SortedSpikes to determine which analyzer to use
+        curation_id = (SortedSpikes & key).fetch1("curation_id")
+        if curation_id != -1:
+            # Fetch applied analyzer path from database
+            import importlib
+            spike_sorting_curation_module = importlib.import_module(
+                "aeon.dj_pipeline.spike_sorting_curation"
+            )
+            analyzer_output_dir = Path(
+                (
+                    spike_sorting_curation_module.ManualCuration.File
+                    & key
+                    & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
+                ).fetch1("file")
+            )
+            logger.info(
+                f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
+            )
+        else:
+            analyzer_output_dir = output_dir / "sorting_analyzer"
+            logger.info("Using raw analyzer (curation_id=-1)")
+
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
 
         self.insert1(key)
@@ -841,8 +898,28 @@ class SortingQuality(dj.Imported):
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
-        # Get sorter method and create output directory.
-        analyzer_output_dir = output_dir / "sorting_analyzer"
+        # Get curation_id from SortedSpikes to determine which analyzer to use
+        curation_id = (SortedSpikes & key).fetch1("curation_id")
+        if curation_id != -1:
+            # Fetch applied analyzer path from database
+            import importlib
+            spike_sorting_curation_module = importlib.import_module(
+                "aeon.dj_pipeline.spike_sorting_curation"
+            )
+            analyzer_output_dir = Path(
+                (
+                    spike_sorting_curation_module.ManualCuration.File
+                    & key
+                    & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
+                ).fetch1("file")
+            )
+            logger.info(
+                f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
+            )
+        else:
+            analyzer_output_dir = output_dir / "sorting_analyzer"
+            logger.info("Using raw analyzer (curation_id=-1)")
+
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
 
         self.insert1(key)
@@ -990,7 +1067,6 @@ def ephys_preproc(recording) -> Any:
     import spikeinterface as si
     from spikeinterface import preprocessing
 
-    recording = si.preprocessing.unsigned_to_signed(recording)
     recording = si.preprocessing.bandpass_filter(
         recording=recording, freq_min=300, freq_max=6000
     )
@@ -1018,7 +1094,7 @@ def load_and_verify_binary_file(binary_file_path: Path, se_recording_obj: Any) -
     binary_rec = se.read_binary(
         binary_file_path,
         sampling_frequency=se_recording_obj.get_sampling_frequency(),
-        dtype=np.int16,  # Fixed: must match dtype used in write_binary_recording (int16, not uint16)
+        dtype=se_recording_obj.dtype,
         num_channels=se_recording_obj.get_num_channels(),
         gain_to_uV=se_recording_obj.get_channel_gains()[0])
     if binary_rec.get_num_samples() != se_recording_obj.get_num_samples():

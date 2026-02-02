@@ -4,6 +4,8 @@
 # AEON Spike Sorting SLURM Script
 # =============================================================================
 # Usage:  sbatch run_aeon_spike_sorting.sh
+# Check job status: squeue --start -j <job_id>
+# Cancel job: scancel <job_id>
 # =============================================================================
 
 #SBATCH --job-name=aeon-spike-sorting         # job name
@@ -11,8 +13,8 @@
 #SBATCH --gres=gpu:a100:1                    # Remove this line for CPU-only mode (options a100, p5000)
 #SBATCH --nodes=1                             # node count
 #SBATCH --ntasks=1                            # total number of tasks across all nodes
-#SBATCH --mem=128G                            # total memory per node
-#SBATCH --time=7-01:00:00                     # total run time limit (DD-HH:MM:SS)
+#SBATCH --mem=256G                            # total memory per node
+#SBATCH --time=7-08:00:00                     # total run time limit (DD-HH:MM:SS)
 #SBATCH --output=slurm_output/%N_%j.out       # output file path
 #SBATCH --error=slurm_output/%N_%j.err        # error file path
 
