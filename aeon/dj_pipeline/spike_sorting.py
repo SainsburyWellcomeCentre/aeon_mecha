@@ -6,6 +6,7 @@ import json
 from datetime import datetime, UTC
 import joblib
 import tempfile
+import os
 from typing import Dict, List, Tuple, Any, Optional
 
 from aeon.dj_pipeline import acquisition, ephys, get_schema_name
@@ -336,6 +337,15 @@ class SpikeSorting(dj.Computed):
         Returns:
             Tuple of (sorting_output_dir, execution_time, execution_duration)
         """
+        # Set PyTorch CUDA memory allocator configuration BEFORE importing PyTorch
+        # Note: PYTORCH_CUDA_ALLOC_CONF must be set BEFORE PyTorch is imported to take effect.
+        # If not already set (e.g., from bash script), use:
+        # - expandable_segments:True allows PyTorch to dynamically expand memory segments to reduce fragmentation
+        # - garbage_collection_threshold:0.6 triggers GC when 60% of reserved memory is unused,
+        #   helping free reserved but unallocated memory (like the 7.69 GiB in the error)
+        if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
+            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_threshold:0.6"
+        
         import spikeinterface as si
         from spikeinterface import sorters
 
@@ -350,12 +360,19 @@ class SpikeSorting(dj.Computed):
             binary_file_path=Path(recording_file).parent / "recording.dat",
             se_recording_obj=si_recording)
 
-        sorting_params = params["SI_SORTING_PARAMS"]
+        sorting_params = params["SI_SORTING_PARAMS"].copy()
 
         # explicitly set `skip_kilosort_preprocessing` to False
         # to avoid SpikeInterface rerunning the `write_binary_recording` step
         # https://github.com/SpikeInterface/spikeinterface/blob/813d9640eed6e4e28a411e37efaef67026b790e3/src/spikeinterface/sorters/external/kilosortbase.py#L131
         sorting_params["skip_kilosort_preprocessing"] = False
+        
+        # Add Kilosort4 memory optimization parameters to reduce GPU memory usage
+        # clear_cache=True forces PyTorch to clear cached CUDA memory after memory-intensive steps,
+        # which helps free reserved but unallocated memory (like the 7.69 GiB in the error)
+        if sorting_method == "kilosort4":
+            if "clear_cache" not in sorting_params:
+                sorting_params["clear_cache"] = True
 
         si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
             sorter_name=sorter_name,
@@ -1001,7 +1018,7 @@ def load_and_verify_binary_file(binary_file_path: Path, se_recording_obj: Any) -
     binary_rec = se.read_binary(
         binary_file_path,
         sampling_frequency=se_recording_obj.get_sampling_frequency(),
-        dtype=np.uint16,
+        dtype=np.int16,  # Fixed: must match dtype used in write_binary_recording (int16, not uint16)
         num_channels=se_recording_obj.get_num_channels(),
         gain_to_uV=se_recording_obj.get_channel_gains()[0])
     if binary_rec.get_num_samples() != se_recording_obj.get_num_samples():

@@ -8,7 +8,7 @@
 
 #SBATCH --job-name=aeon-spike-sorting         # job name
 #SBATCH --partition=gpu                       # Change to 'cpu' for CPU-only mode
-#SBATCH --gres=gpu:p5000:1                    # Remove this line for CPU-only mode
+#SBATCH --gres=gpu:a100:1                    # Remove this line for CPU-only mode (options a100, p5000)
 #SBATCH --nodes=1                             # node count
 #SBATCH --ntasks=1                            # total number of tasks across all nodes
 #SBATCH --mem=128G                            # total memory per node
@@ -41,6 +41,14 @@ if ! conda activate aeon_env; then
     echo "ERROR: Failed to activate conda environment 'aeon_env'"
     exit 1
 fi
+
+# Set PyTorch CUDA memory allocator configuration to free reserved memory
+# This helps prevent CUDA out of memory errors during long-running Kilosort4 jobs
+# expandable_segments:True allows PyTorch to dynamically expand memory segments to reduce fragmentation
+# garbage_collection_threshold:0.6 triggers GC when 60% of reserved memory is unused,
+#   which should free the 7.69 GiB reserved but unallocated memory
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.6
+echo "Set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.6"
 
 # Start resource profiler in the background
 echo "Starting resource profiler..."
