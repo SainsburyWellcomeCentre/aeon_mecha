@@ -4,7 +4,7 @@ from datetime import datetime
 from sklearn.linear_model import LinearRegression
 
 from swc.aeon.io import reader as _reader
-from swc.aeon.schema import Stream, StreamGroup
+from swc.aeon.schema.streams import Stream, StreamGroup
 
 
 # -- Ephys streams for HarpSync and OnixClock data
@@ -98,7 +98,7 @@ class NeuropixelsV2Beta(StreamGroup):
 # ----
 
 from dotmap import DotMap
-from swc.aeon.schema import Device
+from swc.aeon.schema.streams import Device
 
 social_ephys = DotMap(
     [

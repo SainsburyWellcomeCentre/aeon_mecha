@@ -6,6 +6,7 @@ import json
 from datetime import datetime, UTC
 import joblib
 import tempfile
+import os
 from typing import Dict, List, Tuple, Any, Optional
 
 from aeon.dj_pipeline import acquisition, ephys, get_schema_name
@@ -337,6 +338,15 @@ class SpikeSorting(dj.Computed):
         Returns:
             Tuple of (sorting_output_dir, execution_time, execution_duration)
         """
+        # Set PyTorch CUDA memory allocator configuration BEFORE importing PyTorch
+        # Note: PYTORCH_CUDA_ALLOC_CONF must be set BEFORE PyTorch is imported to take effect.
+        # If not already set (e.g., from bash script), use:
+        # - expandable_segments:True allows PyTorch to dynamically expand memory segments to reduce fragmentation
+        # - garbage_collection_threshold:0.6 triggers GC when 60% of reserved memory is unused,
+        #   helping free reserved but unallocated memory (like the 7.69 GiB in the error)
+        if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
+            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_threshold:0.6"
+        
         import spikeinterface as si
         from spikeinterface import sorters
 
@@ -352,12 +362,20 @@ class SpikeSorting(dj.Computed):
             binary_file_path=binary_file_path,
             se_recording_obj=si_recording)
 
-        sorting_params = params["SI_SORTING_PARAMS"]
+        sorting_params = params["SI_SORTING_PARAMS"].copy()
 
         # explicitly set `skip_kilosort_preprocessing` to False
         # to avoid SpikeInterface rerunning the `write_binary_recording` step
         # https://github.com/SpikeInterface/spikeinterface/blob/705c9320c854f2a192fa200fe7866cec5a8ffca7/src/spikeinterface/sorters/external/kilosortbase.py#L124
         sorting_params["skip_kilosort_preprocessing"] = False
+        
+        # Add Kilosort4 memory optimization parameters to reduce GPU memory usage
+        # clear_cache=True forces PyTorch to clear cached CUDA memory after memory-intensive steps,
+        # which helps free reserved but unallocated memory (like the 7.69 GiB in the error)
+        if sorting_method == "kilosort4":
+            if "clear_cache" not in sorting_params:
+                sorting_params["clear_cache"] = True
+                
         if not binary_rec.binary_compatible_with(dtype="int16", time_axis=0, file_paths_length=1):
             raise ValueError(f"Incompatible binary file for spike sorting: {binary_file_path}")
 
