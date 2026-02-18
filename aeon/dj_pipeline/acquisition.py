@@ -376,7 +376,7 @@ class EpochConfig(dj.Imported):
             "epoch_start": epoch_start,
             "bonsai_workflow": metadata.get("workflow", ""),
             "commit": metadata.get("commit") or metadata.get("metadata", {}).get("Revision", ""),
-            "metadata": rig_config,  # Store original nested JSON for Pydantic reconstruction
+            "metadata": json.dumps(rig_config),  # Store original nested JSON for Pydantic reconstruction
             "metadata_file_path": metadata_filepath.relative_to(data_dir).as_posix(),
             "devices": _flatten_rig_devices(rig_config),  # Flat device dict for ingest_epoch_metadata_from_rig
         }
