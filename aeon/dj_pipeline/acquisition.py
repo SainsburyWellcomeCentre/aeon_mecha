@@ -210,6 +210,7 @@ class Epoch(dj.Manual):
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
+        all_chunks.index = all_chunks.index.tz_localize(None)
 
         epoch_list = []
         for i, (_, chunk) in enumerate(all_chunks.iterrows()):
@@ -396,6 +397,10 @@ class EpochConfig(dj.Imported):
         # Remove devices key before inserting - it was only needed for ingest_epoch_metadata_from_rig
         epoch_config.pop("devices", None)
 
+        # MariaDB aliases `json` to `longtext`, so DataJoint's auto json.dumps doesn't fire.
+        # Serialize manually before insert.
+        epoch_config["metadata"] = json.dumps(epoch_config["metadata"])
+
         # Insert EpochConfig entries (stores rig_config JSON for runtime reader resolution)
         self.insert1(key)
         self.Meta.insert1(epoch_config)
@@ -460,6 +465,7 @@ class Chunk(dj.Manual):
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
+        all_chunks.index = all_chunks.index.tz_localize(None)
 
         chunk_starts, chunk_list, file_list, file_name_list = [], [], [], []
         for _, chunk in all_chunks.iterrows():
