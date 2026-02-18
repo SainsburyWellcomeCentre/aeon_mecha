@@ -376,7 +376,7 @@ class EpochConfig(dj.Imported):
             "epoch_start": epoch_start,
             "bonsai_workflow": metadata.get("workflow", ""),
             "commit": metadata.get("commit") or metadata.get("metadata", {}).get("Revision", ""),
-            "metadata": json.dumps(rig_config),  # Store original nested JSON for Pydantic reconstruction
+            "metadata": rig_config,  # Store original nested JSON for Pydantic reconstruction
             "metadata_file_path": metadata_filepath.relative_to(data_dir).as_posix(),
             "devices": _flatten_rig_devices(rig_config),  # Flat device dict for ingest_epoch_metadata_from_rig
         }
@@ -396,6 +396,9 @@ class EpochConfig(dj.Imported):
 
         # Remove devices key before inserting - it was only needed for ingest_epoch_metadata_from_rig
         epoch_config.pop("devices", None)
+
+        # Serialize metadata dict to JSON string for MySQL json column
+        epoch_config["metadata"] = json.dumps(epoch_config["metadata"])
 
         # Insert EpochConfig entries (stores rig_config JSON for runtime reader resolution)
         self.insert1(key)
