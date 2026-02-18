@@ -467,6 +467,12 @@ def get_stream_reader_for_epoch(
     epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
     rig_metadata = (acquisition.EpochConfig.Meta & epoch_key).fetch1("metadata")
 
+    # MariaDB 10.3 aliases `json` columns to `longtext`, so DataJoint's auto
+    # json.loads() doesn't fire. Deserialize manually if needed.
+    if isinstance(rig_metadata, str):
+        import json
+        rig_metadata = json.loads(rig_metadata)
+
     # Get Rig class from Experiment class and reconstruct directly
     experiment_class = get_experiment_pydantic(schema_name)
     rig_class = experiment_class.model_fields["rig"].annotation

@@ -397,6 +397,10 @@ class EpochConfig(dj.Imported):
         # Remove devices key before inserting - it was only needed for ingest_epoch_metadata_from_rig
         epoch_config.pop("devices", None)
 
+        # MariaDB aliases `json` to `longtext`, so DataJoint's auto json.dumps doesn't fire.
+        # Serialize manually before insert.
+        epoch_config["metadata"] = json.dumps(epoch_config["metadata"])
+
         # Insert EpochConfig entries (stores rig_config JSON for runtime reader resolution)
         self.insert1(key)
         self.Meta.insert1(epoch_config)
