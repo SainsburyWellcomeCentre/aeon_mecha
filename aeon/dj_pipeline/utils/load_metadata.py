@@ -730,7 +730,7 @@ def _extract_device_mapper_from_rig(rig_config: dict) -> tuple[dict[str, str], d
             device_sn: {"device_name": "serial_number"}
     """
     device_type_mapper: dict[str, str] = {}
-    device_sn: dict[str, str] = {}
+    device_sn: dict[str, str | None] = {}
 
     # Extract cameras
     cameras = rig_config.get("cameras", {})
@@ -843,18 +843,15 @@ def ingest_epoch_metadata_from_rig(
             }
 
             # Convert device config to attribute entries
-            table_attribute_entry = []
-            for attr_name, attr_value in device_config.items():
-                # Skip nested structures and internal fields
-                if isinstance(attr_value, (dict, list)):
-                    continue
-                table_attribute_entry.append(
-                    {
-                        **table_entry,
-                        "attribute_name": attr_name,
-                        "attribute_value": attr_value,
-                    }
-                )
+            table_attribute_entry = [
+                {
+                    **table_entry,
+                    "attribute_name": attr_name,
+                    "attribute_value": attr_value,
+                }
+                for attr_name, attr_value in device_config.items()
+                if not isinstance(attr_value, (dict, list))
+            ]
 
             # Add trigger frequency if camera has trigger reference
             if "trigger" in device_config and device_config["trigger"] in trigger_frequencies:
@@ -974,8 +971,7 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
 
     # Extract stream info from each device
     for device_name, device in devices:
-        if device_name not in device_info:
-            device_info[device_name] = defaultdict(list)
+        device_info.setdefault(device_name, defaultdict(list))
 
         for method_name, _ in get_data_reader_methods(device.__class__):
             try:
@@ -1044,7 +1040,7 @@ def get_device_mapper_from_rig(
             device_sn: {"device_name": "serial_number"}
     """
     device_type_mapper: dict[str, str] = {}
-    device_sn: dict[str, str] = {}
+    device_sn: dict[str, str | None] = {}
 
     # Iterate over Rig fields to find Device collections
     for field_name in type(rig).model_fields:
