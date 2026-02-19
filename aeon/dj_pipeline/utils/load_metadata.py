@@ -14,6 +14,8 @@ import importlib
 import inspect
 import json
 import pathlib
+import re
+import typing
 from collections import defaultdict
 from functools import cached_property
 from pathlib import Path
@@ -43,17 +45,12 @@ def get_device_class_from_field(field_info) -> type["Device"] | None:
     Returns:
         Device class type, or None if not a device field
     """
-    import typing
-
     annotation = field_info.annotation
     origin = typing.get_origin(annotation)
 
     def is_device_class(cls) -> bool:
         """Check if class is a Device with device_type field."""
-        return (
-            hasattr(cls, 'model_fields')
-            and 'device_type' in cls.model_fields
-        )
+        return hasattr(cls, "model_fields") and "device_type" in cls.model_fields
 
     # Handle Dict[Name, Device] - e.g., Dict[CameraName, Camera]
     if origin is dict:
@@ -87,17 +84,17 @@ def get_data_reader_methods(device_class: type) -> list[tuple[str, Any]]:
     data_reader_methods = []
     for name, attr in inspect.getmembers(device_class):
         if isinstance(attr, cached_property):
-            func = getattr(attr, 'func', None)
+            func = getattr(attr, "func", None)
             if func:
                 # Check direct signature first
                 sig = inspect.signature(func)
                 params = list(sig.parameters.keys())
-                if len(params) == 2 and params[1] == 'pattern':
+                if len(params) == 2 and params[1] == "pattern":
                     data_reader_methods.append((name, func))
                     continue
 
                 # Check closure for original function (real @data_reader wraps in closure)
-                closure = getattr(func, '__closure__', None)
+                closure = getattr(func, "__closure__", None)
                 if closure:
                     for cell in closure:
                         try:
@@ -105,7 +102,7 @@ def get_data_reader_methods(device_class: type) -> list[tuple[str, Any]]:
                             if callable(orig_func):
                                 orig_sig = inspect.signature(orig_func)
                                 orig_params = list(orig_sig.parameters.keys())
-                                if len(orig_params) == 2 and orig_params[1] == 'pattern':
+                                if len(orig_params) == 2 and orig_params[1] == "pattern":
                                     data_reader_methods.append((name, func))
                                     break
                         except ValueError:
@@ -131,7 +128,6 @@ def get_reader_path_from_annotation(func) -> str | None:
         Fully-qualified class path (e.g., "swc.aeon.io.reader.Video"), or None.
         Returns None for TypeVar annotations (base class placeholders).
     """
-    import typing
 
     def _get_return_type(f) -> type | None:
         """Get return type from function, handling TypeVar."""
@@ -140,7 +136,7 @@ def get_reader_path_from_annotation(func) -> str | None:
         except (NameError, TypeError):
             return None
 
-        return_type = hints.get('return')
+        return_type = hints.get("return")
         if return_type is None or isinstance(return_type, typing.TypeVar):
             return None
         return return_type
@@ -151,7 +147,7 @@ def get_reader_path_from_annotation(func) -> str | None:
     # If TypeVar or None, check closure for original function
     # (The @data_reader decorator wraps the original function in a closure)
     if return_type is None:
-        closure = getattr(func, '__closure__', None)
+        closure = getattr(func, "__closure__", None)
         if closure:
             for cell in closure:
                 try:
@@ -167,8 +163,8 @@ def get_reader_path_from_annotation(func) -> str | None:
         return None
 
     # Get the fully-qualified path
-    module = getattr(return_type, '__module__', None)
-    name = getattr(return_type, '__name__', None)
+    module = getattr(return_type, "__module__", None)
+    name = getattr(return_type, "__name__", None)
 
     if module and name:
         return f"{module}.{name}"
@@ -192,9 +188,9 @@ def _extract_kwargs_from_reader(reader) -> dict | None:
     sig = inspect.signature(reader_class.__init__)
 
     kwargs = {}
-    for param_name, param in sig.parameters.items():
+    for param_name, _param in sig.parameters.items():
         # Skip 'self' and 'pattern' (the required positional args)
-        if param_name in ('self', 'pattern'):
+        if param_name in ("self", "pattern"):
             continue
 
         # Get the value from the instance
@@ -202,7 +198,7 @@ def _extract_kwargs_from_reader(reader) -> dict | None:
             value = getattr(reader, param_name)
             if value is not None:
                 # Handle numpy arrays, tuples -> list for JSON serialization
-                if hasattr(value, 'tolist'):
+                if hasattr(value, "tolist"):
                     value = value.tolist()
                 elif isinstance(value, tuple):
                     value = list(value)
@@ -263,7 +259,9 @@ def populate_catalog_from_pydantic(experiment_class: type["BaseSchema"]) -> None
     # Get Rig class from Experiment.rig field
     rig_field = experiment_class.model_fields.get("rig")
     if rig_field is None:
-        logger.warning(f"Experiment class {experiment_class} has no 'rig' field. Skipping catalog population.")
+        logger.warning(
+            f"Experiment class {experiment_class} has no 'rig' field. Skipping catalog population."
+        )
         return
 
     rig_class = rig_field.annotation
@@ -274,7 +272,7 @@ def populate_catalog_from_pydantic(experiment_class: type["BaseSchema"]) -> None
     device_stream_entries = []
 
     # Iterate over Rig fields to find Device classes
-    for field_name, field_info in rig_class.model_fields.items():
+    for _field_name, field_info in rig_class.model_fields.items():
         device_class = get_device_class_from_field(field_info)
         if device_class is None:
             continue
@@ -309,22 +307,28 @@ def populate_catalog_from_pydantic(experiment_class: type["BaseSchema"]) -> None
             stream_type = to_pascal_case(stream_name)
 
             # Compute hash for (stream_type, stream_reader) combination
-            stream_hash = dict_to_uuid({
-                "stream_type": stream_type,
-                "stream_reader": stream_reader_path,
-            })
+            stream_hash = dict_to_uuid(
+                {
+                    "stream_type": stream_type,
+                    "stream_reader": stream_reader_path,
+                }
+            )
 
-            stream_type_entries.append({
-                "stream_hash": stream_hash,
-                "stream_type": stream_type,
-                "stream_reader": stream_reader_path,
-                "stream_reader_kwargs": stream_reader_kwargs,
-            })
+            stream_type_entries.append(
+                {
+                    "stream_hash": stream_hash,
+                    "stream_type": stream_type,
+                    "stream_reader": stream_reader_path,
+                    "stream_reader_kwargs": stream_reader_kwargs,
+                }
+            )
 
-            device_stream_entries.append({
-                "device_type": device_type,
-                "stream_hash": stream_hash,
-            })
+            device_stream_entries.append(
+                {
+                    "device_type": device_type,
+                    "stream_hash": stream_hash,
+                }
+            )
 
     # Insert entries (using skip_duplicates for idempotency)
     # Deduplicate before inserting
@@ -384,7 +388,7 @@ def get_experiment_pydantic(schema_name: str) -> type["BaseSchema"]:
     Returns:
         Pydantic Experiment class type
     """
-    module_path, class_name = schema_name.rsplit(':', 1)
+    module_path, class_name = schema_name.rsplit(":", 1)
     module = importlib.import_module(module_path)
     return getattr(module, class_name)
 
@@ -398,9 +402,7 @@ def to_snake_case(pascal_str: str) -> str:
     Returns:
         snake_case string (e.g., "beam_break", "video")
     """
-    import re
-    result = re.sub(r'(?<!^)(?=[A-Z])', '_', pascal_str).lower()
-    return result
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", pascal_str).lower()
 
 
 def _find_device_in_rig(rig, device_name: str):
@@ -419,7 +421,7 @@ def _find_device_in_rig(rig, device_name: str):
     Raises:
         ValueError: If device not found in Rig
     """
-    for field_name in rig.model_fields:
+    for field_name in type(rig).model_fields:
         field_value = getattr(rig, field_name)
 
         # Handle Dict[Name, Device] collections
@@ -428,8 +430,8 @@ def _find_device_in_rig(rig, device_name: str):
                 return field_value[device_name]
 
         # Handle single device fields
-        elif hasattr(field_value, 'device_type'):
-            if field_name == device_name or getattr(field_value, '_container_prefix', None) == device_name:
+        elif hasattr(field_value, "device_type"):
+            if field_name == device_name or getattr(field_value, "_container_prefix", None) == device_name:
                 return field_value
 
     raise ValueError(f"Device '{device_name}' not found in Rig")
@@ -458,10 +460,9 @@ def get_stream_reader_for_epoch(
     from aeon.dj_pipeline import acquisition
 
     # Get Experiment class path (e.g., "swc.aeon.exp.foragingABC.experiment:Experiment")
-    schema_name = (
-        acquisition.Experiment.DevicesSchema
-        & {"experiment_name": experiment_name}
-    ).fetch1("devices_schema_name")
+    schema_name = (acquisition.Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1(
+        "devices_schema_name"
+    )
 
     # Get rig metadata for the specific epoch
     epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
@@ -470,7 +471,6 @@ def get_stream_reader_for_epoch(
     # MariaDB 10.3 aliases `json` columns to `longtext`, so DataJoint's auto
     # json.loads() doesn't fire. Deserialize manually if needed.
     if isinstance(rig_metadata, str):
-        import json
         rig_metadata = json.loads(rig_metadata)
 
     # Get Rig class from Experiment class and reconstruct directly
@@ -548,8 +548,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
             **device_info[device_name],
         }
         for device_name in device_info
-        if device_type_mapper.get(device_name)
-        and device_info[device_name].get("stream_type")
+        if device_type_mapper.get(device_name) and device_info[device_name].get("stream_type")
     }
 
     # Create a map of device_type to (stream_type, stream_hash) pairs
@@ -596,7 +595,8 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
             "device_type": device_config["device_type"],
         }
         for device_name, device_config in device_info.items()
-        if device_sn.get(device_name) and not streams.Device & {"device_serial_number": device_sn[device_name]}
+        if device_sn.get(device_name)
+        and not streams.Device & {"device_serial_number": device_sn[device_name]}
     ]
 
     # Insert new entries.
@@ -916,9 +916,7 @@ def ingest_epoch_metadata_from_rig(
     for device_type in streams.DeviceType.fetch("device_type"):
         table = getattr(streams, device_type)
 
-        device_removal_list.extend(
-            (table - table.RemovalTime - device_list & experiment_key).fetch("KEY")
-        )
+        device_removal_list.extend((table - table.RemovalTime - device_list & experiment_key).fetch("KEY"))
 
         for device_entry in device_removal_list:
             if device_removal(device_type, device_entry):
@@ -941,8 +939,8 @@ def to_pascal_case(snake_str: str) -> str:
     Returns:
         PascalCase string
     """
-    components = snake_str.split('_')
-    return ''.join(word.capitalize() for word in components)
+    components = snake_str.split("_")
+    return "".join(word.capitalize() for word in components)
 
 
 def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
@@ -963,14 +961,14 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
 
     # Collect all (device_name, device) pairs from Rig fields
     devices: list[tuple[str, Any]] = []
-    for field_name in rig.model_fields:
+    for field_name in type(rig).model_fields:
         field_value = getattr(rig, field_name)
         if isinstance(field_value, dict):
             # Dict[Name, Device] collection (cameras, feeders, nest)
             for name, dev in field_value.items():
-                if hasattr(dev, 'device_type'):
+                if hasattr(dev, "device_type"):
                     devices.append((name, dev))
-        elif hasattr(field_value, 'device_type'):
+        elif hasattr(field_value, "device_type"):
             # Single Device field
             devices.append((field_name, field_value))
 
@@ -1049,34 +1047,29 @@ def get_device_mapper_from_rig(
     device_sn: dict[str, str] = {}
 
     # Iterate over Rig fields to find Device collections
-    for field_name in rig.model_fields:
+    for field_name in type(rig).model_fields:
         field_value = getattr(rig, field_name)
 
         # Handle Dict[Name, Device] - e.g., cameras, feeders, nest
         if isinstance(field_value, dict):
             for device_name, device in field_value.items():
                 # Check if it's a Device instance (BaseSchema with device_type)
-                if not hasattr(device, 'device_type'):
+                if not hasattr(device, "device_type"):
                     continue
 
                 device_type_mapper[device_name] = device.device_type
                 # Extract serial number or port name
                 device_sn[device_name] = (
-                    getattr(device, 'serial_number', None) or
-                    getattr(device, 'port_name', None) or
-                    None
+                    getattr(device, "serial_number", None) or getattr(device, "port_name", None) or None
                 )
 
         # Handle single Device instance (if any)
-        elif hasattr(field_value, 'device_type'):
+        elif hasattr(field_value, "device_type"):
             device_name = field_name
             device = field_value
             device_type_mapper[device_name] = device.device_type
             device_sn[device_name] = (
-                getattr(device, 'serial_number', None) or
-                getattr(device, 'port_name', None) or
-                None
+                getattr(device, "serial_number", None) or getattr(device, "port_name", None) or None
             )
 
     return device_type_mapper, device_sn
-
