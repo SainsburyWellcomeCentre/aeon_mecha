@@ -237,9 +237,41 @@ def full_pipeline(dj_config_with_golden_data, golden_dataset_config):
     2. Populate catalog from Pydantic class
     3. Create ExperimentDevice and DeviceDataStream tables
     4. Tests can then call EpochConfig.make() for DML (Step 3)
+
+    When schema integration tests run first (with a different db prefix),
+    module-level variables like db_prefix and streams_maker.schema_name become
+    stale. This fixture patches them and forces a clean streams module reload.
     """
-    from aeon.dj_pipeline import acquisition, lab, subject
+    import importlib
+    import sys
+
+    import datajoint as dj
+
+    import aeon.dj_pipeline as pipeline
     from aeon.dj_pipeline.utils import streams_maker
+
+    # Ensure db_prefix matches golden test config.
+    # Other integration tests may have set a different prefix at import time.
+    target_prefix = dj_config_with_golden_data["custom"]["database.prefix"]
+    pipeline.db_prefix = target_prefix
+    streams_maker.schema_name = pipeline.get_schema_name("streams")
+
+    # Force clean streams module: remove cached module and stale file
+    # so streams_maker.main() regenerates it with the correct schema name.
+    sys.modules.pop("aeon.dj_pipeline.streams", None)
+    if streams_maker._STREAMS_MODULE_FILE.exists():
+        streams_maker._STREAMS_MODULE_FILE.unlink()
+
+    # Re-activate pipeline schemas with the correct prefix.
+    # If modules were already imported by other tests, their schema objects
+    # may point to a different prefix (e.g., test_integration_ vs test_golden_).
+    from aeon.dj_pipeline import acquisition, lab, subject
+
+    for module, name in [(lab, "lab"), (subject, "subject"), (acquisition, "acquisition")]:
+        expected_schema = pipeline.get_schema_name(name)
+        if hasattr(module, "schema") and module.schema.database != expected_schema:
+            module.schema.activate(expected_schema, create_schema=True, create_tables=True)
+
     from aeon.dj_pipeline.utils.load_metadata import (
         get_experiment_pydantic,
         populate_catalog_from_pydantic,

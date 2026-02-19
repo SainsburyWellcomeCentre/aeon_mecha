@@ -124,6 +124,8 @@ class TestEpochConfigMake:
 
     def test_epoch_config_meta_has_rig_metadata(self, test_epochs, full_pipeline, golden_dataset_config):
         """Verify EpochConfig.Meta contains rig metadata."""
+        import json
+
         acquisition = full_pipeline["acquisition"]
         cfg = golden_dataset_config
 
@@ -131,10 +133,15 @@ class TestEpochConfigMake:
 
         meta = (acquisition.EpochConfig.Meta & {"experiment_name": cfg["experiment_name"]}).fetch1()
 
-        assert "cameras" in meta["metadata"]
-        assert "feeders" in meta["metadata"]
-        assert len(meta["metadata"]["cameras"]) == cfg["expected_camera_count"]
-        assert len(meta["metadata"]["feeders"]) == cfg["expected_feeder_count"]
+        # metadata may be a JSON string (MariaDB json-as-longtext) or a dict
+        metadata = meta["metadata"]
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)
+
+        assert "cameras" in metadata
+        assert "feeders" in metadata
+        assert len(metadata["cameras"]) == cfg["expected_camera_count"]
+        assert len(metadata["feeders"]) == cfg["expected_feeder_count"]
 
     def test_streams_device_registered(self, test_epochs, full_pipeline, golden_dataset_config):
         """Verify streams.Device populated by EpochConfig.make()."""
