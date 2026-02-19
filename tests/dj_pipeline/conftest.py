@@ -7,10 +7,13 @@ Test commands:
 """
 
 import datetime
+import logging
 import os
 from pathlib import Path
 
 import pytest
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -76,7 +79,7 @@ def dj_config_integration(mysql_container):
 
     dj.config["custom"]["database.prefix"] = "test_integration_"
 
-    yield dj.config
+    return dj.config
 
 
 @pytest.fixture(scope="session")
@@ -89,39 +92,51 @@ def streams_schema(dj_config_integration):
     - DeviceName
     - Device
 
+    Uses a fresh dj.Schema object with the undecorated catalog class definitions
+    from streams_maker (not streams.schema, which may be polluted by full_pipeline's
+    main() appending dynamic tables with unresolvable FK references).
     Session-scoped to avoid repeated schema creation.
     """
     import datajoint as dj
 
-    from aeon.dj_pipeline.utils.streams_maker import Device, DeviceName, DeviceType, StreamType
+    import aeon.dj_pipeline as pipeline
 
-    # Get schema name with test prefix
-    schema_name = dj_config_integration["custom"]["database.prefix"] + "streams"
+    # Save and patch db_prefix so get_schema_name() returns test-prefixed names
+    original_db_prefix = pipeline.db_prefix
+    target_prefix = dj_config_integration["custom"]["database.prefix"]
+    pipeline.db_prefix = target_prefix
 
-    # Drop existing schema if it exists (ensures clean state with new table definitions)
-    existing_schema = dj.Schema(schema_name)
-    if existing_schema.is_activated():
-        existing_schema.drop(force=True)
+    schema_name = target_prefix + "streams"
 
-    schema = dj.Schema(schema_name)
+    # Create a fresh Schema for catalog tables only.
+    # We use the undecorated classes from streams_maker (not streams.schema)
+    # because full_pipeline's main() may have polluted streams.schema with
+    # dynamic table classes whose FK refs don't exist in this test DB.
+    from aeon.dj_pipeline.utils.streams_maker import (
+        Device,
+        DeviceName,
+        DeviceType,
+        StreamType,
+    )
 
-    # Register catalog tables
-    schema(StreamType)
-    schema(DeviceType)
-    schema(DeviceName)
-    schema(Device)
+    test_schema = dj.Schema(schema_name, create_schema=True, create_tables=True)
+    test_schema(StreamType)
+    test_schema(DeviceType)
+    test_schema(DeviceName)
+    test_schema(Device)
 
     yield {
         "StreamType": StreamType,
         "DeviceType": DeviceType,
         "DeviceName": DeviceName,
         "Device": Device,
-        "schema": schema,
+        "schema": test_schema,
         "schema_name": schema_name,
     }
 
-    # Teardown: drop test schema
-    schema.drop()
+    # Teardown: drop test schema and restore db_prefix
+    dj.Schema(schema_name).drop()
+    pipeline.db_prefix = original_db_prefix
 
 
 @pytest.fixture(scope="session")
@@ -203,11 +218,9 @@ def dj_config_with_golden_data(mysql_container, golden_dataset_config):
         dj.config["custom"] = {}
 
     dj.config["custom"]["database.prefix"] = "test_golden_"
-    dj.config["custom"]["repository_config"] = {
-        "ceph_aeon": str(DEFAULT_GOLDEN_DATA_ROOT)
-    }
+    dj.config["custom"]["repository_config"] = {"ceph_aeon": str(DEFAULT_GOLDEN_DATA_ROOT)}
 
-    yield dj.config
+    return dj.config
 
 
 @pytest.fixture(scope="session")
@@ -216,7 +229,9 @@ def require_golden_data(dj_config_with_golden_data, golden_dataset_config):
     from aeon.dj_pipeline.utils.paths import get_repository_path
 
     repo_path = get_repository_path("ceph_aeon")
-    epoch_path = repo_path / "raw" / golden_dataset_config["experiment_path"] / golden_dataset_config["epoch_dir"]
+    epoch_path = (
+        repo_path / "raw" / golden_dataset_config["experiment_path"] / golden_dataset_config["epoch_dir"]
+    )
 
     if not epoch_path.exists():
         pytest.skip(f"Golden dataset not found: {epoch_path}")
@@ -233,44 +248,52 @@ def full_pipeline(dj_config_with_golden_data, golden_dataset_config):
     """Full pipeline setup with all schemas for golden dataset tests.
 
     Follows the "Three Decoupled Steps" architecture:
-    1. Create base tables (StreamType, DeviceType, Device) via streams_maker.main()
+    1. Activate schemas with golden test prefix
     2. Populate catalog from Pydantic class
-    3. Create ExperimentDevice and DeviceDataStream tables
-    4. Tests can then call EpochConfig.make() for DML (Step 3)
+    3. Create ExperimentDevice and DeviceDataStream tables via streams_maker.main()
+    4. Tests can then call EpochConfig.make() for DML
 
     When schema integration tests run first (with a different db prefix),
     module-level variables like db_prefix and streams_maker.schema_name become
-    stale. This fixture patches them and forces a clean streams module reload.
+    stale. This fixture patches them and uses schema.activate() to rebind all
+    schemas to the golden test database.
     """
-    import importlib
-    import sys
-
     import datajoint as dj
 
     import aeon.dj_pipeline as pipeline
+    from aeon.dj_pipeline import streams
     from aeon.dj_pipeline.utils import streams_maker
 
-    # Ensure db_prefix matches golden test config.
+    # Save and patch db_prefix to match golden test config.
     # Other integration tests may have set a different prefix at import time.
+    original_db_prefix = pipeline.db_prefix
     target_prefix = dj_config_with_golden_data["custom"]["database.prefix"]
     pipeline.db_prefix = target_prefix
     streams_maker.schema_name = pipeline.get_schema_name("streams")
 
-    # Force clean streams module: remove cached module and stale file
-    # so streams_maker.main() regenerates it with the correct schema name.
-    sys.modules.pop("aeon.dj_pipeline.streams", None)
-    if streams_maker._STREAMS_MODULE_FILE.exists():
-        streams_maker._STREAMS_MODULE_FILE.unlink()
-
     # Re-activate pipeline schemas with the correct prefix.
-    # If modules were already imported by other tests, their schema objects
-    # may point to a different prefix (e.g., test_integration_ vs test_golden_).
+    # Importing streams.py triggers acquisition/lab/subject schema activation
+    # at module level (with the default or a previous test prefix).
+    #
+    # WORKAROUND: DataJoint's Schema.activate() raises DataJointError if the
+    # schema is already activated for a different database name (schemas.py:109-116).
+    # There is no public API for rebinding a Schema to a different database.
+    # We reset schema.database = None to bypass this guard before re-activating.
+    # This is an internal implementation detail — if DataJoint adds a rebind() API
+    # or changes Schema internals, this pattern should be updated accordingly.
     from aeon.dj_pipeline import acquisition, lab, subject
 
     for module, name in [(lab, "lab"), (subject, "subject"), (acquisition, "acquisition")]:
         expected_schema = pipeline.get_schema_name(name)
         if hasattr(module, "schema") and module.schema.database != expected_schema:
+            module.schema.database = None
             module.schema.activate(expected_schema, create_schema=True, create_tables=True)
+
+    # Rebind streams schema to golden test database (same workaround as above)
+    streams_schema_name = pipeline.get_schema_name("streams")
+    if streams.schema.database != streams_schema_name:
+        streams.schema.database = None
+        streams.schema.activate(streams_schema_name, create_schema=True, create_tables=True)
 
     from aeon.dj_pipeline.utils.load_metadata import (
         get_experiment_pydantic,
@@ -279,29 +302,22 @@ def full_pipeline(dj_config_with_golden_data, golden_dataset_config):
 
     cfg = golden_dataset_config
 
-    # Step 1a: Create base catalog tables (StreamType, DeviceType, Device)
-    # This creates streams.py file and registers base tables in database
-    streams_maker.main(create_tables=False)
-
-    # Step 1b: Populate catalog from Pydantic class
+    # Step 1: Populate catalog from Pydantic class
     experiment_class = get_experiment_pydantic(cfg["devices_schema"])
     populate_catalog_from_pydantic(experiment_class)
 
     # Step 2: Create ExperimentDevice and DeviceDataStream tables
-    streams = streams_maker.main(create_tables=True)
+    streams_module = streams_maker.main(create_tables=True)
 
     yield {
         "lab": lab,
         "subject": subject,
         "acquisition": acquisition,
-        "streams": streams,
+        "streams": streams_module,
     }
 
-    # Teardown - drop schemas in reverse dependency order
-    import datajoint as dj
-
+    # Teardown - drop schemas in reverse dependency order, then restore db_prefix
     prefix = dj.config["custom"]["database.prefix"]
-    # Get all schemas to drop, then drop them handling FK constraints
     schemas_to_drop = [s for s in dj.list_schemas() if s.startswith(prefix)]
     # Try multiple passes to handle foreign key dependencies
     max_attempts = len(schemas_to_drop) + 1
@@ -312,9 +328,14 @@ def full_pipeline(dj_config_with_golden_data, golden_dataset_config):
         for schema_name in schemas_to_drop:
             try:
                 dj.Schema(schema_name).drop()
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to drop schema {schema_name}: {e}")
                 remaining.append(schema_name)
         schemas_to_drop = remaining
+    if schemas_to_drop:
+        logger.error(f"Could not drop schemas after {max_attempts} attempts: {schemas_to_drop}")
+
+    pipeline.db_prefix = original_db_prefix
 
 
 @pytest.fixture(scope="session")
