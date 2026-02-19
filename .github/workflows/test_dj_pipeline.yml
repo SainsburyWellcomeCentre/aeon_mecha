@@ -1,0 +1,33 @@
+# Runs unit tests for the DataJoint pipeline on PRs to datajoint_pipeline branch.
+# Unit tests use mocked datajoint — no database or golden datasets required.
+
+name: test_dj_pipeline
+on:
+  pull_request:
+    branches: [datajoint_pipeline]
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    name: DJ Pipeline unit tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --extra test
+
+      - name: Run unit tests
+        run: uv run pytest -m unit --tb=short -q
