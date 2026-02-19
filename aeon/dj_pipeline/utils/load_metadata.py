@@ -34,40 +34,6 @@ logger = dj.logger
 # region Catalog Population Functions
 
 
-def get_device_class_from_field(field_info) -> type["Device"] | None:
-    """Extract Device class from Pydantic field annotation.
-
-    Handles both Dict[Name, Device] and single Device field types.
-
-    Args:
-        field_info: Pydantic FieldInfo from model_fields
-
-    Returns:
-        Device class type, or None if not a device field
-    """
-    annotation = field_info.annotation
-    origin = typing.get_origin(annotation)
-
-    def is_device_class(cls) -> bool:
-        """Check if class is a Device with device_type field."""
-        return hasattr(cls, "model_fields") and "device_type" in cls.model_fields
-
-    # Handle Dict[Name, Device] - e.g., Dict[CameraName, Camera]
-    if origin is dict:
-        args = typing.get_args(annotation)
-        if len(args) == 2:
-            # args[1] is the value type (Device class)
-            device_class = args[1]
-            if is_device_class(device_class):
-                return device_class
-
-    # Handle single Device field
-    elif is_device_class(annotation):
-        return annotation
-
-    return None
-
-
 def get_data_reader_methods(device_class: type) -> list[tuple[str, Any]]:
     """Get @data_reader methods from Device class.
 
@@ -109,6 +75,42 @@ def get_data_reader_methods(device_class: type) -> list[tuple[str, Any]]:
                             # Empty cell
                             continue
     return data_reader_methods
+
+
+def _has_data_readers(cls) -> bool:
+    """Check if cls is a device class (has @data_reader decorated methods)."""
+    return isinstance(cls, type) and bool(get_data_reader_methods(cls))
+
+
+def get_device_class_from_field(field_info) -> type | None:
+    """Extract Device class from Pydantic field annotation.
+
+    A class is considered a Device if it has @data_reader decorated methods.
+    Handles both Dict[Name, Device] and single Device field types.
+
+    Args:
+        field_info: Pydantic FieldInfo from model_fields
+
+    Returns:
+        Device class type, or None if not a device field
+    """
+    annotation = field_info.annotation
+    origin = typing.get_origin(annotation)
+
+    # Handle Dict[Name, Device] - e.g., Dict[CameraName, Camera]
+    if origin is dict:
+        args = typing.get_args(annotation)
+        if len(args) == 2:
+            # args[1] is the value type (Device class)
+            device_class = args[1]
+            if _has_data_readers(device_class):
+                return device_class
+
+    # Handle single Device field
+    elif _has_data_readers(annotation):
+        return annotation
+
+    return None
 
 
 def get_reader_path_from_annotation(func) -> str | None:
@@ -277,17 +279,9 @@ def populate_catalog_from_pydantic(experiment_class: type["BaseSchema"]) -> None
         if device_class is None:
             continue
 
-        # Get device_type from class field default
-        device_type_field = device_class.model_fields.get("device_type")
-        if device_type_field is None:
-            logger.debug(f"Device class {device_class} has no 'device_type' field. Skipping.")
-            continue
-
-        device_type = device_type_field.default
-        if device_type is None:
-            logger.debug(f"Device class {device_class} has no default device_type. Skipping.")
-            continue
-
+        # Use the class name as the device type (not the inherited device_type field,
+        # which gives parent class names like "HarpOutputExpander" for Feeder subclasses)
+        device_type = device_class.__name__
         device_type_entries.append({"device_type": device_type})
 
         # Extract @data_reader methods
@@ -430,7 +424,7 @@ def _find_device_in_rig(rig, device_name: str):
                 return field_value[device_name]
 
         # Handle single device fields
-        elif hasattr(field_value, "device_type"):
+        elif _has_data_readers(type(field_value)):
             if field_name == device_name or getattr(field_value, "_container_prefix", None) == device_name:
                 return field_value
 
@@ -963,9 +957,9 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
         if isinstance(field_value, dict):
             # Dict[Name, Device] collection (cameras, feeders, nest)
             for name, dev in field_value.items():
-                if hasattr(dev, "device_type"):
+                if _has_data_readers(type(dev)):
                     devices.append((name, dev))
-        elif hasattr(field_value, "device_type"):
+        elif _has_data_readers(type(field_value)):
             # Single Device field
             devices.append((field_name, field_value))
 
@@ -1027,7 +1021,7 @@ def get_device_mapper_from_rig(
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Extract device type mapper and serial numbers from Pydantic Rig.
 
-    Device types are extracted directly from device.device_type field.
+    Device types are derived from the class name (type(device).__name__).
     Serial numbers/port names are extracted from device attributes.
 
     Args:
@@ -1049,21 +1043,20 @@ def get_device_mapper_from_rig(
         # Handle Dict[Name, Device] - e.g., cameras, feeders, nest
         if isinstance(field_value, dict):
             for device_name, device in field_value.items():
-                # Check if it's a Device instance (BaseSchema with device_type)
-                if not hasattr(device, "device_type"):
+                if not _has_data_readers(type(device)):
                     continue
 
-                device_type_mapper[device_name] = device.device_type
+                device_type_mapper[device_name] = type(device).__name__
                 # Extract serial number or port name
                 device_sn[device_name] = (
                     getattr(device, "serial_number", None) or getattr(device, "port_name", None) or None
                 )
 
         # Handle single Device instance (if any)
-        elif hasattr(field_value, "device_type"):
+        elif _has_data_readers(type(field_value)):
             device_name = field_name
             device = field_value
-            device_type_mapper[device_name] = device.device_type
+            device_type_mapper[device_name] = type(device).__name__
             device_sn[device_name] = (
                 getattr(device, "serial_number", None) or getattr(device, "port_name", None) or None
             )

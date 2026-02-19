@@ -46,8 +46,9 @@ class TestStep1CatalogPopulation:
         device_types = streams.DeviceType.fetch("device_type")
         assert len(device_types) > 0
 
-        # Should have SpinnakerCamera, UndergroundFeeder, etc.
-        assert "SpinnakerCamera" in device_types
+        # Should have Camera, Feeder, etc. (leaf class names, not inherited parent names)
+        assert "Camera" in device_types
+        assert "Feeder" in device_types
 
     def test_device_type_streams_linked(self, full_pipeline):
         """Verify DeviceType.Stream linking table populated."""
@@ -66,19 +67,19 @@ class TestStep1CatalogPopulation:
 class TestStep2TableCreation:
     """Test Step 2: Table creation via streams_maker.main().
 
-    ExperimentDevice tables (e.g., SpinnakerCamera) and DeviceDataStream tables
-    (e.g., SpinnakerCameraVideo) should exist after streams_maker.main().
+    ExperimentDevice tables (e.g., Camera) and DeviceDataStream tables
+    (e.g., CameraVideo) should exist after streams_maker.main().
     """
 
     def test_experiment_device_tables_exist(self, full_pipeline):
-        """Verify ExperimentDevice tables created (e.g., SpinnakerCamera)."""
+        """Verify ExperimentDevice tables created (e.g., Camera)."""
         streams = full_pipeline["streams"]
 
-        # Check SpinnakerCamera table exists
-        assert hasattr(streams, "SpinnakerCamera")
+        # Check Camera table exists (leaf class name, not parent SpinnakerCamera)
+        assert hasattr(streams, "Camera")
 
     def test_device_data_stream_tables_exist(self, full_pipeline):
-        """Verify DeviceDataStream tables created (e.g., SpinnakerCameraVideo)."""
+        """Verify DeviceDataStream tables created (e.g., CameraVideo)."""
         streams = full_pipeline["streams"]
 
         # Check at least one DeviceDataStream table exists
