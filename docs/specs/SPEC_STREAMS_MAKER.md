@@ -4,7 +4,7 @@ Auto-generates DataJoint table definitions for device and stream data based on P
 
 ## Overview
 
-`streams_maker.py` bridges declarative Pydantic schema definitions (Experiment classes with Rig objects) and executable DataJoint tables (`streams.py`). It reads catalog entries from the database (`StreamType`, `DeviceType`, `Device`) and generates Python table classes dynamically.
+`streams_maker.py` bridges declarative Pydantic schema definitions (Experiment classes with Rig objects) and executable DataJoint tables (`streams.py`). It reads catalog entries from the database (`StreamType`, `DeviceType`, `DeviceName`, `Device`) and generates Python table classes dynamically.
 
 ## Package Dependencies
 
@@ -160,10 +160,12 @@ class Rig(DataSchema):  # DataSchema enables @data_reader on child devices
 
 ### Device
 
-A physical or logical hardware unit. Each device:
-- Has a `device_type` attribute (e.g., "SpinnakerCamera", "Feeder")
+A physical or logical hardware unit. A class is identified as a device if it has `@data_reader` decorated methods. Each device:
+- Is identified by its **class name** (e.g., `Camera.__name__` → `"Camera"`, `Feeder.__name__` → `"Feeder"`)
 - May have a `serial_number` or `port_name` for identification
 - Contains `@data_reader` methods that define its data streams
+
+> **Note:** The class name (`cls.__name__`) is used as `device_type` in the database, not the inherited `device_type` Literal field. This avoids parent class names propagating through inheritance (e.g., `Feeder(UndergroundFeeder(HarpOutputExpander))` → `"Feeder"` not `"HarpOutputExpander"`).
 
 ### Stream
 
@@ -171,8 +173,6 @@ A data collection channel from a device, defined as a `@data_reader` method on t
 
 ```python
 class Camera(SpinnakerCamera):
-    device_type: Literal["SpinnakerCamera"] = "SpinnakerCamera"
-
     @data_reader
     def video(self, pattern) -> reader.Video:
         """Video stream from camera."""
@@ -211,6 +211,7 @@ stream_hash: uuid  # hash(stream_type, stream_reader) - unique identifier
 ---
 stream_type: varchar(36)  # e.g., "Video", "WeightRaw"
 stream_reader: varchar(256)  # e.g., "swc.aeon.io.reader.Video"
+stream_reader_kwargs=null: longblob  # JSON dict of reader constructor kwargs (value, tag, columns, etc.)
 stream_description='': varchar(256)
 unique index(stream_type, stream_reader)
 """
@@ -221,7 +222,7 @@ The `stream_hash` serves as the primary key because different experiments may us
 The `stream_reader` field stores the fully-qualified class path (e.g., `"swc.aeon.io.reader.Video"`), which allows Step 2 to import the reader class directly and extract columns on-demand.
 
 **`DeviceType`**: Catalog of device types
-- `device_type`: Name (e.g., "SpinnakerCamera", "Feeder")
+- `device_type`: Leaf class name (e.g., `"Camera"`, `"Feeder"`, `"ActivityWeightScale"`)
 - `device_description`: Optional description
 
 **`DeviceType.Stream`**: Links device types to their streams
@@ -231,6 +232,10 @@ definition = """
 -> StreamType  # References StreamType by stream_hash
 """
 ```
+
+**`DeviceName`**: Catalog of device instance names
+- `device_name`: Instance name (e.g., `"CameraTop"`, `"Feeder1"`)
+- Foreign key to `DeviceType`
 
 **`Device`**: Physical device instances
 - `device_serial_number`: Unique identifier (or port_name)
@@ -260,6 +265,16 @@ The `metadata` field stores the **original nested rig configuration** as JSON, e
 - Uses colon separator format: `"module.path:ClassName"`
 - Example: `"swc.aeon.exp.foragingABC.experiment:Experiment"` → Experiment class
 
+**`_has_data_readers(cls)`**
+- Checks if a class is a "device" by testing for `@data_reader` decorated methods
+- Returns `True` if `get_data_reader_methods(cls)` is non-empty
+- Used throughout the module to replace the deprecated `hasattr(x, "device_type")` checks
+
+**`get_device_class_from_field(field_info)`**
+- Extracts Device class from Pydantic field annotation
+- Handles both `Dict[Name, Device]` and single Device field types
+- Identifies devices using `_has_data_readers()` (presence of `@data_reader` methods)
+
 **`populate_catalog_from_pydantic(experiment_class)`** *(NEW)*
 - **Step 1 function**: Populates catalog from Pydantic class definition
 - Extracts DeviceType, StreamType, DeviceType.Stream from class hierarchy
@@ -282,7 +297,7 @@ def populate_catalog_from_pydantic(experiment_class):
 
     for field_name, field_info in rig_class.model_fields.items():
         device_class = get_device_class_from_field(field_info)
-        device_type = device_class.model_fields["device_type"].default
+        device_type = device_class.__name__  # Leaf class name, e.g., "Camera", "Feeder"
 
         # Insert DeviceType
         DeviceType.insert1({"device_type": device_type}, skip_duplicates=True)
@@ -306,8 +321,9 @@ def populate_catalog_from_pydantic(experiment_class):
 
 **`get_device_info(rig)`**
 - Iterates over Rig model fields to find device collections
+- Identifies devices by checking for `@data_reader` methods via `_has_data_readers()`
 - For each device, extracts:
-  - `device_type` from `device.device_type` attribute
+  - `device_type` from `type(device).__name__` (leaf class name)
   - Stream types from `@data_reader` methods on the device class
 - Returns dict mapping device names to their stream info (flat lists):
 ```python
@@ -324,17 +340,16 @@ def populate_catalog_from_pydantic(experiment_class):
 
 **`get_device_mapper_from_rig(rig, metadata_filepath)`**
 - Extracts device type and serial number mappings
-- Uses `device.device_type` directly (no hardcoded inference)
+- Uses `type(device).__name__` for device type (leaf class name)
+- Identifies devices via `_has_data_readers()` (presence of `@data_reader` methods)
 - Handles both dict collections and single device instances
 
-**`insert_stream_types(rig)`**
+**`insert_stream_types(rig)`** *(superseded by `populate_catalog_from_pydantic()`)*
 - Populates `StreamType` table with unique (stream_type, stream_reader) combinations
 - Computes `stream_hash` for each entry
 - Stores `stream_reader` path for on-demand column extraction in Step 2
-- Required before `DeviceType.Stream` can be inserted (FK constraint)
-- Note: Being replaced by `populate_catalog_from_pydantic()` for cleaner Step 1
 
-**`insert_device_types(rig, metadata_filepath)`**
+**`insert_device_types(rig, metadata_filepath)`** *(superseded by `populate_catalog_from_pydantic()`)*
 - Populates catalog tables (`DeviceType`, `DeviceType.Stream`, `Device`)
 - Only inserts devices that exist in both Rig and metadata file
 - Handles FK constraint by calling `insert_stream_types()` if needed
@@ -345,10 +360,9 @@ def populate_catalog_from_pydantic(experiment_class):
   1. Get Experiment class path from `Experiment.DevicesSchema` (e.g., `"swc...experiment:Experiment"`)
   2. Fetch `rig_config` JSON from `EpochConfig.Meta`
   3. Load Experiment class using `get_experiment_pydantic()`
-  4. Reconstruct Experiment using `model_validate({"rig": rig_config})`
-  5. Access `experiment.rig` to get Rig instance
-  6. Find device by name in Rig hierarchy
-  7. Call `@data_reader` method to get configured stream reader
+  4. Reconstruct Rig using `model_validate()` on the rig config
+  5. Find device by name in Rig hierarchy using `_find_device_in_rig()`
+  6. Call `@data_reader` method to get configured stream reader
 - Returns reader instance ready for `io_api.load()`
 - **Note**: This is only used for DATA LOADING (Step 3), NOT for column extraction (Step 1)
 
@@ -360,9 +374,10 @@ def populate_catalog_from_pydantic(experiment_class):
 ### Template Generators
 
 **`get_device_template(device_type)`**
-- Creates `dj.Manual` table for device installation/removal tracking
+- Creates `dj.Manual` table (ExperimentDevice) for device installation/removal tracking
+- Uses `-> DeviceName` as primary key (not `-> Device`), making queries more intuitive
 - Includes `Attribute` and `RemovalTime` part tables
-- Example: `SpinnakerCamera` table tracks when cameras are installed/removed
+- Example: `Camera` table tracks when cameras are installed/removed
 
 **`get_device_stream_template(device_type, stream_type, streams_module)`**
 - Creates `dj.Imported` table for raw data streams
@@ -372,7 +387,7 @@ def populate_catalog_from_pydantic(experiment_class):
   3. Instantiate with dummy pattern to get columns (columns are instance attributes)
   4. No `EpochConfig.Meta` query needed!
 - **make() method**: Uses `get_stream_reader_for_epoch()` for data loading
-- Example: `SpinnakerCameraVideo` table stores video metadata per chunk
+- Example: `CameraVideo` table stores video metadata per chunk
 
 ```python
 def get_device_stream_template(device_type, stream_type, streams_module):
@@ -388,15 +403,16 @@ def get_device_stream_template(device_type, stream_type, streams_module):
     ).fetch1()
 
     stream_reader_path = stream_detail["stream_reader"]  # e.g., "swc.aeon.io.reader.BitmaskEvent"
+    stream_reader_kwargs = stream_detail.get("stream_reader_kwargs") or {}
 
     # Import the reader class directly
     module_path, class_name = stream_reader_path.rsplit(".", 1)
     module = importlib.import_module(module_path)
     reader_class = getattr(module, class_name)
 
-    # Instantiate with dummy pattern to get columns
+    # Instantiate with dummy pattern and stored kwargs to get columns
     # (columns are instance attributes set in __init__, not class attributes)
-    reader_instance = reader_class("_dummy_pattern_")
+    reader_instance = reader_class("_dummy_pattern_", **stream_reader_kwargs)
     columns = reader_instance.columns
 
     # Filter and normalize columns
@@ -407,9 +423,9 @@ def get_device_stream_template(device_type, stream_type, streams_module):
         col_name = re.sub(r"\([^)]*\)", "", col).strip()  # Remove type annotations
         table_columns.append(f"{col_name}: longblob")
 
-    # Generate table definition
+    # Generate table definition (ExperimentDevice is referenced via device_type name)
     table_definition = f"""
-    -> {device_type}
+    -> {device_type}          # References ExperimentDevice (e.g., -> Camera)
     -> acquisition.Chunk
     ---
     sample_count: int
@@ -428,7 +444,7 @@ graph TD
     B --> C[populate_catalog_from_pydantic]
     C --> D[Get Rig class from Experiment]
     D --> E[For each device field in Rig]
-    E --> F[Get device_type from class]
+    E --> F[Use cls.__name__ as device_type]
     F --> G[Insert DeviceType]
     G --> H[For each @data_reader method]
     H --> I[Get return type annotation]
@@ -494,14 +510,19 @@ def make(self, key):
     from swc.aeon.io import api as io_api
     from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-    chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+    # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
+    chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+        "chunk_start", "chunk_end", "epoch_start"
+    )
     data_dirs = acquisition.Experiment.get_data_directories(key)
-    device_name = (ExperimentDevice & key).fetch1("{device_type_name}_name")
+
+    # device_name is part of the key (PK via DeviceName), no need to fetch
+    device_name = key["device_name"]
 
     # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
     # This is Step 3: we need EpochConfig.Meta for proper pattern resolution
     stream_reader = get_stream_reader_for_epoch(
-        key["experiment_name"], device_name, "{stream_type}", key["epoch_start"]
+        key["experiment_name"], device_name, "{stream_type}", epoch_start
     )
 
     stream_data = io_api.load(
@@ -582,8 +603,8 @@ def make(self, key):
         "metadata": rig_config,  # Stored for Step 3 (data loading)
     }
 
-    # 5. Insert device serial numbers (Device table)
-    insert_device_instances(rig, metadata_filepath)
+    # 5. Insert device types, serial numbers, and names (DeviceType, Device, DeviceName)
+    insert_device_types(rig, metadata_filepath)
 
     # 6. Insert device installation records (ExperimentDevice tables)
     ingest_epoch_metadata_from_rig(experiment_name, rig, epoch_config, metadata_filepath)
@@ -661,21 +682,21 @@ stream_type_names = [to_pascal_case(st) for st in stream_types]
 
 | Component | Table Type | Purpose | Example |
 |-----------|-----------|---------|---------|
-| **Device** | `dj.Manual` | Track device installation/removal | `SpinnakerCamera` |
-| **Stream** | `dj.Imported` | Store raw data per chunk | `SpinnakerCameraVideo` |
+| **ExperimentDevice** | `dj.Manual` | Track device installation/removal | `Camera` |
+| **DeviceDataStream** | `dj.Imported` | Store raw data per chunk | `CameraVideo` |
 
-**Device Table** (`SpinnakerCamera`):
+**ExperimentDevice Table** (`Camera`):
 ```python
 -> Experiment
--> Device
-spinnaker_camera_install_time: datetime(6)
+-> DeviceName
+camera_install_time: datetime(6)
 ---
-spinnaker_camera_name: varchar(36)
+device_serial_number=null: varchar(12)  # Optional: physical device serial/port
 ```
 
-**Stream Table** (`SpinnakerCameraVideo`):
+**DeviceDataStream Table** (`CameraVideo`):
 ```python
--> SpinnakerCamera
+-> Camera
 -> Chunk
 ---
 sample_count: int
@@ -740,7 +761,7 @@ populate_catalog_from_pydantic(experiment_class)
 # STEP 2: Create tables
 streams = streams_maker.main()
 
-# Result: SpinnakerCamera, SpinnakerCameraVideo, UndergroundFeeder, etc. tables created
+# Result: Camera, CameraVideo, Feeder, FeederBeamBreak, etc. tables created
 ```
 
 ### 3. EpochConfig.make() (Step 3 - DML only)
@@ -751,8 +772,8 @@ streams = streams_maker.main()
 # Parse metadata.json → get device INSTANCES (CameraTop, Feeder1, etc.)
 rig = experiment_class.model_validate({"rig": rig_config}).rig
 
-# Insert device serial numbers
-insert_device_instances(rig, metadata_filepath)
+# Insert device types, serial numbers, and names
+insert_device_types(rig, metadata_filepath)
 
 # Insert device installations (rows in ExperimentDevice tables)
 ingest_epoch_metadata_from_rig(...)
@@ -769,11 +790,11 @@ The original `rig_config` JSON is stored in `EpochConfig.Meta.metadata`:
 ```json
 {
   "cameras": {
-    "top": {"device_type": "SpinnakerCamera", "serial_number": "12345", ...},
-    "side": {"device_type": "SpinnakerCamera", "serial_number": "12346", ...}
+    "top": {"serialNumber": "12345", "trigger": "Trigger0", ...},
+    "side": {"serialNumber": "12346", "trigger": "Trigger1", ...}
   },
   "feeders": {
-    "feeder1": {"device_type": "UndergroundFeeder", "port_name": "COM3", ...}
+    "feeder1": {"portName": "COM3", ...}
   }
 }
 ```
@@ -782,8 +803,8 @@ This enables Pydantic reconstruction for data loading (Step 3).
 
 ### 5. Data Population (Step 3 - Stream Data)
 
-When `SpinnakerCameraVideo.populate()` is called:
-1. `key_source` returns Chunk × SpinnakerCamera combinations
+When `CameraVideo.populate()` is called:
+1. `key_source` returns Chunk × Camera combinations
 2. For each key, `make()` is called
 3. `get_stream_reader_for_epoch()` is called which:
    - Fetches Experiment class path from `Experiment.DevicesSchema`
@@ -802,13 +823,13 @@ When `SpinnakerCameraVideo.populate()` is called:
 from aeon.dj_pipeline import streams
 
 # Query installed cameras
-streams.SpinnakerCamera & {"experiment_name": "foraging-abc"}
+streams.Camera & {"experiment_name": "foraging-abc"}
 
 # Populate video data for all chunks
-streams.SpinnakerCameraVideo.populate()
+streams.CameraVideo.populate()
 
 # Query encoder data
-streams.UndergroundFeederEncoder & {"experiment_name": "foraging-abc"}
+streams.FeederEncoder & {"experiment_name": "foraging-abc"}
 ```
 
 ## Design Decisions
