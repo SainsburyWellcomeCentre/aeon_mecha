@@ -2,7 +2,7 @@
 
 Testing strategy for the Pydantic-based metadata loading and DataJoint table generation pipeline.
 
-**Last Updated:** 2025-01-27
+**Last Updated:** 2026-02-19
 
 ---
 
@@ -13,7 +13,7 @@ Testing strategy for the Pydantic-based metadata loading and DataJoint table gen
 | Tier | Scope | Database | Data | CI |
 |------|-------|----------|------|-----|
 | Unit | Pure functions | None | Synthetic dicts + sample fixtures | Yes |
-| Integration | `populate()` with real data | MySQL (testcontainers) | Golden datasets | Yes (size-limited) |
+| Integration | DB operations, `populate()` | MySQL (testcontainers) | Synthetic Pydantic OR golden datasets | Yes |
 | Specialized | GPU/high-RAM `populate()` | MySQL (testcontainers) | Golden datasets | No |
 
 **Key patterns:**
@@ -146,14 +146,14 @@ Unlike synthetic test data or sample fixtures, golden datasets:
 
 ```
 tests/
-├── conftest.py                           # Root: testcontainers, markers
+├── conftest.py                           # Root: DJ env vars, DJ mocking, testcontainers, auto-marking
 ├── dj_pipeline/
-│   ├── conftest.py                       # Golden dataset registry, DB fixtures
+│   ├── conftest.py                       # Golden dataset registry, DB fixtures, integration setup
 │   ├── test_full_ingestion.py            # Golden dataset integration tests
 │   └── utils/
-│       ├── conftest.py                   # Fixtures for load_metadata tests
+│       ├── conftest.py                   # Test Rig fixtures (real @data_reader)
 │       ├── test_load_metadata_unit.py    # Unit tests (no DB)
-│       └── test_load_metadata_integration.py  # Integration tests (DB)
+│       └── test_load_metadata_integration.py  # Schema integration tests (DB)
 └── fixtures/
     └── metadata/                         # Sample Metadata.json files
 ```
@@ -220,7 +220,7 @@ Database operations using real Pydantic classes with real `@data_reader` decorat
 ```python
 @pytest.mark.integration
 class TestInsertStreamTypes:
-    def test_inserts_stream_types(self, pipeline, test_rig):
+    def test_inserts_stream_types(self, pipeline_integration, test_rig):
         """Verify StreamType entries are inserted from Rig."""
         streams = dj.VirtualModule("streams", streams_maker.schema_name)
         initial_count = len(streams.StreamType())
@@ -229,7 +229,7 @@ class TestInsertStreamTypes:
 
         assert len(streams.StreamType()) > initial_count
 
-    def test_handles_duplicates(self, pipeline, test_rig):
+    def test_handles_duplicates(self, pipeline_integration, test_rig):
         """Verify duplicate insertions are handled gracefully (skip_duplicates)."""
         streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
@@ -244,7 +244,7 @@ class TestInsertStreamTypes:
 
 @pytest.mark.integration
 class TestInsertDeviceTypesFKHandling:
-    def test_fk_constraint_triggers_stream_type_insert(self, pipeline, test_rig, tmp_path):
+    def test_fk_constraint_triggers_stream_type_insert(self, pipeline_integration, test_rig, tmp_path):
         """Verify FK failure triggers insert_stream_types()."""
         streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
@@ -259,7 +259,7 @@ class TestInsertDeviceTypesFKHandling:
         assert len(streams.StreamType()) > 0
         assert len(streams.DeviceType.Stream()) > 0
 
-    def test_non_fk_errors_are_reraised(self, pipeline, test_rig, tmp_path, monkeypatch):
+    def test_non_fk_errors_are_reraised(self, pipeline_integration, test_rig, tmp_path, monkeypatch):
         """Verify non-FK DataJointErrors are re-raised."""
         streams = dj.VirtualModule("streams", streams_maker.schema_name)
 
@@ -281,34 +281,52 @@ class TestInsertDeviceTypesFKHandling:
 ```python
 # tests/conftest.py
 
+import os
 import pytest
-from testcontainers.mysql import MySqlContainer
 
 
 @pytest.fixture(scope="session")
 def mysql_container():
     """Auto-provision MySQL via testcontainers."""
-    with MySqlContainer("mysql:8.0") as mysql:
-        yield mysql
+    from testcontainers.mysql import MySqlContainer
 
+    container = MySqlContainer(
+        image="mysql:8.0",
+        username="root",
+        password="test_password",
+        dbname="test_db",
+    )
+    container.start()
 
+    # Update environment variables with container details
+    host = container.get_container_host_ip()
+    port = container.get_exposed_port(3306)
+    os.environ["DJ_HOST"] = host
+    os.environ["DJ_PORT"] = str(port)
+    os.environ["DJ_USER"] = "root"
+    os.environ["DJ_PASS"] = "test_password"
+
+    yield container
+    container.stop()
+```
+
+The `dj_config_integration` fixture (in `tests/dj_pipeline/conftest.py`) reads from these env vars and configures DataJoint:
+
+```python
 @pytest.fixture(scope="session")
-def dj_config(mysql_container):
+def dj_config_integration(mysql_container):
     """Configure DataJoint to use testcontainers MySQL."""
     import datajoint as dj
 
-    dj.config["database.host"] = mysql_container.get_container_host_ip()
-    dj.config["database.port"] = mysql_container.get_exposed_port(3306)
-    dj.config["database.user"] = "root"
-    dj.config["database.password"] = mysql_container.MYSQL_ROOT_PASSWORD
-    dj.config["safemode"] = False
-    dj.config["custom"] = {}
-    dj.config["custom"]["database.prefix"] = "test_"
-
-    yield dj.config
-
-    # Teardown: drop test schemas
-    # (implementation depends on pipeline structure)
+    dj.config.update({
+        "safemode": False,
+        "database.host": os.environ.get("DJ_HOST", "localhost"),
+        "database.port": int(os.environ.get("DJ_PORT", "3306")),
+        "database.user": os.environ.get("DJ_USER", "root"),
+        "database.password": os.environ.get("DJ_PASS", "test_password"),
+    })
+    dj.config["custom"]["database.prefix"] = "test_integration_"
+    return dj.config
 ```
 
 ### Test Rig with Real @data_reader
@@ -406,9 +424,9 @@ def sample_rig_config():
 
 def pytest_collection_modifyitems(items):
     """Auto-mark tests that use integration fixtures."""
+    integration_fixtures = {"mysql_container", "pipeline_integration", "dj_config_integration"}
     for item in items:
-        # If test uses mysql_container or pipeline fixture, mark as integration
-        if "mysql_container" in item.fixturenames or "pipeline" in item.fixturenames:
+        if integration_fixtures & set(item.fixturenames):
             item.add_marker(pytest.mark.integration)
 ```
 
@@ -421,8 +439,9 @@ Register in `pyproject.toml`:
 ```toml
 [tool.pytest.ini_options]
 markers = [
-    "unit: Unit tests (no database required)",
-    "integration: Integration tests (requires MySQL via testcontainers)",
+    "unit: Unit tests (no database, synthetic data)",
+    "integration: Integration tests (DB via testcontainers, synthetic or golden datasets)",
+    "specialized: Specialized tests (GPU/high-RAM, golden datasets)",
 ]
 testpaths = ["tests"]
 ```
@@ -433,46 +452,55 @@ testpaths = ["tests"]
 
 ### Trigger Matrix
 
-| Event | Unit Tests | Integration Tests |
-|-------|------------|-------------------|
-| PR opened/updated | Yes | Yes |
-| Merge to main | Yes | Yes |
-| Scheduled (weekly) | Yes | Yes |
+| Event | Unit Tests | Integration Tests (Schema) | Integration Tests (Golden) |
+|-------|------------|---------------------------|---------------------------|
+| PR to `datajoint_pipeline` | Yes | Yes | Skip (no data) |
+| `workflow_dispatch` | Yes | Yes | Skip (no data) |
 
 ### GitHub Actions Workflow
 
+Two parallel jobs using `uv` (not `pip`):
+
 ```yaml
-name: Tests
+name: test_dj_pipeline
 
 on:
-  push:
-    branches: [datajoint_pipeline, main]
   pull_request:
-    branches: [datajoint_pipeline, main]
+    branches: [datajoint_pipeline]
+    types: [opened, reopened, synchronize]
+  workflow_dispatch:
 
 jobs:
-  tests:
+  unit-tests:
+    name: Unit tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    strategy:
+      matrix:
+        python-version: ["3.11"]
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv sync --extra test
+      - run: uv run pytest -m unit --tb=short -q
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          pip install -e ".[dev]"
-          pip install testcontainers[mysql]
-
-      - name: Run unit tests
-        run: pytest -m unit -v --tb=short
-
-      - name: Run integration tests
-        run: pytest -m integration -v --tb=short
+  integration-tests:
+    name: Integration tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install ${{ matrix.python-version }}
+      - run: uv sync --extra test
+      - run: uv run pytest -m integration --tb=short -q
 ```
 
-**Note:** Testcontainers automatically handles MySQL provisioning - no `services:` block needed.
+**Note:** Testcontainers automatically handles MySQL provisioning - no `services:` block needed. Golden dataset tests skip automatically when data is unavailable.
 
 ---
 
@@ -480,22 +508,22 @@ jobs:
 
 ```bash
 # Unit tests only (fast, no database)
-pytest -m unit -v
+uv run pytest -m unit -v
 
 # Integration tests only (auto-provisions MySQL)
-pytest -m integration -v
+uv run pytest -m integration -v
 
 # All tests
-pytest -v
+uv run pytest -v
 
 # Specific test file
-pytest tests/dj_pipeline/utils/test_load_metadata_unit.py -v
+uv run pytest tests/dj_pipeline/utils/test_load_metadata_unit.py -v
 
 # With coverage
-pytest --cov=aeon.dj_pipeline.utils --cov-report=html
+uv run pytest --cov=aeon.dj_pipeline.utils --cov-report=html
 
 # Debug single test
-pytest tests/dj_pipeline/utils/test_load_metadata_unit.py::TestToPascalCase -v --pdb
+uv run pytest tests/dj_pipeline/utils/test_load_metadata_unit.py::TestToPascalCase -v --pdb
 ```
 
 ---
@@ -555,6 +583,8 @@ test = [
 ]
 ```
 
+Install with: `uv sync --extra test`
+
 **Note:** `swc-aeon` (aeon_api) is already a main dependency and provides `@data_reader`, `BaseSchema`, device classes, and Reader classes needed for all tests.
 
 ---
@@ -595,48 +625,32 @@ Golden dataset tests validate:
 
 ### Golden Dataset Registry
 
-Datasets are configured via a registry pattern to support multiple datasets:
+Datasets are configured via a plain dict registry to support multiple datasets:
 
 ```python
 # tests/dj_pipeline/conftest.py
 
-from dataclasses import dataclass
 from pathlib import Path
 
-@dataclass
-class GoldenDataset:
-    """Configuration for a golden dataset."""
-    name: str                    # e.g., "foraging_abc_2025_11_18"
-    experiment_name: str         # e.g., "abcBehav0-aeon3"
-    experiment_path: str         # e.g., "AEON3/abcBehav0" (relative to raw/)
-    epoch_dir: str               # e.g., "2025-11-18T10-13-15"
-    devices_schema: str          # e.g., "swc.aeon.exp.foragingABC.experiment:Experiment"
-    arena: str                   # e.g., "arena-aeon3"
-    required_files: list[str]    # Files to validate before running tests
-
-    # Expected values for assertions
-    expected_camera_count: int = 0
-    expected_feeder_count: int = 0
-
-
-# Registry of available golden datasets
-GOLDEN_DATASETS: dict[str, GoldenDataset] = {
-    "foraging_abc_2025_11_18": GoldenDataset(
-        name="foraging_abc_2025_11_18",
-        experiment_name="abcBehav0-aeon3",
-        experiment_path="AEON3/abcBehav0",
-        epoch_dir="2025-11-18T10-13-15",
-        devices_schema="swc.aeon.exp.foragingABC.experiment:Experiment",
-        arena="arena-aeon3",
-        required_files=[
+GOLDEN_DATASETS = {
+    "foraging_abc_2025_11_18": {
+        "experiment_name": "abcBehav0-aeon3",
+        "experiment_path": "AEON3/abcBehav0",
+        "epoch_dir": "2025-11-18T10-13-15",
+        "devices_schema": "swc.aeon.exp.foragingABC.experiment:Experiment",
+        "arena_name": "arena-aeon3",
+        "lab": "SWC",
+        "location": "room-0",
+        "experiment_type": "foraging",
+        "required_files": [
             "Metadata.json",
             "CameraTop/CameraTop_2025-11-18T10-00-00.csv",
             "Feeder1/Feeder1_32_2025-11-18T10-00-00.bin",
         ],
-        expected_camera_count=13,
-        expected_feeder_count=6,
-    ),
-    # Future datasets added here
+        "expected_camera_count": 13,
+        "expected_feeder_count": 6,
+    },
+    # Future datasets can be added here
 }
 
 DEFAULT_GOLDEN_DATA_ROOT = Path.home() / "sciops-data/project_aeon/aeon/data"
@@ -666,15 +680,18 @@ This maintains consistency with how paths are configured in `dj_local_conf.json`
 | `golden_dataset_config` | session | Active dataset configuration from registry |
 | `dj_config_with_golden_data` | session | Configure `repository_config` for golden data |
 | `require_golden_data` | session | Skip tests if data unavailable, validate files |
-| `full_pipeline` | session | All schema modules (lab, subject, acquisition, streams) |
-| `test_experiment` | session | Insert experiment from config |
-| `test_epoch` | session | Insert epoch from config |
+| `full_pipeline` | session | All schema modules (lab, subject, acquisition, streams) + catalog + table creation |
+| `test_experiment` | session | Insert experiment, arena, directories from config |
+| `test_epochs` | session | Ingest epochs using `Epoch.ingest_epochs()` |
 
 ### Test Classes
 
 | Class | Tests | Description |
 |-------|-------|-------------|
-| `TestEpochConfigMake` | 4 | `EpochConfig.populate()` with metadata assertions |
+| `TestStep1CatalogPopulation` | 3 | Verify StreamType, DeviceType, DeviceType.Stream populated |
+| `TestStep2TableCreation` | 2 | Verify ExperimentDevice and DeviceDataStream tables exist |
+| `TestEpochIngestion` | 2 | `Epoch.ingest_epochs()` filesystem detection |
+| `TestEpochConfigMake` | 3 | `EpochConfig.populate()` with metadata assertions |
 | `TestChunkIngestion` | 2 | `Chunk.ingest_chunks()` file detection |
 | `TestStreamDataIngestion` | 3 | ALL streams with `populate(limit=10)` |
 
@@ -732,17 +749,19 @@ tests/
 
 2. **Add to registry** in `tests/dj_pipeline/conftest.py`:
    ```python
-   GOLDEN_DATASETS["new_dataset_name"] = GoldenDataset(
-       name="new_dataset_name",
-       experiment_name="expName-aeonN",
-       experiment_path="AEONN/expName",
-       epoch_dir="YYYY-MM-DDTHH-MM-SS",
-       devices_schema="swc.aeon.exp.expName.experiment:Experiment",
-       arena="arena-aeonN",
-       required_files=["Metadata.json", ...],
-       expected_camera_count=N,
-       expected_feeder_count=N,
-   )
+   GOLDEN_DATASETS["new_dataset_name"] = {
+       "experiment_name": "expName-aeonN",
+       "experiment_path": "AEONN/expName",
+       "epoch_dir": "YYYY-MM-DDTHH-MM-SS",
+       "devices_schema": "swc.aeon.exp.expName.experiment:Experiment",
+       "arena_name": "arena-aeonN",
+       "lab": "SWC",
+       "location": "room-0",
+       "experiment_type": "foraging",
+       "required_files": ["Metadata.json", ...],
+       "expected_camera_count": N,
+       "expected_feeder_count": N,
+   }
    ```
 
 3. **Update active dataset** (optional) or **parametrize** to test multiple:
@@ -756,9 +775,8 @@ tests/
 
 | Event | Unit | Integration (Schema) | Integration (Golden) |
 |-------|------|---------------------|---------------------|
-| PR | Yes | Yes | Skip (no data) |
-| Merge to main | Yes | Yes | Skip (no data) |
-| Scheduled (weekly) | Yes | Yes | Yes (mounted data) |
+| PR to `datajoint_pipeline` | Yes | Yes | Skip (no data) |
+| `workflow_dispatch` | Yes | Yes | Skip (no data) |
 | Local dev | Yes | Yes | Yes (if available) |
 
 Golden dataset tests gracefully skip with clear messages when data is unavailable.
@@ -799,7 +817,7 @@ swc-aeon-exp-foragingabc = { git = "https://github.com/SainsburyWellcomeCentre/a
 # Run golden dataset tests (skips if data unavailable)
 uv run pytest tests/dj_pipeline/test_full_ingestion.py -v
 
-# Run all integration tests
+# Run all integration tests (schema + golden, golden skips if no data)
 uv run pytest -m integration -v
 ```
 
