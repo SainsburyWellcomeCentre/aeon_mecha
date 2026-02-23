@@ -61,10 +61,36 @@ class ElectrodeConfig(dj.Lookup):
 
 
 @schema
+class TargetArea(dj.Lookup):
+    definition = """
+    target_area: varchar(32)  # e.g. "hippocampus", "amygdala"
+    """
+
+
+@schema
+class ProbeInsertion(dj.Manual):
+    definition = """
+    -> acquisition.Experiment.Subject
+    insertion_number: int  # per-subject numbering (1, 2, 3...)
+    ---
+    -> Probe
+    implantation_date=null: datetime(6)
+    """
+
+
+@schema
+class InsertionTargetArea(dj.Manual):
+    definition = """
+    # Links a probe insertion to one or more target brain areas
+    -> ProbeInsertion
+    -> TargetArea
+    """
+
+
+@schema
 class EphysChunk(dj.Manual):
     definition = """  # A recording period corresponds to a 1-hour ephys data acquisition
-    -> acquisition.Experiment
-    -> Probe  # the probe used for this ephys recording
+    -> ProbeInsertion
     chunk_start: datetime(6)  # start of an ephys chunk (in HARP clock)
     ---
     chunk_end: datetime(6)    # end of an ephys chunk (in HARP clock)
@@ -91,19 +117,46 @@ class EphysChunk(dj.Manual):
         """
 
     @classmethod
-    def ingest_chunks(cls, experiment_name: str) -> None:
+    def ingest_chunks(cls, experiment_name: str, subject: str, insertion_number: int,
+                      electrode_config_name: str = None) -> None:
         """Ingest ephys recording chunks with clock synchronization.
-        
+
         For each ephys file:
         1. Extract ONIX timestamps from clock files
         2. Map to HARP timestamps using sync models
         3. Store chunk metadata and sync models
-        4. Infer probe type and electrode configuration
-        
+
         Args:
             experiment_name: Name of the experiment to process
+            subject: Subject identifier
+            insertion_number: Probe insertion number for this subject
+            electrode_config_name: Electrode config to use (auto-detected if probe type has only one)
         """
-        key = {"experiment_name": experiment_name}
+        key = {
+            "experiment_name": experiment_name,
+            "subject": subject,
+            "insertion_number": insertion_number,
+        }
+
+        # Look up probe info from ProbeInsertion
+        probe_insertion = (ProbeInsertion & key).fetch1()
+        probe_name = probe_insertion["probe"]
+        probe_type = (Probe & {"probe": probe_name}).fetch1("probe_type")
+
+        # Resolve electrode config
+        if electrode_config_name is None:
+            configs = (ElectrodeConfig & {"probe_type": probe_type}).fetch(
+                "electrode_config_name"
+            )
+            if len(configs) == 1:
+                electrode_config_name = configs[0]
+            else:
+                raise ValueError(
+                    f"Multiple electrode configs for {probe_type}: {configs}. "
+                    "Please specify electrode_config_name."
+                )
+
+        # get_data_directory only needs experiment_name; extra key fields are ignored
         raw_dir = acquisition.Experiment.get_data_directory(key, directory_type="raw")
         ephys_files = sorted(
             list(raw_dir.rglob("*ProbeA_AmplifierData*.bin")),
@@ -113,15 +166,10 @@ class EphysChunk(dj.Manual):
 
         def ephys_chunk_from_file(ephys_file: Path) -> None:
             """Process a single ephys file into a chunk entry.
-            
+
             Args:
                 ephys_file: Path to the ephys amplifier data file
             """
-            # TODO: Retrieve probe/electrode info from file metadata instead of hardcoding
-            probe_name = "NP2004-001"
-            probe_type = "neuropixels - NP2004"
-            electrode_config_name = "0-383"
-
             clock_file = ephys_file.with_name(
                 ephys_file.name.replace("AmplifierData", "Clock")
             )
@@ -174,7 +222,6 @@ class EphysChunk(dj.Manual):
                 **key,
                 "chunk_start": chunk_start,
                 "chunk_end": chunk_end,
-                "probe": probe_name,
                 "probe_type": probe_type,
                 "electrode_config_name": electrode_config_name,
             }
@@ -215,8 +262,7 @@ class EphysBlock(dj.Manual):
     """
 
     definition = """  # A an arbitrary period of time of ephys data
-    -> acquisition.Experiment
-    -> Probe  # the probe used for this ephys recording
+    -> ProbeInsertion
     block_start: datetime(6)  # start of an ephys block (in synced clock - i.e. HARP clock)
     block_end: datetime(6)    # end of an ephys block (in synced clock - i.e. HARP clock)
     """
@@ -256,7 +302,7 @@ class EphysBlockInfo(dj.Imported):
         - Block duration calculations
         
         Args:
-            key: Dictionary containing experiment_name, probe, block_start, block_end
+            key: Dictionary containing experiment_name, subject, insertion_number, block_start, block_end
         """
 
         def create_ephys_chunk_restriction(start_time: datetime, end_time: datetime) -> str:
@@ -313,10 +359,13 @@ class EphysBlockInfo(dj.Imported):
             key["block_end"] - key["block_start"]
         ).total_seconds() / 3600.0  # in hours
 
-        # ElectrodeConfig & Channel - hardcode
+        # Read electrode config from the chunks in this block (set during ingest_chunks)
+        first_chunk = chunk_query.fetch(
+            "probe_type", "electrode_config_name", limit=1, as_dict=True
+        )[0]
         econfig = {
-            "probe_type": "neuropixels - NP2004",
-            "electrode_config_name": "0-383",
+            "probe_type": first_chunk["probe_type"],
+            "electrode_config_name": first_chunk["electrode_config_name"],
         }
 
         self.insert1(

@@ -13,7 +13,8 @@ from aeon.dj_pipeline import acquisition, ephys, spike_sorting
 table_name = "SpikeSorting"
 # Specify the key to be populated
 key = {'experiment_name': 'social-ephys0.1-aeon3',
-       'probe': 'NP2004-001',
+       'subject': 'BAA-1104045',
+       'insertion_number': 1,
        'block_start': "2024-06-04 11:00:00",
        'block_end': "2024-06-10 12:00:00",
        'probe_type': 'neuropixels - NP2004',
