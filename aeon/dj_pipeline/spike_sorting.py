@@ -136,6 +136,7 @@ class PreProcessing(dj.Computed):
         end_str = key["block_end"].strftime("%Y-%m-%dT%H-%M-%S")
 
         output_dir = (sorting_root_dir / key["experiment_name"]
+                      / key["subject"]
                       / f"insertion_{key['insertion_number']}"
                       / "ephys_blocks"
                       / f"{start_str}_{end_str}"
@@ -1126,7 +1127,7 @@ class UnitMatching(dj.Computed):
         ---
         spike_times: longblob  # datetime64[ns] (UTC), HARP-synced
         spike_count: int
-        unique index (experiment_name, insertion_number, global_unit, chunk_start)
+        unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)
         """
 
     @property
@@ -1141,7 +1142,7 @@ class UnitMatching(dj.Computed):
         eligible = SyncedSpikes & spike_sorting_curation.ApplyOfficialCuration
         candidates = eligible - self
         next_per_insertion = dj.U(
-            "experiment_name", "insertion_number"
+            "experiment_name", "subject", "insertion_number"
         ).aggr(candidates, next_start="MIN(block_start)")
         return candidates * next_per_insertion & "block_start = next_start"
 
@@ -1166,7 +1167,7 @@ class UnitMatching(dj.Computed):
         matching_method = "spike_time_overlap"
 
         insertion_key = {
-            k: key[k] for k in ("experiment_name", "insertion_number")
+            k: key[k] for k in ("experiment_name", "subject", "insertion_number")
         }
 
         # ---- Temporal ordering guard ----

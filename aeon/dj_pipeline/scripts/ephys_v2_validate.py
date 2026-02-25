@@ -132,19 +132,27 @@ def check_ephys_epochs(results):
     results.record("EphysEpoch", "ProbeInsertion auto-created", len(probe_insertions) > 0,
                     f"{len(probe_insertions)} insertions")
 
-    # Check PK structure: no 'subject' column
+    # Check PK structure: subject should be in PK
     pi_heading = ephys.ProbeInsertion.heading
     has_subject_pk = "subject" in pi_heading.primary_key
-    results.record("EphysEpoch", "ProbeInsertion PK has NO subject", not has_subject_pk,
+    results.record("EphysEpoch", "ProbeInsertion PK has subject", has_subject_pk,
                     f"PK: {pi_heading.primary_key}")
 
-    # Check probe_label field exists
-    has_probe_label = "probe_label" in pi_heading.names
-    results.record("EphysEpoch", "ProbeInsertion has probe_label field", has_probe_label)
+    # Check probe_label is on EphysEpoch.Insertion (not ProbeInsertion)
+    has_probe_label_on_pi = "probe_label" in pi_heading.names
+    results.record("EphysEpoch", "probe_label NOT on ProbeInsertion", not has_probe_label_on_pi)
 
-    # Check probe_label values
-    if probe_insertions and has_probe_label:
-        labels = [pi["probe_label"] for pi in probe_insertions]
+    insertion_heading = ephys.EphysEpoch.Insertion.heading
+    has_probe_label_on_insertion = "probe_label" in insertion_heading.names
+    results.record("EphysEpoch", "probe_label on EphysEpoch.Insertion", has_probe_label_on_insertion)
+
+    # Check EphysEpoch.Insertion entries exist
+    epoch_insertions = (ephys.EphysEpoch.Insertion & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    results.record("EphysEpoch", "EphysEpoch.Insertion entries created",
+                    len(epoch_insertions) > 0,
+                    f"{len(epoch_insertions)} entries")
+    if epoch_insertions:
+        labels = [ei["probe_label"] for ei in epoch_insertions]
         results.record("EphysEpoch", "probe_label values populated",
                         all(l for l in labels),
                         f"labels: {labels}")

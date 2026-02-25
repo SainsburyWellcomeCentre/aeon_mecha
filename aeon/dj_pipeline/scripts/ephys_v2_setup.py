@@ -318,8 +318,7 @@ def step_ephys_epoch_populate(dry_run=False):
     print_ok(f"ProbeInsertion entries: {len(probe_insertions)}")
     for pi in probe_insertions:
         print_info(
-            f"  insertion {pi['insertion_number']}: probe={pi['probe']}, "
-            f"label={pi['probe_label']}"
+            f"  insertion {pi['insertion_number']}: subject={pi['subject']}, probe={pi['probe']}"
         )
 
     return True

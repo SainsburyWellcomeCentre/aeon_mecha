@@ -532,6 +532,7 @@ def restore_raw_sorting(key: dict) -> None:
     Args:
         key: Dictionary key identifying the sorting task. Must contain:
             - experiment_name
+            - subject
             - insertion_number
             - block_start (datetime or string)
             - block_end (datetime or string)
@@ -565,7 +566,7 @@ def restore_raw_sorting(key: dict) -> None:
 
     # Step 3: Delete orphaned GlobalUnit entries
     # (those with no remaining UnitMatching.Unit references from any block)
-    insertion_key = {k: key[k] for k in ("experiment_name", "insertion_number")}
+    insertion_key = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
     n_orphans = 0
     for gu_key in (spike_sorting.GlobalUnit & insertion_key).fetch("KEY"):
         if len(spike_sorting.UnitMatching.Unit & gu_key) == 0:
