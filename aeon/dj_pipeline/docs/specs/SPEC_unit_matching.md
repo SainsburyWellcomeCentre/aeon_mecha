@@ -44,7 +44,33 @@ The **ownership convention** determines which session "owns" the spike data for 
 
 ### Critical Constraint: Temporal Ordering
 
-Sessions **must** be processed in temporal order (by `block_start`). Session N compares its units against previously-matched sessions (1..N-1). Processing out of order produces incorrect universal unit assignments. This constraint is documented but enforced only by convention — there is no schema-level enforcement.
+Sessions **must** be processed in temporal order (by `block_start`). Session N compares its units against previously-matched sessions (1..N-1). Processing out of order produces incorrect universal unit assignments.
+
+This constraint is enforced at two levels:
+
+1. **`key_source` gate**: Only yields the session with the earliest unprocessed `block_start` per insertion. Under `populate(reserve_jobs=True)`, a worker that finishes the earliest session causes the next `key_source` evaluation to advance to the next block. Workers processing different insertions can run in parallel; within an insertion, processing is serialized.
+
+2. **`make()` guard**: Before processing, verifies that no earlier eligible session (by `block_start`) for the same insertion remains unprocessed. This is a defense-in-depth check that catches direct `make(key)` calls bypassing `key_source`, or hypothetical bugs in the key_source logic.
+
+```python
+# key_source: only the earliest unprocessed block per insertion
+eligible = SyncedSpikes & spike_sorting_curation.ApplyOfficialCuration
+candidates = eligible - self
+next_per_insertion = dj.U(
+    "experiment_name", "subject", "insertion_number"
+).aggr(candidates, next_start="MIN(block_start)")
+return candidates * next_per_insertion & "block_start = next_start"
+```
+
+```python
+# make() guard: verify all predecessors are done
+earlier_eligible = eligible & insertion_key & f'block_start < "{key["block_start"]}"'
+unprocessed_earlier = earlier_eligible - self
+if unprocessed_earlier:
+    raise ValueError("Temporal ordering violation: earlier sessions not yet processed.")
+```
+
+**Interaction with `reserve_jobs=True`**: When Worker A reserves the earliest session for insertion I1, Worker B's `key_source` also returns that same session (it's not yet in `self`). But the job reservation system prevents B from reserving the already-reserved key. With no other candidates for I1, Worker B idles or processes a different insertion. When A finishes, the next `populate()` cycle advances to the next block.
 
 ---
 
@@ -229,9 +255,7 @@ UniversalUnit (Manual)                    ← NEW (populated by UnitMatching.mak
 
 ### Worker Integration
 
-`UnitMatching` is a `Computed` table and can be registered with a DataJoint worker for automated processing. However, the temporal ordering constraint means the worker must process sessions sequentially by `block_start`. If the worker picks up sessions out of order, results will be incorrect.
-
-**Recommendation**: Either (a) register with a dedicated worker that processes one session at a time in order, or (b) keep matching as a manually-triggered step until the ordering constraint is better enforced.
+`UnitMatching` is a `Computed` table and can be registered with a DataJoint worker for automated processing. The `key_source` gate (see [Critical Constraint: Temporal Ordering](#critical-constraint-temporal-ordering)) ensures that `populate(reserve_jobs=True)` respects temporal ordering even under parallel execution — workers processing different insertions run in parallel, while sessions within an insertion are serialized automatically.
 
 ---
 
