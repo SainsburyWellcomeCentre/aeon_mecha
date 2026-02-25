@@ -104,7 +104,7 @@ UnitMatching (Computed)
         -> UniversalUnit                    # adds universal_unit to PK
         -> ephys.EphysChunk                 # adds chunk_start to PK
         ---
-        spike_times: longblob               # float64 epoch seconds (UTC), HARP-synced
+        spike_times: longblob               # datetime64[ns] (UTC), HARP-synced — same format as SyncedSpikes.Unit
         spike_count: int
         unique index (experiment_name, subject, insertion_number, universal_unit, chunk_start)  # schema-enforced: one row per (insertion, unit, chunk)
 
@@ -149,7 +149,7 @@ The current (and only) matching method uses SpikeInterface's `compare_two_sorter
 
 #### Steps
 
-1. **Load this session's synced spike times** from `SyncedSpikes.Unit`. Concatenate across chunks per unit. Convert `datetime64[ns]` to float64 epoch seconds.
+1. **Load this session's synced spike times** from `SyncedSpikes.Unit`. Concatenate across chunks per unit. Convert `datetime64[ns]` to epoch seconds for the overlap comparison and SpikeInterface compatibility.
 
 2. **Find overlapping previous sessions**: Query all previously-completed `UnitMatching` entries for the same `(experiment_name, subject, insertion_number)`. Filter to those whose `(block_start, block_end)` overlaps with this session's time range.
 
@@ -176,7 +176,7 @@ The current (and only) matching method uses SpikeInterface's `compare_two_sorter
 | Parameter | Value | Description |
 |-----------|-------|-------------|
 | `delta_time` | 0.4 ms | Spike time coincidence window for `compare_two_sorters` |
-| Sampling frequency | 30,000 Hz | Used to convert epoch seconds to sample indices for SpikeInterface |
+| Sampling frequency | 30,000 Hz | Used internally to convert timestamps to sample indices for SpikeInterface comparison |
 
 ---
 
