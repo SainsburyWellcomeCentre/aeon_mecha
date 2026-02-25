@@ -11,8 +11,7 @@ This script is intended for interactive use. Before running:
 2. Modify the 'key' dictionary in the __main__ section with your
    specific session parameters:
    - experiment_name: Your experiment identifier
-   - subject: Subject identifier
-   - insertion_number: Probe insertion number for this subject
+   - insertion_number: Probe insertion number
    - block_start: Start datetime of the block (string or datetime)
    - block_end: End datetime of the block (string or datetime)
    - electrode_group: Electrode group identifier (e.g., "0-143")
@@ -37,15 +36,13 @@ if __name__ == "__main__":
     # Example key - modify these values for your session
     # The key must contain:
     #   - experiment_name: Your experiment identifier
-    #   - subject: Subject identifier
-    #   - insertion_number: Probe insertion number for this subject
+    #   - insertion_number: Probe insertion number
     #   - block_start: Start datetime of the block (string or datetime)
     #   - block_end: End datetime of the block (string or datetime)
     #   - electrode_group: Electrode group identifier (e.g., "0-143")
     #   - paramset_id: Parameter set ID (e.g., "250")
     key = {
         "experiment_name": "social-ephys0.1-aeon3",
-        "subject": "BAA-1104045",
         "insertion_number": 1,
         "block_start": "2024-06-04 11:00:00",
         "block_end": "2024-06-10 12:00:00",

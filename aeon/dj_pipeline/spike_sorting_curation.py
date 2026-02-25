@@ -536,7 +536,6 @@ def restore_raw_sorting(key: dict) -> None:
     Args:
         key: Dictionary key identifying the sorting task. Must contain:
             - experiment_name
-            - subject
             - insertion_number
             - block_start (datetime or string)
             - block_end (datetime or string)
@@ -581,8 +580,8 @@ def restore_raw_sorting(key: dict) -> None:
             matched_to_delete.delete(force=True)
 
     # 2c: Delete orphaned UniversalUnit rows (those with zero remaining Matched children)
-    #   Scope: only check universal units for this subject+insertion
-    insertion_key = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
+    #   Scope: only check universal units for this insertion
+    insertion_key = {k: key[k] for k in ("experiment_name", "insertion_number")}
     n_orphans = 0
     for uu_key in (spike_sorting.UniversalUnit & insertion_key).fetch("KEY"):
         if len(spike_sorting.UniversalUnit.Matched & uu_key) == 0:

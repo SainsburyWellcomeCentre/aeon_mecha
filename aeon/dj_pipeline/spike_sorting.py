@@ -136,7 +136,7 @@ class PreProcessing(dj.Computed):
         end_str = key["block_end"].strftime("%Y-%m-%dT%H-%M-%S")
 
         output_dir = (sorting_root_dir / key["experiment_name"]
-                      / key["subject"] / f"insertion_{key['insertion_number']}"
+                      / f"insertion_{key['insertion_number']}"
                       / "ephys_blocks"
                       / f"{start_str}_{end_str}"
                       / key["electrode_group"]
@@ -149,7 +149,14 @@ class PreProcessing(dj.Computed):
         return output_dir.relative_to(sorting_root_dir) if relative else output_dir
 
     def make_fetch(self, key):
-        # Infer output directory
+        # Safety check: refuse to overwrite existing data on ceph
+        output_dir = self.infer_output_dir(key)
+        if output_dir.exists() and any(output_dir.iterdir()):
+            raise FileExistsError(
+                f"Output directory already contains data: {output_dir}. "
+                "Refusing to overwrite existing sorting data."
+            )
+        # Create output directory
         output_dir = self.infer_output_dir(key, mkdir=True)
         recording_dir = output_dir.parent / "recording"
         recording_dir.mkdir(parents=True, exist_ok=True)
@@ -355,6 +362,12 @@ class SpikeSorting(dj.Computed):
         execution_time = datetime.now(UTC)
         sorter_name = sorting_method.replace(".", "_")
         sorting_output_dir = output_dir / "spike_sorting"
+        # Safety check: refuse to overwrite existing data on ceph
+        if sorting_output_dir.exists() and any(sorting_output_dir.iterdir()):
+            raise FileExistsError(
+                f"Sorting output directory already contains data: {sorting_output_dir}. "
+                "Refusing to overwrite existing sorting data."
+            )
         si_recording: si.BaseRecording = si.load(
             recording_file, base_folder=output_dir
         )
@@ -484,6 +497,12 @@ class PostProcessing(dj.Computed):
         )
 
         analyzer_output_dir = output_dir / "sorting_analyzer"
+        # Safety check: refuse to overwrite existing data on ceph
+        if analyzer_output_dir.exists() and any(analyzer_output_dir.iterdir()):
+            raise FileExistsError(
+                f"Sorting analyzer directory already contains data: {analyzer_output_dir}. "
+                "Refusing to overwrite existing sorting data."
+            )
 
         has_units = si_sorting.unit_ids.size > 0
 
@@ -952,7 +971,7 @@ class SyncedSpikes(dj.Imported):
         -> ephys.EphysChunk
         ---
         spike_count: int       # how many spikes in this recording for this unit
-        spike_times: longblob  # (s) synchronized spike times (i.e. in HARP clock) for the respective EphysChunk
+        spike_times: longblob  # datetime64[ns] synchronized spike times (in HARP clock) for the respective EphysChunk
         """
 
     def make(self, key: Dict[str, Any]) -> None:
@@ -1092,7 +1111,7 @@ class UnitMatching(dj.Computed):
         If sessions are processed out of order, universal unit assignments will be wrong.
 
         Algorithm (spike_time_overlap):
-        1. Find all previously matched sessions for the same subject+insertion that
+        1. Find all previously matched sessions for the same insertion that
            overlap in time with this session
         2. For each overlapping pair, use SpikeInterface's compare_two_sorters()
            to find matching units based on spike time coincidence
@@ -1106,7 +1125,7 @@ class UnitMatching(dj.Computed):
 
         matching_method = key["matching_method"]
         insertion_key = {
-            k: key[k] for k in ("experiment_name", "subject", "insertion_number")
+            k: key[k] for k in ("experiment_name", "insertion_number")
         }
 
         # Scope for universal unit ID assignment
@@ -1178,7 +1197,7 @@ class UnitMatching(dj.Computed):
                 # Get previous session's spike times
                 prev_key = {
                     k: prev_session[k]
-                    for k in ("experiment_name", "subject", "insertion_number",
+                    for k in ("experiment_name", "insertion_number",
                               "block_start", "block_end", "electrode_group", "paramset_id")
                 }
                 prev_units = {}
@@ -1240,7 +1259,7 @@ class UnitMatching(dj.Computed):
                     # Find which universal unit the previous session's unit belongs to
                     prev_sorted_key = {
                         k: prev_session[k]
-                        for k in ("experiment_name", "subject", "insertion_number",
+                        for k in ("experiment_name", "insertion_number",
                                   "block_start", "block_end", "electrode_group", "paramset_id")
                     }
                     uu_match = (
@@ -1271,7 +1290,7 @@ class UnitMatching(dj.Computed):
         # Insert UniversalUnit.Matched entries
         sorted_key_fields = {
             k: key[k]
-            for k in ("experiment_name", "subject", "insertion_number",
+            for k in ("experiment_name", "insertion_number",
                       "block_start", "block_end", "electrode_group", "paramset_id")
         }
         for unit_id, uu_id in unit_to_universal.items():
@@ -1307,7 +1326,7 @@ class UniversalUnit(dj.Manual):
     # Persistent neuron identity across sessions for the same probe insertion
     -> ephys.ProbeInsertion
     -> UnitMatchingMethod
-    universal_unit: int  # unique ID within this subject+insertion+method
+    universal_unit: int  # unique ID within this experiment+insertion+method
     ---
     universal_unit_comment='': varchar(1000)
     """
@@ -1330,13 +1349,13 @@ class ChunkedSpikeTimes(dj.Computed):
     -> UniversalUnit
     -> ephys.EphysChunk
     ---
-    spike_times: longblob  # (s) HARP-synced spike times as float64 epoch seconds (UTC) for this universal unit in this chunk
+    spike_times: longblob  # datetime64[ns] HARP-synced spike times for this universal unit in this chunk
     spike_count: int       # number of spikes
     """
 
     @property
     def key_source(self):
-        """All (UniversalUnit, EphysChunk) combinations for the same subject+insertion.
+        """All (UniversalUnit, EphysChunk) combinations for the same insertion.
 
         NOTE on key_source scope (discuss with team):
         This full cartesian approach produces rows with spike_count=0 for chunks where
@@ -1372,7 +1391,6 @@ class ChunkedSpikeTimes(dj.Computed):
             # Build the SyncedSpikes.Unit key for this matched unit + chunk
             synced_unit_key = {
                 "experiment_name": matched["experiment_name"],
-                "subject": matched["subject"],
                 "insertion_number": matched["insertion_number"],
                 "block_start": matched["block_start"],
                 "block_end": matched["block_end"],
@@ -1389,15 +1407,11 @@ class ChunkedSpikeTimes(dj.Computed):
                 all_spike_times.append(spike_times)
 
         # Concatenate and sort all spike times from all matched units
+        # Spike times are stored as datetime64[ns] (absolute HARP timestamps)
         if all_spike_times:
             merged_times = np.sort(np.concatenate(all_spike_times))
-            # Convert datetime64[ns] → float64 epoch seconds (UTC)
-            # No meaningful resolution loss: float64 gives ~100ns precision,
-            # well below the 30kHz sample interval (~33μs)
-            if merged_times.dtype.kind == 'M':
-                merged_times = merged_times.astype('datetime64[ns]').astype(np.int64) / 1e9
         else:
-            merged_times = np.array([], dtype=np.float64)
+            merged_times = np.array([], dtype='datetime64[ns]')
 
         self.insert1({
             **key,

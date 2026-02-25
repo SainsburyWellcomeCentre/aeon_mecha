@@ -95,6 +95,11 @@ class NeuropixelsV2Beta(StreamGroup):
     def __init__(self, path):
         super().__init__(path, HarpSync, HarpSyncModel)
 
+
+class NeuropixelsV2(StreamGroup):
+    def __init__(self, path):
+        super().__init__(path, HarpSync, HarpSyncModel)
+
 # ----
 
 from dotmap import DotMap
@@ -102,5 +107,6 @@ from swc.aeon.schema.streams import Device
 
 social_ephys = DotMap(
     [
-        Device("NeuropixelsV2Beta", NeuropixelsV2Beta, Bno055)
+        Device("NeuropixelsV2Beta", NeuropixelsV2Beta, Bno055),
+        Device("NeuropixelsV2", NeuropixelsV2, Bno055),
     ])
