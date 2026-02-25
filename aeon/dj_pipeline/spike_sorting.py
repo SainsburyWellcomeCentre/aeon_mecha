@@ -1087,56 +1087,104 @@ class UnitMatchingMethod(dj.Lookup):
 
 
 @schema
+class GlobalUnit(dj.Manual):
+    definition = """
+    # Persistent neuron identity across sessions for the same probe insertion
+    -> ephys.ProbeInsertion
+    global_unit: int  # unique ID within this insertion
+    ---
+    -> ephys.ProbeType.Electrode  # peak electrode (denormalized, updated each session)
+    global_unit_comment='': varchar(1000)
+    """
+
+
+@schema
 class UnitMatching(dj.Computed):
     definition = """
     -> SyncedSpikes
-    -> UnitMatchingMethod
     ---
+    -> UnitMatchingMethod
     execution_time: datetime
     execution_duration: float  # hours
     """
 
+    class Unit(dj.Part):
+        definition = """
+        -> master
+        -> SortedSpikes.Unit
+        ---
+        -> GlobalUnit
+        match_confidence=null: float
+        match_comment='': varchar(1000)
+        """
+
+    class Spikes(dj.Part):
+        definition = """
+        -> master
+        -> GlobalUnit
+        -> ephys.EphysChunk
+        ---
+        spike_times: longblob  # datetime64[ns] (UTC), HARP-synced
+        spike_count: int
+        unique index (experiment_name, insertion_number, global_unit, chunk_start)
+        """
+
     @property
     def key_source(self):
-        """Only process sessions that have been officially curated."""
+        """Only the earliest unprocessed session per insertion (temporal ordering).
+
+        Ensures that sessions are processed in block_start order within each insertion.
+        Different insertions can be processed in parallel.
+        """
         from aeon.dj_pipeline import spike_sorting_curation
-        curated = SyncedSpikes * UnitMatchingMethod & spike_sorting_curation.ApplyOfficialCuration
-        return curated - self
+
+        eligible = SyncedSpikes & spike_sorting_curation.ApplyOfficialCuration
+        candidates = eligible - self
+        next_per_insertion = dj.U(
+            "experiment_name", "insertion_number"
+        ).aggr(candidates, next_start="MIN(block_start)")
+        return candidates * next_per_insertion & "block_start = next_start"
 
     def make(self, key):
-        """Match units from a new session against existing universal units.
+        """Match units from a new session against existing global units.
 
-        IMPORTANT: Sessions must be processed in temporal order (by block_start).
-        Session N compares its units against all previously-matched sessions (1..N-1).
-        If sessions are processed out of order, universal unit assignments will be wrong.
+        Sessions must be processed in temporal order (by block_start).
+        Session N compares its units against previously-matched sessions (1..N-1).
 
         Algorithm (spike_time_overlap):
-        1. Find all previously matched sessions for the same insertion that
-           overlap in time with this session
-        2. For each overlapping pair, use SpikeInterface's compare_two_sorters()
-           to find matching units based on spike time coincidence
-        3. Matched units get linked to existing universal units
-        4. Unmatched units become new universal units
+        1. Verify temporal ordering (guard against direct make() calls)
+        2. Find overlapping previous blocks and compare spike times
+        3. Matched units inherit existing global unit IDs
+        4. Unmatched units become new global units
+        5. Insert GlobalUnit, UnitMatching.Unit, UnitMatching.Spikes entries
         """
         from spikeinterface.comparison import compare_two_sorters
         from spikeinterface.core import NumpySorting
+        from aeon.dj_pipeline import spike_sorting_curation
 
         execution_time = datetime.now(UTC)
+        matching_method = "spike_time_overlap"
 
-        matching_method = key["matching_method"]
         insertion_key = {
             k: key[k] for k in ("experiment_name", "insertion_number")
         }
 
-        # Scope for universal unit ID assignment
-        scope_key = {**insertion_key, "matching_method": matching_method}
+        # ---- Temporal ordering guard ----
+        eligible = SyncedSpikes & spike_sorting_curation.ApplyOfficialCuration
+        earlier_eligible = eligible & insertion_key & f'block_start < "{key["block_start"]}"'
+        unprocessed_earlier = earlier_eligible - self
+        if unprocessed_earlier:
+            raise ValueError(
+                f"Temporal ordering violation: {len(unprocessed_earlier)} earlier session(s) "
+                f"for insertion {insertion_key} not yet processed. "
+                f"Sessions must be processed in block_start order."
+            )
 
-        # Get this session's block time range
+        # ---- Load this session's synced spike times ----
         block_start, block_end = (ephys.EphysBlock & key).fetch1(
             "block_start", "block_end"
         )
 
-        # Get this session's synced spike times by unit (as epoch seconds)
         this_session_units = {}
         for unit_entry in (SyncedSpikes.Unit & key).fetch(as_dict=True):
             unit_id = unit_entry["unit"]
@@ -1144,40 +1192,45 @@ class UnitMatching(dj.Computed):
                 this_session_units[unit_id] = []
             this_session_units[unit_id].append(unit_entry["spike_times"])
 
-        # Concatenate spike times across chunks for each unit, convert to epoch seconds
+        # Concatenate spike times across chunks per unit, convert to epoch seconds
         for unit_id in this_session_units:
             concatenated = np.sort(np.concatenate(this_session_units[unit_id]))
-            # SyncedSpikes.Unit stores datetime64[ns] arrays; convert to epoch seconds
-            # for overlap comparison and SpikeInterface compatibility
-            if concatenated.dtype.kind == 'M':  # datetime64
-                concatenated = concatenated.astype('datetime64[ns]').astype(np.int64) / 1e9
+            if concatenated.dtype.kind == "M":  # datetime64
+                concatenated = concatenated.astype("datetime64[ns]").astype(np.int64) / 1e9
             this_session_units[unit_id] = concatenated
 
         if not this_session_units:
             logger.warning(f"No synced spike data found for session {key}. Skipping.")
-            self.insert1({**key, "execution_time": execution_time,
-                          "execution_duration": 0.0})
+            self.insert1({
+                **key,
+                "matching_method": matching_method,
+                "execution_time": execution_time,
+                "execution_duration": 0.0,
+            })
             return
 
-        # Find previously matched sessions for the same insertion that overlap in time
-        # block_start and block_end are already in the PK (inherited from EphysBlock)
-        previously_matched = (
-            self & insertion_key
-        ).fetch(as_dict=True)
-
+        # ---- Find overlapping previous sessions ----
+        previously_matched = (self & insertion_key).fetch(as_dict=True)
         overlapping_sessions = [
             s for s in previously_matched
             if s["block_start"] < block_end and s["block_end"] > block_start
         ]
 
-        # Map: this session's unit_id -> universal_unit (if matched)
-        unit_to_universal = {}
+        # Map: this session's unit_id -> global_unit (if matched)
+        unit_to_global = {}
+
+        if not previously_matched:
+            logger.info("First session for this insertion — all units will be new global units.")
+        elif not overlapping_sessions:
+            logger.warning(
+                f"No overlapping sessions found among {len(previously_matched)} previous sessions. "
+                f"All units will be assigned new global unit IDs (no temporal overlap for matching)."
+            )
 
         def _restrict_to_overlap(spike_times_s, start_s, end_s):
             """Restrict spike times (epoch seconds) to overlap window.
 
             Returns times relative to start of overlap window (in seconds).
-            Returns empty array if no spikes fall within the window.
             """
             if len(spike_times_s) == 0:
                 return np.array([])
@@ -1185,21 +1238,14 @@ class UnitMatching(dj.Computed):
             return spike_times_s[mask] - start_s
 
         if overlapping_sessions:
-            # Get overlap window and compare
             for prev_session in overlapping_sessions:
                 overlap_start = max(block_start, prev_session["block_start"])
                 overlap_end = min(block_end, prev_session["block_end"])
-
-                # Convert overlap bounds to epoch seconds (matching spike time format)
                 overlap_start_s = overlap_start.timestamp()
                 overlap_end_s = overlap_end.timestamp()
 
-                # Get previous session's spike times
-                prev_key = {
-                    k: prev_session[k]
-                    for k in ("experiment_name", "insertion_number",
-                              "block_start", "block_end", "electrode_group", "paramset_id")
-                }
+                # Load previous session's spike times (prev_session has all PK fields)
+                prev_key = prev_session
                 prev_units = {}
                 for unit_entry in (SyncedSpikes.Unit & prev_key).fetch(as_dict=True):
                     uid = unit_entry["unit"]
@@ -1208,8 +1254,8 @@ class UnitMatching(dj.Computed):
                     prev_units[uid].append(unit_entry["spike_times"])
                 for uid in prev_units:
                     concatenated = np.sort(np.concatenate(prev_units[uid]))
-                    if concatenated.dtype.kind == 'M':
-                        concatenated = concatenated.astype('datetime64[ns]').astype(np.int64) / 1e9
+                    if concatenated.dtype.kind == "M":
+                        concatenated = concatenated.astype("datetime64[ns]").astype(np.int64) / 1e9
                     prev_units[uid] = concatenated
 
                 if not prev_units:
@@ -1231,193 +1277,133 @@ class UnitMatching(dj.Computed):
                 if not this_spike_trains or not prev_spike_trains:
                     continue
 
-                # Create NumpySorting objects
+                # Compare using SpikeInterface
                 sorting_this = NumpySorting.from_unit_dict(
                     this_spike_trains, sampling_frequency=30000
                 )
                 sorting_prev = NumpySorting.from_unit_dict(
                     prev_spike_trains, sampling_frequency=30000
                 )
-
-                # Compare using SpikeInterface
                 comparison = compare_two_sorters(
                     sorting1=sorting_prev,
                     sorting2=sorting_this,
                     sorting1_name="previous",
                     sorting2_name="current",
-                    delta_time=0.4,  # ms — default spike time coincidence window
+                    delta_time=0.4,  # ms
                 )
 
-                # Get matched pairs: (prev_unit_id, this_unit_id) with agreement > threshold
                 matched_pairs = comparison.get_matching()
-                # matched_pairs is a dict: {prev_unit_id: this_unit_id} (-1 if no match)
-
                 for prev_uid, this_uid in matched_pairs.items():
-                    if this_uid == -1 or this_uid in unit_to_universal:
+                    if this_uid == -1 or this_uid in unit_to_global:
                         continue
 
-                    # Find which universal unit the previous session's unit belongs to
-                    prev_sorted_key = {
-                        k: prev_session[k]
-                        for k in ("experiment_name", "insertion_number",
-                                  "block_start", "block_end", "electrode_group", "paramset_id")
-                    }
-                    uu_match = (
-                        UniversalUnit.Matched
-                        & {**prev_sorted_key, "unit": prev_uid, "matching_method": matching_method}
-                    ).fetch(as_dict=True)
+                    # Look up which global unit the previous session's unit belongs to
+                    gu_match = self.Unit & {**prev_key, "unit": prev_uid}
+                    if gu_match:
+                        unit_to_global[this_uid] = gu_match.fetch1("global_unit")
 
-                    if uu_match:
-                        unit_to_universal[this_uid] = uu_match[0]["universal_unit"]
-
-        # Assign new universal units for unmatched units
-        existing_max = (UniversalUnit & scope_key).fetch("universal_unit")
-        next_uu_id = int(existing_max.max()) + 1 if len(existing_max) > 0 else 1
-        n_matched = len(unit_to_universal)  # count before adding new ones
+        # ---- Assign new global units for unmatched units ----
+        existing_ids = (GlobalUnit & insertion_key).fetch("global_unit")
+        next_gu_id = int(existing_ids.max()) + 1 if len(existing_ids) > 0 else 1
+        n_matched = len(unit_to_global)
 
         for unit_id in this_session_units:
-            if unit_id not in unit_to_universal:
-                unit_to_universal[unit_id] = next_uu_id
-                next_uu_id += 1
-        n_new = len(unit_to_universal) - n_matched
+            if unit_id not in unit_to_global:
+                unit_to_global[unit_id] = next_gu_id
+                next_gu_id += 1
+        n_new = len(unit_to_global) - n_matched
 
-        # Insert UniversalUnit entries (new ones only)
-        for unit_id, uu_id in unit_to_universal.items():
-            uu_key = {**scope_key, "universal_unit": uu_id}
-            if not (UniversalUnit & uu_key):
-                UniversalUnit.insert1(uu_key)
+        # ---- Get peak electrode for each unit in this session ----
+        # electrode is a non-PK attribute on SortedSpikes.Unit, so use proj() to include it
+        unit_electrodes = {}
+        for entry in (SortedSpikes.Unit & key).proj("electrode").fetch(as_dict=True):
+            unit_electrodes[entry["unit"]] = {
+                "probe_type": entry["probe_type"],
+                "electrode": entry["electrode"],
+            }
 
-        # Insert UniversalUnit.Matched entries
-        sorted_key_fields = {
-            k: key[k]
-            for k in ("experiment_name", "insertion_number",
-                      "block_start", "block_end", "electrode_group", "paramset_id")
-        }
-        for unit_id, uu_id in unit_to_universal.items():
-            UniversalUnit.Matched.insert1(
-                {
-                    **scope_key,
-                    "universal_unit": uu_id,
-                    **sorted_key_fields,
-                    "unit": unit_id,
-                },
-                skip_duplicates=True,
-            )
+        # ---- Insert GlobalUnit entries (new) + update electrode (matched) ----
+        for unit_id, gu_id in unit_to_global.items():
+            gu_key = {**insertion_key, "global_unit": gu_id}
+            if unit_id not in unit_electrodes:
+                raise ValueError(
+                    f"No electrode info found for unit {unit_id} in SortedSpikes.Unit. "
+                    f"Key: {key}"
+                )
+            electrode = unit_electrodes[unit_id]
+            if not (GlobalUnit & gu_key):
+                # New global unit
+                GlobalUnit.insert1({**gu_key, **electrode})
+            else:
+                # Existing global unit — update electrode to latest session's estimate
+                GlobalUnit.update1({**gu_key, **electrode})
 
-        # Insert UnitMatching entry
+        # ---- Insert master entry ----
         execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
         self.insert1({
             **key,
+            "matching_method": matching_method,
             "execution_time": execution_time,
             "execution_duration": execution_duration,
         })
 
+        # ---- Insert UnitMatching.Unit entries ----
+        for unit_id, gu_id in unit_to_global.items():
+            self.Unit.insert1({
+                **key,
+                "unit": unit_id,
+                **insertion_key,
+                "global_unit": gu_id,
+            }, ignore_extra_fields=True)
+
+        # ---- Insert UnitMatching.Spikes with ownership convention ----
+        # For each (global_unit, chunk): skip if an earlier session already owns it
+        this_session_chunks = (SyncedSpikes.Unit & key).fetch("KEY")
+        # Get unique chunk_starts for this session
+        chunk_starts = sorted({ck["chunk_start"] for ck in this_session_chunks})
+
+        for unit_id, gu_id in unit_to_global.items():
+            for chunk_start in chunk_starts:
+                # Ownership check: does any session already own this (insertion, unit, chunk)?
+                existing = self.Spikes & {
+                    **insertion_key,
+                    "global_unit": gu_id,
+                    "chunk_start": chunk_start,
+                }
+                if existing:
+                    logger.debug(
+                        f"Ownership skip: global_unit={gu_id}, chunk_start={chunk_start} "
+                        f"already owned by earlier session"
+                    )
+                    continue
+
+                # Get spike times for this unit in this chunk from SyncedSpikes
+                synced_entry = SyncedSpikes.Unit & {
+                    **key,
+                    "unit": unit_id,
+                    "chunk_start": chunk_start,
+                }
+                if not synced_entry:
+                    continue  # no spikes for this unit in this chunk
+
+                spike_times = synced_entry.fetch1("spike_times")
+                self.Spikes.insert1({
+                    **key,
+                    **insertion_key,
+                    "global_unit": gu_id,
+                    "chunk_start": chunk_start,
+                    "spike_times": spike_times,
+                    "spike_count": len(spike_times),
+                }, ignore_extra_fields=True)
+
         logger.info(
             f"Unit matching complete for session {key['block_start']}:\n"
-            f"  {len(unit_to_universal)} units processed\n"
-            f"  {n_matched} matched to existing universal units\n"
-            f"  {n_new} new universal units created"
+            f"  {len(unit_to_global)} units processed\n"
+            f"  {n_matched} matched to existing global units\n"
+            f"  {n_new} new global units created"
         )
 
 
-@schema
-class UniversalUnit(dj.Manual):
-    definition = """
-    # Persistent neuron identity across sessions for the same probe insertion
-    -> ephys.ProbeInsertion
-    -> UnitMatchingMethod
-    universal_unit: int  # unique ID within this experiment+insertion+method
-    ---
-    universal_unit_comment='': varchar(1000)
-    """
-
-    class Matched(dj.Part):
-        definition = """
-        # Links a session-specific unit to a universal unit
-        -> master
-        -> SortedSpikes.Unit
-        ---
-        match_confidence=null: float
-        match_comment='': varchar(1000)
-        """
-
-
-@schema
-class ChunkedSpikeTimes(dj.Computed):
-    definition = """
-    # HARP-synced spike times per universal unit per ephys chunk — the primary analysis table
-    -> UniversalUnit
-    -> ephys.EphysChunk
-    ---
-    spike_times: longblob  # datetime64[ns] HARP-synced spike times for this universal unit in this chunk
-    spike_count: int       # number of spikes
-    """
-
-    @property
-    def key_source(self):
-        """All (UniversalUnit, EphysChunk) combinations for the same insertion.
-
-        NOTE on key_source scope (discuss with team):
-        This full cartesian approach produces rows with spike_count=0 for chunks where
-        the universal unit has no data (e.g., the neuron wasn't recorded in that session).
-        This is simpler for researchers (every unit x chunk exists, no need to handle
-        missing rows), but produces more rows.
-
-        Alternative: restricted key_source (no empty rows):
-            return (UniversalUnit * ephys.EphysChunk
-                    & (UniversalUnit.Matched * SyncedSpikes.Unit)) - self
-        The restricted set is more efficient but means "no row" = "no data for this chunk."
-        """
-        return (UniversalUnit * ephys.EphysChunk) - self
-
-    def make(self, key):
-        """Aggregate HARP-synced spike times by universal unit and ephys chunk.
-
-        For a given (UniversalUnit, EphysChunk) pair:
-        1. Look up all matched session units via UniversalUnit.Matched
-        2. For each matched unit, fetch spike times from SyncedSpikes.Unit for this chunk
-        3. Concatenate and sort the spike times
-        4. Insert with spike_count
-
-        If multiple matched units contribute spikes to the same chunk (overlapping blocks),
-        the spike times are merged. This is the intended behavior — the universal unit
-        represents one neuron, and overlapping blocks may both capture it.
-        """
-        # Get all session units matched to this universal unit
-        matched_units = (UniversalUnit.Matched & key).fetch(as_dict=True)
-
-        all_spike_times = []
-        for matched in matched_units:
-            # Build the SyncedSpikes.Unit key for this matched unit + chunk
-            synced_unit_key = {
-                "experiment_name": matched["experiment_name"],
-                "insertion_number": matched["insertion_number"],
-                "block_start": matched["block_start"],
-                "block_end": matched["block_end"],
-                "electrode_group": matched["electrode_group"],
-                "paramset_id": matched["paramset_id"],
-                "unit": matched["unit"],
-                "chunk_start": key["chunk_start"],
-            }
-
-            # Fetch spike times for this unit in this chunk (may not exist)
-            synced_entry = SyncedSpikes.Unit & synced_unit_key
-            if synced_entry:
-                spike_times = synced_entry.fetch1("spike_times")
-                all_spike_times.append(spike_times)
-
-        # Concatenate and sort all spike times from all matched units
-        # Spike times are stored as datetime64[ns] (absolute HARP timestamps)
-        if all_spike_times:
-            merged_times = np.sort(np.concatenate(all_spike_times))
-        else:
-            merged_times = np.array([], dtype='datetime64[ns]')
-
-        self.insert1({
-            **key,
-            "spike_times": merged_times,
-            "spike_count": len(merged_times),
-        })
 
 
 # ---- Ephys preprocessing with spike interface ----

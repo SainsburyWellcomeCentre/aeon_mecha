@@ -169,11 +169,11 @@ The current (and only) matching method uses SpikeInterface's `compare_two_sorter
 
 6. **Update electrode** on existing `GlobalUnit` entries for matched units (overwrite with this session's peak electrode — latest session = best estimate).
 
-7. **Insert `UnitMatching.Unit`** entries linking each session unit to its global unit.
+7. **Insert `UnitMatching`** master entry with execution metadata. (Master must exist before Part inserts.)
 
-8. **Insert `UnitMatching.Spikes`** entries following the ownership convention (see next section).
+8. **Insert `UnitMatching.Unit`** entries linking each session unit to its global unit.
 
-9. **Insert `UnitMatching`** master entry with execution metadata.
+9. **Insert `UnitMatching.Spikes`** entries following the ownership convention (see next section).
 
 #### Parameters
 

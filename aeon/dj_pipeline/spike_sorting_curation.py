@@ -518,17 +518,13 @@ def make_curation_official(key: dict, curation_id: int) -> None:
 
 
 def restore_raw_sorting(key: dict) -> None:
-    """
-    Restore raw (uncurated) sorting by removing official curation.
+    """Restore raw (uncurated) sorting by removing official curation.
 
     This function:
     1. Deletes the OfficialCuration entry (which cascades to ApplyOfficialCuration)
-    2. Cleans up unit matching data that references this session's units:
-       a. Deletes UnitMatching for this session
-       b. Deletes UniversalUnit.Matched rows for this session's units (force=True
-          to bypass Part-table protection)
-       c. Deletes orphaned UniversalUnit rows (those with zero remaining Matched children)
-    3. Deletes the curated SortedSpikes entry (which cascades to downstream tables)
+    2. Deletes UnitMatching for this session (cascades to .Unit and .Spikes Part rows)
+    3. Deletes orphaned GlobalUnit entries (those with no remaining UnitMatching.Unit refs)
+    4. Deletes the curated SortedSpikes entry (which cascades to downstream tables)
 
     After restoring, re-run SortedSpikes.populate() + SyncedSpikes.populate() to load
     the new curation, then re-run UnitMatching.populate() to re-match units.
@@ -539,6 +535,8 @@ def restore_raw_sorting(key: dict) -> None:
             - insertion_number
             - block_start (datetime or string)
             - block_end (datetime or string)
+            - probe_type
+            - electrode_config_name
             - electrode_group
             - paramset_id
     """
@@ -551,47 +549,33 @@ def restore_raw_sorting(key: dict) -> None:
     curation_id = official_curation.fetch1("curation_id")
     logger.info(f"Restoring raw sorting (removing official curation_id={curation_id})...")
 
-    # Step 1: Delete OfficialCuration entry (this will cascade to ApplyOfficialCuration)
+    # Step 1: Delete OfficialCuration entry (cascades to ApplyOfficialCuration)
     logger.info("Deleting OfficialCuration entry...")
     official_curation.delete(safemode=False)
     logger.info("OfficialCuration and ApplyOfficialCuration entries deleted.")
 
-    # Step 2: Clean up unit matching data before deleting SortedSpikes
-    # Without this cleanup, SortedSpikes.delete() would fail because
-    # UniversalUnit.Matched references SortedSpikes.Unit, and DataJoint's
-    # Part-table protection blocks deletion when the Part's master (UniversalUnit)
-    # is not in the deletion set.
-
-    # 2a: Delete UnitMatching for this session (Computed table, normal delete)
+    # Step 2: Delete UnitMatching for this session
+    # Cascades to UnitMatching.Unit and UnitMatching.Spikes Part rows
     unit_matching_entries = spike_sorting.UnitMatching & key
     if unit_matching_entries:
         n_um = len(unit_matching_entries)
         logger.info(f"Deleting {n_um} UnitMatching entries for this session...")
         unit_matching_entries.delete(safemode=False)
+        logger.info("UnitMatching entries deleted (cascaded to Unit and Spikes parts).")
 
-    # 2b: Delete UniversalUnit.Matched rows for this session's units
-    #   Part.delete(force=True) allows deleting Part rows without their master
-    block_unit_keys = (spike_sorting.SortedSpikes.Unit & key).fetch("KEY")
-    if block_unit_keys:
-        matched_to_delete = spike_sorting.UniversalUnit.Matched & block_unit_keys
-        if matched_to_delete:
-            n_matched = len(matched_to_delete)
-            logger.info(f"Deleting {n_matched} UniversalUnit.Matched entries for this session's units...")
-            matched_to_delete.delete(force=True)
-
-    # 2c: Delete orphaned UniversalUnit rows (those with zero remaining Matched children)
-    #   Scope: only check universal units for this insertion
+    # Step 3: Delete orphaned GlobalUnit entries
+    # (those with no remaining UnitMatching.Unit references from any block)
     insertion_key = {k: key[k] for k in ("experiment_name", "insertion_number")}
     n_orphans = 0
-    for uu_key in (spike_sorting.UniversalUnit & insertion_key).fetch("KEY"):
-        if len(spike_sorting.UniversalUnit.Matched & uu_key) == 0:
-            logger.info(f"Deleting orphaned UniversalUnit {uu_key['universal_unit']}...")
-            (spike_sorting.UniversalUnit & uu_key).delete(safemode=False)
+    for gu_key in (spike_sorting.GlobalUnit & insertion_key).fetch("KEY"):
+        if len(spike_sorting.UnitMatching.Unit & gu_key) == 0:
+            logger.info(f"Deleting orphaned GlobalUnit {gu_key['global_unit']}...")
+            (spike_sorting.GlobalUnit & gu_key).delete(safemode=False)
             n_orphans += 1
     if n_orphans:
-        logger.info(f"Deleted {n_orphans} orphaned UniversalUnit entries.")
+        logger.info(f"Deleted {n_orphans} orphaned GlobalUnit entries.")
 
-    # Step 3: Delete the SortedSpikes entry (this will cascade to downstream tables)
+    # Step 4: Delete the SortedSpikes entry (cascades to downstream tables)
     sorted_spikes_entry = spike_sorting.SortedSpikes & key
     if sorted_spikes_entry:
         logger.info("Deleting SortedSpikes entry and downstream tables...")
@@ -602,8 +586,7 @@ def restore_raw_sorting(key: dict) -> None:
             "  1. Run SortedSpikes.populate() to load the raw sorting results\n"
             "  2. Run SyncedSpikes.populate() to sync spike times\n"
             "  3. Apply new curation if needed (make_curation_official + ApplyOfficialCuration.populate)\n"
-            "  4. Run UnitMatching.populate() to re-match units\n"
-            "  5. Run ChunkedSpikeTimes.populate() to regenerate chunked output"
+            "  4. Run UnitMatching.populate() to re-match units and generate Spikes"
         )
     else:
         logger.info("No SortedSpikes entry found (run populate to load the raw sorting results back into the pipeline).")
