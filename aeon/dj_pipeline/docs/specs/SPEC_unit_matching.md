@@ -136,13 +136,14 @@ EphysEpoch (Imported)
 
 1. **Discover probes** from epoch directory files (probe serial + probe_type are available from files).
 2. **Auto-create `Probe` entries** (serial + type) — idempotent, since probe_type is now discoverable from files.
-3. **Read subject-probe mapping** from one of two sources:
+3. **Read subject-probe mapping** (**not yet implemented** — placeholder raises `NotImplementedError`). The intended design is:
    - **Per-epoch file** (e.g., `probe_assignments.json` in epoch directory): Contains `{probe_label: {probe: serial, subject: name, ...}}` mapping.
    - **Carry-forward**: If no file exists, reuse the mapping from the most recent `EphysEpoch` that had one. The first epoch with ephys data MUST have the file (no previous to carry forward from).
+   - The exact file format and carry-forward logic will be determined once the experimental data conventions are finalized.
 4. **Create `ProbeInsertion` entries** (with subject) — idempotent. If a probe-swap is detected (same probe, different subject), a new ProbeInsertion is created.
 5. **Insert `EphysEpoch.Insertion`** Part rows recording which ProbeInsertions are active in this epoch with their file labels.
 
-**Carry-forward semantics** for probe-swap detection:
+**Carry-forward semantics** (planned, not yet implemented) for probe-swap detection:
 
 ```
 Epoch 1: probe_assignments.json found

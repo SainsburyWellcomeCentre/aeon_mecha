@@ -262,71 +262,10 @@ class EphysEpoch(dj.Imported):
         Returns:
             Dict mapping probe_label -> {"subject": str, ...}
         """
-        assignments_path = epoch_path / "probe_assignments.json"
-        if assignments_path.exists():
-            try:
-                with open(assignments_path) as f:
-                    assignments = json.load(f)
-                # Validate: every discovered probe label must be in the assignments
-                missing = [l for l in probe_labels if l not in assignments]
-                if missing:
-                    raise ValueError(
-                        f"probe_assignments.json missing entries for: {missing}. "
-                        f"File has keys: {list(assignments.keys())}"
-                    )
-                # Validate: every entry must have 'subject'
-                for label, info in assignments.items():
-                    if "subject" not in info:
-                        raise ValueError(
-                            f"probe_assignments.json entry for '{label}' missing 'subject' field."
-                        )
-                logger.info(f"Read probe assignments from {assignments_path}")
-                return assignments
-            except (json.JSONDecodeError, IOError) as e:
-                raise ValueError(
-                    f"Failed to parse probe_assignments.json at {assignments_path}: {e}"
-                ) from e
-
-        # Carry-forward: find most recent EphysEpoch with Insertion entries
-        prev_insertions = (
-            self.Insertion
-            & {"experiment_name": key["experiment_name"]}
-            & f'epoch_start < "{key["epoch_start"]}"'
-        )
-        if prev_insertions:
-            # Get the most recent epoch_start that has insertions
-            latest_epoch_start = prev_insertions.fetch(
-                "epoch_start", order_by="epoch_start DESC", limit=1
-            )[0]
-            prev_entries = (
-                self.Insertion
-                & {"experiment_name": key["experiment_name"], "epoch_start": latest_epoch_start}
-            ).fetch(as_dict=True)
-
-            # Build assignments from previous epoch's Insertion entries
-            assignments = {}
-            for entry in prev_entries:
-                assignments[entry["probe_label"]] = {"subject": entry["subject"]}
-
-            # Validate: every discovered probe label must be covered
-            missing = [l for l in probe_labels if l not in assignments]
-            if missing:
-                raise ValueError(
-                    f"Carry-forward from epoch {latest_epoch_start} does not cover "
-                    f"probe labels: {missing}. Provide a probe_assignments.json for this epoch."
-                )
-            logger.info(
-                f"Carried forward probe assignments from epoch {latest_epoch_start}"
-            )
-            return assignments
-
-        # No file, no previous epoch — error
-        raise ValueError(
-            f"No probe_assignments.json found in {epoch_path} and no previous epoch "
-            f"to carry forward from. For the first epoch with ephys data, a "
-            f"probe_assignments.json file is required. Expected format:\n"
-            f'{{\n  "ProbeA": {{"probe": "<serial>", "subject": "<subject_name>"}},\n'
-            f'  "ProbeB": {{"probe": "<serial>", "subject": "<subject_name>"}}\n}}'
+        raise NotImplementedError(
+            "Probe-subject assignment resolution is not yet implemented. "
+            "The exact file format and carry-forward logic will be determined "
+            "once the experimental data conventions are finalized."
         )
 
     @staticmethod
