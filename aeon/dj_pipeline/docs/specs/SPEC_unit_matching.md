@@ -16,13 +16,13 @@
 
 ### Purpose
 
-Long-running AEON experiments record neural activity across multiple consecutive ephys blocks (sessions), each independently spike-sorted. The same neuron appears as a different `unit` ID in each session's sorting results. The unit matching system solves this by assigning a persistent **global unit** identity to neurons across sessions, enabling longitudinal analysis of single-neuron activity over days or weeks.
+Long-running AEON experiments record neural activity across multiple consecutive ephys blocks, each independently spike-sorted. The same neuron appears as a different `unit` ID in each block's sorting results. The unit matching system solves this by assigning a persistent **global unit** identity to neurons across blocks, enabling longitudinal analysis of single-neuron activity over days or weeks.
 
-The system works by exploiting temporal overlap between consecutive ephys blocks: when two blocks share a time window, the same neurons produce spikes in both blocks' sorted data. By comparing spike times in the overlap region, the system identifies which units across sessions correspond to the same neuron.
+The system works by exploiting temporal overlap between consecutive ephys blocks: when two blocks share a time window, the same neurons produce spikes in both blocks' sorted data. By comparing spike times in the overlap region, the system identifies which units across blocks correspond to the same neuron.
 
 ### Prerequisites
 
-Unit matching sits at the end of the spike sorting pipeline. A session must have completed the full chain before it is eligible for matching:
+Unit matching sits at the end of the spike sorting pipeline. An ephys block must have completed the full chain before it is eligible for matching:
 
 ```
 SortingTask → PreProcessing → SpikeSorting → PostProcessing
@@ -30,27 +30,27 @@ SortingTask → PreProcessing → SpikeSorting → PostProcessing
 → UnitMatching (this system)
 ```
 
-Specifically, `UnitMatching.key_source` requires that `ApplyOfficialCuration` exists for the session, ensuring only curated (quality-controlled) results enter the matching pipeline.
+Specifically, `UnitMatching.key_source` requires that `ApplyOfficialCuration` exists for the block, ensuring only curated (quality-controlled) results enter the matching pipeline.
 
 ### Key Concepts
 
 A **global unit** is a persistent neuron identity scoped to a single probe insertion (i.e., one physical probe in one subject). Global unit IDs are integers starting at 1, unique within a `(experiment_name, subject, insertion_number)` scope.
 
-A **matched unit** links a session-specific `SortedSpikes.Unit` to its assigned global unit. Each session unit maps to exactly one global unit. A global unit may be matched to units from multiple sessions (that's the whole point).
+A **matched unit** links a block-specific `SortedSpikes.Unit` to its assigned global unit. Each block's unit maps to exactly one global unit. A global unit may be matched to units from multiple blocks (that's the whole point).
 
 **Temporal overlap** between consecutive ephys blocks is the mechanism that enables matching. The overlap region contains spikes from the same neurons captured by both blocks' independent sorting runs. The matching algorithm compares spike times in this overlap window to identify corresponding units.
 
-The **ownership convention** determines which session "owns" the spike data for a given (global_unit, chunk) pair when multiple sessions cover the same chunk. This prevents duplicate rows in `Spikes`.
+The **ownership convention** determines which block "owns" the spike data for a given (global_unit, chunk) pair when multiple blocks cover the same chunk. This prevents duplicate rows in `Spikes`.
 
 ### Critical Constraint: Temporal Ordering
 
-Sessions **must** be processed in temporal order (by `block_start`). Session N compares its units against previously-matched sessions (1..N-1). Processing out of order produces incorrect global unit assignments.
+Ephys blocks **must** be processed in temporal order (by `block_start`). Block N compares its units against previously-matched blocks (1..N-1). Processing out of order produces incorrect global unit assignments.
 
 This constraint is enforced at two levels:
 
-1. **`key_source` gate**: Only yields the session with the earliest unprocessed `block_start` per insertion. Under `populate(reserve_jobs=True)`, a worker that finishes the earliest session causes the next `key_source` evaluation to advance to the next block. Workers processing different insertions can run in parallel; within an insertion, processing is serialized.
+1. **`key_source` gate**: Only yields the block with the earliest unprocessed `block_start` per insertion. Under `populate(reserve_jobs=True)`, a worker that finishes the earliest block causes the next `key_source` evaluation to advance to the next block. Workers processing different insertions can run in parallel; within an insertion, processing is serialized.
 
-2. **`make()` guard**: Before processing, verifies that no earlier eligible session (by `block_start`) for the same insertion remains unprocessed. This is a defense-in-depth check that catches direct `make(key)` calls bypassing `key_source`, or hypothetical bugs in the key_source logic.
+2. **`make()` guard**: Before processing, verifies that no earlier eligible block (by `block_start`) for the same insertion remains unprocessed. This is a defense-in-depth check that catches direct `make(key)` calls bypassing `key_source`, or hypothetical bugs in the key_source logic.
 
 ```python
 # key_source: only the earliest unprocessed block per insertion
@@ -67,10 +67,10 @@ return candidates * next_per_insertion & "block_start = next_start"
 earlier_eligible = eligible & insertion_key & f'block_start < "{key["block_start"]}"'
 unprocessed_earlier = earlier_eligible - self
 if unprocessed_earlier:
-    raise ValueError("Temporal ordering violation: earlier sessions not yet processed.")
+    raise ValueError("Temporal ordering violation: earlier blocks not yet processed.")
 ```
 
-**Interaction with `reserve_jobs=True`**: When Worker A reserves the earliest session for insertion I1, Worker B's `key_source` also returns that same session (it's not yet in `self`). But the job reservation system prevents B from reserving the already-reserved key. With no other candidates for I1, Worker B idles or processes a different insertion. When A finishes, the next `populate()` cycle advances to the next block.
+**Interaction with `reserve_jobs=True`**: When Worker A reserves the earliest block for insertion I1, Worker B's `key_source` also returns that same block (it's not yet in `self`). But the job reservation system prevents B from reserving the already-reserved key. With no other candidates for I1, Worker B idles or processes a different insertion. When A finishes, the next `populate()` cycle advances to the next block.
 
 ---
 
@@ -85,7 +85,7 @@ UnitMatchingMethod (Lookup)
     matching_method_description: varchar(1000)
 
 UnitMatching (Computed)
-    -> SyncedSpikes                         # inherits full session key
+    -> SyncedSpikes                         # inherits full block key
     ---
     -> UnitMatchingMethod                   # non-PK: which method was used
     execution_time: datetime
@@ -112,7 +112,7 @@ GlobalUnit (Manual)
     -> ephys.ProbeInsertion                 # experiment_name, subject, insertion_number
     global_unit: int                     # unique ID within this insertion
     ---
-    -> ephys.ProbeType.Electrode      # peak electrode (denormalized, updated each session)
+    -> ephys.ProbeType.Electrode      # peak electrode (denormalized, updated each block)
     global_unit_comment='': varchar(1000)
 ```
 
@@ -133,13 +133,13 @@ erDiagram
 
 ### Design Notes
 
-- **`UnitMatchingMethod` as non-PK FK**: Only one matching result per session. The method is recorded for provenance but does not multiply the key space. This means one canonical set of global units per insertion — no parallel method comparison. This is a deliberate simplification; if method comparison becomes needed, it can be added later by promoting the FK back to PK.
+- **`UnitMatchingMethod` as non-PK FK**: Only one matching result per block. The method is recorded for provenance but does not multiply the key space. This means one canonical set of global units per insertion — no parallel method comparison. This is a deliberate simplification; if method comparison becomes needed, it can be added later by promoting the FK back to PK.
 
-- **`GlobalUnit` is Manual with denormalized electrode**: Populated programmatically by `UnitMatching.make()`, not by DataJoint's `populate()` machinery. This means it cannot be auto-cleared. Orphaned entries (those with no remaining `Unit` references) must be cleaned up explicitly during re-processing. The peak `electrode` is denormalized from `SortedSpikes.Unit` and stored directly on `GlobalUnit`. It is updated each time a new session is matched (latest session = best estimate of the unit's electrode position). This enables a clean unit roster query — `GlobalUnit & insertion_key` returns one row per unit with its electrode, no joins required.
+- **`GlobalUnit` is Manual with denormalized electrode**: Populated programmatically by `UnitMatching.make()`, not by DataJoint's `populate()` machinery. This means it cannot be auto-cleared. Orphaned entries (those with no remaining `Unit` references) must be cleaned up explicitly during re-processing. The peak `electrode` is denormalized from `SortedSpikes.Unit` and stored directly on `GlobalUnit`. It is updated each time a new block is matched (latest block = best estimate of the unit's electrode position). This enables a clean unit roster query — `GlobalUnit & insertion_key` returns one row per unit with its electrode, no joins required.
 
-- **`unique index` on `Spikes`**: The Part table PK includes the master's session key, so the same `(global_unit, chunk_start)` from different sessions would be valid at the PK level. The unique index on `(experiment_name, subject, insertion_number, global_unit, chunk_start)` provides a schema-level guarantee that only one session can own a given (insertion, unit, chunk) pair. The index is scoped per-insertion because `global_unit` IDs are only unique within an insertion — two insertions for the same subject can both have `global_unit=1`.
+- **`unique index` on `Spikes`**: The Part table PK includes the master's block key, so the same `(global_unit, chunk_start)` from different blocks would be valid at the PK level. The unique index on `(experiment_name, subject, insertion_number, global_unit, chunk_start)` provides a schema-level guarantee that only one block can own a given (insertion, unit, chunk) pair. The index is scoped per-insertion because `global_unit` IDs are only unique within an insertion — two insertions for the same subject can both have `global_unit=1`.
 
-- **`UnitMatching.Unit` references `SortedSpikes.Unit` via formal FK**: This enforces referential integrity (can't match a non-existent unit). Since `UnitMatching` sits downstream of `SortedSpikes` in the pipeline, and curation cleanup deletes `UnitMatching` before `SortedSpikes`, cascade ordering is correct.
+- **`UnitMatching.Unit` references `SortedSpikes.Unit` via formal FK**: This enforces referential integrity (cannot match a non-existent unit). Since `UnitMatching` sits downstream of `SortedSpikes` in the pipeline, and curation cleanup deletes `UnitMatching` before `SortedSpikes`, cascade ordering is correct.
 
 ---
 
@@ -147,31 +147,31 @@ erDiagram
 
 ### Matching Method: `spike_time_overlap`
 
-The current (and only) matching method uses SpikeInterface's `compare_two_sorters()` to identify corresponding units between sessions based on spike time coincidence in the overlap window.
+The current (and only) matching method uses SpikeInterface's `compare_two_sorters()` to identify corresponding units between ephys blocks based on spike time coincidence in the overlap window.
 
 #### Steps
 
-1. **Load this session's synced spike times** from `SyncedSpikes.Unit`. Concatenate across chunks per unit. Convert `datetime64[ns]` to epoch seconds for the overlap comparison and SpikeInterface compatibility.
+1. **Load this block's synced spike times** from `SyncedSpikes.Unit`. Concatenate across chunks per unit. Convert `datetime64[ns]` to epoch seconds for the overlap comparison and SpikeInterface compatibility.
 
-2. **Find overlapping previous sessions**: Query all previously-completed `UnitMatching` entries for the same `(experiment_name, subject, insertion_number)`. Filter to those whose `(block_start, block_end)` overlaps with this session's time range.
+2. **Find overlapping previous blocks**: Query all previously-completed `UnitMatching` entries for the same `(experiment_name, subject, insertion_number)`. Filter to those whose `(block_start, block_end)` overlaps with this block's time range.
 
-3. **For each overlapping previous session**:
-   a. Load the previous session's synced spike times (same format).
+3. **For each overlapping previous block**:
+   a. Load the previous block's synced spike times (same format).
    b. Compute the overlap window: `overlap_start = max(this.block_start, prev.block_start)`, `overlap_end = min(this.block_end, prev.block_end)`.
-   c. Restrict both sessions' spike times to the overlap window, converting to relative times (seconds from overlap start).
+   c. Restrict both blocks' spike times to the overlap window, converting to relative times (seconds from overlap start).
    d. Convert to sample indices at 30 kHz and build `NumpySorting` objects.
    e. Run `compare_two_sorters(delta_time=0.4)` (0.4 ms coincidence window).
-   f. Extract matched pairs. For each match, look up the previous session's unit's `global_unit` assignment (via `UnitMatching.Unit`). Assign this session's unit to the same global unit.
+   f. Extract matched pairs. For each match, look up the previous block's unit's `global_unit` assignment (via `UnitMatching.Unit`). Assign this block's unit to the same global unit.
 
 4. **Assign new global units** for unmatched units: find the current maximum `global_unit` ID for this insertion, increment sequentially.
 
 5. **Insert `GlobalUnit`** entries for newly created global units, with peak electrode from `SortedSpikes.Unit`.
 
-6. **Update electrode** on existing `GlobalUnit` entries for matched units (overwrite with this session's peak electrode — latest session = best estimate).
+6. **Update electrode** on existing `GlobalUnit` entries for matched units (overwrite with this block's peak electrode — latest block = best estimate).
 
 7. **Insert `UnitMatching`** master entry with execution metadata. (Master must exist before Part inserts.)
 
-8. **Insert `UnitMatching.Unit`** entries linking each session unit to its global unit.
+8. **Insert `UnitMatching.Unit`** entries linking each block's unit to its global unit.
 
 9. **Insert `UnitMatching.Spikes`** entries following the ownership convention (see next section).
 
@@ -188,25 +188,25 @@ The current (and only) matching method uses SpikeInterface's `compare_two_sorter
 
 ### Problem
 
-When two ephys blocks overlap in time, the same `EphysChunk` (1-hour raw data segment) is sorted independently by both blocks. For a global unit present in both blocks, `SyncedSpikes.Unit` contains spike times from both sessions for the overlapping chunks. Without a convention, `Spikes` would contain duplicate rows for the same `(global_unit, chunk)` from different sessions.
+When two ephys blocks overlap in time, the same `EphysChunk` (1-hour raw data segment) is sorted independently by both blocks. For a global unit present in both blocks, `SyncedSpikes.Unit` contains spike times from both blocks for the overlapping chunks. Without a convention, `Spikes` would contain duplicate rows for the same `(global_unit, chunk)` from different blocks.
 
 Duplicates cause incorrect downstream analysis: inflated spike counts, artificial short ISIs, and wrong firing rate estimates.
 
 ### Convention: Earlier Session Owns
 
-**Rule: for each `(global_unit, chunk)` pair, the first session (in processing order) to write a `Spikes` row wins. Later sessions skip that pair.**
+**Rule: for each `(global_unit, chunk)` pair, the first block (in processing order) to write a `Spikes` row wins. Later blocks skip that pair.**
 
-Since sessions are processed in temporal order, "first to process" = "earlier session" for chunks in the overlap region.
+Since blocks are processed in temporal order, "first to process" = "earlier block" for chunks in the overlap region.
 
 Implementation in `UnitMatching.make()`:
 
 ```python
-for uu_id in this_session_global_units:
-    for chunk_key in this_session_chunks:
-        # Check if ANY session already wrote this (uu, chunk)
-        if self.Spikes & {"global_unit": uu_id, "chunk_start": chunk_key["chunk_start"]}:
-            continue  # earlier session owns it
-        # Get synced spikes for this session's unit in this chunk
+for gu_id in this_block_global_units:
+    for chunk_key in this_block_chunks:
+        # Check if ANY block already wrote this (global_unit, chunk)
+        if self.Spikes & {"global_unit": gu_id, "chunk_start": chunk_key["chunk_start"]}:
+            continue  # earlier block owns it
+        # Get synced spikes for this block's unit in this chunk
         # ... insert if spikes exist
 ```
 
@@ -214,16 +214,16 @@ for uu_id in this_session_global_units:
 
 | Scenario | Behavior |
 |----------|----------|
-| Non-overlapping chunks | Each chunk covered by exactly one session. No ambiguity. |
-| Overlapping chunks, same global unit in both sessions | Earlier session writes the row. Later session skips. |
-| New global unit in later session (not matched to prior) | No prior data exists for this unit. Later session writes all its chunks, including overlap ones. |
-| Unit has no spikes in a chunk (silent period) | No row written. A later session that does have spikes for this unit in this chunk will write it. |
+| Non-overlapping chunks | Each chunk covered by exactly one block. No ambiguity. |
+| Overlapping chunks, same global unit in both blocks | Earlier block writes the row. Later block skips. |
+| New global unit in later block (not matched to prior) | No prior data exists for this unit. Later block writes all its chunks, including overlap ones. |
+| Unit has no spikes in a chunk (silent period) | No row written. A later block that does have spikes for this unit in this chunk will write it. |
 
 ### Invariant
 
-After all sessions are processed, each `(global_unit, chunk_start)` pair appears in **at most one** `UnitMatching.Spikes` row across all sessions. This invariant is enforced at two levels:
+After all blocks are processed, each `(global_unit, chunk_start)` pair appears in **at most one** `UnitMatching.Spikes` row across all blocks. This invariant is enforced at two levels:
 
-1. **Schema-level**: A `unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)` on `Spikes` guarantees that the database rejects any duplicate per-insertion `(global_unit, chunk_start)` insertion, regardless of which session attempts it. The index is scoped per-insertion because `global_unit` IDs are only unique within an insertion. A later session trying to write an already-owned pair will raise an `IntegrityError`.
+1. **Schema-level**: A `unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)` on `Spikes` guarantees that the database rejects any duplicate per-insertion `(global_unit, chunk_start)` insertion, regardless of which block attempts it. The index is scoped per-insertion because `global_unit` IDs are only unique within an insertion. A later block trying to write an already-owned pair will raise an `IntegrityError`.
 
 2. **Code-level**: The `make()` method checks for existing rows before inserting, skipping already-owned pairs. This prevents the `IntegrityError` from ever being raised during normal operation and provides clear logging of skipped chunks.
 
@@ -252,14 +252,14 @@ GlobalUnit (Manual)                    ← NEW (populated by UnitMatching.make()
 
 ### Curation Gate
 
-`UnitMatching.key_source` restricts to sessions that have `ApplyOfficialCuration`. This means:
-- Raw (uncurated) sessions are never matched
+`UnitMatching.key_source` restricts to blocks that have `ApplyOfficialCuration`. This means:
+- Raw (uncurated) blocks are never matched
 - The matching uses curated spike sorting results
 - Changing a curation requires re-running the matching (see next section)
 
 ### Worker Integration
 
-`UnitMatching` is a `Computed` table and can be registered with a DataJoint worker for automated processing. The `key_source` gate (see [Critical Constraint: Temporal Ordering](#critical-constraint-temporal-ordering)) ensures that `populate(reserve_jobs=True)` respects temporal ordering even under parallel execution — workers processing different insertions run in parallel, while sessions within an insertion are serialized automatically.
+`UnitMatching` is a `Computed` table and can be registered with a DataJoint worker for automated processing. The `key_source` gate (see [Critical Constraint: Temporal Ordering](#critical-constraint-temporal-ordering)) ensures that `populate(reserve_jobs=True)` respects temporal ordering even under parallel execution — workers processing different insertions run in parallel, while blocks within an insertion are serialized automatically.
 
 ---
 
@@ -267,14 +267,14 @@ GlobalUnit (Manual)                    ← NEW (populated by UnitMatching.make()
 
 ### Scenario: Re-curation of a Session
 
-When a session's curation is changed (via `restore_raw_sorting()` → new curation → `ApplyOfficialCuration`):
+When a block's curation is changed (via `restore_raw_sorting()` → new curation → `ApplyOfficialCuration`):
 
-1. `restore_raw_sorting()` deletes `UnitMatching` for the session → cascades to `Unit` and `Spikes` Part rows for that session.
-2. Orphaned `GlobalUnit` entries (those with no remaining `Unit` references from any session) are explicitly deleted.
+1. `restore_raw_sorting()` deletes `UnitMatching` for the block → cascades to `Unit` and `Spikes` Part rows for that block.
+2. Orphaned `GlobalUnit` entries (those with no remaining `Unit` references from any block) are explicitly deleted.
 3. `SortedSpikes` and downstream tables are deleted and re-populated with the new curation.
-4. `UnitMatching.populate()` re-runs for the session, re-matching and re-writing `Spikes`.
+4. `UnitMatching.populate()` re-runs for the block, re-matching and re-writing `Spikes`.
 
-**Important**: Later sessions' `UnitMatching` entries are NOT automatically invalidated. If the re-curation changes which units exist or how they match, downstream sessions may have stale global unit assignments. In this case, the user should re-run matching for affected downstream sessions as well.
+**Important**: Later blocks' `UnitMatching` entries are NOT automatically invalidated. If the re-curation changes which units exist or how they match, downstream blocks may have stale global unit assignments. In this case, the user should re-run matching for affected downstream blocks as well.
 
 ### Cascade Behavior
 
@@ -292,7 +292,7 @@ Delete SortedSpikes.Unit
 
 ```
 Step 1: Delete OfficialCuration (cascades to ApplyOfficialCuration)
-Step 2: Delete UnitMatching for this session (cascades to Unit + Spikes)
+Step 2: Delete UnitMatching for this block (cascades to Unit + Spikes)
 Step 3: Delete orphaned GlobalUnit entries
 Step 4: Delete SortedSpikes (cascades to Waveform, SortingQuality, SyncedSpikes)
 ```
@@ -324,7 +324,7 @@ Returns `(experiment_name, subject, insertion_number, global_unit, probe_type, e
 )
 ```
 
-Returns one row per chunk (guaranteed by unique index). Session key fields (block_start, block_end, etc.) exist in the PK but are not fetched.
+Returns one row per chunk (guaranteed by unique index). Block key fields (block_start, block_end, etc.) exist in the PK but are not fetched.
 
 ### Spike times filtered by chunk range (for alignment with other streams)
 
@@ -349,18 +349,18 @@ Returns one row per chunk (guaranteed by unique index). Session key fields (bloc
 )
 ```
 
-### Which sessions contributed to a global unit?
+### Which blocks contributed to a global unit?
 
 ```python
 UnitMatching.Unit & insertion_key & {"global_unit": 5}
 ```
 
-Returns one row per session where the unit was matched, with the session-specific `unit` ID and match confidence.
+Returns one row per block where the unit was matched, with the block-specific `unit` ID and match confidence.
 
-### Global unit assignments for a specific session
+### Global unit assignments for a specific block
 
 ```python
-UnitMatching.Unit & session_key
+UnitMatching.Unit & block_key
 ```
 
 ### Raw (non-deduplicated) spike times via join
@@ -369,7 +369,7 @@ UnitMatching.Unit & session_key
 SyncedSpikes.Unit * UnitMatching.Unit & insertion_key & {"global_unit": 5}
 ```
 
-Returns per-session per-chunk spike times with global unit labels. Overlap chunks appear with multiple rows (one per session). Use `UnitMatching.Spikes` for the deduplicated version.
+Returns per-block per-chunk spike times with global unit labels. Overlap chunks appear with multiple rows (one per block). Use `UnitMatching.Spikes` for the deduplicated version.
 
 ---
 
@@ -377,15 +377,15 @@ Returns per-session per-chunk spike times with global unit labels. Overlap chunk
 
 ### Why `UnitMatchingMethod` is a non-PK FK
 
-**Decision**: One matching result per session. The method is recorded but does not partition the data.
+**Decision**: One matching result per block. The method is recorded but does not partition the data.
 
-**Rationale**: Making it a PK would mean every downstream query must carry `matching_method`, and global units would be scoped per-method (allowing parallel sets). In practice, the team settles on one matching method and uses it consistently. The simpler design avoids combinatorial complexity. If method comparison becomes necessary, the FK can be promoted to PK.
+**Rationale**: Making it a PK would mean every downstream query must carry `matching_method`, and global units would be scoped per-method (allowing parallel sets). In practice, the team uses one matching method consistently. The simpler design avoids combinatorial complexity. If method comparison becomes necessary, the FK can be promoted to PK.
 
 ### Why `Unit` is a Part of `UnitMatching` (not `GlobalUnit`)
 
 **Decision**: `UnitMatching.Unit` instead of `GlobalUnit.Matched`.
 
-**Rationale**: Part table lifecycle should be governed by the master. `Unit` rows are created and destroyed with their session's `UnitMatching` entry. Placing them under `GlobalUnit` (which has a different lifecycle — it persists across sessions) creates cascade problems: deleting `SortedSpikes.Unit` is blocked by `GlobalUnit.Matched`'s FK, requiring `force=True` hacks. Under `UnitMatching`, the cascade is clean: delete `UnitMatching` → cascades to `Unit` and `Spikes`.
+**Rationale**: Part table lifecycle should be governed by the master. `Unit` rows are created and destroyed with their block's `UnitMatching` entry. Placing them under `GlobalUnit` (which has a different lifecycle — it persists across blocks) creates cascade problems: deleting `SortedSpikes.Unit` is blocked by `GlobalUnit.Matched`'s FK, requiring `force=True` hacks. Under `UnitMatching`, the cascade is clean: delete `UnitMatching` → cascades to `Unit` and `Spikes`.
 
 ### Why `Spikes` is a Part of `UnitMatching` (not standalone)
 
@@ -394,12 +394,12 @@ Returns per-session per-chunk spike times with global unit labels. Overlap chunk
 **Alternatives considered**:
 - **Standalone Computed keyed on `(GlobalUnit, EphysChunk)`**: Clean one-row-per-pair semantics, but the cartesian `key_source` (all units x all chunks) is prohibitively large. A restricted `key_source` is complex to express correctly.
 - **No table at all** (use `SyncedSpikes.Unit * UnitMatching.Unit` join): Simplest schema, but overlap chunks produce duplicate rows. Every downstream analysis must implement deduplication.
-- **Part of `UnitMatching`** with ownership convention: Avoids cartesian explosion (scoped to session's chunks). Ownership convention guarantees at most one row per (unit, chunk), enforced by a `unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)` at the schema level. Lifecycle managed by cascade.
+- **Part of `UnitMatching`** with ownership convention: Avoids cartesian explosion (scoped to block's chunks). Ownership convention guarantees at most one row per (unit, chunk), enforced by a `unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)` at the schema level. Lifecycle managed by cascade.
 
-The Part table approach was chosen because it provides pre-materialized, deduplicated spike times (the primary analysis output) while keeping the scope naturally bounded per session.
+The Part table approach was chosen because it provides pre-materialized, deduplicated spike times (the primary analysis output) while keeping the scope naturally bounded per block.
 
 ### Why `GlobalUnit` is Manual (not Computed)
 
 **Decision**: `GlobalUnit` is a Manual table populated programmatically by `UnitMatching.make()`.
 
-**Rationale**: Global units are created incrementally as sessions are processed. They persist across sessions — a global unit created by session 1 is referenced by sessions 2, 3, etc. A Computed table would need a well-defined `key_source` that doesn't exist (you can't predict which global units will be needed before running the matching). The Manual tier correctly reflects that these entries are managed by application logic, not by DataJoint's populate machinery.
+**Rationale**: Global units are created incrementally as blocks are processed. They persist across blocks — a global unit created by block 1 is referenced by blocks 2, 3, etc. A Computed table would need a well-defined `key_source` that doesn't exist (you can't predict which global units will be needed before running the matching). The Manual tier correctly reflects that these entries are managed by application logic, not by DataJoint's populate machinery.

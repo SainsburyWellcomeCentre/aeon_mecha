@@ -164,7 +164,7 @@ class ApplyOfficialCuration(dj.Imported):
         if current_curation_id == curation_id:
             # This curation is already applied
             logger.info(
-                f"Curation (curation_id={curation_id}) is already applied to this session. "
+                f"Curation (curation_id={curation_id}) is already applied to this block. "
                 "No action needed. If you need to reprocess, restore the raw uncurated version first."
             )
             return
@@ -172,7 +172,7 @@ class ApplyOfficialCuration(dj.Imported):
         if current_curation_id is not None and current_curation_id != -1:
             # A different curation is already applied
             raise ValueError(
-                f"A different curation (curation_id={current_curation_id}) has already been applied to this session. "
+                f"A different curation (curation_id={current_curation_id}) has already been applied to this block. "
                 f"Cannot apply curation_id={curation_id}. "
                 "If you want to apply a new curation, the data needs to be reverted to the uncurated version first."
             )
@@ -267,7 +267,7 @@ def launch_spikeinterface_gui(
     if not analyzer_dir.exists():
         raise FileNotFoundError(
             f"Sorting analyzer directory not found: {analyzer_dir}\n"
-            f"Please verify the key is correct and that PreProcessing has been run for this session."
+            f"Please verify the key is correct and that PreProcessing has been run for this block."
         )
 
     # Handle parent curation if specified
@@ -497,7 +497,7 @@ def make_curation_official(key: dict, curation_id: int) -> None:
         existing_curation = (OfficialCuration & sorted_spikes_key).fetch1()
         if existing_curation["curation_id"] != curation_id:
             raise ValueError(
-                f"An official curation already exists for this session "
+                f"An official curation already exists for this block "
                 f"(curation_id={existing_curation['curation_id']}). "
                 f"Please remove it first if you want to set a different one."
             )
@@ -522,8 +522,8 @@ def restore_raw_sorting(key: dict) -> None:
 
     This function:
     1. Deletes the OfficialCuration entry (which cascades to ApplyOfficialCuration)
-    2. Deletes UnitMatching for this session (cascades to .Unit and .Spikes Part rows)
-    3. Deletes orphaned GlobalUnit entries (those with no remaining UnitMatching.Unit refs)
+    2. Deletes UnitMatching for this block (cascades to .Unit and .Spikes Part rows)
+    3. Deletes orphaned GlobalUnit entries (those with no remaining UnitMatching.Unit references)
     4. Deletes the curated SortedSpikes entry (which cascades to downstream tables)
 
     After restoring, re-run SortedSpikes.populate() + SyncedSpikes.populate() to load
@@ -554,12 +554,12 @@ def restore_raw_sorting(key: dict) -> None:
     official_curation.delete(safemode=False)
     logger.info("OfficialCuration and ApplyOfficialCuration entries deleted.")
 
-    # Step 2: Delete UnitMatching for this session
+    # Step 2: Delete UnitMatching for this block
     # Cascades to UnitMatching.Unit and UnitMatching.Spikes Part rows
     unit_matching_entries = spike_sorting.UnitMatching & key
     if unit_matching_entries:
         n_um = len(unit_matching_entries)
-        logger.info(f"Deleting {n_um} UnitMatching entries for this session...")
+        logger.info(f"Deleting {n_um} UnitMatching entries for this block...")
         unit_matching_entries.delete(safemode=False)
         logger.info("UnitMatching entries deleted (cascaded to Unit and Spikes parts).")
 

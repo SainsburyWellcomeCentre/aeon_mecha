@@ -658,7 +658,7 @@ class SortedSpikes(dj.Imported):
                 & key
         )
 
-        # Check if there's an official curation for this session
+        # Check if there's an official curation for this block
         # If so, use the curated analyzer; otherwise use the raw analyzer
         # Use lazy import to avoid circular dependency
         curation_id = -1
@@ -1082,18 +1082,18 @@ class UnitMatchingMethod(dj.Lookup):
     matching_method_description: varchar(1000)
     """
     contents = [
-        ("spike_time_overlap", "Matches units by comparing spike times during overlapping time windows between sessions"),
+        ("spike_time_overlap", "Matches units by comparing spike times during overlapping time windows between ephys blocks"),
     ]
 
 
 @schema
 class GlobalUnit(dj.Manual):
     definition = """
-    # Persistent neuron identity across sessions for the same probe insertion
+    # Persistent neuron identity across ephys blocks for the same probe insertion
     -> ephys.ProbeInsertion
     global_unit: int  # unique ID within this insertion
     ---
-    -> ephys.ProbeType.Electrode  # peak electrode (denormalized, updated each session)
+    -> ephys.ProbeType.Electrode  # peak electrode (denormalized, updated each block)
     global_unit_comment='': varchar(1000)
     """
 
@@ -1131,9 +1131,9 @@ class UnitMatching(dj.Computed):
 
     @property
     def key_source(self):
-        """Only the earliest unprocessed session per insertion (temporal ordering).
+        """Only the earliest unprocessed ephys block per insertion (temporal ordering).
 
-        Ensures that sessions are processed in block_start order within each insertion.
+        Ensures that blocks are processed in block_start order within each insertion.
         Different insertions can be processed in parallel.
         """
         from aeon.dj_pipeline import spike_sorting_curation
@@ -1146,10 +1146,10 @@ class UnitMatching(dj.Computed):
         return candidates * next_per_insertion & "block_start = next_start"
 
     def make(self, key):
-        """Match units from a new session against existing global units.
+        """Match units from a new ephys block against existing global units.
 
-        Sessions must be processed in temporal order (by block_start).
-        Session N compares its units against previously-matched sessions (1..N-1).
+        Blocks must be processed in temporal order (by block_start).
+        Block N compares its units against previously-matched blocks (1..N-1).
 
         Algorithm (spike_time_overlap):
         1. Verify temporal ordering (guard against direct make() calls)
@@ -1175,32 +1175,32 @@ class UnitMatching(dj.Computed):
         unprocessed_earlier = earlier_eligible - self
         if unprocessed_earlier:
             raise ValueError(
-                f"Temporal ordering violation: {len(unprocessed_earlier)} earlier session(s) "
+                f"Temporal ordering violation: {len(unprocessed_earlier)} earlier block(s) "
                 f"for insertion {insertion_key} not yet processed. "
-                f"Sessions must be processed in block_start order."
+                f"Blocks must be processed in block_start order."
             )
 
-        # ---- Load this session's synced spike times ----
+        # ---- Load this block's synced spike times ----
         block_start, block_end = (ephys.EphysBlock & key).fetch1(
             "block_start", "block_end"
         )
 
-        this_session_units = {}
+        this_block_units = {}
         for unit_entry in (SyncedSpikes.Unit & key).fetch(as_dict=True):
             unit_id = unit_entry["unit"]
-            if unit_id not in this_session_units:
-                this_session_units[unit_id] = []
-            this_session_units[unit_id].append(unit_entry["spike_times"])
+            if unit_id not in this_block_units:
+                this_block_units[unit_id] = []
+            this_block_units[unit_id].append(unit_entry["spike_times"])
 
         # Concatenate spike times across chunks per unit, convert to epoch seconds
-        for unit_id in this_session_units:
-            concatenated = np.sort(np.concatenate(this_session_units[unit_id]))
+        for unit_id in this_block_units:
+            concatenated = np.sort(np.concatenate(this_block_units[unit_id]))
             if concatenated.dtype.kind == "M":  # datetime64
                 concatenated = concatenated.astype("datetime64[ns]").astype(np.int64) / 1e9
-            this_session_units[unit_id] = concatenated
+            this_block_units[unit_id] = concatenated
 
-        if not this_session_units:
-            logger.warning(f"No synced spike data found for session {key}. Skipping.")
+        if not this_block_units:
+            logger.warning(f"No synced spike data found for block {key}. Skipping.")
             self.insert1({
                 **key,
                 "matching_method": matching_method,
@@ -1209,21 +1209,21 @@ class UnitMatching(dj.Computed):
             })
             return
 
-        # ---- Find overlapping previous sessions ----
+        # ---- Find overlapping previous blocks ----
         previously_matched = (self & insertion_key).fetch(as_dict=True)
-        overlapping_sessions = [
+        overlapping_blocks = [
             s for s in previously_matched
             if s["block_start"] < block_end and s["block_end"] > block_start
         ]
 
-        # Map: this session's unit_id -> global_unit (if matched)
+        # Map: this block's unit_id -> global_unit (if matched)
         unit_to_global = {}
 
         if not previously_matched:
-            logger.info("First session for this insertion — all units will be new global units.")
-        elif not overlapping_sessions:
+            logger.info("First block for this insertion — all units will be new global units.")
+        elif not overlapping_blocks:
             logger.warning(
-                f"No overlapping sessions found among {len(previously_matched)} previous sessions. "
+                f"No overlapping blocks found among {len(previously_matched)} previous blocks. "
                 f"All units will be assigned new global unit IDs (no temporal overlap for matching)."
             )
 
@@ -1237,15 +1237,15 @@ class UnitMatching(dj.Computed):
             mask = (spike_times_s >= start_s) & (spike_times_s <= end_s)
             return spike_times_s[mask] - start_s
 
-        if overlapping_sessions:
-            for prev_session in overlapping_sessions:
-                overlap_start = max(block_start, prev_session["block_start"])
-                overlap_end = min(block_end, prev_session["block_end"])
+        if overlapping_blocks:
+            for prev_block in overlapping_blocks:
+                overlap_start = max(block_start, prev_block["block_start"])
+                overlap_end = min(block_end, prev_block["block_end"])
                 overlap_start_s = overlap_start.timestamp()
                 overlap_end_s = overlap_end.timestamp()
 
-                # Load previous session's spike times (prev_session has all PK fields)
-                prev_key = prev_session
+                # Load previous block's spike times (prev_block has all PK fields)
+                prev_key = prev_block
                 prev_units = {}
                 for unit_entry in (SyncedSpikes.Unit & prev_key).fetch(as_dict=True):
                     uid = unit_entry["unit"]
@@ -1263,7 +1263,7 @@ class UnitMatching(dj.Computed):
 
                 # Build spike train dicts for the overlap window (sample indices at 30kHz)
                 this_spike_trains = {}
-                for uid, times in this_session_units.items():
+                for uid, times in this_block_units.items():
                     restricted = _restrict_to_overlap(times, overlap_start_s, overlap_end_s)
                     if len(restricted) > 0:
                         this_spike_trains[uid] = (restricted * 30000).astype(np.int64)
@@ -1297,7 +1297,7 @@ class UnitMatching(dj.Computed):
                     if this_uid == -1 or this_uid in unit_to_global:
                         continue
 
-                    # Look up which global unit the previous session's unit belongs to
+                    # Look up which global unit the previous block's unit belongs to
                     gu_match = self.Unit & {**prev_key, "unit": prev_uid}
                     if gu_match:
                         unit_to_global[this_uid] = gu_match.fetch1("global_unit")
@@ -1307,13 +1307,13 @@ class UnitMatching(dj.Computed):
         next_gu_id = int(existing_ids.max()) + 1 if len(existing_ids) > 0 else 1
         n_matched = len(unit_to_global)
 
-        for unit_id in this_session_units:
+        for unit_id in this_block_units:
             if unit_id not in unit_to_global:
                 unit_to_global[unit_id] = next_gu_id
                 next_gu_id += 1
         n_new = len(unit_to_global) - n_matched
 
-        # ---- Get peak electrode for each unit in this session ----
+        # ---- Get peak electrode for each unit in this block ----
         # electrode is a non-PK attribute on SortedSpikes.Unit, so use proj() to include it
         unit_electrodes = {}
         for entry in (SortedSpikes.Unit & key).proj("electrode").fetch(as_dict=True):
@@ -1335,7 +1335,7 @@ class UnitMatching(dj.Computed):
                 # New global unit
                 GlobalUnit.insert1({**gu_key, **electrode})
             else:
-                # Existing global unit — update electrode to latest session's estimate
+                # Existing global unit — update electrode to latest block's estimate
                 GlobalUnit.update1({**gu_key, **electrode})
 
         # ---- Insert master entry ----
@@ -1357,14 +1357,14 @@ class UnitMatching(dj.Computed):
             }, ignore_extra_fields=True)
 
         # ---- Insert UnitMatching.Spikes with ownership convention ----
-        # For each (global_unit, chunk): skip if an earlier session already owns it
-        this_session_chunks = (SyncedSpikes.Unit & key).fetch("KEY")
-        # Get unique chunk_starts for this session
-        chunk_starts = sorted({ck["chunk_start"] for ck in this_session_chunks})
+        # For each (global_unit, chunk): skip if an earlier block already owns it
+        this_block_chunks = (SyncedSpikes.Unit & key).fetch("KEY")
+        # Get unique chunk_starts for this block
+        chunk_starts = sorted({ck["chunk_start"] for ck in this_block_chunks})
 
         for unit_id, gu_id in unit_to_global.items():
             for chunk_start in chunk_starts:
-                # Ownership check: does any session already own this (insertion, unit, chunk)?
+                # Ownership check: does any block already own this (insertion, unit, chunk)?
                 existing = self.Spikes & {
                     **insertion_key,
                     "global_unit": gu_id,
@@ -1373,7 +1373,7 @@ class UnitMatching(dj.Computed):
                 if existing:
                     logger.debug(
                         f"Ownership skip: global_unit={gu_id}, chunk_start={chunk_start} "
-                        f"already owned by earlier session"
+                        f"already owned by earlier block"
                     )
                     continue
 
@@ -1397,7 +1397,7 @@ class UnitMatching(dj.Computed):
                 }, ignore_extra_fields=True)
 
         logger.info(
-            f"Unit matching complete for session {key['block_start']}:\n"
+            f"Unit matching complete for block {key['block_start']}:\n"
             f"  {len(unit_to_global)} units processed\n"
             f"  {n_matched} matched to existing global units\n"
             f"  {n_new} new global units created"
