@@ -106,7 +106,7 @@ UnitMatching (Computed)
         ---
         spike_times: longblob               # float64 epoch seconds (UTC), HARP-synced
         spike_count: int
-        unique index (universal_unit, chunk_start)  # schema-enforced: one row per (unit, chunk)
+        unique index (experiment_name, subject, insertion_number, universal_unit, chunk_start)  # schema-enforced: one row per (insertion, unit, chunk)
 
 UniversalUnit (Manual)
     -> ephys.ProbeInsertion                 # experiment_name, subject, insertion_number
@@ -135,7 +135,7 @@ erDiagram
 
 - **`UniversalUnit` is Manual**: Populated programmatically by `UnitMatching.make()`, not by DataJoint's `populate()` machinery. This means it cannot be auto-cleared. Orphaned entries (those with no remaining `Matched` references) must be cleaned up explicitly during re-processing.
 
-- **`unique index` on `ChunkedSpikeTimes`**: The Part table PK includes the master's session key, so the same `(universal_unit, chunk_start)` from different sessions would be valid at the PK level. The unique index on `(universal_unit, chunk_start)` provides a schema-level guarantee that only one session can own a given (unit, chunk) pair, making the ownership convention a hard constraint rather than a soft convention.
+- **`unique index` on `ChunkedSpikeTimes`**: The Part table PK includes the master's session key, so the same `(universal_unit, chunk_start)` from different sessions would be valid at the PK level. The unique index on `(experiment_name, subject, insertion_number, universal_unit, chunk_start)` provides a schema-level guarantee that only one session can own a given (insertion, unit, chunk) pair. The index is scoped per-insertion because `universal_unit` IDs are only unique within an insertion — two insertions for the same subject can both have `universal_unit=1`.
 
 - **`UnitMatching.Matched` references `SortedSpikes.Unit` via formal FK**: This enforces referential integrity (can't match a non-existent unit). Since `UnitMatching` sits downstream of `SortedSpikes` in the pipeline, and curation cleanup deletes `UnitMatching` before `SortedSpikes`, cascade ordering is correct.
 
@@ -219,7 +219,7 @@ for uu_id in this_session_universal_units:
 
 After all sessions are processed, each `(universal_unit, chunk_start)` pair appears in **at most one** `UnitMatching.ChunkedSpikeTimes` row across all sessions. This invariant is enforced at two levels:
 
-1. **Schema-level**: A `unique index (universal_unit, chunk_start)` on `ChunkedSpikeTimes` guarantees that the database rejects any duplicate `(universal_unit, chunk_start)` insertion, regardless of which session attempts it. A later session trying to write an already-owned pair will raise an `IntegrityError`.
+1. **Schema-level**: A `unique index (experiment_name, subject, insertion_number, universal_unit, chunk_start)` on `ChunkedSpikeTimes` guarantees that the database rejects any duplicate per-insertion `(universal_unit, chunk_start)` insertion, regardless of which session attempts it. The index is scoped per-insertion because `universal_unit` IDs are only unique within an insertion. A later session trying to write an already-owned pair will raise an `IntegrityError`.
 
 2. **Code-level**: The `make()` method checks for existing rows before inserting, skipping already-owned pairs. This prevents the `IntegrityError` from ever being raised during normal operation and provides clear logging of skipped chunks.
 
@@ -358,7 +358,7 @@ UniversalUnit & {"experiment_name": "...", "subject": "...", "insertion_number":
 **Alternatives considered**:
 - **Standalone Computed keyed on `(UniversalUnit, EphysChunk)`**: Clean one-row-per-pair semantics, but the cartesian `key_source` (all units x all chunks) is prohibitively large. A restricted `key_source` is complex to express correctly.
 - **No table at all** (use `SyncedSpikes.Unit * UnitMatching.Matched` join): Simplest schema, but overlap chunks produce duplicate rows. Every downstream analysis must implement deduplication.
-- **Part of `UnitMatching`** with ownership convention: Avoids cartesian explosion (scoped to session's chunks). Ownership convention guarantees at most one row per (unit, chunk), enforced by a `unique index (universal_unit, chunk_start)` at the schema level. Lifecycle managed by cascade.
+- **Part of `UnitMatching`** with ownership convention: Avoids cartesian explosion (scoped to session's chunks). Ownership convention guarantees at most one row per (unit, chunk), enforced by a `unique index (experiment_name, subject, insertion_number, universal_unit, chunk_start)` at the schema level. Lifecycle managed by cascade.
 
 The Part table approach was chosen because it provides pre-materialized, deduplicated spike times (the primary analysis output) while keeping the scope naturally bounded per session.
 
