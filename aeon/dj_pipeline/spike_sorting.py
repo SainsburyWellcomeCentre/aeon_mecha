@@ -1088,12 +1088,24 @@ class UnitMatchingMethod(dj.Lookup):
 
 
 @schema
+class UnitMatchingParamSet(dj.Lookup):
+    definition = """  # Parameter set for unit matching
+    matching_paramset_id: smallint
+    ---
+    -> UnitMatchingMethod
+    matching_paramset_description='': varchar(1000)
+    params: longblob  # dictionary of all applicable parameters
+    """
+
+
+@schema
 class GlobalUnit(dj.Manual):
     definition = """
     # Persistent neuron identity across ephys blocks for the same probe insertion
     -> ephys.ProbeInsertion
     global_unit: int  # unique ID within this insertion
     ---
+    -> UnitMatchingParamSet
     -> ephys.ProbeType.Electrode  # peak electrode (denormalized, updated each block)
     global_unit_comment='': varchar(1000)
     """
@@ -1103,8 +1115,8 @@ class GlobalUnit(dj.Manual):
 class UnitMatching(dj.Computed):
     definition = """
     -> SyncedSpikes
+    -> UnitMatchingParamSet
     ---
-    -> UnitMatchingMethod
     execution_time: datetime
     execution_duration: float  # hours
     """
@@ -1132,19 +1144,22 @@ class UnitMatching(dj.Computed):
 
     @property
     def key_source(self):
-        """Only the earliest unprocessed ephys block per insertion (temporal ordering).
+        """Only the earliest unprocessed ephys block per (insertion, paramset) (temporal ordering).
 
-        Ensures that blocks are processed in block_start order within each insertion.
-        Different insertions can be processed in parallel.
+        Ensures that blocks are processed in block_start order within each
+        (insertion, paramset) combination. Different insertions/paramsets can
+        be processed in parallel.
         """
         from aeon.dj_pipeline import spike_sorting_curation
 
         eligible = SyncedSpikes & spike_sorting_curation.ApplyOfficialCuration
-        candidates = eligible - self
-        next_per_insertion = dj.U(
-            "experiment_name", "subject", "insertion_number"
+        # Cross with all paramsets to produce (block x paramset) candidates
+        all_candidates = eligible * UnitMatchingParamSet
+        candidates = all_candidates - self
+        next_per_group = dj.U(
+            "experiment_name", "subject", "insertion_number", "matching_paramset_id"
         ).aggr(candidates, next_start="MIN(block_start)")
-        return candidates * next_per_insertion & "block_start = next_start"
+        return candidates * next_per_group & "block_start = next_start"
 
     def make(self, key):
         """Match units from a new ephys block against existing global units.
@@ -1164,16 +1179,17 @@ class UnitMatching(dj.Computed):
         from aeon.dj_pipeline import spike_sorting_curation
 
         execution_time = datetime.now(UTC)
-        matching_method = "spike_time_overlap"
+        matching_method = (UnitMatchingParamSet & key).fetch1("matching_method")
 
         insertion_key = {
             k: key[k] for k in ("experiment_name", "subject", "insertion_number")
         }
+        paramset_key = {"matching_paramset_id": key["matching_paramset_id"]}
 
         # ---- Temporal ordering guard ----
         eligible = SyncedSpikes & spike_sorting_curation.ApplyOfficialCuration
         earlier_eligible = eligible & insertion_key & f'block_start < "{key["block_start"]}"'
-        unprocessed_earlier = earlier_eligible - self
+        unprocessed_earlier = (earlier_eligible * UnitMatchingParamSet & paramset_key) - self
         if unprocessed_earlier:
             raise ValueError(
                 f"Temporal ordering violation: {len(unprocessed_earlier)} earlier block(s) "
@@ -1204,14 +1220,13 @@ class UnitMatching(dj.Computed):
             logger.warning(f"No synced spike data found for block {key}. Skipping.")
             self.insert1({
                 **key,
-                "matching_method": matching_method,
                 "execution_time": execution_time,
                 "execution_duration": 0.0,
             })
             return
 
         # ---- Find overlapping previous blocks ----
-        previously_matched = (self & insertion_key).fetch(as_dict=True)
+        previously_matched = (self & insertion_key & paramset_key).fetch(as_dict=True)
         overlapping_blocks = [
             s for s in previously_matched
             if s["block_start"] < block_end and s["block_end"] > block_start
@@ -1304,7 +1319,7 @@ class UnitMatching(dj.Computed):
                         unit_to_global[this_uid] = gu_match.fetch1("global_unit")
 
         # ---- Assign new global units for unmatched units ----
-        existing_ids = (GlobalUnit & insertion_key).fetch("global_unit")
+        existing_ids = (GlobalUnit & insertion_key & paramset_key).fetch("global_unit")
         next_gu_id = int(existing_ids.max()) + 1 if len(existing_ids) > 0 else 1
         n_matched = len(unit_to_global)
 
@@ -1325,7 +1340,7 @@ class UnitMatching(dj.Computed):
 
         # ---- Insert GlobalUnit entries (new) + update electrode (matched) ----
         for unit_id, gu_id in unit_to_global.items():
-            gu_key = {**insertion_key, "global_unit": gu_id}
+            gu_key = {**insertion_key, **paramset_key, "global_unit": gu_id}
             if unit_id not in unit_electrodes:
                 raise ValueError(
                     f"No electrode info found for unit {unit_id} in SortedSpikes.Unit. "
@@ -1343,7 +1358,6 @@ class UnitMatching(dj.Computed):
         execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
         self.insert1({
             **key,
-            "matching_method": matching_method,
             "execution_time": execution_time,
             "execution_duration": execution_duration,
         })

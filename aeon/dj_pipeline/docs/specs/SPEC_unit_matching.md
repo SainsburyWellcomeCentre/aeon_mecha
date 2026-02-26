@@ -49,18 +49,19 @@ Ephys blocks **must** be processed in temporal order (by `block_start`). Block N
 
 This constraint is enforced at two levels:
 
-1. **`key_source` gate**: Only yields the block with the earliest unprocessed `block_start` per insertion. Under `populate(reserve_jobs=True)`, a worker that finishes the earliest block causes the next `key_source` evaluation to advance to the next block. Workers processing different insertions can run in parallel; within an insertion, processing is serialized.
+1. **`key_source` gate**: Only yields the block with the earliest unprocessed `block_start` per (insertion, paramset). Under `populate(reserve_jobs=True)`, a worker that finishes the earliest block causes the next `key_source` evaluation to advance to the next block. Workers processing different insertions or different paramsets can run in parallel; within an (insertion, paramset), processing is serialized.
 
 2. **`make()` guard**: Before processing, verifies that no earlier eligible block (by `block_start`) for the same insertion remains unprocessed. This is a defense-in-depth check that catches direct `make(key)` calls bypassing `key_source`, or hypothetical bugs in the key_source logic.
 
 ```python
-# key_source: only the earliest unprocessed block per insertion
+# key_source: only the earliest unprocessed block per (insertion, paramset)
 eligible = SyncedSpikes & spike_sorting_curation.ApplyOfficialCuration
-candidates = eligible - self
-next_per_insertion = dj.U(
-    "experiment_name", "subject", "insertion_number"
+all_candidates = eligible * UnitMatchingParamSet
+candidates = all_candidates - self
+next_per_group = dj.U(
+    "experiment_name", "subject", "insertion_number", "matching_paramset_id"
 ).aggr(candidates, next_start="MIN(block_start)")
-return candidates * next_per_insertion & "block_start = next_start"
+return candidates * next_per_group & "block_start = next_start"
 ```
 
 ```python
@@ -240,7 +241,7 @@ ProbeInsertion: (experiment_name, subject, insertion_number)
     → EphysBlockInfo
     → SortingTask: + (probe_type, electrode_config_name, electrode_group, sorting_method, paramset_id)
       → PreProcessing → SpikeSorting → PostProcessing → SortedSpikes → SyncedSpikes
-        → UnitMatching
+        → UnitMatching: + (matching_paramset_id)
           → GlobalUnit: (experiment_name, subject, insertion_number, global_unit)
 ```
 
@@ -256,10 +257,17 @@ UnitMatchingMethod (Lookup)
     ---
     matching_method_description: varchar(1000)
 
+UnitMatchingParamSet (Lookup)
+    matching_paramset_id: smallint
+    ---
+    -> UnitMatchingMethod
+    matching_paramset_description='': varchar(1000)
+    params: longblob                        # dictionary of all applicable parameters
+
 UnitMatching (Computed)
     -> SyncedSpikes                         # inherits full block key
+    -> UnitMatchingParamSet                 # PK: which paramset was used
     ---
-    -> UnitMatchingMethod                   # non-PK: which method was used
     execution_time: datetime
     execution_duration: float               # hours
 
@@ -284,6 +292,7 @@ GlobalUnit (Manual)
     -> ephys.ProbeInsertion                 # experiment_name, subject, insertion_number
     global_unit: int                        # unique ID within this insertion
     ---
+    -> UnitMatchingParamSet                 # FK: which paramset produced this unit
     -> ephys.ProbeType.Electrode            # peak electrode (denormalized, updated each block)
     global_unit_comment='': varchar(1000)
 ```
@@ -293,13 +302,15 @@ GlobalUnit (Manual)
 ```mermaid
 erDiagram
     SyncedSpikes ||--o| UnitMatching : "populates"
-    UnitMatchingMethod ||--o| UnitMatching : "FK (matching_method)"
+    UnitMatchingParamSet ||--o{ UnitMatching : "PK (matching_paramset_id)"
+    UnitMatchingMethod ||--o{ UnitMatchingParamSet : "FK (matching_method)"
     UnitMatching ||--o{ "UnitMatching.Unit" : "part"
     UnitMatching ||--o{ "UnitMatching.Spikes" : "part"
     "SortedSpikes.Unit" ||--o| "UnitMatching.Unit" : "FK (unit)"
     GlobalUnit ||--o{ "UnitMatching.Unit" : "FK (global_unit)"
     GlobalUnit ||--o{ "UnitMatching.Spikes" : "FK (global_unit)"
     "ephys.EphysChunk" ||--o{ "UnitMatching.Spikes" : "FK (chunk_start)"
+    UnitMatchingParamSet ||--o{ GlobalUnit : "FK (matching_paramset_id)"
     "ephys.ProbeType.Electrode" ||--o{ GlobalUnit : "FK (electrode)"
     "ephys.ProbeInsertion" ||--|| GlobalUnit : "scopes"
     "ephys.EphysEpoch" ||--o{ "ephys.EphysChunk" : "FK (epoch_start)"
@@ -309,7 +320,7 @@ erDiagram
 
 ### Design Notes
 
-- **`UnitMatchingMethod` as non-PK FK**: Only one matching result per block. The method is recorded for provenance but does not multiply the key space. This means one canonical set of global units per insertion — no parallel method comparison. This is a deliberate simplification; if method comparison becomes needed, it can be added later by promoting the FK back to PK.
+- **`UnitMatchingParamSet` as PK in `UnitMatching`, FK in `GlobalUnit`**: Each block can be matched with multiple parameter sets (different methods or tuning). `UnitMatchingParamSet` is in the PK of `UnitMatching`, so each (block, paramset) is a separate matching result. However, `GlobalUnit` has `UnitMatchingParamSet` as a non-PK FK — a neuron's identity is scoped to the insertion `(experiment_name, subject, insertion_number)`, not to the method that discovered it. The FK records provenance (which paramset produced this global unit).
 
 - **`GlobalUnit` is Manual with denormalized electrode**: Populated programmatically by `UnitMatching.make()`, not by DataJoint's `populate()` machinery. This means it cannot be auto-cleared. Orphaned entries (those with no remaining `Unit` references) must be cleaned up explicitly during re-processing. The peak `electrode` is denormalized from `SortedSpikes.Unit` and stored directly on `GlobalUnit`. It is updated each time a new block is matched (latest block = best estimate of the unit's electrode position). This enables a clean unit roster query — `GlobalUnit & insertion_key` returns one row per unit with its electrode, no joins required.
 
@@ -428,11 +439,12 @@ ProbeInsertion (Manual)                        ← CHANGED: subject in PK, probe
                   → Waveform (Imported)
                   → SortingQuality (Imported)
                   → SyncedSpikes (Imported)
-                    → UnitMatching (Computed)
+                    → UnitMatching (Computed)          ← PK includes UnitMatchingParamSet
                       ├─ .Unit (Part)
                       └─ .Spikes (Part)
 
-GlobalUnit (Manual, populated by UnitMatching.make())
+UnitMatchingMethod (Lookup) → UnitMatchingParamSet (Lookup)
+GlobalUnit (Manual, populated by UnitMatching.make())  ← FK to UnitMatchingParamSet
 ```
 
 ### Ingestion Flow
@@ -462,7 +474,7 @@ Steps 3-5 can run continuously as data arrives. Step 4 only needs the epoch dire
 
 ### Worker Integration
 
-`UnitMatching` is a `Computed` table and can be registered with a DataJoint worker for automated processing. The `key_source` gate (see [Critical Constraint: Temporal Ordering](#critical-constraint-temporal-ordering)) ensures that `populate(reserve_jobs=True)` respects temporal ordering even under parallel execution — workers processing different insertions run in parallel, while blocks within an insertion are serialized automatically.
+`UnitMatching` is a `Computed` table and can be registered with a DataJoint worker for automated processing. The `key_source` gate (see [Critical Constraint: Temporal Ordering](#critical-constraint-temporal-ordering)) ensures that `populate(reserve_jobs=True)` respects temporal ordering even under parallel execution — workers processing different insertions or paramsets run in parallel, while blocks within an (insertion, paramset) are serialized automatically.
 
 ---
 
@@ -628,11 +640,11 @@ The operational cost is small: subject-probe association must be provided (via f
 - **Dependency enforcement**: EphysEpoch must be populated (subject-probe mapping established) before chunks can be created for that epoch. This is the correct ordering.
 - **Real-time compatible**: The FK references `epoch_start`, not `epoch_end`. As soon as an epoch begins and EphysEpoch runs (Metadata.yml exists immediately), the mapping is established. Chunks are ingested as they arrive — no waiting for the epoch to end.
 
-### Why `UnitMatchingMethod` is a non-PK FK
+### Why `UnitMatchingParamSet` is PK in `UnitMatching` but FK in `GlobalUnit`
 
-**Decision**: One matching result per block. The method is recorded but does not partition the data.
+**Decision**: `UnitMatchingParamSet` is part of the `UnitMatching` PK (enabling parallel matching with different parameters), but is a non-PK FK on `GlobalUnit` (a neuron's identity is scoped to the insertion, not the matching method).
 
-**Rationale**: Making it a PK would mean every downstream query must carry `matching_method`, and global units would be scoped per-method (allowing parallel sets). In practice, the team uses one matching method consistently. The simpler design avoids combinatorial complexity. If method comparison becomes necessary, the FK can be promoted to PK.
+**Rationale**: Unit matching is parameterizable — different methods (spike time overlap, template matching) and different tuning (delta_time, sampling frequency) should be explorable in parallel. Making `UnitMatchingParamSet` part of the `UnitMatching` PK allows each (block, paramset) combination to produce independent matching results. However, a global unit represents a physical neuron in a specific subject's brain via a specific probe insertion. Its identity should not depend on how it was discovered. The FK on `GlobalUnit` records which paramset produced the unit for provenance, without fragmenting the global unit namespace.
 
 ### Why `Unit` is a Part of `UnitMatching` (not `GlobalUnit`)
 
