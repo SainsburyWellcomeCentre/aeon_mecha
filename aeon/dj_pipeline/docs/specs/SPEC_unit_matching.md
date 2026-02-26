@@ -668,3 +668,72 @@ The Part table approach was chosen because it provides pre-materialized, dedupli
 **Decision**: `GlobalUnit` is a Manual table populated programmatically by `UnitMatching.make()`.
 
 **Rationale**: Global units are created incrementally as blocks are processed. They persist across blocks — a global unit created by block 1 is referenced by blocks 2, 3, etc. A Computed table would need a well-defined `key_source` that doesn't exist (you can't predict which global units will be needed before running the matching). The Manual tier correctly reflects that these entries are managed by application logic, not by DataJoint's populate machinery.
+
+---
+
+## Alternative Design: Pair-Based Unit Matching
+
+> **Status**: Both designs are implemented. The team will evaluate and choose one.
+
+### Motivation
+
+The sequential `UnitMatching` design auto-selects the next block via `key_source` and enforces strict temporal ordering. The pair-based alternative gives users explicit control over which two blocks to compare, while maintaining the same matching algorithm and GlobalUnit semantics.
+
+### Table Definitions
+
+```
+UnitMatchingPair (Manual)
+    -> SyncedSpikes.proj(earlier_block_start='block_start', earlier_block_end='block_end')
+    -> SyncedSpikes.proj(latter_block_start='block_start', latter_block_end='block_end')
+    -> UnitMatchingParamSet
+
+PairMatching (Computed)
+    -> UnitMatchingPair
+    ---
+    execution_time: datetime
+    execution_duration: float               # hours
+
+    PairMatching.Unit (Part)
+        -> master
+        -> GlobalUnit
+        ---
+        -> [nullable] SortedSpikes.Unit.proj(earlier_block_start='block_start', earlier_block_end='block_end', earlier_unit='unit')
+        -> [nullable] SortedSpikes.Unit.proj(latter_block_start='block_start', latter_block_end='block_end', latter_unit='unit')
+        match_confidence=null: float
+        match_comment='': varchar(1000)
+
+    PairMatching.Spikes (Part)
+        -> master
+        -> GlobalUnit
+        -> ephys.EphysChunk
+        ---
+        spike_times: longblob
+        spike_count: int
+        unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)
+```
+
+### How It Works
+
+The key insight: **this design is functionally equivalent to the sequential design.** In practice, one of the two blocks in a pair has already been matched (its units have GlobalUnit assignments from a previous pair). That block becomes the "anchor." The other block is "new" — its units are compared against the anchor and assigned global units. This is identical to "match one new block to the existing chain."
+
+**Canonical ordering**: `earlier_block_start < latter_block_start` prevents duplicate pairs `(A,B)` / `(B,A)`. The naming is positional, not semantic — either block can be the anchor.
+
+**Anchor determination** (`PairMatching.make()`):
+- If one block has previous `PairMatching.Unit` entries → it's the anchor
+- If both do → earlier block is anchor by convention
+- If neither (seed pair) → earlier block is anchor; all units get fresh global unit IDs
+
+**Constraint**: At least one block must be already matched, unless this is the seed pair (no previous `PairMatching` for this insertion + paramset).
+
+**Unit Part table semantics**: Each `PairMatching.Unit` row is keyed by `(pair_key, global_unit)` and records the unit IDs from both blocks via nullable projected FKs to `SortedSpikes.Unit`. For matched pairs, both `earlier_unit` and `latter_unit` are populated — you can read "unit X in the earlier block matched unit Y in the latter block → GlobalUnit G." For unmatched units (only present in one block), one side is null. The projection renames `block_start`/`block_end`/`unit` to match the master's `earlier_block_start`/`latter_block_start` naming. The `[nullable]` FK provides referential integrity on insert (can't reference a non-existent unit) and `ON DELETE SET NULL` behavior (deleting a `SortedSpikes.Unit` nulls the reference rather than deleting the `PairMatching.Unit` row).
+
+### Comparison with Sequential Design
+
+| Aspect | Sequential (`UnitMatching`) | Pair-Based (`UnitMatchingPair` + `PairMatching`) |
+|--------|----------------------------|--------------------------------------------------|
+| Block selection | Auto (`key_source`, temporal order) | Manual (user picks pairs) |
+| Ordering enforcement | Schema + `key_source` + `make()` guard | `make()` constraint (one must be matched) |
+| Non-adjacent matching | Not supported | Supported (user picks any two blocks) |
+| Method per comparison | Same paramset for all blocks | Different paramset per pair |
+| GlobalUnit / Spikes | Identical semantics | Identical semantics |
+| `SortedSpikes.Unit` FK | Formal FK in Part table | Nullable projected FK (ON DELETE SET NULL) |

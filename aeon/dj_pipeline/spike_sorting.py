@@ -1421,6 +1421,431 @@ class UnitMatching(dj.Computed):
 
 
 
+# ---- Pair-Based Unit Matching (alternative design) ----
+
+
+@schema
+class UnitMatchingPair(dj.Manual):
+    definition = """
+    # User-specified pair of SyncedSpikes for unit matching.
+    # Convention: earlier_block_start < latter_block_start (canonical ordering to prevent duplicates).
+    -> SyncedSpikes.proj(earlier_block_start='block_start', earlier_block_end='block_end')
+    -> SyncedSpikes.proj(latter_block_start='block_start', latter_block_end='block_end')
+    -> UnitMatchingParamSet
+    """
+
+
+@schema
+class PairMatching(dj.Computed):
+    definition = """
+    -> UnitMatchingPair
+    ---
+    execution_time: datetime
+    execution_duration: float  # hours
+    """
+
+    class Unit(dj.Part):
+        definition = """
+        # Unit correspondence between the earlier and latter blocks in this pair.
+        # Each row records one global unit and its unit IDs in each block.
+        # For matched pairs: both earlier_unit and latter_unit are populated.
+        # For unmatched units (only in one block): one side is null.
+        -> master
+        -> GlobalUnit
+        ---
+        -> [nullable] SortedSpikes.Unit.proj(earlier_block_start='block_start', earlier_block_end='block_end', earlier_unit='unit')
+        -> [nullable] SortedSpikes.Unit.proj(latter_block_start='block_start', latter_block_end='block_end', latter_unit='unit')
+        match_confidence=null: float
+        match_comment='': varchar(1000)
+        """
+
+    class Spikes(dj.Part):
+        definition = """
+        # Deduplicated spike times per (global_unit, chunk). Ownership convention:
+        # the first pair to write a (global_unit, chunk) row wins; later pairs skip.
+        -> master
+        -> GlobalUnit
+        -> ephys.EphysChunk
+        ---
+        spike_times: longblob  # datetime64[ns] (UTC), HARP-synced
+        spike_count: int
+        unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)
+        """
+
+    def make(self, key):
+        """Match units between a pair of ephys blocks.
+
+        Determines which block is the "anchor" (already matched in a previous pair)
+        and which is "new". Compares spike times in the overlap region to identify
+        corresponding units. Matched units inherit the anchor's global unit IDs;
+        unmatched units get new global unit IDs.
+
+        For seed pairs (first pair for an insertion — neither block previously matched),
+        all matched unit pairs get fresh global units, and unmatched units each get their own.
+
+        Constraint enforced here: at least one of the two blocks must have been matched
+        in a previous PairMatching, unless this is the seed pair (no PairMatching entries
+        exist for this insertion + paramset).
+
+        Algorithm (spike_time_overlap):
+        1. Determine anchor vs. new block
+        2. Load synced spike times from both blocks
+        3. Compare spike times in overlap region
+        4. Assign global units (inherit or create new)
+        5. Insert GlobalUnit, PairMatching.Unit, PairMatching.Spikes entries
+        """
+        from spikeinterface.comparison import compare_two_sorters
+        from spikeinterface.core import NumpySorting
+
+        execution_time = datetime.now(UTC)
+        matching_method = (UnitMatchingParamSet & key).fetch1("matching_method")
+        params = (UnitMatchingParamSet & key).fetch1("params")
+
+        insertion_key = {
+            k: key[k] for k in ("experiment_name", "subject", "insertion_number")
+        }
+        paramset_key = {"matching_paramset_id": key["matching_paramset_id"]}
+
+        # ---- Build SyncedSpikes keys for both blocks ----
+        # Shared PK fields (same upstream: insertion, electrode group, sorting params)
+        shared_fields = {
+            k: key[k] for k in key
+            if k not in (
+                "earlier_block_start", "earlier_block_end",
+                "latter_block_start", "latter_block_end",
+                "matching_paramset_id",
+            )
+        }
+        earlier_synced_key = {
+            **shared_fields,
+            "block_start": key["earlier_block_start"],
+            "block_end": key["earlier_block_end"],
+        }
+        latter_synced_key = {
+            **shared_fields,
+            "block_start": key["latter_block_start"],
+            "block_end": key["latter_block_end"],
+        }
+
+        # ---- Determine anchor vs. new block ----
+        # A block is "already matched" if it appears as a unit in any previous PairMatching
+        earlier_matched = bool(
+            self.Unit & insertion_key & paramset_key
+            & f'earlier_block_start = "{key["earlier_block_start"]}" '
+            f'OR latter_block_start = "{key["earlier_block_start"]}"'
+        )
+        latter_matched = bool(
+            self.Unit & insertion_key & paramset_key
+            & f'earlier_block_start = "{key["latter_block_start"]}" '
+            f'OR latter_block_start = "{key["latter_block_start"]}"'
+        )
+
+        # Check if any PairMatching exists for this insertion + paramset (seed detection)
+        any_previous = bool(self & insertion_key & paramset_key)
+
+        is_seed = not any_previous
+        if not is_seed and not earlier_matched and not latter_matched:
+            raise ValueError(
+                "Neither block has been matched in a previous pair. "
+                "At least one block must be already matched, unless this is the "
+                "seed pair (no previous PairMatching for this insertion + paramset)."
+            )
+
+        if is_seed:
+            # Seed: earlier block is the anchor by convention
+            anchor_key, new_key = earlier_synced_key, latter_synced_key
+            anchor_is_earlier = True
+            logger.info("Seed pair — earlier block is anchor by convention.")
+        elif earlier_matched and not latter_matched:
+            anchor_key, new_key = earlier_synced_key, latter_synced_key
+            anchor_is_earlier = True
+        elif latter_matched and not earlier_matched:
+            anchor_key, new_key = latter_synced_key, earlier_synced_key
+            anchor_is_earlier = False
+        else:
+            # Both matched — earlier block is anchor by convention
+            anchor_key, new_key = earlier_synced_key, latter_synced_key
+            anchor_is_earlier = True
+            logger.info("Both blocks already matched — earlier block used as anchor.")
+
+        # ---- Load spike times from both blocks ----
+        def _load_block_units(synced_key):
+            """Load and concatenate spike times per unit from SyncedSpikes."""
+            units = {}
+            for entry in (SyncedSpikes.Unit & synced_key).fetch(as_dict=True):
+                uid = entry["unit"]
+                if uid not in units:
+                    units[uid] = []
+                units[uid].append(entry["spike_times"])
+            for uid in units:
+                concatenated = np.sort(np.concatenate(units[uid]))
+                if concatenated.dtype.kind == "M":  # datetime64
+                    concatenated = concatenated.astype("datetime64[ns]").astype(np.int64) / 1e9
+                units[uid] = concatenated
+            return units
+
+        anchor_units = _load_block_units(anchor_key)
+        new_units = _load_block_units(new_key)
+
+        if not new_units:
+            logger.warning(f"No synced spike data in new block. Inserting empty result.")
+            execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
+            self.insert1({**key, "execution_time": execution_time, "execution_duration": execution_duration})
+            return
+
+        # ---- Look up anchor block's existing global unit assignments ----
+        # Query previous PairMatching.Unit entries where the anchor block participated
+        # (it could have been the earlier or latter block in a previous pair)
+        anchor_unit_to_global = {}
+        if not is_seed:
+            anchor_bs = anchor_key["block_start"]
+            # Anchor appeared as the earlier block in a previous pair
+            for entry in (
+                self.Unit & insertion_key & paramset_key
+                & f'earlier_block_start = "{anchor_bs}"'
+            ).fetch(as_dict=True):
+                if entry["earlier_unit"] is not None:
+                    anchor_unit_to_global[entry["earlier_unit"]] = entry["global_unit"]
+            # Anchor appeared as the latter block in a previous pair
+            for entry in (
+                self.Unit & insertion_key & paramset_key
+                & f'latter_block_start = "{anchor_bs}"'
+            ).fetch(as_dict=True):
+                if entry["latter_unit"] is not None:
+                    anchor_unit_to_global[entry["latter_unit"]] = entry["global_unit"]
+
+        # ---- Compare spike times in overlap region ----
+        anchor_start = anchor_key["block_start"]
+        anchor_end = anchor_key["block_end"]
+        new_start = new_key["block_start"]
+        new_end = new_key["block_end"]
+
+        # Convert to timestamps if datetime
+        if hasattr(anchor_start, "timestamp"):
+            anchor_start_s, anchor_end_s = anchor_start.timestamp(), anchor_end.timestamp()
+            new_start_s, new_end_s = new_start.timestamp(), new_end.timestamp()
+        else:
+            anchor_start_s, anchor_end_s = float(anchor_start), float(anchor_end)
+            new_start_s, new_end_s = float(new_start), float(new_end)
+
+        overlap_start_s = max(anchor_start_s, new_start_s)
+        overlap_end_s = min(anchor_end_s, new_end_s)
+
+        unit_to_global = {}  # new block's unit_id -> global_unit
+        matched_anchors = {}  # new block's unit_id -> anchor unit_id it matched to
+
+        if overlap_start_s < overlap_end_s and anchor_units:
+            # Build spike trains restricted to overlap window
+            def _restrict_to_overlap(spike_times_s):
+                if len(spike_times_s) == 0:
+                    return np.array([])
+                mask = (spike_times_s >= overlap_start_s) & (spike_times_s <= overlap_end_s)
+                return spike_times_s[mask] - overlap_start_s
+
+            delta_time = params.get("delta_time", 0.4) if params else 0.4
+            sampling_frequency = params.get("sampling_frequency", 30000) if params else 30000
+
+            anchor_trains = {}
+            for uid, times in anchor_units.items():
+                restricted = _restrict_to_overlap(times)
+                if len(restricted) > 0:
+                    anchor_trains[uid] = (restricted * sampling_frequency).astype(np.int64)
+
+            new_trains = {}
+            for uid, times in new_units.items():
+                restricted = _restrict_to_overlap(times)
+                if len(restricted) > 0:
+                    new_trains[uid] = (restricted * sampling_frequency).astype(np.int64)
+
+            if anchor_trains and new_trains:
+                sorting_anchor = NumpySorting.from_unit_dict(
+                    anchor_trains, sampling_frequency=sampling_frequency
+                )
+                sorting_new = NumpySorting.from_unit_dict(
+                    new_trains, sampling_frequency=sampling_frequency
+                )
+                comparison = compare_two_sorters(
+                    sorting1=sorting_anchor,
+                    sorting2=sorting_new,
+                    sorting1_name="anchor",
+                    sorting2_name="new",
+                    delta_time=delta_time,
+                )
+
+                matched_pairs = comparison.get_matching()
+                for anchor_uid, new_uid in matched_pairs.items():
+                    if new_uid == -1 or new_uid in unit_to_global:
+                        continue
+                    if anchor_uid in anchor_unit_to_global:
+                        unit_to_global[new_uid] = anchor_unit_to_global[anchor_uid]
+                        matched_anchors[new_uid] = anchor_uid
+                    elif is_seed:
+                        # Seed: anchor units don't have global IDs yet, will be assigned below
+                        pass
+        else:
+            if not anchor_units:
+                logger.info("Anchor block has no units.")
+            else:
+                logger.warning("No temporal overlap between the two blocks.")
+
+        # ---- Handle seed case: assign global units to anchor block's units first ----
+        existing_ids = (GlobalUnit & insertion_key).fetch("global_unit")
+        next_gu_id = int(existing_ids.max()) + 1 if len(existing_ids) > 0 else 1
+
+        seed_anchor_assignments = {}
+        if is_seed:
+            for uid in anchor_units:
+                seed_anchor_assignments[uid] = next_gu_id
+                anchor_unit_to_global[uid] = next_gu_id
+                next_gu_id += 1
+
+            # Now resolve matched pairs using the freshly-assigned anchor globals
+            if overlap_start_s < overlap_end_s and anchor_units:
+                # Re-check matched_pairs with the now-populated anchor_unit_to_global
+                if anchor_trains and new_trains:
+                    matched_pairs = comparison.get_matching()
+                    for anchor_uid, new_uid in matched_pairs.items():
+                        if new_uid == -1 or new_uid in unit_to_global:
+                            continue
+                        if anchor_uid in anchor_unit_to_global:
+                            unit_to_global[new_uid] = anchor_unit_to_global[anchor_uid]
+                            matched_anchors[new_uid] = anchor_uid
+
+        # ---- Assign new global units for unmatched new-block units ----
+        n_matched = len(unit_to_global)
+        for uid in new_units:
+            if uid not in unit_to_global:
+                unit_to_global[uid] = next_gu_id
+                next_gu_id += 1
+        n_new = len(unit_to_global) - n_matched
+
+        # ---- Get peak electrode for units ----
+        def _get_unit_electrodes(synced_key):
+            electrodes = {}
+            for entry in (SortedSpikes.Unit & synced_key).proj("electrode").fetch(as_dict=True):
+                electrodes[entry["unit"]] = {
+                    "probe_type": entry["probe_type"],
+                    "electrode": entry["electrode"],
+                }
+            return electrodes
+
+        new_electrodes = _get_unit_electrodes(new_key)
+        anchor_electrodes = _get_unit_electrodes(anchor_key) if is_seed else {}
+
+        # ---- Insert GlobalUnit entries ----
+        # Seed: insert anchor block's global units
+        for uid, gu_id in seed_anchor_assignments.items():
+            gu_key = {**insertion_key, "global_unit": gu_id}
+            if uid in anchor_electrodes:
+                GlobalUnit.insert1(
+                    {**gu_key, **paramset_key, **anchor_electrodes[uid]},
+                    skip_duplicates=True,
+                )
+
+        # New block's global units: insert new, update existing
+        for uid, gu_id in unit_to_global.items():
+            gu_key = {**insertion_key, "global_unit": gu_id}
+            if uid not in new_electrodes:
+                raise ValueError(
+                    f"No electrode info for unit {uid} in SortedSpikes.Unit. Key: {new_key}"
+                )
+            electrode = new_electrodes[uid]
+            if not (GlobalUnit & gu_key):
+                GlobalUnit.insert1({**gu_key, **paramset_key, **electrode})
+            else:
+                GlobalUnit.update1({**gu_key, **paramset_key, **electrode})
+
+        # ---- Insert master entry ----
+        execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
+        self.insert1({
+            **key,
+            "execution_time": execution_time,
+            "execution_duration": execution_duration,
+        })
+
+        # ---- Insert PairMatching.Unit entries ----
+        # Build global_unit -> (earlier_unit, latter_unit) mapping
+        pair_units = {}  # global_unit -> {earlier_unit, latter_unit, match_confidence}
+
+        # Seed: anchor block units
+        if is_seed:
+            for uid, gu_id in seed_anchor_assignments.items():
+                entry = pair_units.setdefault(
+                    gu_id, {"earlier_unit": None, "latter_unit": None, "match_confidence": None}
+                )
+                if anchor_is_earlier:
+                    entry["earlier_unit"] = uid
+                else:
+                    entry["latter_unit"] = uid
+
+        # New block units (matched and unmatched)
+        for new_uid, gu_id in unit_to_global.items():
+            entry = pair_units.setdefault(
+                gu_id, {"earlier_unit": None, "latter_unit": None, "match_confidence": None}
+            )
+            # Place the new unit on the correct side
+            if anchor_is_earlier:
+                entry["latter_unit"] = new_uid
+            else:
+                entry["earlier_unit"] = new_uid
+            # If matched, also record the anchor unit on the other side
+            anchor_uid = matched_anchors.get(new_uid)
+            if anchor_uid is not None:
+                if anchor_is_earlier:
+                    entry["earlier_unit"] = anchor_uid
+                else:
+                    entry["latter_unit"] = anchor_uid
+
+        # Insert Unit Part rows
+        for gu_id, unit_info in pair_units.items():
+            self.Unit.insert1({
+                **key,
+                **insertion_key,
+                "global_unit": gu_id,
+                "earlier_unit": unit_info["earlier_unit"],
+                "latter_unit": unit_info["latter_unit"],
+                "match_confidence": unit_info["match_confidence"],
+            }, ignore_extra_fields=True)
+
+        # ---- Insert PairMatching.Spikes with ownership convention ----
+        def _insert_spikes_for_block(synced_key, block_unit_to_global):
+            chunk_starts = sorted({
+                ck["chunk_start"]
+                for ck in (SyncedSpikes.Unit & synced_key).fetch("KEY")
+            })
+            for uid, gu_id in block_unit_to_global.items():
+                for cs in chunk_starts:
+                    # Ownership check
+                    if self.Spikes & {**insertion_key, "global_unit": gu_id, "chunk_start": cs}:
+                        continue
+                    synced_entry = SyncedSpikes.Unit & {**synced_key, "unit": uid, "chunk_start": cs}
+                    if not synced_entry:
+                        continue
+                    spike_times = synced_entry.fetch1("spike_times")
+                    self.Spikes.insert1({
+                        **key,
+                        **insertion_key,
+                        "global_unit": gu_id,
+                        "chunk_start": cs,
+                        "spike_times": spike_times,
+                        "spike_count": len(spike_times),
+                    }, ignore_extra_fields=True)
+
+        if is_seed:
+            _insert_spikes_for_block(anchor_key, seed_anchor_assignments)
+        _insert_spikes_for_block(new_key, unit_to_global)
+
+        logger.info(
+            f"Pair matching complete:\n"
+            f"  Earlier block: {key['earlier_block_start']}\n"
+            f"  Latter block: {key['latter_block_start']}\n"
+            f"  Seed: {is_seed}\n"
+            f"  {len(unit_to_global)} new-block units processed\n"
+            f"  {n_matched} matched to existing global units\n"
+            f"  {n_new} new global units created"
+        )
+
+
 # ---- Ephys preprocessing with spike interface ----
 
 def ephys_preproc(recording) -> Any:
