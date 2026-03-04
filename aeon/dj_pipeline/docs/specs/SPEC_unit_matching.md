@@ -43,36 +43,48 @@ A **matched unit** links a block-specific `SortedSpikes.Unit` to its assigned gl
 
 The **ownership convention** determines which block "owns" the spike data for a given (global_unit, chunk) pair when multiple blocks cover the same chunk. This prevents duplicate rows in `Spikes`.
 
-### Critical Constraint: Temporal Ordering
+### Critical Constraint: Seed-Based Bidirectional Propagation
 
-Ephys blocks **must** be processed in temporal order (by `block_start`). Block N compares its units against previously-matched blocks (1..N-1). Processing out of order produces incorrect global unit assignments.
+Ephys blocks are processed starting from a user-specified **seed block** (the block with the best signal quality), then propagating outward in both directions. Each `UnitMatchingParamSet` entry specifies a `seed_block_start` — the block from which matching begins.
 
 This constraint is enforced at two levels:
 
-1. **`key_source` gate**: Only yields the block with the earliest unprocessed `block_start` per (insertion, paramset). Under `populate(reserve_jobs=True)`, a worker that finishes the earliest block causes the next `key_source` evaluation to advance to the next block. Workers processing different insertions or different paramsets can run in parallel; within an (insertion, paramset), processing is serialized.
+1. **`key_source` gate**: Yields at most 3 blocks per (insertion, paramset) — the seed (if unprocessed), the forward frontier (nearest unprocessed block after the processed region), and the backward frontier (nearest unprocessed block before the processed region). Workers processing different insertions or paramsets can run in parallel; within an (insertion, paramset), processing is serialized to at most 3 candidates.
 
-2. **`make()` guard**: Before processing, verifies that no earlier eligible block (by `block_start`) for the same insertion remains unprocessed. This is a defense-in-depth check that catches direct `make(key)` calls bypassing `key_source`, or hypothetical bugs in the key_source logic.
+2. **`make()` guard**: Before processing, verifies that either (a) this is the first block and it matches `seed_block_start`, or (b) this block overlaps with at least one previously-matched block. This is a defense-in-depth check that catches direct `make(key)` calls bypassing `key_source`.
 
 ```python
-# key_source: only the earliest unprocessed block per (insertion, paramset)
+# key_source: seed block if unprocessed, else forward/backward frontiers
 eligible = SyncedSpikes & spike_sorting_curation.ApplyOfficialCuration
 all_candidates = eligible * UnitMatchingParamSet
 candidates = all_candidates - self
-next_per_group = dj.U(
-    "experiment_name", "subject", "insertion_number", "matching_paramset_id"
-).aggr(candidates, next_start="MIN(block_start)")
-return candidates * next_per_group & "block_start = next_start"
+
+# Case 1: seed block itself is unprocessed
+seed_candidates = candidates & "block_start = seed_block_start"
+
+# Case 2: seed already processed -> find frontiers
+processed = all_candidates & self
+processed_bounds = dj.U(...).aggr(processed, proc_min="MIN(block_start)", proc_max="MAX(block_start)")
+fwd_candidates = candidates * fwd & "block_start = fwd_start"  # MIN unprocessed > proc_max
+bwd_candidates = candidates * bwd & "block_start = bwd_start"  # MAX unprocessed < proc_min
+
+return seed_candidates + fwd_candidates + bwd_candidates
 ```
 
 ```python
-# make() guard: verify all predecessors are done
-earlier_eligible = eligible & insertion_key & f'block_start < "{key["block_start"]}"'
-unprocessed_earlier = earlier_eligible - self
-if unprocessed_earlier:
-    raise ValueError("Temporal ordering violation: earlier blocks not yet processed.")
+# make() guard: seed-first + overlap check
+previously_matched = (self & insertion_key & paramset_key).fetch(as_dict=True)
+if not previously_matched:
+    # First block must be the seed
+    if key["block_start"] != seed_block_start:
+        raise ValueError("First block must be the seed.")
+else:
+    # Subsequent blocks must overlap with at least one processed block
+    if not any(s["block_start"] < block_end and s["block_end"] > block_start for s in previously_matched):
+        raise ValueError("Block does not overlap with any previously matched block.")
 ```
 
-**Interaction with `reserve_jobs=True`**: When Worker A reserves the earliest block for insertion I1, Worker B's `key_source` also returns that same block (it's not yet in `self`). But the job reservation system prevents B from reserving the already-reserved key. With no other candidates for I1, Worker B idles or processes a different insertion. When A finishes, the next `populate()` cycle advances to the next block.
+**Interaction with `reserve_jobs=True`**: When the seed is consumed, the next `populate()` cycle yields up to 2 frontier blocks (forward and backward). Workers processing different insertions or paramsets run in parallel. Within an (insertion, paramset), the seed must complete before frontiers are yielded, and each frontier must complete before the next frontier in that direction is yielded.
 
 ---
 
@@ -261,6 +273,7 @@ UnitMatchingParamSet (Lookup)
     matching_paramset_id: smallint
     ---
     -> UnitMatchingMethod
+    seed_block_start: datetime(6)           # block_start of the seed block (first to process)
     matching_paramset_description='': varchar(1000)
     params: longblob                        # dictionary of all applicable parameters
 
@@ -669,71 +682,18 @@ The Part table approach was chosen because it provides pre-materialized, dedupli
 
 **Rationale**: Global units are created incrementally as blocks are processed. They persist across blocks — a global unit created by block 1 is referenced by blocks 2, 3, etc. A Computed table would need a well-defined `key_source` that doesn't exist (you can't predict which global units will be needed before running the matching). The Manual tier correctly reflects that these entries are managed by application logic, not by DataJoint's populate machinery.
 
----
+### Why `seed_block_start` on `UnitMatchingParamSet`
 
-## Alternative Design: Pair-Based Unit Matching
+**Decision**: `seed_block_start` is a required dependent attribute on `UnitMatchingParamSet`, not a separate configuration table or a runtime parameter.
 
-> **Status**: Both designs are implemented. The team will evaluate and choose one.
+**Rationale**: Scientists need control over where matching starts — the block with the best signal quality (e.g., highest unit count, cleanest waveforms). Placing the seed on the paramset means:
 
-### Motivation
+1. **Different seeds → different paramset entries**: Even if all other parameters are identical, two paramsets with different seeds produce different matching chains (different propagation order → potentially different global unit assignments). This is correct: the seed is a meaningful parameter that affects the result.
 
-The sequential `UnitMatching` design auto-selects the next block via `key_source` and enforces strict temporal ordering. The pair-based alternative gives users explicit control over which two blocks to compare, while maintaining the same matching algorithm and GlobalUnit semantics.
+2. **Reproducibility**: The seed is recorded as part of the paramset, so the matching result is fully reproducible from the paramset alone.
 
-### Table Definitions
+3. **Bidirectional propagation**: From the seed, `key_source` propagates outward in both directions — forward (toward later blocks) and backward (toward earlier blocks). This eliminates the old restriction that matching must start from the earliest block, which was suboptimal when early blocks have poor signal quality.
 
-```
-UnitMatchingPair (Manual)
-    -> SyncedSpikes.proj(earlier_block_start='block_start', earlier_block_end='block_end')
-    -> SyncedSpikes.proj(latter_block_start='block_start', latter_block_end='block_end')
-    -> UnitMatchingParamSet
+4. **No separate Manual table**: A separate "seed configuration" table would add complexity without benefit. The seed is a matching parameter, not an independent entity.
 
-PairMatching (Computed)
-    -> UnitMatchingPair
-    ---
-    execution_time: datetime
-    execution_duration: float               # hours
-
-    PairMatching.Unit (Part)
-        -> master
-        -> GlobalUnit
-        ---
-        -> [nullable] SortedSpikes.Unit.proj(earlier_block_start='block_start', earlier_block_end='block_end', earlier_unit='unit')
-        -> [nullable] SortedSpikes.Unit.proj(latter_block_start='block_start', latter_block_end='block_end', latter_unit='unit')
-        match_confidence=null: float
-        match_comment='': varchar(1000)
-
-    PairMatching.Spikes (Part)
-        -> master
-        -> GlobalUnit
-        -> ephys.EphysChunk
-        ---
-        spike_times: longblob
-        spike_count: int
-        unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)
-```
-
-### How It Works
-
-The key insight: **this design is functionally equivalent to the sequential design.** In practice, one of the two blocks in a pair has already been matched (its units have GlobalUnit assignments from a previous pair). That block becomes the "anchor." The other block is "new" — its units are compared against the anchor and assigned global units. This is identical to "match one new block to the existing chain."
-
-**Canonical ordering**: `earlier_block_start < latter_block_start` prevents duplicate pairs `(A,B)` / `(B,A)`. The naming is positional, not semantic — either block can be the anchor.
-
-**Anchor determination** (`PairMatching.make()`):
-- If one block has previous `PairMatching.Unit` entries → it's the anchor
-- If both do → earlier block is anchor by convention
-- If neither (seed pair) → earlier block is anchor; all units get fresh global unit IDs
-
-**Constraint**: At least one block must be already matched, unless this is the seed pair (no previous `PairMatching` for this insertion + paramset).
-
-**Unit Part table semantics**: Each `PairMatching.Unit` row is keyed by `(pair_key, global_unit)` and records the unit IDs from both blocks via nullable projected FKs to `SortedSpikes.Unit`. For matched pairs, both `earlier_unit` and `latter_unit` are populated — you can read "unit X in the earlier block matched unit Y in the latter block → GlobalUnit G." For unmatched units (only present in one block), one side is null. The projection renames `block_start`/`block_end`/`unit` to match the master's `earlier_block_start`/`latter_block_start` naming. The `[nullable]` FK provides referential integrity on insert (can't reference a non-existent unit) and `ON DELETE SET NULL` behavior (deleting a `SortedSpikes.Unit` nulls the reference rather than deleting the `PairMatching.Unit` row).
-
-### Comparison with Sequential Design
-
-| Aspect | Sequential (`UnitMatching`) | Pair-Based (`UnitMatchingPair` + `PairMatching`) |
-|--------|----------------------------|--------------------------------------------------|
-| Block selection | Auto (`key_source`, temporal order) | Manual (user picks pairs) |
-| Ordering enforcement | Schema + `key_source` + `make()` guard | `make()` constraint (one must be matched) |
-| Non-adjacent matching | Not supported | Supported (user picks any two blocks) |
-| Method per comparison | Same paramset for all blocks | Different paramset per pair |
-| GlobalUnit / Spikes | Identical semantics | Identical semantics |
-| `SortedSpikes.Unit` FK | Formal FK in Part table | Nullable projected FK (ON DELETE SET NULL) |
+**Alternative rejected: Pair-based matching** (`UnitMatchingPair` + `PairMatching`). This design gave users explicit control over which pairs of blocks to compare, but was functionally equivalent to seed-based sequential matching with extra complexity. The seed-based approach provides the same user control (choosing the starting point) with simpler schema and automatic propagation.
