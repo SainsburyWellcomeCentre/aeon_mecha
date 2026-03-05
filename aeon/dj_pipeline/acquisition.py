@@ -1,21 +1,23 @@
+"""DataJoint schema for the acquisition pipeline."""
+
 import datetime
 import json
 import pathlib
 import re
 
 import datajoint as dj
-import numpy as np
 import pandas as pd
+from swc.aeon.io import api as io_api
+from swc.aeon.io import reader as io_reader
 
-from aeon.analysis import utils as analysis_utils
 from aeon.dj_pipeline import get_schema_name, lab, subject
 from aeon.dj_pipeline.utils import paths
-from aeon.io import api as io_api
-from aeon.io import reader as io_reader
-from aeon.schema import schemas as aeon_schemas
+from aeon.schema import ingestion_schemas as aeon_schemas
+
+schema = dj.schema(get_schema_name("acquisition"))
 
 logger = dj.logger
-schema = dj.schema(get_schema_name("acquisition"))
+
 
 # ------------------- Some Constants --------------------------
 
@@ -35,7 +37,7 @@ class ExperimentType(dj.Lookup):
     experiment_type: varchar(32)
     """
 
-    contents = zip(["foraging", "social"])
+    contents = zip(["foraging", "social"], strict=False)
 
 
 @schema
@@ -63,7 +65,7 @@ class DevicesSchema(dj.Lookup):
     devices_schema_name: varchar(32)
     """
 
-    contents = zip(aeon_schemas.__all__)
+    contents = zip(aeon_schemas.__all__, strict=False)
 
 
 # ------------------- Data repository/directory ------------------------
@@ -75,7 +77,7 @@ class PipelineRepository(dj.Lookup):
     repository_name: varchar(16)
     """
 
-    contents = zip(["ceph_aeon"])
+    contents = zip(["ceph_aeon"], strict=False)
 
 
 @schema
@@ -84,7 +86,7 @@ class DirectoryType(dj.Lookup):
     directory_type: varchar(16)
     """
 
-    contents = zip(["raw", "processed", "qc"])
+    contents = zip(["raw", "processed", "qc"], strict=False)
 
 
 # ------------------- GENERAL INFORMATION ABOUT AN EXPERIMENT --------------------
@@ -136,6 +138,7 @@ class Experiment(dj.Manual):
 
     @classmethod
     def get_data_directory(cls, experiment_key, directory_type="raw", as_posix=False):
+        """Get the data directory for the specified ``experiment_key`` and ``directory_type``."""
         try:
             repo_name, dir_path = (
                 cls.Directory & experiment_key & {"directory_type": directory_type}
@@ -145,7 +148,8 @@ class Experiment(dj.Manual):
 
         dir_path = pathlib.Path(dir_path)
         if dir_path.exists():
-            assert dir_path.is_relative_to(paths.get_repository_path(repo_name))
+            if not dir_path.is_relative_to(paths.get_repository_path(repo_name)):
+                raise ValueError(f"{dir_path} is not relative to the repository path.")
             data_directory = dir_path
         else:
             data_directory = paths.get_repository_path(repo_name) / dir_path
@@ -155,6 +159,7 @@ class Experiment(dj.Manual):
 
     @classmethod
     def get_data_directories(cls, experiment_key, directory_types=None, as_posix=False):
+        """Get the data directories for the specified ``experiment_key`` and ``directory_types``."""
         if directory_types is None:
             directory_types = (cls.Directory & experiment_key).fetch(
                 "directory_type", order_by="load_order"
@@ -164,6 +169,24 @@ class Experiment(dj.Manual):
             for dir_type in directory_types
             if (d := cls.get_data_directory(experiment_key, dir_type, as_posix=as_posix)) is not None
         ]
+
+
+@schema
+class ExperimentTimeline(dj.Manual):
+    definition = """  # different parts of an experiment timeline
+    -> Experiment
+    name: varchar(32)  # e.g. presocial, social, postsocial
+    ---
+    start: datetime
+    end: datetime
+    note='': varchar(1000)
+    """
+
+    class Subject(dj.Part):
+        definition = """  # the subjects participating in this part of the experiment timeline
+        -> master
+        -> Experiment.Subject
+        """
 
 
 # ------------------- ACQUISITION EPOCH --------------------
@@ -223,7 +246,11 @@ class Epoch(dj.Manual):
             with cls.connection.transaction:
                 # insert new epoch
                 cls.insert1(
-                    {**epoch_key, **directory, "epoch_dir": epoch_dir.relative_to(raw_data_dir).as_posix()}
+                    {
+                        **epoch_key,
+                        **directory,
+                        "epoch_dir": epoch_dir.relative_to(raw_data_dir).as_posix(),
+                    }
                 )
                 epoch_list.append(epoch_key)
 
@@ -279,7 +306,7 @@ class EpochConfig(dj.Imported):
         -> master
         ---
         bonsai_workflow: varchar(36)
-        commit: varchar(64)   # e.g. git commit hash of aeon_experiment used to generated this particular epoch
+        commit: varchar(64) # e.g. git commit hash of aeon_experiment used to generate this epoch
         source='': varchar(16)  # e.g. aeon_experiment or aeon_acquisition (or others)
         metadata: longblob
         metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
@@ -300,6 +327,7 @@ class EpochConfig(dj.Imported):
         """
 
     def make(self, key):
+        """Ingest metadata into EpochConfig."""
         from aeon.dj_pipeline.utils import streams_maker
         from aeon.dj_pipeline.utils.load_metadata import (
             extract_epoch_config,
@@ -369,6 +397,31 @@ class Chunk(dj.Manual):
 
     @classmethod
     def ingest_chunks(cls, experiment_name):
+        """Ingest data chunks for a given experiment into the database.
+
+        This method processes and ingests 1-hour data acquisition chunks for a specified experiment.
+        The high-level logic follows these steps:
+        1. Get all chunks from raw data directories using the appropriate device (default: CameraTop)
+        2. For each chunk:
+           - Extract epoch information and validate against existing epochs
+           - Calculate chunk start/end times:
+             * Chunk start is the maximum of chunk name time and epoch start
+             * Chunk end is calculated by adding CHUNK_DURATION (1-hour) using timedelta
+             * Chunk end is adjusted to start of next hour (minutes/seconds/microseconds set to 0)
+             * If epoch end exists, chunk end is capped at epoch end
+           - Skip chunks that have already been ingested
+           - Collect file information for the chunk
+        3. Insert all new chunks and their associated files into the database in a single transaction
+
+        Args:
+            experiment_name (str): Name of the experiment to ingest chunks for
+
+        Note:
+            - Chunks are 1-hour recording periods
+            - Each chunk must belong to a valid epoch
+            - Chunk end times are adjusted to not exceed epoch end times
+            - Files are tracked relative to the repository path
+        """
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
@@ -386,8 +439,13 @@ class Chunk(dj.Manual):
 
             chunk_start = chunk.name
             chunk_start = max(chunk_start, epoch_start)  # first chunk of the epoch starts at epoch_start
-            chunk_end = chunk_start + datetime.timedelta(hours=io_api.CHUNK_DURATION)
 
+            # Calculate chunk_end using timedelta for robust date handling
+            chunk_end = chunk_start + datetime.timedelta(hours=io_api.CHUNK_DURATION)
+            # Chunk should end at the start of the next hour
+            chunk_end = chunk_end.replace(minute=0, second=0, microsecond=0)
+
+            # If there's an epoch end, use that instead
             if EpochEnd & epoch_key:
                 epoch_end = (EpochEnd & epoch_key).fetch1("epoch_end")
                 chunk_end = min(chunk_end, epoch_end)
@@ -516,6 +574,7 @@ class Environment(dj.Imported):
         """
 
     def make(self, key):
+        """Ingest environment data into Environment table."""
         chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
 
         # Populate the part table
@@ -563,10 +622,53 @@ class Environment(dj.Imported):
             )
 
 
+@schema
+class EnvironmentActiveConfiguration(dj.Imported):
+    definition = """  # Environment Active Configuration
+    -> Chunk
+    """
+
+    class Name(dj.Part):
+        definition = """
+        -> master
+        time: datetime(6)  # time when the configuration is applied to the environment
+        ---
+        name: varchar(32)  # name of the environment configuration
+        value: longblob    # dictionary of the configuration
+        """
+
+    def make(self, key):
+        """Ingest active configuration data into EnvironmentActiveConfiguration table."""
+        chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
+        data_dirs = Experiment.get_data_directories(key)
+        devices_schema = getattr(
+            aeon_schemas,
+            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
+                "devices_schema_name"
+            ),
+        )
+        device = devices_schema.Environment
+        stream_reader = device.EnvironmentActiveConfiguration  # expecting columns: time, name, value
+        stream_data = io_api.load(
+            root=data_dirs,
+            reader=stream_reader,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end),
+        )
+
+        stream_data.reset_index(inplace=True)
+        for k, v in key.items():
+            stream_data[k] = v
+
+        self.insert1(key)
+        self.Name.insert(stream_data)
+
+
 # ---- HELPERS ----
 
 
 def _get_all_chunks(experiment_name, device_name):
+    """Get all chunks for the specified ``experiment_name`` and ``device_name``."""
     directory_types = ["quality-control", "raw"]
     raw_data_dirs = {
         dir_type: Experiment.get_data_directory(
@@ -588,6 +690,7 @@ def _get_all_chunks(experiment_name, device_name):
 
 
 def _match_experiment_directory(experiment_name, path, directories):
+    """Match the path to the experiment directory."""
     for k, v in directories.items():
         raw_data_dir = v
         if pathlib.Path(raw_data_dir) in list(path.parents):
@@ -605,10 +708,17 @@ def _match_experiment_directory(experiment_name, path, directories):
 
 def create_chunk_restriction(experiment_name, start_time, end_time):
     """Create a time restriction string for the chunks between the specified "start" and "end" times."""
+    exp_key = {"experiment_name": experiment_name}
     start_restriction = f'"{start_time}" BETWEEN chunk_start AND chunk_end'
     end_restriction = f'"{end_time}" BETWEEN chunk_start AND chunk_end'
-    start_query = Chunk & {"experiment_name": experiment_name} & start_restriction
-    end_query = Chunk & {"experiment_name": experiment_name} & end_restriction
+    start_query = Chunk & exp_key & start_restriction
+    end_query = Chunk & exp_key & end_restriction
+    if not start_query:
+        # No chunk contains the start time, need to find the first chunk that ends after the start time
+        start_query = Chunk & exp_key & f'chunk_start BETWEEN "{start_time}" AND "{end_time}"'
+    if not end_query:
+        # No chunk contains the end time, need to find the last chunk that starts before the end time
+        end_query = Chunk & exp_key & f'chunk_end BETWEEN "{start_time}" AND "{end_time}"'
     if not (start_query and end_query):
         raise ValueError(f"No Chunk found between {start_time} and {end_time}")
     time_restriction = (

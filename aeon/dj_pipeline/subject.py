@@ -1,7 +1,9 @@
+"""DataJoint schema for animal subjects."""
+
 import json
 import os
 import time
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import datajoint as dj
 import requests
@@ -56,6 +58,7 @@ class SubjectDetail(dj.Imported):
     """
 
     def make(self, key):
+        """Automatically import and update entries in the Subject table."""
         eartag_or_id = key["subject"]
         # cage id, sex, line/strain, genetic background, dob, lab id
         params = {
@@ -64,6 +67,7 @@ class SubjectDetail(dj.Imported):
             "o": 0,
             "l": 10,
             "eartag": eartag_or_id,
+            "state": ["live", "sacrificed", "exported"],
         }
         animal_resp = get_pyrat_data(endpoint="animals", params=params)
         if len(animal_resp) == 0:
@@ -105,6 +109,7 @@ class SubjectDetail(dj.Imported):
             "strain_id": animal_resp["strain_id"],
             "cage_number": animal_resp["cagenumber"],
             "lab_id": animal_resp["labid"],
+            "available": animal_resp.get("state", "") == "live",
         }
         if animal_resp["gen_bg_id"] is not None:
             GeneticBackground.insert1(
@@ -173,6 +178,7 @@ class SubjectReferenceWeight(dj.Manual):
 
     @classmethod
     def get_reference_weight(cls, subject_name):
+        """Get the reference weight for the subject."""
         subj_key = {"subject": subject_name}
 
         food_restrict_query = SubjectProcedure & subj_key & "procedure_name = 'R02 - food restriction'"
@@ -181,7 +187,7 @@ class SubjectReferenceWeight(dj.Manual):
                 0
             ]
         else:
-            ref_date = datetime.now().date()
+            ref_date = datetime.now(UTC).date()
 
         weight_query = SubjectWeight & subj_key & f"weight_time < '{ref_date}'"
         ref_weight = (
@@ -191,7 +197,7 @@ class SubjectReferenceWeight(dj.Manual):
         entry = {
             "subject": subject_name,
             "reference_weight": ref_weight,
-            "last_updated_time": datetime.utcnow(),
+            "last_updated_time": datetime.now(UTC),
         }
         cls.update1(entry) if cls & {"subject": subject_name} else cls.insert1(entry)
 
@@ -233,7 +239,8 @@ class PyratIngestion(dj.Imported):
     schedule_interval = 12  # schedule interval in number of hours
 
     def _auto_schedule(self):
-        utc_now = datetime.utcnow()
+        """Automatically schedule the next task."""
+        utc_now = datetime.now(UTC)
 
         next_task_schedule_time = utc_now + timedelta(hours=self.schedule_interval)
         if (
@@ -245,12 +252,15 @@ class PyratIngestion(dj.Imported):
         PyratIngestionTask.insert1({"pyrat_task_scheduled_time": next_task_schedule_time})
 
     def make(self, key):
-        execution_time = datetime.utcnow()
         """Automatically import or update entries in the Subject table."""
+        execution_time = datetime.now(UTC)
         new_eartags = []
         for responsible_id in lab.User.fetch("responsible_id"):
             # 1 - retrieve all animals from this user
-            animal_resp = get_pyrat_data(endpoint="animals", params={"responsible_id": responsible_id})
+            animal_resp = get_pyrat_data(
+                endpoint="animals",
+                params={"responsible_id": responsible_id, "state": ["live", "sacrificed", "exported"]},
+            )
             for animal_entry in animal_resp:
                 # 2 - find animal with comment - Project Aeon
                 eartag_or_id = animal_entry["eartag_or_id"]
@@ -278,7 +288,7 @@ class PyratIngestion(dj.Imported):
             new_entry_count += 1
 
         logger.info(f"Inserting {new_entry_count} new subject(s) from Pyrat")
-        completion_time = datetime.utcnow()
+        completion_time = datetime.now(UTC)
         self.insert1(
             {
                 **key,
@@ -308,7 +318,8 @@ class PyratCommentWeightProcedure(dj.Imported):
     key_source = (PyratIngestion * SubjectDetail) & "available = 1"
 
     def make(self, key):
-        execution_time = datetime.utcnow()
+        """Automatically import or update entries in the PyratCommentWeightProcedure table."""
+        execution_time = datetime.now(UTC)
         logger.info("Extracting weights/comments/procedures")
 
         eartag_or_id = key["subject"]
@@ -318,7 +329,7 @@ class PyratCommentWeightProcedure(dj.Imported):
             if e.args[0].endswith("response code: 404"):
                 SubjectDetail.update1(
                     {
-                        **key,
+                        "subject": key["subject"],
                         "available": False,
                     }
                 )
@@ -347,7 +358,27 @@ class PyratCommentWeightProcedure(dj.Imported):
             # compute/update reference weight
             SubjectReferenceWeight.get_reference_weight(eartag_or_id)
         finally:
-            completion_time = datetime.utcnow()
+            # recheck for "state" to see if the animal is still available
+            animal_resp = get_pyrat_data(
+                endpoint="animals",
+                params={
+                    "k": ["labid", "state"],
+                    "eartag": eartag_or_id,
+                    "state": ["live", "sacrificed", "exported"],
+                },
+            )
+            animal_resp = animal_resp[0]
+            SubjectDetail.update1(
+                {
+                    "subject": key["subject"],
+                    "available": animal_resp.get("state", "") == "live",
+                    "lab_id": animal_resp["labid"],
+                }
+            )
+
+            associate_subject_and_experiment(eartag_or_id)
+
+            completion_time = datetime.now(UTC)
             self.insert1(
                 {
                     **key,
@@ -365,7 +396,7 @@ class CreatePyratIngestionTask(dj.Computed):
 
     def make(self, key):
         """Create one new PyratIngestionTask for every newly added users."""
-        PyratIngestionTask.insert1({"pyrat_task_scheduled_time": datetime.utcnow()})
+        PyratIngestionTask.insert1({"pyrat_task_scheduled_time": datetime.now(UTC)})
         time.sleep(1)
         self.insert1(key)
 
@@ -435,13 +466,18 @@ _pyrat_animal_attributes = [
 
 
 def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
+    """Get data from PyRat API.
+
+    See docs at: https://swc.pyrat.cloud/api/v3/docs (production)
+    """
     base_url = "https://swc.pyrat.cloud/api/v3/"
     pyrat_system_token = os.getenv("PYRAT_SYSTEM_TOKEN")
     pyrat_user_token = os.getenv("PYRAT_USER_TOKEN")
 
     if pyrat_system_token is None or pyrat_user_token is None:
         raise ValueError(
-            "The PYRAT tokens must be defined as an environment variable named 'PYRAT_SYSTEM_TOKEN' and 'PYRAT_USER_TOKEN'"
+            "The PYRAT tokens must be defined as an environment"
+            "variable named 'PYRAT_SYSTEM_TOKEN' and 'PYRAT_USER_TOKEN'"
         )
 
     session = requests.Session()
@@ -461,9 +497,35 @@ def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
 
     response = session.get(base_url + endpoint + params_str, **kwargs)
 
-    if response.status_code != 200:
+    RESPONSE_STATUS_CODE_OK = 200
+
+    if response.status_code != RESPONSE_STATUS_CODE_OK:
         raise requests.exceptions.HTTPError(
             f"PyRat API errored out with response code: {response.status_code}"
         )
 
     return response.json()
+
+
+def associate_subject_and_experiment(subject_name):
+    """Check SubjectComment for experiment name for which the animal is participating in.
+
+    The expected comment format is "experiment: <experiment_name>".
+    E.g. "experiment: social0.3-aeon3"
+    Note: this function many need to run repeatedly to catch all experiments/animals.
+        - an experiment is not yet added when the animal comment is added
+        - the animal comment is not yet added when the experiment is created
+    """
+    from aeon.dj_pipeline import acquisition
+
+    new_entries = []
+    for entry in (
+        SubjectComment.proj("content") & {"subject": subject_name} & "content LIKE 'experiment:%'"
+    ).fetch(as_dict=True):
+        entry.pop("comment_id")
+        entry["experiment_name"] = entry.pop("content").replace("experiment:", "").strip()
+        if (acquisition.Experiment.proj() & entry) and (not acquisition.Experiment.Subject & entry):
+            new_entries.append(entry)
+            logger.info(f"\tNew experiment subject: {entry}")
+
+    acquisition.Experiment.Subject.insert(new_entries)

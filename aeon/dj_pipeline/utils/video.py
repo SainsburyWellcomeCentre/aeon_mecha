@@ -1,12 +1,13 @@
+"""Utility functions for video processing."""
+
 import base64
 from pathlib import Path
 
 import cv2
 import pandas as pd
-
-import aeon.io.reader as io_reader
-from aeon.io import api as io_api
-from aeon.io import video as io_video
+import swc.aeon.io.reader as io_reader
+from swc.aeon.io import api as io_api
+from swc.aeon.io import video as io_video
 
 
 def retrieve_video_frames(
@@ -22,8 +23,8 @@ def retrieve_video_frames(
 ):
     """Retrive video trames from the raw data directory."""
     raw_data_dir = Path(raw_data_dir)
-    assert raw_data_dir.exists()
-
+    if not raw_data_dir.exists():
+        raise FileNotFoundError(f"The specified raw data directory does not exist: {raw_data_dir}")
     # Load video data
     videodata = io_api.load(
         root=raw_data_dir.as_posix(),

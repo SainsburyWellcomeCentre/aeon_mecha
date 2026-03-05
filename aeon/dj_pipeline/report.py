@@ -1,3 +1,5 @@
+"""DataJoint schema dedicated for tables containing figures."""
+
 import datetime
 import json
 import os
@@ -7,21 +9,17 @@ import datajoint as dj
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from swc.aeon.analysis import plotting as analysis_plotting
 
-from aeon.analysis import plotting as analysis_plotting
 from aeon.dj_pipeline.analysis.visit import Visit, VisitEnd
-from aeon.dj_pipeline.analysis.visit_analysis import *
 
-from . import acquisition, analysis, get_schema_name
+from . import acquisition, analysis
+
+logger = dj.logger
 
 # schema = dj.schema(get_schema_name("report"))
 schema = dj.schema()
 os.environ["DJ_SUPPORT_FILEPATH_MANAGEMENT"] = "TRUE"
-
-
-"""
-    DataJoint schema dedicated for tables containing figures
-"""
 
 
 @schema
@@ -44,6 +42,7 @@ class InArenaSummaryPlot(dj.Computed):
     }
 
     def make(self, key):
+        """Make method for InArenaSummaryPlot table."""
         in_arena_start, in_arena_end = (analysis.InArena * analysis.InArenaEnd & key).fetch1(
             "in_arena_start", "in_arena_end"
         )
@@ -192,7 +191,7 @@ class InArenaSummaryPlot(dj.Computed):
                 alpha=0.6,
                 label="nest",
             )
-        for patch_idx, (patch_name, in_patch) in enumerate(zip(patch_names, in_patches)):
+        for patch_idx, (patch_name, in_patch) in enumerate(zip(patch_names, in_patches, strict=False)):
             ethogram_ax.plot(
                 position_minutes_elapsed[in_patch],
                 np.full_like(position_minutes_elapsed[in_patch], (patch_idx + 3)),
@@ -276,12 +275,13 @@ class SubjectRewardRateDifference(dj.Computed):
     -> acquisition.Experiment.Subject
     ---
     in_arena_count: int
-    reward_rate_difference_plotly: longblob  # dictionary storing the plotly object (from fig.to_plotly_json())
+    reward_rate_difference_plotly: longblob  # dict storing the plotly object (from fig.to_plotly_json())
     """
 
     key_source = acquisition.Experiment.Subject & analysis.InArenaRewardRate
 
     def make(self, key):
+        """Insert reward rate differences plot in SubjectRewardRateDifference table."""
         from aeon.dj_pipeline.utils.plotting import plot_reward_rate_differences
 
         fig = plot_reward_rate_differences(key)
@@ -298,7 +298,14 @@ class SubjectRewardRateDifference(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """Each entry in this table correspond to one subject. However, the plot is capturing data for all sessions.Hence a dynamic update routine is needed to recompute the plot as new sessions become available."""
+        """Dynamically update the plot for all sessions.
+
+        Each entry in this table correspond to one subject.
+        However, the plot is capturing data for all sessions.
+        Hence a dynamic update routine is needed to recompute
+        the plot as new sessions become available.
+
+        """
         outdated_entries = (
             cls
             * (
@@ -319,12 +326,13 @@ class SubjectWheelTravelledDistance(dj.Computed):
     -> acquisition.Experiment.Subject
     ---
     in_arena_count: int
-    wheel_travelled_distance_plotly: longblob  # dictionary storing the plotly object (from fig.to_plotly_json())
+    wheel_travelled_distance_plotly: longblob  # dict storing the plotly object (from fig.to_plotly_json())
     """
 
     key_source = acquisition.Experiment.Subject & analysis.InArenaSummary
 
     def make(self, key):
+        """Insert wheel travelled distance plot in SubjectWheelTravelledDistance table."""
         from aeon.dj_pipeline.utils.plotting import plot_wheel_travelled_distance
 
         in_arena_keys = (analysis.InArenaSummary & key).fetch("KEY")
@@ -343,7 +351,13 @@ class SubjectWheelTravelledDistance(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """Each entry in this table correspond to one subject. However the plot is capturing data for all sessions. Hence a dynamic update routine is needed to recompute the plot as new sessions become available."""
+        """Dynamically update the plot for all sessions.
+
+        Each entry in this table correspond to one subject.
+        However the plot is capturing data for all sessions.
+        Hence a dynamic update routine is needed to recompute
+        the plot as new sessions become available.
+        """
         outdated_entries = (
             cls
             * (
@@ -368,6 +382,7 @@ class ExperimentTimeDistribution(dj.Computed):
     """
 
     def make(self, key):
+        """Insert average time distribution plot into ExperimentTimeDistribution table."""
         from aeon.dj_pipeline.utils.plotting import plot_average_time_distribution
 
         in_arena_keys = (analysis.InArenaTimeDistribution & key).fetch("KEY")
@@ -386,7 +401,13 @@ class ExperimentTimeDistribution(dj.Computed):
 
     @classmethod
     def delete_outdated_entries(cls):
-        """Each entry in this table correspond to one subject. However the plot is capturing data for all sessions. Hence a dynamic update routine is needed to recompute the plot as new sessions become available."""
+        """Dynamically update the plot for all sessions.
+
+        Each entry in this table correspond to one subject.
+        However the plot is capturing data for all sessions.
+        Hence a dynamic update routine is needed to recompute
+        the plot as new sessions become available.
+        """
         outdated_entries = (
             cls
             * (
@@ -402,6 +423,7 @@ class ExperimentTimeDistribution(dj.Computed):
 
 
 def delete_outdated_plot_entries():
+    """Delete outdated entries in the tables that store plots."""
     for tbl in (
         SubjectRewardRateDifference,
         SubjectWheelTravelledDistance,
@@ -415,7 +437,7 @@ class VisitDailySummaryPlot(dj.Computed):
     definition = """
     -> Visit
     ---
-    pellet_count_plotly:             longblob  # Dictionary storing the plotly object (from fig.to_plotly_json())
+    pellet_count_plotly:             longblob  # Dict storing the plotly object (from fig.to_plotly_json())
     wheel_distance_travelled_plotly: longblob
     total_distance_travelled_plotly: longblob
     weight_patch_plotly:                longblob
@@ -431,6 +453,7 @@ class VisitDailySummaryPlot(dj.Computed):
     )
 
     def make(self, key):
+        """Make method for VisitDailySummaryPlot table."""
         from aeon.dj_pipeline.utils.plotting import (
             plot_foraging_bouts_count,
             plot_foraging_bouts_distribution,
@@ -530,6 +553,7 @@ class VisitDailySummaryPlot(dj.Computed):
 
 
 def _make_path(in_arena_key):
+    """Make path for saving figures."""
     store_stage = pathlib.Path(dj.config["stores"]["djstore"]["stage"])
     experiment_name, subject, in_arena_start = (analysis.InArena & in_arena_key).fetch1(
         "experiment_name", "subject", "in_arena_start"
@@ -540,8 +564,9 @@ def _make_path(in_arena_key):
 
 
 def _save_figs(figs, fig_names, save_dir, prefix, extension=".png"):
+    """Save figures and return a dictionary with figure names and file paths."""
     fig_dict = {}
-    for fig, figname in zip(figs, fig_names):
+    for fig, figname in zip(figs, fig_names, strict=False):
         fig_fp = save_dir / (prefix + "_" + figname + extension)
         fig.tight_layout()
         fig.savefig(fig_fp, dpi=300)
