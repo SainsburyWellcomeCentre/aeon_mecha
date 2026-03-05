@@ -21,7 +21,7 @@ resolution-markers = [
 
 [[package]]
 name = "aeon-mecha"
-version = "0.2.3"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "bottleneck" },
