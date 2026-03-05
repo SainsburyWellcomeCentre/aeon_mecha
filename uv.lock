@@ -3899,7 +3899,7 @@ dependencies = [
 [[package]]
 name = "swc-aeon-rigs-foragingabc"
 version = "0.0.1"
-source = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=tn%2Fdata-api-updated#cc40f219147825414f4cd1d7f734c9c31809577a" }
+source = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=tn%2Fdata-api-updated#f0f02e72a86cbeace062ec4795fee9cbbdc9aed9" }
 dependencies = [
     { name = "dotmap" },
     { name = "gitpython" },

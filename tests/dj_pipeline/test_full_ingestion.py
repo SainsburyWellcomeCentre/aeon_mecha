@@ -216,14 +216,19 @@ class TestStreamDataIngestion:
         for table_name, table in stream_tables:
             try:
                 table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
-                count = len(table & {"experiment_name": cfg["experiment_name"]})
-                results[table_name] = count
+                total = len(table & {"experiment_name": cfg["experiment_name"]})
+                with_data = len(
+                    table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
+                )
+                results[table_name] = {"total": total, "with_data": with_data}
             except Exception as e:
                 results[table_name] = f"error: {e}"
 
-        # At least some tables should populate successfully
-        populated = {k: v for k, v in results.items() if isinstance(v, int) and v > 0}
-        assert len(populated) > 0, f"No stream tables populated. Results: {results}"
+        # At least some tables should have entries with actual data (sample_count > 0)
+        with_data = {
+            k: v for k, v in results.items() if isinstance(v, dict) and v["with_data"] > 0
+        }
+        assert len(with_data) > 0, f"No stream tables with sample_count > 0. Results: {results}"
 
     def test_video_stream_has_data(self, test_epochs, full_pipeline, golden_dataset_config):
         """Verify at least one Video stream populated with data."""
@@ -251,13 +256,13 @@ class TestStreamDataIngestion:
         for table_name, table in video_tables:
             table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
 
-        # Check at least one video entry exists
+        # Check at least one video entry has actual data (sample_count > 0)
         for table_name, table in video_tables:
-            entries = (table & {"experiment_name": cfg["experiment_name"]}).to_dicts()
-            if entries:
+            query = table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
+            if len(query):
                 return  # Success
 
-        pytest.fail("No Video stream entries populated")
+        pytest.fail("No Video stream entries with sample_count > 0")
 
     def test_harp_stream_has_data(self, test_epochs, full_pipeline, golden_dataset_config):
         """Verify at least one Harp-based stream populated."""
@@ -286,10 +291,169 @@ class TestStreamDataIngestion:
         for table_name, table in harp_tables:
             table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
 
-        # Check at least one has data
+        # Check at least one has actual data (sample_count > 0)
         for table_name, table in harp_tables:
-            count = len(table & {"experiment_name": cfg["experiment_name"]})
-            if count > 0:
+            query = table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
+            if len(query):
                 return  # Success
 
-        pytest.fail("No Harp stream entries populated")
+        pytest.fail("No Harp stream entries with sample_count > 0")
+
+
+# =============================================================================
+# fetch_stream Tests (uses populated stream data from above)
+# =============================================================================
+
+
+@pytest.mark.integration
+class TestFetchStream:
+    """Test fetch_stream() with real populated stream data.
+
+    fetch_stream is the primary data access function for stream tables.
+    It fetches blob columns, explodes arrays into rows, and returns a
+    time-indexed DataFrame. These tests validate the full round-trip:
+    raw data -> DB -> fetch_stream -> DataFrame.
+    """
+
+    POPULATE_LIMIT = 10
+
+    def _ensure_stream_data(self, full_pipeline, golden_dataset_config):
+        """Ensure stream data is populated (idempotent)."""
+        import datajoint as dj
+
+        acquisition = full_pipeline["acquisition"]
+        streams = full_pipeline["streams"]
+        cfg = golden_dataset_config
+
+        acquisition.EpochConfig.populate()
+        acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
+
+        # Populate all stream tables
+        for name in dir(streams):
+            if name.startswith("_"):
+                continue
+            obj = getattr(streams, name, None)
+            if isinstance(obj, type) and issubclass(obj, dj.Imported) and obj is not dj.Imported:
+                obj.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+
+    def _find_stream_with_data(self, streams, cfg, name_filter=None):
+        """Find a stream table with sample_count > 0 data."""
+        import datajoint as dj
+
+        for name in dir(streams):
+            if name.startswith("_"):
+                continue
+            if name_filter and not name_filter(name):
+                continue
+            obj = getattr(streams, name, None)
+            if isinstance(obj, type) and issubclass(obj, dj.Imported):
+                query = obj & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
+                if len(query):
+                    return name, obj, query
+        return None
+
+    def test_fetch_stream_returns_dataframe(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify fetch_stream returns a non-empty time-indexed DataFrame."""
+        import pandas as pd
+
+        from aeon.dj_pipeline import fetch_stream
+
+        self._ensure_stream_data(full_pipeline, golden_dataset_config)
+        streams = full_pipeline["streams"]
+        cfg = golden_dataset_config
+
+        result = self._find_stream_with_data(streams, cfg)
+        if result is None:
+            pytest.fail("No stream table with sample_count > 0 found")
+
+        name, table, query = result
+        df = fetch_stream(query)
+        assert isinstance(df, pd.DataFrame)
+        assert df.index.name == "time"
+        assert not df.empty
+
+    def test_fetch_stream_video_columns(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify fetch_stream on CameraVideo returns expected columns."""
+        from aeon.dj_pipeline import fetch_stream
+
+        self._ensure_stream_data(full_pipeline, golden_dataset_config)
+        streams = full_pipeline["streams"]
+        cfg = golden_dataset_config
+
+        result = self._find_stream_with_data(
+            streams, cfg, name_filter=lambda n: "CameraVideo" in n
+        )
+        if result is None:
+            pytest.skip("No CameraVideo data populated")
+
+        name, table, query = result
+        df = fetch_stream(query)
+        assert df.index.name == "time"
+        assert "hw_counter" in df.columns
+        assert "hw_timestamp" in df.columns
+        assert len(df) > 0
+
+    def test_fetch_stream_harp_columns(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify fetch_stream on a Harp stream returns expected columns."""
+        from aeon.dj_pipeline import fetch_stream
+
+        self._ensure_stream_data(full_pipeline, golden_dataset_config)
+        streams = full_pipeline["streams"]
+        cfg = golden_dataset_config
+
+        harp_indicators = ["BeamBreak", "Encoder", "DeliverPellet"]
+        result = self._find_stream_with_data(
+            streams, cfg, name_filter=lambda n: any(h in n for h in harp_indicators)
+        )
+        if result is None:
+            pytest.skip("No Harp stream data populated")
+
+        name, table, query = result
+        df = fetch_stream(query)
+        assert df.index.name == "time"
+        assert len(df) > 0
+        assert len(df.columns) > 0
+
+    def test_fetch_stream_drop_pk(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify drop_pk=True removes primary key columns from result."""
+        from aeon.dj_pipeline import fetch_stream
+
+        self._ensure_stream_data(full_pipeline, golden_dataset_config)
+        streams = full_pipeline["streams"]
+        cfg = golden_dataset_config
+
+        result = self._find_stream_with_data(streams, cfg)
+        if result is None:
+            pytest.fail("No stream table with data found")
+
+        name, table, query = result
+        pk_cols = query.primary_key
+
+        df_dropped = fetch_stream(query, drop_pk=True)
+        for pk in pk_cols:
+            assert pk not in df_dropped.columns
+
+        df_kept = fetch_stream(query, drop_pk=False)
+        pk_in_result = [pk for pk in pk_cols if pk in df_kept.columns]
+        assert len(pk_in_result) > 0
+
+    def test_fetch_stream_timestamps_rounded(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify round_microseconds option works correctly."""
+        import numpy as np
+
+        from aeon.dj_pipeline import fetch_stream
+
+        self._ensure_stream_data(full_pipeline, golden_dataset_config)
+        streams = full_pipeline["streams"]
+        cfg = golden_dataset_config
+
+        result = self._find_stream_with_data(streams, cfg)
+        if result is None:
+            pytest.skip("No stream data found")
+
+        name, table, query = result
+        df = fetch_stream(query, round_microseconds=True)
+        assert not df.empty
+        # Timestamps should be rounded to microseconds (no sub-us precision)
+        nanos = df.index.astype(np.int64)
+        assert all(nanos % 1000 == 0), "Timestamps should be rounded to microseconds"
