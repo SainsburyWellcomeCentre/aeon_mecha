@@ -29,7 +29,7 @@ class StreamType(dj.Lookup):
     ---
     stream_type: varchar(36)  # stream type name, e.g., "Video", "BeamBreak"
     stream_reader: varchar(256)  # reader class path for documentation, e.g., "swc.aeon.io.reader.Video"
-    stream_reader_kwargs=null: longblob  # JSON dict of reader constructor kwargs (value, tag, columns, etc.)
+    stream_reader_kwargs=null: <blob>  # JSON dict of reader constructor kwargs (value, tag, columns, etc.)
     stream_description='': varchar(256)
     unique index(stream_type, stream_reader)
     """
