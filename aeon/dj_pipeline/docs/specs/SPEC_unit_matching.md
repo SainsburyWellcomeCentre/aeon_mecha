@@ -396,7 +396,6 @@ Duplicates cause incorrect downstream analysis: inflated spike counts, artificia
 
 **Rule: for each `(global_unit, chunk)` pair, the first block (in processing order) to write a `Spikes` row wins. Later blocks skip that pair.**
 
-Since blocks are processed in temporal order, "first to process" = "earlier block" for chunks in the overlap region.
 
 Implementation in `UnitMatching.make()`:
 
