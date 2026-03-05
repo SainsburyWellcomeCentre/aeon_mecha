@@ -93,6 +93,26 @@ octagon01 = DotMap(
     ]
 )
 
+octagon02 = DotMap(
+    [
+        Device("Metadata", core.Metadata),
+        Device("CameraTop", Video, core.Position),
+        Device("CameraColorTop", Video),
+        Device("ExperimentalMetadata", core.SubjectState),
+        Device("Photodiode", octagon.Photodiode),
+        Device("OSC", octagon.OSC),
+        Device("TaskLogic", octagon.TaskLogic),
+        Device("Wall1", octagon.Wall),
+        Device("Wall2", octagon.Wall),
+        Device("Wall3", octagon.Wall),
+        Device("Wall4", octagon.Wall),
+        Device("Wall5", octagon.Wall),
+        Device("Wall6", octagon.Wall),
+        Device("Wall7", octagon.Wall),
+        Device("Wall8", octagon.Wall),
+    ]
+)
+
 exp01 = DotMap(
     [
         Device("SessionData", foraging.SessionData),
