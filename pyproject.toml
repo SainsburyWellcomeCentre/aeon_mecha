@@ -22,8 +22,7 @@ license = { file = "license.md" }
 readme = "readme.md"
 dependencies = [
   "bottleneck>=1.2.1,<2",
-  "datajoint>=0.13.7",
-  "datajoint-utilities @ git+https://github.com/datajoint-company/datajoint-utilities",
+  "datajoint>=2.1.0",
   "swc-aeon>=0.1.0",
   "fastparquet",
   "graphviz",
@@ -63,9 +62,6 @@ docs = [
   "sphinx",
 ]
 gpu = ["cupy", "dask"]
-
-[project.scripts]
-aeon_ingest = "aeon.dj_pipeline.populate.process:cli"
 
 [project.urls]
 Homepage = "https://sainsburywellcomecentre.github.io/aeon_docs/"

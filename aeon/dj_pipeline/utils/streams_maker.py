@@ -40,7 +40,7 @@ class StreamType(dj.Lookup):
     ---
     stream_type: varchar(36)  # stream type name, e.g., "Video", "BeamBreak"
     stream_reader: varchar(256)  # reader class path for documentation, e.g., "swc.aeon.io.reader.Video"
-    stream_reader_kwargs=null: longblob  # JSON dict of reader constructor kwargs (value, tag, columns, etc.)
+    stream_reader_kwargs=null: <blob>  # JSON dict of reader constructor kwargs (value, tag, columns, etc.)
     stream_description='': varchar(256)
     unique index(stream_type, stream_reader)
     """
@@ -113,7 +113,7 @@ def get_device_template(device_type: str):
             -> master
             attribute_name          : varchar(32)
             ---
-            attribute_value=null    : longblob
+            attribute_value=null    : <blob>
             """
 
         class RemovalTime(dj.Part):
@@ -195,15 +195,15 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
     -> {device_type}
     -> acquisition.Chunk
     ---
-    sample_count: int      # number of data points acquired from this stream for a given chunk
-    timestamps: longblob   # (datetime) timestamps of {stream_type} data
+    sample_count: int32      # number of data points acquired from this stream for a given chunk
+    timestamps: <blob>   # (datetime) timestamps of {stream_type} data
     """
 
     for col in columns:
         if col.startswith("_"):
             continue
         new_col = re.sub(r"\([^)]*\)", "", col)
-        table_definition += f"{new_col}: longblob\n    "
+        table_definition += f"{new_col}: <blob>\n    "
 
     class DeviceDataStream(dj.Imported):
         definition = table_definition
@@ -296,7 +296,7 @@ def main(create_tables=True):
 
     if create_tables:
         # Create DeviceType tables.
-        for device_info in streams.DeviceType.fetch(as_dict=True):
+        for device_info in streams.DeviceType.to_dicts():
             if hasattr(streams, device_info["device_type"]):
                 continue
 
@@ -324,7 +324,7 @@ def main(create_tables=True):
 
         # Create DeviceDataStream tables.
         # Join with StreamType to get stream_type (DeviceType.Stream only has stream_hash FK)
-        for device_info in (streams.DeviceType.Stream * streams.StreamType).fetch(as_dict=True):
+        for device_info in (streams.DeviceType.Stream * streams.StreamType).to_dicts():
             device_type = device_info["device_type"]
             stream_type = device_info["stream_type"]
             table_name = f"{device_type}{stream_type}"

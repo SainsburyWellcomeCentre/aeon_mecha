@@ -1,5 +1,6 @@
 """DataJoint pipeline for Aeon."""
 
+import json
 import logging
 import os
 
@@ -10,16 +11,16 @@ from aeon.dj_pipeline.utils import dict_to_uuid
 
 logger = dj.logger
 
-_default_database_prefix = os.getenv("DJ_DB_PREFIX") or "aeon_"
+_default_database_prefix = "aeon_"
 _default_repository_config = {"ceph_aeon": "/ceph/aeon"}
 
-# safe-guard in case `custom` is not provided
-if "custom" not in dj.config:
-    dj.config["custom"] = {}
+db_prefix = dj.config.database.database_prefix or os.getenv("DJ_DB_PREFIX") or _default_database_prefix
 
-db_prefix = dj.config["custom"].get("database.prefix", _default_database_prefix)
-
-repository_config = dj.config["custom"].get("repository_config", _default_repository_config)
+repository_config = (
+    json.loads(os.environ["DJ_REPOSITORY_CONFIG"])
+    if "DJ_REPOSITORY_CONFIG" in os.environ
+    else _default_repository_config
+)
 
 
 def get_schema_name(name) -> str:
@@ -39,9 +40,9 @@ def fetch_stream(query, drop_pk=True, round_microseconds=True):
         round_microseconds (bool, optional): Round timestamps to microseconds. Defaults to True.
             (this is important as timestamps in mysql is only accurate to microseconds)
     """
-    df = (query & "sample_count > 0").fetch(format="frame").reset_index()
+    df = (query & "sample_count > 0").to_pandas().reset_index()
     cols2explode = [
-        c for c in query.heading.secondary_attributes if query.heading.attributes[c].type == "longblob"
+        c for c in query.heading.secondary_attributes if query.heading.attributes[c].is_blob
     ]
     df = df.explode(column=cols2explode)
     cols2drop = ["sample_count"] + (query.primary_key if drop_pk else [])

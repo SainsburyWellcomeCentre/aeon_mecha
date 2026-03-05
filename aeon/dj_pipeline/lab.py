@@ -4,7 +4,7 @@ import datajoint as dj
 
 from . import get_schema_name
 
-schema = dj.schema(get_schema_name("lab"))
+schema = dj.Schema(get_schema_name("lab"))
 logger = dj.logger
 
 
@@ -17,7 +17,7 @@ class Colony(dj.Lookup):
     definition = """
     subject                 : varchar(32)
     ---
-    reference_weight=null   : float
+    reference_weight=null   : float32
     sex='U'                 : enum('M', 'F', 'U')
     subject_birth_date=null : date  # date of birth
     note=''                 : varchar(1024)
@@ -103,9 +103,9 @@ class Arena(dj.Lookup):
     ---
     arena_description='': varchar(1000)
     -> ArenaShape
-    arena_x_dim:    float # (m) x-dimension of the bounding box of this arena
-    arena_y_dim:    float # (m) y-dimension of the bounding box of this arena
-    arena_z_dim=0:  float # (m) z-dimension of this arena (e.g. wall height)
+    arena_x_dim:    float32 # (m) x-dimension of the bounding box of this arena
+    arena_y_dim:    float32 # (m) y-dimension of the bounding box of this arena
+    arena_z_dim=0:  float32 # (m) z-dimension of this arena (e.g. wall height)
     """
 
     contents = [
@@ -118,17 +118,17 @@ class Arena(dj.Lookup):
 class ArenaNest(dj.Manual):
     definition = """
     -> Arena
-    nest: int  # nest number - e.g. 1, 2, ...
+    nest: int32  # nest number - e.g. 1, 2, ...
     """
 
     class Vertex(dj.Part):
         definition = """
         -> master
-        vertex: int
+        vertex: int32
         ---
-        vertex_x: float    # (m) x-coordinate of the vertex, in the arena's coordinate frame
-        vertex_y: float    # (m) y-coordinate of the vertex, in the arena's coordinate frame
-        vertex_z=0: float  # (m) z-coordinate of the vertex, in the arena's coordinate frame
+        vertex_x: float32    # (m) x-coordinate of the vertex, in the arena's coordinate frame
+        vertex_y: float32    # (m) y-coordinate of the vertex, in the arena's coordinate frame
+        vertex_z=0: float32  # (m) z-coordinate of the vertex, in the arena's coordinate frame
         """
 
 
@@ -136,15 +136,15 @@ class ArenaNest(dj.Manual):
 class ArenaTile(dj.Manual):
     definition = """
     -> Arena
-    tile: int
+    tile: int32
     """
 
     class Vertex(dj.Part):
         definition = """
         -> master
-        vertex: int
+        vertex: int32
         ---
-        vertex_x: float    # (m) x-coordinate of the vertex, in the arena's coordinate frame
-        vertex_y: float    # (m) y-coordinate of the vertex, in the arena's coordinate frame
-        vertex_z=0: float  # (m) z-coordinate of the vertex, in the arena's coordinate frame
+        vertex_x: float32    # (m) x-coordinate of the vertex, in the arena's coordinate frame
+        vertex_y: float32    # (m) y-coordinate of the vertex, in the arena's coordinate frame
+        vertex_z=0: float32  # (m) z-coordinate of the vertex, in the arena's coordinate frame
         """

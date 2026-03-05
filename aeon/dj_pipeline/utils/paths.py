@@ -4,14 +4,11 @@ from __future__ import annotations
 
 import pathlib
 
-from aeon.dj_pipeline import repository_config
+import aeon.dj_pipeline as _pipeline
 
 
 def get_repository_path(repository_name: str) -> pathlib.Path:
     """Find the directory's full-path corresponding to a given repository_name.
-
-    This function looks up the repository path based on the provided repository_name
-    using the configuration stored in dj.config['custom']['repository_config'].
 
     Args:
         repository_name (str): The name of the repository to find.
@@ -19,7 +16,7 @@ def get_repository_path(repository_name: str) -> pathlib.Path:
     Returns:
         pathlib.Path: The full path to the directory corresponding to the repository_name.
     """
-    repo_path = repository_config.get(repository_name)
+    repo_path = _pipeline.repository_config.get(repository_name)
     if repo_path is None:
         raise ValueError(f"Repository name not configured: {repository_name}")
 

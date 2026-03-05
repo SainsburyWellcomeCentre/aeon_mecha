@@ -11,7 +11,7 @@ from swc.aeon.io import api as io_api
 from aeon.dj_pipeline import acquisition, dict_to_uuid, get_schema_name, lab, streams
 from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-schema = dj.schema(get_schema_name("tracking"))
+schema = dj.Schema(get_schema_name("tracking"))
 logger = dj.logger
 
 
@@ -35,13 +35,13 @@ class TrackingMethod(dj.Lookup):
 @schema
 class TrackingParamSet(dj.Lookup):
     definition = """  # Parameter set used in a particular TrackingMethod
-    tracking_paramset_id:  smallint
+    tracking_paramset_id:  int16
     ---
     -> TrackingMethod
     paramset_description: varchar(128)
     param_set_hash: uuid
     unique index (param_set_hash)
-    params: longblob  # dictionary of all applicable parameters
+    params: <blob>  # dictionary of all applicable parameters
     """
 
     contents = [
@@ -124,10 +124,10 @@ class SLEAPTracking(dj.Imported):
     class PoseIdentity(dj.Part):
         definition = """
         -> master
-        identity_idx:           smallint
+        identity_idx:           int16
         ---
         identity_name:          varchar(16)
-        identity_likelihood:    longblob
+        identity_likelihood:    <blob>
         anchor_part:         varchar(16)  # the name of the part used as anchor node for this class
         """
 
@@ -135,11 +135,11 @@ class SLEAPTracking(dj.Imported):
         definition = """  # Position data of the anchor part of a particular identity
         -> master.PoseIdentity
         ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        x:          longblob   # (px) x-coordinates of the anchor part
-        y:          longblob   # (px) y-coordinates of the anchor part
-        likelihood: longblob   # likelihood of the anchor part
-        timestamps: longblob   # (datetime) timestamps of the anchor part
+        sample_count: int32      # number of data points acquired from this stream for a given chunk
+        x:          <blob>   # (px) x-coordinates of the anchor part
+        y:          <blob>   # (px) y-coordinates of the anchor part
+        likelihood: <blob>   # likelihood of the anchor part
+        timestamps: <blob>   # (datetime) timestamps of the anchor part
         """
 
     class Part(dj.Part):
@@ -147,11 +147,11 @@ class SLEAPTracking(dj.Imported):
         -> master.PoseIdentity
         part_name: varchar(16)
         ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        x:          longblob   # (px) x-coordinates of the part
-        y:          longblob   # (px) y-coordinates of the part
-        likelihood: longblob   # likelihood of the part
-        timestamps: longblob   # (datetime) timestamps of the part
+        sample_count: int32      # number of data points acquired from this stream for a given chunk
+        x:          <blob>   # (px) x-coordinates of the part
+        y:          <blob>   # (px) y-coordinates of the part
+        likelihood: <blob>   # likelihood of the part
+        timestamps: <blob>   # (datetime) timestamps of the part
         """
 
     @property
@@ -331,7 +331,7 @@ def is_position_in_nest(position_df, nest_key, xcol="x", ycol="y") -> pd.Series:
     """
     nest_vertices = list(
         zip(
-            *(lab.ArenaNest.Vertex & nest_key).fetch("vertex_x", "vertex_y"),
+            *(lab.ArenaNest.Vertex & nest_key).to_arrays("vertex_x", "vertex_y"),
             strict=False,
         )
     )
@@ -366,12 +366,12 @@ def _get_position(
         )
 
     time_restriction = (
-        f'{start_attr} >= "{min(start_query.fetch(start_attr))}"'
-        f' AND {start_attr} < "{max(end_query.fetch(end_attr))}"'
+        f'{start_attr} >= "{min(start_query.to_arrays(start_attr))}"'
+        f' AND {start_attr} < "{max(end_query.to_arrays(end_attr))}"'
     )
 
     # subject's position data in the time slice
-    fetched_data = (table & obj_restriction & time_restriction).fetch(
+    fetched_data = (table & obj_restriction & time_restriction).to_arrays(
         *fetch_attrs, order_by=start_attr
     )
 

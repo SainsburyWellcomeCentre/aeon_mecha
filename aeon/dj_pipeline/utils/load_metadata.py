@@ -789,9 +789,8 @@ def ingest_epoch_metadata_from_rig(
         acquisition.Epoch & f'epoch_start < "{epoch_config["epoch_start"]}"',
         epoch_start="MAX(epoch_start)",
     )
-    if len(acquisition.EpochConfig.Meta & previous_epoch) and epoch_config["commit"] == (
-        acquisition.EpochConfig.Meta & previous_epoch
-    ).fetch1("commit"):
+    prev_meta = acquisition.EpochConfig.Meta().restrict(previous_epoch, semantic_check=False)
+    if len(prev_meta) and epoch_config["commit"] == prev_meta.fetch1("commit"):
         # if identical commit -> no changes
         return set()
 
@@ -862,13 +861,7 @@ def ingest_epoch_metadata_from_rig(
             current_device_query = table - table.RemovalTime & experiment_key & device_key
 
             if current_device_query:
-                current_device_config: list[dict] = (table.Attribute & current_device_query).fetch(
-                    "experiment_name",
-                    "device_name",
-                    "attribute_name",
-                    "attribute_value",
-                    as_dict=True,
-                )
+                current_device_config: list[dict] = (table.Attribute & current_device_query).to_dicts()
                 new_device_config: list[dict] = [
                     {k: v for k, v in entry.items() if dj.utils.from_camel_case(table.__name__) not in k}
                     for entry in table_attribute_entry
@@ -904,10 +897,10 @@ def ingest_epoch_metadata_from_rig(
         dj.utils.from_camel_case(device_type) in k for k in device_entry
     )  # returns True if the device type is found in the attribute name
 
-    for device_type in streams.DeviceType.fetch("device_type"):
+    for device_type in streams.DeviceType.to_arrays("device_type"):
         table = getattr(streams, device_type)
 
-        device_removal_list.extend((table - table.RemovalTime - device_list & experiment_key).fetch("KEY"))
+        device_removal_list.extend((table - table.RemovalTime - device_list & experiment_key).keys())
 
         for device_entry in device_removal_list:
             if device_removal(device_type, device_entry):

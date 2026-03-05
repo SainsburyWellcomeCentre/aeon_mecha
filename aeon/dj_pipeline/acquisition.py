@@ -12,7 +12,7 @@ from swc.aeon.io import reader as io_reader
 from aeon.dj_pipeline import get_schema_name, lab, subject
 from aeon.dj_pipeline.utils import paths
 
-schema = dj.schema(get_schema_name("acquisition"))
+schema = dj.Schema(get_schema_name("acquisition"))
 
 logger = dj.logger
 
@@ -41,7 +41,7 @@ class ExperimentType(dj.Lookup):
 @schema
 class EventType(dj.Lookup):
     definition = """  # Experimental event type
-    event_code: smallint
+    event_code: int16
     ---
     event_type: varchar(36)
     """
@@ -119,7 +119,7 @@ class Experiment(dj.Manual):
         ---
         -> PipelineRepository
         directory_path: varchar(255)
-        load_order=1: int  # order of priority to load the directory
+        load_order=1: int32  # order of priority to load the directory
         """
 
     class DevicesSchema(dj.Part):
@@ -163,7 +163,7 @@ class Experiment(dj.Manual):
     def get_data_directories(cls, experiment_key, directory_types=None, as_posix=False):
         """Get the data directories for the specified ``experiment_key`` and ``directory_types``."""
         if directory_types is None:
-            directory_types = (cls.Directory & experiment_key).fetch(
+            directory_types = (cls.Directory & experiment_key).to_arrays(
                 "directory_type", order_by="load_order"
             )
         return [
@@ -294,7 +294,7 @@ class EpochEnd(dj.Manual):
     -> Epoch
     ---
     epoch_end: datetime(6)
-    epoch_duration: float  # (hour)
+    epoch_duration: float32  # (hour)
     """
 
 
@@ -326,7 +326,7 @@ class EpochConfig(dj.Imported):
         -> master
         region_name: varchar(36)
         ---
-        region_data: longblob
+        region_data: <blob>
         """
 
     def make(self, key):
@@ -428,7 +428,7 @@ class Chunk(dj.Manual):
     class File(dj.Part):
         definition = """
         -> master
-        file_number: int
+        file_number: int32
         ---
         file_name: varchar(128)
         -> Experiment.Directory
@@ -588,7 +588,7 @@ def create_chunk_restriction(experiment_name, start_time, end_time):
     if not (start_query and end_query):
         raise ValueError(f"No Chunk found between {start_time} and {end_time}")
     time_restriction = (
-        f'chunk_start >= "{min(start_query.fetch("chunk_start"))}"'
-        f' AND chunk_start < "{max(end_query.fetch("chunk_end"))}"'
+        f'chunk_start >= "{min(start_query.to_arrays("chunk_start"))}"'
+        f' AND chunk_start < "{max(end_query.to_arrays("chunk_end"))}"'
     )
     return time_restriction

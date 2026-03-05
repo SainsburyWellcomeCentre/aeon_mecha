@@ -42,9 +42,10 @@ def pytest_configure(config):
         # Create a mock datajoint module
         mock_dj = MagicMock()
         mock_dj.logger = MagicMock()
-        mock_dj.config = {"custom": {}}
+        mock_dj.config = MagicMock()
+        mock_dj.config.database.database_prefix = ""
         mock_dj.VirtualModule = MagicMock()
-        mock_dj.schema = MagicMock()
+        mock_dj.Schema = MagicMock()
         mock_dj.DataJointError = Exception
 
         sys.modules["datajoint"] = mock_dj

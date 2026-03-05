@@ -32,7 +32,7 @@ class TestStep1CatalogPopulation:
         """Verify StreamType catalog populated from Pydantic class."""
         streams = full_pipeline["streams"]
 
-        stream_types = streams.StreamType.fetch(as_dict=True)
+        stream_types = streams.StreamType.to_dicts()
         assert len(stream_types) > 0
 
         # Should have Video, BeamBreak, Encoder, etc.
@@ -43,7 +43,7 @@ class TestStep1CatalogPopulation:
         """Verify DeviceType catalog populated from Pydantic class."""
         streams = full_pipeline["streams"]
 
-        device_types = streams.DeviceType.fetch("device_type")
+        device_types = streams.DeviceType.to_arrays("device_type")
         assert len(device_types) > 0
 
         # Should have Camera, Feeder, etc. (leaf class names, not inherited parent names)
@@ -54,7 +54,7 @@ class TestStep1CatalogPopulation:
         """Verify DeviceType.Stream linking table populated."""
         streams = full_pipeline["streams"]
 
-        device_streams = streams.DeviceType.Stream.fetch(as_dict=True)
+        device_streams = streams.DeviceType.Stream.to_dicts()
         assert len(device_streams) > 0
 
 
@@ -120,8 +120,7 @@ class TestEpochConfigMake:
 
         acquisition.EpochConfig.populate()
 
-        epoch_configs = (acquisition.EpochConfig & {"experiment_name": cfg["experiment_name"]}).fetch()
-        assert len(epoch_configs) >= 1
+        assert len(acquisition.EpochConfig & {"experiment_name": cfg["experiment_name"]}) >= 1
 
     def test_epoch_config_meta_has_rig_metadata(self, test_epochs, full_pipeline, golden_dataset_config):
         """Verify EpochConfig.Meta contains rig metadata."""
@@ -151,7 +150,7 @@ class TestEpochConfigMake:
 
         acquisition.EpochConfig.populate()
 
-        devices = streams.Device.fetch(as_dict=True)
+        devices = streams.Device.to_dicts()
         assert len(devices) > 0
 
 
@@ -166,8 +165,7 @@ class TestChunkIngestion:
 
         acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
 
-        chunks = (acquisition.Chunk & {"experiment_name": cfg["experiment_name"]}).fetch()
-        assert len(chunks) >= 1
+        assert len(acquisition.Chunk & {"experiment_name": cfg["experiment_name"]}) >= 1
 
     def test_chunk_start_time_valid(self, test_epochs, full_pipeline, golden_dataset_config):
         """Verify chunk has valid start time."""
@@ -217,7 +215,7 @@ class TestStreamDataIngestion:
         results = {}
         for table_name, table in stream_tables:
             try:
-                table.populate(limit=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+                table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
                 count = len(table & {"experiment_name": cfg["experiment_name"]})
                 results[table_name] = count
             except Exception as e:
@@ -251,11 +249,11 @@ class TestStreamDataIngestion:
             pytest.skip("No Video stream tables found")
 
         for table_name, table in video_tables:
-            table.populate(limit=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+            table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
 
         # Check at least one video entry exists
         for table_name, table in video_tables:
-            entries = (table & {"experiment_name": cfg["experiment_name"]}).fetch(as_dict=True)
+            entries = (table & {"experiment_name": cfg["experiment_name"]}).to_dicts()
             if entries:
                 return  # Success
 
@@ -286,7 +284,7 @@ class TestStreamDataIngestion:
             pytest.skip("No Harp stream tables found")
 
         for table_name, table in harp_tables:
-            table.populate(limit=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+            table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
 
         # Check at least one has data
         for table_name, table in harp_tables:
