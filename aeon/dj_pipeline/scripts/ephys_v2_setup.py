@@ -168,7 +168,19 @@ def step_create_experiment(dry_run=False):
         print_info(f"Would insert subject: {SUBJECT}")
         return True
 
-    from aeon.dj_pipeline import acquisition
+    from aeon.dj_pipeline import acquisition, subject
+
+    # Insert into Subject table first (Experiment.Subject has FK to it)
+    subject.Subject.insert1(
+        {
+            "subject": SUBJECT,
+            "sex": "U",
+            "subject_birth_date": "2024-01-01",
+            "subject_description": "Test subject for ephys v2 pipeline",
+        },
+        skip_duplicates=True,
+    )
+    print_ok(f"Subject inserted: {SUBJECT}")
 
     acquisition.Experiment.insert1(
         {
