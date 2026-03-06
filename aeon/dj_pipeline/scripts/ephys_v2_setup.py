@@ -246,12 +246,22 @@ def step_insert_probe_config(dry_run=False):
 
     from aeon.dj_pipeline import ephys
 
-    # ProbeType
+    # ProbeType (manual insert — probeinterface needs internet, HPC doesn't have it)
     if not (ephys.ProbeType & {"probe_type": PROBE_TYPE}):
-        ephys.create_probe_type(
-            PROBE_TYPE, manufacturer="neuropixels", probe_name="NP2004"
-        )
-        print_ok(f"ProbeType created: {PROBE_TYPE}")
+        ephys.ProbeType.insert1({"probe_type": PROBE_TYPE})
+        # NP2004 = 4-shank, 384 electrodes per shank, 2-column layout
+        # We only need basic geometry for the electrodes we're sorting
+        electrodes = []
+        for e in range(N_ELECTRODES):
+            electrodes.append({
+                "probe_type": PROBE_TYPE,
+                "electrode": e,
+                "shank": 0,
+                "x_coord": (e % 2) * 32.0,  # 2-column, 32um spacing
+                "y_coord": (e // 2) * 15.0,  # 15um vertical pitch
+            })
+        ephys.ProbeType.Electrode.insert(electrodes)
+        print_ok(f"ProbeType created: {PROBE_TYPE} ({N_ELECTRODES} electrodes)")
     else:
         print_ok(f"ProbeType already exists: {PROBE_TYPE}")
 
