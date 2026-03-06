@@ -68,7 +68,7 @@ class ElectrodeConfig(dj.Lookup):
 @schema
 class TargetArea(dj.Lookup):
     definition = """
-    target_area: varchar(32)  # e.g. "hippocampus", "amygdala"
+    target_area: varchar(32)  # e.g. hippocampus, amygdala
     """
 
 
