@@ -15,7 +15,7 @@ import sys
 # Configuration (must match ephys_v2_setup.py)
 # ---------------------------------------------------------------------------
 EXPERIMENT_NAME = "social-ephys0.1-aeon3"
-EXPECTED_PREFIX = "elissas_aeon_ephys_v2_test_"
+EXPECTED_PREFIX = "u_elissas_aeon_ephys_v2_test_"
 PROBE_TYPE = "neuropixels - NP2004"
 ELECTRODE_CONFIG_NAME = "0-383"
 N_BLOCKS = 4

@@ -9,7 +9,7 @@ Three phases:
   Phase 3: Post-sorting, curation & unit matching (no SLURM needed)
 
 Prerequisites:
-  - dj_local_conf.json configured with prefix "elissas_aeon_ephys_v2_test_"
+  - dj_local_conf.json configured with prefix "u_elissas_aeon_ephys_v2_test_"
   - On HPC with access to /ceph/aeon/
   - SpikeInterface installed (standard version, or Elissa's fork if needed)
 
@@ -28,7 +28,7 @@ import uuid
 # Configuration
 # ---------------------------------------------------------------------------
 EXPERIMENT_NAME = "social-ephys0.1-aeon3"
-EXPECTED_PREFIX = "elissas_aeon_ephys_v2_test_"
+EXPECTED_PREFIX = "u_elissas_aeon_ephys_v2_test_"
 
 # Subject (fake — real subject-probe mapping not yet implemented)
 SUBJECT = "test-subject-001"
