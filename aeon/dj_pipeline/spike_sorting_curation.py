@@ -87,6 +87,30 @@ class ApplyOfficialCuration(dj.Imported):
         # The key only contains SortedSpikes primary key fields, not attributes
         curation_id = (OfficialCuration & key).fetch1("curation_id")
 
+        # Auto-approved curation: no manual curation file, based on raw sorting
+        has_curation_file = bool(ManualCuration.File & key & {"curation_id": curation_id})
+        if not has_curation_file:
+            parent_curation_id = (ManualCuration & key & {"curation_id": curation_id}).fetch1(
+                "parent_curation_id"
+            )
+            if parent_curation_id == -1:
+                # Raw sorting approved as official — no curation to apply
+                # Update SortedSpikes.curation_id from -1 to the official curation_id
+                sorted_key = (spike_sorting.SortedSpikes & key).fetch1("KEY")
+                spike_sorting.SortedSpikes.update1({**sorted_key, "curation_id": curation_id})
+
+                self.insert1({
+                    **key,
+                    "execution_time": execution_time,
+                    "new_unit_count": 0,
+                    "removed_unit_count": 0,
+                })
+                logger.info(
+                    f"Auto-approved curation (curation_id={curation_id}): "
+                    "raw sorting results accepted as official. No changes applied."
+                )
+                return
+
         # Get the curation file path
         curation_file_path = Path(
             (ManualCuration.File & key & {"curation_id": curation_id}).fetch1("file")
