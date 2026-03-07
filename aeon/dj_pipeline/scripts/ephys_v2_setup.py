@@ -305,28 +305,17 @@ def step_insert_probe_config(dry_run=False):
 
 
 def step_ingest_epochs(dry_run=False):
-    """Step 4: Ingest acquisition epochs from filesystem."""
-    print_header(4, "Ingest Acquisition Epochs")
+    """Step 4: Skip — epoch ingestion not needed for ephys-only experiments.
 
-    if dry_run:
-        print_info(f"Would call: Epoch.ingest_epochs('{EXPERIMENT_NAME}')")
-        return True
+    The social-ephys0.1 data has no CameraTop device, so Epoch.ingest_epochs()
+    (which discovers epochs via chunk files for a reference device) finds nothing.
+    Step 5 manually inserts the EphysEpoch we need instead.
+    """
+    print_header(4, "Ingest Acquisition Epochs (skipped)")
 
-    from aeon.dj_pipeline import acquisition
-
-    print_info("Ingesting epochs...")
-    acquisition.Epoch.ingest_epochs(EXPERIMENT_NAME)
-
-    epochs = (acquisition.Epoch & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
-    if not epochs:
-        print_fail("No epochs ingested")
-        return False
-
-    print_ok(f"Ingested {len(epochs)} epochs")
-    # Show first/last
-    epoch_starts = sorted([e["epoch_start"] for e in epochs])
-    print_info(f"  First: {epoch_starts[0]}")
-    print_info(f"  Last:  {epoch_starts[-1]}")
+    print_info("Skipped — ephys-only experiment has no reference device for epoch discovery")
+    print_info("(Epoch.ingest_epochs() needs CameraTop/FrameTop chunk files; this data only has Environment + NeuropixelsV2Beta)")
+    print_info("Step 5 will manually insert the Epoch + EphysEpoch entries we need")
 
     return True
 
@@ -336,18 +325,18 @@ def step_manual_ephys_setup(dry_run=False):
 
     Since read_probe_assignments() raises NotImplementedError, we manually:
     1. Insert ProbeInsertion (with subject)
-    2. Insert EphysEpoch for the target epoch
+    2. Insert Epoch + EphysEpoch for the target epoch
     3. Insert EphysEpoch.Insertion linking the probe to the epoch
     """
-    print_header(5, "Manual Ephys Setup (ProbeInsertion + EphysEpoch)")
+    print_header(5, "Manual Ephys Setup (ProbeInsertion + Epoch + EphysEpoch)")
 
     if dry_run:
         print_info(f"Would insert ProbeInsertion: subject={SUBJECT}, insertion=1, probe={PROBE_NAME}")
-        print_info(f"Would insert EphysEpoch for epoch dir: {TARGET_EPOCH_DIR}")
+        print_info(f"Would insert Epoch + EphysEpoch for epoch dir: {TARGET_EPOCH_DIR}")
         print_info(f"Would insert EphysEpoch.Insertion: probe_label={PROBE_LABEL}")
         return True
 
-    from pathlib import Path
+    from datetime import datetime
     from aeon.dj_pipeline import acquisition, ephys
 
     # 1. Insert ProbeInsertion
@@ -362,24 +351,18 @@ def step_manual_ephys_setup(dry_run=False):
     )
     print_ok(f"ProbeInsertion: subject={SUBJECT}, insertion=1, probe={PROBE_NAME}")
 
-    # 2. Find the epoch_start for our target epoch directory
-    epochs = (acquisition.Epoch & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
-    target_epoch_start = None
-    for ep in epochs:
-        if ep["epoch_dir"]:
-            top_dir = Path(ep["epoch_dir"]).parts[0]
-            if top_dir == TARGET_EPOCH_DIR:
-                target_epoch_start = ep["epoch_start"]
-                break
-
-    if target_epoch_start is None:
-        print_fail(f"Could not find epoch with dir '{TARGET_EPOCH_DIR}' in Epoch table")
-        print_info("Available epoch_dirs (first 10):")
-        for ep in epochs[:10]:
-            print_info(f"  {ep['epoch_dir']}")
-        return False
-
-    print_ok(f"Target epoch found: {TARGET_EPOCH_DIR} → epoch_start={target_epoch_start}")
+    # 2. Insert Epoch directly (epoch ingestion skipped — no reference device)
+    target_epoch_start = datetime.strptime(TARGET_EPOCH_DIR, "%Y-%m-%dT%H-%M-%S")
+    acquisition.Epoch.insert1(
+        {
+            "experiment_name": EXPERIMENT_NAME,
+            "epoch_start": target_epoch_start,
+            "directory_type": "raw",
+            "epoch_dir": TARGET_EPOCH_DIR,
+        },
+        skip_duplicates=True,
+    )
+    print_ok(f"Epoch inserted: {TARGET_EPOCH_DIR} → {target_epoch_start}")
 
     # 3. Insert EphysEpoch master row
     epoch_key = {"experiment_name": EXPERIMENT_NAME, "epoch_start": target_epoch_start}
