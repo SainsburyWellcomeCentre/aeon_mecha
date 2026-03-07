@@ -13,13 +13,14 @@ from aeon.dj_pipeline import acquisition, ephys, spike_sorting
 table_name = "SpikeSorting"
 # Specify the key to be populated
 key = {'experiment_name': 'social-ephys0.1-aeon3',
+       'subject': 'test-subject-001',
        'insertion_number': 1,
        'block_start': "2024-06-04 11:00:00",
-       'block_end': "2024-06-10 12:00:00",
+       'block_end': "2024-06-04 14:00:00",
        'probe_type': 'neuropixels - NP2004',
        'electrode_config_name': '0-383',
-       'electrode_group': '0-143',
-       'paramset_id': '250'}
+       'electrode_group': '0-95',
+       'paramset_id': 400}
 _CLEAR_JOB = True  # Whether to clear any existing 'error' job for this key before populating
 
 
