@@ -25,7 +25,7 @@ GOLDEN_DATASETS = {
         "experiment_name": "abcBehav0-aeon3",
         "experiment_path": "AEON3/abcBehav0",
         "epoch_dir": "2025-11-18T10-13-15",
-        "devices_schema": "swc.aeon.exp.foragingABC.experiment:Experiment",
+        "devices_schema": "swc.aeon_exp.foragingABC.experiment:Experiment",
         "arena_name": "arena-aeon3",
         "lab": "SWC",
         "location": "room-0",

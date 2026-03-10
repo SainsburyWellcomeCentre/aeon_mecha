@@ -399,7 +399,7 @@ class TestPopulateCatalogFromPydantic:
         streams = pipeline_integration["streams"]
 
         # Use real ForagingABC Experiment class
-        experiment_class = get_experiment_pydantic("swc.aeon.exp.foragingABC.experiment:Experiment")
+        experiment_class = get_experiment_pydantic("swc.aeon_exp.foragingABC.experiment:Experiment")
         populate_catalog_from_pydantic(experiment_class)
 
         # All three catalog tables should be populated
@@ -418,7 +418,7 @@ class TestPopulateCatalogFromPydantic:
         monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
         streams = pipeline_integration["streams"]
 
-        experiment_class = get_experiment_pydantic("swc.aeon.exp.foragingABC.experiment:Experiment")
+        experiment_class = get_experiment_pydantic("swc.aeon_exp.foragingABC.experiment:Experiment")
 
         populate_catalog_from_pydantic(experiment_class)
         first_count = len(streams.StreamType())
