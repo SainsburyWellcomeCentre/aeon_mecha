@@ -86,7 +86,7 @@ class DirectoryType(dj.Lookup):
     directory_type: varchar(16)
     """
 
-    contents = zip(["raw", "processed", "qc"], strict=False)
+    contents = zip(["raw", "processed", "qc", "ingest"], strict=False)
 
 
 # ------------------- GENERAL INFORMATION ABOUT AN EXPERIMENT --------------------
