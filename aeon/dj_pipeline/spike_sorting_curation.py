@@ -22,7 +22,8 @@ class CurationMethod(dj.Lookup):
     curation_method: varchar(16)  # method/package used to perform manual curation (e.g. SpikeInterface, Phy, FigURL, etc.)
     """
     contents = [
-        ("Phy", "SpikeInterface"),
+        ("Phy",),
+        ("SpikeInterface",),
     ]
 
 
