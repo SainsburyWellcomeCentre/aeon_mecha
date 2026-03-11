@@ -1186,7 +1186,9 @@ class UnitMatching(dj.Computed):
         )
         bwd_candidates = candidates * bwd & "block_start = bwd_start"
 
-        return seed_candidates + fwd_candidates + bwd_candidates
+        # Project to PK only — Union requires no shared secondary attributes
+        pk = self.primary_key
+        return seed_candidates.proj(*pk) + fwd_candidates.proj(*pk) + bwd_candidates.proj(*pk)
 
     def make(self, key):
         """Match units from a new ephys block against existing global units.
