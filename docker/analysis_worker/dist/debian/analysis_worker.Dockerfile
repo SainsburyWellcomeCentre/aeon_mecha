@@ -5,7 +5,7 @@ USER root
 RUN apt update && \
     apt install -y ssh git && \
     pip install --upgrade pip && \
-    pip install gateway_provisioners && \
+    pip install gateway_provisioners ipykernel && \
     jupyter image-bootstrap install --languages python && \
     chown jovyan:users /usr/local/bin/bootstrap-kernel.sh && \
     chmod 0755 /usr/local/bin/bootstrap-kernel.sh && \
