@@ -264,6 +264,96 @@ def measure_offset(block_a_idx, block_b_idx, blocks):
               f"mean = {np.mean(arr):.3f} ms, std = {np.std(arr):.3f} ms")
 
 
+def compare_shared_chunk(block_a_idx, block_b_idx, blocks):
+    """Compare spike timestamps for the SAME chunk across two blocks.
+
+    If the same chunk's spike times differ between blocks, it's a sync issue.
+    If they're the same, it's a sorting (spike detection) issue.
+    """
+    ba = blocks[block_a_idx]
+    bb = blocks[block_b_idx]
+
+    key_a = {**insertion_key, "block_start": ba["block_start"], "block_end": ba["block_end"]}
+    key_b = {**insertion_key, "block_start": bb["block_start"], "block_end": bb["block_end"]}
+
+    print(f"\n{'='*60}")
+    print(f"  Chunk-level comparison: Block {block_a_idx} vs Block {block_b_idx}")
+    print(f"{'='*60}")
+
+    # Get chunk_starts for each block from SyncedSpikes.Unit
+    chunks_a = set((spike_sorting.SyncedSpikes.Unit & key_a).fetch("chunk_start"))
+    chunks_b = set((spike_sorting.SyncedSpikes.Unit & key_b).fetch("chunk_start"))
+    shared_chunks = sorted(chunks_a & chunks_b)
+
+    print(f"  Block {block_a_idx} chunks: {sorted(chunks_a)}")
+    print(f"  Block {block_b_idx} chunks: {sorted(chunks_b)}")
+    print(f"  Shared chunks: {shared_chunks}")
+
+    if not shared_chunks:
+        print("  NO SHARED CHUNKS — cannot compare at chunk level")
+        return
+
+    # For each shared chunk, compare spike counts and times per unit
+    for chunk_start in shared_chunks:
+        print(f"\n  --- Chunk {chunk_start} ---")
+
+        # Fetch per-unit spike_times from each block for this chunk
+        entries_a = (spike_sorting.SyncedSpikes.Unit & key_a & {"chunk_start": chunk_start}).fetch(
+            "unit", "spike_times", "spike_count", as_dict=True
+        )
+        entries_b = (spike_sorting.SyncedSpikes.Unit & key_b & {"chunk_start": chunk_start}).fetch(
+            "unit", "spike_times", "spike_count", as_dict=True
+        )
+        print(f"    Block {block_a_idx}: {len(entries_a)} unit entries, "
+              f"{sum(e['spike_count'] for e in entries_a)} total spikes")
+        print(f"    Block {block_b_idx}: {len(entries_b)} unit entries, "
+              f"{sum(e['spike_count'] for e in entries_b)} total spikes")
+
+        # Build per-unit spike arrays (in epoch seconds)
+        def to_epoch_sec(times):
+            if len(times) == 0:
+                return np.array([])
+            if times.dtype.kind == "M":
+                return times.astype("datetime64[ns]").astype(np.int64) / 1e9
+            return times
+
+        units_a = {e["unit"]: to_epoch_sec(e["spike_times"]) for e in entries_a}
+        units_b = {e["unit"]: to_epoch_sec(e["spike_times"]) for e in entries_b}
+
+        # Concatenate ALL spikes in this chunk (regardless of unit) and compare
+        all_a = np.sort(np.concatenate([t for t in units_a.values() if len(t) > 0])) if units_a else np.array([])
+        all_b = np.sort(np.concatenate([t for t in units_b.values() if len(t) > 0])) if units_b else np.array([])
+
+        if len(all_a) > 0 and len(all_b) > 0:
+            print(f"    Block {block_a_idx} time range: {all_a[0]:.6f} → {all_a[-1]:.6f}")
+            print(f"    Block {block_b_idx} time range: {all_b[0]:.6f} → {all_b[-1]:.6f}")
+
+            # Find nearest-neighbor distances between ALL spikes (pooled across units)
+            # Sample 2000 spikes from A
+            step = max(1, len(all_a) // 2000)
+            nn_dists = []
+            for t in all_a[::step]:
+                idx = np.searchsorted(all_b, t)
+                dists = []
+                if idx > 0:
+                    dists.append(abs(all_b[idx - 1] - t))
+                if idx < len(all_b):
+                    dists.append(abs(all_b[idx] - t))
+                if dists:
+                    nn_dists.append(min(dists))
+
+            nn_arr = np.array(nn_dists) * 1000  # ms
+            pct_below_04 = np.mean(nn_arr < 0.4) * 100
+            pct_below_1 = np.mean(nn_arr < 1.0) * 100
+            pct_below_10 = np.mean(nn_arr < 10.0) * 100
+            print(f"    Nearest-neighbor distances (pooled, all units):")
+            print(f"      median: {np.median(nn_arr):.3f} ms")
+            print(f"      <0.4ms: {pct_below_04:.1f}%")
+            print(f"      <1.0ms: {pct_below_1:.1f}%")
+            print(f"      <10ms:  {pct_below_10:.1f}%")
+            print(f"      p25/p75: {np.percentile(nn_arr, 25):.3f} / {np.percentile(nn_arr, 75):.3f} ms")
+
+
 def main():
     # Fetch blocks
     blocks = (ephys.EphysBlock & insertion_key).fetch(
@@ -273,15 +363,9 @@ def main():
     for i, b in enumerate(blocks):
         print(f"  Block {i}: {b['block_start']} → {b['block_end']}")
 
-    # Compare block 0 vs 1 (the failing pair)
-    compare_blocks(0, 1, blocks)
-
-    # Compare block 1 vs 2 (a working pair) for reference
-    compare_blocks(1, 2, blocks)
-
-    # Measure the actual temporal offset for both pairs
-    measure_offset(0, 1, blocks)
-    measure_offset(1, 2, blocks)
+    # Skip the full comparison (already done), go straight to chunk analysis
+    compare_shared_chunk(0, 1, blocks)
+    compare_shared_chunk(1, 2, blocks)
 
 
 if __name__ == "__main__":
