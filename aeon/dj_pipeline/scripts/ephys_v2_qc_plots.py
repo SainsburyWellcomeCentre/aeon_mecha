@@ -120,12 +120,15 @@ def plot_unit_gantt(blocks, global_units, presence, longevity, output_dir):
         lon = longevity[uid]
         color = CMAP_LONGEVITY(lon / max_longevity)
 
-        # Draw a single solid line spanning from first to last active block
+        # Draw a solid bar spanning from first to last active block
         first_b = active_blocks.min()
         last_b = active_blocks.max()
-        ax.plot(
-            [first_b, last_b], [plot_row, plot_row],
-            color=color, linewidth=1.5, solid_capstyle="butt",
+        span = last_b - first_b
+        bar_width = max(span, 0.3)  # minimum width for single-block units
+        center = (first_b + last_b) / 2
+        ax.barh(
+            plot_row, width=bar_width, left=center - bar_width / 2,
+            height=0.6, color=color, edgecolor="none",
         )
 
     # Axis formatting
