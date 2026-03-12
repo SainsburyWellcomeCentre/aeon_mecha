@@ -11,18 +11,22 @@ import datajoint as dj
 
 from aeon.dj_pipeline import get_schema_name
 
+OLD_SCHEMA = "elissas_aeon_ephys_test_spike_sorting"
+
 TABLES = [
     {
         "schema": get_schema_name("spike_sorting"),
         "table": "__sorted_spikes__unit",
         "label": "SortedSpikes.Unit",
         "columns": ["spike_indices", "spike_sites", "spike_depths"],
+        "fallback_schema": OLD_SCHEMA,
     },
     {
         "schema": get_schema_name("spike_sorting"),
         "table": "__synced_spikes__unit",
         "label": "SyncedSpikes.Unit",
         "columns": ["spike_times"],
+        "fallback_schema": OLD_SCHEMA,
     },
     {
         "schema": get_schema_name("spike_sorting"),
@@ -35,12 +39,14 @@ TABLES = [
         "table": "__waveform__unit_waveform",
         "label": "Waveform.UnitWaveform",
         "columns": ["unit_waveform"],
+        "fallback_schema": OLD_SCHEMA,
     },
     {
         "schema": get_schema_name("spike_sorting"),
         "table": "__waveform__channel_waveform",
         "label": "Waveform.ChannelWaveform",
         "columns": ["channel_waveform"],
+        "fallback_schema": OLD_SCHEMA,
     },
 ]
 
@@ -57,18 +63,31 @@ def measure():
         table_name = spec["table"]
         full_name = f"`{schema_name}`.`{table_name}`"
 
-        # Check the table exists and has rows
+        # Check the table exists and has rows; try fallback schema if primary missing
+        used_schema = schema_name
         try:
             n_rows = conn.query(f"SELECT COUNT(*) AS n FROM {full_name}").fetchone()[0]
-        except Exception as e:
-            print(f"\n{spec['label']}  --  SKIPPED ({e})")
-            continue
+        except Exception:
+            fallback = spec.get("fallback_schema")
+            if fallback:
+                fallback_name = f"`{fallback}`.`{table_name}`"
+                try:
+                    n_rows = conn.query(f"SELECT COUNT(*) AS n FROM {fallback_name}").fetchone()[0]
+                    full_name = fallback_name
+                    used_schema = fallback
+                except Exception as e2:
+                    print(f"\n{spec['label']}  --  SKIPPED (not in primary or fallback schema)")
+                    continue
+            else:
+                print(f"\n{spec['label']}  --  SKIPPED (table does not exist)")
+                continue
 
         if n_rows == 0:
             print(f"\n{spec['label']}  --  0 rows")
             continue
 
-        print(f"\n{spec['label']}  ({n_rows} rows)")
+        source = f" [from {used_schema}]" if used_schema != schema_name else ""
+        print(f"\n{spec['label']}  ({n_rows} rows){source}")
         print("-" * 60)
         print(f"  {'Column':<20} {'Avg (KB)':>10} {'Max (KB)':>10} {'Total (MB)':>12}")
 
