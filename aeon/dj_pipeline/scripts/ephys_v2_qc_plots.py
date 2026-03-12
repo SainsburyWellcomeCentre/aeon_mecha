@@ -113,18 +113,20 @@ def plot_unit_gantt(blocks, global_units, presence, longevity, output_dir):
     first_block = np.array([np.argmax(presence[i]) for i in range(n_units)])
     sort_idx = np.lexsort((first_block, -longevity))
 
-    fig, ax = plt.subplots(figsize=(10, max(6, n_units * 0.15 + 2)))
+    fig, ax = plt.subplots(figsize=(10, max(4, n_units * 0.06 + 2)))
 
     for plot_row, uid in enumerate(sort_idx):
         active_blocks = np.where(presence[uid] == 1)[0]
         lon = longevity[uid]
         color = CMAP_LONGEVITY(lon / max_longevity)
 
-        for bidx in active_blocks:
-            ax.barh(
-                plot_row, width=0.9, left=bidx - 0.45,
-                height=0.7, color=color, edgecolor="white", linewidth=0.5,
-            )
+        # Draw a single solid line spanning from first to last active block
+        first_b = active_blocks.min()
+        last_b = active_blocks.max()
+        ax.plot(
+            [first_b, last_b], [plot_row, plot_row],
+            color=color, linewidth=1.5, solid_capstyle="butt",
+        )
 
     # Axis formatting
     ax.set_xlim(-0.5, n_blocks - 0.5)
