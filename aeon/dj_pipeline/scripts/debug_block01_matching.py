@@ -180,6 +180,90 @@ def compare_blocks(block_a_idx, block_b_idx, blocks, delta_times=None):
             print(f"    (Could not get agreement fraction: {e})")
 
 
+def measure_offset(block_a_idx, block_b_idx, blocks):
+    """For matched units at 50ms, measure the actual temporal offset between spikes."""
+    from spikeinterface.comparison import compare_two_sorters
+    from spikeinterface.core import NumpySorting
+
+    ba = blocks[block_a_idx]
+    bb = blocks[block_b_idx]
+    overlap_start = max(ba["block_start"], bb["block_start"])
+    overlap_end = min(ba["block_end"], bb["block_end"])
+    overlap_start_s = overlap_start.timestamp()
+    overlap_end_s = overlap_end.timestamp()
+
+    key_a = {**insertion_key, "block_start": ba["block_start"], "block_end": ba["block_end"]}
+    key_b = {**insertion_key, "block_start": bb["block_start"], "block_end": bb["block_end"]}
+
+    units_a = load_block_spike_trains(key_a)
+    units_b = load_block_spike_trains(key_b)
+
+    # Get overlap spike trains in SECONDS (not samples) relative to overlap start
+    trains_a_sec = {}
+    for uid, times in units_a.items():
+        restricted = restrict_to_overlap(times, overlap_start_s, overlap_end_s)
+        if len(restricted) > 0:
+            trains_a_sec[uid] = restricted
+
+    trains_b_sec = {}
+    for uid, times in units_b.items():
+        restricted = restrict_to_overlap(times, overlap_start_s, overlap_end_s)
+        if len(restricted) > 0:
+            trains_b_sec[uid] = restricted
+
+    # Get matches at 50ms
+    trains_a_samp = {uid: (t * 30000).astype(np.int64) for uid, t in trains_a_sec.items()}
+    trains_b_samp = {uid: (t * 30000).astype(np.int64) for uid, t in trains_b_sec.items()}
+
+    sorting_a = NumpySorting.from_unit_dict(trains_a_samp, sampling_frequency=30000)
+    sorting_b = NumpySorting.from_unit_dict(trains_b_samp, sampling_frequency=30000)
+    comparison = compare_two_sorters(
+        sorting1=sorting_a, sorting2=sorting_b,
+        sorting1_name="block_a", sorting2_name="block_b",
+        delta_time=50.0,
+    )
+    a_to_b, _ = comparison.get_matching()
+
+    print(f"\n{'='*60}")
+    print(f"  Measuring temporal offset: Block {block_a_idx} vs Block {block_b_idx}")
+    print(f"{'='*60}")
+
+    offsets = []
+    for a_uid, b_uid in a_to_b.items():
+        if b_uid == -1:
+            continue
+        times_a = trains_a_sec[a_uid]
+        times_b = trains_b_sec[b_uid]
+
+        # For each spike in A, find nearest spike in B
+        nearest_offsets = []
+        # Sample 1000 spikes evenly spaced through the overlap
+        step = max(1, len(times_a) // 1000)
+        for t_a in times_a[::step]:
+            idx = np.searchsorted(times_b, t_a)
+            candidates = []
+            if idx > 0:
+                candidates.append(times_b[idx - 1] - t_a)
+            if idx < len(times_b):
+                candidates.append(times_b[idx] - t_a)
+            if candidates:
+                nearest = min(candidates, key=abs)
+                if abs(nearest) < 0.1:  # within 100ms
+                    nearest_offsets.append(nearest)
+
+        if nearest_offsets:
+            arr = np.array(nearest_offsets)
+            median_off = np.median(arr) * 1000  # convert to ms
+            offsets.append(median_off)
+            print(f"  Unit {a_uid}→{b_uid}: median offset = {median_off:.3f} ms "
+                  f"(from {len(nearest_offsets)} matched spikes)")
+
+    if offsets:
+        arr = np.array(offsets)
+        print(f"\n  Overall: median offset = {np.median(arr):.3f} ms, "
+              f"mean = {np.mean(arr):.3f} ms, std = {np.std(arr):.3f} ms")
+
+
 def main():
     # Fetch blocks
     blocks = (ephys.EphysBlock & insertion_key).fetch(
@@ -194,6 +278,10 @@ def main():
 
     # Compare block 1 vs 2 (a working pair) for reference
     compare_blocks(1, 2, blocks)
+
+    # Measure the actual temporal offset for both pairs
+    measure_offset(0, 1, blocks)
+    measure_offset(1, 2, blocks)
 
 
 if __name__ == "__main__":
