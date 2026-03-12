@@ -15,7 +15,7 @@ import sys
 # Configuration (must match ephys_v2_setup.py)
 # ---------------------------------------------------------------------------
 EXPERIMENT_NAME = "social-ephys0.1-aeon3"
-EXPECTED_PREFIX = "u_elissas_aeon_ephys_v2_test_"
+PRODUCTION_PREFIX = "aeon_"
 PROBE_TYPE = "neuropixels - NP2004"
 ELECTRODE_CONFIG_NAME = "0-383"
 N_BLOCKS = 4
@@ -26,6 +26,7 @@ BLOCK_DURATION_HOURS = 3
 # Safety
 # ---------------------------------------------------------------------------
 def verify_prefix_or_exit():
+    """These setup/validation scripts are for testing only — never run against production."""
     import datajoint as dj
 
     if "custom" not in dj.config:
@@ -34,15 +35,19 @@ def verify_prefix_or_exit():
     prefix = dj.config["custom"].get("database.prefix", "")
     host = dj.config.get("database.host", "")
 
-    if prefix != EXPECTED_PREFIX:
-        print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is '{prefix}'")
-        print(f"    Expected: '{EXPECTED_PREFIX}'")
-        if not prefix:
-            print(f"    Make sure you run from the aeon_mecha_tn_ephys_v2/ directory.")
+    if not prefix:
+        print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is empty.")
+        print(f"    Make sure you run from the repo root directory.")
+        sys.exit(1)
+
+    if prefix == PRODUCTION_PREFIX:
+        print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is '{prefix}' (production).")
+        print(f"    This script is for testing only — do not run against production.")
         sys.exit(1)
 
     if "aeon-db2" in host:
-        print(f"\n  ✗ SAFETY CHECK FAILED: connecting to production host '{host}'")
+        print(f"\n  ✗ SAFETY CHECK FAILED: connecting to production host '{host}'.")
+        print(f"    This script is for testing only — do not run against production.")
         sys.exit(1)
 
 

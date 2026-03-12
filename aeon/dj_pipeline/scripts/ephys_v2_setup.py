@@ -28,7 +28,7 @@ import uuid
 # Configuration
 # ---------------------------------------------------------------------------
 EXPERIMENT_NAME = "social-ephys0.1-aeon3"
-EXPECTED_PREFIX = "u_elissas_aeon_ephys_v2_test_"
+PRODUCTION_PREFIX = "aeon_"
 
 # Subject (fake — real subject-probe mapping not yet implemented)
 SUBJECT = "test-subject-001"
@@ -68,6 +68,9 @@ def verify_prefix_or_exit():
     Critical because `from aeon.dj_pipeline import ephys` triggers
     `dj.schema(get_schema_name("ephys"))` at import time, which CREATES
     schemas in the database.
+
+    These setup/validation scripts are designed for testing only and should
+    never be run against the production database.
     """
     import datajoint as dj
 
@@ -77,21 +80,22 @@ def verify_prefix_or_exit():
     prefix = dj.config["custom"].get("database.prefix", "")
     host = dj.config.get("database.host", "")
 
-    if prefix != EXPECTED_PREFIX:
-        print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is '{prefix}'")
-        print(f"    Expected: '{EXPECTED_PREFIX}'")
-        print(f"    Host: '{host}'")
-        if not prefix:
-            print(f"    The prefix is empty — dj_local_conf.json may not have been found.")
-            print(f"    Make sure you run from the aeon_mecha_tn_ephys_v2/ directory.")
-        else:
-            print(f"    Fix: ensure dj_local_conf.json has:")
-            print(f'      "custom": {{"database.prefix": "{EXPECTED_PREFIX}"}}')
+    if not prefix:
+        print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is empty.")
+        print(f"    dj_local_conf.json may not have been found.")
+        print(f"    Make sure you run from the repo root directory.")
+        sys.exit(1)
+
+    if prefix == PRODUCTION_PREFIX:
+        print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is '{prefix}' (production).")
+        print(f"    This script is for testing only — do not run against production.")
+        print(f"    Set a test prefix in dj_local_conf.json, e.g.:")
+        print(f'      "custom": {{"database.prefix": "u_yourname_test_"}}')
         sys.exit(1)
 
     if "aeon-db2" in host:
-        print(f"\n  ✗ SAFETY CHECK FAILED: connecting to production host '{host}'")
-        print(f"    This script should only run against aeon-db (test).")
+        print(f"\n  ✗ SAFETY CHECK FAILED: connecting to production host '{host}'.")
+        print(f"    This script is for testing only — do not run against production.")
         sys.exit(1)
 
 
@@ -968,7 +972,7 @@ Steps:
     print("  Ephys v2 Pipeline Test")
     print(f"  Experiment: {EXPERIMENT_NAME}")
     print(f"  Subject:    {SUBJECT}")
-    print(f"  DB prefix:  {EXPECTED_PREFIX}")
+    print(f"  DB prefix:  {dj.config['custom'].get('database.prefix', '')}")
     if args.dry_run:
         print("  Mode: DRY RUN")
     print("=" * 60)
