@@ -62,8 +62,14 @@ def main():
         ss.delete()
         print("  Done.")
 
-    # Step 2: Delete EphysChunk (cascades to File, SyncModel, EphysBlockInfo.Chunk)
-    print("\n--- Step 2: Delete EphysChunk entries ---")
+    # Step 2: Delete EphysBlockInfo first (required before deleting chunks)
+    print("\n--- Step 2: Delete EphysBlockInfo + EphysChunk entries ---")
+    block_info = ephys.EphysBlockInfo & key
+    if block_info:
+        print(f"  Deleting {len(block_info)} EphysBlockInfo entries (cascades to Chunk, Channel)...")
+        block_info.delete()
+        print("  Done.")
+
     chunks = ephys.EphysChunk & key
     if chunks:
         print(f"  Deleting {len(chunks)} EphysChunk entries (cascades to File, SyncModel)...")
