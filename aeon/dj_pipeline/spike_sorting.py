@@ -1348,8 +1348,9 @@ class UnitMatching(dj.Computed):
                     delta_time=0.4,  # ms
                 )
 
-                matched_pairs = comparison.get_matching()
-                for prev_uid, this_uid in matched_pairs.items():
+                # get_matching() returns (sorting1→sorting2, sorting2→sorting1)
+                prev_to_this, _ = comparison.get_matching()
+                for prev_uid, this_uid in prev_to_this.items():
                     if this_uid == -1 or this_uid in unit_to_global:
                         continue
 
