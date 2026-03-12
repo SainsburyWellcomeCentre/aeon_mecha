@@ -267,23 +267,30 @@ def process_ephys_file(
                     np.array(onix_ts[0]).reshape(-1, 1)
                 ).flatten()[0]
                 chunk_start = io_api.to_datetime(chunk_start)
+                if hasattr(chunk_start, "tz_localize"):
+                    chunk_start = chunk_start.tz_localize(None)
             if idx == len(matched_sync) - 1:
                 chunk_end = r.model.predict(
                     np.array(onix_ts[-1]).reshape(-1, 1)
                 ).flatten()[0]
                 chunk_end = io_api.to_datetime(chunk_end)
+                if hasattr(chunk_end, "tz_localize"):
+                    chunk_end = chunk_end.tz_localize(None)
 
             model_path = Path(tmpdir) / (
                 ephys_file.stem + f"_{r.clock_start}.joblib"
             )
             joblib.dump(r.model, model_path)
 
+            harp_start = r.name
+            if hasattr(harp_start, "tz_localize"):
+                harp_start = harp_start.tz_localize(None)
             sync_entries.append(
                 {
                     "onix_ts_start": r.clock_start,
                     "onix_ts_end": r.clock_end,
                     "sync_model": model_path,
-                    "harp_start": r.name,
+                    "harp_start": harp_start,
                 }
             )
 
