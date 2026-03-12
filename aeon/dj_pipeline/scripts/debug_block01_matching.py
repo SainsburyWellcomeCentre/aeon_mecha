@@ -157,15 +157,14 @@ def compare_blocks(block_a_idx, block_b_idx, blocks, delta_times=None):
         )
 
         a_to_b, b_to_a = comparison.get_matching()
-        n_matched_ab = sum(1 for v in a_to_b.values() if v != -1)
-        n_matched_ba = sum(1 for v in b_to_a.values() if v != -1)
+        n_matched_ab = sum(1 for v in a_to_b if v != -1)
+        n_matched_ba = sum(1 for v in b_to_a if v != -1)
         print(f"    A→B matches: {n_matched_ab}/{len(a_to_b)}")
         print(f"    B→A matches: {n_matched_ba}/{len(b_to_a)}")
 
-        if n_matched_ab > 0 and dt_ms == delta_times[0]:
-            # Show actual matches for the default threshold
+        if n_matched_ab > 0:
             print(f"    Matched pairs (A unit → B unit):")
-            for a_uid, b_uid in sorted(a_to_b.items()):
+            for a_uid, b_uid in a_to_b.items():
                 if b_uid != -1:
                     print(f"      {a_uid} → {b_uid}")
 
