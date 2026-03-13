@@ -33,16 +33,9 @@ echo "================================"
 # Create output directory
 mkdir -p slurm_output
 
-# Load modules and activate environment (update according to your conda environment name!)
+# Load modules
 echo "Loading modules..."
-module load miniconda
-source "$(conda info --base)/etc/profile.d/conda.sh"
-
-echo "Activating conda environment..."
-if ! conda activate aeon_env; then
-    echo "ERROR: Failed to activate conda environment 'aeon_env'"
-    exit 1
-fi
+module load uv
 
 # Set PyTorch CUDA memory allocator configuration to free reserved memory
 # This helps prevent CUDA out of memory errors during long-running Kilosort4 jobs
@@ -54,7 +47,7 @@ echo "Set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,garbage_collection_th
 
 # Start resource profiler in the background
 echo "Starting resource profiler..."
-python ./aeon/dj_pipeline/scripts/start_resource_profiler.py -o "./slurm_output/resource_use_${SLURM_JOB_ID}.csv" & PROFILER_PID=$!
+uv run python ./aeon/dj_pipeline/scripts/start_resource_profiler.py -o "./slurm_output/resource_use_${SLURM_JOB_ID}.csv" & PROFILER_PID=$!
 echo "Resource profiler started with PID: $PROFILER_PID"
 
 # Verify Python script exists
@@ -66,7 +59,7 @@ fi
 
 # Run the spike sorting script
 echo "Starting spike sorting..."
-python "$SCRIPT_PATH"
+uv run python "$SCRIPT_PATH"
 
 # Stop the profiler
 echo "Stopping resource profiler..."
