@@ -632,9 +632,9 @@ class SortedSpikes(dj.Imported):
         -> ephys.ElectrodeConfig.Electrode  # electrode with highest waveform amplitude for this unit
         -> UnitQuality
         spike_count: int         # how many spikes in this recording for this unit
-        spike_indices: longblob  # array of spike indices into the concatenated binary data (from preprocessing)
-        spike_sites : longblob   # array of electrode associated with each spike
-        spike_depths=null : longblob  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe    
+        spike_indices: blob@dj_store  # array of spike indices into the concatenated binary data (from preprocessing)
+        spike_sites : blob@dj_store   # array of electrode associated with each spike
+        spike_depths=null : blob@dj_store  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe
         """
 
     def make(self, key):
@@ -972,7 +972,7 @@ class SyncedSpikes(dj.Imported):
         -> ephys.EphysChunk
         ---
         spike_count: int       # how many spikes in this recording for this unit
-        spike_times: longblob  # datetime64[ns] synchronized spike times (in HARP clock) for the respective EphysChunk
+        spike_times: blob@dj_store  # datetime64[ns] synchronized spike times (in HARP clock) for the respective EphysChunk
         """
 
     def make(self, key: Dict[str, Any]) -> None:
@@ -1138,7 +1138,7 @@ class UnitMatching(dj.Computed):
         -> GlobalUnit
         -> ephys.EphysChunk
         ---
-        spike_times: longblob  # datetime64[ns] (UTC), HARP-synced
+        spike_times: blob@dj_store  # datetime64[ns] (UTC), HARP-synced
         spike_count: int
         unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)
         """
@@ -1186,7 +1186,9 @@ class UnitMatching(dj.Computed):
         )
         bwd_candidates = candidates * bwd & "block_start = bwd_start"
 
-        return seed_candidates + fwd_candidates + bwd_candidates
+        # Project to PK only — Union requires no shared secondary attributes
+        pk = self.primary_key
+        return seed_candidates.proj(*pk) + fwd_candidates.proj(*pk) + bwd_candidates.proj(*pk)
 
     def make(self, key):
         """Match units from a new ephys block against existing global units.
@@ -1346,8 +1348,9 @@ class UnitMatching(dj.Computed):
                     delta_time=0.4,  # ms
                 )
 
-                matched_pairs = comparison.get_matching()
-                for prev_uid, this_uid in matched_pairs.items():
+                # get_matching() returns (sorting1→sorting2, sorting2→sorting1)
+                prev_to_this, _ = comparison.get_matching()
+                for prev_uid, this_uid in prev_to_this.items():
                     if this_uid == -1 or this_uid in unit_to_global:
                         continue
 

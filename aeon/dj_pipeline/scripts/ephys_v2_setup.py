@@ -1,17 +1,17 @@
-"""Setup and run script for the ephys v2 PK revamp test.
+"""Setup and run script for the ephys v2 pipeline test.
 
 Tests the full ephys pipeline end-to-end using AEONX1/social-ephys0.1 data,
-with the new v2 PK structure (experiment_name, insertion_number) — no subject.
+with the v2 PK structure (experiment_name, subject, insertion_number).
 
 Three phases:
   Phase 1: Setup & ingestion (no SLURM needed)
   Phase 2: Spike sorting (requires SLURM for SpikeSorting step)
-  Phase 3: Post-sorting & curation (no SLURM needed)
+  Phase 3: Post-sorting, curation & unit matching (no SLURM needed)
 
 Prerequisites:
-  - dj_local_conf.json configured with prefix "elissas_aeon_ephys_test_"
+  - dj_local_conf.json configured with prefix "u_elissas_aeon_ephys_v2_test_"
   - On HPC with access to /ceph/aeon/
-  - SpikeInterface installed from Elissa's fork (for Phase 2)
+  - SpikeInterface installed (standard version, or Elissa's fork if needed)
 
 Usage:
   uv run python -m aeon.dj_pipeline.scripts.ephys_v2_setup              # Run all Phase 1
@@ -28,13 +28,20 @@ import uuid
 # Configuration
 # ---------------------------------------------------------------------------
 EXPERIMENT_NAME = "social-ephys0.1-aeon3"
-EXPECTED_PREFIX = "elissas_aeon_ephys_test_"
+PRODUCTION_PREFIX = "aeon_"
+
+# Subject (fake — real subject-probe mapping not yet implemented)
+SUBJECT = "test-subject-001"
 
 # Probe config (from previous test run — ephys_test_ingestion.py)
 PROBE_NAME = "NP2004-001"
 PROBE_TYPE = "neuropixels - NP2004"
 ELECTRODE_CONFIG_NAME = "0-383"
 N_ELECTRODES = 384
+
+# The epoch directory that contains our test data files
+TARGET_EPOCH_DIR = "2024-06-04T10-24-07"
+PROBE_LABEL = "ProbeA"  # Only sort ProbeA (single probe test)
 
 # Block schedule: 4 blocks × 3 hours, 1-hour overlap
 BLOCK_START = "2024-06-04 11:00:00"
@@ -45,7 +52,8 @@ N_BLOCKS = 4
 # Sorting config
 PARAMSET_ID = 400
 SORTING_METHOD = "kilosort4"
-N_ELECTRODE_GROUPS = 4  # 96 channels each
+ELECTRODE_GROUP_NAME = "0-95"
+ELECTRODE_GROUP_SIZE = 96
 
 # Controls whether populate() raises on first error
 SUPPRESS_ERRORS = False
@@ -60,6 +68,9 @@ def verify_prefix_or_exit():
     Critical because `from aeon.dj_pipeline import ephys` triggers
     `dj.schema(get_schema_name("ephys"))` at import time, which CREATES
     schemas in the database.
+
+    These setup/validation scripts are designed for testing only and should
+    never be run against the production database.
     """
     import datajoint as dj
 
@@ -69,21 +80,22 @@ def verify_prefix_or_exit():
     prefix = dj.config["custom"].get("database.prefix", "")
     host = dj.config.get("database.host", "")
 
-    if prefix != EXPECTED_PREFIX:
-        print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is '{prefix}'")
-        print(f"    Expected: '{EXPECTED_PREFIX}'")
-        print(f"    Host: '{host}'")
-        if not prefix:
-            print(f"    The prefix is empty — dj_local_conf.json may not have been found.")
-            print(f"    Make sure you run from the aeon_mecha_ephys/ directory.")
-        else:
-            print(f"    Fix: ensure dj_local_conf.json has:")
-            print(f'      "custom": {{"database.prefix": "{EXPECTED_PREFIX}"}}')
+    if not prefix:
+        print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is empty.")
+        print(f"    dj_local_conf.json may not have been found.")
+        print(f"    Make sure you run from the repo root directory.")
+        sys.exit(1)
+
+    if prefix == PRODUCTION_PREFIX:
+        print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is '{prefix}' (production).")
+        print(f"    This script is for testing only — do not run against production.")
+        print(f"    Set a test prefix in dj_local_conf.json, e.g.:")
+        print(f'      "custom": {{"database.prefix": "u_yourname_test_"}}')
         sys.exit(1)
 
     if "aeon-db2" in host:
-        print(f"\n  ✗ SAFETY CHECK FAILED: connecting to production host '{host}'")
-        print(f"    This script should only run against aeon-db (test).")
+        print(f"\n  ✗ SAFETY CHECK FAILED: connecting to production host '{host}'.")
+        print(f"    This script is for testing only — do not run against production.")
         sys.exit(1)
 
 
@@ -151,15 +163,28 @@ def step_verify_config(dry_run=False):
 
 
 def step_create_experiment(dry_run=False):
-    """Step 2: Register experiment + directories."""
-    print_header(2, "Create Experiment")
+    """Step 2: Register experiment + directories + subject."""
+    print_header(2, "Create Experiment & Subject")
 
     if dry_run:
         print_info(f"Would create experiment: {EXPERIMENT_NAME}")
         print_info(f"Would register raw dir: aeon/data/raw/AEONX1/social-ephys0.1")
+        print_info(f"Would insert subject: {SUBJECT}")
         return True
 
-    from aeon.dj_pipeline import acquisition
+    from aeon.dj_pipeline import acquisition, subject
+
+    # Insert into Subject table first (Experiment.Subject has FK to it)
+    subject.Subject.insert1(
+        {
+            "subject": SUBJECT,
+            "sex": "U",
+            "subject_birth_date": "2024-01-01",
+            "subject_description": "Test subject for ephys v2 pipeline",
+        },
+        skip_duplicates=True,
+    )
+    print_ok(f"Subject inserted: {SUBJECT}")
 
     acquisition.Experiment.insert1(
         {
@@ -189,6 +214,16 @@ def step_create_experiment(dry_run=False):
     )
     print_ok("Raw directory registered")
 
+    # Insert subject into Experiment.Subject
+    acquisition.Experiment.Subject.insert1(
+        {
+            "experiment_name": EXPERIMENT_NAME,
+            "subject": SUBJECT,
+        },
+        skip_duplicates=True,
+    )
+    print_ok(f"Subject registered: {SUBJECT}")
+
     # Verify
     exp = (acquisition.Experiment & {"experiment_name": EXPERIMENT_NAME}).fetch1()
     print_ok(f"  arena: {exp['arena_name']}, location: {exp['location']}")
@@ -196,6 +231,9 @@ def step_create_experiment(dry_run=False):
     dirs = (acquisition.Experiment.Directory & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
     for d in dirs:
         print_ok(f"  directory: {d['directory_type']} → {d['directory_path']}")
+
+    subjects = (acquisition.Experiment.Subject & {"experiment_name": EXPERIMENT_NAME}).fetch("subject")
+    print_ok(f"  subjects: {list(subjects)}")
 
     return True
 
@@ -212,12 +250,22 @@ def step_insert_probe_config(dry_run=False):
 
     from aeon.dj_pipeline import ephys
 
-    # ProbeType
+    # ProbeType (manual insert — probeinterface needs internet, HPC doesn't have it)
     if not (ephys.ProbeType & {"probe_type": PROBE_TYPE}):
-        ephys.create_probe_type(
-            PROBE_TYPE, manufacturer="neuropixels", probe_name="NP2004"
-        )
-        print_ok(f"ProbeType created: {PROBE_TYPE}")
+        ephys.ProbeType.insert1({"probe_type": PROBE_TYPE})
+        # NP2004 = 4-shank, 384 electrodes per shank, 2-column layout
+        # We only need basic geometry for the electrodes we're sorting
+        electrodes = []
+        for e in range(N_ELECTRODES):
+            electrodes.append({
+                "probe_type": PROBE_TYPE,
+                "electrode": e,
+                "shank": 0,
+                "x_coord": (e % 2) * 32.0,  # 2-column, 32um spacing
+                "y_coord": (e // 2) * 15.0,  # 15um vertical pitch
+            })
+        ephys.ProbeType.Electrode.insert(electrodes)
+        print_ok(f"ProbeType created: {PROBE_TYPE} ({N_ELECTRODES} electrodes)")
     else:
         print_ok(f"ProbeType already exists: {PROBE_TYPE}")
 
@@ -261,65 +309,92 @@ def step_insert_probe_config(dry_run=False):
 
 
 def step_ingest_epochs(dry_run=False):
-    """Step 4: Ingest acquisition epochs from filesystem."""
-    print_header(4, "Ingest Acquisition Epochs")
+    """Step 4: Skip — epoch ingestion not needed for ephys-only experiments.
 
-    if dry_run:
-        print_info(f"Would call: Epoch.ingest_epochs('{EXPERIMENT_NAME}')")
-        return True
+    The social-ephys0.1 data has no CameraTop device, so Epoch.ingest_epochs()
+    (which discovers epochs via chunk files for a reference device) finds nothing.
+    Step 5 manually inserts the EphysEpoch we need instead.
+    """
+    print_header(4, "Ingest Acquisition Epochs (skipped)")
 
-    from aeon.dj_pipeline import acquisition
-
-    print_info("Ingesting epochs...")
-    acquisition.Epoch.ingest_epochs(EXPERIMENT_NAME)
-
-    epochs = (acquisition.Epoch & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
-    if not epochs:
-        print_fail("No epochs ingested")
-        return False
-
-    print_ok(f"Ingested {len(epochs)} epochs")
-    # Show first/last
-    epoch_starts = sorted([e["epoch_start"] for e in epochs])
-    print_info(f"  First: {epoch_starts[0]}")
-    print_info(f"  Last:  {epoch_starts[-1]}")
+    print_info("Skipped — ephys-only experiment has no reference device for epoch discovery")
+    print_info("(Epoch.ingest_epochs() needs CameraTop/FrameTop chunk files; this data only has Environment + NeuropixelsV2Beta)")
+    print_info("Step 5 will manually insert the Epoch + EphysEpoch entries we need")
 
     return True
 
 
-def step_ephys_epoch_populate(dry_run=False):
-    """Step 5: Run EphysEpoch.populate() — discovers probes, creates ProbeInsertion (Probe must pre-exist from step 3)."""
-    print_header(5, "Populate EphysEpoch (probe discovery)")
+def step_manual_ephys_setup(dry_run=False):
+    """Step 5: Manual ProbeInsertion + EphysEpoch setup (bypasses read_probe_assignments).
+
+    Since read_probe_assignments() raises NotImplementedError, we manually:
+    1. Insert ProbeInsertion (with subject)
+    2. Insert Epoch + EphysEpoch for the target epoch
+    3. Insert EphysEpoch.Insertion linking the probe to the epoch
+    """
+    print_header(5, "Manual Ephys Setup (ProbeInsertion + Epoch + EphysEpoch)")
 
     if dry_run:
-        print_info("Would call: EphysEpoch.populate()")
-        print_info("Expected: auto-creates ProbeInsertion entries (Probe must pre-exist)")
+        print_info(f"Would insert ProbeInsertion: subject={SUBJECT}, insertion=1, probe={PROBE_NAME}")
+        print_info(f"Would insert Epoch + EphysEpoch for epoch dir: {TARGET_EPOCH_DIR}")
+        print_info(f"Would insert EphysEpoch.Insertion: probe_label={PROBE_LABEL}")
         return True
 
-    from aeon.dj_pipeline import ephys
+    from datetime import datetime
+    from aeon.dj_pipeline import acquisition, ephys
 
-    print_info("Running EphysEpoch.populate()...")
-    ephys.EphysEpoch.populate(
-        display_progress=True, suppress_errors=SUPPRESS_ERRORS
+    # 1. Insert ProbeInsertion
+    ephys.ProbeInsertion.insert1(
+        {
+            "experiment_name": EXPERIMENT_NAME,
+            "subject": SUBJECT,
+            "insertion_number": 1,
+            "probe": PROBE_NAME,
+        },
+        skip_duplicates=True,
     )
+    print_ok(f"ProbeInsertion: subject={SUBJECT}, insertion=1, probe={PROBE_NAME}")
 
-    # Check results
-    ephys_epochs = (ephys.EphysEpoch & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
-    has_ephys = [e for e in ephys_epochs if e["has_ephys"]]
-    no_ephys = [e for e in ephys_epochs if not e["has_ephys"]]
-    print_ok(f"EphysEpoch: {len(ephys_epochs)} total, {len(has_ephys)} with ephys, {len(no_ephys)} without")
+    # 2. Insert Epoch directly (epoch ingestion skipped — no reference device)
+    target_epoch_start = datetime.strptime(TARGET_EPOCH_DIR, "%Y-%m-%dT%H-%M-%S")
+    acquisition.Epoch.insert1(
+        {
+            "experiment_name": EXPERIMENT_NAME,
+            "epoch_start": target_epoch_start,
+            "directory_type": "raw",
+            "epoch_dir": TARGET_EPOCH_DIR,
+        },
+        skip_duplicates=True,
+    )
+    print_ok(f"Epoch inserted: {TARGET_EPOCH_DIR} → {target_epoch_start}")
 
-    # Check ProbeInsertion was auto-created
-    probe_insertions = (ephys.ProbeInsertion & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
-    if not probe_insertions:
-        print_fail("No ProbeInsertion entries created — EphysEpoch.make() may have failed")
-        return False
+    # 3. Insert EphysEpoch master row
+    epoch_key = {"experiment_name": EXPERIMENT_NAME, "epoch_start": target_epoch_start}
+    ephys.EphysEpoch.insert1(
+        {**epoch_key, "has_ephys": True, "n_probes": 1},
+        skip_duplicates=True,
+        allow_direct_insert=True,
+    )
+    print_ok(f"EphysEpoch: has_ephys=True, n_probes=1")
 
-    print_ok(f"ProbeInsertion entries: {len(probe_insertions)}")
-    for pi in probe_insertions:
-        print_info(
-            f"  insertion {pi['insertion_number']}: subject={pi['subject']}, probe={pi['probe']}"
-        )
+    # 4. Insert EphysEpoch.Insertion part row
+    ephys.EphysEpoch.Insertion.insert1(
+        {
+            **epoch_key,
+            "subject": SUBJECT,
+            "insertion_number": 1,
+            "probe_label": PROBE_LABEL,
+        },
+        skip_duplicates=True,
+        allow_direct_insert=True,
+    )
+    print_ok(f"EphysEpoch.Insertion: probe_label={PROBE_LABEL}")
+
+    # Verify
+    pi = (ephys.ProbeInsertion & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    print_ok(f"ProbeInsertion count: {len(pi)}")
+    ei = (ephys.EphysEpoch.Insertion & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    print_ok(f"EphysEpoch.Insertion count: {len(ei)}")
 
     return True
 
@@ -384,6 +459,7 @@ def step_create_blocks(dry_run=False):
         for start, end in blocks_to_create:
             block_key = {
                 "experiment_name": EXPERIMENT_NAME,
+                "subject": pi["subject"],
                 "insertion_number": pi["insertion_number"],
                 "block_start": start,
                 "block_end": end,
@@ -438,11 +514,11 @@ def step_populate_block_info(dry_run=False):
 # ===========================================================================
 
 def step_create_electrode_groups(dry_run=False):
-    """Step 9: Create electrode groups (4 groups of 96 channels)."""
-    print_header(9, "Create Electrode Groups")
+    """Step 9: Create single electrode group (0-95, 96 channels)."""
+    print_header(9, "Create Electrode Group")
 
     if dry_run:
-        print_info(f"Would create {N_ELECTRODE_GROUPS} groups of {N_ELECTRODES // N_ELECTRODE_GROUPS} channels")
+        print_info(f"Would create 1 group: {ELECTRODE_GROUP_NAME} ({ELECTRODE_GROUP_SIZE} channels)")
         return True
 
     from aeon.dj_pipeline import spike_sorting, ephys
@@ -451,32 +527,26 @@ def step_create_electrode_groups(dry_run=False):
         "probe_type": PROBE_TYPE,
         "electrode_config_name": ELECTRODE_CONFIG_NAME,
     }
-    config_electrodes = (ephys.ElectrodeConfig.Electrode & electrode_config_key).fetch(
-        "electrode", order_by="electrode"
+
+    group_electrodes = list(range(ELECTRODE_GROUP_SIZE))
+
+    spike_sorting.ElectrodeGroup.insert1(
+        {
+            **electrode_config_key,
+            "electrode_group": ELECTRODE_GROUP_NAME,
+            "electrode_group_description": f"electrodes {ELECTRODE_GROUP_NAME}",
+            "electrode_count": len(group_electrodes),
+        },
+        skip_duplicates=True,
     )
-
-    group_size = len(config_electrodes) // N_ELECTRODE_GROUPS
-    for i in range(N_ELECTRODE_GROUPS):
-        group_electrodes = list(config_electrodes[i * group_size : (i + 1) * group_size])
-        group_name = f"{group_electrodes[0]}-{group_electrodes[-1]}"
-
-        spike_sorting.ElectrodeGroup.insert1(
-            {
-                **electrode_config_key,
-                "electrode_group": group_name,
-                "electrode_group_description": f"electrodes {group_name}",
-                "electrode_count": len(group_electrodes),
-            },
-            skip_duplicates=True,
-        )
-        spike_sorting.ElectrodeGroup.Electrode.insert(
-            (
-                {**electrode_config_key, "electrode_group": group_name, "electrode": e}
-                for e in group_electrodes
-            ),
-            skip_duplicates=True,
-        )
-        print_ok(f"  Group {group_name} ({len(group_electrodes)} electrodes)")
+    spike_sorting.ElectrodeGroup.Electrode.insert(
+        (
+            {**electrode_config_key, "electrode_group": ELECTRODE_GROUP_NAME, "electrode": e}
+            for e in group_electrodes
+        ),
+        skip_duplicates=True,
+    )
+    print_ok(f"  Group {ELECTRODE_GROUP_NAME} ({len(group_electrodes)} electrodes)")
 
     return True
 
@@ -547,7 +617,6 @@ def step_create_sorting_tasks(dry_run=False):
     from aeon.dj_pipeline import ephys, spike_sorting
 
     blocks = (ephys.EphysBlock & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
-    electrode_groups = spike_sorting.ElectrodeGroup.fetch("electrode_group")
 
     if not blocks:
         print_fail("No EphysBlock entries — run step 7 first")
@@ -555,19 +624,19 @@ def step_create_sorting_tasks(dry_run=False):
 
     count = 0
     for block in blocks:
-        for eg in electrode_groups:
-            task_key = {
-                "experiment_name": block["experiment_name"],
-                "insertion_number": block["insertion_number"],
-                "block_start": block["block_start"],
-                "block_end": block["block_end"],
-                "probe_type": PROBE_TYPE,
-                "electrode_config_name": ELECTRODE_CONFIG_NAME,
-                "electrode_group": eg,
-                "paramset_id": PARAMSET_ID,
-            }
-            spike_sorting.SortingTask.insert1(task_key, skip_duplicates=True)
-            count += 1
+        task_key = {
+            "experiment_name": block["experiment_name"],
+            "subject": block["subject"],
+            "insertion_number": block["insertion_number"],
+            "block_start": block["block_start"],
+            "block_end": block["block_end"],
+            "probe_type": PROBE_TYPE,
+            "electrode_config_name": ELECTRODE_CONFIG_NAME,
+            "electrode_group": ELECTRODE_GROUP_NAME,
+            "paramset_id": PARAMSET_ID,
+        }
+        spike_sorting.SortingTask.insert1(task_key, skip_duplicates=True)
+        count += 1
 
     print_ok(f"Created {count} SortingTask entries")
     return True
@@ -605,7 +674,6 @@ def step_spike_sorting_slurm(dry_run=False):
     print_info("After SLURM jobs complete, continue with --step 14")
     print_info("")
     print_info("IMPORTANT: Do NOT change code while SLURM jobs are queued!")
-    print_info("           SLURM copies the environment at job start time.")
 
     if dry_run:
         return True
@@ -667,21 +735,29 @@ def step_sorted_spikes(dry_run=False):
 
 
 # ===========================================================================
-# PHASE 3: Curation & Downstream
+# PHASE 3: Curation, Sync & Unit Matching
 # ===========================================================================
 
-def step_fake_curation(dry_run=False):
-    """Step 16: Fake curation — make auto results the official curation."""
-    print_header(16, "Fake Curation (auto → official)")
+def step_approve_auto_curation(dry_run=False):
+    """Step 16: Approve automatic curation (no manual curation needed).
+
+    Creates ManualCuration + OfficialCuration entries for each block, then
+    runs ApplyOfficialCuration.populate() which auto-detects the "no curation
+    file + parent=-1" pattern and approves the raw sorting as official.
+    """
+    print_header(16, "Approve Automatic Curation")
 
     if dry_run:
-        print_info("Would insert CurationMethod + OfficialCuration entries")
-        print_info("Skipping ManualCuration / Phy GUI entirely")
+        print_info("Would insert ManualCuration + OfficialCuration for each block")
+        print_info("Would run ApplyOfficialCuration.populate() (auto-approval path)")
+        print_info("Auto-sorted results treated as official (no manual curation)")
         return True
 
+    from datetime import datetime, timezone
+    from aeon.dj_pipeline import spike_sorting
     from aeon.dj_pipeline import spike_sorting_curation as curation
 
-    # Ensure CurationMethod has the default entry
+    # Ensure CurationMethod has the entry we need
     if not (curation.CurationMethod & {"curation_method": "SpikeInterface"}):
         curation.CurationMethod.insert1(
             {"curation_method": "SpikeInterface"},
@@ -689,53 +765,58 @@ def step_fake_curation(dry_run=False):
         )
         print_ok("CurationMethod 'SpikeInterface' inserted")
 
-    # For each SortedSpikes entry, create an OfficialCuration pointing to raw sorting
-    from aeon.dj_pipeline import spike_sorting
+    # For each SpikeSorting entry, create ManualCuration + OfficialCuration
+    sorting_entries = (spike_sorting.SpikeSorting & {"experiment_name": EXPERIMENT_NAME}).fetch("KEY")
+    now = datetime.now(timezone.utc)
 
-    sorted_entries = (spike_sorting.SortedSpikes & {"experiment_name": EXPERIMENT_NAME}).fetch(
-        as_dict=True
-    )
+    mc_count = 0
+    oc_count = 0
 
-    count = 0
-    for entry in sorted_entries:
-        curation_key = {
-            **{k: entry[k] for k in spike_sorting.SortedSpikes.primary_key},
-            "curation_method": "SpikeInterface",
-        }
-        if not (curation.OfficialCuration & curation_key):
-            curation.OfficialCuration.insert1(curation_key, skip_duplicates=True)
-            count += 1
+    for sorting_key in sorting_entries:
+        # ManualCuration: curation_id=0, parent=-1 (based on raw sorting)
+        mc_key = {**sorting_key, "curation_id": 0}
+        if not (curation.ManualCuration & mc_key):
+            curation.ManualCuration.insert1(
+                {
+                    **mc_key,
+                    "curation_datetime": now,
+                    "parent_curation_id": -1,
+                    "curation_method": "SpikeInterface",
+                    "description": "Auto-approved: no manual curation applied",
+                },
+                skip_duplicates=True,
+            )
+            mc_count += 1
 
-    print_ok(f"OfficialCuration entries created: {count}")
-    print_info("(ManualCuration skipped — using auto sorting as official)")
+        # OfficialCuration: points to the ManualCuration entry
+        # PK = SortedSpikes PK (same as SortingTask PK)
+        sorted_pk = {k: sorting_key[k] for k in spike_sorting.SortedSpikes.primary_key}
+        if not (curation.OfficialCuration & sorted_pk):
+            curation.OfficialCuration.insert1(
+                {**sorted_pk, "curation_id": 0},
+                skip_duplicates=True,
+            )
+            oc_count += 1
 
-    return True
+    print_ok(f"ManualCuration entries: {mc_count}")
+    print_ok(f"OfficialCuration entries: {oc_count}")
 
-
-def step_apply_curation(dry_run=False):
-    """Step 17: Run ApplyOfficialCuration.populate()."""
-    print_header(17, "Apply Official Curation")
-
-    if dry_run:
-        print_info("Would call: ApplyOfficialCuration.populate()")
-        return True
-
-    from aeon.dj_pipeline import spike_sorting_curation as curation
-
+    # ApplyOfficialCuration: populate() now handles auto-approval natively
     print_info("Running ApplyOfficialCuration.populate()...")
     curation.ApplyOfficialCuration.populate(
         display_progress=True, suppress_errors=SUPPRESS_ERRORS
     )
 
-    count = len(curation.ApplyOfficialCuration & {"experiment_name": EXPERIMENT_NAME})
-    print_ok(f"ApplyOfficialCuration entries: {count}")
+    aoc_count = len(curation.ApplyOfficialCuration & {"experiment_name": EXPERIMENT_NAME})
+    print_ok(f"ApplyOfficialCuration entries: {aoc_count}")
+    print_info("(Auto-sorted results approved as official — no changes applied)")
 
     return True
 
 
 def step_synced_spikes(dry_run=False):
-    """Step 18: Run SyncedSpikes.populate()."""
-    print_header(18, "Run SyncedSpikes")
+    """Step 17: Run SyncedSpikes.populate()."""
+    print_header(17, "Run SyncedSpikes")
 
     if dry_run:
         print_info("Would call: SyncedSpikes.populate()")
@@ -757,8 +838,36 @@ def step_synced_spikes(dry_run=False):
     return True
 
 
+def step_insert_matching_params(dry_run=False):
+    """Step 18: Insert UnitMatchingParamSet (seed = first block)."""
+    print_header(18, "Insert Unit Matching Parameters")
+
+    if dry_run:
+        print_info(f"Would insert UnitMatchingParamSet with seed_block_start={BLOCK_START}")
+        return True
+
+    from aeon.dj_pipeline import spike_sorting
+
+    matching_paramset_id = 1
+    if not (spike_sorting.UnitMatchingParamSet & {"matching_paramset_id": matching_paramset_id}):
+        spike_sorting.UnitMatchingParamSet.insert1(
+            {
+                "matching_paramset_id": matching_paramset_id,
+                "matching_method": "spike_time_overlap",
+                "seed_block_start": BLOCK_START,
+                "matching_paramset_description": "Test: seed at first block, delta_time=0.4ms",
+                "params": {"delta_time": 0.4},
+            },
+        )
+        print_ok(f"UnitMatchingParamSet inserted: seed_block_start={BLOCK_START}")
+    else:
+        print_ok(f"UnitMatchingParamSet {matching_paramset_id} already exists")
+
+    return True
+
+
 def step_unit_matching(dry_run=False):
-    """Step 19: Run UnitMatching (across overlapping blocks)."""
+    """Step 19: Run UnitMatching.populate() (across overlapping blocks)."""
     print_header(19, "Run Unit Matching")
 
     if dry_run:
@@ -776,29 +885,15 @@ def step_unit_matching(dry_run=False):
     count = len(spike_sorting.UnitMatching & {"experiment_name": EXPERIMENT_NAME})
     print_ok(f"UnitMatching entries: {count}")
 
-    universal_units = len(spike_sorting.UniversalUnit & {"experiment_name": EXPERIMENT_NAME})
-    print_ok(f"UniversalUnit entries: {universal_units}")
+    global_units = len(spike_sorting.GlobalUnit & {"experiment_name": EXPERIMENT_NAME})
+    print_ok(f"GlobalUnit entries: {global_units}")
 
-    return True
+    # Show matching details
+    matched_units = len(spike_sorting.UnitMatching.Unit & {"experiment_name": EXPERIMENT_NAME})
+    print_ok(f"UnitMatching.Unit entries: {matched_units}")
 
-
-def step_chunked_spike_times(dry_run=False):
-    """Step 20: Run ChunkedSpikeTimes.populate()."""
-    print_header(20, "Run ChunkedSpikeTimes")
-
-    if dry_run:
-        print_info("Would call: ChunkedSpikeTimes.populate()")
-        return True
-
-    from aeon.dj_pipeline import spike_sorting
-
-    print_info("Running ChunkedSpikeTimes.populate()...")
-    spike_sorting.ChunkedSpikeTimes.populate(
-        display_progress=True, suppress_errors=SUPPRESS_ERRORS
-    )
-
-    count = len(spike_sorting.ChunkedSpikeTimes & {"experiment_name": EXPERIMENT_NAME})
-    print_ok(f"ChunkedSpikeTimes entries: {count}")
+    spikes_entries = len(spike_sorting.UnitMatching.Spikes & {"experiment_name": EXPERIMENT_NAME})
+    print_ok(f"UnitMatching.Spikes entries: {spikes_entries}")
 
     return True
 
@@ -813,7 +908,7 @@ STEPS = [
     (1, "create_experiment", step_create_experiment),
     (1, "insert_probe_config", step_insert_probe_config),
     (1, "ingest_epochs", step_ingest_epochs),
-    (1, "ephys_epoch_populate", step_ephys_epoch_populate),
+    (1, "manual_ephys_setup", step_manual_ephys_setup),
     (1, "ingest_chunks", step_ingest_chunks),
     (1, "create_blocks", step_create_blocks),
     (1, "populate_block_info", step_populate_block_info),
@@ -825,12 +920,11 @@ STEPS = [
     (2, "spike_sorting_slurm", step_spike_sorting_slurm),
     (2, "post_processing", step_post_processing),
     (2, "sorted_spikes", step_sorted_spikes),
-    # Phase 3: Curation & Downstream
-    (3, "fake_curation", step_fake_curation),
-    (3, "apply_curation", step_apply_curation),
+    # Phase 3: Curation, Sync & Unit Matching
+    (3, "approve_auto_curation", step_approve_auto_curation),
     (3, "synced_spikes", step_synced_spikes),
+    (3, "insert_matching_params", step_insert_matching_params),
     (3, "unit_matching", step_unit_matching),
-    (3, "chunked_spike_times", step_chunked_spike_times),
 ]
 
 
@@ -842,32 +936,31 @@ def main():
 Phases:
   1  Setup & Ingestion     Steps 1-8   (no SLURM)
   2  Spike Sorting         Steps 9-15  (SLURM at step 13)
-  3  Curation & Downstream Steps 16-20 (no SLURM)
+  3  Curation & Matching   Steps 16-19 (no SLURM)
 
 Steps:
   1   verify_config           Check DB config, ceph path
-  2   create_experiment       Register experiment + directories
+  2   create_experiment       Register experiment + directories + subject
   3   insert_probe_config     ProbeType, Probe, ElectrodeConfig
   4   ingest_epochs           Epoch.ingest_epochs()
-  5   ephys_epoch_populate    EphysEpoch → ProbeInsertion (Probe must pre-exist)
+  5   manual_ephys_setup      ProbeInsertion + EphysEpoch (bypass read_probe_assignments)
   6   ingest_chunks           EphysChunk.ingest_chunks()
   7   create_blocks           4 × 3h blocks, 1h overlap
   8   populate_block_info     EphysBlockInfo.populate()
-  9   create_electrode_groups 4 groups × 96 channels
+  9   create_electrode_groups 1 group × 96 channels (0-95)
   10  insert_sorting_params   Kilosort4 paramset
   11  create_sorting_tasks    SortingTask entries
   12  preprocessing           PreProcessing.populate()
   13  spike_sorting_slurm     *** SLURM submission ***
   14  post_processing         PostProcessing.populate()
   15  sorted_spikes           SortedSpikes.populate()
-  16  fake_curation           Auto → OfficialCuration
-  17  apply_curation          ApplyOfficialCuration.populate()
-  18  synced_spikes           SyncedSpikes.populate()
+  16  approve_auto_curation   Auto → ManualCuration → OfficialCuration → ApplyOfficialCuration
+  17  synced_spikes           SyncedSpikes.populate()
+  18  insert_matching_params  UnitMatchingParamSet (seed = first block)
   19  unit_matching           UnitMatching.populate()
-  20  chunked_spike_times     ChunkedSpikeTimes.populate()
         """,
     )
-    parser.add_argument("--step", type=int, help="Run a single step (1-20)")
+    parser.add_argument("--step", type=int, help="Run a single step (1-19)")
     parser.add_argument("--phase", type=int, choices=[1, 2, 3], help="Run all steps in a phase")
     parser.add_argument("--dry-run", action="store_true", help="Preview without executing")
     args = parser.parse_args()
@@ -878,13 +971,17 @@ Steps:
     print("=" * 60)
     print("  Ephys v2 Pipeline Test")
     print(f"  Experiment: {EXPERIMENT_NAME}")
-    print(f"  DB prefix:  {EXPECTED_PREFIX}")
+    print(f"  Subject:    {SUBJECT}")
+    print(f"  DB prefix:  {dj.config['custom'].get('database.prefix', '')}")
     if args.dry_run:
         print("  Mode: DRY RUN")
     print("=" * 60)
 
     if args.step:
         # Run single step
+        if args.step < 1 or args.step > len(STEPS):
+            print(f"\n✗ Invalid step {args.step}. Valid range: 1-{len(STEPS)}")
+            sys.exit(1)
         step_entry = STEPS[args.step - 1]
         _, step_name, step_func = step_entry
         success = step_func(dry_run=args.dry_run)
