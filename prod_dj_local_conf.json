@@ -1,0 +1,25 @@
+{
+  "database.host": "aeon-db2",
+  "database.user": "elissas",
+  "database.password": "REPLACE_WITH_PASSWORD",
+  "database.port": 3306,
+  "connection.init_function": null,
+  "database.reconnect": true,
+  "enable_python_native_blobs": true,
+  "loglevel": "INFO",
+  "safemode": true,
+  "display.limit": 20,
+  "display.width": 40,
+  "display.show_tuple_count": true,
+  "custom": {
+      "database.prefix": "aeon_",
+      "repository_config": {"ceph_aeon": "/ceph/aeon"}
+  },
+  "stores": {
+      "dj_store": {
+          "protocol": "file",
+          "location": "/ceph/aeon/aeon/dj_store",
+          "stage": "/ceph/aeon/aeon/dj_store"
+      }
+  }
+}
