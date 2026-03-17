@@ -20,10 +20,9 @@ from aeon.dj_pipeline import acquisition, ephys, spike_sorting
 table_name = "SpikeSorting"  # "PreProcessing", "SpikeSorting", or "PostProcessing"
 
 # Common key fields (shared across blocks)
-# UPDATE subject + paramset_id for production values
 _base = {
     "experiment_name": "social-ephys0.1-aeon3",
-    "subject": "PLACEHOLDER-EDIT-ME",  # UPDATE with real subject
+    "subject": "BAA-1104292",
     "insertion_number": 1,              # 1=ProbeA, 2=ProbeB
     "probe_type": "neuropixels - NP2004",
     "electrode_config_name": "0-383",

@@ -34,10 +34,9 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 EXPERIMENT_NAME = "social-ephys0.1-aeon3"
 
-# Subject — UPDATE after running Phase 0 reconnaissance
-# The test used "test-subject-001" — production needs the real subject name.
-# Phase 0 will help you discover the right value.
-SUBJECT = "PLACEHOLDER-EDIT-ME"
+# Subject — confirmed from behavioral data (AEON2/social-ephys0.1/2024-06-04T10-29-49)
+# Brain area targets: retrosplenial cortex + superior colliculus
+SUBJECT = "BAA-1104292"
 
 # Probe config (same hardware as test — NeuropixelsV2Beta)
 PROBE_NAME = "NP2004-001"
@@ -45,13 +44,12 @@ PROBE_TYPE = "neuropixels - NP2004"
 ELECTRODE_CONFIG_NAME = "0-383"
 N_ELECTRODES = 384
 
-# Epoch + probe labels — will sort BOTH probes in production
-PROBE_LABELS = ["ProbeA", "ProbeB"]  # dual-probe setup
-# Set to ["ProbeA"] if single-probe only (Phase 0 will tell you)
+# Epoch + probe labels — Phase 0 confirmed single probe for June 2024 epochs
+PROBE_LABELS = ["ProbeA"]
 
 # Block schedule: 30h blocks, 6h overlap (24h advance)
-# UPDATE block_start after Phase 0 reconnaissance
-BLOCK_START = "PLACEHOLDER-EDIT-ME"  # e.g. "2024-06-04 11:00:00"
+# First epoch starts 2024-06-04 10:24:07 — round up slightly
+BLOCK_START = "2024-06-04 11:00:00"
 BLOCK_DURATION_HOURS = 30
 BLOCK_ADVANCE_HOURS = 24  # 30 - 6 overlap = advance by 24
 N_BLOCKS = 7  # ~1 week of data
