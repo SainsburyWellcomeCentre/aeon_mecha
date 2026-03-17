@@ -12,6 +12,7 @@ Note: All imports from aeon.dj_pipeline are done inside test methods to avoid
 triggering DataJoint connections before testcontainers fixtures are ready.
 """
 
+import importlib.util
 import uuid
 
 import pytest
@@ -384,6 +385,10 @@ class TestInsertDeviceTypesFKHandling:
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(
+    not importlib.util.find_spec("swc.aeon_exp"),
+    reason="swc-aeon-rigs-foragingabc not installed (install with --extra test-golden)",
+)
 class TestPopulateCatalogFromPydantic:
     """Test Step 1 catalog population from Pydantic class hierarchy."""
 
