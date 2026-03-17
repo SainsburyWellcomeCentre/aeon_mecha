@@ -84,10 +84,25 @@ def dj_config_integration(mysql_container):
 def streams_schema(dj_config_integration):
     """Provide access to streams catalog tables.
 
-    Tables are created during pipeline import (triggered by dj_config_integration).
+    Calls streams_maker.main() to ensure catalog tables (StreamType, DeviceType, etc.)
+    are written to the auto-generated streams.py module.
     Session-scoped — shared by load_metadata integration tests and golden dataset tests.
     """
-    from aeon.dj_pipeline import streams
+    import importlib
+    import sys
+
+    from aeon.dj_pipeline.utils import streams_maker
+
+    # Delete auto-generated file so main() regenerates it with catalog tables
+    if streams_maker._STREAMS_MODULE_FILE.exists():
+        streams_maker._STREAMS_MODULE_FILE.unlink()
+
+    # Remove stale module from cache so it gets reimported after regeneration
+    sys.modules.pop("aeon.dj_pipeline.streams", None)
+
+    streams_maker.main(create_tables=False)
+
+    streams = importlib.import_module("aeon.dj_pipeline.streams")
 
     yield {
         "StreamType": streams.StreamType,
