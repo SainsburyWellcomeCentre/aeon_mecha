@@ -104,7 +104,7 @@ requires-dist = [
     { name = "seaborn" },
     { name = "sphinx", marker = "extra == 'docs'" },
     { name = "swc-aeon", git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git?branch=main" },
-    { name = "swc-aeon-rigs-foragingabc", marker = "extra == 'test'", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=tn%2Fdata-api-updated" },
+    { name = "swc-aeon-rigs-foragingabc", marker = "extra == 'test'", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main" },
     { name = "testcontainers", extras = ["mysql"], marker = "extra == 'test'", specifier = ">=3.7" },
     { name = "xarray", specifier = ">=0.12.3" },
 ]
@@ -4055,8 +4055,8 @@ wheels = [
 
 [[package]]
 name = "swc-aeon"
-version = "0.1.1.dev62+gf453543ee"
-source = { git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git?branch=main#f453543ee547760a00412a77b0d6ef811526a99e" }
+version = "0.2.0"
+source = { git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git?branch=main#c494d5e59e099f9d6034aba50d0fa629c723211b" }
 dependencies = [
     { name = "dotmap" },
     { name = "harp-python" },
@@ -4070,18 +4070,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "swc-aeon-rigs"
-version = "0.1.0"
-source = { git = "https://github.com/SainsburyWellcomeCentre/aeon_swc_rigs.git?branch=main#fa6f4cf83aac773c947989869ed530058640a0a8" }
-dependencies = [
-    { name = "pydantic" },
-    { name = "pydantic-yaml" },
-]
-
-[[package]]
 name = "swc-aeon-rigs-foragingabc"
 version = "0.0.1"
-source = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=tn%2Fdata-api-updated#8b282a46f4c7280138a9e12864ca149e39d19b3b" }
+source = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main#d75a553ad90b06f2206415760e0d9c917c51faa1" }
 dependencies = [
     { name = "dotmap" },
     { name = "gitpython" },
@@ -4093,7 +4084,6 @@ dependencies = [
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "pandas", version = "3.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
     { name = "swc-aeon" },
-    { name = "swc-aeon-rigs" },
 ]
 
 [[package]]
