@@ -67,12 +67,18 @@ gpu = [
 test = [
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "testcontainers", extra = ["mysql"] },
+]
+test-golden = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
     { name = "swc-aeon-rigs-foragingabc" },
     { name = "testcontainers", extra = ["mysql"] },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "aeon-mecha", extras = ["test"], marker = "extra == 'test-golden'" },
     { name = "bandit", marker = "extra == 'dev'" },
     { name = "bottleneck", specifier = ">=1.2.1,<2" },
     { name = "cupy", marker = "extra == 'gpu'" },
@@ -104,11 +110,11 @@ requires-dist = [
     { name = "seaborn" },
     { name = "sphinx", marker = "extra == 'docs'" },
     { name = "swc-aeon", git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git?branch=main" },
-    { name = "swc-aeon-rigs-foragingabc", marker = "extra == 'test'", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main" },
+    { name = "swc-aeon-rigs-foragingabc", marker = "extra == 'test-golden'", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main" },
     { name = "testcontainers", extras = ["mysql"], marker = "extra == 'test'", specifier = ">=3.7" },
     { name = "xarray", specifier = ">=0.12.3" },
 ]
-provides-extras = ["dev", "test", "docs", "gpu"]
+provides-extras = ["dev", "test", "test-golden", "docs", "gpu"]
 
 [[package]]
 name = "alabaster"
