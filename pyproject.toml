@@ -57,6 +57,9 @@ test = [
   "pytest>=7.0",
   "pytest-cov",
   "testcontainers[mysql]>=3.7",
+]
+test-golden = [
+  "aeon-mecha[test]",
   "swc-aeon-rigs-foragingabc",
 ]
 docs = [
