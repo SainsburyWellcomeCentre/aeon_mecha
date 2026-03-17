@@ -149,7 +149,6 @@ try:
             diffs = np.diff(index.values).astype(float)  # nanoseconds
             median_diff_ns = float(np.median(diffs))
             stats["sampling_rate_hz"] = round(1e9 / median_diff_ns, 2) if median_diff_ns > 0 else None
-            stats["median_dt_ms"] = round(median_diff_ns / 1e6, 4)
         return stats
 
     # Now import pipeline — schemas activate with test prefix
@@ -412,7 +411,6 @@ try:
     logger.info("\nSTATS VALIDATION:")
     ts_stats = codec_row["timestamps"]
     logger.info(f"  Sampling rate: {ts_stats.get('sampling_rate_hz')} Hz")
-    logger.info(f"  Median dt:    {ts_stats.get('median_dt_ms')} ms")
     for col in encoder_columns:
         clean_col = re.sub(r"\([^)]*\)", "", col)
         stats = codec_row[clean_col]

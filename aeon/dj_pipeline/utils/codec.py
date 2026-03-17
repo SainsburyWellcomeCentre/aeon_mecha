@@ -96,7 +96,7 @@ def timestamp_stats(index):
     """Compute JSON-serializable summary stats for a datetime index.
 
     Returns:
-        dict with keys: min, max, count, and when count > 1: sampling_rate_hz, median_dt_ms.
+        dict with keys: min, max, count, and when count > 1: sampling_rate_hz.
     """
     stats = {
         "min": str(index.min()),
@@ -107,5 +107,4 @@ def timestamp_stats(index):
         diffs = np.diff(index.values) / np.timedelta64(1, "ns")  # convert to nanoseconds
         median_diff_ns = float(np.median(diffs))
         stats["sampling_rate_hz"] = round(1e9 / median_diff_ns, 2) if median_diff_ns > 0 else None
-        stats["median_dt_ms"] = round(median_diff_ns / 1e6, 4)
     return stats

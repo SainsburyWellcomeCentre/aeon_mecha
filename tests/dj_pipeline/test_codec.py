@@ -36,7 +36,6 @@ def _timestamp_stats(index):
         diffs = np.diff(index.values) / np.timedelta64(1, "ns")
         median_diff_ns = float(np.median(diffs))
         stats["sampling_rate_hz"] = round(1e9 / median_diff_ns, 2) if median_diff_ns > 0 else None
-        stats["median_dt_ms"] = round(median_diff_ns / 1e6, 4)
     return stats
 
 
@@ -88,14 +87,13 @@ class TestTimestampStats:
         stats = _timestamp_stats(index)
         assert stats["count"] == 100
         assert stats["sampling_rate_hz"] == 500.0
-        assert stats["median_dt_ms"] == 2.0
 
     def test_single_timestamp(self):
         index = pd.DatetimeIndex(["2025-01-01"])
         stats = _timestamp_stats(index)
         assert stats["count"] == 1
         assert "sampling_rate_hz" not in stats
-        assert "median_dt_ms" not in stats
+        assert "sampling_rate_hz" not in stats
 
     def test_irregular_timestamps(self):
         times = pd.to_datetime(["2025-01-01 00:00:00", "2025-01-01 00:00:01", "2025-01-01 00:00:05"])

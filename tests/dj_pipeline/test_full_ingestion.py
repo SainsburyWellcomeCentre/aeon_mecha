@@ -530,7 +530,7 @@ class TestCodecStreamData:
 
         assert ts_stats["count"] == len(df)
         assert "sampling_rate_hz" in ts_stats
-        assert "median_dt_ms" in ts_stats
+        assert "sampling_rate_hz" in ts_stats
 
     def test_column_stats_match_stream_df(self, test_epochs, full_pipeline, golden_dataset_config):
         """Verify JSON summary stats match actual stream_df data."""
