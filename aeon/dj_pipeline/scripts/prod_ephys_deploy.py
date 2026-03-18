@@ -386,15 +386,15 @@ def step_recon_existing_data(dry_run=False):
     exp_name = EXPERIMENT_NAME
 
     queries = [
-        ("Experiment", f"SELECT * FROM `{prefix}acquisition`.`#experiment` WHERE experiment_name='{exp_name}'"),
-        ("Experiment.Directory", f"SELECT * FROM `{prefix}acquisition`.`#experiment__directory` WHERE experiment_name='{exp_name}'"),
-        ("Experiment.Subject", f"SELECT * FROM `{prefix}acquisition`.`#experiment__subject` WHERE experiment_name='{exp_name}'"),
-        ("Subject (all)", f"SELECT * FROM `{prefix}subject`.`#subject`"),
+        ("Experiment", f"SELECT * FROM `{prefix}acquisition`.experiment WHERE experiment_name='{exp_name}'"),
+        ("Experiment.Directory", f"SELECT * FROM `{prefix}acquisition`.experiment__directory WHERE experiment_name='{exp_name}'"),
+        ("Experiment.Subject", f"SELECT * FROM `{prefix}acquisition`.experiment__subject WHERE experiment_name='{exp_name}'"),
+        ("Subject (all)", f"SELECT * FROM `{prefix}subject`.subject"),
         ("ProbeType", f"SELECT * FROM `{prefix}ephys`.`#probe_type`"),
         ("Probe", f"SELECT * FROM `{prefix}ephys`.`#probe`"),
-        ("ElectrodeConfig", f"SELECT * FROM `{prefix}ephys`.electrode_config"),
-        ("ElectrodeConfig.Electrode (count)", f"SELECT electrode_config_name, COUNT(*) as n_electrodes FROM `{prefix}ephys`.electrode_config__electrode GROUP BY electrode_config_name"),
-        ("EphysBlock (old, if exists)", f"SELECT * FROM `{prefix}ephys`.`_ephys_block`"),
+        ("ElectrodeConfig", f"SELECT * FROM `{prefix}ephys`.`#electrode_config`"),
+        ("ElectrodeConfig.Electrode (count)", f"SELECT electrode_config_name, COUNT(*) as n_electrodes FROM `{prefix}ephys`.`#electrode_config__electrode` GROUP BY electrode_config_name"),
+        ("EphysBlock (old, if exists)", f"SELECT * FROM `{prefix}ephys`.ephys_block"),
         ("TargetArea", f"SELECT * FROM `{prefix}ephys`.`#target_area`"),
     ]
 
@@ -694,8 +694,6 @@ def step_verify_existing_data(dry_run=False):
         return False
 
     print_ok("All expected existing data verified")
-    return True
-
     return True
 
 
