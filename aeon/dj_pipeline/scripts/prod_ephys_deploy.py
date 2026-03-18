@@ -615,162 +615,86 @@ def step_verify_clean_state(dry_run=False):
 # PHASE 2: Ingestion
 # ===========================================================================
 
-def step_verify_lookups(dry_run=False):
-    """Step 11: Verify Lookup table data survived the drop."""
-    print_header(12, "Verify Lookup Tables")
+def step_verify_existing_data(dry_run=False):
+    """Step 12: Verify tables we did NOT drop have the expected data.
+
+    These tables should already exist in production. We verify they have
+    the values we expect and ERROR if anything is missing or wrong.
+    We never insert into these tables.
+    """
+    print_header(12, "Verify Existing Data (tables we did NOT drop)")
 
     if dry_run:
-        print_info("Would check: ProbeType, Probe, ElectrodeConfig entries")
+        print_info("Would verify: Experiment, Subject, Directory, ProbeType, Probe, ElectrodeConfig")
         return True
 
-    from aeon.dj_pipeline import ephys
+    from aeon.dj_pipeline import acquisition, subject, ephys
 
-    pt = len(ephys.ProbeType())
-    print_ok(f"ProbeType: {pt} entries") if pt > 0 else print_warn(f"ProbeType: EMPTY — need to re-insert")
+    errors = []
 
-    pr = len(ephys.Probe())
-    print_ok(f"Probe: {pr} entries") if pr > 0 else print_warn(f"Probe: EMPTY — need to re-insert")
-
-    ec = len(ephys.ElectrodeConfig())
-    print_ok(f"ElectrodeConfig: {ec} entries") if ec > 0 else print_warn(f"ElectrodeConfig: EMPTY — need to re-insert")
-
-    if pt == 0 or pr == 0 or ec == 0:
-        print_warn("Some Lookup tables are empty — run step 12 to re-insert")
+    # --- Subject ---
+    if subject.Subject & {"subject": SUBJECT}:
+        existing = (subject.Subject & {"subject": SUBJECT}).fetch1()
+        print_ok(f"Subject exists: {SUBJECT}")
+        print_info(f"  {existing}")
     else:
-        print_ok("All Lookup tables have data — you can skip step 12")
+        errors.append(f"Subject '{SUBJECT}' not found in subject table")
 
+    # --- Experiment ---
+    if acquisition.Experiment & {"experiment_name": EXPERIMENT_NAME}:
+        existing = (acquisition.Experiment & {"experiment_name": EXPERIMENT_NAME}).fetch1()
+        print_ok(f"Experiment exists: {EXPERIMENT_NAME}")
+        print_info(f"  start_time: {existing.get('experiment_start_time')}")
+        print_info(f"  arena: {existing.get('arena_name')}, location: {existing.get('location')}")
+    else:
+        errors.append(f"Experiment '{EXPERIMENT_NAME}' not found")
+
+    # --- Directory ---
+    dir_key = {"experiment_name": EXPERIMENT_NAME, "directory_type": "raw"}
+    if acquisition.Experiment.Directory & dir_key:
+        existing = (acquisition.Experiment.Directory & dir_key).fetch1()
+        print_ok(f"Directory exists: {existing.get('directory_path')}")
+    else:
+        errors.append(f"No raw directory registered for {EXPERIMENT_NAME}")
+
+    # --- Experiment.Subject ---
+    exp_subj_key = {"experiment_name": EXPERIMENT_NAME, "subject": SUBJECT}
+    if acquisition.Experiment.Subject & exp_subj_key:
+        print_ok(f"Experiment.Subject exists: {SUBJECT}")
+    else:
+        errors.append(f"Experiment.Subject link missing: {EXPERIMENT_NAME} <-> {SUBJECT}")
+
+    # --- ProbeType ---
+    if ephys.ProbeType & {"probe_type": PROBE_TYPE}:
+        n_elec = len(ephys.ProbeType.Electrode & {"probe_type": PROBE_TYPE})
+        print_ok(f"ProbeType exists: {PROBE_TYPE} ({n_elec} electrodes)")
+    else:
+        errors.append(f"ProbeType '{PROBE_TYPE}' not found")
+
+    # --- Probe ---
+    if ephys.Probe & {"probe": PROBE_NAME}:
+        print_ok(f"Probe exists: {PROBE_NAME}")
+    else:
+        errors.append(f"Probe '{PROBE_NAME}' not found")
+
+    # --- ElectrodeConfig ---
+    ec_key = {"probe_type": PROBE_TYPE, "electrode_config_name": ELECTRODE_CONFIG_NAME}
+    if ephys.ElectrodeConfig & ec_key:
+        n_elec = len(ephys.ElectrodeConfig.Electrode & ec_key)
+        print_ok(f"ElectrodeConfig exists: {ELECTRODE_CONFIG_NAME} ({n_elec} electrodes)")
+    else:
+        errors.append(f"ElectrodeConfig '{ELECTRODE_CONFIG_NAME}' not found")
+
+    if errors:
+        print_fail("Missing expected data — cannot proceed:")
+        for e in errors:
+            print_fail(f"  {e}")
+        print_info("These tables were NOT dropped and should already exist in production.")
+        print_info("If they are missing, something is wrong — investigate before continuing.")
+        return False
+
+    print_ok("All expected existing data verified")
     return True
-
-
-def step_insert_probe_config(dry_run=False):
-    """Step 12: Insert ProbeType, Probe, ElectrodeConfig (only if needed)."""
-    print_header(13, "Insert Probe Configuration")
-
-    if dry_run:
-        print_info(f"Would create ProbeType: {PROBE_TYPE}")
-        print_info(f"Would create Probe: {PROBE_NAME}")
-        print_info(f"Would create ElectrodeConfig: {ELECTRODE_CONFIG_NAME} ({N_ELECTRODES} electrodes)")
-        return True
-
-    import uuid
-    from aeon.dj_pipeline import ephys
-
-    # ProbeType
-    if not (ephys.ProbeType & {"probe_type": PROBE_TYPE}):
-        ephys.ProbeType.insert1({"probe_type": PROBE_TYPE})
-        electrodes = []
-        for e in range(N_ELECTRODES):
-            electrodes.append({
-                "probe_type": PROBE_TYPE,
-                "electrode": e,
-                "shank": 0,
-                "x_coord": (e % 2) * 32.0,
-                "y_coord": (e // 2) * 15.0,
-            })
-        ephys.ProbeType.Electrode.insert(electrodes)
-        print_ok(f"ProbeType created: {PROBE_TYPE} ({N_ELECTRODES} electrodes)")
-    else:
-        print_ok(f"ProbeType already exists: {PROBE_TYPE}")
-
-    # Probe
-    ephys.Probe.insert1(
-        {"probe": PROBE_NAME, "probe_type": PROBE_TYPE, "probe_comment": ""},
-        skip_duplicates=True,
-    )
-    print_ok(f"Probe: {PROBE_NAME}")
-
-    # ElectrodeConfig
-    electrode_config_key = {
-        "probe_type": PROBE_TYPE,
-        "electrode_config_name": ELECTRODE_CONFIG_NAME,
-    }
-    ephys.ElectrodeConfig.insert1(
-        {
-            **electrode_config_key,
-            "electrode_config_description": "",
-            "electrode_config_hash": uuid.uuid4(),
-        },
-        skip_duplicates=True,
-    )
-    print_ok(f"ElectrodeConfig: {ELECTRODE_CONFIG_NAME}")
-
-    existing = len(ephys.ElectrodeConfig.Electrode & electrode_config_key)
-    if existing < N_ELECTRODES:
-        ephys.ElectrodeConfig.Electrode.insert(
-            ({**electrode_config_key, "electrode": e} for e in range(N_ELECTRODES)),
-            skip_duplicates=True,
-        )
-        print_ok(f"ElectrodeConfig.Electrode: {N_ELECTRODES} electrodes")
-    else:
-        print_ok(f"ElectrodeConfig.Electrode: already has {existing} electrodes")
-
-    return True
-
-
-def step_create_experiment(dry_run=False):
-    """Step 13: Register experiment + directories + subject."""
-    print_header(14, "Create Experiment & Subject")
-
-    if dry_run:
-        print_info(f"Would create experiment: {EXPERIMENT_NAME}")
-        print_info(f"Would register raw dir: aeon/data/raw/AEONX1/social-ephys0.1")
-        print_info(f"Would insert subject: {SUBJECT}")
-        return True
-
-    from aeon.dj_pipeline import acquisition, subject
-
-    # Subject
-    subject.Subject.insert1(
-        {
-            "subject": SUBJECT,
-            "sex": "U",
-            "subject_birth_date": "2024-01-01",
-            "subject_description": "Subject for social-ephys0.1 experiment",
-        },
-        skip_duplicates=True,
-    )
-    print_ok(f"Subject: {SUBJECT}")
-
-    # Experiment
-    acquisition.Experiment.insert1(
-        {
-            "experiment_name": EXPERIMENT_NAME,
-            "experiment_start_time": "2024-06-01 06:00:00",
-            "experiment_description": "social ephys experiment 0.1 - AEON3",
-            "arena_name": "circle-2m",
-            "lab": "SWC",
-            "location": "AEON3",
-            "experiment_type": "social",
-        },
-        skip_duplicates=True,
-    )
-    print_ok(f"Experiment: {EXPERIMENT_NAME}")
-
-    # Directory
-    acquisition.Experiment.Directory.insert(
-        [
-            {
-                "experiment_name": EXPERIMENT_NAME,
-                "directory_type": "raw",
-                "repository_name": "ceph_aeon",
-                "directory_path": "aeon/data/raw/AEONX1/social-ephys0.1",
-                "load_order": 0,
-            },
-        ],
-        skip_duplicates=True,
-    )
-    print_ok("Raw directory registered")
-
-    # Experiment.Subject
-    acquisition.Experiment.Subject.insert1(
-        {"experiment_name": EXPERIMENT_NAME, "subject": SUBJECT},
-        skip_duplicates=True,
-    )
-    print_ok(f"Experiment.Subject: {SUBJECT}")
-
-    # Verify
-    exp = (acquisition.Experiment & {"experiment_name": EXPERIMENT_NAME}).fetch1()
-    print_ok(f"  arena: {exp['arena_name']}, location: {exp['location']}")
 
     return True
 
@@ -783,7 +707,7 @@ def step_manual_ephys_setup(dry_run=False):
     2. Insert Epoch + EphysEpoch for relevant epochs
     3. Insert EphysEpoch.Insertion linking probes to epochs
     """
-    print_header(15, "Manual Ephys Setup (ProbeInsertion + Epoch + EphysEpoch)")
+    print_header(13, "Manual Ephys Setup (ProbeInsertion + Epoch + EphysEpoch)")
 
     if dry_run:
         for i, label in enumerate(PROBE_LABELS, 1):
@@ -890,7 +814,7 @@ def step_manual_ephys_setup(dry_run=False):
 
 def step_ingest_chunks(dry_run=False):
     """Step 15: Run ingest_chunks(experiment_name) — creates EphysChunk entries."""
-    print_header(16, "Ingest Ephys Chunks")
+    print_header(14, "Ingest Ephys Chunks")
 
     if dry_run:
         print_info(f"Would call: EphysChunk.ingest_chunks('{EXPERIMENT_NAME}')")
@@ -918,7 +842,7 @@ def step_ingest_chunks(dry_run=False):
 
 def step_create_blocks(dry_run=False):
     """Step 16: Create EphysBlock entries (30h blocks, 6h overlap)."""
-    print_header(17, "Create EphysBlock Entries")
+    print_header(15, "Create EphysBlock Entries")
 
     import pandas as pd
 
@@ -966,7 +890,7 @@ def step_create_blocks(dry_run=False):
 
 def step_populate_block_info(dry_run=False):
     """Step 17: Run EphysBlockInfo.populate()."""
-    print_header(18, "Populate EphysBlockInfo")
+    print_header(16, "Populate EphysBlockInfo")
 
     if dry_run:
         print_info("Would call: EphysBlockInfo.populate()")
@@ -1002,7 +926,7 @@ def step_populate_block_info(dry_run=False):
 
 def step_create_electrode_groups(dry_run=False):
     """Step 18: Create electrode group(s) for sorting."""
-    print_header(19, "Create Electrode Groups")
+    print_header(17, "Create Electrode Groups")
 
     if dry_run:
         print_info(f"Would create 1 group: {ELECTRODE_GROUP_NAME} ({ELECTRODE_GROUP_SIZE} channels)")
@@ -1040,7 +964,7 @@ def step_create_electrode_groups(dry_run=False):
 
 def step_insert_sorting_params(dry_run=False):
     """Step 19: Insert SortingParamSet (Kilosort4)."""
-    print_header(20, "Insert Sorting Parameters")
+    print_header(18, "Insert Sorting Parameters")
 
     if dry_run:
         print_info(f"Would insert paramset_id={PARAMSET_ID} ({SORTING_METHOD})")
@@ -1095,7 +1019,7 @@ def step_insert_sorting_params(dry_run=False):
 
 def step_create_sorting_tasks(dry_run=False):
     """Step 20: Create SortingTask entries (block x electrode group x probe)."""
-    print_header(21, "Create SortingTask Entries")
+    print_header(19, "Create SortingTask Entries")
 
     if dry_run:
         print_info("Would create SortingTask for each block x electrode group x probe")
@@ -1130,7 +1054,7 @@ def step_create_sorting_tasks(dry_run=False):
 
 def step_preprocessing(dry_run=False):
     """Step 21: Run PreProcessing.populate()."""
-    print_header(22, "Run PreProcessing")
+    print_header(20, "Run PreProcessing")
 
     if dry_run:
         print_info("Would call: PreProcessing.populate()")
@@ -1151,7 +1075,7 @@ def step_preprocessing(dry_run=False):
 
 def step_spike_sorting_info(dry_run=False):
     """Step 22: Show SpikeSorting status (SLURM submission needed)."""
-    print_header(23, "SpikeSorting Status (SLURM)")
+    print_header(21, "SpikeSorting Status (SLURM)")
 
     print_info("*** SpikeSorting requires SLURM submission ***")
     print_info("Edit aeon/dj_pipeline/scripts/prod_spike_sorting.py, then: sbatch prod_spike_sorting.sh")
@@ -1185,7 +1109,7 @@ def step_spike_sorting_info(dry_run=False):
 
 def step_post_processing(dry_run=False):
     """Step 23: Run PostProcessing.populate()."""
-    print_header(24, "Run PostProcessing")
+    print_header(22, "Run PostProcessing")
 
     if dry_run:
         print_info("Would call: PostProcessing.populate()")
@@ -1205,7 +1129,7 @@ def step_post_processing(dry_run=False):
 
 def step_sorted_spikes(dry_run=False):
     """Step 24: Run SortedSpikes.populate()."""
-    print_header(25, "Run SortedSpikes + Waveform + SortingQuality")
+    print_header(23, "Run SortedSpikes + Waveform + SortingQuality")
 
     if dry_run:
         print_info("Would call: SortedSpikes.populate(), Waveform.populate(), SortingQuality.populate()")
@@ -1238,7 +1162,7 @@ def step_sorted_spikes(dry_run=False):
 
 def step_approve_auto_curation(dry_run=False):
     """Step 25: Auto-approve curation (raw sorting as official)."""
-    print_header(26, "Approve Automatic Curation")
+    print_header(24, "Approve Automatic Curation")
 
     if dry_run:
         print_info("Would insert ManualCuration + OfficialCuration for each block")
@@ -1301,7 +1225,7 @@ def step_approve_auto_curation(dry_run=False):
 
 def step_synced_spikes(dry_run=False):
     """Step 26: Run SyncedSpikes.populate()."""
-    print_header(27, "Run SyncedSpikes")
+    print_header(25, "Run SyncedSpikes")
 
     if dry_run:
         print_info("Would call: SyncedSpikes.populate()")
@@ -1323,7 +1247,7 @@ def step_synced_spikes(dry_run=False):
 
 def step_insert_matching_params(dry_run=False):
     """Step 27: Insert UnitMatchingParamSet (seed = first block)."""
-    print_header(28, "Insert Unit Matching Parameters")
+    print_header(26, "Insert Unit Matching Parameters")
 
     if dry_run:
         print_info(f"Would insert UnitMatchingParamSet with seed_block_start={BLOCK_START}")
@@ -1351,7 +1275,7 @@ def step_insert_matching_params(dry_run=False):
 
 def step_unit_matching(dry_run=False):
     """Step 28: Run UnitMatching.populate() (iterative frontier expansion)."""
-    print_header(29, "Run Unit Matching")
+    print_header(27, "Run Unit Matching")
 
     if dry_run:
         print_info("Would call: UnitMatching.populate() iteratively")
@@ -1404,9 +1328,7 @@ STEPS = [
     (1, "drop_ephys_tables", step_drop_ephys_tables),
     (1, "verify_clean_state", step_verify_clean_state),
     # Phase 2: Ingestion
-    (2, "verify_lookups", step_verify_lookups),
-    (2, "insert_probe_config", step_insert_probe_config),
-    (2, "create_experiment", step_create_experiment),
+    (2, "verify_existing_data", step_verify_existing_data),
     (2, "manual_ephys_setup", step_manual_ephys_setup),
     (2, "ingest_chunks", step_ingest_chunks),
     (2, "create_blocks", step_create_blocks),
@@ -1439,9 +1361,9 @@ def main():
 Phases:
   0  Reconnaissance       Steps 1-6    (read-only, no changes)
   1  Drop Old Tables      Steps 7-11   (DESTRUCTIVE — drops production data)
-  2  Ingestion            Steps 12-18  (inserts new data)
-  3  Spike Sorting Setup  Steps 19-23  (setup + preprocessing, SLURM at 23)
-  4  Post-Sorting         Steps 24-29  (curation, sync, unit matching)
+  2  Ingestion            Steps 12-16  (verify existing + insert new data)
+  3  Spike Sorting Setup  Steps 17-21  (setup + preprocessing, SLURM at 21)
+  4  Post-Sorting         Steps 22-27  (curation, sync, unit matching)
 
 Steps:
   --- Phase 0: Reconnaissance ---
@@ -1460,28 +1382,26 @@ Steps:
   11  verify_clean_state    Verify + recreate schemas
 
   --- Phase 2: Ingestion ---
-  12  verify_lookups        Check Lookup data survived
-  13  insert_probe_config   ProbeType, Probe, ElectrodeConfig
-  14  create_experiment     Experiment + directories + subject
-  15  manual_ephys_setup    ProbeInsertion + EphysEpoch (all epochs)
-  16  ingest_chunks         EphysChunk.ingest_chunks()
-  17  create_blocks         30h blocks, 6h overlap
-  18  populate_block_info   EphysBlockInfo.populate()
+  12  verify_existing_data  Verify Experiment/Subject/Probe exist (error if not)
+  13  manual_ephys_setup    ProbeInsertion + EphysEpoch (all epochs)
+  14  ingest_chunks         EphysChunk.ingest_chunks()
+  15  create_blocks         30h blocks, 6h overlap
+  16  populate_block_info   EphysBlockInfo.populate()
 
   --- Phase 3: Spike Sorting ---
-  19  create_electrode_groups  Electrode group 0-95
-  20  insert_sorting_params    Kilosort4 paramset
-  21  create_sorting_tasks     SortingTask entries
-  22  preprocessing            PreProcessing.populate()
-  23  spike_sorting_info       *** SLURM submission info ***
+  17  create_electrode_groups  Electrode group 0-95
+  18  insert_sorting_params    Kilosort4 paramset
+  19  create_sorting_tasks     SortingTask entries
+  20  preprocessing            PreProcessing.populate()
+  21  spike_sorting_info       *** SLURM submission info ***
 
   --- Phase 4: Post-Sorting ---
-  24  post_processing       PostProcessing.populate()
-  25  sorted_spikes         SortedSpikes + Waveform + SortingQuality
-  26  approve_auto_curation ManualCuration + OfficialCuration
-  27  synced_spikes         SyncedSpikes.populate()
-  28  insert_matching_params UnitMatchingParamSet
-  29  unit_matching          UnitMatching.populate()
+  22  post_processing       PostProcessing.populate()
+  23  sorted_spikes         SortedSpikes + Waveform + SortingQuality
+  24  approve_auto_curation ManualCuration + OfficialCuration
+  25  synced_spikes         SyncedSpikes.populate()
+  26  insert_matching_params UnitMatchingParamSet
+  27  unit_matching          UnitMatching.populate()
         """,
     )
     parser.add_argument("--step", type=int, help="Run a single step (1-28)")
