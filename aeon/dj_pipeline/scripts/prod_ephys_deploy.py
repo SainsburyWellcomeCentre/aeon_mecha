@@ -370,13 +370,65 @@ def step_recon_subjects(dry_run=False):
     return True
 
 
+def step_recon_existing_data(dry_run=False):
+    """Step 6: Show existing DB values for tables we'll interact with."""
+    print_header(6, "Existing DB Data (tables we interact with)")
+
+    if dry_run:
+        print_info("Would query: Experiment, Experiment.Directory, Experiment.Subject,")
+        print_info("  Subject, ProbeType, Probe, ElectrodeConfig, EphysBlock (old)")
+        return True
+
+    import datajoint as dj
+
+    conn = dj.conn()
+    prefix = dj.config["custom"].get("database.prefix", "")
+    exp_name = EXPERIMENT_NAME
+
+    queries = [
+        ("Experiment", f"SELECT * FROM `{prefix}acquisition`.`#experiment` WHERE experiment_name='{exp_name}'"),
+        ("Experiment.Directory", f"SELECT * FROM `{prefix}acquisition`.`#experiment__directory` WHERE experiment_name='{exp_name}'"),
+        ("Experiment.Subject", f"SELECT * FROM `{prefix}acquisition`.`#experiment__subject` WHERE experiment_name='{exp_name}'"),
+        ("Subject (all)", f"SELECT * FROM `{prefix}subject`.`#subject`"),
+        ("ProbeType", f"SELECT * FROM `{prefix}ephys`.`#probe_type`"),
+        ("Probe", f"SELECT * FROM `{prefix}ephys`.`#probe`"),
+        ("ElectrodeConfig", f"SELECT * FROM `{prefix}ephys`.electrode_config"),
+        ("ElectrodeConfig.Electrode (count)", f"SELECT electrode_config_name, COUNT(*) as n_electrodes FROM `{prefix}ephys`.electrode_config__electrode GROUP BY electrode_config_name"),
+        ("EphysBlock (old, if exists)", f"SELECT * FROM `{prefix}ephys`.`_ephys_block`"),
+        ("TargetArea", f"SELECT * FROM `{prefix}ephys`.`#target_area`"),
+    ]
+
+    for label, sql in queries:
+        print(f"\n  --- {label} ---")
+        try:
+            rows = conn.query(sql).fetchall()
+            if rows:
+                # Get column names
+                cols = conn.query(sql.replace("SELECT *", "SELECT *", 1))
+                for row in rows:
+                    print_info(f"  {row}")
+            else:
+                print_info("  (empty)")
+        except Exception as e:
+            err = str(e)
+            if "doesn't exist" in err:
+                print_info("  (table does not exist)")
+            else:
+                print_warn(f"  Error: {err}")
+
+    print(f"\n  COMPARE these values with the script's config constants above.")
+    print(f"  Tables with skip_duplicates=True won't overwrite existing data.")
+
+    return True
+
+
 # ===========================================================================
 # PHASE 1: Drop Old Production Tables
 # ===========================================================================
 
 def step_safety_check(dry_run=False):
     """Step 6: Final safety check before dropping tables."""
-    print_header(6, "Safety Check Before Drop")
+    print_header(7, "Safety Check Before Drop")
 
     if dry_run:
         print_info("Would verify: host=aeon-db2, prefix=aeon_")
@@ -402,7 +454,7 @@ def step_safety_check(dry_run=False):
 
 def step_drop_curation_schema(dry_run=False):
     """Step 7: Drop spike_sorting_curation schema (depends on spike_sorting)."""
-    print_header(7, "Drop spike_sorting_curation Schema")
+    print_header(8, "Drop spike_sorting_curation Schema")
 
     if dry_run:
         print_info("Would drop entire aeon_spike_sorting_curation schema")
@@ -434,7 +486,7 @@ def step_drop_curation_schema(dry_run=False):
 
 def step_drop_spike_sorting_schema(dry_run=False):
     """Step 8: Drop spike_sorting schema (depends on ephys)."""
-    print_header(8, "Drop spike_sorting Schema")
+    print_header(9, "Drop spike_sorting Schema")
 
     if dry_run:
         print_info("Would drop entire aeon_spike_sorting schema")
@@ -466,7 +518,7 @@ def step_drop_spike_sorting_schema(dry_run=False):
 
 def step_drop_ephys_tables(dry_run=False):
     """Step 9: Drop changed ephys tables (keep Lookup tables)."""
-    print_header(9, "Drop Changed Ephys Tables")
+    print_header(10, "Drop Changed Ephys Tables")
 
     tables_to_drop = [
         "EphysBlockInfo",  # depends on EphysBlock
@@ -515,7 +567,7 @@ def step_drop_ephys_tables(dry_run=False):
 
 def step_verify_clean_state(dry_run=False):
     """Step 10: Verify schemas are clean and recreate tables."""
-    print_header(10, "Verify Clean State + Recreate Tables")
+    print_header(11, "Verify Clean State + Recreate Tables")
 
     if dry_run:
         print_info("Would verify clean state and re-import modules to create tables")
@@ -565,7 +617,7 @@ def step_verify_clean_state(dry_run=False):
 
 def step_verify_lookups(dry_run=False):
     """Step 11: Verify Lookup table data survived the drop."""
-    print_header(11, "Verify Lookup Tables")
+    print_header(12, "Verify Lookup Tables")
 
     if dry_run:
         print_info("Would check: ProbeType, Probe, ElectrodeConfig entries")
@@ -592,7 +644,7 @@ def step_verify_lookups(dry_run=False):
 
 def step_insert_probe_config(dry_run=False):
     """Step 12: Insert ProbeType, Probe, ElectrodeConfig (only if needed)."""
-    print_header(12, "Insert Probe Configuration")
+    print_header(13, "Insert Probe Configuration")
 
     if dry_run:
         print_info(f"Would create ProbeType: {PROBE_TYPE}")
@@ -657,7 +709,7 @@ def step_insert_probe_config(dry_run=False):
 
 def step_create_experiment(dry_run=False):
     """Step 13: Register experiment + directories + subject."""
-    print_header(13, "Create Experiment & Subject")
+    print_header(14, "Create Experiment & Subject")
 
     if dry_run:
         print_info(f"Would create experiment: {EXPERIMENT_NAME}")
@@ -731,7 +783,7 @@ def step_manual_ephys_setup(dry_run=False):
     2. Insert Epoch + EphysEpoch for relevant epochs
     3. Insert EphysEpoch.Insertion linking probes to epochs
     """
-    print_header(14, "Manual Ephys Setup (ProbeInsertion + Epoch + EphysEpoch)")
+    print_header(15, "Manual Ephys Setup (ProbeInsertion + Epoch + EphysEpoch)")
 
     if dry_run:
         for i, label in enumerate(PROBE_LABELS, 1):
@@ -838,7 +890,7 @@ def step_manual_ephys_setup(dry_run=False):
 
 def step_ingest_chunks(dry_run=False):
     """Step 15: Run ingest_chunks(experiment_name) — creates EphysChunk entries."""
-    print_header(15, "Ingest Ephys Chunks")
+    print_header(16, "Ingest Ephys Chunks")
 
     if dry_run:
         print_info(f"Would call: EphysChunk.ingest_chunks('{EXPERIMENT_NAME}')")
@@ -866,7 +918,7 @@ def step_ingest_chunks(dry_run=False):
 
 def step_create_blocks(dry_run=False):
     """Step 16: Create EphysBlock entries (30h blocks, 6h overlap)."""
-    print_header(16, "Create EphysBlock Entries")
+    print_header(17, "Create EphysBlock Entries")
 
     import pandas as pd
 
@@ -914,7 +966,7 @@ def step_create_blocks(dry_run=False):
 
 def step_populate_block_info(dry_run=False):
     """Step 17: Run EphysBlockInfo.populate()."""
-    print_header(17, "Populate EphysBlockInfo")
+    print_header(18, "Populate EphysBlockInfo")
 
     if dry_run:
         print_info("Would call: EphysBlockInfo.populate()")
@@ -950,7 +1002,7 @@ def step_populate_block_info(dry_run=False):
 
 def step_create_electrode_groups(dry_run=False):
     """Step 18: Create electrode group(s) for sorting."""
-    print_header(18, "Create Electrode Groups")
+    print_header(19, "Create Electrode Groups")
 
     if dry_run:
         print_info(f"Would create 1 group: {ELECTRODE_GROUP_NAME} ({ELECTRODE_GROUP_SIZE} channels)")
@@ -988,7 +1040,7 @@ def step_create_electrode_groups(dry_run=False):
 
 def step_insert_sorting_params(dry_run=False):
     """Step 19: Insert SortingParamSet (Kilosort4)."""
-    print_header(19, "Insert Sorting Parameters")
+    print_header(20, "Insert Sorting Parameters")
 
     if dry_run:
         print_info(f"Would insert paramset_id={PARAMSET_ID} ({SORTING_METHOD})")
@@ -1043,7 +1095,7 @@ def step_insert_sorting_params(dry_run=False):
 
 def step_create_sorting_tasks(dry_run=False):
     """Step 20: Create SortingTask entries (block x electrode group x probe)."""
-    print_header(20, "Create SortingTask Entries")
+    print_header(21, "Create SortingTask Entries")
 
     if dry_run:
         print_info("Would create SortingTask for each block x electrode group x probe")
@@ -1078,7 +1130,7 @@ def step_create_sorting_tasks(dry_run=False):
 
 def step_preprocessing(dry_run=False):
     """Step 21: Run PreProcessing.populate()."""
-    print_header(21, "Run PreProcessing")
+    print_header(22, "Run PreProcessing")
 
     if dry_run:
         print_info("Would call: PreProcessing.populate()")
@@ -1099,7 +1151,7 @@ def step_preprocessing(dry_run=False):
 
 def step_spike_sorting_info(dry_run=False):
     """Step 22: Show SpikeSorting status (SLURM submission needed)."""
-    print_header(22, "SpikeSorting Status (SLURM)")
+    print_header(23, "SpikeSorting Status (SLURM)")
 
     print_info("*** SpikeSorting requires SLURM submission ***")
     print_info("Edit aeon/dj_pipeline/scripts/prod_spike_sorting.py, then: sbatch prod_spike_sorting.sh")
@@ -1133,7 +1185,7 @@ def step_spike_sorting_info(dry_run=False):
 
 def step_post_processing(dry_run=False):
     """Step 23: Run PostProcessing.populate()."""
-    print_header(23, "Run PostProcessing")
+    print_header(24, "Run PostProcessing")
 
     if dry_run:
         print_info("Would call: PostProcessing.populate()")
@@ -1153,7 +1205,7 @@ def step_post_processing(dry_run=False):
 
 def step_sorted_spikes(dry_run=False):
     """Step 24: Run SortedSpikes.populate()."""
-    print_header(24, "Run SortedSpikes + Waveform + SortingQuality")
+    print_header(25, "Run SortedSpikes + Waveform + SortingQuality")
 
     if dry_run:
         print_info("Would call: SortedSpikes.populate(), Waveform.populate(), SortingQuality.populate()")
@@ -1186,7 +1238,7 @@ def step_sorted_spikes(dry_run=False):
 
 def step_approve_auto_curation(dry_run=False):
     """Step 25: Auto-approve curation (raw sorting as official)."""
-    print_header(25, "Approve Automatic Curation")
+    print_header(26, "Approve Automatic Curation")
 
     if dry_run:
         print_info("Would insert ManualCuration + OfficialCuration for each block")
@@ -1249,7 +1301,7 @@ def step_approve_auto_curation(dry_run=False):
 
 def step_synced_spikes(dry_run=False):
     """Step 26: Run SyncedSpikes.populate()."""
-    print_header(26, "Run SyncedSpikes")
+    print_header(27, "Run SyncedSpikes")
 
     if dry_run:
         print_info("Would call: SyncedSpikes.populate()")
@@ -1271,7 +1323,7 @@ def step_synced_spikes(dry_run=False):
 
 def step_insert_matching_params(dry_run=False):
     """Step 27: Insert UnitMatchingParamSet (seed = first block)."""
-    print_header(27, "Insert Unit Matching Parameters")
+    print_header(28, "Insert Unit Matching Parameters")
 
     if dry_run:
         print_info(f"Would insert UnitMatchingParamSet with seed_block_start={BLOCK_START}")
@@ -1299,7 +1351,7 @@ def step_insert_matching_params(dry_run=False):
 
 def step_unit_matching(dry_run=False):
     """Step 28: Run UnitMatching.populate() (iterative frontier expansion)."""
-    print_header(28, "Run Unit Matching")
+    print_header(29, "Run Unit Matching")
 
     if dry_run:
         print_info("Would call: UnitMatching.populate() iteratively")
@@ -1344,6 +1396,7 @@ STEPS = [
     (0, "recon_epochs", step_recon_epochs),
     (0, "recon_probes", step_recon_probes),
     (0, "recon_subjects", step_recon_subjects),
+    (0, "recon_existing_data", step_recon_existing_data),
     # Phase 1: Drop Old Tables
     (1, "safety_check", step_safety_check),
     (1, "drop_curation_schema", step_drop_curation_schema),
@@ -1384,11 +1437,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Phases:
-  0  Reconnaissance       Steps 1-5    (read-only, no changes)
-  1  Drop Old Tables      Steps 6-10   (DESTRUCTIVE — drops production data)
-  2  Ingestion            Steps 11-17  (inserts new data)
-  3  Spike Sorting Setup  Steps 18-22  (setup + preprocessing, SLURM at 22)
-  4  Post-Sorting         Steps 23-28  (curation, sync, unit matching)
+  0  Reconnaissance       Steps 1-6    (read-only, no changes)
+  1  Drop Old Tables      Steps 7-11   (DESTRUCTIVE — drops production data)
+  2  Ingestion            Steps 12-18  (inserts new data)
+  3  Spike Sorting Setup  Steps 19-23  (setup + preprocessing, SLURM at 23)
+  4  Post-Sorting         Steps 24-29  (curation, sync, unit matching)
 
 Steps:
   --- Phase 0: Reconnaissance ---
@@ -1397,37 +1450,38 @@ Steps:
    3  recon_epochs          Discover epochs + time range
    4  recon_probes          Inspect probe structure
    5  recon_subjects        Check subject table
+   6  recon_existing_data   Show existing Experiment, Probe, etc. values
 
   --- Phase 1: Drop Old Tables ---
-   6  safety_check          Final safety verification
-   7  drop_curation_schema  Drop spike_sorting_curation
-   8  drop_spike_sorting    Drop spike_sorting
-   9  drop_ephys_tables     Drop changed ephys tables (keep Lookups)
-  10  verify_clean_state    Verify + recreate schemas
+   7  safety_check          Final safety verification
+   8  drop_curation_schema  Drop spike_sorting_curation
+   9  drop_spike_sorting    Drop spike_sorting
+  10  drop_ephys_tables     Drop changed ephys tables (keep Lookups)
+  11  verify_clean_state    Verify + recreate schemas
 
   --- Phase 2: Ingestion ---
-  11  verify_lookups        Check Lookup data survived
-  12  insert_probe_config   ProbeType, Probe, ElectrodeConfig
-  13  create_experiment     Experiment + directories + subject
-  14  manual_ephys_setup    ProbeInsertion + EphysEpoch (all epochs)
-  15  ingest_chunks         EphysChunk.ingest_chunks()
-  16  create_blocks         30h blocks, 6h overlap
-  17  populate_block_info   EphysBlockInfo.populate()
+  12  verify_lookups        Check Lookup data survived
+  13  insert_probe_config   ProbeType, Probe, ElectrodeConfig
+  14  create_experiment     Experiment + directories + subject
+  15  manual_ephys_setup    ProbeInsertion + EphysEpoch (all epochs)
+  16  ingest_chunks         EphysChunk.ingest_chunks()
+  17  create_blocks         30h blocks, 6h overlap
+  18  populate_block_info   EphysBlockInfo.populate()
 
   --- Phase 3: Spike Sorting ---
-  18  create_electrode_groups  Electrode group 0-95
-  19  insert_sorting_params    Kilosort4 paramset
-  20  create_sorting_tasks     SortingTask entries
-  21  preprocessing            PreProcessing.populate()
-  22  spike_sorting_info       *** SLURM submission info ***
+  19  create_electrode_groups  Electrode group 0-95
+  20  insert_sorting_params    Kilosort4 paramset
+  21  create_sorting_tasks     SortingTask entries
+  22  preprocessing            PreProcessing.populate()
+  23  spike_sorting_info       *** SLURM submission info ***
 
   --- Phase 4: Post-Sorting ---
-  23  post_processing       PostProcessing.populate()
-  24  sorted_spikes         SortedSpikes + Waveform + SortingQuality
-  25  approve_auto_curation ManualCuration + OfficialCuration
-  26  synced_spikes         SyncedSpikes.populate()
-  27  insert_matching_params UnitMatchingParamSet
-  28  unit_matching          UnitMatching.populate()
+  24  post_processing       PostProcessing.populate()
+  25  sorted_spikes         SortedSpikes + Waveform + SortingQuality
+  26  approve_auto_curation ManualCuration + OfficialCuration
+  27  synced_spikes         SyncedSpikes.populate()
+  28  insert_matching_params UnitMatchingParamSet
+  29  unit_matching          UnitMatching.populate()
         """,
     )
     parser.add_argument("--step", type=int, help="Run a single step (1-28)")
@@ -1437,7 +1491,7 @@ Steps:
 
     # Phase 0 is read-only, so skip config verification for placeholders
     needs_config = True
-    if args.phase == 0 or (args.step and args.step <= 5):
+    if args.phase == 0 or (args.step and args.step <= 6):
         needs_config = False
 
     if not args.dry_run:
