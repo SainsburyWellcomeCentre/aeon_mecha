@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aeon_mecha"
 version = "0.4.0"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 description = '''
     Code for managing acquired data from Project Aeon experiments. Includes general file IO,
     data QC, querying, and analysis modules.
@@ -65,6 +65,8 @@ docs = [
   "sphinx",
 ]
 gpu = ["cupy", "dask"]
+spike_sorting = ["spikeinterface[full] @ git+https://github.com/SpikeInterface/spikeinterface.git@652f8566c1f7",
+  "spython", "cuda-python", "spikeinterface-gui", "PySide6<6.8", "pyqtgraph"]
 
 [project.urls]
 Homepage = "https://sainsburywellcomecentre.github.io/aeon_docs/"
