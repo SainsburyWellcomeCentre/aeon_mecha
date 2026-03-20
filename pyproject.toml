@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "aeon_mecha"
 version = "0.2.3"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 description = '''
     Code for managing acquired data from Project Aeon experiments. Includes general file IO,
     data QC, querying, and analysis modules.
@@ -22,7 +22,7 @@ license = { file = "license.md" }
 readme = "readme.md"
 dependencies = [
   "bottleneck>=1.2.1,<2",
-  "datajoint>=0.13.7",
+  "datajoint>=0.14,<2",
   "datajoint-utilities @ git+https://github.com/datajoint-company/datajoint-utilities",
   "swc-aeon>=0.1.0",
   "fastparquet",
@@ -66,6 +66,8 @@ docs = [
   "sphinx",
 ]
 gpu = ["cupy", "dask"]
+spike_sorting = ["spikeinterface[full] @ git+https://github.com/SpikeInterface/spikeinterface.git@652f8566c1f7",
+  "spython", "cuda-python", "spikeinterface-gui", "PySide6<6.8", "pyqtgraph"]
 
 [project.scripts]
 aeon_ingest = "aeon.dj_pipeline.populate.process:cli"
