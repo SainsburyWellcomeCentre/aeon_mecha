@@ -7,8 +7,9 @@
 # Status: squeue --start -j <job_id>
 # Cancel: scancel <job_id>
 #
-# Submits as a job array (1-7). Each task sorts one block.
+# Submits as a job array. Each task sorts one block.
 # Block number is passed via $SLURM_ARRAY_TASK_ID.
+# After block 3 split: 8 blocks total (3a=block 3, 3b=block 4).
 # =============================================================================
 
 #SBATCH --job-name=aeon-prod-spike-sort
@@ -18,7 +19,7 @@
 #SBATCH --ntasks=1
 #SBATCH --mem=256G
 #SBATCH --time=7-08:00:00
-#SBATCH --array=1-7
+#SBATCH --array=3-4
 #SBATCH --output=slurm_output/%N_%j_%a.out
 #SBATCH --error=slurm_output/%N_%j_%a.err
 

@@ -2,12 +2,22 @@
 Production spike sorting worker — run via SLURM.
 
 Accepts --block N (1-indexed) to select which block to sort.
-Designed for SLURM job arrays: sbatch --array=1-7 prod_spike_sorting.sh
+Designed for SLURM job arrays: sbatch --array=1-8 prod_spike_sorting.sh
+
+Block schedule (after block 3 split):
+  1: 2024-06-04 11:00 -> 2024-06-05 17:00 (30h)
+  2: 2024-06-05 11:00 -> 2024-06-06 17:00 (30h)
+  3: 2024-06-06 11:00 -> 2024-06-07 05:00 (18h)  <- 3a
+  4: 2024-06-06 23:00 -> 2024-06-07 17:00 (18h)  <- 3b
+  5: 2024-06-07 11:00 -> 2024-06-08 17:00 (30h)
+  6: 2024-06-08 11:00 -> 2024-06-09 17:00 (30h)
+  7: 2024-06-09 11:00 -> 2024-06-10 17:00 (30h)
+  8: 2024-06-10 11:00 -> 2024-06-11 17:00 (30h)
 
 Usage:
     # Single block:
-    uv run python prod_spike_sorting.py --block 1
-    # Via SLURM array (passes $SLURM_ARRAY_TASK_ID automatically):
+    uv run python prod_spike_sorting.py --block 3
+    # Via SLURM array:
     sbatch prod_spike_sorting.sh
 """
 
@@ -23,11 +33,18 @@ from aeon.dj_pipeline import acquisition, ephys, spike_sorting
 # Which pipeline step to run
 TABLE_NAME = "SpikeSorting"  # "PreProcessing", "SpikeSorting", or "PostProcessing"
 
-# Block timing
-BLOCK_START_BASE = "2024-06-04 11:00:00"  # First block start
-BLOCK_DURATION_HOURS = 30
-BLOCK_ADVANCE_HOURS = 24  # Step between blocks (overlap = duration - advance)
-N_BLOCKS = 7
+# Explicit block schedule (after block 3 OOM split)
+BLOCKS = [
+    ("2024-06-04 11:00:00", "2024-06-05 17:00:00"),  # 1
+    ("2024-06-05 11:00:00", "2024-06-06 17:00:00"),  # 2
+    ("2024-06-06 11:00:00", "2024-06-07 05:00:00"),  # 3a
+    ("2024-06-06 23:00:00", "2024-06-07 17:00:00"),  # 3b
+    ("2024-06-07 11:00:00", "2024-06-08 17:00:00"),  # 4
+    ("2024-06-08 11:00:00", "2024-06-09 17:00:00"),  # 5
+    ("2024-06-09 11:00:00", "2024-06-10 17:00:00"),  # 6
+    ("2024-06-10 11:00:00", "2024-06-11 17:00:00"),  # 7
+]
+N_BLOCKS = len(BLOCKS)
 
 # Common key fields
 BASE_KEY = {
@@ -46,13 +63,9 @@ CLEAR_JOB = True  # Clear any 'error' job state before re-running
 
 
 def get_block_key(block_num):
-    """Compute block start/end from 1-indexed block number."""
-    import pandas as pd
-
-    base = pd.Timestamp(BLOCK_START_BASE)
-    start = base + pd.Timedelta(hours=BLOCK_ADVANCE_HOURS * (block_num - 1))
-    end = start + pd.Timedelta(hours=BLOCK_DURATION_HOURS)
-    return {**BASE_KEY, "block_start": str(start), "block_end": str(end)}
+    """Get block start/end from 1-indexed block number."""
+    start, end = BLOCKS[block_num - 1]
+    return {**BASE_KEY, "block_start": start, "block_end": end}
 
 
 def clear_job(dj_table, key):
