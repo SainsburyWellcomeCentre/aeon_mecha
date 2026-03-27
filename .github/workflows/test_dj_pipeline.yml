@@ -6,7 +6,6 @@
 name: test_dj_pipeline
 on:
   pull_request:
-    branches: [datajoint_pipeline]
     types: [opened, reopened, synchronize]
   workflow_dispatch:
 
