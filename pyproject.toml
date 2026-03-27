@@ -45,7 +45,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gpu = ["cupy", "dask"]
+spike_sorting = [
+  "spikeinterface[full]>=0.104.0",
+  "spython", 
+  "cuda-python", 
+  "spikeinterface-gui", 
+  "PySide6<6.8", 
+  "pyqtgraph"
+]
+
+[dependency-groups]
 dev = [
+  { include-group = "test" },
+  { include-group = "docs" },
   "bandit",
   "ipdb",
   "pre-commit",
@@ -59,20 +72,11 @@ test = [
   "testcontainers[mysql]>=3.7",
 ]
 test-golden = [
-  "aeon-mecha[test]",
+  { include-group = "test" },
   "swc-aeon-rigs-foragingabc",
 ]
 docs = [
   "sphinx",
-]
-gpu = ["cupy", "dask"]
-spike_sorting = [
-  "spikeinterface[full]>=0.104.0",
-  "spython", 
-  "cuda-python", 
-  "spikeinterface-gui", 
-  "PySide6<6.8", 
-  "pyqtgraph"
 ]
 
 [project.scripts]
