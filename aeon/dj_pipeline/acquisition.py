@@ -35,7 +35,10 @@ class ExperimentType(dj.Lookup):
     experiment_type: varchar(32)
     """
 
-    contents = zip(["foraging", "social"], strict=False)
+    contents = [
+        {"experiment_type": "foraging"},
+        {"experiment_type": "social"},
+    ]
 
 
 @schema
@@ -47,13 +50,13 @@ class EventType(dj.Lookup):
     """
 
     contents = [
-        (220, "SubjectEnteredArena"),
-        (221, "SubjectExitedArena"),
-        (222, "SubjectRemovedFromArena"),
-        (223, "SubjectRemainedInArena"),
-        (35, "TriggerPellet"),
-        (32, "PelletDetected"),
-        (1000, "No Events"),
+        {"event_code": 220, "event_type": "SubjectEnteredArena"},
+        {"event_code": 221, "event_type": "SubjectExitedArena"},
+        {"event_code": 222, "event_type": "SubjectRemovedFromArena"},
+        {"event_code": 223, "event_type": "SubjectRemainedInArena"},
+        {"event_code": 35, "event_type": "TriggerPellet"},
+        {"event_code": 32, "event_type": "PelletDetected"},
+        {"event_code": 1000, "event_type": "No Events"},
     ]
 
 
@@ -79,7 +82,7 @@ class PipelineRepository(dj.Lookup):
     repository_name: varchar(16)
     """
 
-    contents = zip(["ceph_aeon"], strict=False)
+    contents = [{"repository_name": "ceph_aeon"}]
 
 
 @schema
@@ -88,7 +91,11 @@ class DirectoryType(dj.Lookup):
     directory_type: varchar(16)
     """
 
-    contents = zip(["raw", "processed", "qc"], strict=False)
+    contents = [
+        {"directory_type": "raw"},
+        {"directory_type": "processed"},
+        {"directory_type": "qc"},
+    ]
 
 
 # ------------------- GENERAL INFORMATION ABOUT AN EXPERIMENT --------------------
@@ -378,7 +385,9 @@ class EpochConfig(dj.Imported):
             "commit": metadata.get("commit") or metadata.get("metadata", {}).get("Revision", ""),
             "metadata": rig_config,  # Store original nested JSON for Pydantic reconstruction
             "metadata_file_path": metadata_filepath.relative_to(data_dir).as_posix(),
-            "devices": _flatten_rig_devices(rig_config),  # Flat device dict for ingest_epoch_metadata_from_rig
+            "devices": _flatten_rig_devices(
+                rig_config
+            ),  # Flat device dict for ingest_epoch_metadata_from_rig
         }
 
         # Insert new entries for streams.DeviceType, streams.Device using Rig
@@ -410,6 +419,7 @@ class EpochConfig(dj.Imported):
         self.ActiveRegion.insert(
             {**key, "region_name": k, "region_data": v} for k, v in active_region.items()
         )
+
 
 # ------------------- ACQUISITION CHUNK --------------------
 
@@ -567,7 +577,7 @@ def _match_experiment_directory(experiment_name, path, directories):
             repo_path = paths.get_repository_path(directory.pop("repository_name"))
             break
     else:
-        raise FileNotFoundError(f"Unable to identify the directory" f" where this chunk is from: {path}")
+        raise FileNotFoundError(f"Unable to identify the directory where this chunk is from: {path}")
 
     return raw_data_dir, directory, repo_path
 

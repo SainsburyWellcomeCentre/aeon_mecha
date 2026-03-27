@@ -36,13 +36,13 @@ class Lab(dj.Lookup):
     """
 
     contents = [
-        (
-            "SWC",
-            "Sainsbury Wellcome Centre",
-            "University College London",
-            "25 Howland Street London W1T 4JG",
-            "GMT+1",
-        )
+        {
+            "lab": "SWC",
+            "lab_name": "Sainsbury Wellcome Centre",
+            "institution": "University College London",
+            "address": "25 Howland Street London W1T 4JG",
+            "time_zone": "GMT+1",
+        }
     ]
 
 
@@ -57,13 +57,17 @@ class Location(dj.Lookup):
     """
 
     contents = [
-        ("SWC", "room-0", "room for experiment 0"),
-        ("SWC", "room-1", "room for social experiment"),
-        ("SWC", "464", "room for social experiment using octagon arena"),
-        ("SWC", "AEON", "acquisition machine AEON"),
-        ("SWC", "AEON2", "acquisition machine AEON2"),
-        ("SWC", "AEON3", "acquisition machine AEON3"),
-        ("SWC", "AEON4", "acquisition machine AEON4"),
+        {"lab": "SWC", "location": "room-0", "location_description": "room for experiment 0"},
+        {"lab": "SWC", "location": "room-1", "location_description": "room for social experiment"},
+        {
+            "lab": "SWC",
+            "location": "464",
+            "location_description": "room for social experiment using octagon arena",
+        },
+        {"lab": "SWC", "location": "AEON", "location_description": "acquisition machine AEON"},
+        {"lab": "SWC", "location": "AEON2", "location_description": "acquisition machine AEON2"},
+        {"lab": "SWC", "location": "AEON3", "location_description": "acquisition machine AEON3"},
+        {"lab": "SWC", "location": "AEON4", "location_description": "acquisition machine AEON4"},
     ]
 
 
@@ -85,7 +89,13 @@ class ArenaShape(dj.Lookup):
     definition = """
     arena_shape: varchar(32)
     """
-    contents = zip(["square", "circular", "rectangular", "linear", "octagon"], strict=False)
+    contents = [
+        {"arena_shape": "square"},
+        {"arena_shape": "circular"},
+        {"arena_shape": "rectangular"},
+        {"arena_shape": "linear"},
+        {"arena_shape": "octagon"},
+    ]
 
 
 @schema
@@ -109,8 +119,22 @@ class Arena(dj.Lookup):
     """
 
     contents = [
-        ("circle-2m", "circular arena with 2-meter diameter", "circular", 2, 2, 0.2),
-        ("octagon-1m", "octagon arena with 1-m diameter", "octagon", 1, 1, 0.2),
+        {
+            "arena_name": "circle-2m",
+            "arena_description": "circular arena with 2-meter diameter",
+            "arena_shape": "circular",
+            "arena_x_dim": 2,
+            "arena_y_dim": 2,
+            "arena_z_dim": 0.2,
+        },
+        {
+            "arena_name": "octagon-1m",
+            "arena_description": "octagon arena with 1-m diameter",
+            "arena_shape": "octagon",
+            "arena_x_dim": 1,
+            "arena_y_dim": 1,
+            "arena_z_dim": 0.2,
+        },
     ]
 
 
