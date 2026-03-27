@@ -437,7 +437,7 @@ def pytest_collection_modifyitems(items):
 Register in `pyproject.toml`:
 
 ```toml
-[tool.pytest.ini_options]
+[tool.pytest]
 markers = [
     "unit: Unit tests (no database, synthetic data)",
     "integration: Integration tests (DB via testcontainers, synthetic or golden datasets)",

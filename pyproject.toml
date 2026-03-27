@@ -159,12 +159,17 @@ reportShadowedImports = "error"
 venvPath = "."
 venv = ".venv"
 exclude = ["aeon/dj_pipeline/*", ".venv/*"]
-[tool.pytest.ini_options]
+
+[tool.pytest]
 testpaths = ["tests"]
 markers = [
   "unit: Unit tests (no database, synthetic data)",
   "integration: Integration tests (DB via testcontainers, synthetic or golden datasets)",
   "specialized: Specialized tests (GPU/high-RAM, golden datasets)",
+]
+filterwarnings = [
+  "ignore:No datajoint.json found.*:UserWarning",
+  "ignore:datajoint.migrate is deprecated.*:DeprecationWarning",
 ]
 
 [tool.uv.sources]
