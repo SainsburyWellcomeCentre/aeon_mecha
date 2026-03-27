@@ -64,7 +64,6 @@ dev = [
     { name = "ruff" },
     { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "swc-aeon-rigs-foragingabc" },
     { name = "testcontainers", extra = ["mysql"] },
 ]
 docs = [
@@ -72,6 +71,11 @@ docs = [
     { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 test = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "testcontainers", extra = ["mysql"] },
+]
+test-golden = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "swc-aeon-rigs-foragingabc" },
@@ -123,11 +127,15 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "sphinx" },
-    { name = "swc-aeon-rigs-foragingabc", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main" },
     { name = "testcontainers", extras = ["mysql"], specifier = ">=3.7" },
 ]
 docs = [{ name = "sphinx" }]
 test = [
+    { name = "pytest", specifier = ">=7.0" },
+    { name = "pytest-cov" },
+    { name = "testcontainers", extras = ["mysql"], specifier = ">=3.7" },
+]
+test-golden = [
     { name = "pytest", specifier = ">=7.0" },
     { name = "pytest-cov" },
     { name = "swc-aeon-rigs-foragingabc", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main" },
