@@ -9,10 +9,12 @@ Requirements:
 1. Golden dataset at ~/sciops-data/project_aeon/aeon/data/raw/AEON3/abcBehav0/
 2. aeon_exp_foragingABC package installed
 
-Tests gracefully skip if data unavailable.
+If the above conditions are not met, these tests will be skipped.
 """
 
 import pytest
+
+pytest.importorskip("swc.aeon_exp", reason="Full ingestion tests require swc.aeon_exp package")
 
 
 # =============================================================================
@@ -217,17 +219,13 @@ class TestStreamDataIngestion:
             try:
                 table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
                 total = len(table & {"experiment_name": cfg["experiment_name"]})
-                with_data = len(
-                    table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
-                )
+                with_data = len(table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0")
                 results[table_name] = {"total": total, "with_data": with_data}
             except Exception as e:
                 results[table_name] = f"error: {e}"
 
         # At least some tables should have entries with actual data (sample_count > 0)
-        with_data = {
-            k: v for k, v in results.items() if isinstance(v, dict) and v["with_data"] > 0
-        }
+        with_data = {k: v for k, v in results.items() if isinstance(v, dict) and v["with_data"] > 0}
         assert len(with_data) > 0, f"No stream tables with sample_count > 0. Results: {results}"
 
     def test_video_stream_has_data(self, test_epochs, full_pipeline, golden_dataset_config):
@@ -380,9 +378,7 @@ class TestFetchStream:
         streams = full_pipeline["streams"]
         cfg = golden_dataset_config
 
-        result = self._find_stream_with_data(
-            streams, cfg, name_filter=lambda n: "CameraVideo" in n
-        )
+        result = self._find_stream_with_data(streams, cfg, name_filter=lambda n: "CameraVideo" in n)
         if result is None:
             pytest.skip("No CameraVideo data populated")
 
