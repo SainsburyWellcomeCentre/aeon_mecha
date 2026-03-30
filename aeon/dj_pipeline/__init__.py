@@ -5,9 +5,6 @@ import os
 
 import datajoint as dj
 
-# Import dict_to_uuid from utils for backward compatibility
-from aeon.dj_pipeline.utils import dict_to_uuid
-
 logger = dj.logger
 
 _default_database_prefix = os.getenv("DJ_DB_PREFIX") or "aeon_"
@@ -53,14 +50,13 @@ def fetch_stream(query, drop_pk=True, round_microseconds=True):
     df.set_index("time", inplace=True)
     df.sort_index(inplace=True)
     df = df.convert_dtypes(
-        convert_string=False,
-        convert_integer=False,
-        convert_boolean=False,
-        convert_floating=False
+        convert_string=False, convert_integer=False, convert_boolean=False, convert_floating=False
     )
     if not df.empty and round_microseconds:
-        logging.warning("Rounding timestamps to microseconds is now enabled by default."
-                        " To disable, set round_microseconds=False.")
+        logging.warning(
+            "Rounding timestamps to microseconds is now enabled by default."
+            " To disable, set round_microseconds=False."
+        )
         df.index = df.index.round("us")
     return df
 
