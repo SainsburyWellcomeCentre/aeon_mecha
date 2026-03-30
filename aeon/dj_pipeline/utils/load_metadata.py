@@ -9,11 +9,9 @@ Devices are organized in Rig objects with collections (cameras, feeders, nest, e
 Stream readers are defined via @data_reader decorated methods on Device classes.
 """
 
-import datetime
 import importlib
 import inspect
 import json
-import pathlib
 import re
 import typing
 from collections import defaultdict
@@ -26,10 +24,13 @@ import datajoint as dj
 from aeon.dj_pipeline.utils import dict_to_uuid, streams_maker
 
 if TYPE_CHECKING:
-    from swc.aeon.schema import BaseSchema, Device
+    from swc.aeon.schema import BaseSchema
 
 logger = dj.logger
 
+# Constants for annotation parsing
+ANNOTATION_ARGS_COUNT = 2
+DATA_READER_PARAMS_COUNT = 2
 
 # region Catalog Population Functions
 
@@ -55,7 +56,7 @@ def get_data_reader_methods(device_class: type) -> list[tuple[str, Any]]:
                 # Check direct signature first
                 sig = inspect.signature(func)
                 params = list(sig.parameters.keys())
-                if len(params) == 2 and params[1] == "pattern":
+                if len(params) == DATA_READER_PARAMS_COUNT and params[1] == "pattern":
                     data_reader_methods.append((name, func))
                     continue
 
@@ -68,7 +69,10 @@ def get_data_reader_methods(device_class: type) -> list[tuple[str, Any]]:
                             if callable(orig_func):
                                 orig_sig = inspect.signature(orig_func)
                                 orig_params = list(orig_sig.parameters.keys())
-                                if len(orig_params) == 2 and orig_params[1] == "pattern":
+                                if (
+                                    len(orig_params) == DATA_READER_PARAMS_COUNT
+                                    and orig_params[1] == "pattern"
+                                ):
                                     data_reader_methods.append((name, func))
                                     break
                         except ValueError:
@@ -100,7 +104,7 @@ def get_device_class_from_field(field_info) -> type | None:
     # Handle Dict[Name, Device] - e.g., Dict[CameraName, Camera]
     if origin is dict:
         args = typing.get_args(annotation)
-        if len(args) == 2:
+        if len(args) == ANNOTATION_ARGS_COUNT:
             # args[1] is the value type (Device class)
             device_class = args[1]
             if _has_data_readers(device_class):
@@ -419,14 +423,14 @@ def _find_device_in_rig(rig, device_name: str):
         field_value = getattr(rig, field_name)
 
         # Handle Dict[Name, Device] collections
-        if isinstance(field_value, dict):
-            if device_name in field_value:
-                return field_value[device_name]
+        if isinstance(field_value, dict) and device_name in field_value:
+            return field_value[device_name]
 
         # Handle single device fields
-        elif _has_data_readers(type(field_value)):
-            if field_name == device_name or getattr(field_value, "_container_prefix", None) == device_name:
-                return field_value
+        if _has_data_readers(type(field_value)) and (
+            field_name == device_name or getattr(field_value, "_container_prefix", None) == device_name
+        ):
+            return field_value
 
     raise ValueError(f"Device '{device_name}' not found in Rig")
 
@@ -819,7 +823,8 @@ def ingest_epoch_metadata_from_rig(
             if not (streams.DeviceName & device_key):
                 logger.warning(
                     f"Device name '{device_name}' not registered in streams.DeviceName. "
-                    "This should not happen - check if metadata file and Rig schema are consistent. Skipping..."
+                    "This should not happen - check if metadata file and Rig schema are consistent. "
+                    "Skipping..."
                 )
                 continue
 
