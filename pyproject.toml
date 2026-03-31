@@ -170,7 +170,8 @@ reportMatchNotExhaustive = "error"
 # *Note*: we may want to set all 'ReportOptional*' rules to "none", but leaving 'em default for now
 venvPath = "."
 venv = ".venv"
-exclude = ["aeon/dj_pipeline/*", ".venv/*"]
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", "aeon/dj_pipeline/*", ".venv"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
