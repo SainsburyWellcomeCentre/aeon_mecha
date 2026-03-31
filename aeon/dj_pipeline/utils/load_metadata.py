@@ -714,7 +714,7 @@ def extract_active_regions(rig_config: dict) -> dict[str, Any]:
     return active_regions
 
 
-def _extract_device_mapper_from_rig(rig_config: dict) -> tuple[dict[str, str], dict[str, str]]:
+def _extract_device_mapper_from_rig(rig_config: dict) -> tuple[dict[str, str], dict[str, str | None]]:
     """Extract device type mapper and serial numbers from rig structure.
 
     Calculates device types on-the-fly from rig structure. No persistent cache needed
@@ -1024,7 +1024,7 @@ def get_stream_entries(rig: "BaseSchema") -> list[dict]:
 
 def get_device_mapper_from_rig(
     rig: "BaseSchema", metadata_filepath: Path
-) -> tuple[dict[str, str], dict[str, str]]:
+) -> tuple[dict[str, str], dict[str, str | None]]:
     """Extract device type mapper and serial numbers from Pydantic Rig.
 
     Device types are derived from the class name (type(device).__name__).
