@@ -14,9 +14,6 @@ If the above conditions are not met, these tests will be skipped.
 
 import pytest
 
-pytest.importorskip("swc.aeon_exp", reason="Full ingestion tests require swc.aeon_exp package")
-
-
 # =============================================================================
 # Step 1: Catalog Population Tests
 # =============================================================================

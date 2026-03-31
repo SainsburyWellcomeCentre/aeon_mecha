@@ -7,8 +7,10 @@ Test commands:
 """
 
 import datetime
+import importlib
 import logging
 import os
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -75,7 +77,7 @@ def dj_config_integration(mysql_container):
     dj.config.database.database_prefix = TEST_DB_PREFIX
 
     # Now import pipeline — all module-level schema activations use test prefix
-    import aeon.dj_pipeline as pipeline  # noqa: F841
+    importlib.import_module("aeon.dj_pipeline")
 
     return {"database_prefix": TEST_DB_PREFIX}
 
@@ -101,10 +103,8 @@ def streams_schema(dj_config_integration):
     # Teardown: drop test schema (may already be dropped by full_pipeline)
     import datajoint as dj
 
-    try:
+    with suppress(Exception):
         dj.Schema(streams.schema.database).drop()
-    except Exception:
-        pass
 
 
 @pytest.fixture(scope="session")
@@ -164,8 +164,13 @@ def golden_dataset_config():
 
 @pytest.fixture(scope="session")
 def require_golden_data(dj_config_integration, golden_dataset_config):
-    """Skip tests if golden dataset is unavailable. Returns epoch path."""
+    """Skip golden-data tests if required packages or dataset files are unavailable."""
     import aeon.dj_pipeline as pipeline
+
+    pytest.importorskip(
+        "swc.aeon_exp",
+        reason="Full ingestion tests require swc.aeon_exp package",
+    )
 
     if not DEFAULT_GOLDEN_DATA_ROOT.exists():
         pytest.skip(f"Golden data root not found: {DEFAULT_GOLDEN_DATA_ROOT}")
@@ -191,7 +196,7 @@ def require_golden_data(dj_config_integration, golden_dataset_config):
 
 
 @pytest.fixture(scope="session")
-def full_pipeline(dj_config_integration, streams_schema, golden_dataset_config):
+def full_pipeline(dj_config_integration, streams_schema, require_golden_data, golden_dataset_config):
     """Full pipeline setup with all schemas for golden dataset tests.
 
     Since dj_config_integration sets database_prefix BEFORE importing pipeline
@@ -249,7 +254,7 @@ def full_pipeline(dj_config_integration, streams_schema, golden_dataset_config):
 
 
 @pytest.fixture(scope="session")
-def test_experiment(full_pipeline, require_golden_data, golden_dataset_config):
+def test_experiment(full_pipeline, golden_dataset_config):
     """Create experiment from golden dataset config."""
     lab = full_pipeline["lab"]
     acquisition = full_pipeline["acquisition"]
