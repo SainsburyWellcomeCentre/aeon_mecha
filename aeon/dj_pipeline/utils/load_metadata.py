@@ -608,7 +608,8 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
             streams.DeviceType.Stream.insert(new_device_stream_types)
         except dj.DataJointError as e:
             # Only handle FK constraint violations (MySQL error 1452)
-            if "foreign key constraint fails" in str(e).lower() or "1452" in str(e):
+            msg = str(e).lower()
+            if "foreign key constraint fails" in msg or "1452" in msg:
                 logger.info("FK constraint on DeviceType.Stream, inserting missing StreamType")
                 insert_stream_types(rig)
                 streams.DeviceType.Stream.insert(new_device_stream_types)
