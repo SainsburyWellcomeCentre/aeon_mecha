@@ -2,14 +2,6 @@
 
 This module provides a reusable pattern for programmatically creating new experiments
 in the DataJoint pipeline.
-
-Example:
-    >>> from aeon.dj_pipeline.utils.create_experiment import create_experiment
-    >>> create_experiment(
-    ...     experiment_name="myexp-aeon3",
-    ...     experiment_type="foraging",
-    ...     devices_schema_name="swc.aeon.exp.myexp.experiment.MyExperiment",
-    ... )
 """
 
 from datetime import datetime
@@ -51,6 +43,14 @@ def create_experiment(
 
     Raises:
         FileNotFoundError: If the raw data directory cannot be found
+
+    Examples:
+        >>> from aeon.dj_pipeline.utils.create_experiment import create_experiment
+        >>> create_experiment(
+        ...     experiment_name="myexp-aeon3",
+        ...     experiment_type="foraging",
+        ...     devices_schema_name="swc.aeon.exp.myexp.experiment.MyExperiment",
+        ... )
     """
     # Parse experiment name to infer components
     # Convention: "{exp_name}-{machine_name}", e.g., "social0.4-aeon3"
