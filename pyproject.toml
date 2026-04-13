@@ -22,7 +22,7 @@ license = { file = "license.md" }
 readme = "readme.md"
 dependencies = [
   "bottleneck>=1.2.1,<2",
-  "datajoint>=0.13.7",
+  "datajoint>=0.14,<2",
   "datajoint-utilities @ git+https://github.com/datajoint-company/datajoint-utilities",
   "swc-aeon @ git+https://github.com/SainsburyWellcomeCentre/aeon_api.git",
   "fastparquet",
@@ -60,6 +60,14 @@ dev = [
   "tox",
 ]
 gpu = ["cupy", "dask"]
+spike_sorting = [
+  "spikeinterface[full]>=0.104.0",
+  "spython", 
+  "cuda-python", 
+  "spikeinterface-gui", 
+  "PySide6<6.8", 
+  "pyqtgraph"
+]
 
 [project.scripts]
 aeon_ingest = "aeon.dj_pipeline.populate.process:cli"
