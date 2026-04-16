@@ -376,7 +376,7 @@ class EphysChunk(dj.Manual):
 class EphysBlock(dj.Manual):
     """User-defined period of time of ephys data (in HARP clock)."""
 
-    definition = """  # A an arbitrary period of time of ephys data
+    definition = """  # An arbitrary period of time of ephys data
     -> ProbeInsertion
     block_start: datetime(6)  # start of an ephys block (in synced clock - i.e. HARP clock)
     block_end: datetime(6)    # end of an ephys block (in synced clock - i.e. HARP clock)

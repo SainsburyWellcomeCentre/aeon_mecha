@@ -13,7 +13,7 @@ from swc.aeon.io import api as io_api
 schema = dj.Schema(get_schema_name("streams"))
 
 
-@schema
+@schema 
 class StreamType(dj.Lookup):
     """Catalog of unique stream types used across Project Aeon.
 
@@ -35,7 +35,7 @@ class StreamType(dj.Lookup):
     """
 
 
-@schema
+@schema 
 class DeviceType(dj.Lookup):
     """Catalog of all device types used across Project Aeon."""
 
@@ -60,7 +60,7 @@ class DeviceType(dj.Lookup):
         """
 
 
-@schema
+@schema 
 class DeviceName(dj.Lookup):
     definition = """  # Catalog of device instance names
     device_name: varchar(36)
@@ -69,13 +69,15 @@ class DeviceName(dj.Lookup):
     """
 
 
-@schema
+@schema 
 class Device(dj.Lookup):
     definition = """  # Physical devices identified by serial number or port
     device_serial_number: varchar(12)
     ---
     -> DeviceType
     """
+
+
 @schema 
 class ActivityWeightScale(dj.Manual):
         definition = """ # activity_weight_scale operation for time, location, experiment (v-unknown)
@@ -186,10 +188,11 @@ class ActivityWeightScaleWeightFiltered(dj.Imported):
     -> ActivityWeightScale
     -> acquisition.Chunk
     ---
-    sample_count: int32      # number of data points acquired from this stream for a given chunk
-    timestamps: <blob>   # (datetime) timestamps of WeightFiltered data
-    value: <blob>
-    stable: <blob>
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    value: json             # summary stats (min, max, mean, dtype, count)
+    stable: json             # summary stats (min, max, mean, dtype, count)
+    stream_df: <aeon_stream>   # full DataFrame via codec
     """
 
         @property
@@ -206,21 +209,18 @@ class ActivityWeightScaleWeightFiltered(dj.Imported):
             )
 
         def make(self, key):
-            """Load and insert the data for the ActivityWeightScaleWeightFiltered table."""
+            """Load stream data, compute summary stats, and store codec reference."""
             from swc.aeon.io import api as io_api
 
+            from aeon.dj_pipeline.utils.codec import column_stats, timestamp_stats
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-            # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "epoch_start"
             )
             data_dirs = acquisition.Experiment.get_data_directories(key)
-
-            # device_name is now part of the key (PK), no need to fetch from attribute
             device_name = key["device_name"]
 
-            # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
                 key["experiment_name"], device_name, "WeightFiltered", epoch_start
             )
@@ -232,19 +232,29 @@ class ActivityWeightScaleWeightFiltered(dj.Imported):
                 end=pd.Timestamp(chunk_end),
             )
 
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "WeightFiltered",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
 
 
 @schema 
@@ -253,9 +263,10 @@ class FeederDeliverPellet(dj.Imported):
     -> Feeder
     -> acquisition.Chunk
     ---
-    sample_count: int32      # number of data points acquired from this stream for a given chunk
-    timestamps: <blob>   # (datetime) timestamps of DeliverPellet data
-    event: <blob>
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    event: json             # summary stats (min, max, mean, dtype, count)
+    stream_df: <aeon_stream>   # full DataFrame via codec
     """
 
         @property
@@ -272,21 +283,18 @@ class FeederDeliverPellet(dj.Imported):
             )
 
         def make(self, key):
-            """Load and insert the data for the FeederDeliverPellet table."""
+            """Load stream data, compute summary stats, and store codec reference."""
             from swc.aeon.io import api as io_api
 
+            from aeon.dj_pipeline.utils.codec import column_stats, timestamp_stats
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-            # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "epoch_start"
             )
             data_dirs = acquisition.Experiment.get_data_directories(key)
-
-            # device_name is now part of the key (PK), no need to fetch from attribute
             device_name = key["device_name"]
 
-            # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
                 key["experiment_name"], device_name, "DeliverPellet", epoch_start
             )
@@ -298,19 +306,29 @@ class FeederDeliverPellet(dj.Imported):
                 end=pd.Timestamp(chunk_end),
             )
 
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "DeliverPellet",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
 
 
 @schema 
@@ -319,9 +337,10 @@ class FeederBeamBreak(dj.Imported):
     -> Feeder
     -> acquisition.Chunk
     ---
-    sample_count: int32      # number of data points acquired from this stream for a given chunk
-    timestamps: <blob>   # (datetime) timestamps of BeamBreak data
-    event: <blob>
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    event: json             # summary stats (min, max, mean, dtype, count)
+    stream_df: <aeon_stream>   # full DataFrame via codec
     """
 
         @property
@@ -338,21 +357,18 @@ class FeederBeamBreak(dj.Imported):
             )
 
         def make(self, key):
-            """Load and insert the data for the FeederBeamBreak table."""
+            """Load stream data, compute summary stats, and store codec reference."""
             from swc.aeon.io import api as io_api
 
+            from aeon.dj_pipeline.utils.codec import column_stats, timestamp_stats
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-            # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "epoch_start"
             )
             data_dirs = acquisition.Experiment.get_data_directories(key)
-
-            # device_name is now part of the key (PK), no need to fetch from attribute
             device_name = key["device_name"]
 
-            # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
                 key["experiment_name"], device_name, "BeamBreak", epoch_start
             )
@@ -364,19 +380,29 @@ class FeederBeamBreak(dj.Imported):
                 end=pd.Timestamp(chunk_end),
             )
 
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "BeamBreak",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
 
 
 @schema 
@@ -385,10 +411,11 @@ class FeederEncoder(dj.Imported):
     -> Feeder
     -> acquisition.Chunk
     ---
-    sample_count: int32      # number of data points acquired from this stream for a given chunk
-    timestamps: <blob>   # (datetime) timestamps of Encoder data
-    angle: <blob>
-    intensity: <blob>
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    angle: json             # summary stats (min, max, mean, dtype, count)
+    intensity: json             # summary stats (min, max, mean, dtype, count)
+    stream_df: <aeon_stream>   # full DataFrame via codec
     """
 
         @property
@@ -405,21 +432,18 @@ class FeederEncoder(dj.Imported):
             )
 
         def make(self, key):
-            """Load and insert the data for the FeederEncoder table."""
+            """Load stream data, compute summary stats, and store codec reference."""
             from swc.aeon.io import api as io_api
 
+            from aeon.dj_pipeline.utils.codec import column_stats, timestamp_stats
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-            # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "epoch_start"
             )
             data_dirs = acquisition.Experiment.get_data_directories(key)
-
-            # device_name is now part of the key (PK), no need to fetch from attribute
             device_name = key["device_name"]
 
-            # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
                 key["experiment_name"], device_name, "Encoder", epoch_start
             )
@@ -431,19 +455,29 @@ class FeederEncoder(dj.Imported):
                 end=pd.Timestamp(chunk_end),
             )
 
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "Encoder",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
 
 
 @schema 
@@ -452,10 +486,11 @@ class CameraVideo(dj.Imported):
     -> Camera
     -> acquisition.Chunk
     ---
-    sample_count: int32      # number of data points acquired from this stream for a given chunk
-    timestamps: <blob>   # (datetime) timestamps of Video data
-    hw_counter: <blob>
-    hw_timestamp: <blob>
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    hw_counter: json             # summary stats (min, max, mean, dtype, count)
+    hw_timestamp: json             # summary stats (min, max, mean, dtype, count)
+    stream_df: <aeon_stream>   # full DataFrame via codec
     """
 
         @property
@@ -472,21 +507,18 @@ class CameraVideo(dj.Imported):
             )
 
         def make(self, key):
-            """Load and insert the data for the CameraVideo table."""
+            """Load stream data, compute summary stats, and store codec reference."""
             from swc.aeon.io import api as io_api
 
+            from aeon.dj_pipeline.utils.codec import column_stats, timestamp_stats
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-            # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "epoch_start"
             )
             data_dirs = acquisition.Experiment.get_data_directories(key)
-
-            # device_name is now part of the key (PK), no need to fetch from attribute
             device_name = key["device_name"]
 
-            # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
                 key["experiment_name"], device_name, "Video", epoch_start
             )
@@ -498,19 +530,29 @@ class CameraVideo(dj.Imported):
                 end=pd.Timestamp(chunk_end),
             )
 
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "Video",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
 
 
 @schema 
@@ -519,10 +561,11 @@ class EnvironmentLightEvents(dj.Imported):
     -> Environment
     -> acquisition.Chunk
     ---
-    sample_count: int32      # number of data points acquired from this stream for a given chunk
-    timestamps: <blob>   # (datetime) timestamps of LightEvents data
-    channel: <blob>
-    value: <blob>
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    channel: json             # summary stats (min, max, mean, dtype, count)
+    value: json             # summary stats (min, max, mean, dtype, count)
+    stream_df: <aeon_stream>   # full DataFrame via codec
     """
 
         @property
@@ -539,21 +582,18 @@ class EnvironmentLightEvents(dj.Imported):
             )
 
         def make(self, key):
-            """Load and insert the data for the EnvironmentLightEvents table."""
+            """Load stream data, compute summary stats, and store codec reference."""
             from swc.aeon.io import api as io_api
 
+            from aeon.dj_pipeline.utils.codec import column_stats, timestamp_stats
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-            # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "epoch_start"
             )
             data_dirs = acquisition.Experiment.get_data_directories(key)
-
-            # device_name is now part of the key (PK), no need to fetch from attribute
             device_name = key["device_name"]
 
-            # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
                 key["experiment_name"], device_name, "LightEvents", epoch_start
             )
@@ -565,19 +605,29 @@ class EnvironmentLightEvents(dj.Imported):
                 end=pd.Timestamp(chunk_end),
             )
 
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "LightEvents",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
 
 
 @schema 
@@ -586,15 +636,16 @@ class CameraPosition(dj.Imported):
     -> Camera
     -> acquisition.Chunk
     ---
-    sample_count: int32      # number of data points acquired from this stream for a given chunk
-    timestamps: <blob>   # (datetime) timestamps of Position data
-    x: <blob>
-    y: <blob>
-    angle: <blob>
-    major: <blob>
-    minor: <blob>
-    area: <blob>
-    id: <blob>
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    x: json             # summary stats (min, max, mean, dtype, count)
+    y: json             # summary stats (min, max, mean, dtype, count)
+    angle: json             # summary stats (min, max, mean, dtype, count)
+    major: json             # summary stats (min, max, mean, dtype, count)
+    minor: json             # summary stats (min, max, mean, dtype, count)
+    area: json             # summary stats (min, max, mean, dtype, count)
+    id: json             # summary stats (min, max, mean, dtype, count)
+    stream_df: <aeon_stream>   # full DataFrame via codec
     """
 
         @property
@@ -611,21 +662,18 @@ class CameraPosition(dj.Imported):
             )
 
         def make(self, key):
-            """Load and insert the data for the CameraPosition table."""
+            """Load stream data, compute summary stats, and store codec reference."""
             from swc.aeon.io import api as io_api
 
+            from aeon.dj_pipeline.utils.codec import column_stats, timestamp_stats
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-            # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "epoch_start"
             )
             data_dirs = acquisition.Experiment.get_data_directories(key)
-
-            # device_name is now part of the key (PK), no need to fetch from attribute
             device_name = key["device_name"]
 
-            # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
                 key["experiment_name"], device_name, "Position", epoch_start
             )
@@ -637,19 +685,29 @@ class CameraPosition(dj.Imported):
                 end=pd.Timestamp(chunk_end),
             )
 
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "Position",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
 
 
 @schema 
@@ -658,10 +716,11 @@ class ActivityWeightScaleWeightSubject(dj.Imported):
     -> ActivityWeightScale
     -> acquisition.Chunk
     ---
-    sample_count: int32      # number of data points acquired from this stream for a given chunk
-    timestamps: <blob>   # (datetime) timestamps of WeightSubject data
-    value: <blob>
-    stable: <blob>
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    value: json             # summary stats (min, max, mean, dtype, count)
+    stable: json             # summary stats (min, max, mean, dtype, count)
+    stream_df: <aeon_stream>   # full DataFrame via codec
     """
 
         @property
@@ -678,21 +737,18 @@ class ActivityWeightScaleWeightSubject(dj.Imported):
             )
 
         def make(self, key):
-            """Load and insert the data for the ActivityWeightScaleWeightSubject table."""
+            """Load stream data, compute summary stats, and store codec reference."""
             from swc.aeon.io import api as io_api
 
+            from aeon.dj_pipeline.utils.codec import column_stats, timestamp_stats
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-            # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "epoch_start"
             )
             data_dirs = acquisition.Experiment.get_data_directories(key)
-
-            # device_name is now part of the key (PK), no need to fetch from attribute
             device_name = key["device_name"]
 
-            # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
                 key["experiment_name"], device_name, "WeightSubject", epoch_start
             )
@@ -704,19 +760,29 @@ class ActivityWeightScaleWeightSubject(dj.Imported):
                 end=pd.Timestamp(chunk_end),
             )
 
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "WeightSubject",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
 
 
 @schema 
@@ -725,10 +791,11 @@ class ActivityWeightScaleWeightRaw(dj.Imported):
     -> ActivityWeightScale
     -> acquisition.Chunk
     ---
-    sample_count: int32      # number of data points acquired from this stream for a given chunk
-    timestamps: <blob>   # (datetime) timestamps of WeightRaw data
-    value: <blob>
-    stable: <blob>
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    value: json             # summary stats (min, max, mean, dtype, count)
+    stable: json             # summary stats (min, max, mean, dtype, count)
+    stream_df: <aeon_stream>   # full DataFrame via codec
     """
 
         @property
@@ -745,21 +812,18 @@ class ActivityWeightScaleWeightRaw(dj.Imported):
             )
 
         def make(self, key):
-            """Load and insert the data for the ActivityWeightScaleWeightRaw table."""
+            """Load stream data, compute summary stats, and store codec reference."""
             from swc.aeon.io import api as io_api
 
+            from aeon.dj_pipeline.utils.codec import column_stats, timestamp_stats
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-            # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "epoch_start"
             )
             data_dirs = acquisition.Experiment.get_data_directories(key)
-
-            # device_name is now part of the key (PK), no need to fetch from attribute
             device_name = key["device_name"]
 
-            # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
                 key["experiment_name"], device_name, "WeightRaw", epoch_start
             )
@@ -771,19 +835,29 @@ class ActivityWeightScaleWeightRaw(dj.Imported):
                 end=pd.Timestamp(chunk_end),
             )
 
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "WeightRaw",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
 
 
 @schema 
@@ -792,9 +866,10 @@ class ActivityWeightScaleBaselineEvent(dj.Imported):
     -> ActivityWeightScale
     -> acquisition.Chunk
     ---
-    sample_count: int32      # number of data points acquired from this stream for a given chunk
-    timestamps: <blob>   # (datetime) timestamps of BaselineEvent data
-    value: <blob>
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    value: json             # summary stats (min, max, mean, dtype, count)
+    stream_df: <aeon_stream>   # full DataFrame via codec
     """
 
         @property
@@ -811,21 +886,18 @@ class ActivityWeightScaleBaselineEvent(dj.Imported):
             )
 
         def make(self, key):
-            """Load and insert the data for the ActivityWeightScaleBaselineEvent table."""
+            """Load stream data, compute summary stats, and store codec reference."""
             from swc.aeon.io import api as io_api
 
+            from aeon.dj_pipeline.utils.codec import column_stats, timestamp_stats
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-            # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "epoch_start"
             )
             data_dirs = acquisition.Experiment.get_data_directories(key)
-
-            # device_name is now part of the key (PK), no need to fetch from attribute
             device_name = key["device_name"]
 
-            # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
                 key["experiment_name"], device_name, "BaselineEvent", epoch_start
             )
@@ -837,19 +909,29 @@ class ActivityWeightScaleBaselineEvent(dj.Imported):
                 end=pd.Timestamp(chunk_end),
             )
 
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "BaselineEvent",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
 
 
 @schema 
@@ -858,9 +940,10 @@ class FeederRetriedDelivery(dj.Imported):
     -> Feeder
     -> acquisition.Chunk
     ---
-    sample_count: int32      # number of data points acquired from this stream for a given chunk
-    timestamps: <blob>   # (datetime) timestamps of RetriedDelivery data
-    retried_delivery: <blob>
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    retried_delivery: json             # summary stats (min, max, mean, dtype, count)
+    stream_df: <aeon_stream>   # full DataFrame via codec
     """
 
         @property
@@ -877,21 +960,18 @@ class FeederRetriedDelivery(dj.Imported):
             )
 
         def make(self, key):
-            """Load and insert the data for the FeederRetriedDelivery table."""
+            """Load stream data, compute summary stats, and store codec reference."""
             from swc.aeon.io import api as io_api
 
+            from aeon.dj_pipeline.utils.codec import column_stats, timestamp_stats
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
-            # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "epoch_start"
             )
             data_dirs = acquisition.Experiment.get_data_directories(key)
-
-            # device_name is now part of the key (PK), no need to fetch from attribute
             device_name = key["device_name"]
 
-            # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
                 key["experiment_name"], device_name, "RetriedDelivery", epoch_start
             )
@@ -903,18 +983,28 @@ class FeederRetriedDelivery(dj.Imported):
                 end=pd.Timestamp(chunk_end),
             )
 
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "RetriedDelivery",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
 
 
