@@ -305,8 +305,8 @@ class TestFetchStream:
     """Test fetch_stream() with real populated stream data.
 
     fetch_stream is the primary data access function for stream tables.
-    It fetches blob columns, explodes arrays into rows, and returns a
-    time-indexed DataFrame. These tests validate the full round-trip:
+    For codec-based tables, it fetches stream_df (decoded via AeonStreamCodec)
+    and returns a time-indexed DataFrame. These tests validate the full round-trip:
     raw data -> DB -> fetch_stream -> DataFrame.
     """
 
@@ -450,3 +450,116 @@ class TestFetchStream:
         # Timestamps should be rounded to microseconds (no sub-us precision)
         nanos = df.index.astype(np.int64)
         assert all(nanos % 1000 == 0), "Timestamps should be rounded to microseconds"
+
+
+# =============================================================================
+# Codec Stream Data Regression Tests
+# =============================================================================
+
+
+@pytest.mark.integration
+class TestCodecStreamData:
+    """Verify codec-based stream tables store correct summary stats and return correct DataFrames."""
+
+    POPULATE_LIMIT = 10
+
+    def _ensure_and_find(self, full_pipeline, golden_dataset_config, name_filter=None):
+        """Populate streams and find one with data."""
+        import datajoint as dj
+
+        acquisition = full_pipeline["acquisition"]
+        streams = full_pipeline["streams"]
+        cfg = golden_dataset_config
+
+        acquisition.EpochConfig.populate()
+        acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
+
+        for name in dir(streams):
+            if name.startswith("_"):
+                continue
+            if name_filter and not name_filter(name):
+                continue
+            obj = getattr(streams, name, None)
+            if isinstance(obj, type) and issubclass(obj, dj.Imported) and obj is not dj.Imported:
+                obj.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+                query = obj & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
+                if len(query):
+                    return name, obj, query
+        return None
+
+    def test_stream_df_returns_dataframe(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify stream_df codec column returns a pandas DataFrame."""
+        import pandas as pd
+
+        result = self._ensure_and_find(full_pipeline, golden_dataset_config)
+        if result is None:
+            pytest.fail("No stream table with data found")
+
+        name, table, query = result
+        row = query.fetch1()
+        assert isinstance(row["stream_df"], pd.DataFrame)
+        assert not row["stream_df"].empty
+
+    def test_sample_count_matches_stream_df(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify sample_count matches len(stream_df)."""
+        result = self._ensure_and_find(full_pipeline, golden_dataset_config)
+        if result is None:
+            pytest.fail("No stream table with data found")
+
+        name, table, query = result
+        row = query.fetch1()
+        assert row["sample_count"] == len(row["stream_df"])
+
+    def test_timestamp_stats_match_stream_df(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify timestamp JSON stats match actual stream_df index."""
+        result = self._ensure_and_find(full_pipeline, golden_dataset_config)
+        if result is None:
+            pytest.fail("No stream table with data found")
+
+        name, table, query = result
+        row = query.fetch1()
+        ts_stats = row["timestamps"]
+        df = row["stream_df"]
+
+        assert ts_stats["count"] == len(df)
+        assert "sampling_rate_hz" in ts_stats
+        assert "sampling_rate_hz" in ts_stats
+
+    def test_column_stats_match_stream_df(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify JSON summary stats match actual stream_df data."""
+        import numpy as np
+
+        result = self._ensure_and_find(
+            full_pipeline, golden_dataset_config, name_filter=lambda n: "Encoder" in n
+        )
+        if result is None:
+            pytest.skip("No Encoder stream data populated")
+
+        name, table, query = result
+        # Restrict to one device to get exactly one row
+        row = (query & "device_name LIKE '%1'").fetch1()
+        df = row["stream_df"]
+
+        for col in df.columns:
+            if col in row and isinstance(row[col], dict) and "min" in row[col]:
+                stats = row[col]
+                assert stats["min"] == float(np.nanmin(df[col].values))
+                assert stats["max"] == float(np.nanmax(df[col].values))
+                assert stats["count"] == len(df)
+
+    def test_no_blob_columns_in_stream_tables(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify stream tables have no blob columns (all json + codec)."""
+        import datajoint as dj
+
+        streams = full_pipeline["streams"]
+
+        for name in dir(streams):
+            if name.startswith("_"):
+                continue
+            obj = getattr(streams, name, None)
+            if isinstance(obj, type) and issubclass(obj, dj.Imported) and obj is not dj.Imported:
+                for attr_name in obj.heading.secondary_attributes:
+                    attr = obj.heading.attributes[attr_name]
+                    assert not attr.is_blob, (
+                        f"{name}.{attr_name} is still a blob column — expected json or codec"
+                    )
