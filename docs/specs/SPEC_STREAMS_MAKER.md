@@ -573,7 +573,7 @@ from aeon.dj_pipeline.utils.load_metadata import (
 )
 
 # STEP 1: Populate catalog from all registered Experiment classes
-for exp in acquisition.Experiment.DevicesSchema.fetch(as_dict=True):
+for exp in acquisition.Experiment.DevicesSchema.to_dicts():
     experiment_class = get_experiment_pydantic(exp["devices_schema_name"])
     populate_catalog_from_pydantic(experiment_class)
 
