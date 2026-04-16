@@ -109,7 +109,7 @@ class TestTimestampStats:
 
 @pytest.mark.integration
 class TestAeonStreamCodecEncode:
-    def test_valid_encode(self):
+    def test_valid_encode(self, dj_config_integration):
         from aeon.dj_pipeline.utils.codec import AeonStreamCodec
 
         codec = AeonStreamCodec()
@@ -124,14 +124,14 @@ class TestAeonStreamCodecEncode:
         result = codec.encode(value)
         assert result == value
 
-    def test_missing_keys_raises(self):
+    def test_missing_keys_raises(self, dj_config_integration):
         from aeon.dj_pipeline.utils.codec import AeonStreamCodec
 
         codec = AeonStreamCodec()
         with pytest.raises(ValueError, match="missing required keys"):
             codec.encode({"stream_type": "Encoder"})
 
-    def test_non_dict_raises(self):
+    def test_non_dict_raises(self, dj_config_integration):
         from aeon.dj_pipeline.utils.codec import AeonStreamCodec
 
         codec = AeonStreamCodec()
