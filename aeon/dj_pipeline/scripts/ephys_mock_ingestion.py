@@ -147,7 +147,7 @@ ephys.EphysBlockInfo.Chunk.insert1(
     {**ephys_block_key, **ephys_chunk_key}, allow_direct_insert=True
 )
 
-electrode_df = (ephys.ElectrodeConfig.Electrode & config_key).fetch("KEY", order_by="electrode")
+electrode_df = (ephys.ElectrodeConfig.Electrode & config_key).keys(order_by="electrode")
 ephys.EphysBlockInfo.Channel.insert(
     ({**ephys_block_key, "channel_idx": ch_idx, "channel_name": ch_idx, **ch_key}
      for ch_idx, ch_key in enumerate(electrode_df)),

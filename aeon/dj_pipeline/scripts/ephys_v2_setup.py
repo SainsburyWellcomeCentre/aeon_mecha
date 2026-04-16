@@ -74,11 +74,8 @@ def verify_prefix_or_exit():
     """
     import datajoint as dj
 
-    if "custom" not in dj.config:
-        dj.config["custom"] = {}
-
-    prefix = dj.config["custom"].get("database.prefix", "")
-    host = dj.config.get("database.host", "")
+    prefix = dj.config.database.database_prefix or ""
+    host = dj.config.database.host or ""
 
     if not prefix:
         print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is empty.")
@@ -134,7 +131,7 @@ def step_verify_config(dry_run=False):
 
     import datajoint as dj
 
-    prefix = dj.config["custom"].get("database.prefix", "")
+    prefix = dj.config.database.database_prefix or ""
     print_ok(f"Database prefix: {prefix}")
 
     try:
@@ -228,11 +225,11 @@ def step_create_experiment(dry_run=False):
     exp = (acquisition.Experiment & {"experiment_name": EXPERIMENT_NAME}).fetch1()
     print_ok(f"  arena: {exp['arena_name']}, location: {exp['location']}")
 
-    dirs = (acquisition.Experiment.Directory & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    dirs = (acquisition.Experiment.Directory & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     for d in dirs:
         print_ok(f"  directory: {d['directory_type']} → {d['directory_path']}")
 
-    subjects = (acquisition.Experiment.Subject & {"experiment_name": EXPERIMENT_NAME}).fetch("subject")
+    subjects = (acquisition.Experiment.Subject & {"experiment_name": EXPERIMENT_NAME}).to_arrays("subject")
     print_ok(f"  subjects: {list(subjects)}")
 
     return True
@@ -391,9 +388,9 @@ def step_manual_ephys_setup(dry_run=False):
     print_ok(f"EphysEpoch.Insertion: probe_label={PROBE_LABEL}")
 
     # Verify
-    pi = (ephys.ProbeInsertion & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    pi = (ephys.ProbeInsertion & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     print_ok(f"ProbeInsertion count: {len(pi)}")
-    ei = (ephys.EphysEpoch.Insertion & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    ei = (ephys.EphysEpoch.Insertion & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     print_ok(f"EphysEpoch.Insertion count: {len(ei)}")
 
     return True
@@ -412,7 +409,7 @@ def step_ingest_chunks(dry_run=False):
     print_info("Ingesting ephys chunks...")
     ephys.EphysChunk.ingest_chunks(EXPERIMENT_NAME)
 
-    chunks = (ephys.EphysChunk & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    chunks = (ephys.EphysChunk & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     if not chunks:
         print_fail("No EphysChunk entries created")
         return False
@@ -449,7 +446,7 @@ def step_create_blocks(dry_run=False):
 
     from aeon.dj_pipeline import ephys
 
-    probe_insertions = (ephys.ProbeInsertion & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    probe_insertions = (ephys.ProbeInsertion & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     if not probe_insertions:
         print_fail("No ProbeInsertions found — run step 5 first")
         return False
@@ -490,7 +487,7 @@ def step_populate_block_info(dry_run=False):
         display_progress=True, suppress_errors=SUPPRESS_ERRORS
     )
 
-    block_infos = (ephys.EphysBlockInfo & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    block_infos = (ephys.EphysBlockInfo & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     if not block_infos:
         print_fail("No EphysBlockInfo entries — populate may have failed")
         return False
@@ -616,7 +613,7 @@ def step_create_sorting_tasks(dry_run=False):
 
     from aeon.dj_pipeline import ephys, spike_sorting
 
-    blocks = (ephys.EphysBlock & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    blocks = (ephys.EphysBlock & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
 
     if not blocks:
         print_fail("No EphysBlock entries — run step 7 first")
@@ -766,7 +763,7 @@ def step_approve_auto_curation(dry_run=False):
         print_ok("CurationMethod 'SpikeInterface' inserted")
 
     # For each SpikeSorting entry, create ManualCuration + OfficialCuration
-    sorting_entries = (spike_sorting.SpikeSorting & {"experiment_name": EXPERIMENT_NAME}).fetch("KEY")
+    sorting_entries = (spike_sorting.SpikeSorting & {"experiment_name": EXPERIMENT_NAME}).keys()
     now = datetime.now(timezone.utc)
 
     mc_count = 0
