@@ -90,7 +90,7 @@ def find_or_create_probe_insertion(
     existing = (
         probe_insertion_table
         & {"experiment_name": experiment_name, "subject": subject, "probe": probe_id}
-    ).fetch(as_dict=True)
+    ).to_dicts()
     if existing:
         row = existing[0]
         return {
@@ -103,7 +103,7 @@ def find_or_create_probe_insertion(
     existing_nums = (
         probe_insertion_table
         & {"experiment_name": experiment_name, "subject": subject}
-    ).fetch("insertion_number")
+    ).to_arrays("insertion_number")
     new_num = int(existing_nums.max()) + 1 if len(existing_nums) > 0 else 1
 
     probe_insertion_table.insert1({

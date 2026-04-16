@@ -412,7 +412,7 @@ def save_manual_curation(key: dict, description: str = "") -> int:
         )
 
     # Find the next available curation_id
-    existing_ids = (ManualCuration & key).fetch("curation_id")
+    existing_ids = (ManualCuration & key).to_arrays("curation_id")
     next_curation_id = max(existing_ids) + 1 if len(existing_ids) > 0 else 1
 
     # Copy curation_data.json with curation_id suffix
@@ -593,7 +593,7 @@ def restore_raw_sorting(key: dict) -> None:
     # (those with no remaining UnitMatching.Unit references from any block)
     insertion_key = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
     n_orphans = 0
-    for gu_key in (spike_sorting.GlobalUnit & insertion_key).fetch("KEY"):
+    for gu_key in (spike_sorting.GlobalUnit & insertion_key).keys():
         if len(spike_sorting.UnitMatching.Unit & gu_key) == 0:
             logger.info(f"Deleting orphaned GlobalUnit {gu_key['global_unit']}...")
             (spike_sorting.GlobalUnit & gu_key).delete(safemode=False)

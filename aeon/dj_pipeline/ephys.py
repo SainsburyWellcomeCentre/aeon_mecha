@@ -259,9 +259,7 @@ class EphysChunk(dj.Manual):
             return
 
         # Build epoch lookup: {epoch_dir_name: epoch_start} from Epoch table
-        epochs = (acquisition.Epoch & exp_key).fetch(
-            "epoch_start", "epoch_dir", as_dict=True
-        )
+        epochs = (acquisition.Epoch & exp_key).proj("epoch_start", "epoch_dir").to_dicts()
         epoch_dir_to_start = {}
         for ep in epochs:
             if ep["epoch_dir"]:
@@ -271,7 +269,7 @@ class EphysChunk(dj.Manual):
         # Build insertion lookup from EphysEpoch.Insertion:
         # {(epoch_start, probe_label): insertion_key}
         insertion_lookup = {}
-        insertion_entries = (EphysEpoch.Insertion & exp_key).fetch(as_dict=True)
+        insertion_entries = (EphysEpoch.Insertion & exp_key).to_dicts()
         for entry in insertion_entries:
             lookup_key = (entry["epoch_start"], entry["probe_label"])
             insertion_lookup[lookup_key] = {
@@ -344,7 +342,7 @@ class EphysChunk(dj.Manual):
             # Resolve electrode config
             probe_name = (ProbeInsertion & insertion_key).fetch1("probe")
             probe_type = (Probe & {"probe": probe_name}).fetch1("probe_type")
-            configs = (ElectrodeConfig & {"probe_type": probe_type}).fetch(
+            configs = (ElectrodeConfig & {"probe_type": probe_type}).to_arrays(
                 "electrode_config_name"
             )
             if len(configs) == 0:
@@ -453,8 +451,8 @@ class EphysBlockInfo(dj.Imported):
             if not (start_query and end_query):
                 raise ValueError(f"No Chunk found between {start_time} and {end_time}")
             time_restriction = (
-                f'chunk_start >= "{min(start_query.fetch("chunk_start"))}"'
-                f' AND chunk_start < "{max(end_query.fetch("chunk_end"))}"'
+                f'chunk_start >= "{min(start_query.to_arrays("chunk_start"))}"'
+                f' AND chunk_start < "{max(end_query.to_arrays("chunk_end"))}"'
             )
             return time_restriction
 
@@ -468,7 +466,7 @@ class EphysBlockInfo(dj.Imported):
             sum(
                 chunk_query.proj(
                     dur="TIMESTAMPDIFF(SECOND, chunk_start, chunk_end) / 3600"
-                ).fetch("dur")
+                ).to_arrays("dur")
             )
         )
 
@@ -477,12 +475,12 @@ class EphysBlockInfo(dj.Imported):
         ).total_seconds() / 3600.0  # in hours
 
         # Read electrode config from the chunks in this block (set during ingest_chunks)
-        first_chunk = chunk_query.fetch(
-            "probe_type", "electrode_config_name", limit=1, as_dict=True
-        )[0]
+        probe_type, electrode_config_name = (chunk_query & dj.Top(limit=1)).fetch1(
+            "probe_type", "electrode_config_name"
+        )
         econfig = {
-            "probe_type": first_chunk["probe_type"],
-            "electrode_config_name": first_chunk["electrode_config_name"],
+            "probe_type": probe_type,
+            "electrode_config_name": electrode_config_name,
         }
 
         self.insert1(
@@ -496,9 +494,7 @@ class EphysBlockInfo(dj.Imported):
         )
 
         # Channel
-        electrode_df = (ElectrodeConfig.Electrode & econfig).fetch(
-            "KEY", order_by="electrode"
-        )
+        electrode_df = (ElectrodeConfig.Electrode & econfig).keys(order_by="electrode")
         self.Channel.insert(
             (
                 {**key, "channel_idx": ch_idx, "channel_name": ch_idx, **ch_key}
