@@ -526,6 +526,11 @@ uv run pytest --cov=aeon.dj_pipeline.utils --cov-report=html
 uv run pytest tests/dj_pipeline/utils/test_load_metadata_unit.py::TestToPascalCase -v --pdb
 ```
 
+> **Note:** Running tests regenerates `aeon/dj_pipeline/streams.py` with auto-generated
+> stream tables (e.g. `FeederEncoder`, `CameraVideo`) from the test database. Before
+> committing, check `git diff aeon/dj_pipeline/streams.py` and discard test-generated
+> changes (`git checkout aeon/dj_pipeline/streams.py`).
+
 ---
 
 ## Implementation Plan
