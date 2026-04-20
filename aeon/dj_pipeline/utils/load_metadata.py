@@ -662,11 +662,16 @@ def extract_active_regions(rig_config: dict) -> dict[str, Any]:
     active_regions: dict[str, Any] = {}
 
     # Extract regions from camera tracking configs
-    for camera_name, camera_config in rig_config.get("cameras", {}).items():
-        blob_tracking = camera_config.get("cameraTracking", {}).get("blobTracking", {})
-        for region_name, region_config in blob_tracking.items():
-            if region_name != "threshold":
-                active_regions[f"{camera_name}_{region_name}"] = region_config
+    cameras = rig_config.get("cameras", {})
+    for camera_name, camera_config in cameras.items():
+        camera_tracking = camera_config.get("cameraTracking")
+        if not camera_tracking:
+            continue
+
+        for region_name, region_config in camera_tracking.get("blobTracking", {}).items():
+            if region_name == "threshold":
+                continue
+            active_regions[f"{camera_name}_{region_name}"] = region_config
 
     # Extract activity center regions if present
     activity_center = rig_config.get("activityCenter", {})
