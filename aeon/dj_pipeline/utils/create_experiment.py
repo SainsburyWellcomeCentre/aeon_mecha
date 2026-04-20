@@ -101,9 +101,7 @@ def create_experiment(
             "experiment_name": experiment_name,
             "repository_name": repository_name,
             "directory_type": dir_type,
-            "directory_path": (repo_path / "aeon" / "data" / dir_type / machine_name.upper() / exp_name)
-            .relative_to(repo_path)
-            .as_posix(),
+            "directory_path": f"aeon/data/{dir_type}/{machine_name.upper()}/{exp_name}",
             "load_order": load_order,
         }
         for load_order, dir_type in enumerate(["processed", "raw"])
