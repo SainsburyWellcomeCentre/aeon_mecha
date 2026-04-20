@@ -169,7 +169,7 @@ Pure function tests - no database, no external packages required:
 | Function | Test Cases |
 |----------|------------|
 | `to_pascal_case()` | `"video"` → `"Video"`, `"beam_break"` → `"BeamBreak"` |
-| `_flatten_rig_devices()` | Flatten nested rig config to device dict |
+| `flatten_rig_devices()` | Flatten nested rig config to device dict |
 | `_extract_device_mapper_from_rig()` | Extract device type mapper and serial numbers |
 | `extract_active_regions()` | Extract ActiveRegion data from rig config |
 
@@ -193,12 +193,12 @@ class TestToPascalCase:
 @pytest.mark.unit
 class TestFlattenRigDevices:
     def test_extracts_cameras(self, sample_rig_config):
-        result = _flatten_rig_devices(sample_rig_config)
+        result = flatten_rig_devices(sample_rig_config)
         assert "CameraTop" in result
         assert result["CameraTop"]["serialNumber"] == "21053810"
 
     def test_extracts_feeders(self, sample_rig_config):
-        result = _flatten_rig_devices(sample_rig_config)
+        result = flatten_rig_devices(sample_rig_config)
         assert "Feeder1" in result
         assert result["Feeder1"]["portName"] == "COM3"
 ```

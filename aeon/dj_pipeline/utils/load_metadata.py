@@ -621,7 +621,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         streams.Device.insert(new_devices)
 
 
-def _flatten_rig_devices(rig_config: dict) -> dict[str, dict]:  # pyright: ignore[reportUnusedFunction]
+def flatten_rig_devices(rig_config: dict) -> dict[str, dict]:
     """Flatten nested rig device structure into flat device dict.
 
     Converts:

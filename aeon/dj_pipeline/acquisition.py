@@ -5,11 +5,10 @@ import json
 import pathlib
 
 import datajoint as dj
-import pandas as pd
 from swc.aeon.io import api as io_api
 from swc.aeon.io import reader as io_reader
 
-from aeon.dj_pipeline import get_schema_name, lab, subject
+from aeon.dj_pipeline import get_schema_name, lab, subject  # pyright: ignore[reportUnusedImport]
 from aeon.dj_pipeline.utils import paths
 
 schema = dj.schema(get_schema_name("acquisition"))
@@ -336,8 +335,8 @@ class EpochConfig(dj.Imported):
         worker startup. This method only performs DML (inserts), no DDL (table creation).
         """
         from aeon.dj_pipeline.utils.load_metadata import (
-            _flatten_rig_devices,
             extract_active_regions,
+            flatten_rig_devices,
             get_experiment_pydantic,
             ingest_epoch_metadata_from_rig,
             insert_device_types,
@@ -378,7 +377,9 @@ class EpochConfig(dj.Imported):
             "commit": metadata.get("commit") or metadata.get("metadata", {}).get("Revision", ""),
             "metadata": rig_config,  # Store original nested JSON for Pydantic reconstruction
             "metadata_file_path": metadata_filepath.relative_to(data_dir).as_posix(),
-            "devices": _flatten_rig_devices(rig_config),  # Flat device dict for ingest_epoch_metadata_from_rig
+            "devices": flatten_rig_devices(
+                rig_config
+            ),  # Flat device dict for ingest_epoch_metadata_from_rig
         }
 
         # Insert new entries for streams.DeviceType, streams.Device using Rig
@@ -410,6 +411,7 @@ class EpochConfig(dj.Imported):
         self.ActiveRegion.insert(
             {**key, "region_name": k, "region_data": v} for k, v in active_region.items()
         )
+
 
 # ------------------- ACQUISITION CHUNK --------------------
 
@@ -567,7 +569,7 @@ def _match_experiment_directory(experiment_name, path, directories):
             repo_path = paths.get_repository_path(directory.pop("repository_name"))
             break
     else:
-        raise FileNotFoundError(f"Unable to identify the directory" f" where this chunk is from: {path}")
+        raise FileNotFoundError(f"Unable to identify the directory where this chunk is from: {path}")
 
     return raw_data_dir, directory, repo_path
 
