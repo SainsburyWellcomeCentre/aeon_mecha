@@ -151,6 +151,7 @@ convention = "google"
 useLibraryCodeForTypes = false
 reportMissingImports = "none"
 reportImportCycles = "error"
+reportOperatorIssue = "none"
 reportUnusedImport = "error"
 reportUnusedClass = "error"
 reportUnusedFunction = "error"
