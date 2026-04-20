@@ -21,7 +21,8 @@ from typing import TYPE_CHECKING, Any
 
 import datajoint as dj
 
-from aeon.dj_pipeline.utils import dict_to_uuid, streams_maker
+from aeon.dj_pipeline import get_schema_name
+from aeon.dj_pipeline.utils import dict_to_uuid
 
 if TYPE_CHECKING:
     from swc.aeon.schema import BaseSchema
@@ -139,13 +140,12 @@ def get_reader_path_from_annotation(func) -> str | None:
         """Get return type from function, handling TypeVar."""
         try:
             hints = typing.get_type_hints(f)
+            return_type = hints.get("return")
+            if return_type is not None and not isinstance(return_type, typing.TypeVar):
+                return return_type
         except (NameError, TypeError):
-            return None
-
-        return_type = hints.get("return")
-        if return_type is None or isinstance(return_type, typing.TypeVar):
-            return None
-        return return_type
+            pass
+        return None
 
     # First try the function directly
     return_type = _get_return_type(func)
@@ -172,10 +172,7 @@ def get_reader_path_from_annotation(func) -> str | None:
     module = getattr(return_type, "__module__", None)
     name = getattr(return_type, "__name__", None)
 
-    if module and name:
-        return f"{module}.{name}"
-
-    return None
+    return f"{module}.{name}" if module and name else None
 
 
 def _extract_kwargs_from_reader(reader) -> dict | None:
@@ -190,25 +187,21 @@ def _extract_kwargs_from_reader(reader) -> dict | None:
     Returns:
         Dict of kwargs (excluding 'pattern'), or None if no special kwargs
     """
-    reader_class = reader.__class__
-    sig = inspect.signature(reader_class.__init__)
-
+    sig = inspect.signature(reader.__class__.__init__)
     kwargs = {}
-    for param_name, _param in sig.parameters.items():
-        # Skip 'self' and 'pattern' (the required positional args)
-        if param_name in ("self", "pattern"):
-            continue
 
-        # Get the value from the instance
-        if hasattr(reader, param_name):
-            value = getattr(reader, param_name)
-            if value is not None:
-                # Handle numpy arrays, tuples -> list for JSON serialization
-                if hasattr(value, "tolist"):
-                    value = value.tolist()
-                elif isinstance(value, tuple):
-                    value = list(value)
-                kwargs[param_name] = value
+    for param_name in sig.parameters:
+        # Skip 'self' and 'pattern' (the required positional args)
+        if param_name in ("self", "pattern") or not hasattr(reader, param_name):
+            continue
+        value = getattr(reader, param_name, None)
+        if value is not None:
+            # Handle numpy arrays, tuples -> list for JSON serialization
+            if hasattr(value, "tolist"):
+                value = value.tolist()
+            elif isinstance(value, tuple):
+                value = list(value)
+            kwargs[param_name] = value
 
     return kwargs if kwargs else None
 
@@ -260,7 +253,7 @@ def populate_catalog_from_pydantic(experiment_class: type["BaseSchema"]) -> None
     Args:
         experiment_class: Pydantic Experiment class with rig field
     """
-    streams = dj.VirtualModule("streams", streams_maker.schema_name)
+    streams = dj.VirtualModule("streams", get_schema_name("streams"))
 
     # Get Rig class from Experiment.rig field
     rig_field = experiment_class.model_fields.get("rig")
@@ -394,6 +387,9 @@ def get_experiment_pydantic(schema_name: str) -> type["BaseSchema"]:
 def to_snake_case(pascal_str: str) -> str:
     """Convert PascalCase to snake_case.
 
+    This function assumes that every capital letter marks a word
+    boundary, except when it appears at the start of the string.
+
     Args:
         pascal_str: PascalCase string (e.g., "BeamBreak", "Video")
 
@@ -495,7 +491,7 @@ def insert_stream_types(rig: "BaseSchema") -> None:
     Args:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
     """
-    streams = dj.VirtualModule("streams", streams_maker.schema_name)
+    streams = dj.VirtualModule("streams", get_schema_name("streams"))
     stream_entries = get_stream_entries(rig)
 
     # Deduplicate by stream_hash (same stream type may appear on multiple devices)
@@ -531,7 +527,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
         metadata_filepath: Path to metadata file
     """
-    streams = dj.VirtualModule("streams", streams_maker.schema_name)
+    streams = dj.VirtualModule("streams", get_schema_name("streams"))
 
     device_info: dict[str, dict] = get_device_info(rig)
     device_type_mapper, device_sn = get_device_mapper_from_rig(rig, metadata_filepath)
@@ -575,7 +571,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
     new_device_stream_types = [
         {"device_type": device_type, "stream_hash": stream_hash}
         for device_type, stream_list in device_stream_map.items()
-        for stream_type, stream_hash in stream_list
+        for _stream_type, stream_hash in stream_list
         if not streams.DeviceType.Stream & {"device_type": device_type, "stream_hash": stream_hash}
     ]
 
@@ -625,7 +621,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         streams.Device.insert(new_devices)
 
 
-def _flatten_rig_devices(rig_config: dict) -> dict[str, dict]:
+def _flatten_rig_devices(rig_config: dict) -> dict[str, dict]:  # pyright: ignore[reportUnusedFunction]
     """Flatten nested rig device structure into flat device dict.
 
     Converts:
@@ -690,31 +686,21 @@ def extract_active_regions(rig_config: dict) -> dict[str, Any]:
     active_regions: dict[str, Any] = {}
 
     # Extract regions from camera tracking configs
-    cameras = rig_config.get("cameras", {})
-    for camera_name, camera_config in cameras.items():
-        camera_tracking = camera_config.get("cameraTracking")
-        if not camera_tracking:
-            continue
-
-        # Extract blob tracking regions
-        blob_tracking = camera_tracking.get("blobTracking")
-        if blob_tracking:
-            for region_name, region_config in blob_tracking.items():
-                if region_name == "threshold":
-                    continue
-                # Store with camera prefix to avoid conflicts
-                region_key = f"{camera_name}_{region_name}"
-                active_regions[region_key] = region_config
+    for camera_name, camera_config in rig_config.get("cameras", {}).items():
+        blob_tracking = camera_config.get("cameraTracking", {}).get("blobTracking", {})
+        for region_name, region_config in blob_tracking.items():
+            if region_name != "threshold":
+                active_regions[f"{camera_name}_{region_name}"] = region_config
 
     # Extract activity center regions if present
-    activity_center = rig_config.get("activityCenter")
-    if activity_center and "regions" in activity_center:
+    activity_center = rig_config.get("activityCenter", {})
+    if "regions" in activity_center:
         active_regions["ActivityCenter"] = activity_center
 
     return active_regions
 
 
-def _extract_device_mapper_from_rig(rig_config: dict) -> tuple[dict[str, str], dict[str, str | None]]:
+def _extract_device_mapper_from_rig(rig_config: dict) -> tuple[dict[str, str], dict[str, str | None]]:  # pyright: ignore[reportUnusedFunction]
     """Extract device type mapper and serial numbers from rig structure.
 
     Calculates device types on-the-fly from rig structure. No persistent cache needed
@@ -786,7 +772,7 @@ def ingest_epoch_metadata_from_rig(
     """
     from aeon.dj_pipeline import acquisition
 
-    streams = dj.VirtualModule("streams", streams_maker.schema_name)
+    streams = dj.VirtualModule("streams", get_schema_name("streams"))
 
     experiment_key = {"experiment_name": experiment_name}
 
@@ -962,9 +948,7 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
         field_value = getattr(rig, field_name)
         if isinstance(field_value, dict):
             # Dict[Name, Device] collection (cameras, feeders, nest)
-            for name, dev in field_value.items():
-                if _has_data_readers(type(dev)):
-                    devices.append((name, dev))
+            devices.extend((name, dev) for name, dev in field_value.items() if _has_data_readers(type(dev)))
         elif _has_data_readers(type(field_value)):
             # Single Device field
             devices.append((field_name, field_value))
