@@ -47,6 +47,8 @@ jobs:
             pytest_args: "--tb=short -q --cov=aeon --cov-report=xml"
           - os: windows-latest
             pytest_args: "-m unit --tb=short -q"
+          - os: macos-latest
+            pytest_args: "-m unit --tb=short -q"
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
