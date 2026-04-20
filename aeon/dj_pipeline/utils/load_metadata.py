@@ -539,7 +539,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
     }
 
     # Create a map of device_type to (stream_type, stream_hash) pairs
-    device_stream_map: dict[str, list[tuple[str, str]]] = {}
+    device_stream_map: dict[str, set[tuple[str, str]]] = {}
 
     for device_config in device_info.values():
         device_type = device_config["device_type"]
@@ -547,12 +547,11 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         stream_hashes = device_config["stream_hash"]
 
         if device_type not in device_stream_map:
-            device_stream_map[device_type] = []
+            device_stream_map[device_type] = set()
 
         for stream_type, stream_hash in zip(stream_types, stream_hashes, strict=True):
             pair = (stream_type, stream_hash)
-            if pair not in device_stream_map[device_type]:
-                device_stream_map[device_type].append(pair)
+            device_stream_map[device_type].add(pair)
 
     # List only new device & stream types that need to be inserted & created.
     new_device_types = [
