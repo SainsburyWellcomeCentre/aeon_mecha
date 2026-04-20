@@ -50,35 +50,36 @@ def get_data_reader_methods(device_class: type) -> list[tuple[str, Any]]:
         List of (method_name, method_func) tuples for @data_reader methods
     """
     data_reader_methods = []
-    for name, attr in inspect.getmembers(device_class):
-        if isinstance(attr, cached_property):
-            func = getattr(attr, "func", None)
-            if func:
-                # Check direct signature first
-                sig = inspect.signature(func)
-                params = list(sig.parameters.keys())
-                if len(params) == DATA_READER_PARAMS_COUNT and params[1] == "pattern":
-                    data_reader_methods.append((name, func))
-                    continue
 
-                # Check closure for original function (real @data_reader wraps in closure)
-                closure = getattr(func, "__closure__", None)
-                if closure:
-                    for cell in closure:
-                        try:
-                            orig_func = cell.cell_contents
-                            if callable(orig_func):
-                                orig_sig = inspect.signature(orig_func)
-                                orig_params = list(orig_sig.parameters.keys())
-                                if (
-                                    len(orig_params) == DATA_READER_PARAMS_COUNT
-                                    and orig_params[1] == "pattern"
-                                ):
-                                    data_reader_methods.append((name, func))
-                                    break
-                        except ValueError:
-                            # Empty cell
-                            continue
+    def has_pattern_signature(f) -> bool:
+        """Check if function has signature (self, pattern)."""
+        try:
+            params = list(inspect.signature(f).parameters.keys())
+            return len(params) == DATA_READER_PARAMS_COUNT and params[1] == "pattern"
+        except (TypeError, ValueError):
+            return False
+
+    for name, attr in inspect.getmembers(device_class):
+        if not isinstance(attr, cached_property):
+            continue
+        func = getattr(attr, "func", None)
+        if func is None:
+            continue
+        # Direct function check
+        if has_pattern_signature(func):
+            data_reader_methods.append((name, func))
+            continue
+        # Check closure for original function (real @data_reader wraps in closure)
+        closure = getattr(func, "__closure__", None)
+        if closure:
+            for cell in closure:
+                try:
+                    orig = cell.cell_contents
+                except ValueError:
+                    continue
+                if callable(orig) and has_pattern_signature(orig):
+                    data_reader_methods.append((name, func))
+                    break
     return data_reader_methods
 
 
@@ -224,18 +225,10 @@ def get_reader_kwargs_from_device_class(device_class: type, method_name: str) ->
         # Create minimal device instance bypassing validation
         # model_construct() allows creating instance without required fields
         device = device_class.model_construct()
-
         # Get the @data_reader property (returns reader instance)
-        try:
-            reader = getattr(device, method_name)
-        except (ValueError, AttributeError, TypeError) as e:
-            # Method raised error (e.g., camera_tracking is None for position)
-            logger.debug(f"Could not execute {method_name} on {device_class.__name__}: {e}")
-            return None
-
+        reader = getattr(device, method_name)
         # Extract kwargs from reader instance
         return _extract_kwargs_from_reader(reader)
-
     except Exception as e:
         logger.debug(f"Failed to extract kwargs for {device_class.__name__}.{method_name}: {e}")
         return None
