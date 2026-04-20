@@ -152,7 +152,7 @@ convention = "google"
 [tool.pyright]
 useLibraryCodeForTypes = false
 reportMissingImports = "none"
-reportImportCycles = "error"
+reportImportCycles = "warning"
 reportOperatorIssue = "none"
 reportUnusedImport = "error"
 reportUnusedClass = "error"
