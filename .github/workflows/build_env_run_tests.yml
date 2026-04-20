@@ -7,9 +7,9 @@
 name: build_env_run_tests
 on:
   push:
-    branches: [main, datajoint_pipeline]
+    branches: [main, datajoint_pipeline, tn/core_pipeline]
   pull_request:
-    branches: [main, datajoint_pipeline]
+    branches: [main, datajoint_pipeline, tn/core_pipeline]
     types: [opened, reopened, synchronize]
   workflow_dispatch:
 
