@@ -9,21 +9,21 @@ Auto-generates DataJoint table definitions for device and stream data based on P
 ## Package Dependencies
 
 ```
-swc.aeon.rigs (aeon_swc_rigs)          swc.aeon.schema (aeon_api)
-├── BaseSchema                          ├── BaseSchema (extends rigs)
-├── Device (config only)                ├── DataSchema (adds @data_reader support)
-├── SpinnakerCamera                     ├── data_reader decorator
-├── UndergroundFeeder                   └── Reader classes (Video, Position, Encoder)
-└── HarpDevices                                │
-                                               ▼
-                            Experiment packages (e.g., aeon_exp_foragingABC)
-                            ├── Extend device classes with @data_reader methods
-                            └── Define experiment-specific Rig(DataSchema)
+swc.aeon.schema (aeon_api)
+├── BaseSchema
+├── data_reader decorator
+├── Device, SpinnakerCamera, UndergroundFeeder
+└── Reader classes (Video, Position, Encoder)
+        │
+        ▼
+Experiment packages (e.g., aeon_exp_foragingABC)
+├── Extend device classes with @data_reader methods
+└── Define experiment-specific Rig(BaseSchema)
 ```
 
 **Key imports** (in experiment package):
 ```python
-from swc.aeon.schema import BaseSchema, DataSchema, data_reader
+from swc.aeon.schema import BaseSchema, data_reader
 from swc.aeon.schema.core import Video, Position, Encoder
 from swc.aeon.schema.video import SpinnakerCamera
 from swc.aeon.schema.foraging import UndergroundFeeder
@@ -149,10 +149,10 @@ Columns are extracted on-demand by importing the reader class directly from `Str
 
 ### Rig
 
-A Pydantic model representing the hardware configuration of an experiment. Extends `DataSchema` (not `BaseSchema`) to enable `@data_reader` support. Contains device collections organized by category:
+A Pydantic model representing the hardware configuration of an experiment. Extends `BaseSchema` which provides `_validate_container_prefix` for `@data_reader` pattern resolution. Contains device collections organized by category:
 
 ```python
-class Rig(DataSchema):  # DataSchema enables @data_reader on child devices
+class Rig(BaseSchema):  # BaseSchema provides _validate_container_prefix for @data_reader
     cameras: Dict[CameraName, Camera]   # e.g., 13 cameras keyed by enum
     feeders: Dict[FeederName, Feeder]   # e.g., 6 feeders keyed by enum
     nest: Dict[NestName, WeightScale]   # Weight scale(s)
@@ -740,7 +740,7 @@ class Feeder(UndergroundFeeder):
         return Encoder(f"{pattern}").reader
 
 
-class Rig(DataSchema):
+class Rig(BaseSchema):
     cameras: Dict[CameraName, Camera]           # 13 cameras
     feeders: Dict[FeederName, Feeder]           # 6 feeders
     nest: Dict[NestName, ActivityWeightScale]   # Weight scale
