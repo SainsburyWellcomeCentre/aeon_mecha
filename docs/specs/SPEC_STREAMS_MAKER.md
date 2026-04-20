@@ -338,7 +338,7 @@ def populate_catalog_from_pydantic(experiment_class):
 }
 ```
 
-**`get_device_mapper_from_rig(rig, metadata_filepath)`**
+**`get_device_mapper_from_rig(rig)`**
 - Extracts device type and serial number mappings
 - Uses `type(device).__name__` for device type (leaf class name)
 - Identifies devices via `_has_data_readers()` (presence of `@data_reader` methods)

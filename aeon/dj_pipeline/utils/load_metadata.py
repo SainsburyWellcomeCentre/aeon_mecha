@@ -33,6 +33,19 @@ logger = dj.logger
 ANNOTATION_ARGS_COUNT = 2
 DATA_READER_PARAMS_COUNT = 2
 
+
+def _dedupe(entries: list, key_fn) -> list:
+    """Return entries with duplicates removed, keeping first occurrence of each key."""
+    seen = set()
+    result = []
+    for entry in entries:
+        key = key_fn(entry)
+        if key not in seen:
+            seen.add(key)
+            result.append(entry)
+    return result
+
+
 # region Catalog Population Functions
 
 
@@ -314,29 +327,10 @@ def populate_catalog_from_pydantic(experiment_class: type["BaseSchema"]) -> None
                 }
             )
 
-    # Insert entries (using skip_duplicates for idempotency)
-    # Deduplicate before inserting
-    seen_device_types = set()
-    unique_device_types = []
-    for entry in device_type_entries:
-        if entry["device_type"] not in seen_device_types:
-            seen_device_types.add(entry["device_type"])
-            unique_device_types.append(entry)
-
-    seen_stream_hashes = set()
-    unique_stream_types = []
-    for entry in stream_type_entries:
-        if entry["stream_hash"] not in seen_stream_hashes:
-            seen_stream_hashes.add(entry["stream_hash"])
-            unique_stream_types.append(entry)
-
-    seen_device_streams = set()
-    unique_device_streams = []
-    for entry in device_stream_entries:
-        key = (entry["device_type"], entry["stream_hash"])
-        if key not in seen_device_streams:
-            seen_device_streams.add(key)
-            unique_device_streams.append(entry)
+    # Deduplicate before inserting (using skip_duplicates for idempotency)
+    unique_device_types = _dedupe(device_type_entries, lambda e: e["device_type"])
+    unique_stream_types = _dedupe(stream_type_entries, lambda e: e["stream_hash"])
+    unique_device_streams = _dedupe(device_stream_entries, lambda e: (e["device_type"], e["stream_hash"]))
 
     # Insert in correct order (StreamType before DeviceType.Stream due to FK)
     # Wrap in transaction to prevent race conditions with multiple workers
@@ -488,23 +482,13 @@ def insert_stream_types(rig: "BaseSchema") -> None:
     stream_entries = get_stream_entries(rig)
 
     # Deduplicate by stream_hash (same stream type may appear on multiple devices)
-    seen_hashes = set()
-    for entry in stream_entries:
-        if entry["stream_hash"] in seen_hashes:
-            continue
-        seen_hashes.add(entry["stream_hash"])
-
-        stream_type_entry = {
-            "stream_hash": entry["stream_hash"],
-            "stream_type": entry["stream_type"],
-            "stream_reader": entry["stream_reader"],
-            "stream_reader_kwargs": entry.get("stream_reader_kwargs"),
-        }
+    unique_entries = _dedupe(stream_entries, lambda e: e["stream_hash"])
+    for entry in unique_entries:
         # Use skip_duplicates to handle race conditions
-        streams.StreamType.insert1(stream_type_entry, skip_duplicates=True)
+        streams.StreamType.insert1(entry, skip_duplicates=True)
 
-    if seen_hashes:
-        logger.debug(f"Processed {len(seen_hashes)} unique StreamType entries")
+    if unique_entries:
+        logger.debug(f"Processed {len(unique_entries)} unique StreamType entries")
 
 
 def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
@@ -523,7 +507,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
     streams = dj.VirtualModule("streams", get_schema_name("streams"))
 
     device_info: dict[str, dict] = get_device_info(rig)
-    device_type_mapper, device_sn = get_device_mapper_from_rig(rig, metadata_filepath)
+    device_type_mapper, device_sn = get_device_mapper_from_rig(rig)
 
     # Add device type to device_info. Only include devices that:
     # 1. Have a device_type defined in metadata
@@ -778,7 +762,7 @@ def ingest_epoch_metadata_from_rig(
         # if identical commit -> no changes
         return set()
 
-    device_type_mapper, _ = get_device_mapper_from_rig(rig, metadata_filepath)
+    device_type_mapper, _ = get_device_mapper_from_rig(rig)
     rig_config = epoch_config["metadata"]
 
     # Extract trigger frequencies from camera synchronizer
@@ -998,9 +982,7 @@ def get_stream_entries(rig: "BaseSchema") -> list[dict]:
     ]
 
 
-def get_device_mapper_from_rig(
-    rig: "BaseSchema", metadata_filepath: Path
-) -> tuple[dict[str, str], dict[str, str | None]]:
+def get_device_mapper_from_rig(rig: "BaseSchema") -> tuple[dict[str, str], dict[str, str | None]]:
     """Extract device type mapper and serial numbers from Pydantic Rig.
 
     Device types are derived from the class name (type(device).__name__).
@@ -1008,7 +990,6 @@ def get_device_mapper_from_rig(
 
     Args:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
-        metadata_filepath: Path to metadata file (unused, kept for signature compatibility)
 
     Returns:
         tuple: (device_type_mapper, device_sn)
