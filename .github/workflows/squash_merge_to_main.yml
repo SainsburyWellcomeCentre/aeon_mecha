@@ -1,0 +1,31 @@
+# Squash merges commits from PRs to 'datajoint_pipeline' into 'main'. 'main' thus serves as a
+# more readable history of the project, while 'datajoint_pipeline' retains the full commit history.
+
+name: squash_merge_to_main
+on:
+  pull_request:
+    branches: [ datajoint_pipeline ]
+    types: [ closed ]
+jobs:
+  squash_merge_to_main:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.merged == true  # only run if PR merged (subset of 'closed')
+    permissions:
+      contents: write
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Configure Git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+    - name: Merge and squash to main
+      run: |
+        git checkout main
+        COMMIT_MSG="${{ github.event.pull_request.title }} (#${{ github.event.pull_request.number }})"
+        git merge --squash -X theirs datajoint_pipeline
+        git commit -m "$COMMIT_MSG"
+        git push origin main
