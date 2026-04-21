@@ -9,11 +9,9 @@ Devices are organized in Rig objects with collections (cameras, feeders, nest, e
 Stream readers are defined via @data_reader decorated methods on Device classes.
 """
 
-import datetime
 import importlib
 import inspect
 import json
-import pathlib
 import re
 import typing
 from collections import defaultdict
@@ -23,12 +21,29 @@ from typing import TYPE_CHECKING, Any
 
 import datajoint as dj
 
-from aeon.dj_pipeline.utils import dict_to_uuid, streams_maker
+from aeon.dj_pipeline import get_schema_name
+from aeon.dj_pipeline.utils import dict_to_uuid
 
 if TYPE_CHECKING:
-    from swc.aeon.schema import BaseSchema, Device
+    from swc.aeon.schema import BaseSchema
 
 logger = dj.logger
+
+# Constants for annotation parsing
+ANNOTATION_ARGS_COUNT = 2
+DATA_READER_PARAMS_COUNT = 2
+
+
+def _dedupe(entries: list, key_fn) -> list:
+    """Return entries with duplicates removed, keeping first occurrence of each key."""
+    seen = set()
+    result = []
+    for entry in entries:
+        key = key_fn(entry)
+        if key not in seen:
+            seen.add(key)
+            result.append(entry)
+    return result
 
 
 # region Catalog Population Functions
@@ -48,32 +63,36 @@ def get_data_reader_methods(device_class: type) -> list[tuple[str, Any]]:
         List of (method_name, method_func) tuples for @data_reader methods
     """
     data_reader_methods = []
-    for name, attr in inspect.getmembers(device_class):
-        if isinstance(attr, cached_property):
-            func = getattr(attr, "func", None)
-            if func:
-                # Check direct signature first
-                sig = inspect.signature(func)
-                params = list(sig.parameters.keys())
-                if len(params) == 2 and params[1] == "pattern":
-                    data_reader_methods.append((name, func))
-                    continue
 
-                # Check closure for original function (real @data_reader wraps in closure)
-                closure = getattr(func, "__closure__", None)
-                if closure:
-                    for cell in closure:
-                        try:
-                            orig_func = cell.cell_contents
-                            if callable(orig_func):
-                                orig_sig = inspect.signature(orig_func)
-                                orig_params = list(orig_sig.parameters.keys())
-                                if len(orig_params) == 2 and orig_params[1] == "pattern":
-                                    data_reader_methods.append((name, func))
-                                    break
-                        except ValueError:
-                            # Empty cell
-                            continue
+    def has_pattern_signature(f) -> bool:
+        """Check if function has signature (self, pattern)."""
+        try:
+            params = list(inspect.signature(f).parameters.keys())
+            return len(params) == DATA_READER_PARAMS_COUNT and params[1] == "pattern"
+        except (TypeError, ValueError):
+            return False
+
+    for name, attr in inspect.getmembers(device_class):
+        if not isinstance(attr, cached_property):
+            continue
+        func = getattr(attr, "func", None)
+        if func is None:
+            continue
+        # Direct function check
+        if has_pattern_signature(func):
+            data_reader_methods.append((name, func))
+            continue
+        # Check closure for original function (real @data_reader wraps in closure)
+        closure = getattr(func, "__closure__", None)
+        if closure:
+            for cell in closure:
+                try:
+                    orig = cell.cell_contents
+                except ValueError:
+                    continue
+                if callable(orig) and has_pattern_signature(orig):
+                    data_reader_methods.append((name, func))
+                    break
     return data_reader_methods
 
 
@@ -100,7 +119,7 @@ def get_device_class_from_field(field_info) -> type | None:
     # Handle Dict[Name, Device] - e.g., Dict[CameraName, Camera]
     if origin is dict:
         args = typing.get_args(annotation)
-        if len(args) == 2:
+        if len(args) == ANNOTATION_ARGS_COUNT:
             # args[1] is the value type (Device class)
             device_class = args[1]
             if _has_data_readers(device_class):
@@ -135,13 +154,12 @@ def get_reader_path_from_annotation(func) -> str | None:
         """Get return type from function, handling TypeVar."""
         try:
             hints = typing.get_type_hints(f)
+            return_type = hints.get("return")
+            if return_type is not None and not isinstance(return_type, typing.TypeVar):
+                return return_type
         except (NameError, TypeError):
-            return None
-
-        return_type = hints.get("return")
-        if return_type is None or isinstance(return_type, typing.TypeVar):
-            return None
-        return return_type
+            pass
+        return None
 
     # First try the function directly
     return_type = _get_return_type(func)
@@ -168,10 +186,7 @@ def get_reader_path_from_annotation(func) -> str | None:
     module = getattr(return_type, "__module__", None)
     name = getattr(return_type, "__name__", None)
 
-    if module and name:
-        return f"{module}.{name}"
-
-    return None
+    return f"{module}.{name}" if module and name else None
 
 
 def _extract_kwargs_from_reader(reader) -> dict | None:
@@ -186,25 +201,21 @@ def _extract_kwargs_from_reader(reader) -> dict | None:
     Returns:
         Dict of kwargs (excluding 'pattern'), or None if no special kwargs
     """
-    reader_class = reader.__class__
-    sig = inspect.signature(reader_class.__init__)
-
+    sig = inspect.signature(reader.__class__.__init__)
     kwargs = {}
-    for param_name, _param in sig.parameters.items():
-        # Skip 'self' and 'pattern' (the required positional args)
-        if param_name in ("self", "pattern"):
-            continue
 
-        # Get the value from the instance
-        if hasattr(reader, param_name):
-            value = getattr(reader, param_name)
-            if value is not None:
-                # Handle numpy arrays, tuples -> list for JSON serialization
-                if hasattr(value, "tolist"):
-                    value = value.tolist()
-                elif isinstance(value, tuple):
-                    value = list(value)
-                kwargs[param_name] = value
+    for param_name in sig.parameters:
+        # Skip 'self' and 'pattern' (the required positional args)
+        if param_name in ("self", "pattern") or not hasattr(reader, param_name):
+            continue
+        value = getattr(reader, param_name, None)
+        if value is not None:
+            # Handle numpy arrays, tuples -> list for JSON serialization
+            if hasattr(value, "tolist"):
+                value = value.tolist()
+            elif isinstance(value, tuple):
+                value = list(value)
+            kwargs[param_name] = value
 
     return kwargs if kwargs else None
 
@@ -227,18 +238,10 @@ def get_reader_kwargs_from_device_class(device_class: type, method_name: str) ->
         # Create minimal device instance bypassing validation
         # model_construct() allows creating instance without required fields
         device = device_class.model_construct()
-
         # Get the @data_reader property (returns reader instance)
-        try:
-            reader = getattr(device, method_name)
-        except (ValueError, AttributeError, TypeError) as e:
-            # Method raised error (e.g., camera_tracking is None for position)
-            logger.debug(f"Could not execute {method_name} on {device_class.__name__}: {e}")
-            return None
-
+        reader = getattr(device, method_name)
         # Extract kwargs from reader instance
         return _extract_kwargs_from_reader(reader)
-
     except Exception as e:
         logger.debug(f"Failed to extract kwargs for {device_class.__name__}.{method_name}: {e}")
         return None
@@ -256,7 +259,7 @@ def populate_catalog_from_pydantic(experiment_class: type["BaseSchema"]) -> None
     Args:
         experiment_class: Pydantic Experiment class with rig field
     """
-    streams = dj.VirtualModule("streams", streams_maker.schema_name)
+    streams = dj.VirtualModule("streams", get_schema_name("streams"))
 
     # Get Rig class from Experiment.rig field
     rig_field = experiment_class.model_fields.get("rig")
@@ -324,29 +327,10 @@ def populate_catalog_from_pydantic(experiment_class: type["BaseSchema"]) -> None
                 }
             )
 
-    # Insert entries (using skip_duplicates for idempotency)
-    # Deduplicate before inserting
-    seen_device_types = set()
-    unique_device_types = []
-    for entry in device_type_entries:
-        if entry["device_type"] not in seen_device_types:
-            seen_device_types.add(entry["device_type"])
-            unique_device_types.append(entry)
-
-    seen_stream_hashes = set()
-    unique_stream_types = []
-    for entry in stream_type_entries:
-        if entry["stream_hash"] not in seen_stream_hashes:
-            seen_stream_hashes.add(entry["stream_hash"])
-            unique_stream_types.append(entry)
-
-    seen_device_streams = set()
-    unique_device_streams = []
-    for entry in device_stream_entries:
-        key = (entry["device_type"], entry["stream_hash"])
-        if key not in seen_device_streams:
-            seen_device_streams.add(key)
-            unique_device_streams.append(entry)
+    # Deduplicate before inserting (using skip_duplicates for idempotency)
+    unique_device_types = _dedupe(device_type_entries, lambda e: e["device_type"])
+    unique_stream_types = _dedupe(stream_type_entries, lambda e: e["stream_hash"])
+    unique_device_streams = _dedupe(device_stream_entries, lambda e: (e["device_type"], e["stream_hash"]))
 
     # Insert in correct order (StreamType before DeviceType.Stream due to FK)
     # Wrap in transaction to prevent race conditions with multiple workers
@@ -390,6 +374,9 @@ def get_experiment_pydantic(schema_name: str) -> type["BaseSchema"]:
 def to_snake_case(pascal_str: str) -> str:
     """Convert PascalCase to snake_case.
 
+    This function assumes that every capital letter marks a word
+    boundary, except when it appears at the start of the string.
+
     Args:
         pascal_str: PascalCase string (e.g., "BeamBreak", "Video")
 
@@ -419,14 +406,14 @@ def _find_device_in_rig(rig, device_name: str):
         field_value = getattr(rig, field_name)
 
         # Handle Dict[Name, Device] collections
-        if isinstance(field_value, dict):
-            if device_name in field_value:
-                return field_value[device_name]
+        if isinstance(field_value, dict) and device_name in field_value:
+            return field_value[device_name]
 
         # Handle single device fields
-        elif _has_data_readers(type(field_value)):
-            if field_name == device_name or getattr(field_value, "_container_prefix", None) == device_name:
-                return field_value
+        if _has_data_readers(type(field_value)) and (
+            field_name == device_name or getattr(field_value, "_container_prefix", None) == device_name
+        ):
+            return field_value
 
     raise ValueError(f"Device '{device_name}' not found in Rig")
 
@@ -491,27 +478,17 @@ def insert_stream_types(rig: "BaseSchema") -> None:
     Args:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
     """
-    streams = dj.VirtualModule("streams", streams_maker.schema_name)
+    streams = dj.VirtualModule("streams", get_schema_name("streams"))
     stream_entries = get_stream_entries(rig)
 
     # Deduplicate by stream_hash (same stream type may appear on multiple devices)
-    seen_hashes = set()
-    for entry in stream_entries:
-        if entry["stream_hash"] in seen_hashes:
-            continue
-        seen_hashes.add(entry["stream_hash"])
-
-        stream_type_entry = {
-            "stream_hash": entry["stream_hash"],
-            "stream_type": entry["stream_type"],
-            "stream_reader": entry["stream_reader"],
-            "stream_reader_kwargs": entry.get("stream_reader_kwargs"),
-        }
+    unique_entries = _dedupe(stream_entries, lambda e: e["stream_hash"])
+    for entry in unique_entries:
         # Use skip_duplicates to handle race conditions
-        streams.StreamType.insert1(stream_type_entry, skip_duplicates=True)
+        streams.StreamType.insert1(entry, skip_duplicates=True)
 
-    if seen_hashes:
-        logger.debug(f"Processed {len(seen_hashes)} unique StreamType entries")
+    if unique_entries:
+        logger.debug(f"Processed {len(unique_entries)} unique StreamType entries")
 
 
 def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
@@ -527,10 +504,10 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
         metadata_filepath: Path to metadata file
     """
-    streams = dj.VirtualModule("streams", streams_maker.schema_name)
+    streams = dj.VirtualModule("streams", get_schema_name("streams"))
 
     device_info: dict[str, dict] = get_device_info(rig)
-    device_type_mapper, device_sn = get_device_mapper_from_rig(rig, metadata_filepath)
+    device_type_mapper, device_sn = get_device_mapper_from_rig(rig)
 
     # Add device type to device_info. Only include devices that:
     # 1. Have a device_type defined in metadata
@@ -546,7 +523,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
     }
 
     # Create a map of device_type to (stream_type, stream_hash) pairs
-    device_stream_map: dict[str, list[tuple[str, str]]] = {}
+    device_stream_map: dict[str, set[tuple[str, str]]] = {}
 
     for device_config in device_info.values():
         device_type = device_config["device_type"]
@@ -554,12 +531,11 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         stream_hashes = device_config["stream_hash"]
 
         if device_type not in device_stream_map:
-            device_stream_map[device_type] = []
+            device_stream_map[device_type] = set()
 
         for stream_type, stream_hash in zip(stream_types, stream_hashes, strict=True):
             pair = (stream_type, stream_hash)
-            if pair not in device_stream_map[device_type]:
-                device_stream_map[device_type].append(pair)
+            device_stream_map[device_type].add(pair)
 
     # List only new device & stream types that need to be inserted & created.
     new_device_types = [
@@ -571,7 +547,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
     new_device_stream_types = [
         {"device_type": device_type, "stream_hash": stream_hash}
         for device_type, stream_list in device_stream_map.items()
-        for stream_type, stream_hash in stream_list
+        for _stream_type, stream_hash in stream_list
         if not streams.DeviceType.Stream & {"device_type": device_type, "stream_hash": stream_hash}
     ]
 
@@ -604,7 +580,8 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
             streams.DeviceType.Stream.insert(new_device_stream_types)
         except dj.DataJointError as e:
             # Only handle FK constraint violations (MySQL error 1452)
-            if "foreign key constraint fails" in str(e).lower() or "1452" in str(e):
+            msg = str(e).lower()
+            if "foreign key constraint fails" in msg or "1452" in msg:
                 logger.info("FK constraint on DeviceType.Stream, inserting missing StreamType")
                 insert_stream_types(rig)
                 streams.DeviceType.Stream.insert(new_device_stream_types)
@@ -620,7 +597,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         streams.Device.insert(new_devices)
 
 
-def _flatten_rig_devices(rig_config: dict) -> dict[str, dict]:
+def flatten_rig_devices(rig_config: dict) -> dict[str, dict]:
     """Flatten nested rig device structure into flat device dict.
 
     Converts:
@@ -691,25 +668,20 @@ def extract_active_regions(rig_config: dict) -> dict[str, Any]:
         if not camera_tracking:
             continue
 
-        # Extract blob tracking regions
-        blob_tracking = camera_tracking.get("blobTracking")
-        if blob_tracking:
-            for region_name, region_config in blob_tracking.items():
-                if region_name == "threshold":
-                    continue
-                # Store with camera prefix to avoid conflicts
-                region_key = f"{camera_name}_{region_name}"
-                active_regions[region_key] = region_config
+        for region_name, region_config in camera_tracking.get("blobTracking", {}).items():
+            if region_name == "threshold":
+                continue
+            active_regions[f"{camera_name}_{region_name}"] = region_config
 
     # Extract activity center regions if present
-    activity_center = rig_config.get("activityCenter")
-    if activity_center and "regions" in activity_center:
+    activity_center = rig_config.get("activityCenter", {})
+    if "regions" in activity_center:
         active_regions["ActivityCenter"] = activity_center
 
     return active_regions
 
 
-def _extract_device_mapper_from_rig(rig_config: dict) -> tuple[dict[str, str], dict[str, str]]:
+def _extract_device_mapper_from_rig(rig_config: dict) -> tuple[dict[str, str], dict[str, str | None]]:  # pyright: ignore[reportUnusedFunction]
     """Extract device type mapper and serial numbers from rig structure.
 
     Calculates device types on-the-fly from rig structure. No persistent cache needed
@@ -781,7 +753,7 @@ def ingest_epoch_metadata_from_rig(
     """
     from aeon.dj_pipeline import acquisition
 
-    streams = dj.VirtualModule("streams", streams_maker.schema_name)
+    streams = dj.VirtualModule("streams", get_schema_name("streams"))
 
     experiment_key = {"experiment_name": experiment_name}
 
@@ -789,12 +761,13 @@ def ingest_epoch_metadata_from_rig(
         acquisition.Epoch & f'epoch_start < "{epoch_config["epoch_start"]}"',
         epoch_start="MAX(epoch_start)",
     )
-    prev_meta = acquisition.EpochConfig.Meta().restrict(previous_epoch, semantic_check=False)
-    if len(prev_meta) and epoch_config["commit"] == prev_meta.fetch1("commit"):
+    if len(acquisition.EpochConfig.Meta & previous_epoch) and epoch_config["commit"] == (
+        acquisition.EpochConfig.Meta & previous_epoch
+    ).fetch1("commit"):
         # if identical commit -> no changes
         return set()
 
-    device_type_mapper, _ = get_device_mapper_from_rig(rig, metadata_filepath)
+    device_type_mapper, _ = get_device_mapper_from_rig(rig)
     rig_config = epoch_config["metadata"]
 
     # Extract trigger frequencies from camera synchronizer
@@ -818,7 +791,8 @@ def ingest_epoch_metadata_from_rig(
             if not (streams.DeviceName & device_key):
                 logger.warning(
                     f"Device name '{device_name}' not registered in streams.DeviceName. "
-                    "This should not happen - check if metadata file and Rig schema are consistent. Skipping..."
+                    "This should not happen - check if metadata file and Rig schema are consistent. "
+                    "Skipping..."
                 )
                 continue
 
@@ -861,7 +835,12 @@ def ingest_epoch_metadata_from_rig(
             current_device_query = table - table.RemovalTime & experiment_key & device_key
 
             if current_device_query:
-                current_device_config: list[dict] = (table.Attribute & current_device_query).to_dicts()
+                current_device_config: list[dict] = (table.Attribute & current_device_query).proj(
+                    "experiment_name",
+                    "device_name",
+                    "attribute_name",
+                    "attribute_value",
+                ).to_dicts()
                 new_device_config: list[dict] = [
                     {k: v for k, v in entry.items() if dj.utils.from_camel_case(table.__name__) not in k}
                     for entry in table_attribute_entry
@@ -949,9 +928,7 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
         field_value = getattr(rig, field_name)
         if isinstance(field_value, dict):
             # Dict[Name, Device] collection (cameras, feeders, nest)
-            for name, dev in field_value.items():
-                if _has_data_readers(type(dev)):
-                    devices.append((name, dev))
+            devices.extend((name, dev) for name, dev in field_value.items() if _has_data_readers(type(dev)))
         elif _has_data_readers(type(field_value)):
             # Single Device field
             devices.append((field_name, field_value))
@@ -1009,9 +986,7 @@ def get_stream_entries(rig: "BaseSchema") -> list[dict]:
     ]
 
 
-def get_device_mapper_from_rig(
-    rig: "BaseSchema", metadata_filepath: Path
-) -> tuple[dict[str, str], dict[str, str]]:
+def get_device_mapper_from_rig(rig: "BaseSchema") -> tuple[dict[str, str], dict[str, str | None]]:
     """Extract device type mapper and serial numbers from Pydantic Rig.
 
     Device types are derived from the class name (type(device).__name__).
@@ -1019,7 +994,6 @@ def get_device_mapper_from_rig(
 
     Args:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
-        metadata_filepath: Path to metadata file (unused, kept for signature compatibility)
 
     Returns:
         tuple: (device_type_mapper, device_sn)

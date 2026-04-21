@@ -15,6 +15,10 @@ import pytest
 
 logger = logging.getLogger(__name__)
 
+# Run Ryuk reaper in privileged mode for proper container cleanup (on macOS)
+# Must be set before testcontainers is imported
+os.environ.setdefault("TESTCONTAINERS_RYUK_CONTAINER_PRIVILEGED", "true")
+
 # Set default DataJoint connection env vars (for imports to work)
 # These will be overridden by mysql_container fixture for integration tests
 if "DJ_HOST" not in os.environ:
@@ -42,10 +46,9 @@ def pytest_configure(config):
         # Create a mock datajoint module
         mock_dj = MagicMock()
         mock_dj.logger = MagicMock()
-        mock_dj.config = MagicMock()
-        mock_dj.config.database.database_prefix = ""
+        mock_dj.config = {"custom": {}}
         mock_dj.VirtualModule = MagicMock()
-        mock_dj.Schema = MagicMock()
+        mock_dj.schema = MagicMock()
         mock_dj.DataJointError = Exception
 
         sys.modules["datajoint"] = mock_dj

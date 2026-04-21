@@ -44,7 +44,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+gpu = ["cupy", "dask"]
+spike_sorting = [
+  "spikeinterface[full]>=0.104.0",
+  "spython", 
+  "cuda-python", 
+  "spikeinterface-gui", 
+  "PySide6<6.8", 
+  "pyqtgraph"
+]
+
+[dependency-groups]
 dev = [
+  { include-group = "test" },
+  { include-group = "docs" },
   "bandit",
   "ipdb",
   "pre-commit",
@@ -58,15 +71,15 @@ test = [
   "testcontainers[mysql]>=3.7",
 ]
 test-golden = [
-  "aeon-mecha[test]",
+  { include-group = "test" },
   "swc-aeon-rigs-foragingabc",
 ]
 docs = [
   "sphinx",
 ]
-gpu = ["cupy", "dask"]
-spike_sorting = ["spikeinterface[full] @ git+https://github.com/SpikeInterface/spikeinterface.git@652f8566c1f7",
-  "spython", "cuda-python", "spikeinterface-gui", "PySide6<6.8", "pyqtgraph"]
+
+[project.scripts]
+aeon_ingest = "aeon.dj_pipeline.populate.process:cli"
 
 [project.urls]
 Homepage = "https://sainsburywellcomecentre.github.io/aeon_docs/"
@@ -101,7 +114,6 @@ lint.ignore = [
   "PLR0912", 
   "PLR0913",
   "PLR0915",
-  "UP038", # Deprecated and will be removed in a future release.
 ]
 extend-exclude = [
   ".git",
@@ -113,8 +125,10 @@ extend-exclude = [
 ]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
+  "D102",    # skip adding docstrings for public methods
   "D103",    # skip adding docstrings for public functions  
   "S101",    # skip using assert
+  "PLR2004", # skip checking for magic values
 ]
 "aeon/schema/*" = [
   "D101",    # skip adding docstrings for schema classes
@@ -137,42 +151,38 @@ convention = "google"
 [tool.pyright]
 useLibraryCodeForTypes = false
 reportMissingImports = "none"
-reportImportCycles = "error"
+reportImportCycles = "warning"
+reportOperatorIssue = "none"
 reportUnusedImport = "error"
 reportUnusedClass = "error"
-reportUnusedfunction = "error"
+reportUnusedFunction = "error"
 reportUnusedVariable = "error"
 reportDuplicateImport = "error"
 reportWildcardImportFromLibrary = "error"
 reportPrivateUsage = "error"
 reportCallInDefaultInitializer = "error"
 reportUnnecessaryIsInstance = "error"
-reportUnnecesaryCast = "error"
-reportUnnecesarryComparison = "error"
+reportUnnecessaryCast = "error"
+reportUnnecessaryComparison = "error"
 reportUnnecessaryContains = "error"
 reportAssertAlwaysTrue = "error"
 reportSelfClsParameterName = "error"
 reportUnusedExpression = "error"
 reportMatchNotExhaustive = "error"
-reportShadowedImports = "error"
+reportPossiblyUnboundVariable = "warning"
 # *Note*: we may want to set all 'ReportOptional*' rules to "none", but leaving 'em default for now
 venvPath = "."
 venv = ".venv"
-exclude = ["aeon/dj_pipeline/*", ".venv/*"]
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests", "docs", ".venv"]
 
-[tool.pytest]
+[tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
   "unit: Unit tests (no database, synthetic data)",
   "integration: Integration tests (DB via testcontainers, synthetic or golden datasets)",
   "specialized: Specialized tests (GPU/high-RAM, golden datasets)",
 ]
-filterwarnings = [
-  "ignore:No datajoint.json found.*:UserWarning",
-  "ignore:datajoint.migrate is deprecated.*:DeprecationWarning",
-]
 
 [tool.uv.sources]
 swc-aeon = { git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git", branch = "main" }
-swc-aeon-rigs = { git = "https://github.com/SainsburyWellcomeCentre/aeon_swc_rigs.git", branch = "main" }
 swc-aeon-rigs-foragingabc = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git", branch = "main" }

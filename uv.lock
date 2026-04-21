@@ -38,18 +38,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "bandit" },
-    { name = "ipdb" },
-    { name = "pre-commit" },
-    { name = "pydantic" },
-    { name = "pyright" },
-    { name = "ruff" },
-]
-docs = [
-    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-]
 gpu = [
     { name = "cupy" },
     { name = "dask" },
@@ -61,6 +49,25 @@ spike-sorting = [
     { name = "spikeinterface", extra = ["full"] },
     { name = "spikeinterface-gui" },
     { name = "spython" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "bandit" },
+    { name = "ipdb" },
+    { name = "pre-commit" },
+    { name = "pydantic" },
+    { name = "pyright" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "testcontainers", extra = ["mysql"] },
+]
+docs = [
+    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 test = [
     { name = "pytest" },
@@ -76,8 +83,6 @@ test-golden = [
 
 [package.metadata]
 requires-dist = [
-    { name = "aeon-mecha", extras = ["test"], marker = "extra == 'test-golden'" },
-    { name = "bandit", marker = "extra == 'dev'" },
     { name = "bottleneck", specifier = ">=1.2.1,<2" },
     { name = "cuda-python", marker = "extra == 'spike-sorting'" },
     { name = "cupy", marker = "extra == 'gpu'" },
@@ -85,7 +90,6 @@ requires-dist = [
     { name = "datajoint", specifier = ">=2.1.0" },
     { name = "fastparquet" },
     { name = "graphviz" },
-    { name = "ipdb", marker = "extra == 'dev'" },
     { name = "ipykernel" },
     { name = "jupyter" },
     { name = "jupyterlab" },
@@ -93,31 +97,48 @@ requires-dist = [
     { name = "numexpr", specifier = ">=2.6.8,<3" },
     { name = "pillow" },
     { name = "plotly" },
-    { name = "pre-commit", marker = "extra == 'dev'" },
     { name = "pyarrow" },
-    { name = "pydantic", marker = "extra == 'dev'" },
     { name = "pydotplus" },
     { name = "pymysql" },
     { name = "pyqtgraph", marker = "extra == 'spike-sorting'" },
-    { name = "pyright", marker = "extra == 'dev'" },
     { name = "pyside6", marker = "extra == 'spike-sorting'", specifier = "<6.8" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0" },
-    { name = "pytest-cov", marker = "extra == 'test'" },
     { name = "pyyaml" },
-    { name = "ruff", marker = "extra == 'dev'" },
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "seaborn" },
-    { name = "sphinx", marker = "extra == 'docs'" },
-    { name = "spikeinterface", extras = ["full"], marker = "extra == 'spike-sorting'", git = "https://github.com/SpikeInterface/spikeinterface.git?rev=652f8566c1f7" },
+    { name = "spikeinterface", extras = ["full"], marker = "extra == 'spike-sorting'", specifier = ">=0.104.0" },
     { name = "spikeinterface-gui", marker = "extra == 'spike-sorting'" },
     { name = "spython", marker = "extra == 'spike-sorting'" },
     { name = "swc-aeon", git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git?branch=main" },
-    { name = "swc-aeon-rigs-foragingabc", marker = "extra == 'test-golden'", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main" },
-    { name = "testcontainers", extras = ["mysql"], marker = "extra == 'test'", specifier = ">=3.7" },
     { name = "xarray", specifier = ">=0.12.3" },
 ]
-provides-extras = ["dev", "test", "test-golden", "docs", "gpu", "spike-sorting"]
+provides-extras = ["gpu", "spike-sorting"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "bandit" },
+    { name = "ipdb" },
+    { name = "pre-commit" },
+    { name = "pydantic" },
+    { name = "pyright" },
+    { name = "pytest", specifier = ">=7.0" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+    { name = "sphinx" },
+    { name = "testcontainers", extras = ["mysql"], specifier = ">=3.7" },
+]
+docs = [{ name = "sphinx" }]
+test = [
+    { name = "pytest", specifier = ">=7.0" },
+    { name = "pytest-cov" },
+    { name = "testcontainers", extras = ["mysql"], specifier = ">=3.7" },
+]
+test-golden = [
+    { name = "pytest", specifier = ">=7.0" },
+    { name = "pytest-cov" },
+    { name = "swc-aeon-rigs-foragingabc", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main" },
+    { name = "testcontainers", extras = ["mysql"], specifier = ">=3.7" },
+]
 
 [[package]]
 name = "alabaster"
@@ -2224,16 +2245,16 @@ wheels = [
 
 [[package]]
 name = "probeinterface"
-version = "0.3.1"
+version = "0.3.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "packaging" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f9/0c/27361de1adf1b21a15f1e0612ce08b3003e07f02a8f1a5467cc53d994878/probeinterface-0.3.1.tar.gz", hash = "sha256:e036412bac4608569ddd61403d8408548715f6d3d03af2a68c344426b1a5668c", size = 6543357, upload-time = "2025-11-03T15:47:19.677Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ad/b6/149976dac9228c39a80fd1dee1743b3ba8e878b8c425df4304a7ac395aa1/probeinterface-0.3.2.tar.gz", hash = "sha256:8cf02afb1f344be027e1f29e7a2c54fd35b38573ad77890fc5076f957ddf3db5", size = 6681139, upload-time = "2026-03-20T16:06:09.401Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/dd/4b/0be7d87196652020fc1aac8ec6ffc9ea875f1a7fb94b8d3f08cbe933d0a2/probeinterface-0.3.1-py3-none-any.whl", hash = "sha256:8b2ed199c3337cf97b5fdba0778798e2cb1acee9b4f466179b37ca9d7bdba261", size = 62286, upload-time = "2025-11-03T15:47:18.14Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/c9/7cd477fa3cc6e31b643c1ca8d13a7b398fa8c2b6a9c5926cab916729cf43/probeinterface-0.3.2-py3-none-any.whl", hash = "sha256:f288d013697a73836384a9ee8db6bc979764814b981b6730d463d3bd04d5f317", size = 68822, upload-time = "2026-03-20T16:06:08.059Z" },
 ]
 
 [[package]]
@@ -3191,8 +3212,8 @@ wheels = [
 
 [[package]]
 name = "spikeinterface"
-version = "0.103.3"
-source = { git = "https://github.com/SpikeInterface/spikeinterface.git?rev=652f8566c1f7#652f8566c1f71435a89f82677789d29d136a2a35" }
+version = "0.104.2"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "neo" },
     { name = "numcodecs" },
@@ -3203,6 +3224,10 @@ dependencies = [
     { name = "threadpoolctl" },
     { name = "tqdm" },
     { name = "zarr" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f4/d5/76f8aac4bd4fccb32e70bb1765c523fb6904559f1946ec3b30aec66a7bfa/spikeinterface-0.104.2.tar.gz", hash = "sha256:34f9ab344737548619c27d293a34f812b9649947ec239dc31434d9d9734eaf91", size = 907376, upload-time = "2026-04-20T08:22:16.768Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/20/34/2c83d15edc183676b0e6f21aaec60fcdf0e690199ace7865099dc13b8d21/spikeinterface-0.104.2-py3-none-any.whl", hash = "sha256:1c955ce2d433c69f25458d9e678c07a1bfbbc898e83d91a172e2405ee06a8937", size = 1129067, upload-time = "2026-04-20T08:22:14.994Z" },
 ]
 
 [package.optional-dependencies]
