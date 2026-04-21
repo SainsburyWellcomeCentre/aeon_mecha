@@ -14,6 +14,9 @@ Tests gracefully skip if data unavailable.
 
 import pytest
 
+pytest.importorskip("swc.aeon_exp", reason="Full ingestion tests require swc.aeon_exp package")
+
+
 # =============================================================================
 # Step 1: Catalog Population Tests
 # =============================================================================
