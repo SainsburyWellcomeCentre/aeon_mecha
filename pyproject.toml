@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aeon_mecha"
-version = "0.1.0"
-requires-python = ">=3.11"
+version = "0.3.0"
+requires-python = ">=3.11,<3.13"
 description = '''
     Code for managing acquired data from Project Aeon experiments. Includes general file IO,
     data QC, querying, and analysis modules.
@@ -24,7 +24,7 @@ dependencies = [
   "bottleneck>=1.2.1,<2",
   "datajoint>=0.14,<2",
   "datajoint-utilities @ git+https://github.com/datajoint-company/datajoint-utilities",
-  "swc-aeon @ git+https://github.com/SainsburyWellcomeCentre/aeon_api.git",
+  "swc-aeon>=0.1.0",
   "fastparquet",
   "graphviz",
   "ipykernel",
@@ -45,20 +45,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-  "bandit",
-  "gh",
-  "ipdb",
-  "pre-commit",
-  "pyan3 @ git+https://github.com/Technologicat/pyan.git",
-  "pydantic",
-  "pyright",
-  "pytest",
-  "pytest-cov",
-  "sphinx",
-  "ruff",
-  "tox",
-]
 gpu = ["cupy", "dask"]
 spike_sorting = [
   "spikeinterface[full]>=0.104.0",
@@ -67,6 +53,30 @@ spike_sorting = [
   "spikeinterface-gui", 
   "PySide6<6.8", 
   "pyqtgraph"
+]
+
+[dependency-groups]
+dev = [
+  { include-group = "test" },
+  { include-group = "docs" },
+  "bandit",
+  "ipdb",
+  "pre-commit",
+  "pydantic",
+  "pyright",
+  "ruff",
+]
+test = [
+  "pytest>=7.0",
+  "pytest-cov",
+  "testcontainers[mysql]>=3.7",
+]
+test-golden = [
+  { include-group = "test" },
+  "swc-aeon-rigs-foragingabc",
+]
+docs = [
+  "sphinx",
 ]
 
 [project.scripts]
@@ -105,7 +115,6 @@ lint.ignore = [
   "PLR0912", 
   "PLR0913",
   "PLR0915",
-  "UP038", # Deprecated and will be removed in a future release.
 ]
 extend-exclude = [
   ".git",
@@ -117,8 +126,10 @@ extend-exclude = [
 ]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
+  "D102",    # skip adding docstrings for public methods
   "D103",    # skip adding docstrings for public functions  
   "S101",    # skip using assert
+  "PLR2004", # skip checking for magic values
 ]
 "aeon/schema/*" = [
   "D101",    # skip adding docstrings for schema classes
@@ -141,27 +152,38 @@ convention = "google"
 [tool.pyright]
 useLibraryCodeForTypes = false
 reportMissingImports = "none"
-reportImportCycles = "error"
+reportImportCycles = "warning"
+reportOperatorIssue = "none"
 reportUnusedImport = "error"
 reportUnusedClass = "error"
-reportUnusedfunction = "error"
+reportUnusedFunction = "error"
 reportUnusedVariable = "error"
 reportDuplicateImport = "error"
 reportWildcardImportFromLibrary = "error"
 reportPrivateUsage = "error"
 reportCallInDefaultInitializer = "error"
 reportUnnecessaryIsInstance = "error"
-reportUnnecesaryCast = "error"
-reportUnnecesarryComparison = "error"
+reportUnnecessaryCast = "error"
+reportUnnecessaryComparison = "error"
 reportUnnecessaryContains = "error"
 reportAssertAlwaysTrue = "error"
 reportSelfClsParameterName = "error"
 reportUnusedExpression = "error"
 reportMatchNotExhaustive = "error"
-reportShadowedImports = "error"
+reportPossiblyUnboundVariable = "warning"
 # *Note*: we may want to set all 'ReportOptional*' rules to "none", but leaving 'em default for now
 venvPath = "."
 venv = ".venv"
-exclude = ["aeon/dj_pipeline/*", ".venv/*"]
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests", "docs", ".venv"]
+
 [tool.pytest.ini_options]
-markers = ["api"]
+testpaths = ["tests"]
+markers = [
+  "unit: Unit tests (no database, synthetic data)",
+  "integration: Integration tests (DB via testcontainers, synthetic or golden datasets)",
+  "specialized: Specialized tests (GPU/high-RAM, golden datasets)",
+]
+
+[tool.uv.sources]
+swc-aeon = { git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git", branch = "main" }
+swc-aeon-rigs-foragingabc = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git", branch = "main" }

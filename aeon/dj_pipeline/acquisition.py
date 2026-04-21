@@ -3,16 +3,13 @@
 import datetime
 import json
 import pathlib
-import re
 
 import datajoint as dj
-import pandas as pd
 from swc.aeon.io import api as io_api
 from swc.aeon.io import reader as io_reader
 
-from aeon.dj_pipeline import get_schema_name, lab, subject
+from aeon.dj_pipeline import get_schema_name, lab, subject  # pyright: ignore[reportUnusedImport]
 from aeon.dj_pipeline.utils import paths
-from aeon.schema import ingestion_schemas as aeon_schemas
 
 schema = dj.schema(get_schema_name("acquisition"))
 
@@ -61,11 +58,15 @@ class EventType(dj.Lookup):
 
 @schema
 class DevicesSchema(dj.Lookup):
-    definition = """
-    devices_schema_name: varchar(32)
+    """Lookup table for experiment device schemas (Pydantic Experiment class paths).
+
+    The devices_schema_name should be a full class path to the Experiment class using
+    the format 'module.path:ClassName', e.g., 'swc.aeon.exp.foragingABC.experiment:Experiment'.
     """
 
-    contents = zip(aeon_schemas.__all__, strict=False)
+    definition = """
+    devices_schema_name: varchar(128)  # Experiment class path (module.path:ClassName format)
+    """
 
 
 # ------------------- Data repository/directory ------------------------
@@ -208,6 +209,7 @@ class Epoch(dj.Manual):
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
+        all_chunks.index = all_chunks.index.tz_localize(None)
 
         epoch_list = []
         for i, (_, chunk) in enumerate(all_chunks.iterrows()):
@@ -308,7 +310,7 @@ class EpochConfig(dj.Imported):
         bonsai_workflow: varchar(36)
         commit: varchar(64) # e.g. git commit hash of aeon_experiment used to generate this epoch
         source='': varchar(16)  # e.g. aeon_experiment or aeon_acquisition (or others)
-        metadata: longblob
+        metadata: json  # Rig configuration JSON for Pydantic reconstruction
         metadata_file_path: varchar(255)  # path of the file, relative to the experiment repository
         """
 
@@ -327,47 +329,87 @@ class EpochConfig(dj.Imported):
         """
 
     def make(self, key):
-        """Ingest metadata into EpochConfig."""
-        from aeon.dj_pipeline.utils import streams_maker
+        """Ingest metadata into EpochConfig.
+
+        Note: Stream tables (ExperimentDevice, DeviceDataStream) are pre-created at
+        worker startup. This method only performs DML (inserts), no DDL (table creation).
+        """
         from aeon.dj_pipeline.utils.load_metadata import (
-            extract_epoch_config,
-            ingest_epoch_metadata,
+            extract_active_regions,
+            flatten_rig_devices,
+            get_experiment_pydantic,
+            ingest_epoch_metadata_from_rig,
             insert_device_types,
         )
 
         experiment_name = key["experiment_name"]
-        devices_schema = getattr(
-            aeon_schemas,
-            (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1("devices_schema_name"),
+
+        # Get Experiment class path (e.g., "swc.aeon.exp.foragingABC.experiment:Experiment")
+        schema_name = (Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1(
+            "devices_schema_name"
         )
 
         dir_type, epoch_dir = (Epoch & key).fetch1("directory_type", "epoch_dir")
         data_dir = Experiment.get_data_directory(key, dir_type)
-        metadata_yml_filepath = data_dir / epoch_dir / "Metadata.yml"
+        metadata_filepath = data_dir / epoch_dir / "Metadata.json"
 
-        epoch_config = extract_epoch_config(experiment_name, devices_schema, metadata_yml_filepath)
+        # Load metadata and extract rig_config
+        metadata = json.loads(metadata_filepath.read_text())
+        epoch_start = datetime.datetime.strptime(metadata_filepath.parent.name, "%Y-%m-%dT%H-%M-%S")
+        rig_config = metadata.get("rig", {})
+
+        if not rig_config:
+            raise ValueError(f"No 'rig' configuration found in {metadata_filepath}")
+
+        # Validate and construct Experiment/Rig from full metadata
+        # Experiment model expects workflow, commit, repository_url, rig, etc.
+        # Note: We validate full metadata but only store rig_config in EpochConfig.Meta
+        experiment_class = get_experiment_pydantic(schema_name)
+        try:
+            experiment = experiment_class.model_validate(metadata)
+        except Exception as e:
+            raise ValueError(f"Failed to validate metadata for {key}: {e}") from e
+        rig = experiment.rig
         epoch_config = {
-            **epoch_config,
-            "metadata_file_path": metadata_yml_filepath.relative_to(data_dir).as_posix(),
+            "experiment_name": experiment_name,
+            "epoch_start": epoch_start,
+            "bonsai_workflow": metadata.get("workflow", ""),
+            "commit": metadata.get("commit") or metadata.get("metadata", {}).get("Revision", ""),
+            "metadata": rig_config,  # Store original nested JSON for Pydantic reconstruction
+            "metadata_file_path": metadata_filepath.relative_to(data_dir).as_posix(),
+            "devices": flatten_rig_devices(
+                rig_config
+            ),  # Flat device dict for ingest_epoch_metadata_from_rig
         }
 
-        # Insert new entries for streams.DeviceType, streams.Device.
-        insert_device_types(
-            devices_schema,
-            metadata_yml_filepath,
-        )
-        # Define and instantiate new devices/stream tables under `streams` schema
-        streams_maker.main()
-        # Insert devices' installation/removal/settings
-        epoch_device_types = ingest_epoch_metadata(experiment_name, devices_schema, metadata_yml_filepath)
+        # Insert new entries for streams.DeviceType, streams.Device using Rig
+        # Note: StreamType and DeviceType catalog populated at worker startup
+        # ExperimentDevice and DeviceDataStream tables created at worker startup
+        insert_device_types(rig, metadata_filepath)
 
+        # Insert devices' installation/removal/settings into ExperimentDevice tables
+        epoch_device_types = ingest_epoch_metadata_from_rig(
+            experiment_name, rig, epoch_config, metadata_filepath
+        )
+
+        # Extract active regions
+        active_region = extract_active_regions(rig_config)
+
+        # Remove devices key before inserting - it was only needed for ingest_epoch_metadata_from_rig
+        epoch_config.pop("devices", None)
+
+        # MariaDB aliases `json` to `longtext`, so DataJoint's auto json.dumps doesn't fire.
+        # Serialize manually before insert.
+        epoch_config["metadata"] = json.dumps(epoch_config["metadata"])
+
+        # Insert EpochConfig entries (stores rig_config JSON for runtime reader resolution)
         self.insert1(key)
         self.Meta.insert1(epoch_config)
+
+        # Insert remaining entries
         self.DeviceType.insert(key | {"device_type": n} for n in epoch_device_types or {})
-        with metadata_yml_filepath.open("r") as f:
-            metadata = json.load(f)
         self.ActiveRegion.insert(
-            {**key, "region_name": k, "region_data": v} for k, v in metadata["ActiveRegion"].items()
+            {**key, "region_name": k, "region_data": v} for k, v in active_region.items()
         )
 
 
@@ -425,6 +467,7 @@ class Chunk(dj.Manual):
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
+        all_chunks.index = all_chunks.index.tz_localize(None)
 
         chunk_starts, chunk_list, file_list, file_name_list = [], [], [], []
         for _, chunk in all_chunks.iterrows():
@@ -489,181 +532,6 @@ class Chunk(dj.Manual):
             cls.File.insert(file_list)
 
 
-# ------------------- ENVIRONMENT --------------------
-
-
-@schema
-class Environment(dj.Imported):
-    definition = """  # Experiment environments
-    -> Chunk
-    """
-
-    class EnvironmentState(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) timestamps
-        state: longblob
-        """
-
-    class BlockState(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) timestamps
-        pellet_ct: longblob
-        pellet_ct_thresh: longblob
-        due_time: longblob
-        """
-
-    class LightEvents(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) timestamps
-        channel: longblob
-        value: longblob
-        """
-
-    class MessageLog(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime)
-        priority: longblob
-        type: longblob
-        message: longblob
-        """
-
-    class SubjectState(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) timestamps
-        id: longblob
-        weight: longblob
-        type: longblob
-        """
-
-    class SubjectVisits(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) timestamps
-        id: longblob
-        type: longblob
-        region: longblob
-        """
-
-    class SubjectWeight(dj.Part):
-        definition = """
-        -> master
-        ---
-        sample_count: int      # number of data points acquired from this stream for a given chunk
-        timestamps: longblob   # (datetime) timestamps
-        weight: longblob
-        confidence: longblob
-        subject_id: longblob
-        int_id: longblob
-        """
-
-    def make(self, key):
-        """Ingest environment data into Environment table."""
-        chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
-
-        # Populate the part table
-        data_dirs = Experiment.get_data_directories(key)
-        devices_schema = getattr(
-            aeon_schemas,
-            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
-        )
-        device = devices_schema.Environment
-
-        self.insert1(key)
-
-        for stream_type, part_table in [
-            ("EnvironmentState", self.EnvironmentState),
-            ("BlockState", self.BlockState),
-            ("LightEvents", self.LightEvents),
-            ("MessageLog", self.MessageLog),
-            ("SubjectState", self.SubjectState),
-            ("SubjectVisits", self.SubjectVisits),
-            ("SubjectWeight", self.SubjectWeight),
-        ]:
-            stream_reader = getattr(device, stream_type)
-
-            stream_data = io_api.load(
-                root=data_dirs,
-                reader=stream_reader,
-                start=pd.Timestamp(chunk_start),
-                end=pd.Timestamp(chunk_end),
-            )
-
-            part_table.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
-
-
-@schema
-class EnvironmentActiveConfiguration(dj.Imported):
-    definition = """  # Environment Active Configuration
-    -> Chunk
-    """
-
-    class Name(dj.Part):
-        definition = """
-        -> master
-        time: datetime(6)  # time when the configuration is applied to the environment
-        ---
-        name: varchar(32)  # name of the environment configuration
-        value: longblob    # dictionary of the configuration
-        """
-
-    def make(self, key):
-        """Ingest active configuration data into EnvironmentActiveConfiguration table."""
-        chunk_start, chunk_end = (Chunk & key).fetch1("chunk_start", "chunk_end")
-        data_dirs = Experiment.get_data_directories(key)
-        devices_schema = getattr(
-            aeon_schemas,
-            (Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
-                "devices_schema_name"
-            ),
-        )
-        device = devices_schema.Environment
-        stream_reader = device.EnvironmentActiveConfiguration  # expecting columns: time, name, value
-        stream_data = io_api.load(
-            root=data_dirs,
-            reader=stream_reader,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
-
-        stream_data.reset_index(inplace=True)
-        for k, v in key.items():
-            stream_data[k] = v
-
-        self.insert1(key)
-        self.Name.insert(stream_data)
-
-
 # ---- HELPERS ----
 
 
@@ -701,7 +569,7 @@ def _match_experiment_directory(experiment_name, path, directories):
             repo_path = paths.get_repository_path(directory.pop("repository_name"))
             break
     else:
-        raise FileNotFoundError(f"Unable to identify the directory" f" where this chunk is from: {path}")
+        raise FileNotFoundError(f"Unable to identify the directory where this chunk is from: {path}")
 
     return raw_data_dir, directory, repo_path
 

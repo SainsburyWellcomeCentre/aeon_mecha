@@ -1,9 +1,7 @@
 """DataJoint pipeline for Aeon."""
 
-import hashlib
 import logging
 import os
-import uuid
 
 import datajoint as dj
 
@@ -29,15 +27,6 @@ def get_schema_name(name) -> str:
     return db_prefix + name
 
 
-def dict_to_uuid(key) -> uuid.UUID:
-    """Given a dictionary `key`, returns a hash string as UUID."""
-    hashed = hashlib.md5()
-    for k, v in sorted(key.items()):
-        hashed.update(str(k).encode())
-        hashed.update(str(v).encode())
-    return uuid.UUID(hex=hashed.hexdigest())
-
-
 def fetch_stream(query, drop_pk=True, round_microseconds=True):
     """Fetches data from a Stream table based on a query and returns it as a DataFrame.
 
@@ -61,14 +50,13 @@ def fetch_stream(query, drop_pk=True, round_microseconds=True):
     df.set_index("time", inplace=True)
     df.sort_index(inplace=True)
     df = df.convert_dtypes(
-        convert_string=False,
-        convert_integer=False,
-        convert_boolean=False,
-        convert_floating=False
+        convert_string=False, convert_integer=False, convert_boolean=False, convert_floating=False
     )
     if not df.empty and round_microseconds:
-        logging.warning("Rounding timestamps to microseconds is now enabled by default."
-                        " To disable, set round_microseconds=False.")
+        logging.warning(
+            "Rounding timestamps to microseconds is now enabled by default."
+            " To disable, set round_microseconds=False."
+        )
         df.index = df.index.round("us")
     return df
 
