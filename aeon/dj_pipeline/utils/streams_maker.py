@@ -218,7 +218,10 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             + Chunk(s) started after {device_type} install time for {device_type} and not yet removed
             """
             return (
-                acquisition.Chunk * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
+                acquisition.Chunk.join(
+                    ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True),
+                    semantic_check=False,
+                )
                 & "chunk_start >= {device_type_name}_install_time"
                 & 'chunk_start < IFNULL({device_type_name}_removal_time,"2200-01-01")'
             )
