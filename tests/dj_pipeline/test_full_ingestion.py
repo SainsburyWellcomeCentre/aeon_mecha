@@ -14,7 +14,6 @@ Tests gracefully skip if data unavailable.
 
 import pytest
 
-
 # =============================================================================
 # Step 1: Catalog Population Tests
 # =============================================================================
@@ -253,11 +252,11 @@ class TestStreamDataIngestion:
         if not video_tables:
             pytest.skip("No Video stream tables found")
 
-        for table_name, table in video_tables:
+        for _table_name, table in video_tables:
             table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
 
         # Check at least one video entry has actual data (sample_count > 0)
-        for table_name, table in video_tables:
+        for _table_name, table in video_tables:
             query = table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
             if len(query):
                 return  # Success
@@ -288,11 +287,11 @@ class TestStreamDataIngestion:
         if not harp_tables:
             pytest.skip("No Harp stream tables found")
 
-        for table_name, table in harp_tables:
+        for _table_name, table in harp_tables:
             table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
 
         # Check at least one has actual data (sample_count > 0)
-        for table_name, table in harp_tables:
+        for _table_name, table in harp_tables:
             query = table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
             if len(query):
                 return  # Success

@@ -6,11 +6,11 @@ import os
 
 import datajoint as dj
 
-# Register AeonStreamCodec BEFORE any schema activation
-from aeon.dj_pipeline.utils.codec import AeonStreamCodec  # noqa: F401
-
 # Import dict_to_uuid from utils for backward compatibility
 from aeon.dj_pipeline.utils import dict_to_uuid
+
+# Register AeonStreamCodec BEFORE any schema activation
+from aeon.dj_pipeline.utils.codec import AeonStreamCodec  # noqa: F401
 
 logger = dj.logger
 
@@ -19,7 +19,9 @@ _default_repository_config = {"ceph_aeon": "/ceph/aeon"}
 
 os.environ["DJ_SUPPORT_FILEPATH_MANAGEMENT"] = "TRUE"
 
-db_prefix = dj.config.database.database_prefix or os.getenv("DJ_DATABASE_PREFIX") or _default_database_prefix
+db_prefix = (
+    dj.config.database.database_prefix or os.getenv("DJ_DATABASE_PREFIX") or _default_database_prefix
+)
 
 repository_config = (
     json.loads(os.environ["DJ_REPOSITORY_CONFIG"])

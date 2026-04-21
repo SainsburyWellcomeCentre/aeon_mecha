@@ -7,10 +7,9 @@ Individual data columns store JSON summary stats (min, max, mean, dtype, count).
 The `stream_df` column uses <aeon_stream> codec for lazy DataFrame loading.
 """
 
+import datajoint as dj
 import numpy as np
 import pandas as pd
-
-import datajoint as dj
 
 
 class AeonStreamCodec(dj.Codec):
@@ -45,9 +44,11 @@ class AeonStreamCodec(dj.Codec):
     }
 
     def get_dtype(self, is_store: bool) -> str:
+        """Return JSON as the storage type."""
         return "json"
 
     def encode(self, value, *, key=None, store_name=None):
+        """Validate and store the stream reference dict as JSON."""
         if not isinstance(value, dict):
             raise TypeError(f"AeonStreamCodec expects a dict, got {type(value).__name__}")
         missing = self._REQUIRED_KEYS - value.keys()
@@ -56,6 +57,7 @@ class AeonStreamCodec(dj.Codec):
         return value
 
     def decode(self, stored, *, key=None):
+        """Load stream data from raw files using the stored reference."""
         from swc.aeon.io import api as io_api
 
         from aeon.dj_pipeline import acquisition

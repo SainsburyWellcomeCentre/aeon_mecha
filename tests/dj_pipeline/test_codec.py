@@ -9,7 +9,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Unit tests: pure numpy/pandas helpers (no datajoint needed)
 # ---------------------------------------------------------------------------

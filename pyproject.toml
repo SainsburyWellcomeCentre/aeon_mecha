@@ -125,9 +125,12 @@ extend-exclude = [
 ]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
+  "D101",    # skip adding docstrings for public classes
   "D102",    # skip adding docstrings for public methods
-  "D103",    # skip adding docstrings for public functions  
+  "D103",    # skip adding docstrings for public functions
   "S101",    # skip using assert
+  "S110",    # skip try-except-pass (used in test teardown)
+  "SIM105",  # skip contextlib.suppress suggestion
   "PLR2004", # skip checking for magic values
 ]
 "aeon/schema/*" = [

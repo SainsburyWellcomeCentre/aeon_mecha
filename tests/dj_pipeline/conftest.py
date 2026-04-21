@@ -75,7 +75,6 @@ def dj_config_integration(mysql_container):
     dj.config.database.database_prefix = TEST_DB_PREFIX
 
     # Now import pipeline — all module-level schema activations use test prefix
-    import aeon.dj_pipeline as pipeline  # noqa: F841
 
     return {"database_prefix": TEST_DB_PREFIX}
 

@@ -203,7 +203,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
         if col.startswith("_"):
             continue
         new_col = re.sub(r"\([^)]*\)", "", col)
-        table_definition += f"{new_col}: json             # summary stats (min, max, mean, dtype, count)\n    "
+        table_definition += f"{new_col}: json             # summary stats\n    "
 
     table_definition += "stream_df: <aeon_stream>   # full DataFrame via codec\n    "
 

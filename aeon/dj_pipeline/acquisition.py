@@ -343,8 +343,8 @@ class EpochConfig(dj.Imported):
         worker startup. This method only performs DML (inserts), no DDL (table creation).
         """
         from aeon.dj_pipeline.utils.load_metadata import (
-            flatten_rig_devices,
             extract_active_regions,
+            flatten_rig_devices,
             get_experiment_pydantic,
             ingest_epoch_metadata_from_rig,
             insert_device_types,
