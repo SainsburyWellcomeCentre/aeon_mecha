@@ -15,7 +15,7 @@ from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
 from swc.aeon.io import api as io_api
 from aeon.schema.ephys import social_ephys
 
-schema = dj.schema(get_schema_name("spike_sorting"))
+schema = dj.Schema(get_schema_name("spike_sorting"))
 logger = dj.logger
 
 

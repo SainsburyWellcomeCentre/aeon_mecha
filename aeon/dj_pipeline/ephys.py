@@ -16,7 +16,7 @@ from aeon.dj_pipeline.utils.ephys_utils import (
     read_probe_assignments,
 )
 
-schema = dj.schema(get_schema_name("ephys"))
+schema = dj.Schema(get_schema_name("ephys"))
 logger = dj.logger
 
 

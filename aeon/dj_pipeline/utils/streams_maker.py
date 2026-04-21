@@ -19,7 +19,6 @@ from aeon.dj_pipeline import acquisition, get_schema_name
 logger = dj.logger
 
 
-# schema_name = f'u_{dj.config["database.user"]}_streams'  # for testing
 schema_name = get_schema_name("streams")
 
 _STREAMS_MODULE_FILE = Path(__file__).parent.parent / "streams.py"

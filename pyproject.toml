@@ -78,9 +78,6 @@ docs = [
   "sphinx",
 ]
 
-[project.scripts]
-aeon_ingest = "aeon.dj_pipeline.populate.process:cli"
-
 [project.urls]
 Homepage = "https://sainsburywellcomecentre.github.io/aeon_docs/"
 Repository = "https://github.com/sainsburyWellcomeCentre/aeon_mecha"

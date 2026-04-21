@@ -66,7 +66,7 @@ def verify_prefix_or_exit():
     """Check the database prefix BEFORE importing any pipeline modules.
 
     Critical because `from aeon.dj_pipeline import ephys` triggers
-    `dj.schema(get_schema_name("ephys"))` at import time, which CREATES
+    `dj.Schema(get_schema_name("ephys"))` at import time, which CREATES
     schemas in the database.
 
     These setup/validation scripts are designed for testing only and should
@@ -136,7 +136,7 @@ def step_verify_config(dry_run=False):
 
     try:
         conn = dj.conn()
-        print_ok(f"Connected to {dj.config['database.host']}:{dj.config['database.port']}")
+        print_ok(f"Connected to {dj.config.database.host}:{dj.config.database.port}")
     except Exception as e:
         print_fail(f"Cannot connect to database: {e}")
         return False
@@ -969,7 +969,7 @@ Steps:
     print("  Ephys v2 Pipeline Test")
     print(f"  Experiment: {EXPERIMENT_NAME}")
     print(f"  Subject:    {SUBJECT}")
-    print(f"  DB prefix:  {dj.config['custom'].get('database.prefix', '')}")
+    print(f"  DB prefix:  {dj.config.database.database_prefix or ''}")
     if args.dry_run:
         print("  Mode: DRY RUN")
     print("=" * 60)

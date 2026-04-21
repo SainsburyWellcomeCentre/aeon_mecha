@@ -11,7 +11,7 @@ import pandas as pd
 from aeon.dj_pipeline import ephys, spike_sorting, get_schema_name
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
 
-schema = dj.schema(get_schema_name("spike_sorting_curation"))
+schema = dj.Schema(get_schema_name("spike_sorting_curation"))
 logger = dj.logger
 
 
