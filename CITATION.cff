@@ -1,8 +1,58 @@
-cff-version: 1.0.0
-message: "If you use this software, please cite it as below."
-authors: 
--  family-names: "Sainsbury Wellcome Centre Foraging Behaviour Working Group"
-title: "Aeon: An open-source platform to study the neural basis of ethological behaviours over naturalistic timescales"
-doi: 10.5281/zenodo.8413142
-date-released: 2023-10-05
-url: https://github.com/SainsburyWellcomeCentre/aeon_docs
+cff-version: 1.2.0
+title: >-
+  Aeon: an open-source platform to study the neural basis of
+  ethological behaviours over naturalistic timescales
+message: >-
+  If you use Aeon in your work, please cite the preprint as
+  below.
+authors:
+  - family-names: Campagner
+    given-names: D.
+  - family-names: Bhagat
+    given-names: J.
+  - family-names: Lopes
+    given-names: G.
+  - family-names: Calcaterra
+    given-names: L.
+  - family-names: Pouget
+    given-names: A. G.
+  - family-names: Almeida
+    given-names: A.
+  - family-names: Nguyen
+    given-names: T. T.
+  - family-names: Lo
+    given-names: C. H.
+  - family-names: Ryan
+    given-names: T.
+  - family-names: Cruz
+    given-names: B.
+  - family-names: Carvalho
+    given-names: F. J.
+  - family-names: Li
+    given-names: Z.
+  - family-names: Erskine
+    given-names: A.
+  - family-names: Rapela
+    given-names: J.
+  - family-names: Folsz
+    given-names: O.
+  - family-names: Marin
+    given-names: M.
+  - family-names: Ahn
+    given-names: J.
+  - family-names: Nierwetberg
+    given-names: S.
+  - family-names: Lenzi
+    given-names: S. C.
+  - family-names: Reggiani
+    given-names: J. D. S.
+  - name: SGEN group – SWC GCNU Experimental Neuroethology Group
+identifiers:
+  - type: doi
+    value: 10.1101/2025.07.31.664513
+    description: Preprint on bioRxiv
+repository-code: "https://github.com/SainsburyWellcomeCentre/aeon_docs"
+url: "https://aeon.swc.ucl.ac.uk/"
+license: BSD-3-Clause
+version: Preprint
+date-released: "2025-08-01"
