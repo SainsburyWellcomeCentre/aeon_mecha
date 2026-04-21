@@ -761,9 +761,8 @@ def ingest_epoch_metadata_from_rig(
         acquisition.Epoch & f'epoch_start < "{epoch_config["epoch_start"]}"',
         epoch_start="MAX(epoch_start)",
     )
-    if len(acquisition.EpochConfig.Meta & previous_epoch) and epoch_config["commit"] == (
-        acquisition.EpochConfig.Meta & previous_epoch
-    ).fetch1("commit"):
+    prev_meta = acquisition.EpochConfig.Meta().restrict(previous_epoch, semantic_check=False)
+    if len(prev_meta) and epoch_config["commit"] == prev_meta.fetch1("commit"):
         # if identical commit -> no changes
         return set()
 

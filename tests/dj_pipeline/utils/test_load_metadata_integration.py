@@ -336,7 +336,7 @@ class TestInsertDeviceTypesFKHandling:
         insert_stream_types(test_rig)
 
         # Also insert DeviceType entries first
-        device_mapper, _ = get_device_mapper_from_rig(test_rig, metadata_filepath)
+        device_mapper, _ = get_device_mapper_from_rig(test_rig)
         device_types = [{"device_type": dt} for dt in set(device_mapper.values())]
         streams.DeviceType.insert(device_types, skip_duplicates=True)
 
