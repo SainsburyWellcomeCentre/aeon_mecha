@@ -6,9 +6,8 @@ triggering DataJoint connections before testcontainers fixtures are ready.
 
 import pytest
 
-pytestmark = pytest.mark.unit
 
-
+@pytest.mark.unit
 class TestToPascalCase:
     """Test snake_case to PascalCase conversion."""
 
@@ -33,37 +32,39 @@ class TestToPascalCase:
         assert to_pascal_case("") == ""
 
 
+@pytest.mark.unit
 class TestFlattenRigDevices:
     """Test nested rig config flattening."""
 
     def test_extracts_cameras(self, sample_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
+        from aeon.dj_pipeline.utils.load_metadata import _flatten_rig_devices
 
-        result = flatten_rig_devices(sample_rig_config)
+        result = _flatten_rig_devices(sample_rig_config)
         assert "CameraTop" in result
         assert result["CameraTop"]["serialNumber"] == "21053810"
 
     def test_extracts_feeders(self, sample_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
+        from aeon.dj_pipeline.utils.load_metadata import _flatten_rig_devices
 
-        result = flatten_rig_devices(sample_rig_config)
+        result = _flatten_rig_devices(sample_rig_config)
         assert "Feeder1" in result
         assert result["Feeder1"]["portName"] == "COM3"
 
     def test_extracts_nest(self, sample_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
+        from aeon.dj_pipeline.utils.load_metadata import _flatten_rig_devices
 
-        result = flatten_rig_devices(sample_rig_config)
+        result = _flatten_rig_devices(sample_rig_config)
         assert "Nest" in result
 
     def test_extracts_synchronizers(self, sample_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
+        from aeon.dj_pipeline.utils.load_metadata import _flatten_rig_devices
 
-        result = flatten_rig_devices(sample_rig_config)
+        result = _flatten_rig_devices(sample_rig_config)
         assert "CameraSynchronizer" in result
         assert "ClockSynchronizer" in result
 
 
+@pytest.mark.unit
 class TestExtractDeviceMapperFromRig:
     """Test device type mapper extraction."""
 
@@ -82,6 +83,7 @@ class TestExtractDeviceMapperFromRig:
         assert device_sn["Feeder1"] == "COM3"
 
 
+@pytest.mark.unit
 class TestGetDataReaderMethods:
     """Test @data_reader method extraction from Device class."""
 
@@ -112,69 +114,62 @@ class TestGetDataReaderMethods:
 # -----------------------------------------------------------------------------
 
 
+@pytest.mark.unit
 class TestFlattenRigDevicesWithForagingABC:
     """Test rig flattening with real ForagingABC metadata structure."""
 
     def test_extracts_all_cameras(self, foraging_abc_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
+        from aeon.dj_pipeline.utils.load_metadata import _flatten_rig_devices
 
-        result = flatten_rig_devices(foraging_abc_rig_config)
+        result = _flatten_rig_devices(foraging_abc_rig_config)
         # ForagingABC has 13 cameras
         expected_cameras = [
-            "CameraTop",
-            "CameraNest",
-            "CameraNorth",
-            "CameraEast",
-            "CameraSouth",
-            "CameraWest",
-            "CameraLightMonitor",
-            "CameraPatch1",
-            "CameraPatch2",
-            "CameraPatch3",
-            "CameraPatch4",
-            "CameraPatch5",
-            "CameraPatch6",
+            "CameraTop", "CameraNest", "CameraNorth", "CameraEast",
+            "CameraSouth", "CameraWest", "CameraLightMonitor",
+            "CameraPatch1", "CameraPatch2", "CameraPatch3",
+            "CameraPatch4", "CameraPatch5", "CameraPatch6",
         ]
         for camera in expected_cameras:
             assert camera in result, f"Missing camera: {camera}"
 
     def test_extracts_all_feeders(self, foraging_abc_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
+        from aeon.dj_pipeline.utils.load_metadata import _flatten_rig_devices
 
-        result = flatten_rig_devices(foraging_abc_rig_config)
+        result = _flatten_rig_devices(foraging_abc_rig_config)
         # ForagingABC has 6 feeders
         for i in range(1, 7):
             assert f"Feeder{i}" in result
 
     def test_extracts_nest(self, foraging_abc_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
+        from aeon.dj_pipeline.utils.load_metadata import _flatten_rig_devices
 
-        result = flatten_rig_devices(foraging_abc_rig_config)
+        result = _flatten_rig_devices(foraging_abc_rig_config)
         assert "Nest" in result
         assert result["Nest"]["portName"] == "COM7"
 
     def test_extracts_synchronizers(self, foraging_abc_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
+        from aeon.dj_pipeline.utils.load_metadata import _flatten_rig_devices
 
-        result = flatten_rig_devices(foraging_abc_rig_config)
+        result = _flatten_rig_devices(foraging_abc_rig_config)
         assert "CameraSynchronizer" in result
         assert "ClockSynchronizer" in result
 
     def test_camera_serial_numbers_preserved(self, foraging_abc_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
+        from aeon.dj_pipeline.utils.load_metadata import _flatten_rig_devices
 
-        result = flatten_rig_devices(foraging_abc_rig_config)
+        result = _flatten_rig_devices(foraging_abc_rig_config)
         assert result["CameraTop"]["serialNumber"] == "23032909"
         assert result["CameraNest"]["serialNumber"] == "23031407"
 
     def test_feeder_port_names_preserved(self, foraging_abc_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
+        from aeon.dj_pipeline.utils.load_metadata import _flatten_rig_devices
 
-        result = flatten_rig_devices(foraging_abc_rig_config)
+        result = _flatten_rig_devices(foraging_abc_rig_config)
         assert result["Feeder1"]["portName"] == "COM13"
         assert result["Feeder4"]["portName"] == "COM3"
 
 
+@pytest.mark.unit
 class TestExtractDeviceMapperWithForagingABC:
     """Test device mapper extraction with real ForagingABC metadata."""
 
@@ -230,6 +225,7 @@ class TestExtractDeviceMapperWithForagingABC:
         assert len(device_type_mapper) == 23
 
 
+@pytest.mark.unit
 class TestExtractActiveRegionsWithForagingABC:
     """Test active region extraction with real ForagingABC metadata."""
 

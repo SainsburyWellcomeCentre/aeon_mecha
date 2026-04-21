@@ -343,7 +343,7 @@ class EpochConfig(dj.Imported):
         worker startup. This method only performs DML (inserts), no DDL (table creation).
         """
         from aeon.dj_pipeline.utils.load_metadata import (
-            _flatten_rig_devices,
+            flatten_rig_devices,
             extract_active_regions,
             get_experiment_pydantic,
             ingest_epoch_metadata_from_rig,
@@ -385,7 +385,7 @@ class EpochConfig(dj.Imported):
             "commit": metadata.get("commit") or metadata.get("metadata", {}).get("Revision", ""),
             "metadata": rig_config,  # Store original nested JSON for Pydantic reconstruction
             "metadata_file_path": metadata_filepath.relative_to(data_dir).as_posix(),
-            "devices": _flatten_rig_devices(
+            "devices": flatten_rig_devices(
                 rig_config
             ),  # Flat device dict for ingest_epoch_metadata_from_rig
         }
