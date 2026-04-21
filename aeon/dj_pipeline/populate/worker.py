@@ -5,14 +5,33 @@ from datajoint_utilities.dj_worker import DataJointWorker, ErrorLog, WorkerLog
 from datajoint_utilities.dj_worker.worker_schema import is_djtable
 
 from aeon.dj_pipeline import acquisition, db_prefix, qc, subject, tracking
-from aeon.dj_pipeline.analysis import block_analysis
 from aeon.dj_pipeline.utils import streams_maker
+from aeon.dj_pipeline.utils.load_metadata import (
+    get_experiment_pydantic,
+    populate_catalog_from_pydantic,
+)
 
+# STEP 1: Populate catalog from all registered Experiment classes
+# This must happen BEFORE streams_maker.main() creates tables
+for exp in acquisition.Experiment.DevicesSchema.fetch(as_dict=True):
+    devices_schema_name = exp["devices_schema_name"]
+    try:
+        experiment_class = get_experiment_pydantic(devices_schema_name)
+        populate_catalog_from_pydantic(experiment_class)
+    except (ImportError, ModuleNotFoundError) as e:
+        dj.logger.error(
+            f"Failed to import Experiment class '{devices_schema_name}': {e}. "
+            "Check if the package is installed."
+        )
+        raise  # Re-raise to fail fast on missing dependencies
+    except Exception as e:
+        dj.logger.warning(f"Could not populate catalog for {devices_schema_name}: {e}")
+
+# STEP 2: Create tables (MUST be outside transaction)
 streams = streams_maker.main()
 
 __all__ = [
     "acquisition_worker",
-    "analysis_worker",
     "pyrat_worker",
     "streams_worker",
     "WorkerLog",
@@ -56,8 +75,6 @@ acquisition_worker = DataJointWorker(
 )
 acquisition_worker(ingest_epochs_chunks)
 acquisition_worker(acquisition.EpochConfig)
-acquisition_worker(acquisition.Environment)
-acquisition_worker(block_analysis.BlockDetection)
 
 # configure a worker to handle pyrat sync
 pyrat_worker = DataJointWorker(
@@ -80,7 +97,6 @@ streams_worker = DataJointWorker(
     db_prefix=db_prefix,
     max_idled_cycle=50,
     sleep_duration=60,
-    autoclear_error_patterns=["%BlockAnalysis Not Ready%"],
 )
 
 for attr in vars(streams).values():
@@ -89,21 +105,6 @@ for attr in vars(streams).values():
 
 streams_worker(qc.CameraQC, max_calls=10)
 streams_worker(tracking.SLEAPTracking, max_calls=10)
-
-# configure a worker to run the analysis tables
-analysis_worker = DataJointWorker(
-    "analysis_worker",
-    worker_schema_name=worker_schema_name,
-    db_prefix=db_prefix,
-    max_idled_cycle=20,
-    sleep_duration=60,
-)
-
-analysis_worker(block_analysis.BlockAnalysis, max_calls=6)
-analysis_worker(block_analysis.BlockSubjectAnalysis, max_calls=6)
-analysis_worker(block_analysis.BlockForaging, max_calls=6)
-analysis_worker(block_analysis.BlockPatchPlots, max_calls=6)
-analysis_worker(block_analysis.BlockSubjectPositionPlots, max_calls=6)
 
 
 def get_workflow_operation_overview():
