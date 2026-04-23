@@ -5,6 +5,8 @@ to avoid triggering the datajoint mock in unit test mode.
 Codec encode/decode tests require real datajoint and are marked integration.
 """
 
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -18,9 +20,11 @@ def _column_stats(values):
     """Inline copy of column_stats to avoid datajoint import in unit tests."""
     stats = {"dtype": str(values.dtype), "count": int(len(values))}
     if len(values) > 0 and np.issubdtype(values.dtype, np.number):
-        stats["min"] = float(np.nanmin(values))
-        stats["max"] = float(np.nanmax(values))
-        stats["mean"] = round(float(np.nanmean(values)), 4)
+        finite = values[np.isfinite(values)]
+        if len(finite) > 0:
+            stats["min"] = float(np.min(finite))
+            stats["max"] = float(np.max(finite))
+            stats["mean"] = round(float(np.mean(finite)), 4)
     return stats
 
 
@@ -40,43 +44,66 @@ def _timestamp_stats(index):
 
 @pytest.mark.unit
 class TestColumnStats:
-    def test_numeric_array(self):
-        values = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
-        stats = _column_stats(values)
-        assert stats["dtype"] == "float64"
-        assert stats["count"] == 5
-        assert stats["min"] == 1.0
-        assert stats["max"] == 5.0
-        assert stats["mean"] == 3.0
+    @pytest.mark.parametrize(
+        ("values", "expected"),
+        [
+            pytest.param(
+                np.array([1.0, 2.0, 3.0, 4.0, 5.0]),
+                {"dtype": "float64", "count": 5, "min": 1.0, "max": 5.0, "mean": 3.0},
+                id="numeric array",
+            ),
+            pytest.param(
+                np.array([10, 20, 30], dtype=np.int32),
+                {"dtype": "int32", "count": 3, "min": 10.0, "max": 30.0, "mean": 20.0},
+                id="integer array",
+            ),
+            pytest.param(
+                np.array([], dtype=np.float64),
+                {"dtype": "float64", "count": 0},
+                id="empty array",
+            ),
+            pytest.param(
+                np.array(["a", "b", "c"]),
+                {"dtype": "<U1", "count": 3},
+                id="non-numeric array",
+            ),
+            pytest.param(
+                np.array([1.0, np.nan, 3.0]),
+                {"dtype": "float64", "count": 3, "min": 1.0, "max": 3.0, "mean": 2.0},
+                id="partial NaN",
+            ),
+            pytest.param(
+                np.array([np.nan, np.nan, np.nan]),
+                {"dtype": "float64", "count": 3},
+                id="all NaN",
+            ),
+            pytest.param(
+                np.array([1.0, np.inf, 3.0]),
+                {"dtype": "float64", "count": 3, "min": 1.0, "max": 3.0, "mean": 2.0},
+                id="partial Inf",
+            ),
+            pytest.param(
+                np.array([np.inf, -np.inf]),
+                {"dtype": "float64", "count": 2},
+                id="all Inf",
+            ),
+        ],
+    )
+    def test_different_array_types_and_edge_cases(self, values, expected):
+        assert _column_stats(values) == expected
 
-    def test_integer_array(self):
-        values = np.array([10, 20, 30], dtype=np.int32)
-        stats = _column_stats(values)
-        assert stats["dtype"] == "int32"
-        assert stats["min"] == 10.0
-        assert stats["max"] == 30.0
-
-    def test_empty_array(self):
-        values = np.array([], dtype=np.float64)
-        stats = _column_stats(values)
-        assert stats["count"] == 0
-        assert stats["dtype"] == "float64"
-        assert "min" not in stats
-
-    def test_non_numeric_array(self):
-        values = np.array(["a", "b", "c"])
-        stats = _column_stats(values)
-        assert stats["count"] == 3
-        assert "min" not in stats
-        assert "max" not in stats
-        assert "mean" not in stats
-
-    def test_nan_handling(self):
-        values = np.array([1.0, np.nan, 3.0])
-        stats = _column_stats(values)
-        assert stats["min"] == 1.0
-        assert stats["max"] == 3.0
-        assert stats["count"] == 3
+    @pytest.mark.parametrize(
+        "values",
+        [
+            np.array([np.nan]),
+            np.array([np.inf]),
+            np.array([1.0, np.nan, 3.0]),
+            np.array([1.0, np.inf, 3.0]),
+        ],
+    )
+    def test_json_serializable(self, values):
+        """min/max/mean must never be nan or inf (not JSON-serializable)."""
+        json.dumps(_column_stats(values))  # must not raise
 
 
 @pytest.mark.unit

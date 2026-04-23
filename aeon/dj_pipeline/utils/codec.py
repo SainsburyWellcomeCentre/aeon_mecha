@@ -88,9 +88,11 @@ def column_stats(values):
     """
     stats = {"dtype": str(values.dtype), "count": int(len(values))}
     if len(values) > 0 and np.issubdtype(values.dtype, np.number):
-        stats["min"] = float(np.nanmin(values))
-        stats["max"] = float(np.nanmax(values))
-        stats["mean"] = round(float(np.nanmean(values)), 4)
+        finite = values[np.isfinite(values)]
+        if len(finite) > 0:
+            stats["min"] = float(np.min(finite))
+            stats["max"] = float(np.max(finite))
+            stats["mean"] = round(float(np.mean(finite)), 4)
     return stats
 
 
