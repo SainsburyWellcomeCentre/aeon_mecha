@@ -30,6 +30,8 @@ def _column_stats(values):
 
 def _timestamp_stats(index):
     """Inline copy of timestamp_stats to avoid datajoint import in unit tests."""
+    if len(index) == 0:
+        return {"count": 0}
     stats = {
         "min": str(index.min()),
         "max": str(index.max()),
@@ -89,7 +91,8 @@ class TestColumnStats:
             ),
         ],
     )
-    def test_different_array_types_and_edge_cases(self, values, expected):
+    def test_column_stats(self, values, expected):
+        """Test column_stats output for various input arrays, including edge cases."""
         assert _column_stats(values) == expected
 
     @pytest.mark.parametrize(
@@ -101,31 +104,67 @@ class TestColumnStats:
             np.array([1.0, np.inf, 3.0]),
         ],
     )
-    def test_json_serializable(self, values):
+    def test_column_stats_json_serializable(self, values):
         """min/max/mean must never be nan or inf (not JSON-serializable)."""
         json.dumps(_column_stats(values))  # must not raise
 
 
 @pytest.mark.unit
 class TestTimestampStats:
-    def test_regular_timestamps(self):
-        index = pd.date_range("2025-01-01", periods=100, freq="2ms")
-        stats = _timestamp_stats(index)
-        assert stats["count"] == 100
-        assert stats["sampling_rate_hz"] == 500.0
+    @pytest.mark.parametrize(
+        ("index", "expected"),
+        [
+            pytest.param(
+                pd.date_range("2025-01-01", periods=100, freq="2ms"),
+                {
+                    "min": "2025-01-01 00:00:00",
+                    "max": "2025-01-01 00:00:00.198000",
+                    "count": 100,
+                    "sampling_rate_hz": 500.0,
+                },
+                id="regular timestamps",
+            ),
+            pytest.param(
+                pd.DatetimeIndex(["2025-01-01"]),
+                {
+                    "min": "2025-01-01 00:00:00",
+                    "max": "2025-01-01 00:00:00",
+                    "count": 1,
+                },
+                id="single timestamp",
+            ),
+            pytest.param(
+                pd.DatetimeIndex([]),
+                {"count": 0},
+                id="empty index",
+            ),
+            pytest.param(
+                pd.to_datetime(["2025-01-01 00:00:00", "2025-01-01 00:00:01", "2025-01-01 00:00:05"]),
+                {
+                    "min": "2025-01-01 00:00:00",
+                    "max": "2025-01-01 00:00:05",
+                    "count": 3,
+                    "sampling_rate_hz": 0.4,
+                },
+                id="irregular timestamps",
+            ),
+        ],
+    )
+    def test_timestamp_stats(self, index, expected):
+        """Test timestamp_stats output for various datetime indices, including edge cases."""
+        assert _timestamp_stats(index) == expected
 
-    def test_single_timestamp(self):
-        index = pd.DatetimeIndex(["2025-01-01"])
-        stats = _timestamp_stats(index)
-        assert stats["count"] == 1
-        assert "sampling_rate_hz" not in stats
-        assert "sampling_rate_hz" not in stats
-
-    def test_irregular_timestamps(self):
-        times = pd.to_datetime(["2025-01-01 00:00:00", "2025-01-01 00:00:01", "2025-01-01 00:00:05"])
-        stats = _timestamp_stats(times)
-        assert stats["count"] == 3
-        assert stats["sampling_rate_hz"] is not None
+    @pytest.mark.parametrize(
+        "index",
+        [
+            pd.date_range("2025-01-01", periods=100, freq="2ms"),
+            pd.DatetimeIndex(["2025-01-01"]),
+            pd.DatetimeIndex([]),
+        ],
+    )
+    def test_timestamp_stats_json_serializable(self, index):
+        """All stats output must be JSON-serializable."""
+        json.dumps(_timestamp_stats(index))  # must not raise
 
 
 # ---------------------------------------------------------------------------

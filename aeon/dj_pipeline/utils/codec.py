@@ -102,6 +102,8 @@ def timestamp_stats(index):
     Returns:
         dict with keys: min, max, count, and when count > 1: sampling_rate_hz.
     """
+    if len(index) == 0:
+        return {"count": 0}
     stats = {
         "min": str(index.min()),
         "max": str(index.max()),
