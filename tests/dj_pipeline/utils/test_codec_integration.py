@@ -5,8 +5,9 @@ Codec encode/decode tests require real datajoint and are marked integration.
 
 import pytest
 
+pytestmark = pytest.mark.integration
 
-@pytest.mark.integration
+
 class TestAeonStreamCodecEncode:
     def test_valid_encode(self, dj_config_integration):
         from aeon.dj_pipeline.utils.codec import AeonStreamCodec
