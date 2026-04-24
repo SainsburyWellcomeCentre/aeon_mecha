@@ -9,7 +9,7 @@ Three phases:
   Phase 3: Post-sorting, curation & unit matching (no SLURM needed)
 
 Prerequisites:
-  - dj_local_conf.json configured with prefix "u_elissas_aeon_ephys_v2_test_"
+  - datajoint.json / DJ_DATABASE_PREFIX configured with prefix "u_elissas_aeon_ephys_v2_test_"
   - On HPC with access to /ceph/aeon/
   - SpikeInterface installed (standard version, or Elissa's fork if needed)
 
@@ -79,15 +79,15 @@ def verify_prefix_or_exit():
 
     if not prefix:
         print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is empty.")
-        print(f"    dj_local_conf.json may not have been found.")
+        print(f"    datajoint.json / DJ_DATABASE_PREFIX env var may not have been set.")
         print(f"    Make sure you run from the repo root directory.")
         sys.exit(1)
 
     if prefix == PRODUCTION_PREFIX:
         print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is '{prefix}' (production).")
         print(f"    This script is for testing only — do not run against production.")
-        print(f"    Set a test prefix in dj_local_conf.json, e.g.:")
-        print(f'      "custom": {{"database.prefix": "u_yourname_test_"}}')
+        print(f"    Set a test prefix via DJ_DATABASE_PREFIX env var or datajoint.json, e.g.:")
+        print(f'      DJ_DATABASE_PREFIX="u_yourname_test_"')
         sys.exit(1)
 
     if "aeon-db2" in host:
@@ -126,7 +126,7 @@ def step_verify_config(dry_run=False):
     print_header(1, "Verify Configuration")
 
     if dry_run:
-        print_info("Would check: dj_local_conf.json, DB connection, ceph path")
+        print_info("Would check: datajoint.json, DB connection, ceph path")
         return True
 
     import datajoint as dj
