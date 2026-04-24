@@ -14,15 +14,13 @@ Tests gracefully skip if data unavailable.
 
 import pytest
 
+pytestmark = pytest.mark.integration
 pytest.importorskip("swc.aeon_exp", reason="Full ingestion tests require swc.aeon_exp package")
 
 
 # =============================================================================
 # Step 1: Catalog Population Tests
 # =============================================================================
-
-
-@pytest.mark.integration
 class TestStep1CatalogPopulation:
     """Test Step 1: Catalog population from Pydantic class.
 
@@ -63,9 +61,6 @@ class TestStep1CatalogPopulation:
 # =============================================================================
 # Step 2: Table Creation Tests
 # =============================================================================
-
-
-@pytest.mark.integration
 class TestStep2TableCreation:
     """Test Step 2: Table creation via streams_maker.main().
 
@@ -92,9 +87,6 @@ class TestStep2TableCreation:
 # =============================================================================
 # Step 3: Data Population Tests (Epoch, Chunk, EpochConfig, Streams)
 # =============================================================================
-
-
-@pytest.mark.integration
 class TestEpochIngestion:
     """Test Epoch.ingest_epochs() with golden dataset."""
 
@@ -111,7 +103,6 @@ class TestEpochIngestion:
         assert epoch["epoch_dir"] == cfg["epoch_dir"]
 
 
-@pytest.mark.integration
 class TestEpochConfigMake:
     """Test EpochConfig.make() with golden dataset (Step 3 - DML only)."""
 
@@ -156,7 +147,6 @@ class TestEpochConfigMake:
         assert len(devices) > 0
 
 
-@pytest.mark.integration
 class TestChunkIngestion:
     """Test Chunk.ingest_chunks() with golden dataset."""
 
@@ -180,7 +170,6 @@ class TestChunkIngestion:
         assert chunk["chunk_start"] is not None
 
 
-@pytest.mark.integration
 class TestStreamDataIngestion:
     """Test DeviceDataStream.make() with golden dataset.
 
@@ -219,17 +208,13 @@ class TestStreamDataIngestion:
             try:
                 table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
                 total = len(table & {"experiment_name": cfg["experiment_name"]})
-                with_data = len(
-                    table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
-                )
+                with_data = len(table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0")
                 results[table_name] = {"total": total, "with_data": with_data}
             except Exception as e:
                 results[table_name] = f"error: {e}"
 
         # At least some tables should have entries with actual data (sample_count > 0)
-        with_data = {
-            k: v for k, v in results.items() if isinstance(v, dict) and v["with_data"] > 0
-        }
+        with_data = {k: v for k, v in results.items() if isinstance(v, dict) and v["with_data"] > 0}
         assert len(with_data) > 0, f"No stream tables with sample_count > 0. Results: {results}"
 
     def test_video_stream_has_data(self, test_epochs, full_pipeline, golden_dataset_config):
@@ -305,9 +290,6 @@ class TestStreamDataIngestion:
 # =============================================================================
 # fetch_stream Tests (uses populated stream data from above)
 # =============================================================================
-
-
-@pytest.mark.integration
 class TestFetchStream:
     """Test fetch_stream() with real populated stream data.
 
@@ -382,9 +364,7 @@ class TestFetchStream:
         streams = full_pipeline["streams"]
         cfg = golden_dataset_config
 
-        result = self._find_stream_with_data(
-            streams, cfg, name_filter=lambda n: "CameraVideo" in n
-        )
+        result = self._find_stream_with_data(streams, cfg, name_filter=lambda n: "CameraVideo" in n)
         if result is None:
             pytest.skip("No CameraVideo data populated")
 
@@ -466,7 +446,6 @@ class TestFetchStream:
 # =============================================================================
 
 
-@pytest.mark.integration
 class TestCodecStreamData:
     """Verify codec-based stream tables store correct summary stats and return correct DataFrames."""
 
@@ -508,6 +487,8 @@ class TestCodecStreamData:
         row = query.fetch1()
         assert isinstance(row["stream_df"], pd.DataFrame)
         assert not row["stream_df"].empty
+        assert isinstance(row["stream_df"].index, pd.DatetimeIndex)
+        assert row["stream_df"].index.name == "time"
 
     def test_sample_count_matches_stream_df(self, test_epochs, full_pipeline, golden_dataset_config):
         """Verify sample_count matches len(stream_df)."""
@@ -531,7 +512,6 @@ class TestCodecStreamData:
         df = row["stream_df"]
 
         assert ts_stats["count"] == len(df)
-        assert "sampling_rate_hz" in ts_stats
         assert "sampling_rate_hz" in ts_stats
 
     def test_column_stats_match_stream_df(self, test_epochs, full_pipeline, golden_dataset_config):
