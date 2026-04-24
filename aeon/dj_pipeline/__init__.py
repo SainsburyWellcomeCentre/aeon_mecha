@@ -3,14 +3,13 @@
 import json
 import logging
 import os
+from typing import cast
 
 import datajoint as dj
-
-# Import dict_to_uuid from utils for backward compatibility
-from aeon.dj_pipeline.utils import dict_to_uuid
+import pandas as pd
 
 # Register AeonStreamCodec BEFORE any schema activation
-from aeon.dj_pipeline.utils.codec import AeonStreamCodec  # noqa: F401
+from aeon.dj_pipeline.utils.codec import AeonStreamCodec  # pyright: ignore[reportUnusedImport]
 
 logger = dj.logger
 
@@ -47,13 +46,11 @@ def fetch_stream(query, drop_pk=True, round_microseconds=True):
         round_microseconds (bool, optional): Round timestamps to microseconds. Defaults to True.
             (this is important as timestamps in mysql is only accurate to microseconds)
     """
-    import pandas as pd
-
     rows = (query & "sample_count > 0").to_dicts()
     if not rows:
         return pd.DataFrame()
 
-    dfs = []
+    dfs: list[pd.DataFrame] = []
     for row in rows:
         stream_df = row["stream_df"]
         if not drop_pk:
@@ -71,12 +68,12 @@ def fetch_stream(query, drop_pk=True, round_microseconds=True):
             "Rounding timestamps to microseconds is now enabled by default."
             " To disable, set round_microseconds=False."
         )
-        df.index = df.index.round("us")
+        df.index = cast(pd.DatetimeIndex, df.index).round("us")
     return df
 
 
 try:
-    from . import streams
+    from . import streams  # pyright: ignore[reportUnusedImport]
 except ImportError:
     try:
         from .utils import streams_maker
