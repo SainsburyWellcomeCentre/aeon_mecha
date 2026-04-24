@@ -190,11 +190,12 @@ def require_golden_data(dj_config_integration, golden_dataset_config):
     """Skip tests if golden dataset is unavailable. Returns epoch path."""
     import aeon.dj_pipeline as pipeline
 
-    if not DEFAULT_GOLDEN_DATA_ROOT.exists():
-        pytest.skip(f"Golden data root not found: {DEFAULT_GOLDEN_DATA_ROOT}")
+    # If DJ_REPOSITORY_CONFIG env var is not set, use default golden data root
+    if "DJ_REPOSITORY_CONFIG" not in os.environ:
+        pipeline.repository_config = {"ceph_aeon": str(DEFAULT_GOLDEN_DATA_ROOT)}
 
-    # Override repository_config to point to golden data
-    pipeline.repository_config = {"ceph_aeon": str(DEFAULT_GOLDEN_DATA_ROOT)}
+    if not Path(pipeline.repository_config["ceph_aeon"]).exists():
+        pytest.skip(f"Golden data root not found: {pipeline.repository_config['ceph_aeon']}")
 
     from aeon.dj_pipeline.utils.paths import get_repository_path
 
