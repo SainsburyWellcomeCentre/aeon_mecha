@@ -92,9 +92,11 @@ def streams_schema(dj_config_integration):
 
     from aeon.dj_pipeline.utils import streams_maker
 
+    f = streams_maker._STREAMS_MODULE_FILE
+    original = f.read_bytes() if f.exists() else None
+
     # Delete auto-generated file so main() regenerates it with catalog tables
-    if streams_maker._STREAMS_MODULE_FILE.exists():
-        streams_maker._STREAMS_MODULE_FILE.unlink()
+    f.unlink(missing_ok=True)
 
     # Remove stale module from cache so it gets reimported after regeneration
     sys.modules.pop("aeon.dj_pipeline.streams", None)
@@ -112,13 +114,20 @@ def streams_schema(dj_config_integration):
         "schema_name": streams.schema.database,
     }
 
-    # Teardown: drop test schema (may already be dropped by full_pipeline)
+    # Teardown
+    # - drop test schema (may already be dropped by full_pipeline)
+    # - restore original streams.py file
     import datajoint as dj
 
     try:
         dj.Schema(streams.schema.database).drop()
     except Exception:
         pass
+
+    if original is not None:
+        f.write_bytes(original)
+    else:
+        f.unlink(missing_ok=True)
 
 
 @pytest.fixture(scope="session")
@@ -221,10 +230,7 @@ def full_pipeline(dj_config_integration, streams_schema, golden_dataset_config):
 
     from aeon.dj_pipeline import acquisition, lab, subject
     from aeon.dj_pipeline.utils import streams_maker
-    from aeon.dj_pipeline.utils.load_metadata import (
-        get_experiment_pydantic,
-        populate_catalog_from_pydantic,
-    )
+    from aeon.dj_pipeline.utils.load_metadata import get_experiment_pydantic, populate_catalog_from_pydantic
 
     cfg = golden_dataset_config
 
