@@ -297,7 +297,9 @@ def test_experiment(full_pipeline, require_golden_data, golden_dataset_config):
     )
 
     # Parse epoch_dir for start time
-    epoch_dt = datetime.datetime.strptime(cfg["epoch_dir"], "%Y-%m-%dT%H-%M-%S")
+    from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
+
+    epoch_dt = parse_epoch_timestamp(cfg["epoch_dir"])
 
     # Insert experiment
     experiment_key = {

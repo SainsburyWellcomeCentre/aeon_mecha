@@ -11,6 +11,7 @@ from swc.aeon.io import reader as io_reader
 
 from aeon.dj_pipeline import get_schema_name, lab, subject
 from aeon.dj_pipeline.utils import paths
+from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
 
 schema = dj.Schema(get_schema_name("acquisition"))
 
@@ -223,7 +224,7 @@ class Epoch(dj.Manual):
         for i, (_, chunk) in enumerate(all_chunks.iterrows()):
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(epoch_dir.name, "%Y-%m-%dT%H-%M-%S")
+            epoch_start = parse_epoch_timestamp(epoch_dir.name)
             # --- insert to Epoch ---
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
 
@@ -243,9 +244,7 @@ class Epoch(dj.Manual):
                 previous_chunk = all_chunks.iloc[i - 1]
                 previous_chunk_path = pathlib.Path(previous_chunk.path)
                 previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
-                previous_epoch_start = datetime.datetime.strptime(
-                    previous_epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
-                )
+                previous_epoch_start = parse_epoch_timestamp(previous_epoch_dir.name)
                 previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=io_api.CHUNK_DURATION)
                 previous_epoch_end = min(previous_chunk_end, epoch_start)
                 previous_epoch_key = {
@@ -363,7 +362,7 @@ class EpochConfig(dj.Imported):
 
         # Load metadata and extract rig_config
         metadata = json.loads(metadata_filepath.read_text())
-        epoch_start = datetime.datetime.strptime(metadata_filepath.parent.name, "%Y-%m-%dT%H-%M-%S")
+        epoch_start = parse_epoch_timestamp(metadata_filepath.parent.name)
         rig_config = metadata.get("rig", {})
 
         if not rig_config:
@@ -481,7 +480,7 @@ class Chunk(dj.Manual):
         for _, chunk in all_chunks.iterrows():
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(epoch_dir.name, "%Y-%m-%dT%H-%M-%S")
+            epoch_start = parse_epoch_timestamp(epoch_dir.name)
 
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
             if not (Epoch & epoch_key):

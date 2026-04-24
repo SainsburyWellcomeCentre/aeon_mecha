@@ -353,7 +353,9 @@ def step_manual_ephys_setup(dry_run=False):
     print_ok(f"ProbeInsertion: subject={SUBJECT}, insertion=1, probe={PROBE_NAME}")
 
     # 2. Insert Epoch directly (epoch ingestion skipped — no reference device)
-    target_epoch_start = datetime.strptime(TARGET_EPOCH_DIR, "%Y-%m-%dT%H-%M-%S")
+    from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
+
+    target_epoch_start = parse_epoch_timestamp(TARGET_EPOCH_DIR)
     acquisition.Epoch.insert1(
         {
             "experiment_name": EXPERIMENT_NAME,
