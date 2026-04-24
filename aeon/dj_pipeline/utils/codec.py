@@ -3,12 +3,11 @@
 Stores a JSON reference in MySQL; on fetch, reconstructs the stream reader
 and calls io_api.load() to return the full DataFrame from raw files.
 
-Individual data columns store JSON summary stats (min, max, mean, dtype, count).
-The `stream_df` column uses <aeon_stream> codec for lazy DataFrame loading.
+This <aeon_stream> codec is used for the `stream_df` column in auto-generated
+stream tables for lazy DataFrame loading.
 """
 
 import datajoint as dj
-import numpy as np
 import pandas as pd
 
 
@@ -20,7 +19,7 @@ class AeonStreamCodec(dj.Codec):
     to reconstruct the stream reader and load data at fetch time.
     On fetch, returns the full pd.DataFrame from raw files.
 
-    Stored JSON format::
+    Stored JSON format:
 
         {
             "stream_type": "Encoder",
@@ -78,39 +77,3 @@ class AeonStreamCodec(dj.Codec):
             start=pd.Timestamp(stored["chunk_start"]),
             end=pd.Timestamp(stored["chunk_end"]),
         )
-
-
-def column_stats(values):
-    """Compute JSON-serializable summary stats for a numpy array.
-
-    Returns:
-        dict with keys: dtype, count, and for numeric arrays: min, max, mean.
-    """
-    stats = {"dtype": str(values.dtype), "count": int(len(values))}
-    if len(values) > 0 and np.issubdtype(values.dtype, np.number):
-        finite = values[np.isfinite(values)]
-        if len(finite) > 0:
-            stats["min"] = float(np.min(finite))
-            stats["max"] = float(np.max(finite))
-            stats["mean"] = round(float(np.mean(finite)), 4)
-    return stats
-
-
-def timestamp_stats(index):
-    """Compute JSON-serializable summary stats for a datetime index.
-
-    Returns:
-        dict with keys: min, max, count, and when count > 1: sampling_rate_hz.
-    """
-    if len(index) == 0:
-        return {"count": 0}
-    stats = {
-        "min": str(index.min()),
-        "max": str(index.max()),
-        "count": int(len(index)),
-    }
-    if len(index) > 1:
-        diffs = np.diff(index.values) / np.timedelta64(1, "ns")  # convert to nanoseconds
-        median_diff_ns = float(np.median(diffs))
-        stats["sampling_rate_hz"] = round(1e9 / median_diff_ns, 2) if median_diff_ns > 0 else None
-    return stats

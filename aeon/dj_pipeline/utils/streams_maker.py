@@ -139,7 +139,8 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
     # Get stream_reader path and kwargs from catalog
     # Join DeviceType.Stream (has device_type, stream_hash) with StreamType (has stream_type)
     stream_detail = (
-        streams_module.StreamType & {"stream_type": stream_type}
+        streams_module.StreamType
+        & {"stream_type": stream_type}
         & (streams_module.DeviceType.Stream & {"device_type": device_type})
     ).fetch1()
 
@@ -162,18 +163,16 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
         # (columns are instance attributes set in __init__, not class attributes)
         reader_instance = reader_class("_dummy_pattern_", **stream_reader_kwargs)
 
-        if not hasattr(reader_instance, 'columns'):
+        if not hasattr(reader_instance, "columns"):
             logger.error(
-                f"Reader {stream_reader_path} has no 'columns' attribute. "
-                "Cannot generate table definition."
+                f"Reader {stream_reader_path} has no 'columns' attribute. Cannot generate table definition."
             )
             return None, None
 
         columns = reader_instance.columns
         if columns is None:
             logger.warning(
-                f"Reader {stream_reader_path} has None columns. "
-                "Table will only have timestamps."
+                f"Reader {stream_reader_path} has None columns. Table will only have timestamps."
             )
             columns = []
 
@@ -185,8 +184,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
         return None, None
     except Exception as e:
         logger.warning(
-            f"Could not extract columns for {device_type}.{stream_type} "
-            f"from {stream_reader_path}: {e}"
+            f"Could not extract columns for {device_type}.{stream_type} from {stream_reader_path}: {e}"
         )
         return None, None
 
@@ -229,8 +227,8 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             """Load stream data, compute summary stats, and store codec reference."""
             from swc.aeon.io import api as io_api
 
-            from aeon.dj_pipeline.utils.codec import column_stats, timestamp_stats
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
 
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "epoch_start"
