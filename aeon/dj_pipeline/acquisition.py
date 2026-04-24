@@ -223,7 +223,8 @@ class Epoch(dj.Manual):
         for i, (_, chunk) in enumerate(all_chunks.iterrows()):
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(epoch_dir.name, "%Y-%m-%dT%H-%M-%S")
+            date_str, time_str = epoch_dir.name.split("T")
+            epoch_start = datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":")).replace(tzinfo=None)
             # --- insert to Epoch ---
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
 
@@ -243,9 +244,8 @@ class Epoch(dj.Manual):
                 previous_chunk = all_chunks.iloc[i - 1]
                 previous_chunk_path = pathlib.Path(previous_chunk.path)
                 previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
-                previous_epoch_start = datetime.datetime.strptime(
-                    previous_epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
-                )
+                date_str, time_str = previous_epoch_dir.name.split("T")
+                previous_epoch_start = datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":")).replace(tzinfo=None)
                 previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=io_api.CHUNK_DURATION)
                 previous_epoch_end = min(previous_chunk_end, epoch_start)
                 previous_epoch_key = {
@@ -363,7 +363,8 @@ class EpochConfig(dj.Imported):
 
         # Load metadata and extract rig_config
         metadata = json.loads(metadata_filepath.read_text())
-        epoch_start = datetime.datetime.strptime(metadata_filepath.parent.name, "%Y-%m-%dT%H-%M-%S")
+        date_str, time_str = metadata_filepath.parent.name.split("T")
+        epoch_start = datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":")).replace(tzinfo=None)
         rig_config = metadata.get("rig", {})
 
         if not rig_config:
@@ -481,7 +482,8 @@ class Chunk(dj.Manual):
         for _, chunk in all_chunks.iterrows():
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(epoch_dir.name, "%Y-%m-%dT%H-%M-%S")
+            date_str, time_str = epoch_dir.name.split("T")
+            epoch_start = datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":")).replace(tzinfo=None)
 
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
             if not (Epoch & epoch_key):

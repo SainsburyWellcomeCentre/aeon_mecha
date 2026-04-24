@@ -81,7 +81,8 @@ def create_experiment(
     epoch_dirs = sorted([f.name for f in raw_dir.glob("*") if f.is_dir()])
     if not epoch_dirs:
         raise FileNotFoundError(f"No epoch directories found in: {raw_dir}")
-    start_time = datetime.strptime(epoch_dirs[0], "%Y-%m-%dT%H-%M-%S")
+    date_str, time_str = epoch_dirs[0].split("T")
+    start_time = datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":")).replace(tzinfo=None)
 
     # Prepare experiment entry
     experiment_entry = {
