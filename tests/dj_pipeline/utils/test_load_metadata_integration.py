@@ -17,8 +17,9 @@ import uuid
 
 import pytest
 
+pytestmark = pytest.mark.integration
 
-@pytest.mark.integration
+
 class TestGetDataReaderMethods:
     """Test @data_reader method extraction with real Pydantic classes."""
 
@@ -50,7 +51,6 @@ class TestGetDataReaderMethods:
             assert name == name.lower(), f"Expected snake_case, got: {name}"
 
 
-@pytest.mark.integration
 class TestGetDeviceInfo:
     """Test Rig parsing for device/stream info extraction."""
 
@@ -107,7 +107,6 @@ class TestGetDeviceInfo:
             assert isinstance(hash_val, uuid.UUID)
 
 
-@pytest.mark.integration
 class TestGetStreamEntries:
     """Test stream entry generation from Rig."""
 
@@ -144,7 +143,6 @@ class TestGetStreamEntries:
         assert len(entries) >= 4  # At minimum from cameras
 
 
-@pytest.mark.integration
 class TestInsertStreamTypes:
     """Test StreamType catalog population."""
 
@@ -192,7 +190,6 @@ class TestInsertStreamTypes:
         assert len(video_entries) >= 1
 
 
-@pytest.mark.integration
 class TestInsertDeviceTypes:
     """Test DeviceType and Device catalog population."""
 
@@ -289,7 +286,6 @@ class TestInsertDeviceTypes:
         assert len(streams.DeviceType()) == count_after_first
 
 
-@pytest.mark.integration
 class TestInsertDeviceTypesFKHandling:
     """Test FK constraint handling in insert_device_types()."""
 
@@ -314,9 +310,7 @@ class TestInsertDeviceTypesFKHandling:
         assert len(streams.StreamType()) > 0
         assert len(streams.DeviceType.Stream()) > 0
 
-    def test_non_fk_errors_are_reraised(
-        self, pipeline_integration, test_rig, tmp_path, monkeypatch
-    ):
+    def test_non_fk_errors_are_reraised(self, pipeline_integration, test_rig, tmp_path, monkeypatch):
         """Verify non-FK DataJointErrors are re-raised."""
         import datajoint as dj
 
@@ -348,11 +342,19 @@ class TestInsertDeviceTypesFKHandling:
         monkeypatch.setattr(streams.DeviceType.Stream, "insert", mock_insert)
 
         # Patch dj.VirtualModule in load_metadata to return our pre-patched streams
-        monkeypatch.setattr(load_metadata, "dj", type("MockDJ", (), {
-            "VirtualModule": lambda *args, **kwargs: streams,
-            "DataJointError": dj.DataJointError,
-            "logger": dj.logger,
-        })())
+        monkeypatch.setattr(
+            load_metadata,
+            "dj",
+            type(
+                "MockDJ",
+                (),
+                {
+                    "VirtualModule": lambda *args, **kwargs: streams,
+                    "DataJointError": dj.DataJointError,
+                    "logger": dj.logger,
+                },
+            )(),
+        )
 
         with pytest.raises(dj.DataJointError, match="Connection refused"):
             insert_device_types(test_rig, metadata_filepath)
@@ -384,7 +386,6 @@ class TestInsertDeviceTypesFKHandling:
             assert "stream_hash" in entry
 
 
-@pytest.mark.integration
 @pytest.mark.skipif(
     not importlib.util.find_spec("swc.aeon_exp"),
     reason="swc-aeon-rigs-foragingabc not installed (install with --extra test-golden)",
