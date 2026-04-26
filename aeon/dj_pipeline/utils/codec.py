@@ -87,7 +87,7 @@ def column_stats(values):
         dict with keys: dtype, count, and for numeric arrays: min, max, mean.
     """
     stats = {"dtype": str(values.dtype), "count": int(len(values))}
-    if len(values) > 0 and np.issubdtype(values.dtype, np.number):
+    if len(values) > 0 and pd.api.types.is_numeric_dtype(values.dtype):
         stats["min"] = float(np.nanmin(values))
         stats["max"] = float(np.nanmax(values))
         stats["mean"] = round(float(np.nanmean(values)), 4)
