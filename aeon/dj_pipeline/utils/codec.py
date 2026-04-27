@@ -7,6 +7,8 @@ Individual data columns store JSON summary stats (min, max, mean, dtype, count).
 The `stream_df` column uses <aeon_stream> codec for lazy DataFrame loading.
 """
 
+import json
+
 import datajoint as dj
 import numpy as np
 import pandas as pd
@@ -48,7 +50,20 @@ class AeonStreamCodec(dj.Codec):
         return "json"
 
     def encode(self, value, *, key=None, store_name=None):
-        """Validate and store the stream reference dict as JSON."""
+        """Validate and pass through the stream reference.
+
+        Accepts both a dict (MySQL / future fixed MariaDB, where DataJoint
+        will call ``json.dumps`` after this) and a pre-serialized JSON string
+        (current MariaDB, where the ``make()`` method serializes via
+        ``json_serialized()`` because DataJoint won't).
+        """
+        if isinstance(value, str):
+            # Pre-serialized by make() for MariaDB — validate by parsing.
+            parsed = json.loads(value)
+            missing = self._REQUIRED_KEYS - parsed.keys()
+            if missing:
+                raise ValueError(f"AeonStreamCodec missing required keys: {missing}")
+            return value
         if not isinstance(value, dict):
             raise TypeError(f"AeonStreamCodec expects a dict, got {type(value).__name__}")
         missing = self._REQUIRED_KEYS - value.keys()
@@ -62,6 +77,12 @@ class AeonStreamCodec(dj.Codec):
 
         from aeon.dj_pipeline import acquisition
         from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+
+        # MariaDB returns longtext as a raw string; MySQL returns json as a dict.
+        # DJ's codec fetch path normally auto-parses via final_dtype, but handle
+        # both for safety.
+        if isinstance(stored, str):
+            stored = json.loads(stored)
 
         data_dirs = acquisition.Experiment.get_data_directories(
             {"experiment_name": stored["experiment_name"]}
