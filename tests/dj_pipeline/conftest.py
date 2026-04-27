@@ -6,7 +6,6 @@ Test commands:
     pytest tests/dj_pipeline/         # All tests
 """
 
-import datetime
 import logging
 import os
 from pathlib import Path
