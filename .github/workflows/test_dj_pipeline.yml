@@ -1,13 +1,16 @@
-# Runs unit and integration tests for the DataJoint pipeline on PRs.
+# Runs unit and integration tests for the DataJoint pipeline.
 # Unit tests use mocked datajoint — no database required.
 # Integration tests use testcontainers MySQL — no golden datasets required.
 # Tests requiring golden datasets (test_full_ingestion.py) skip automatically in CI.
 
 name: test_dj_pipeline
 on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
   pull_request:
-    branches: [datajoint_pipeline]
-    types: [opened, reopened, synchronize]
   workflow_dispatch:
 
 jobs:
