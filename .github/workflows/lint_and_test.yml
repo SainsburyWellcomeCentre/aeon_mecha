@@ -39,7 +39,7 @@ jobs:
         run: uv run pyright --level error --project ./pyproject.toml .
 
   tests:
-    name: ${{ matrix.os }} py${{ matrix.python-version }}
+    name: Test ${{ matrix.os }} py${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
