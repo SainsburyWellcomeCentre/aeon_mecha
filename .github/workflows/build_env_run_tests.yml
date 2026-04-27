@@ -14,21 +14,17 @@ on:
   pull_request:
   workflow_dispatch:
 
-env:
-  PYTHON_VERSION: "3.11"
-
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
       - name: Install uv and set Python version
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: "3.12"
       - name: Install dependencies
         run: uv sync --group dev
       - name: ruff
@@ -37,32 +33,35 @@ jobs:
         run: uv run pyright --level error --project ./pyproject.toml .
 
   tests:
-    name: Tests (${{ matrix.os }})
+    name: ${{ matrix.os }} py${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
-    if: github.event.pull_request.draft == false
     strategy:
-      fail-fast: false
       matrix:
+        # Run all supported Python versions on linux
+        python-version: ["3.11", "3.12"]
+        os: [ubuntu-latest]
+        pytest_args: ["--tb=short -q --cov=aeon --cov-report=xml"]
+        # Include one windows and macos run
         include:
-          - os: ubuntu-latest
-            pytest_args: "--tb=short -q --cov=aeon --cov-report=xml"
-          - os: windows-latest
-            pytest_args: "-m unit --tb=short -q"
-          - os: macos-latest
-            pytest_args: "-m unit --tb=short -q"
+        - os: macos-latest
+          python-version: "3.12"
+          pytest_args: "-m unit --tb=short -q"
+        - os: windows-latest
+          python-version: "3.12"
+          pytest_args: "-m unit --tb=short -q"
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
       - name: Install uv and set Python version
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: uv sync --group dev
       - name: Run tests
         run: uv run pytest ${{ matrix.pytest_args }}
       - name: Upload coverage to codecov
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
