@@ -5,13 +5,15 @@ import json
 import pathlib
 
 import datajoint as dj
+import pandas as pd
 from swc.aeon.io import api as io_api
 from swc.aeon.io import reader as io_reader
 
-from aeon.dj_pipeline import get_schema_name, lab, subject  # pyright: ignore[reportUnusedImport]
+from aeon.dj_pipeline import get_schema_name, lab, subject
 from aeon.dj_pipeline.utils import paths
+from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
 
-schema = dj.schema(get_schema_name("acquisition"))
+schema = dj.Schema(get_schema_name("acquisition"))
 
 logger = dj.logger
 
@@ -34,25 +36,28 @@ class ExperimentType(dj.Lookup):
     experiment_type: varchar(32)
     """
 
-    contents = zip(["foraging", "social"], strict=False)
+    contents = [
+        {"experiment_type": "foraging"},
+        {"experiment_type": "social"},
+    ]
 
 
 @schema
 class EventType(dj.Lookup):
     definition = """  # Experimental event type
-    event_code: smallint
+    event_code: int16
     ---
     event_type: varchar(36)
     """
 
     contents = [
-        (220, "SubjectEnteredArena"),
-        (221, "SubjectExitedArena"),
-        (222, "SubjectRemovedFromArena"),
-        (223, "SubjectRemainedInArena"),
-        (35, "TriggerPellet"),
-        (32, "PelletDetected"),
-        (1000, "No Events"),
+        {"event_code": 220, "event_type": "SubjectEnteredArena"},
+        {"event_code": 221, "event_type": "SubjectExitedArena"},
+        {"event_code": 222, "event_type": "SubjectRemovedFromArena"},
+        {"event_code": 223, "event_type": "SubjectRemainedInArena"},
+        {"event_code": 35, "event_type": "TriggerPellet"},
+        {"event_code": 32, "event_type": "PelletDetected"},
+        {"event_code": 1000, "event_type": "No Events"},
     ]
 
 
@@ -78,7 +83,7 @@ class PipelineRepository(dj.Lookup):
     repository_name: varchar(16)
     """
 
-    contents = zip(["ceph_aeon"], strict=False)
+    contents = [{"repository_name": "ceph_aeon"}]
 
 
 @schema
@@ -87,7 +92,11 @@ class DirectoryType(dj.Lookup):
     directory_type: varchar(16)
     """
 
-    contents = zip(["raw", "processed", "qc"], strict=False)
+    contents = [
+        {"directory_type": "raw"},
+        {"directory_type": "processed"},
+        {"directory_type": "qc"},
+    ]
 
 
 # ------------------- GENERAL INFORMATION ABOUT AN EXPERIMENT --------------------
@@ -118,7 +127,7 @@ class Experiment(dj.Manual):
         ---
         -> PipelineRepository
         directory_path: varchar(255)
-        load_order=1: int  # order of priority to load the directory
+        load_order=1: int32  # order of priority to load the directory
         """
 
     class DevicesSchema(dj.Part):
@@ -162,7 +171,7 @@ class Experiment(dj.Manual):
     def get_data_directories(cls, experiment_key, directory_types=None, as_posix=False):
         """Get the data directories for the specified ``experiment_key`` and ``directory_types``."""
         if directory_types is None:
-            directory_types = (cls.Directory & experiment_key).fetch(
+            directory_types = (cls.Directory & experiment_key).to_arrays(
                 "directory_type", order_by="load_order"
             )
         return [
@@ -215,7 +224,7 @@ class Epoch(dj.Manual):
         for i, (_, chunk) in enumerate(all_chunks.iterrows()):
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(epoch_dir.name, "%Y-%m-%dT%H-%M-%S")
+            epoch_start = parse_epoch_timestamp(epoch_dir.name)
             # --- insert to Epoch ---
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
 
@@ -235,9 +244,7 @@ class Epoch(dj.Manual):
                 previous_chunk = all_chunks.iloc[i - 1]
                 previous_chunk_path = pathlib.Path(previous_chunk.path)
                 previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
-                previous_epoch_start = datetime.datetime.strptime(
-                    previous_epoch_dir.name, "%Y-%m-%dT%H-%M-%S"
-                )
+                previous_epoch_start = parse_epoch_timestamp(previous_epoch_dir.name)
                 previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=io_api.CHUNK_DURATION)
                 previous_epoch_end = min(previous_chunk_end, epoch_start)
                 previous_epoch_key = {
@@ -293,7 +300,7 @@ class EpochEnd(dj.Manual):
     -> Epoch
     ---
     epoch_end: datetime(6)
-    epoch_duration: float  # (hour)
+    epoch_duration: float32  # (hour)
     """
 
 
@@ -325,7 +332,7 @@ class EpochConfig(dj.Imported):
         -> master
         region_name: varchar(36)
         ---
-        region_data: longblob
+        region_data: <blob>
         """
 
     def make(self, key):
@@ -355,7 +362,7 @@ class EpochConfig(dj.Imported):
 
         # Load metadata and extract rig_config
         metadata = json.loads(metadata_filepath.read_text())
-        epoch_start = datetime.datetime.strptime(metadata_filepath.parent.name, "%Y-%m-%dT%H-%M-%S")
+        epoch_start = parse_epoch_timestamp(metadata_filepath.parent.name)
         rig_config = metadata.get("rig", {})
 
         if not rig_config:
@@ -430,7 +437,7 @@ class Chunk(dj.Manual):
     class File(dj.Part):
         definition = """
         -> master
-        file_number: int
+        file_number: int32
         ---
         file_name: varchar(128)
         -> Experiment.Directory
@@ -473,7 +480,7 @@ class Chunk(dj.Manual):
         for _, chunk in all_chunks.iterrows():
             chunk_rep_file = pathlib.Path(chunk.path)
             epoch_dir = pathlib.Path(chunk_rep_file.as_posix().split(device_name)[0])
-            epoch_start = datetime.datetime.strptime(epoch_dir.name, "%Y-%m-%dT%H-%M-%S")
+            epoch_start = parse_epoch_timestamp(epoch_dir.name)
 
             epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
             if not (Epoch & epoch_key):
@@ -590,7 +597,7 @@ def create_chunk_restriction(experiment_name, start_time, end_time):
     if not (start_query and end_query):
         raise ValueError(f"No Chunk found between {start_time} and {end_time}")
     time_restriction = (
-        f'chunk_start >= "{min(start_query.fetch("chunk_start"))}"'
-        f' AND chunk_start < "{max(end_query.fetch("chunk_end"))}"'
+        f'chunk_start >= "{min(start_query.to_arrays("chunk_start"))}"'
+        f' AND chunk_start < "{max(end_query.to_arrays("chunk_end"))}"'
     )
     return time_restriction

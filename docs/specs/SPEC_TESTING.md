@@ -318,15 +318,13 @@ def dj_config_integration(mysql_container):
     """Configure DataJoint to use testcontainers MySQL."""
     import datajoint as dj
 
-    dj.config.update({
-        "safemode": False,
-        "database.host": os.environ.get("DJ_HOST", "localhost"),
-        "database.port": int(os.environ.get("DJ_PORT", "3306")),
-        "database.user": os.environ.get("DJ_USER", "root"),
-        "database.password": os.environ.get("DJ_PASS", "test_password"),
-    })
-    dj.config["custom"]["database.prefix"] = "test_integration_"
-    return dj.config
+    dj.config.safemode = False
+    dj.config.database.host = os.environ.get("DJ_HOST", "localhost")
+    dj.config.database.port = int(os.environ.get("DJ_PORT", "3306"))
+    dj.config.database.user = os.environ.get("DJ_USER", "root")
+    dj.config.database.password = os.environ.get("DJ_PASS", "test_password")
+    dj.config.database.database_prefix = TEST_DB_PREFIX
+    return {"database_prefix": TEST_DB_PREFIX}
 ```
 
 ### Test Rig with Real @data_reader
@@ -621,7 +619,7 @@ This section details integration tests that validate the full ingestion pipeline
 Golden dataset tests validate:
 1. `EpochConfig.make()` - Parse real Metadata.json with experiment-specific Pydantic schema
 2. `Chunk.ingest_chunks()` - Detect and ingest chunk files from filesystem
-3. `DeviceDataStream.make()` - Load ALL stream types with `populate(limit=10)`
+3. `DeviceDataStream.make()` - Load ALL stream types with `populate(max_calls=10)`
 
 ### Golden Dataset Registry
 
@@ -661,17 +659,16 @@ DEFAULT_GOLDEN_DATA_ROOT = Path.home() / "sciops-data/project_aeon/aeon/data"
 Golden dataset tests use aeon_mecha's existing `repository_config` pattern:
 
 ```python
-# In fixture - configure dj.config the same way production does
-dj.config["custom"]["repository_config"] = {
-    "ceph_aeon": str(golden_data_root)
-}
+# In fixture - override repository_config on the pipeline module
+import aeon.dj_pipeline as pipeline
+pipeline.repository_config = {"ceph_aeon": str(golden_data_root)}
 
 # In production code (unchanged)
 from aeon.dj_pipeline.utils.paths import get_repository_path
 repo_path = get_repository_path("ceph_aeon")
 ```
 
-This maintains consistency with how paths are configured in `dj_local_conf.json` for production deployments.
+This maintains consistency with how paths are configured via environment variables for production deployments.
 
 ### Key Fixtures
 
@@ -693,7 +690,7 @@ This maintains consistency with how paths are configured in `dj_local_conf.json`
 | `TestEpochIngestion` | 2 | `Epoch.ingest_epochs()` filesystem detection |
 | `TestEpochConfigMake` | 3 | `EpochConfig.populate()` with metadata assertions |
 | `TestChunkIngestion` | 2 | `Chunk.ingest_chunks()` file detection |
-| `TestStreamDataIngestion` | 3 | ALL streams with `populate(limit=10)` |
+| `TestStreamDataIngestion` | 3 | ALL streams with `populate(max_calls=10)` |
 
 ### Stream Testing Strategy
 
@@ -707,7 +704,7 @@ def test_all_stream_tables_populate(self, ...):
     stream_tables = [...]  # All DeviceDataStream tables
 
     for table in stream_tables:
-        table.populate(limit=POPULATE_LIMIT, display_progress=False)
+        table.populate(max_calls=POPULATE_LIMIT, display_progress=False)
 
     # Assert at least some tables have data
     populated = [t for t in stream_tables if len(t) > 0]
@@ -800,7 +797,7 @@ Golden dataset tests gracefully skip with clear messages when data is unavailabl
 1. Create `tests/dj_pipeline/test_full_ingestion.py`
 2. Implement `TestEpochConfigMake` (4 tests)
 3. Implement `TestChunkIngestion` (2 tests)
-4. Implement `TestStreamDataIngestion` (3 tests, uses `populate(limit=10)`)
+4. Implement `TestStreamDataIngestion` (3 tests, uses `populate(max_calls=10)`)
 
 ### Dependencies (Additional)
 
@@ -825,7 +822,7 @@ uv run pytest -m integration -v
 
 - [ ] `EpochConfig.make()` completes with golden Metadata.json
 - [ ] `Chunk.ingest_chunks()` detects and ingests chunk
-- [ ] ALL stream tables can `populate(limit=10)`
+- [ ] ALL stream tables can `populate(max_calls=10)`
 - [ ] Tests skip gracefully when data unavailable
 - [ ] No modification to production `streams.py`
 - [ ] Existing tests still pass

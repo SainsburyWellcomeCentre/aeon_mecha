@@ -11,13 +11,13 @@ import requests
 from . import get_schema_name, lab
 
 logger = dj.logger
-schema = dj.schema(get_schema_name("subject"))
+schema = dj.Schema(get_schema_name("subject"))
 
 
 @schema
 class Strain(dj.Manual):
     definition = """
-    strain_id: int
+    strain_id: int32
     ---
     strain_name: varchar(64)
     """
@@ -26,7 +26,7 @@ class Strain(dj.Manual):
 @schema
 class GeneticBackground(dj.Manual):
     definition = """
-    gen_bg_id: int
+    gen_bg_id: int32
     ---
     gen_bg: varchar(64)
     """
@@ -125,9 +125,9 @@ class SubjectDetail(dj.Imported):
 class SubjectWeight(dj.Imported):
     definition = """
     -> Subject
-    weight_id: int
+    weight_id: int32
     ---
-    weight: float
+    weight: float32
     weight_time: datetime
     actor_name: varchar(200)
     """
@@ -137,14 +137,14 @@ class SubjectWeight(dj.Imported):
 class SubjectProcedure(dj.Imported):
     definition = """
     -> Subject
-    assign_id: int
+    assign_id: int32
     ---
-    procedure_id: int
+    procedure_id: int32
     procedure_name: varchar(200)
     procedure_date: date
-    license_id=null: int
+    license_id=null: int32
     license_number=null: varchar(200)
-    classification_id=null: int
+    classification_id=null: int32
     classification_name=null: varchar(200)
     actor_fullname: varchar(200)
     comment=null: varchar(1000)
@@ -155,10 +155,10 @@ class SubjectProcedure(dj.Imported):
 class SubjectComment(dj.Imported):
     definition = """
     -> Subject
-    comment_id: int
+    comment_id: int32
     ---
     created: datetime
-    creator_id: int
+    creator_id: int32
     creator_username: varchar(200)
     creator_fullname: varchar(200)
     origin: varchar(200)
@@ -172,7 +172,7 @@ class SubjectReferenceWeight(dj.Manual):
     definition = """
     -> SubjectDetail
     ---
-    reference_weight=null: float  # animal's reference weight for use in experiment
+    reference_weight=null: float32  # animal's reference weight for use in experiment
     last_updated_time: datetime   # last time (in UTC) when the reference weight was updated
     """
 
@@ -183,7 +183,7 @@ class SubjectReferenceWeight(dj.Manual):
 
         food_restrict_query = SubjectProcedure & subj_key & "procedure_name = 'R02 - food restriction'"
         if food_restrict_query:
-            ref_date = food_restrict_query.fetch("procedure_date", order_by="procedure_date DESC", limit=1)[
+            ref_date = food_restrict_query.to_arrays("procedure_date", order_by="procedure_date DESC", limit=1)[
                 0
             ]
         else:
@@ -191,7 +191,7 @@ class SubjectReferenceWeight(dj.Manual):
 
         weight_query = SubjectWeight & subj_key & f"weight_time < '{ref_date}'"
         ref_weight = (
-            weight_query.fetch("weight", order_by="weight_time DESC", limit=1)[0] if weight_query else -1
+            weight_query.to_arrays("weight", order_by="weight_time DESC", limit=1)[0] if weight_query else -1
         )
 
         entry = {
@@ -224,8 +224,8 @@ class PyratIngestion(dj.Imported):
     -> PyratIngestionTask
     ---
     execution_time: datetime  # (UTC) time of task execution
-    execution_duration: float  # (s) duration of task execution
-    new_pyrat_entry_count: int  # number of new PyRAT subject ingested in this round of ingestion
+    execution_duration: float32  # (s) duration of task execution
+    new_pyrat_entry_count: int32  # number of new PyRAT subject ingested in this round of ingestion
     """
 
     key_source = (
@@ -255,7 +255,7 @@ class PyratIngestion(dj.Imported):
         """Automatically import or update entries in the Subject table."""
         execution_time = datetime.now(UTC)
         new_eartags = []
-        for responsible_id in lab.User.fetch("responsible_id"):
+        for responsible_id in lab.User.to_arrays("responsible_id"):
             # 1 - retrieve all animals from this user
             animal_resp = get_pyrat_data(
                 endpoint="animals",
@@ -312,7 +312,7 @@ class PyratCommentWeightProcedure(dj.Imported):
     -> SubjectDetail
     ---
     execution_time: datetime  # (UTC) time of task execution
-    execution_duration: float  # (s) duration of task execution
+    execution_duration: float32  # (s) duration of task execution
     """
 
     key_source = (PyratIngestion * SubjectDetail) & "available = 1"
@@ -521,7 +521,7 @@ def associate_subject_and_experiment(subject_name):
     new_entries = []
     for entry in (
         SubjectComment.proj("content") & {"subject": subject_name} & "content LIKE 'experiment:%'"
-    ).fetch(as_dict=True):
+    ).to_dicts():
         entry.pop("comment_id")
         entry["experiment_name"] = entry.pop("content").replace("experiment:", "").strip()
         if (acquisition.Experiment.proj() & entry) and (not acquisition.Experiment.Subject & entry):

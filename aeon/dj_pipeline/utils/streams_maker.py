@@ -19,7 +19,6 @@ from aeon.dj_pipeline import acquisition, get_schema_name
 logger = dj.logger
 
 
-# schema_name = f'u_{dj.config["database.user"]}_streams'  # for testing
 schema_name = get_schema_name("streams")
 
 _STREAMS_MODULE_FILE = Path(__file__).parent.parent / "streams.py"
@@ -40,7 +39,7 @@ class StreamType(dj.Lookup):
     ---
     stream_type: varchar(36)  # stream type name, e.g., "Video", "BeamBreak"
     stream_reader: varchar(256)  # reader class path for documentation, e.g., "swc.aeon.io.reader.Video"
-    stream_reader_kwargs=null: longblob  # JSON dict of reader constructor kwargs (value, tag, columns, etc.)
+    stream_reader_kwargs=null: <blob>  # JSON dict of reader constructor kwargs (value, tag, columns, etc.)
     stream_description='': varchar(256)
     unique index(stream_type, stream_reader)
     """
@@ -113,7 +112,7 @@ def get_device_template(device_type: str):
             -> master
             attribute_name          : varchar(32)
             ---
-            attribute_value=null    : longblob
+            attribute_value=null    : <blob>
             """
 
         class RemovalTime(dj.Part):
@@ -193,15 +192,17 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
     -> {device_type}
     -> acquisition.Chunk
     ---
-    sample_count: int      # number of data points acquired from this stream for a given chunk
-    timestamps: longblob   # (datetime) timestamps of {stream_type} data
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
     """
 
     for col in columns:
         if col.startswith("_"):
             continue
         new_col = re.sub(r"\([^)]*\)", "", col)
-        table_definition += f"{new_col}: longblob\n    "
+        table_definition += f"{new_col}: json             # summary stats\n    "
+
+    table_definition += "stream_df: <aeon_stream>   # full DataFrame via codec\n    "
 
     class DeviceDataStream(dj.Imported):
         definition = table_definition
@@ -214,27 +215,27 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             + Chunk(s) started after {device_type} install time for {device_type} and not yet removed
             """
             return (
-                acquisition.Chunk * ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True)
+                acquisition.Chunk.join(
+                    ExperimentDevice.join(ExperimentDevice.RemovalTime, left=True),
+                    semantic_check=False,
+                )
                 & "chunk_start >= {device_type_name}_install_time"
                 & 'chunk_start < IFNULL({device_type_name}_removal_time,"2200-01-01")'
             )
 
         def make(self, key):
-            """Load and insert the data for the DeviceDataStream table."""
+            """Load stream data, compute summary stats, and store codec reference."""
             from swc.aeon.io import api as io_api
 
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
 
-            # Fetch chunk info including epoch_start (epoch_start is FK attribute, not in key)
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
                 "chunk_start", "chunk_end", "epoch_start"
             )
             data_dirs = acquisition.Experiment.get_data_directories(key)
-
-            # device_name is now part of the key (PK), no need to fetch from attribute
             device_name = key["device_name"]
 
-            # Get stream reader using Pydantic approach (reconstructs Rig from stored metadata)
             stream_reader = get_stream_reader_for_epoch(
                 key["experiment_name"], device_name, "{stream_type}", epoch_start
             )
@@ -246,19 +247,29 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
                 end=pd.Timestamp(chunk_end),
             )
 
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": len(stream_data),
-                    "timestamps": stream_data.index.values,
-                    **{
-                        re.sub(r"\([^)]*\)", "", c): stream_data[c].values
-                        for c in stream_reader.columns
-                        if not c.startswith("_")
-                    },
-                },
-                ignore_extra_fields=True,
-            )
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "{stream_type}",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
 
     DeviceDataStream.__name__ = f"{device_type}{stream_type}"
 
@@ -294,7 +305,7 @@ def main(create_tables=True):
 
     if create_tables:
         # Create DeviceType tables.
-        for device_info in streams.DeviceType.fetch(as_dict=True):
+        for device_info in streams.DeviceType.to_dicts():
             if hasattr(streams, device_info["device_type"]):
                 continue
 
@@ -322,7 +333,7 @@ def main(create_tables=True):
 
         # Create DeviceDataStream tables.
         # Join with StreamType to get stream_type (DeviceType.Stream only has stream_hash FK)
-        for device_info in (streams.DeviceType.Stream * streams.StreamType).fetch(as_dict=True):
+        for device_info in (streams.DeviceType.Stream * streams.StreamType).to_dicts():
             device_type = device_info["device_type"]
             stream_type = device_info["stream_type"]
             table_name = f"{device_type}{stream_type}"

@@ -14,13 +14,13 @@ Tests gracefully skip if data unavailable.
 
 import pytest
 
+pytestmark = pytest.mark.integration
+pytest.importorskip("swc.aeon_exp", reason="Full ingestion tests require swc.aeon_exp package")
+
 
 # =============================================================================
 # Step 1: Catalog Population Tests
 # =============================================================================
-
-
-@pytest.mark.integration
 class TestStep1CatalogPopulation:
     """Test Step 1: Catalog population from Pydantic class.
 
@@ -32,7 +32,7 @@ class TestStep1CatalogPopulation:
         """Verify StreamType catalog populated from Pydantic class."""
         streams = full_pipeline["streams"]
 
-        stream_types = streams.StreamType.fetch(as_dict=True)
+        stream_types = streams.StreamType.to_dicts()
         assert len(stream_types) > 0
 
         # Should have Video, BeamBreak, Encoder, etc.
@@ -43,7 +43,7 @@ class TestStep1CatalogPopulation:
         """Verify DeviceType catalog populated from Pydantic class."""
         streams = full_pipeline["streams"]
 
-        device_types = streams.DeviceType.fetch("device_type")
+        device_types = streams.DeviceType.to_arrays("device_type")
         assert len(device_types) > 0
 
         # Should have Camera, Feeder, etc. (leaf class names, not inherited parent names)
@@ -54,16 +54,13 @@ class TestStep1CatalogPopulation:
         """Verify DeviceType.Stream linking table populated."""
         streams = full_pipeline["streams"]
 
-        device_streams = streams.DeviceType.Stream.fetch(as_dict=True)
+        device_streams = streams.DeviceType.Stream.to_dicts()
         assert len(device_streams) > 0
 
 
 # =============================================================================
 # Step 2: Table Creation Tests
 # =============================================================================
-
-
-@pytest.mark.integration
 class TestStep2TableCreation:
     """Test Step 2: Table creation via streams_maker.main().
 
@@ -90,9 +87,6 @@ class TestStep2TableCreation:
 # =============================================================================
 # Step 3: Data Population Tests (Epoch, Chunk, EpochConfig, Streams)
 # =============================================================================
-
-
-@pytest.mark.integration
 class TestEpochIngestion:
     """Test Epoch.ingest_epochs() with golden dataset."""
 
@@ -109,7 +103,6 @@ class TestEpochIngestion:
         assert epoch["epoch_dir"] == cfg["epoch_dir"]
 
 
-@pytest.mark.integration
 class TestEpochConfigMake:
     """Test EpochConfig.make() with golden dataset (Step 3 - DML only)."""
 
@@ -120,8 +113,7 @@ class TestEpochConfigMake:
 
         acquisition.EpochConfig.populate()
 
-        epoch_configs = (acquisition.EpochConfig & {"experiment_name": cfg["experiment_name"]}).fetch()
-        assert len(epoch_configs) >= 1
+        assert len(acquisition.EpochConfig & {"experiment_name": cfg["experiment_name"]}) >= 1
 
     def test_epoch_config_meta_has_rig_metadata(self, test_epochs, full_pipeline, golden_dataset_config):
         """Verify EpochConfig.Meta contains rig metadata."""
@@ -151,11 +143,10 @@ class TestEpochConfigMake:
 
         acquisition.EpochConfig.populate()
 
-        devices = streams.Device.fetch(as_dict=True)
+        devices = streams.Device.to_dicts()
         assert len(devices) > 0
 
 
-@pytest.mark.integration
 class TestChunkIngestion:
     """Test Chunk.ingest_chunks() with golden dataset."""
 
@@ -166,8 +157,7 @@ class TestChunkIngestion:
 
         acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
 
-        chunks = (acquisition.Chunk & {"experiment_name": cfg["experiment_name"]}).fetch()
-        assert len(chunks) >= 1
+        assert len(acquisition.Chunk & {"experiment_name": cfg["experiment_name"]}) >= 1
 
     def test_chunk_start_time_valid(self, test_epochs, full_pipeline, golden_dataset_config):
         """Verify chunk has valid start time."""
@@ -180,7 +170,6 @@ class TestChunkIngestion:
         assert chunk["chunk_start"] is not None
 
 
-@pytest.mark.integration
 class TestStreamDataIngestion:
     """Test DeviceDataStream.make() with golden dataset.
 
@@ -217,19 +206,15 @@ class TestStreamDataIngestion:
         results = {}
         for table_name, table in stream_tables:
             try:
-                table.populate(limit=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+                table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
                 total = len(table & {"experiment_name": cfg["experiment_name"]})
-                with_data = len(
-                    table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
-                )
+                with_data = len(table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0")
                 results[table_name] = {"total": total, "with_data": with_data}
             except Exception as e:
                 results[table_name] = f"error: {e}"
 
         # At least some tables should have entries with actual data (sample_count > 0)
-        with_data = {
-            k: v for k, v in results.items() if isinstance(v, dict) and v["with_data"] > 0
-        }
+        with_data = {k: v for k, v in results.items() if isinstance(v, dict) and v["with_data"] > 0}
         assert len(with_data) > 0, f"No stream tables with sample_count > 0. Results: {results}"
 
     def test_video_stream_has_data(self, test_epochs, full_pipeline, golden_dataset_config):
@@ -255,11 +240,11 @@ class TestStreamDataIngestion:
         if not video_tables:
             pytest.skip("No Video stream tables found")
 
-        for table_name, table in video_tables:
-            table.populate(limit=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+        for _table_name, table in video_tables:
+            table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
 
         # Check at least one video entry has actual data (sample_count > 0)
-        for table_name, table in video_tables:
+        for _table_name, table in video_tables:
             query = table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
             if len(query):
                 return  # Success
@@ -290,11 +275,11 @@ class TestStreamDataIngestion:
         if not harp_tables:
             pytest.skip("No Harp stream tables found")
 
-        for table_name, table in harp_tables:
-            table.populate(limit=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+        for _table_name, table in harp_tables:
+            table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
 
         # Check at least one has actual data (sample_count > 0)
-        for table_name, table in harp_tables:
+        for _table_name, table in harp_tables:
             query = table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
             if len(query):
                 return  # Success
@@ -305,15 +290,12 @@ class TestStreamDataIngestion:
 # =============================================================================
 # fetch_stream Tests (uses populated stream data from above)
 # =============================================================================
-
-
-@pytest.mark.integration
 class TestFetchStream:
     """Test fetch_stream() with real populated stream data.
 
     fetch_stream is the primary data access function for stream tables.
-    It fetches blob columns, explodes arrays into rows, and returns a
-    time-indexed DataFrame. These tests validate the full round-trip:
+    For codec-based tables, it fetches stream_df (decoded via AeonStreamCodec)
+    and returns a time-indexed DataFrame. These tests validate the full round-trip:
     raw data -> DB -> fetch_stream -> DataFrame.
     """
 
@@ -336,7 +318,7 @@ class TestFetchStream:
                 continue
             obj = getattr(streams, name, None)
             if isinstance(obj, type) and issubclass(obj, dj.Imported) and obj is not dj.Imported:
-                obj.populate(limit=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+                obj.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
 
     def _find_stream_with_data(self, streams, cfg, name_filter=None):
         """Find a stream table with sample_count > 0 data."""
@@ -382,9 +364,7 @@ class TestFetchStream:
         streams = full_pipeline["streams"]
         cfg = golden_dataset_config
 
-        result = self._find_stream_with_data(
-            streams, cfg, name_filter=lambda n: "CameraVideo" in n
-        )
+        result = self._find_stream_with_data(streams, cfg, name_filter=lambda n: "CameraVideo" in n)
         if result is None:
             pytest.skip("No CameraVideo data populated")
 
@@ -459,3 +439,116 @@ class TestFetchStream:
         # Timestamps should be rounded to microseconds (no sub-us precision)
         nanos = df.index.astype(np.int64)
         assert all(nanos % 1000 == 0), "Timestamps should be rounded to microseconds"
+
+
+# =============================================================================
+# Codec Stream Data Regression Tests
+# =============================================================================
+
+
+class TestCodecStreamData:
+    """Verify codec-based stream tables store correct summary stats and return correct DataFrames."""
+
+    POPULATE_LIMIT = 10
+
+    def _ensure_and_find(self, full_pipeline, golden_dataset_config, name_filter=None):
+        """Populate streams and find one with data."""
+        import datajoint as dj
+
+        acquisition = full_pipeline["acquisition"]
+        streams = full_pipeline["streams"]
+        cfg = golden_dataset_config
+
+        acquisition.EpochConfig.populate()
+        acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
+
+        for name in dir(streams):
+            if name.startswith("_"):
+                continue
+            if name_filter and not name_filter(name):
+                continue
+            obj = getattr(streams, name, None)
+            if isinstance(obj, type) and issubclass(obj, dj.Imported) and obj is not dj.Imported:
+                obj.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+                query = obj & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
+                if len(query):
+                    return name, obj, query
+        return None
+
+    def test_stream_df_returns_dataframe(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify stream_df codec column returns a pandas DataFrame."""
+        import pandas as pd
+
+        result = self._ensure_and_find(full_pipeline, golden_dataset_config)
+        if result is None:
+            pytest.fail("No stream table with data found")
+
+        name, table, query = result
+        row = query.fetch1()
+        assert isinstance(row["stream_df"], pd.DataFrame)
+        assert not row["stream_df"].empty
+        assert isinstance(row["stream_df"].index, pd.DatetimeIndex)
+        assert row["stream_df"].index.name == "time"
+
+    def test_sample_count_matches_stream_df(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify sample_count matches len(stream_df)."""
+        result = self._ensure_and_find(full_pipeline, golden_dataset_config)
+        if result is None:
+            pytest.fail("No stream table with data found")
+
+        name, table, query = result
+        row = query.fetch1()
+        assert row["sample_count"] == len(row["stream_df"])
+
+    def test_timestamp_stats_match_stream_df(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify timestamp JSON stats match actual stream_df index."""
+        result = self._ensure_and_find(full_pipeline, golden_dataset_config)
+        if result is None:
+            pytest.fail("No stream table with data found")
+
+        name, table, query = result
+        row = query.fetch1()
+        ts_stats = row["timestamps"]
+        df = row["stream_df"]
+
+        assert ts_stats["count"] == len(df)
+        assert "sampling_rate_hz" in ts_stats
+
+    def test_column_stats_match_stream_df(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify JSON summary stats match actual stream_df data."""
+        import numpy as np
+
+        result = self._ensure_and_find(
+            full_pipeline, golden_dataset_config, name_filter=lambda n: "Encoder" in n
+        )
+        if result is None:
+            pytest.skip("No Encoder stream data populated")
+
+        name, table, query = result
+        # Restrict to one device to get exactly one row
+        row = (query & "device_name LIKE '%1'").fetch1()
+        df = row["stream_df"]
+
+        for col in df.columns:
+            if col in row and isinstance(row[col], dict) and "min" in row[col]:
+                stats = row[col]
+                assert stats["min"] == float(np.nanmin(df[col].values))
+                assert stats["max"] == float(np.nanmax(df[col].values))
+                assert stats["count"] == len(df)
+
+    def test_no_blob_columns_in_stream_tables(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Verify stream tables have no blob columns (all json + codec)."""
+        import datajoint as dj
+
+        streams = full_pipeline["streams"]
+
+        for name in dir(streams):
+            if name.startswith("_"):
+                continue
+            obj = getattr(streams, name, None)
+            if isinstance(obj, type) and issubclass(obj, dj.Imported) and obj is not dj.Imported:
+                for attr_name in obj.heading.secondary_attributes:
+                    attr = obj.heading.attributes[attr_name]
+                    assert not attr.is_blob, (
+                        f"{name}.{attr_name} is still a blob column — expected json or codec"
+                    )

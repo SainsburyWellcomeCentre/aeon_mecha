@@ -15,7 +15,7 @@ from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
 from swc.aeon.io import api as io_api
 from aeon.schema.ephys import social_ephys
 
-schema = dj.schema(get_schema_name("spike_sorting"))
+schema = dj.Schema(get_schema_name("spike_sorting"))
 logger = dj.logger
 
 
@@ -167,7 +167,7 @@ class PreProcessing(dj.Computed):
         ephys_files, dir_types = (
             ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key)
             & "file_name LIKE '%AmplifierData%.bin'"
-        ).fetch("file_path", "directory_type", order_by="chunk_start")
+        ).to_arrays("file_path", "directory_type", order_by="chunk_start")
 
         # Channels
         electrodes_query = (
@@ -177,7 +177,7 @@ class PreProcessing(dj.Computed):
                 * ephys.ProbeType.Electrode
                 & key
             )
-        electrodes_df = electrodes_query.fetch(format="frame").reset_index()
+        electrodes_df = electrodes_query.to_pandas().reset_index()
         electrodes_df.drop(columns=list(key), inplace=True, errors="ignore")
 
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
@@ -730,7 +730,7 @@ class SortedSpikes(dj.Imported):
 
         # create channel2electrode_map
         electrode_map: dict[int, dict] = {
-            elec["electrode"]: elec for elec in electrode_query.fetch(as_dict=True)
+            elec["electrode"]: elec for elec in electrode_query.to_dicts()
         }
         channel2electrode_map = {
             chn_idx: electrode_map[int(elec_id)]
@@ -863,7 +863,7 @@ class Waveform(dj.Imported):
 
         # create channel2electrode_map
         electrode_map: dict[int, dict] = {
-            elec["electrode"]: elec for elec in electrode_query.fetch(as_dict=True)
+            elec["electrode"]: elec for elec in electrode_query.to_dicts()
         }
         channel2electrode_map = {
             chn_idx: electrode_map[int(elec_id)]
@@ -873,9 +873,7 @@ class Waveform(dj.Imported):
 
         templates = sorting_analyzer.get_extension("templates")
 
-        for unit in (SortedSpikes.Unit & key).fetch(
-                "KEY", order_by="unit"
-        ):
+        for unit in (SortedSpikes.Unit & key).keys(order_by="unit"):
             # Get mean waveform for this unit from all channels - (sample x channel)
             unit_waveforms = templates.get_unit_template(
                 unit_id=unit["unit"], operator="average"
@@ -952,7 +950,7 @@ class SortingQuality(dj.Imported):
         ).get_data()
         metrics_df = pd.concat([qc_metrics, template_metrics], axis=1)
 
-        for unit_key in (SortedSpikes.Unit & key).fetch("KEY"):
+        for unit_key in (SortedSpikes.Unit & key).keys():
             unit_qc = metrics_df.loc[unit_key["unit"]].to_dict()
             self.Metric.insert1(
                 {**unit_key, "qc_metrics": json.dumps(unit_qc, default=str)}
@@ -995,19 +993,24 @@ class SyncedSpikes(dj.Imported):
         """
         # Load ephys sync models
         sync_models = {}
-        with tempfile.TemporaryDirectory() as tempdir:
-            sync_ = (ephys.EphysChunk.SyncModel & (ephys.EphysBlockInfo.Chunk & key)).fetch(
+        with tempfile.TemporaryDirectory() as tempdir, dj.config.override(download_path=tempdir):
+            sync_ = (ephys.EphysChunk.SyncModel & (ephys.EphysBlockInfo.Chunk & key)).to_arrays(
                 "onix_ts_start", "onix_ts_end", "sync_model",
-                download_path=tempdir, order_by="onix_ts_start"
+                order_by="onix_ts_start"
             )
             for s, e, m in zip(*sync_):
                 sync_models[(s, e)] = joblib.load(m)
 
         # Load ephys onix times
-        ephys_file_keys, ephys_files, dir_types = (
+        _clock_query = (
             ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key)
             & "file_name LIKE '%Clock%.bin'"
-        ).fetch("KEY", "file_path", "directory_type", order_by="chunk_start")
+        )
+        _clock_rows = _clock_query.to_dicts(order_by="chunk_start")
+        _pk = _clock_query.primary_key
+        ephys_file_keys = [{k: r[k] for k in _pk} for r in _clock_rows]
+        ephys_files = [r["file_path"] for r in _clock_rows]
+        dir_types = [r["directory_type"] for r in _clock_rows]
 
         onix_times = []
         for f, d in zip(ephys_files, dir_types):
@@ -1059,7 +1062,7 @@ class SyncedSpikes(dj.Imported):
                 yield chunk_key, synced_ts
 
         self.insert1(key)
-        for unit_data in (SortedSpikes.Unit.proj("spike_indices") & key).fetch(as_dict=True):
+        for unit_data in (SortedSpikes.Unit.proj("spike_indices") & key).to_dicts():
             spike_indices = unit_data.pop("spike_indices")
             for ephys_chunk_key, synced_times in indices2syncedtimes(spike_indices):
                 self.Unit.insert1(
@@ -1221,7 +1224,7 @@ class UnitMatching(dj.Computed):
         )
 
         # ---- Seed / overlap guard ----
-        previously_matched = (self & insertion_key & paramset_key).fetch(as_dict=True)
+        previously_matched = (self & insertion_key & paramset_key).to_dicts()
 
         if not previously_matched:
             # First block must be the seed
@@ -1244,7 +1247,7 @@ class UnitMatching(dj.Computed):
                 )
 
         this_block_units = {}
-        for unit_entry in (SyncedSpikes.Unit & key).fetch(as_dict=True):
+        for unit_entry in (SyncedSpikes.Unit & key).to_dicts():
             unit_id = unit_entry["unit"]
             if unit_id not in this_block_units:
                 this_block_units[unit_id] = []
@@ -1303,7 +1306,7 @@ class UnitMatching(dj.Computed):
                 # Load previous block's spike times (prev_block has all PK fields)
                 prev_key = prev_block
                 prev_units = {}
-                for unit_entry in (SyncedSpikes.Unit & prev_key).fetch(as_dict=True):
+                for unit_entry in (SyncedSpikes.Unit & prev_key).to_dicts():
                     uid = unit_entry["unit"]
                     if uid not in prev_units:
                         prev_units[uid] = []
@@ -1360,7 +1363,7 @@ class UnitMatching(dj.Computed):
                         unit_to_global[this_uid] = gu_match.fetch1("global_unit")
 
         # ---- Assign new global units for unmatched units ----
-        existing_ids = (GlobalUnit & insertion_key & paramset_key).fetch("global_unit")
+        existing_ids = (GlobalUnit & insertion_key & paramset_key).to_arrays("global_unit")
         next_gu_id = int(existing_ids.max()) + 1 if len(existing_ids) > 0 else 1
         n_matched = len(unit_to_global)
 
@@ -1373,7 +1376,7 @@ class UnitMatching(dj.Computed):
         # ---- Get peak electrode for each unit in this block ----
         # electrode is a non-PK attribute on SortedSpikes.Unit, so use proj() to include it
         unit_electrodes = {}
-        for entry in (SortedSpikes.Unit & key).proj("electrode").fetch(as_dict=True):
+        for entry in (SortedSpikes.Unit & key).proj("electrode").to_dicts():
             unit_electrodes[entry["unit"]] = {
                 "probe_type": entry["probe_type"],
                 "electrode": entry["electrode"],
@@ -1414,7 +1417,7 @@ class UnitMatching(dj.Computed):
 
         # ---- Insert UnitMatching.Spikes with ownership convention ----
         # For each (global_unit, chunk): skip if an earlier block already owns it
-        this_block_chunks = (SyncedSpikes.Unit & key).fetch("KEY")
+        this_block_chunks = (SyncedSpikes.Unit & key).keys()
         # Get unique chunk_starts for this block
         chunk_starts = sorted({ck["chunk_start"] for ck in this_block_chunks})
 

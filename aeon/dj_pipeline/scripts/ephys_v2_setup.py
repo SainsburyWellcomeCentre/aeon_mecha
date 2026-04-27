@@ -9,7 +9,7 @@ Three phases:
   Phase 3: Post-sorting, curation & unit matching (no SLURM needed)
 
 Prerequisites:
-  - dj_local_conf.json configured with prefix "u_elissas_aeon_ephys_v2_test_"
+  - datajoint.json / DJ_DATABASE_PREFIX configured with prefix "u_elissas_aeon_ephys_v2_test_"
   - On HPC with access to /ceph/aeon/
   - SpikeInterface installed (standard version, or Elissa's fork if needed)
 
@@ -66,7 +66,7 @@ def verify_prefix_or_exit():
     """Check the database prefix BEFORE importing any pipeline modules.
 
     Critical because `from aeon.dj_pipeline import ephys` triggers
-    `dj.schema(get_schema_name("ephys"))` at import time, which CREATES
+    `dj.Schema(get_schema_name("ephys"))` at import time, which CREATES
     schemas in the database.
 
     These setup/validation scripts are designed for testing only and should
@@ -74,23 +74,20 @@ def verify_prefix_or_exit():
     """
     import datajoint as dj
 
-    if "custom" not in dj.config:
-        dj.config["custom"] = {}
-
-    prefix = dj.config["custom"].get("database.prefix", "")
-    host = dj.config.get("database.host", "")
+    prefix = dj.config.database.database_prefix or ""
+    host = dj.config.database.host or ""
 
     if not prefix:
         print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is empty.")
-        print(f"    dj_local_conf.json may not have been found.")
+        print(f"    datajoint.json / DJ_DATABASE_PREFIX env var may not have been set.")
         print(f"    Make sure you run from the repo root directory.")
         sys.exit(1)
 
     if prefix == PRODUCTION_PREFIX:
         print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is '{prefix}' (production).")
         print(f"    This script is for testing only — do not run against production.")
-        print(f"    Set a test prefix in dj_local_conf.json, e.g.:")
-        print(f'      "custom": {{"database.prefix": "u_yourname_test_"}}')
+        print(f"    Set a test prefix via DJ_DATABASE_PREFIX env var or datajoint.json, e.g.:")
+        print(f'      DJ_DATABASE_PREFIX="u_yourname_test_"')
         sys.exit(1)
 
     if "aeon-db2" in host:
@@ -129,17 +126,17 @@ def step_verify_config(dry_run=False):
     print_header(1, "Verify Configuration")
 
     if dry_run:
-        print_info("Would check: dj_local_conf.json, DB connection, ceph path")
+        print_info("Would check: datajoint.json, DB connection, ceph path")
         return True
 
     import datajoint as dj
 
-    prefix = dj.config["custom"].get("database.prefix", "")
+    prefix = dj.config.database.database_prefix or ""
     print_ok(f"Database prefix: {prefix}")
 
     try:
         conn = dj.conn()
-        print_ok(f"Connected to {dj.config['database.host']}:{dj.config['database.port']}")
+        print_ok(f"Connected to {dj.config.database.host}:{dj.config.database.port}")
     except Exception as e:
         print_fail(f"Cannot connect to database: {e}")
         return False
@@ -228,11 +225,11 @@ def step_create_experiment(dry_run=False):
     exp = (acquisition.Experiment & {"experiment_name": EXPERIMENT_NAME}).fetch1()
     print_ok(f"  arena: {exp['arena_name']}, location: {exp['location']}")
 
-    dirs = (acquisition.Experiment.Directory & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    dirs = (acquisition.Experiment.Directory & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     for d in dirs:
         print_ok(f"  directory: {d['directory_type']} → {d['directory_path']}")
 
-    subjects = (acquisition.Experiment.Subject & {"experiment_name": EXPERIMENT_NAME}).fetch("subject")
+    subjects = (acquisition.Experiment.Subject & {"experiment_name": EXPERIMENT_NAME}).to_arrays("subject")
     print_ok(f"  subjects: {list(subjects)}")
 
     return True
@@ -356,7 +353,9 @@ def step_manual_ephys_setup(dry_run=False):
     print_ok(f"ProbeInsertion: subject={SUBJECT}, insertion=1, probe={PROBE_NAME}")
 
     # 2. Insert Epoch directly (epoch ingestion skipped — no reference device)
-    target_epoch_start = datetime.strptime(TARGET_EPOCH_DIR, "%Y-%m-%dT%H-%M-%S")
+    from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
+
+    target_epoch_start = parse_epoch_timestamp(TARGET_EPOCH_DIR)
     acquisition.Epoch.insert1(
         {
             "experiment_name": EXPERIMENT_NAME,
@@ -391,9 +390,9 @@ def step_manual_ephys_setup(dry_run=False):
     print_ok(f"EphysEpoch.Insertion: probe_label={PROBE_LABEL}")
 
     # Verify
-    pi = (ephys.ProbeInsertion & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    pi = (ephys.ProbeInsertion & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     print_ok(f"ProbeInsertion count: {len(pi)}")
-    ei = (ephys.EphysEpoch.Insertion & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    ei = (ephys.EphysEpoch.Insertion & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     print_ok(f"EphysEpoch.Insertion count: {len(ei)}")
 
     return True
@@ -412,7 +411,7 @@ def step_ingest_chunks(dry_run=False):
     print_info("Ingesting ephys chunks...")
     ephys.EphysChunk.ingest_chunks(EXPERIMENT_NAME)
 
-    chunks = (ephys.EphysChunk & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    chunks = (ephys.EphysChunk & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     if not chunks:
         print_fail("No EphysChunk entries created")
         return False
@@ -449,7 +448,7 @@ def step_create_blocks(dry_run=False):
 
     from aeon.dj_pipeline import ephys
 
-    probe_insertions = (ephys.ProbeInsertion & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    probe_insertions = (ephys.ProbeInsertion & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     if not probe_insertions:
         print_fail("No ProbeInsertions found — run step 5 first")
         return False
@@ -490,7 +489,7 @@ def step_populate_block_info(dry_run=False):
         display_progress=True, suppress_errors=SUPPRESS_ERRORS
     )
 
-    block_infos = (ephys.EphysBlockInfo & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    block_infos = (ephys.EphysBlockInfo & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     if not block_infos:
         print_fail("No EphysBlockInfo entries — populate may have failed")
         return False
@@ -616,7 +615,7 @@ def step_create_sorting_tasks(dry_run=False):
 
     from aeon.dj_pipeline import ephys, spike_sorting
 
-    blocks = (ephys.EphysBlock & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    blocks = (ephys.EphysBlock & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
 
     if not blocks:
         print_fail("No EphysBlock entries — run step 7 first")
@@ -766,7 +765,7 @@ def step_approve_auto_curation(dry_run=False):
         print_ok("CurationMethod 'SpikeInterface' inserted")
 
     # For each SpikeSorting entry, create ManualCuration + OfficialCuration
-    sorting_entries = (spike_sorting.SpikeSorting & {"experiment_name": EXPERIMENT_NAME}).fetch("KEY")
+    sorting_entries = (spike_sorting.SpikeSorting & {"experiment_name": EXPERIMENT_NAME}).keys()
     now = datetime.now(timezone.utc)
 
     mc_count = 0
@@ -972,7 +971,7 @@ Steps:
     print("  Ephys v2 Pipeline Test")
     print(f"  Experiment: {EXPERIMENT_NAME}")
     print(f"  Subject:    {SUBJECT}")
-    print(f"  DB prefix:  {dj.config['custom'].get('database.prefix', '')}")
+    print(f"  DB prefix:  {dj.config.database.database_prefix or ''}")
     if args.dry_run:
         print("  Mode: DRY RUN")
     print("=" * 60)
