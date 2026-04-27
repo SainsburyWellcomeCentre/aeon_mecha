@@ -4,7 +4,7 @@
 # - runs all tests on ubuntu (unit + integration), unit tests only on windows and macOS
 # - reports coverage via codecov (ubuntu only)
 
-name: build_env_run_tests
+name: Lint and Test
 on:
   push:
     branches:
