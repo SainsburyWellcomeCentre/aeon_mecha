@@ -50,15 +50,40 @@ In order to run the pipeline, follow the instruction to install this codebase in
 
 ### Configuration Instructions
 
-DataJoint requires a configuration file named `dj_local_conf.json`. This file should be located in the root directory of the codebase.
+Configuration is split between two files:
 
-1. Generate the `dj_local_conf.json` file:
-   - Make a copy of the `sample_dj_local_conf.json` file with the exact name `dj_local_conf.json`.
-   - Update the file with your database credentials (username, password, and database host).
-   - Ensure the file is kept secure and not leaked.
-2. In the `custom` section, specify the `database.prefix` - you can keep the default `aeon_`.
-3. In the `custom` section, update the value of `ceph_aeon` (under `repository_config`) to the root directory of the downloaded data.
-For example, if you download the data to `D:/data/project-aeon/aeon/data/raw/AEON3/...`, then update `ceph_aeon` to `D:/data/project-aeon/aeon/data`.
+1. **`datajoint.json`** — DataJoint's own config, including the `stores` needed by the ephys pipeline. Generate a template with:
+
+   ```bash
+   python -c "import datajoint as dj; dj.config.save_template()"
+   ```
+
+   Then add the `dj_store` definition required by spike sorting tables:
+
+   ```json
+   {
+     "stores": {
+       "dj_store": {
+         "protocol": "file",
+         "location": "/ceph/aeon/datajoint_stores"
+       }
+     }
+   }
+   ```
+
+2. **`.env`** (or shell exports) — credentials and aeon-specific vars. Never commit this file.
+
+   ```
+   DJ_HOST=<db-host>
+   DJ_USER=<username>
+   DJ_PASS=<password>
+   DJ_DATABASE_PREFIX=aeon_
+   DJ_REPOSITORY_CONFIG={"ceph_aeon": "/path/to/data"}
+   ```
+
+   For example, if you download the data to `D:/data/project-aeon/aeon/data/raw/AEON3/...`, then set `DJ_REPOSITORY_CONFIG='{"ceph_aeon": "D:/data/project-aeon/aeon/data"}'`.
+
+**Why both?** DJ 2.x stores must be defined in `datajoint.json` (no env var for them). Credentials and the aeon-specific `DJ_REPOSITORY_CONFIG` belong in `.env` so they can vary per deployment without editing committed config.
 
 
 ## Data Ingestion & Processing

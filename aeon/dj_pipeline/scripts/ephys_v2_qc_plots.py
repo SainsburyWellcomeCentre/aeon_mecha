@@ -49,9 +49,7 @@ def fetch_unit_matching_data():
 
     # All blocks
     blocks = pd.DataFrame(
-        (ephys.EphysBlock & insertion_key).fetch(
-            "block_start", "block_end", as_dict=True
-        )
+        (ephys.EphysBlock & insertion_key).proj("block_start", "block_end").to_dicts()
     ).sort_values("block_start").reset_index(drop=True)
     blocks["block_idx"] = range(len(blocks))
     blocks["block_label"] = blocks["block_start"].apply(
@@ -60,18 +58,16 @@ def fetch_unit_matching_data():
 
     # UnitMatching.Unit — which global_unit appears in which block
     unit_entries = pd.DataFrame(
-        (spike_sorting.UnitMatching.Unit & insertion_key).fetch(
-            "block_start", "block_end", "unit", "global_unit",
-            "match_confidence", as_dict=True
-        )
+        (spike_sorting.UnitMatching.Unit & insertion_key).proj(
+            "block_start", "block_end", "unit", "global_unit", "match_confidence"
+        ).to_dicts()
     )
 
     # Spike counts per global unit per block (sum across chunks)
     spike_entries = pd.DataFrame(
-        (spike_sorting.UnitMatching.Spikes & insertion_key).fetch(
-            "block_start", "block_end", "global_unit", "spike_count",
-            as_dict=True
-        )
+        (spike_sorting.UnitMatching.Spikes & insertion_key).proj(
+            "block_start", "block_end", "global_unit", "spike_count"
+        ).to_dicts()
     )
 
     return blocks, unit_entries, spike_entries

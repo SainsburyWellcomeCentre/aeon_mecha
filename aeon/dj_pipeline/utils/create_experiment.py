@@ -81,7 +81,9 @@ def create_experiment(
     epoch_dirs = sorted([f.name for f in raw_dir.glob("*") if f.is_dir()])
     if not epoch_dirs:
         raise FileNotFoundError(f"No epoch directories found in: {raw_dir}")
-    start_time = datetime.strptime(epoch_dirs[0], "%Y-%m-%dT%H-%M-%S")
+    from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
+
+    start_time = parse_epoch_timestamp(epoch_dirs[0])
 
     # Prepare experiment entry
     experiment_entry = {

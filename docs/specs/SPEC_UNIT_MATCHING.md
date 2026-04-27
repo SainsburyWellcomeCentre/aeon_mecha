@@ -73,7 +73,7 @@ return seed_candidates + fwd_candidates + bwd_candidates
 
 ```python
 # make() guard: seed-first + overlap check
-previously_matched = (self & insertion_key & paramset_key).fetch(as_dict=True)
+previously_matched = (self & insertion_key & paramset_key).to_dicts()
 if not previously_matched:
     # First block must be the seed
     if key["block_start"] != seed_block_start:
@@ -554,7 +554,7 @@ No join through a separate EphysSubject table — subject is in the PK.
 ### Spike times for a unit across all time
 
 ```python
-(UnitMatching.Spikes & insertion_key & {"global_unit": 5}).fetch(
+(UnitMatching.Spikes & insertion_key & {"global_unit": 5}).to_arrays(
     "chunk_start", "spike_times", "spike_count", order_by="chunk_start"
 )
 ```
@@ -567,7 +567,7 @@ Returns one row per chunk (guaranteed by unique index). Block key fields (block_
 # Time window — align with behavioral or other neural data by chunk
 (UnitMatching.Spikes & insertion_key & {"global_unit": 5}
  & f'chunk_start BETWEEN "{start}" AND "{end}"'
-).fetch("chunk_start", "spike_times", order_by="chunk_start")
+).to_arrays("chunk_start", "spike_times", order_by="chunk_start")
 
 # Single chunk
 (UnitMatching.Spikes & insertion_key
@@ -578,7 +578,7 @@ Returns one row per chunk (guaranteed by unique index). Block key fields (block_
 ### All units + all spikes for an insertion
 
 ```python
-(UnitMatching.Spikes & insertion_key).fetch(
+(UnitMatching.Spikes & insertion_key).to_arrays(
     "global_unit", "chunk_start", "spike_times", "spike_count",
     order_by="global_unit, chunk_start"
 )

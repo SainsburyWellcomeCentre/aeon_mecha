@@ -7,7 +7,7 @@ from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import acquisition, get_schema_name, streams
 
-schema = dj.schema(get_schema_name("qc"))
+schema = dj.Schema(get_schema_name("qc"))
 logger = dj.logger
 
 # -------------- Quality Control ---------------------
@@ -16,7 +16,7 @@ logger = dj.logger
 @schema
 class QCCode(dj.Lookup):
     definition = """
-    qc_code: int
+    qc_code: int32
     ---
     qc_code_description: varchar(255)
     """
@@ -27,7 +27,7 @@ class QCRoutine(dj.Lookup):
     definition = """
     qc_routine: varchar(24)  # name of this quality control evaluation - e.g. drop_frame
     ---
-    qc_routine_order: int    # the order in which this qc routine is executed
+    qc_routine_order: int32    # the order in which this qc routine is executed
     qc_routine_description: varchar(255)  # description of this QC routine
     qc_module: varchar(64)     # module path, e.g., aeon.analysis.quality_control
     qc_function: varchar(64)   # the function used to evaluate this QC - e.g. check_drop_frame
@@ -43,15 +43,15 @@ class CameraQC(dj.Imported):
     -> acquisition.Chunk
     -> streams.SpinnakerVideoSource
     ---
-    drop_count=null: int
-    max_harp_delta: float    # (s)
-    max_camera_delta: float  # (s)
-    timestamps: longblob
-    time_delta: longblob
-    frame_delta: longblob
-    hw_counter_delta: longblob
-    hw_timestamp_delta: longblob
-    frame_offset: longblob
+    drop_count=null: int32
+    max_harp_delta: float32    # (s)
+    max_camera_delta: float32  # (s)
+    timestamps: <blob>
+    time_delta: <blob>
+    frame_delta: <blob>
+    hw_counter_delta: <blob>
+    hw_timestamp_delta: <blob>
+    frame_offset: <blob>
     """
 
     @property

@@ -29,11 +29,8 @@ def verify_prefix_or_exit():
     """These setup/validation scripts are for testing only — never run against production."""
     import datajoint as dj
 
-    if "custom" not in dj.config:
-        dj.config["custom"] = {}
-
-    prefix = dj.config["custom"].get("database.prefix", "")
-    host = dj.config.get("database.host", "")
+    prefix = dj.config.database.database_prefix or ""
+    host = dj.config.database.host or ""
 
     if not prefix:
         print(f"\n  ✗ SAFETY CHECK FAILED: database prefix is empty.")
@@ -99,14 +96,14 @@ def check_experiment(results):
 
     from aeon.dj_pipeline import acquisition
 
-    exp = (acquisition.Experiment & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    exp = (acquisition.Experiment & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     results.record("Experiment", "Experiment exists", len(exp) == 1)
 
-    dirs = (acquisition.Experiment.Directory & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    dirs = (acquisition.Experiment.Directory & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     has_raw = any(d["directory_type"] == "raw" for d in dirs)
     results.record("Experiment", "Raw directory registered", has_raw)
 
-    subjects = (acquisition.Experiment.Subject & {"experiment_name": EXPERIMENT_NAME}).fetch("subject")
+    subjects = (acquisition.Experiment.Subject & {"experiment_name": EXPERIMENT_NAME}).to_arrays("subject")
     results.record("Experiment", "Subject registered", len(subjects) > 0,
                     f"subjects: {list(subjects)}")
 
@@ -117,7 +114,7 @@ def check_epochs(results):
 
     from aeon.dj_pipeline import acquisition
 
-    epochs = (acquisition.Epoch & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    epochs = (acquisition.Epoch & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     results.record("Epochs", "Epochs ingested", len(epochs) > 0, f"{len(epochs)} epochs")
 
 
@@ -128,7 +125,7 @@ def check_ephys_epochs(results):
     from aeon.dj_pipeline import ephys
 
     # EphysEpoch entries
-    ephys_epochs = (ephys.EphysEpoch & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    ephys_epochs = (ephys.EphysEpoch & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     results.record("EphysEpoch", "EphysEpoch populated", len(ephys_epochs) > 0,
                     f"{len(ephys_epochs)} entries")
 
@@ -137,7 +134,7 @@ def check_ephys_epochs(results):
                     f"{len(has_ephys)} with ephys")
 
     # ProbeInsertion
-    probe_insertions = (ephys.ProbeInsertion & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    probe_insertions = (ephys.ProbeInsertion & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     results.record("EphysEpoch", "ProbeInsertion exists", len(probe_insertions) > 0,
                     f"{len(probe_insertions)} insertions")
 
@@ -156,7 +153,7 @@ def check_ephys_epochs(results):
     results.record("EphysEpoch", "probe_label on EphysEpoch.Insertion", has_probe_label_on_insertion)
 
     # Check EphysEpoch.Insertion entries exist
-    epoch_insertions = (ephys.EphysEpoch.Insertion & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    epoch_insertions = (ephys.EphysEpoch.Insertion & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     results.record("EphysEpoch", "EphysEpoch.Insertion entries created",
                     len(epoch_insertions) > 0,
                     f"{len(epoch_insertions)} entries")
@@ -173,7 +170,7 @@ def check_ephys_chunks(results):
 
     from aeon.dj_pipeline import ephys
 
-    chunks = (ephys.EphysChunk & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    chunks = (ephys.EphysChunk & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     results.record("EphysChunk", "Chunks ingested", len(chunks) > 0,
                     f"{len(chunks)} chunks")
 
@@ -184,7 +181,7 @@ def check_ephys_chunks(results):
                     f"PK: {chunk_heading.primary_key}")
 
     # Check files part table
-    files = (ephys.EphysChunk.File & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    files = (ephys.EphysChunk.File & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     results.record("EphysChunk", "EphysChunk.File entries exist", len(files) > 0,
                     f"{len(files)} files")
 
@@ -203,7 +200,7 @@ def check_blocks(results):
 
     from aeon.dj_pipeline import ephys
 
-    blocks = (ephys.EphysBlock & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    blocks = (ephys.EphysBlock & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     results.record("Blocks", "EphysBlock entries exist", len(blocks) > 0,
                     f"{len(blocks)} blocks")
 
@@ -214,7 +211,7 @@ def check_blocks(results):
                     f"PK: {block_heading.primary_key}")
 
     # BlockInfo
-    block_infos = (ephys.EphysBlockInfo & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    block_infos = (ephys.EphysBlockInfo & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     results.record("Blocks", "EphysBlockInfo populated", len(block_infos) > 0,
                     f"{len(block_infos)} entries")
 
@@ -245,7 +242,7 @@ def check_sorting_pipeline(results):
     from aeon.dj_pipeline import spike_sorting
 
     # SortingTask
-    tasks = (spike_sorting.SortingTask & {"experiment_name": EXPERIMENT_NAME}).fetch(as_dict=True)
+    tasks = (spike_sorting.SortingTask & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     results.record("Sorting", "SortingTask entries exist", len(tasks) > 0,
                     f"{len(tasks)} tasks")
 
@@ -317,9 +314,9 @@ def check_synced_spikes(results):
     if synced_units > 0:
         try:
             import numpy as np
-            sample = (spike_sorting.SyncedSpikes.Unit & {"experiment_name": EXPERIMENT_NAME}).fetch(
-                "spike_times", limit=1
-            )[0]
+            sample = (spike_sorting.SyncedSpikes.Unit & {"experiment_name": EXPERIMENT_NAME} & dj.Top(limit=1)).fetch1(
+                "spike_times"
+            )
             is_datetime = np.issubdtype(sample.dtype, np.datetime64)
             results.record("SyncedSpikes", "Spike times are datetime64",
                             is_datetime,
@@ -365,9 +362,9 @@ def check_unit_matching(results):
     if spikes > 0:
         try:
             import numpy as np
-            sample = (spike_sorting.UnitMatching.Spikes & {"experiment_name": EXPERIMENT_NAME}).fetch(
-                "spike_times", limit=1
-            )[0]
+            sample = (spike_sorting.UnitMatching.Spikes & {"experiment_name": EXPERIMENT_NAME} & dj.Top(limit=1)).fetch1(
+                "spike_times"
+            )
             is_datetime = np.issubdtype(sample.dtype, np.datetime64)
             results.record("UnitMatching", "Spikes spike_times are datetime64",
                             is_datetime,
@@ -379,9 +376,9 @@ def check_unit_matching(results):
     # Check no duplicate (global_unit, chunk_start) pairs (ownership convention)
     if spikes > 0:
         try:
-            spikes_data = (spike_sorting.UnitMatching.Spikes & {"experiment_name": EXPERIMENT_NAME}).fetch(
-                "global_unit", "chunk_start", as_dict=True
-            )
+            spikes_data = (spike_sorting.UnitMatching.Spikes & {"experiment_name": EXPERIMENT_NAME}).proj(
+                "global_unit", "chunk_start"
+            ).to_dicts()
             pairs = [(s["global_unit"], s["chunk_start"]) for s in spikes_data]
             has_dupes = len(pairs) != len(set(pairs))
             results.record("UnitMatching", "No duplicate (global_unit, chunk_start) pairs",
@@ -396,7 +393,7 @@ def check_unit_matching(results):
     if global_units > 0 and matching > 0:
         try:
             sorted_units_per_block = []
-            blocks = (spike_sorting.UnitMatching & {"experiment_name": EXPERIMENT_NAME}).fetch("KEY")
+            blocks = (spike_sorting.UnitMatching & {"experiment_name": EXPERIMENT_NAME}).keys()
             for bk in blocks:
                 n = len(spike_sorting.SortedSpikes.Unit & bk)
                 sorted_units_per_block.append(n)

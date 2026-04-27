@@ -186,7 +186,7 @@ class TestInsertStreamTypes:
         insert_stream_types(test_rig)
 
         # Should be able to fetch by stream_type name
-        video_entries = (streams.StreamType & {"stream_type": "Video"}).fetch(as_dict=True)
+        video_entries = (streams.StreamType & {"stream_type": "Video"}).to_dicts()
         assert len(video_entries) >= 1
 
 
@@ -241,7 +241,7 @@ class TestInsertDeviceTypes:
         insert_device_types(test_rig, metadata_filepath)
 
         # DeviceName should be populated with device instance names
-        device_names = streams.DeviceName().fetch(as_dict=True)
+        device_names = streams.DeviceName().to_dicts()
         names = [d["device_name"] for d in device_names]
         assert "CameraTop" in names
         assert "CameraSide" in names
@@ -262,7 +262,7 @@ class TestInsertDeviceTypes:
         insert_device_types(test_rig, metadata_filepath)
 
         # Cameras have serial_number, feeders have port_name (optional hardware tracking)
-        devices = streams.Device().fetch(as_dict=True)
+        devices = streams.Device().to_dicts()
         serial_numbers = [d["device_serial_number"] for d in devices]
         assert "21053810" in serial_numbers  # CameraTop serial
 
@@ -377,7 +377,7 @@ class TestInsertDeviceTypesFKHandling:
         insert_device_types(test_rig, metadata_filepath)
 
         # Verify recovery was successful
-        device_type_streams = streams.DeviceType.Stream().fetch(as_dict=True)
+        device_type_streams = streams.DeviceType.Stream().to_dicts()
         assert len(device_type_streams) > 0
 
         # Verify the structure is correct (device_type + stream_hash pairs)
