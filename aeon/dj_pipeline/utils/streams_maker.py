@@ -230,6 +230,7 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
             from swc.aeon.io import api as io_api
 
             from aeon.dj_pipeline.utils.codec import column_stats, timestamp_stats
+            from aeon.dj_pipeline.utils.json_serialization import json_serialized
             from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
             chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
@@ -249,27 +250,39 @@ def get_device_stream_template(device_type: str, stream_type: str, streams_modul
                 end=pd.Timestamp(chunk_end),
             )
 
-            # Summary stats for JSON columns
+            # MariaDB aliases json to longtext; check once whether DJ handles
+            # json serialization (attr.json=True) or we must do it ourselves.
+            _needs_serialize = not self.heading.attributes["timestamps"].json
+
             row = {
                 **key,
                 "sample_count": len(stream_data),
-                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+                "timestamps": json_serialized(
+                    timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+                    _needs_serialize,
+                ),
             }
             for col in stream_reader.columns:
                 if col.startswith("_"):
                     continue
                 clean_col = re.sub(r"\([^)]*\)", "", col)
-                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+                row[clean_col] = json_serialized(
+                    column_stats(stream_data[col].values) if len(stream_data) > 0 else {},
+                    _needs_serialize,
+                )
 
             # Codec reference for stream_df (self-contained for decode)
-            row["stream_df"] = {
-                "stream_type": "{stream_type}",
-                "experiment_name": key["experiment_name"],
-                "device_name": device_name,
-                "chunk_start": str(chunk_start),
-                "chunk_end": str(chunk_end),
-                "epoch_start": str(epoch_start),
-            }
+            row["stream_df"] = json_serialized(
+                {
+                    "stream_type": "{stream_type}",
+                    "experiment_name": key["experiment_name"],
+                    "device_name": device_name,
+                    "chunk_start": str(chunk_start),
+                    "chunk_end": str(chunk_end),
+                    "epoch_start": str(epoch_start),
+                },
+                _needs_serialize,
+            )
 
             self.insert1(row, ignore_extra_fields=True)
 
