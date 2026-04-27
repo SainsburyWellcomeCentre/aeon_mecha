@@ -1,16 +1,17 @@
-# This workflow runs on PRs and pushes to `main` and `datajoint_pipeline`.
+# This workflow runs on all pushes, pull requests, and manually via workflow dispatch.
 # It does the following:
 # - lints (ruff, pyright)
-# - runs all tests on ubuntu (unit + integration), unit tests only on windows
+# - runs all tests on ubuntu (unit + integration), unit tests only on windows and macOS
 # - reports coverage via codecov (ubuntu only)
 
 name: build_env_run_tests
 on:
   push:
-    branches: [main, datajoint_pipeline, tn/core_pipeline]
+    branches:
+      - "**"
+    tags:
+      - "v*"
   pull_request:
-    branches: [main, datajoint_pipeline, tn/core_pipeline]
-    types: [opened, reopened, synchronize]
   workflow_dispatch:
 
 env:
