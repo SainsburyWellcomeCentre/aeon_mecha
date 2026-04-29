@@ -388,7 +388,7 @@ class EpochConfig(dj.Imported):
             ),  # Flat device dict for ingest_epoch_metadata_from_rig
         }
 
-        # Insert new entries for streams.DeviceType, streams.Device using Rig
+        # Insert new entries for streams.DeviceType, streams.DeviceName using Rig
         # Note: StreamType and DeviceType catalog populated at worker startup
         # ExperimentDevice and DeviceDataStream tables created at worker startup
         insert_device_types(rig, metadata_filepath)

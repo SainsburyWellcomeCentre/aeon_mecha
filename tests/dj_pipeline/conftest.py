@@ -108,7 +108,6 @@ def streams_schema(dj_config_integration):
         "StreamType": streams.StreamType,
         "DeviceType": streams.DeviceType,
         "DeviceName": streams.DeviceName,
-        "Device": streams.Device,
         "schema": streams.schema,
         "schema_name": streams.schema.database,
     }
@@ -159,7 +158,6 @@ def clean_streams_tables(pipeline_integration):
     streams = pipeline_integration["streams"]
 
     # Pre-test cleanup (order matters due to FK constraints)
-    streams.Device().delete()
     streams.DeviceName().delete()
     streams.DeviceType().delete()
     streams.StreamType().delete()
@@ -167,7 +165,6 @@ def clean_streams_tables(pipeline_integration):
     yield
 
     # Post-test cleanup (same order)
-    streams.Device().delete()
     streams.DeviceName().delete()
     streams.DeviceType().delete()
     streams.StreamType().delete()

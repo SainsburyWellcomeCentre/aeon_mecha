@@ -248,24 +248,6 @@ class TestInsertDeviceTypes:
         assert "Feeder1" in names
         assert "Feeder2" in names
 
-    def test_inserts_devices(self, pipeline_integration, test_rig, tmp_path, monkeypatch):
-        from aeon.dj_pipeline.utils import streams_maker
-        from aeon.dj_pipeline.utils.load_metadata import insert_device_types, insert_stream_types
-
-        monkeypatch.setattr(streams_maker, "schema_name", pipeline_integration["schema_name"])
-
-        streams = pipeline_integration["streams"]
-        metadata_filepath = tmp_path / "Metadata.json"
-        metadata_filepath.write_text("{}")
-
-        insert_stream_types(test_rig)
-        insert_device_types(test_rig, metadata_filepath)
-
-        # Cameras have serial_number, feeders have port_name (optional hardware tracking)
-        devices = streams.Device().to_dicts()
-        serial_numbers = [d["device_serial_number"] for d in devices]
-        assert "21053810" in serial_numbers  # CameraTop serial
-
     def test_handles_existing_device_types(self, pipeline_integration, test_rig, tmp_path, monkeypatch):
         from aeon.dj_pipeline.utils import streams_maker
         from aeon.dj_pipeline.utils.load_metadata import insert_device_types, insert_stream_types

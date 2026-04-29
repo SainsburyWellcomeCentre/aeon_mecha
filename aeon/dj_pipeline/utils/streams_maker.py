@@ -77,14 +77,6 @@ class DeviceName(dj.Lookup):
     """
 
 
-class Device(dj.Lookup):
-    definition = """  # Physical devices identified by serial number or port
-    device_serial_number: varchar(12)
-    ---
-    -> DeviceType
-    """
-
-
 # region Helper functions for creating device tables.
 
 
@@ -296,7 +288,7 @@ def main(create_tables=True):
                 'schema = dj.Schema(get_schema_name("streams"))\n\n\n'
             )
             f.write(imports_str)
-            for table_class in (StreamType, DeviceType, DeviceName, Device):
+            for table_class in (StreamType, DeviceType, DeviceName):
                 device_table_def = inspect.getsource(table_class).lstrip()
                 full_def = "@schema \n" + device_table_def + "\n\n"
                 f.write(full_def)
