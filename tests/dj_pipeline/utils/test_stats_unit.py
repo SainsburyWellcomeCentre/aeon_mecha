@@ -67,6 +67,16 @@ class TestColumnStats:
 
         assert column_stats(values) == expected
 
+    def test_column_stats_pandas_extension_dtype(self):
+        """pd.api.types.is_numeric_dtype handles pandas extension dtypes that np.issubdtype cannot."""
+        from aeon.dj_pipeline.utils.stats import column_stats
+
+        values = pd.array([1, 2, None, 4], dtype=pd.Int64Dtype())
+        result = column_stats(values.to_numpy(dtype="float64", na_value=np.nan))
+        assert result["count"] == 4
+        assert result["min"] == 1.0
+        assert result["max"] == 4.0
+
     @pytest.mark.parametrize(
         "values",
         [

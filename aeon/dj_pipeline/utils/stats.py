@@ -8,12 +8,13 @@ DataFrame loading.
 """
 
 import numpy as np
+import pandas as pd
 
 
 def column_stats(values):
     """Compute JSON-serializable summary stats for a numpy array."""
     stats = {"dtype": str(values.dtype), "count": int(len(values))}
-    if len(values) > 0 and np.issubdtype(values.dtype, np.number):
+    if len(values) > 0 and pd.api.types.is_numeric_dtype(values.dtype):
         finite = values[np.isfinite(values)]
         if len(finite) > 0:
             stats["min"] = float(np.min(finite))
