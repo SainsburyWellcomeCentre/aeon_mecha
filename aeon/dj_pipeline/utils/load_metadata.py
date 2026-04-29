@@ -940,7 +940,7 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
             try:
                 reader = getattr(device, method_name)
             except Exception as e:
-                logger.warning(f"Failed to access {method_name} on {device_name}: {e}. Skipping...")
+                logger.debug(f"Failed to access {method_name} on {device_name}: {e}. Skipping...")
                 continue
 
             stream_type = to_pascal_case(method_name)
