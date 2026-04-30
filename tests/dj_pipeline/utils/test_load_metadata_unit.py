@@ -34,52 +34,30 @@ class TestToPascalCase:
 
 
 class TestFlattenRigDevices:
-    """Test nested rig config flattening."""
+    """Test typed Rig flattening into device_name -> config map."""
 
-    def test_extracts_cameras(self, sample_rig_config):
+    def test_extracts_cameras(self, test_rig):
         from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
 
-        result = flatten_rig_devices(sample_rig_config)
+        result = flatten_rig_devices(test_rig)
         assert "CameraTop" in result
         assert result["CameraTop"]["serialNumber"] == "21053810"
 
-    def test_extracts_feeders(self, sample_rig_config):
+    def test_extracts_feeders(self, test_rig):
         from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
 
-        result = flatten_rig_devices(sample_rig_config)
+        result = flatten_rig_devices(test_rig)
         assert "Feeder1" in result
         assert result["Feeder1"]["portName"] == "COM3"
 
-    def test_extracts_nest(self, sample_rig_config):
+    def test_excludes_non_device_fields(self, test_rig):
+        """Fields whose classes have no @data_reader methods must be skipped."""
         from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
 
-        result = flatten_rig_devices(sample_rig_config)
-        assert "Nest" in result
-
-    def test_extracts_synchronizers(self, sample_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
-
-        result = flatten_rig_devices(sample_rig_config)
-        assert "CameraSynchronizer" in result
-        assert "ClockSynchronizer" in result
-
-
-class TestExtractDeviceMapperFromRig:
-    """Test device type mapper extraction."""
-
-    def test_extracts_device_types(self, sample_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import _extract_device_mapper_from_rig
-
-        device_type_mapper, _ = _extract_device_mapper_from_rig(sample_rig_config)
-        assert device_type_mapper["CameraTop"] == "SpinnakerVideoSource"
-        assert device_type_mapper["Feeder1"] == "UndergroundFeeder"
-
-    def test_extracts_serial_numbers(self, sample_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import _extract_device_mapper_from_rig
-
-        _, device_sn = _extract_device_mapper_from_rig(sample_rig_config)
-        assert device_sn["CameraTop"] == "21053810"
-        assert device_sn["Feeder1"] == "COM3"
+        result = flatten_rig_devices(test_rig)
+        # TestRig only declares cameras + feeders, both with @data_reader.
+        # Anything else (synchronizers, light cycles) would be excluded by design.
+        assert set(result.keys()) == {"CameraTop", "CameraSide", "Feeder1", "Feeder2"}
 
 
 class TestGetDataReaderMethods:
@@ -108,17 +86,17 @@ class TestGetDataReaderMethods:
 
 
 # -----------------------------------------------------------------------------
-# Tests using sample ForagingABC metadata fixture
+# Tests using sample ForagingABC metadata fixture (typed Rig)
 # -----------------------------------------------------------------------------
 
 
 class TestFlattenRigDevicesWithForagingABC:
-    """Test rig flattening with real ForagingABC metadata structure."""
+    """Test rig flattening with real ForagingABC typed Rig."""
 
-    def test_extracts_all_cameras(self, foraging_abc_rig_config):
+    def test_extracts_all_cameras(self, foraging_abc_rig):
         from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
 
-        result = flatten_rig_devices(foraging_abc_rig_config)
+        result = flatten_rig_devices(foraging_abc_rig)
         # ForagingABC has 13 cameras
         expected_cameras = [
             "CameraTop",
@@ -138,96 +116,102 @@ class TestFlattenRigDevicesWithForagingABC:
         for camera in expected_cameras:
             assert camera in result, f"Missing camera: {camera}"
 
-    def test_extracts_all_feeders(self, foraging_abc_rig_config):
+    def test_extracts_all_feeders(self, foraging_abc_rig):
         from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
 
-        result = flatten_rig_devices(foraging_abc_rig_config)
+        result = flatten_rig_devices(foraging_abc_rig)
         # ForagingABC has 6 feeders
         for i in range(1, 7):
             assert f"Feeder{i}" in result
 
-    def test_extracts_nest(self, foraging_abc_rig_config):
+    def test_extracts_nest(self, foraging_abc_rig):
         from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
 
-        result = flatten_rig_devices(foraging_abc_rig_config)
+        result = flatten_rig_devices(foraging_abc_rig)
         assert "Nest" in result
         assert result["Nest"]["portName"] == "COM7"
 
-    def test_extracts_synchronizers(self, foraging_abc_rig_config):
+    def test_excludes_synchronizers_and_light_cycle(self, foraging_abc_rig):
+        """Synchronizers and LightCycle have no @data_reader methods, so excluded."""
         from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
 
-        result = flatten_rig_devices(foraging_abc_rig_config)
-        assert "CameraSynchronizer" in result
-        assert "ClockSynchronizer" in result
+        result = flatten_rig_devices(foraging_abc_rig)
+        assert "CameraSynchronizer" not in result
+        assert "ClockSynchronizer" not in result
+        assert "LightCycle" not in result
 
-    def test_camera_serial_numbers_preserved(self, foraging_abc_rig_config):
+    def test_camera_serial_numbers_preserved(self, foraging_abc_rig):
         from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
 
-        result = flatten_rig_devices(foraging_abc_rig_config)
+        result = flatten_rig_devices(foraging_abc_rig)
         assert result["CameraTop"]["serialNumber"] == "23032909"
         assert result["CameraNest"]["serialNumber"] == "23031407"
 
-    def test_feeder_port_names_preserved(self, foraging_abc_rig_config):
+    def test_feeder_port_names_preserved(self, foraging_abc_rig):
         from aeon.dj_pipeline.utils.load_metadata import flatten_rig_devices
 
-        result = flatten_rig_devices(foraging_abc_rig_config)
+        result = flatten_rig_devices(foraging_abc_rig)
         assert result["Feeder1"]["portName"] == "COM13"
         assert result["Feeder4"]["portName"] == "COM3"
 
 
-class TestExtractDeviceMapperWithForagingABC:
-    """Test device mapper extraction with real ForagingABC metadata."""
+class TestGetDeviceMapperFromRigWithForagingABC:
+    """Test typed device mapper extraction with real ForagingABC Rig."""
 
-    def test_camera_device_types(self, foraging_abc_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import _extract_device_mapper_from_rig
+    def test_camera_device_types(self, foraging_abc_rig):
+        from aeon.dj_pipeline.utils.load_metadata import get_device_mapper_from_rig
 
-        device_type_mapper, _ = _extract_device_mapper_from_rig(foraging_abc_rig_config)
-        # All cameras should map to SpinnakerVideoSource
+        device_type_mapper, _ = get_device_mapper_from_rig(foraging_abc_rig)
+        # ForagingABC Camera class is named "Camera" (subclass of SpinnakerCamera)
         for camera in ["CameraTop", "CameraNest", "CameraPatch1"]:
-            assert device_type_mapper[camera] == "SpinnakerVideoSource"
+            assert device_type_mapper[camera] == "Camera"
 
-    def test_feeder_device_types(self, foraging_abc_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import _extract_device_mapper_from_rig
+    def test_feeder_device_types(self, foraging_abc_rig):
+        from aeon.dj_pipeline.utils.load_metadata import get_device_mapper_from_rig
 
-        device_type_mapper, _ = _extract_device_mapper_from_rig(foraging_abc_rig_config)
-        # All feeders should map to UndergroundFeeder
+        device_type_mapper, _ = get_device_mapper_from_rig(foraging_abc_rig)
+        # ForagingABC Feeder class is named "Feeder"
         for feeder in ["Feeder1", "Feeder2", "Feeder6"]:
-            assert device_type_mapper[feeder] == "UndergroundFeeder"
+            assert device_type_mapper[feeder] == "Feeder"
 
-    def test_nest_device_type(self, foraging_abc_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import _extract_device_mapper_from_rig
+    def test_nest_device_type(self, foraging_abc_rig):
+        from aeon.dj_pipeline.utils.load_metadata import get_device_mapper_from_rig
 
-        device_type_mapper, _ = _extract_device_mapper_from_rig(foraging_abc_rig_config)
-        assert device_type_mapper["Nest"] == "WeightScale"
+        device_type_mapper, _ = get_device_mapper_from_rig(foraging_abc_rig)
+        # ForagingABC nest class is "ActivityWeightScale"
+        assert device_type_mapper["Nest"] == "ActivityWeightScale"
 
-    def test_synchronizer_device_types(self, foraging_abc_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import _extract_device_mapper_from_rig
+    def test_camera_serial_numbers(self, foraging_abc_rig):
+        from aeon.dj_pipeline.utils.load_metadata import get_device_mapper_from_rig
 
-        device_type_mapper, _ = _extract_device_mapper_from_rig(foraging_abc_rig_config)
-        assert device_type_mapper["CameraSynchronizer"] == "CameraController"
-        assert device_type_mapper["ClockSynchronizer"] == "TimestampGenerator"
-
-    def test_camera_serial_numbers(self, foraging_abc_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import _extract_device_mapper_from_rig
-
-        _, device_sn = _extract_device_mapper_from_rig(foraging_abc_rig_config)
+        _, device_sn = get_device_mapper_from_rig(foraging_abc_rig)
         assert device_sn["CameraTop"] == "23032909"
         assert device_sn["CameraPatch2"] == "21053811"
 
-    def test_feeder_port_names_as_serial(self, foraging_abc_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import _extract_device_mapper_from_rig
+    def test_feeder_port_names_as_serial(self, foraging_abc_rig):
+        from aeon.dj_pipeline.utils.load_metadata import get_device_mapper_from_rig
 
-        _, device_sn = _extract_device_mapper_from_rig(foraging_abc_rig_config)
+        _, device_sn = get_device_mapper_from_rig(foraging_abc_rig)
         # Feeders use portName as device serial
         assert device_sn["Feeder1"] == "COM13"
         assert device_sn["Feeder6"] == "COM4"
 
-    def test_device_count(self, foraging_abc_rig_config):
-        from aeon.dj_pipeline.utils.load_metadata import _extract_device_mapper_from_rig
+    def test_synchronizers_and_light_cycle_excluded(self, foraging_abc_rig):
+        """Only Device classes with @data_reader methods are mapped."""
+        from aeon.dj_pipeline.utils.load_metadata import get_device_mapper_from_rig
 
-        device_type_mapper, _ = _extract_device_mapper_from_rig(foraging_abc_rig_config)
-        # 13 cameras + 6 feeders + 1 nest + 2 synchronizers + 1 light cycle = 23
-        assert len(device_type_mapper) == 23
+        device_type_mapper, _ = get_device_mapper_from_rig(foraging_abc_rig)
+        assert "CameraSynchronizer" not in device_type_mapper
+        assert "ClockSynchronizer" not in device_type_mapper
+        assert "LightCycle" not in device_type_mapper
+
+    def test_device_count(self, foraging_abc_rig):
+        from aeon.dj_pipeline.utils.load_metadata import get_device_mapper_from_rig
+
+        device_type_mapper, _ = get_device_mapper_from_rig(foraging_abc_rig)
+        # 13 cameras + 6 feeders + 1 nest + 1 environment (light_events @data_reader) = 21
+        # Excluded: synchronizers and lightCycle (no @data_reader methods)
+        assert len(device_type_mapper) == 21
 
 
 class TestExtractActiveRegionsWithForagingABC:

@@ -383,9 +383,7 @@ class EpochConfig(dj.Imported):
             "commit": metadata.get("commit") or metadata.get("metadata", {}).get("Revision", ""),
             "metadata": rig_config,  # Store original nested JSON for Pydantic reconstruction
             "metadata_file_path": metadata_filepath.relative_to(data_dir).as_posix(),
-            "devices": flatten_rig_devices(
-                rig_config
-            ),  # Flat device dict for ingest_epoch_metadata_from_rig
+            "devices": flatten_rig_devices(rig),  # Flat device dict for ingest_epoch_metadata_from_rig
         }
 
         # Insert new entries for streams.DeviceType, streams.DeviceName using Rig

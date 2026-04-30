@@ -56,28 +56,6 @@ class TestRig(BaseSchema):
 
 
 @pytest.fixture
-def sample_rig_config():
-    """Sample nested rig configuration dict for unit tests."""
-    return {
-        "cameras": {
-            "CameraTop": {
-                "serialNumber": "21053810",
-                "trigger": "Trigger0",
-                "cameraTracking": {"blobTracking": {"Arena": {"x": 0, "y": 0}}},
-            },
-            "CameraSide": {"serialNumber": "21053811", "trigger": "Trigger1"},
-        },
-        "feeders": {
-            "Feeder1": {"portName": "COM3"},
-            "Feeder2": {"portName": "COM4"},
-        },
-        "nest": {"Nest": {"portName": "COM5"}},
-        "cameraSynchronizer": {"portName": "COM6"},
-        "clockSynchronizer": {"portName": "COM7"},
-    }
-
-
-@pytest.fixture
 def mock_device_class():
     """Device class using real @data_reader decorator.
 
@@ -122,3 +100,19 @@ def foraging_abc_metadata(foraging_abc_metadata_path):
 def foraging_abc_rig_config(foraging_abc_metadata):
     """Extract the rig config section from ForagingABC sample metadata."""
     return foraging_abc_metadata["rig"]
+
+
+@pytest.fixture
+def foraging_abc_rig(foraging_abc_metadata):
+    """Construct a typed ForagingABC Rig from sample metadata.
+
+    Loads the real swc.aeon_exp.foragingABC.experiment:Experiment Pydantic class
+    and validates the metadata into a typed Rig. Mirrors the production path
+    (acquisition.EpochConfig.make).
+    """
+    pytest.importorskip("swc.aeon_exp")
+    from aeon.dj_pipeline.utils.load_metadata import get_experiment_pydantic
+
+    experiment_class = get_experiment_pydantic("swc.aeon_exp.foragingABC.experiment:Experiment")
+    experiment = experiment_class.model_validate(foraging_abc_metadata)
+    return experiment.rig

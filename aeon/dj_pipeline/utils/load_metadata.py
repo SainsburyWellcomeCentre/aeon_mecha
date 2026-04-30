@@ -581,52 +581,30 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         streams.DeviceName.insert(new_device_names)
 
 
-def flatten_rig_devices(rig_config: dict) -> dict[str, dict]:
-    """Flatten nested rig device structure into flat device dict.
+def flatten_rig_devices(rig: "BaseSchema") -> dict[str, dict]:
+    """Flatten typed Rig into a {device_name: device_config_dict} map.
 
-    Converts:
-        rig.cameras.CameraTop -> devices["CameraTop"]
-        rig.feeders.Feeder1 -> devices["Feeder1"]
-        rig.nest.Nest -> devices["Nest"]
-        etc.
+    Walks Rig fields and includes only Device classes that declare
+    @data_reader methods (matching the catalog/streams_maker discovery rule).
+    Mirrors the pattern in get_device_mapper_from_rig and get_device_info.
 
     Args:
-        rig_config: Nested rig configuration dict.
+        rig: Rig instance (Pydantic BaseSchema) containing device collections.
 
     Returns:
-        Flat dict of device_name -> device_config.
+        Flat dict of device_name -> device_config (camelCase keys via by_alias).
     """
     devices: dict[str, dict] = {}
 
-    # Extract cameras
-    cameras = rig_config.get("cameras", {})
-    for camera_name, camera_config in cameras.items():
-        devices[camera_name] = dict(camera_config)
+    for field_name in type(rig).model_fields:
+        field_value = getattr(rig, field_name)
 
-    # Extract feeders
-    feeders = rig_config.get("feeders", {})
-    for feeder_name, feeder_config in feeders.items():
-        devices[feeder_name] = dict(feeder_config)
-
-    # Extract nest (WeightScale)
-    nest = rig_config.get("nest", {})
-    if "Nest" in nest:
-        devices["Nest"] = dict(nest["Nest"])
-
-    # Extract camera synchronizer (VideoController equivalent)
-    camera_synchronizer = rig_config.get("cameraSynchronizer", {})
-    if camera_synchronizer:
-        devices["CameraSynchronizer"] = dict(camera_synchronizer)
-
-    # Extract clock synchronizer
-    clock_synchronizer = rig_config.get("clockSynchronizer", {})
-    if clock_synchronizer:
-        devices["ClockSynchronizer"] = dict(clock_synchronizer)
-
-    # Extract light cycle
-    light_cycle = rig_config.get("lightCycle", {})
-    if light_cycle:
-        devices["LightCycle"] = dict(light_cycle)
+        if isinstance(field_value, dict):
+            for device_name, device in field_value.items():
+                if _has_data_readers(type(device)):
+                    devices[device_name] = device.model_dump(by_alias=True, exclude_none=True)
+        elif _has_data_readers(type(field_value)):
+            devices[field_name] = field_value.model_dump(by_alias=True, exclude_none=True)
 
     return devices
 
@@ -663,62 +641,6 @@ def extract_active_regions(rig_config: dict) -> dict[str, Any]:
         active_regions["ActivityCenter"] = activity_center
 
     return active_regions
-
-
-def _extract_device_mapper_from_rig(rig_config: dict) -> tuple[dict[str, str], dict[str, str | None]]:  # pyright: ignore[reportUnusedFunction]
-    """Extract device type mapper and serial numbers from rig structure.
-
-    Calculates device types on-the-fly from rig structure. No persistent cache needed
-    since the structure itself is the source of truth.
-
-    Args:
-        rig_config: Nested rig configuration dict.
-
-    Returns:
-        tuple: (device_type_mapper, device_sn)
-            device_type_mapper: {"device_name": "device_type"}
-            device_sn: {"device_name": "serial_number"}
-    """
-    device_type_mapper: dict[str, str] = {}
-    device_sn: dict[str, str | None] = {}
-
-    # Extract cameras
-    cameras = rig_config.get("cameras", {})
-    for camera_name, camera_config in cameras.items():
-        device_type_mapper[camera_name] = "SpinnakerVideoSource"
-        device_sn[camera_name] = camera_config.get("serialNumber") or None
-
-    # Extract feeders
-    feeders = rig_config.get("feeders", {})
-    for feeder_name, feeder_config in feeders.items():
-        device_type_mapper[feeder_name] = "UndergroundFeeder"
-        device_sn[feeder_name] = feeder_config.get("portName") or None
-
-    # Extract nest
-    nest = rig_config.get("nest", {})
-    if "Nest" in nest:
-        device_type_mapper["Nest"] = "WeightScale"
-        device_sn["Nest"] = nest["Nest"].get("portName") or None
-
-    # Extract camera synchronizer
-    camera_synchronizer = rig_config.get("cameraSynchronizer", {})
-    if camera_synchronizer:
-        device_type_mapper["CameraSynchronizer"] = "CameraController"
-        device_sn["CameraSynchronizer"] = camera_synchronizer.get("portName") or None
-
-    # Extract clock synchronizer
-    clock_synchronizer = rig_config.get("clockSynchronizer", {})
-    if clock_synchronizer:
-        device_type_mapper["ClockSynchronizer"] = "TimestampGenerator"
-        device_sn["ClockSynchronizer"] = clock_synchronizer.get("portName") or None
-
-    # Extract light cycle
-    light_cycle = rig_config.get("lightCycle", {})
-    if light_cycle:
-        device_type_mapper["LightCycle"] = "EnvironmentCondition"
-        device_sn["LightCycle"] = None  # Light cycle doesn't have serial/port
-
-    return device_type_mapper, device_sn
 
 
 def ingest_epoch_metadata_from_rig(
