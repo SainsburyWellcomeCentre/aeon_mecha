@@ -169,8 +169,8 @@ Pure function tests - no database, no external packages required:
 | Function | Test Cases |
 |----------|------------|
 | `to_pascal_case()` | `"video"` → `"Video"`, `"beam_break"` → `"BeamBreak"` |
-| `flatten_rig_devices()` | Flatten nested rig config to device dict |
-| `_extract_device_mapper_from_rig()` | Extract device type mapper and serial numbers |
+| `flatten_rig_devices()` | Walk typed Rig → flat `{device_name: config}` dict (only Device classes with `@data_reader`) |
+| `get_device_mapper_from_rig()` | Walk typed Rig → device_type/serial mappings via `type(device).__name__` |
 | `extract_active_regions()` | Extract ActiveRegion data from rig config |
 
 **Example:**
@@ -192,13 +192,13 @@ class TestToPascalCase:
 
 @pytest.mark.unit
 class TestFlattenRigDevices:
-    def test_extracts_cameras(self, sample_rig_config):
-        result = flatten_rig_devices(sample_rig_config)
+    def test_extracts_cameras(self, test_rig):
+        result = flatten_rig_devices(test_rig)
         assert "CameraTop" in result
         assert result["CameraTop"]["serialNumber"] == "21053810"
 
-    def test_extracts_feeders(self, sample_rig_config):
-        result = flatten_rig_devices(sample_rig_config)
+    def test_extracts_feeders(self, test_rig):
+        result = flatten_rig_devices(test_rig)
         assert "Feeder1" in result
         assert result["Feeder1"]["portName"] == "COM3"
 ```
@@ -391,26 +391,6 @@ def test_rig():
     )
 
 
-@pytest.fixture
-def sample_rig_config():
-    """Sample nested rig configuration dict for unit tests."""
-    return {
-        "cameras": {
-            "CameraTop": {
-                "serialNumber": "21053810",
-                "trigger": "Trigger0",
-                "cameraTracking": {"blobTracking": {"Arena": {"x": 0, "y": 0}}},
-            },
-            "CameraSide": {"serialNumber": "21053811", "trigger": "Trigger1"},
-        },
-        "feeders": {
-            "Feeder1": {"portName": "COM3"},
-            "Feeder2": {"portName": "COM4"},
-        },
-        "nest": {"Nest": {"portName": "COM5"}},
-        "cameraSynchronizer": {"portName": "COM6"},
-        "clockSynchronizer": {"portName": "COM7"},
-    }
 ```
 
 **Note:** Import from `swc.aeon.schema` (not `swc.aeon.rigs`) - these classes have `_resolve_pattern_prefix()` required by `@data_reader`.
