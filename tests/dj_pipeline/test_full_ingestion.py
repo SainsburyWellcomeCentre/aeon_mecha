@@ -136,16 +136,6 @@ class TestEpochConfigMake:
         assert len(metadata["cameras"]) == cfg["expected_camera_count"]
         assert len(metadata["feeders"]) == cfg["expected_feeder_count"]
 
-    def test_streams_device_registered(self, test_epochs, full_pipeline, golden_dataset_config):
-        """Verify streams.Device populated by EpochConfig.make()."""
-        acquisition = full_pipeline["acquisition"]
-        streams = full_pipeline["streams"]
-
-        acquisition.EpochConfig.populate()
-
-        devices = streams.Device.to_dicts()
-        assert len(devices) > 0
-
 
 class TestChunkIngestion:
     """Test Chunk.ingest_chunks() with golden dataset."""

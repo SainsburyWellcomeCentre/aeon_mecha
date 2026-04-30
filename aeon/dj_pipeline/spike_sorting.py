@@ -79,7 +79,7 @@ class SortingParamSet(dj.Lookup):
     ---
     -> SortingMethod    
     paramset_description='': varchar(1000)
-    params: longblob  # dictionary of all applicable parameters
+    params: <blob>  # dictionary of all applicable parameters
     """
 
 
@@ -799,7 +799,7 @@ class Waveform(dj.Imported):
         -> master
         -> SortedSpikes.Unit
         ---
-        unit_waveform: longblob  # (uV) mean waveform for a given unit at its representative electrode
+        unit_waveform: <blob>  # (uV) mean waveform for a given unit at its representative electrode
         """
 
     class ChannelWaveform(dj.Part):
@@ -809,7 +809,7 @@ class Waveform(dj.Imported):
         -> SortedSpikes.Unit
         -> ephys.ElectrodeConfig.Electrode  
         --- 
-        channel_waveform: longblob   # (uV) mean waveform across spikes of the given unit at the given electrode
+        channel_waveform: <blob>   # (uV) mean waveform across spikes of the given unit at the given electrode
         """
         
     def make(self, key):
@@ -1098,7 +1098,7 @@ class UnitMatchingParamSet(dj.Lookup):
     -> UnitMatchingMethod
     seed_block_start: datetime(6)  # block_start of the seed block (first to process)
     matching_paramset_description='': varchar(1000)
-    params: longblob  # dictionary of all applicable parameters
+    params: <blob>  # dictionary of all applicable parameters
     """
 
 

@@ -498,7 +498,6 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
     - streams.DeviceType: Catalog of device types (e.g., "SpinnakerCamera")
     - streams.DeviceType.Stream: Links device types to stream types
     - streams.DeviceName: Catalog of device instance names (e.g., "CameraTop")
-    - streams.Device: Physical devices with serial numbers (optional)
 
     Args:
         rig: Rig instance (Pydantic BaseSchema) containing device collections
@@ -558,17 +557,6 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
         if not streams.DeviceName & {"device_name": device_name}
     ]
 
-    # Device entries - only for devices with serial numbers (optional hardware tracking)
-    new_devices = [
-        {
-            "device_serial_number": device_sn[device_name],
-            "device_type": device_config["device_type"],
-        }
-        for device_name, device_config in device_info.items()
-        if device_sn.get(device_name)
-        and not streams.Device & {"device_serial_number": device_sn[device_name]}
-    ]
-
     # Insert new entries.
     if new_device_types:
         streams.DeviceType.insert(new_device_types)
@@ -591,10 +579,6 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
     # Insert DeviceName entries (must be after DeviceType due to FK)
     if new_device_names:
         streams.DeviceName.insert(new_device_names)
-
-    # Insert Device entries (optional, for hardware tracking)
-    if new_devices:
-        streams.Device.insert(new_devices)
 
 
 def flatten_rig_devices(rig_config: dict) -> dict[str, dict]:
@@ -940,7 +924,7 @@ def get_device_info(rig: "BaseSchema") -> dict[str, dict]:
             try:
                 reader = getattr(device, method_name)
             except Exception as e:
-                logger.warning(f"Failed to access {method_name} on {device_name}: {e}. Skipping...")
+                logger.debug(f"Failed to access {method_name} on {device_name}: {e}. Skipping...")
                 continue
 
             stream_type = to_pascal_case(method_name)
