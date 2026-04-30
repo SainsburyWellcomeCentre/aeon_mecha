@@ -69,10 +69,3 @@ class DeviceName(dj.Lookup):
     """
 
 
-@schema
-class Device(dj.Lookup):
-    definition = """  # Physical devices identified by serial number or port
-    device_serial_number: varchar(12)
-    ---
-    -> DeviceType
-    """
