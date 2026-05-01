@@ -69,3 +69,966 @@ class DeviceName(dj.Lookup):
     """
 
 
+@schema 
+class ActivityWeightScale(dj.Manual):
+        definition = """ # activity_weight_scale operation for time, location, experiment (v-unknown)
+        -> acquisition.Experiment
+        -> DeviceName
+        activity_weight_scale_install_time : datetime(6)  # activity_weight_scale time of placement and start operation
+        ---
+        device_serial_number=null : varchar(12)  # Optional: physical device serial/port
+        """
+
+        class Attribute(dj.Part):
+            definition = """  # Metadata (e.g. FPS, config, calibration) for this experimental device
+            -> master
+            attribute_name          : varchar(32)
+            ---
+            attribute_value=null    : <blob>
+            """
+
+        class RemovalTime(dj.Part):
+            definition = """
+            -> master
+            ---
+            activity_weight_scale_removal_time: datetime(6)  # time of the activity_weight_scale being removed
+            """
+
+
+@schema 
+class Camera(dj.Manual):
+        definition = """ # camera operation for time, location, experiment (v-unknown)
+        -> acquisition.Experiment
+        -> DeviceName
+        camera_install_time : datetime(6)  # camera time of placement and start operation
+        ---
+        device_serial_number=null : varchar(12)  # Optional: physical device serial/port
+        """
+
+        class Attribute(dj.Part):
+            definition = """  # Metadata (e.g. FPS, config, calibration) for this experimental device
+            -> master
+            attribute_name          : varchar(32)
+            ---
+            attribute_value=null    : <blob>
+            """
+
+        class RemovalTime(dj.Part):
+            definition = """
+            -> master
+            ---
+            camera_removal_time: datetime(6)  # time of the camera being removed
+            """
+
+
+@schema 
+class Environment(dj.Manual):
+        definition = """ # environment operation for time, location, experiment (v-unknown)
+        -> acquisition.Experiment
+        -> DeviceName
+        environment_install_time : datetime(6)  # environment time of placement and start operation
+        ---
+        device_serial_number=null : varchar(12)  # Optional: physical device serial/port
+        """
+
+        class Attribute(dj.Part):
+            definition = """  # Metadata (e.g. FPS, config, calibration) for this experimental device
+            -> master
+            attribute_name          : varchar(32)
+            ---
+            attribute_value=null    : <blob>
+            """
+
+        class RemovalTime(dj.Part):
+            definition = """
+            -> master
+            ---
+            environment_removal_time: datetime(6)  # time of the environment being removed
+            """
+
+
+@schema 
+class Feeder(dj.Manual):
+        definition = """ # feeder operation for time, location, experiment (v-unknown)
+        -> acquisition.Experiment
+        -> DeviceName
+        feeder_install_time : datetime(6)  # feeder time of placement and start operation
+        ---
+        device_serial_number=null : varchar(12)  # Optional: physical device serial/port
+        """
+
+        class Attribute(dj.Part):
+            definition = """  # Metadata (e.g. FPS, config, calibration) for this experimental device
+            -> master
+            attribute_name          : varchar(32)
+            ---
+            attribute_value=null    : <blob>
+            """
+
+        class RemovalTime(dj.Part):
+            definition = """
+            -> master
+            ---
+            feeder_removal_time: datetime(6)  # time of the feeder being removed
+            """
+
+
+@schema 
+class ActivityWeightScaleWeightFiltered(dj.Imported):
+        definition = """ # Raw per-chunk WeightFiltered from ActivityWeightScale (v-unknown)
+    -> ActivityWeightScale
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    value: json             # summary stats
+    stable: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and ActivityWeightScale with overlapping time.
+
+            + Chunk(s) started after ActivityWeightScale install time & ended before ActivityWeightScale remove time
+            + Chunk(s) started after ActivityWeightScale install time for ActivityWeightScale and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    ActivityWeightScale.join(ActivityWeightScale.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= activity_weight_scale_install_time"
+                & 'chunk_start < IFNULL(activity_weight_scale_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "WeightFiltered", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "WeightFiltered",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class ActivityWeightScaleWeightSubject(dj.Imported):
+        definition = """ # Raw per-chunk WeightSubject from ActivityWeightScale (v-unknown)
+    -> ActivityWeightScale
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    value: json             # summary stats
+    stable: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and ActivityWeightScale with overlapping time.
+
+            + Chunk(s) started after ActivityWeightScale install time & ended before ActivityWeightScale remove time
+            + Chunk(s) started after ActivityWeightScale install time for ActivityWeightScale and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    ActivityWeightScale.join(ActivityWeightScale.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= activity_weight_scale_install_time"
+                & 'chunk_start < IFNULL(activity_weight_scale_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "WeightSubject", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "WeightSubject",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class ActivityWeightScaleWeightRaw(dj.Imported):
+        definition = """ # Raw per-chunk WeightRaw from ActivityWeightScale (v-unknown)
+    -> ActivityWeightScale
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    value: json             # summary stats
+    stable: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and ActivityWeightScale with overlapping time.
+
+            + Chunk(s) started after ActivityWeightScale install time & ended before ActivityWeightScale remove time
+            + Chunk(s) started after ActivityWeightScale install time for ActivityWeightScale and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    ActivityWeightScale.join(ActivityWeightScale.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= activity_weight_scale_install_time"
+                & 'chunk_start < IFNULL(activity_weight_scale_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "WeightRaw", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "WeightRaw",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class ActivityWeightScaleBaselineEvent(dj.Imported):
+        definition = """ # Raw per-chunk BaselineEvent from ActivityWeightScale (v-unknown)
+    -> ActivityWeightScale
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    value: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and ActivityWeightScale with overlapping time.
+
+            + Chunk(s) started after ActivityWeightScale install time & ended before ActivityWeightScale remove time
+            + Chunk(s) started after ActivityWeightScale install time for ActivityWeightScale and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    ActivityWeightScale.join(ActivityWeightScale.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= activity_weight_scale_install_time"
+                & 'chunk_start < IFNULL(activity_weight_scale_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "BaselineEvent", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "BaselineEvent",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class CameraVideo(dj.Imported):
+        definition = """ # Raw per-chunk Video from Camera (v-unknown)
+    -> Camera
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    hw_counter: json             # summary stats
+    hw_timestamp: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and Camera with overlapping time.
+
+            + Chunk(s) started after Camera install time & ended before Camera remove time
+            + Chunk(s) started after Camera install time for Camera and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    Camera.join(Camera.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= camera_install_time"
+                & 'chunk_start < IFNULL(camera_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "Video", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "Video",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class CameraPosition(dj.Imported):
+        definition = """ # Raw per-chunk Position from Camera (v-unknown)
+    -> Camera
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    x: json             # summary stats
+    y: json             # summary stats
+    angle: json             # summary stats
+    major: json             # summary stats
+    minor: json             # summary stats
+    area: json             # summary stats
+    id: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and Camera with overlapping time.
+
+            + Chunk(s) started after Camera install time & ended before Camera remove time
+            + Chunk(s) started after Camera install time for Camera and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    Camera.join(Camera.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= camera_install_time"
+                & 'chunk_start < IFNULL(camera_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "Position", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "Position",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class EnvironmentLightEvents(dj.Imported):
+        definition = """ # Raw per-chunk LightEvents from Environment (v-unknown)
+    -> Environment
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    channel: json             # summary stats
+    value: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and Environment with overlapping time.
+
+            + Chunk(s) started after Environment install time & ended before Environment remove time
+            + Chunk(s) started after Environment install time for Environment and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    Environment.join(Environment.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= environment_install_time"
+                & 'chunk_start < IFNULL(environment_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "LightEvents", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "LightEvents",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class FeederDeliverPellet(dj.Imported):
+        definition = """ # Raw per-chunk DeliverPellet from Feeder (v-unknown)
+    -> Feeder
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    event: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and Feeder with overlapping time.
+
+            + Chunk(s) started after Feeder install time & ended before Feeder remove time
+            + Chunk(s) started after Feeder install time for Feeder and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    Feeder.join(Feeder.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= feeder_install_time"
+                & 'chunk_start < IFNULL(feeder_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "DeliverPellet", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "DeliverPellet",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class FeederBeamBreak(dj.Imported):
+        definition = """ # Raw per-chunk BeamBreak from Feeder (v-unknown)
+    -> Feeder
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    event: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and Feeder with overlapping time.
+
+            + Chunk(s) started after Feeder install time & ended before Feeder remove time
+            + Chunk(s) started after Feeder install time for Feeder and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    Feeder.join(Feeder.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= feeder_install_time"
+                & 'chunk_start < IFNULL(feeder_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "BeamBreak", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "BeamBreak",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class FeederEncoder(dj.Imported):
+        definition = """ # Raw per-chunk Encoder from Feeder (v-unknown)
+    -> Feeder
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    angle: json             # summary stats
+    intensity: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and Feeder with overlapping time.
+
+            + Chunk(s) started after Feeder install time & ended before Feeder remove time
+            + Chunk(s) started after Feeder install time for Feeder and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    Feeder.join(Feeder.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= feeder_install_time"
+                & 'chunk_start < IFNULL(feeder_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "Encoder", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "Encoder",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class FeederRetriedDelivery(dj.Imported):
+        definition = """ # Raw per-chunk RetriedDelivery from Feeder (v-unknown)
+    -> Feeder
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    retried_delivery: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and Feeder with overlapping time.
+
+            + Chunk(s) started after Feeder install time & ended before Feeder remove time
+            + Chunk(s) started after Feeder install time for Feeder and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    Feeder.join(Feeder.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= feeder_install_time"
+                & 'chunk_start < IFNULL(feeder_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "RetriedDelivery", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "RetriedDelivery",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
