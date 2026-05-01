@@ -594,6 +594,7 @@ class CameraPosition(dj.Imported):
                 )
                 & "chunk_start >= camera_install_time"
                 & 'chunk_start < IFNULL(camera_removal_time,"2200-01-01")'
+                & 'device_name = "CameraTop"'
             )
 
         def make(self, key):
