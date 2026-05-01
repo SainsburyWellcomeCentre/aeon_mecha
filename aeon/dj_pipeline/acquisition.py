@@ -42,6 +42,7 @@ class ExperimentType(dj.Lookup):
     contents = [
         {"experiment_type": "foraging"},
         {"experiment_type": "social"},
+        {"experiment_type": "abc"},
     ]
 
 
