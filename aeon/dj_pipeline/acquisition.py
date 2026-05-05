@@ -443,7 +443,7 @@ class Chunk(dj.Manual):
         """
 
     @classmethod
-    def ingest_chunks(cls, experiment_name):
+    def ingest_chunks(cls, experiment_name, enforce_hour_completed=True):
         """Ingest data chunks for a given experiment into the database.
 
         This method processes and ingests 1-hour data acquisition chunks for a specified experiment.
@@ -457,17 +457,23 @@ class Chunk(dj.Manual):
              * Chunk end is adjusted to start of next hour (minutes/seconds/microseconds set to 0)
              * If epoch end exists, chunk end is capped at epoch end
            - Skip chunks that have already been ingested
+           - If `enforce_hour_completed` is True, skip chunks whose start is less than
+             1 hour 10 minutes ago. This avoids ingesting incomplete chunks that have
+             been partially transferred (e.g. by robocopy).
            - Collect file information for the chunk
         3. Insert all new chunks and their associated files into the database in a single transaction
 
         Args:
             experiment_name (str): Name of the experiment to ingest chunks for
+            enforce_hour_completed (bool): If True, only ingest chunks whose start is
+                at least 1 hour 10 minutes in the past (UTC).
 
         Note:
             - Chunks are 1-hour recording periods
             - Each chunk must belong to a valid epoch
             - Chunk end times are adjusted to not exceed epoch end times
             - Files are tracked relative to the repository path
+            - Chunk timestamps are recorded in UTC (London, no DST shift)
         """
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
@@ -487,6 +493,15 @@ class Chunk(dj.Manual):
 
             chunk_start = chunk.name
             chunk_start = max(chunk_start, epoch_start)  # first chunk of the epoch starts at epoch_start
+
+            if enforce_hour_completed:
+                # chunk_start is naive but represents UTC (see tz_localize(None) above);
+                # attach UTC explicitly for a correct comparison against `now(UTC)`.
+                chunk_start_utc = chunk_start.replace(tzinfo=datetime.timezone.utc)
+                time_now_utc = datetime.datetime.now(datetime.timezone.utc)
+                if (time_now_utc - chunk_start_utc) < datetime.timedelta(hours=1, minutes=10):
+                    # Skip recently started chunks: the data may not yet be fully written/copied.
+                    continue
 
             # Calculate chunk_end using timedelta for robust date handling
             chunk_end = chunk_start + datetime.timedelta(hours=io_api.CHUNK_DURATION)
