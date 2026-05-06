@@ -627,14 +627,11 @@ A hybrid approach is also possible: start with Option A for quick deployment, an
 
 ### 2. Tracking Tables: Visibility and Schema Placement
 
-This spec proposes two tables (`WorkerErrorHistory` and `OrchestratorRunHistory`) that live in a visible, dedicated DataJoint schema (e.g., `aeon_slurm_worker`). These tables are user-facing — they are meant to be queried directly when investigating errors or monitoring the system.
+This spec proposes two tables (`WorkerErrorHistory` and `OrchestratorRunHistory`) in a single dedicated DataJoint schema (e.g., `aeon_slurm_worker`) — one set of tables for the entire pipeline, not one per schema. These tables are user-facing: they are meant to be queried directly when investigating errors or monitoring the system.
 
-An alternative approach would be to make these hidden tables (using DataJoint's `~` prefix convention), similar to the built-in `~lineage` table. Hidden tables do not appear in `schema.list_tables()` or in DataJoint diagrams, but are fully queryable.
+An alternative would be to make these hidden tables (using DataJoint's `~` prefix convention). Hidden tables do not appear in `schema.list_tables()` or in DataJoint diagrams, but are fully queryable.
 
-Discussion points:
-- Should the tracking tables be visible (regular tables in their own schema) or hidden?
-- Should they exist in a dedicated schema, or be added to each pipeline schema (one `WorkerErrorHistory` per schema, mirroring how each auto-populated table gets its own `~~table_name` jobs table)?
-- Are both tables valuable, or is one sufficient?
+The question is: **should the tracking tables be visible or hidden?** Visible tables in their own schema are easier to discover and query directly. Hidden tables are less intrusive but require knowing they exist. Since the primary use case is active monitoring and debugging, visibility seems preferable — but this is worth confirming.
 
 ### 3. Package Repository Location
 
