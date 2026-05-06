@@ -202,7 +202,7 @@ tiers:
 
 **SLURM resource specs** map directly to `#SBATCH` directives. The `gpu` field is optional — omit it for CPU-only tiers. For site-specific SLURM directives not covered by the standard fields (e.g., `--account`, `--qos`, `--constraint`), the `slurm` block also supports an `extra_args` list that is passed through to sbatch as-is.
 
-**Worker logging:** Generated sbatch scripts configure `--output` and `--error` directives pointing to a `slurm_output/` directory with job ID in the filename, following the pattern already established in existing Aeon scripts. This ensures that SLURM-level failures (import errors, environment issues, OOM kills) that never reach the `WorkerErrorHistory` table are still captured in log files on disk.
+**Worker logging:** Generated sbatch scripts configure `--output` and `--error` directives pointing to a `slurm_output/` directory with the job ID in the filename. This ensures that SLURM-level failures (import errors, environment issues, OOM kills) that never reach the `WorkerErrorHistory` table are still captured in log files on disk.
 
 **Schedule interval** controls how often the orchestrator fires. Shorter intervals mean data cascades through the pipeline faster (new upstream rows become available to downstream tables sooner). A 3-hour interval is reasonable for most pipelines; adjust based on data arrival frequency and processing times.
 
@@ -217,12 +217,12 @@ The orchestrator is the central coordinator. It runs as a lightweight SLURM job 
 1. Load the configuration file
 2. For each tier, in the order they appear in the config:
    - If the tier's mode is `batch`: submit one SLURM job with the tier's resource spec. The job will call `populate(reserve_jobs=True)` on each table in the tier's list, in order.
-   - If the tier's mode is `per-key`: for each table in the tier, call `TableClass.jobs.refresh()` to update the jobs queue, then read `TableClass.jobs.pending` to find keys that are ready for processing (this excludes keys that are already reserved, errored, or ignored). For each pending key, submit a SLURM job with the tier's resource spec. The job will call `populate(key, reserve_jobs=True)` for that specific key.
+   - If the tier's mode is `per-key`: for each table in the tier, call `TableClass.jobs.refresh(orphan_timeout=N)` (using the tier's configured `orphan_timeout`) to update the jobs queue and recover any orphaned keys, then read `TableClass.jobs.pending` to find keys that are ready for processing (this excludes keys that are already reserved, errored, or ignored). For each pending key, submit a SLURM job with the tier's resource spec. The job will call `populate(key, reserve_jobs=True)` for that specific key.
 3. Log a summary to the `OrchestratorRunHistory` table: timestamp, number of jobs submitted per tier, any errors encountered during submission.
 4. Schedule the next run (mechanism depends on chosen scheduling approach — see [Open Questions](#open-questions-for-discussion)).
 5. Exit.
 
-**Note on per-key job submission:** Using `TableClass.jobs.refresh()` followed by `TableClass.jobs.pending` is important for avoiding wasted SLURM submissions. This API (introduced in DataJoint 2.x) returns only keys that are genuinely pending — it excludes keys that are already reserved by another worker, errored, or marked as ignored. Without this check, successive orchestrator cycles could submit duplicate SLURM jobs for keys that are already being processed, wasting queue priority and potentially billing.
+**Note on per-key job submission:** Using `TableClass.jobs.refresh(orphan_timeout=N)` followed by `TableClass.jobs.pending` is important for two reasons: (1) `refresh()` discovers new pending keys and recovers orphaned reserved jobs, and (2) `pending` returns only keys that are genuinely ready for processing -- it excludes keys that are already reserved by another worker, errored, or marked as ignored. Without this check, successive orchestrator cycles could submit duplicate SLURM jobs for keys that are already being processed, wasting queue priority and potentially billing.
 
 ### Robustness
 
@@ -246,17 +246,18 @@ A batch worker receives a list of table module paths and calls `populate(reserve
 # Pseudocode for a batch worker
 for table_path in config["tiers"]["light"]["tables"]:
     table_class = import_table(table_path)
-    result = worker.populate(
-        table_class,
+    max_calls = config["tiers"]["light"].get("max_calls")
+    result = table_class.populate(
         reserve_jobs=True,
         suppress_errors=True,
+        max_calls=max_calls,
     )
     # result = {"success_count": int, "error_list": [...]}
-    # worker.populate is the package's wrapper that inspects
-    # error_list and logs each error to WorkerErrorHistory
+    # The package's worker wrapper inspects error_list and
+    # logs each error to WorkerErrorHistory
 ```
 
-The `suppress_errors=True` flag is critical: it tells DataJoint to catch exceptions during `make()`, record them in the `~~jobs` table (preventing future retries until manually cleared), and continue to the next key instead of aborting the entire batch. The `populate()` return value includes an `error_list` containing `(key, error_message)` tuples for any failures. The worker wrapper inspects this list and appends each error to `WorkerErrorHistory` with the full context (SLURM job ID, tier, timestamp).
+Two flags are important here. The `reserve_jobs=True` flag enables DataJoint's distributed job system: each key is atomically reserved in the `~~jobs` table before processing, and on failure the error message and stack trace are recorded there (preventing future retries until manually cleared). The `suppress_errors=True` flag tells DataJoint to catch exceptions during `make()` and continue to the next key instead of aborting the entire batch. Together, these ensure that (a) errors are tracked per key and (b) one failure does not block the rest of the batch. The `populate()` return value includes an `error_list` containing `(key, error_message)` tuples for any failures. The worker wrapper inspects this list and appends each error to `WorkerErrorHistory` with the full context (SLURM job ID, tier, timestamp).
 
 The worker processes all tables and all available keys in a single run.
 
@@ -269,11 +270,11 @@ Per-key workers are appropriate for computationally expensive tables (e.g., spik
 ### Environment Setup
 
 All workers need access to:
-- The project's Python environment (managed by `uv` on the Aeon HPC)
+- The project's Python environment (e.g., managed by `uv`, `conda`, or `venv`)
 - DataJoint configuration (database credentials, connection settings)
 - The project's codebase (so that table module paths can be imported)
 
-The package generates sbatch scripts at runtime based on the tier configuration. These scripts handle module loading (`module load uv`), environment activation, and invocation of the worker entry point. The generated scripts follow the same patterns already established in the project's existing sbatch scripts (e.g., creating `slurm_output/` directories, logging job information, setting environment variables like `PYTORCH_CUDA_ALLOC_CONF` for GPU tiers).
+The package generates sbatch scripts at runtime based on the tier configuration. These scripts handle module loading, environment activation, and invocation of the worker entry point. Site-specific setup (e.g., `module load` commands, environment variables like `PYTORCH_CUDA_ALLOC_CONF` for GPU tiers) is handled via the `extra_args` field or the generated script template (see [Open Question 5](#5-additional-slurm-configuration)).
 
 ---
 
@@ -344,7 +345,7 @@ The error history in `WorkerErrorHistory` is preserved regardless of whether the
 
 ### SLURM Wall-Time Kills and Orphaned Jobs
 
-When SLURM kills a worker that exceeds its wall-time limit, it sends SIGTERM followed by SIGKILL. DataJoint 2.x installs a SIGTERM handler during `populate()` that raises `SystemExit`, allowing in-flight transactions to roll back. However, the key remains in `reserved` status in the `~~jobs` table because the worker was killed before it could mark the job as completed or errored.
+When SLURM kills a worker that exceeds its wall-time limit, it sends SIGTERM followed (after a grace period) by SIGKILL. DataJoint 2.x installs a SIGTERM handler during `populate(reserve_jobs=True)` that raises `SystemExit`, allowing in-flight transactions to roll back. The error handler then attempts to mark the key as `error` in the `~~jobs` table, but if SIGKILL arrives before that database write completes, the key remains in `reserved` status.
 
 DataJoint 2.x's `jobs.refresh(orphan_timeout=N)` handles this: reserved jobs older than N seconds are automatically deleted and re-added as `pending`. The orchestrator calls `refresh()` each cycle, so orphaned keys from killed workers are recovered automatically on the next cycle.
 
@@ -628,11 +629,11 @@ A hybrid approach is also possible: start with Option A for quick deployment, an
 
 This spec proposes two tables (`WorkerErrorHistory` and `OrchestratorRunHistory`) that live in a visible, dedicated DataJoint schema (e.g., `aeon_slurm_worker`). These tables are user-facing — they are meant to be queried directly when investigating errors or monitoring the system.
 
-An alternative approach would be to make these hidden tables (using DataJoint's `~` prefix convention), similar to the built-in `~jobs` table. Hidden tables do not appear in `schema.list_tables()` or in DataJoint diagrams, but are fully queryable.
+An alternative approach would be to make these hidden tables (using DataJoint's `~` prefix convention), similar to the built-in `~lineage` table. Hidden tables do not appear in `schema.list_tables()` or in DataJoint diagrams, but are fully queryable.
 
 Discussion points:
 - Should the tracking tables be visible (regular tables in their own schema) or hidden?
-- Should they exist in a dedicated schema, or be added to each pipeline schema (one `WorkerErrorHistory` per schema, mirroring how `~jobs` works)?
+- Should they exist in a dedicated schema, or be added to each pipeline schema (one `WorkerErrorHistory` per schema, mirroring how each auto-populated table gets its own `~~table_name` jobs table)?
 - Are both tables valuable, or is one sufficient?
 
 ### 3. Package Repository Location
@@ -654,14 +655,13 @@ These may need to change to align with DataJoint's naming conventions or to avoi
 
 ### 5. Additional SLURM Configuration
 
-The current spec maps tier resource specs directly to `#SBATCH` directives. Some HPC sites may need additional SLURM configuration that is not covered by the basic fields (partition, cpus, memory, time, gpu). Examples include:
-- Account/billing specifications (`--account`)
-- Quality of service (`--qos`)
-- Node constraints (`--constraint`)
-- Module loading commands (e.g., `module load uv`, `module load cuda`)
-- Environment variables (e.g., `PYTORCH_CUDA_ALLOC_CONF`)
+The current spec maps tier resource specs directly to `#SBATCH` directives and supports an `extra_args` list per tier for site-specific directives (e.g., `--account`, `--qos`, `--constraint`, `--export`). This covers most SLURM customization needs.
 
-The configuration format should be flexible enough to accommodate site-specific SLURM directives. This could be handled by allowing an `extra_sbatch_args` field per tier, or by allowing arbitrary `#SBATCH` lines. The exact approach should be decided during implementation.
+However, some sites may also need pre-`populate()` shell commands that are not `#SBATCH` directives, such as:
+- Module loading commands (e.g., `module load uv`, `module load cuda`)
+- Environment setup scripts (e.g., `source /path/to/env.sh`)
+
+These are currently handled by the generated sbatch script templates. The question is whether this should be configurable per tier (e.g., a `setup_commands` list in the YAML) or handled by a site-specific sbatch template that the package provides a hook for.
 
 ### 6. Database Schema Creation Privileges
 
