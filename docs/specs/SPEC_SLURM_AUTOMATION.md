@@ -91,14 +91,11 @@ Workers use DataJoint's `reserve_jobs=True` flag, which means multiple workers c
 │         │                 (CPU, 2 cores, 8GB, 4hr)    │
 │         │                                            │
 │         ├──── sbatch ──── Per-Key Worker (medium tier) │
-│         │                 populates 1 key of TableD   │
+│         │                 populates 1 key per job     │
 │         │                 (CPU, 8 cores, 64GB, 8hr)   │
 │         │                                            │
-│         ├──── sbatch ──── Per-Key Worker (medium tier) │
-│         │                 populates 1 key of TableD   │
-│         │                                            │
 │         └──── sbatch ──── Per-Key Worker (heavy tier)  │
-│                           populates 1 key of TableE   │
+│                           populates 1 key per job     │
 │                           (GPU, 8 cores, 256GB, 7d)   │
 │                                                      │
 └─────────────────────────────────────────────────────┘
