@@ -193,7 +193,7 @@ tiers:
 
 **Populate modes:**
 - `batch` — One SLURM job is submitted for the entire tier. The worker calls `table.populate(reserve_jobs=True)` on each table in the listed order. This is appropriate for tables where individual rows take seconds to minutes to process. An optional `max_calls` parameter can limit how many keys a single batch worker processes per table, preventing the worker from running longer than its wall time when there is a large backlog.
-- `per-key` — The orchestrator calls `TableClass.jobs.refresh()` and reads `TableClass.jobs.pending` to find keys that are ready for processing. It submits one SLURM job per pending key. This is appropriate for tables where individual rows take hours or days to process.
+- `per-key` — For each table in the tier, the orchestrator calls `TableClass.jobs.refresh()` and reads `TableClass.jobs.pending` to find keys that are ready for processing. It submits a SLURM job array for each table, with one array task per pending key. This is appropriate for tables where individual rows take hours or days to process.
 
 **Table references** use dotted Python module paths (e.g., `aeon.dj_pipeline.spike_sorting.SpikeSorting`). The package imports these at runtime to resolve the actual DataJoint table classes.
 
@@ -214,12 +214,14 @@ The orchestrator is the central coordinator. It runs as a lightweight SLURM job 
 1. Load the configuration file
 2. For each tier, in the order they appear in the config:
    - If the tier's mode is `batch`: submit one SLURM job with the tier's resource spec. The job will call `populate(reserve_jobs=True)` on each table in the tier's list, in order.
-   - If the tier's mode is `per-key`: for each table in the tier, call `TableClass.jobs.refresh(orphan_timeout=N)` (using the tier's configured `orphan_timeout`) to update the jobs queue and recover any orphaned keys, then read `TableClass.jobs.pending` to find keys that are ready for processing (this excludes keys that are already reserved, errored, or ignored). For each pending key, submit a SLURM job with the tier's resource spec. The job will call `populate(key, reserve_jobs=True)` for that specific key.
+   - If the tier's mode is `per-key`: for each table in the tier, call `TableClass.jobs.refresh(orphan_timeout=N)` (using the tier's configured `orphan_timeout`) to update the jobs queue and recover any orphaned keys, then read `TableClass.jobs.pending` to find keys that are ready for processing (this excludes keys that are already reserved, errored, or ignored). Submit a SLURM job array for that table (`sbatch --array=0-N`), with one array task per pending key. Each array task calls `populate(key, reserve_jobs=True)` for its assigned key.
 3. Log a summary to the `OrchestratorRunHistory` table: timestamp, number of jobs submitted per tier, any errors encountered during submission.
 4. Schedule the next run (mechanism depends on chosen scheduling approach — see [Open Questions](#open-questions-for-discussion)).
 5. Exit.
 
-**Note on per-key job submission:** Using `TableClass.jobs.refresh(orphan_timeout=N)` followed by `TableClass.jobs.pending` is important for two reasons: (1) `refresh()` discovers new pending keys and recovers orphaned reserved jobs, and (2) `pending` returns only keys that are genuinely ready for processing -- it excludes keys that are already reserved by another worker, errored, or marked as ignored. Without this check, successive orchestrator cycles could submit duplicate SLURM jobs for keys that are already being processed, wasting queue priority and potentially billing.
+**Note on per-key job submission:** Using `TableClass.jobs.refresh(orphan_timeout=N)` followed by `TableClass.jobs.pending` is important for two reasons: (1) `refresh()` discovers new pending keys and recovers orphaned reserved jobs, and (2) `pending` returns only keys that are genuinely ready for processing — it excludes keys that are already reserved by another worker, errored, or marked as ignored. Without this check, successive orchestrator cycles could submit duplicate SLURM jobs for keys that are already being processed, wasting queue priority and potentially billing.
+
+**Job arrays vs. individual submissions:** Per-key tiers use SLURM job arrays (`sbatch --array=0-N`) rather than individual `sbatch` calls. This means one `sbatch` call per table submits all pending keys as a group. Each array task runs independently with its own resources, but SLURM treats them as a single unit — easier to monitor (`squeue`), cancel (`scancel`), and less overhead on the scheduler. The array task index maps to the list of pending keys; the worker script looks up its assigned key based on `$SLURM_ARRAY_TASK_ID`.
 
 ### Robustness
 
@@ -260,9 +262,9 @@ The worker processes all tables and all available keys in a single run.
 
 ### Per-Key Workers
 
-A per-key worker receives a single table module path and a single primary key dict. It calls `populate(key, reserve_jobs=True)` for that specific key. This is the worker type used for `per-key` mode tiers.
+Per-key workers are submitted as SLURM job arrays — one array per table, one task per pending key. Each array task receives the table module path and uses its `$SLURM_ARRAY_TASK_ID` to look up its assigned key from a key list file generated by the orchestrator at submission time. The task calls `populate(key, reserve_jobs=True)` for that specific key.
 
-Per-key workers are appropriate for computationally expensive tables (e.g., spike sorting) where each row may take hours or days and requires dedicated resources (GPU, large memory).
+Per-key workers are appropriate for computationally expensive tables (e.g., spike sorting) where each row may take hours or days and requires dedicated resources (GPU, large memory). If a table has only one pending key, the array has a single task — the mechanism is the same regardless of count.
 
 ### Environment Setup
 
