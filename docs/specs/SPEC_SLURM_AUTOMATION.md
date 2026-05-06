@@ -671,6 +671,17 @@ The package creates its own DataJoint schema (e.g., `aeon_slurm_worker`) on firs
 
 If two orchestrator runs overlap (e.g., a delayed SLURM start causes a cycle to still be running when the next fires), they could submit duplicate worker jobs. For per-key tiers this is handled by `reserve_jobs=True` (only one worker processes each key), so the duplicates would exit harmlessly. For batch tiers, overlapping populate calls on the same table are also safe due to job reservation. However, the wasted SLURM submissions are undesirable. The implementation should consider a lightweight lock mechanism (e.g., checking if an orchestrator SLURM job is already running via `squeue` before submitting workers).
 
-### 8. Notification System (Stretch Goal)
+### 8. DataJoint Version Compatibility
+
+This spec is written against DataJoint 2.x, which introduced per-table `~~table_name` jobs tables, the `jobs.refresh()` API, and status values like `pending`, `reserved`, `success`, `error`, and `ignore`. However, Aeon's production HPC currently runs DataJoint 0.14.x, which uses a shared `~jobs` table per schema with `key_hash`-based lookups and a different `populate()` return value format.
+
+The package needs to work for its first user. Options include:
+- **Require DJ 2.x** — simplest to implement, but means Aeon would need to upgrade their production HPC environment before adopting the package
+- **Support both versions** — a compatibility layer that abstracts the differences in the jobs API between 0.14.x and 2.x, allowing the same package to work on either
+- **Separate branches** — main branch targets DJ 2.x, with a maintenance branch for DJ 0.14.x
+
+This is a decision that affects scope and timeline significantly.
+
+### 9. Notification System (Stretch Goal)
 
 A future enhancement could add email or Slack notifications when errors occur or when the orchestrator chain breaks. This is out of scope for the initial implementation but should be kept in mind as a possible extension point during design.
