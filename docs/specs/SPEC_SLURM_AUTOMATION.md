@@ -680,7 +680,7 @@ The package needs to work for its first user. Options include:
 - **Support both versions** — a compatibility layer that abstracts the differences in the jobs API between 0.14.x and 2.x, allowing the same package to work on either
 - **Separate branches** — main branch targets DJ 2.x, with a maintenance branch for DJ 0.14.x
 
-This is a decision that affects scope and timeline significantly.
+**Recommendation:** Separate branches. The main branch targets DJ 2.x (the future of all DataJoint projects). A `maint/0.14.x` branch supports DJ 0.14.x for Aeon's current production environment. Tagged releases from each branch allow projects to pin the version they need in their `pyproject.toml`. As Aeon migrates to DJ 2.x, they switch to the main branch releases. This keeps the main codebase clean (no compatibility shims) while supporting the first user immediately.
 
 ### 9. Notification System (Stretch Goal)
 
