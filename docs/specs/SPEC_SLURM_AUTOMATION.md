@@ -472,7 +472,7 @@ The package creates its database schema and tracking tables automatically on fir
 
 ## Example: Aeon Pipeline Configuration
 
-This section illustrates what the configuration would look like for the Aeon project at SWC. This is an example, not a fixed specification — the actual table list and resource allocations would be finalized during implementation.
+This section illustrates what the configuration would look like for the Aeon project at SWC. This is a first pass, not a final assignment — the actual tier assignments need to be validated through a discovery phase where we time how long each table's `populate()` takes for epochs of various lengths. Some tables currently listed in the light tier (e.g., `SortedSpikes`, `Waveform`, `SortingQuality`, `SyncedSpikes`, `UnitMatching`) may need to be promoted to the medium tier if they turn out to take more than a few minutes per key. This benchmarking should happen early in implementation.
 
 ```yaml
 schedule:
