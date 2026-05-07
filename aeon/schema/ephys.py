@@ -40,7 +40,7 @@ class HarpSyncModel(Stream):
 
         def read(self, file):
             data = super().read(file).dropna()
-            onix_clock = data.clock.values.reshape(-1, 1)
+            onix_clock = data.index.values.reshape(-1, 1)
             harp_time = data.harp_time.values.reshape(-1, 1)
 
             model = LinearRegression().fit(onix_clock, harp_time)
@@ -52,6 +52,9 @@ class HarpSyncModel(Stream):
                 data={
                     "clock_start": onix_clock[0],
                     "clock_end": onix_clock[-1],
+                    "harp_start": harp_time[0],
+                    "harp_end": harp_time[-1],
+                    "n_samples": len(data),
                     "model": [model],
                     "r2": [r2],
                 },
