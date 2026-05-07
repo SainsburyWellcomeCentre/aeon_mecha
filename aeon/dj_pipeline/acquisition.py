@@ -536,6 +536,162 @@ class Chunk(dj.Manual):
             cls.File.insert(file_list)
 
 
+# ------------------- ENVIRONMENT STREAMS --------------------
+#
+# Three explicit per-chunk tables for Environment-prefixed streams that
+# are global to the experiment (not tied to a discoverable rig device):
+#   - EnvironmentState  (Environment_EnvironmentState_*)
+#   - MessageLog        (Environment_MessageLog_*)
+#   - LightEvents       (Environment_LightEvents_*, foragingABC-only)
+#
+# All three follow the same codec-based pattern as auto-generated stream
+# tables in `streams_maker`: per-column JSON summary stats plus an
+# <aeon_stream> reference for lazy DataFrame loading.
+
+
+def _environment_row(df, *, key, chunk_window, stream_type: str, columns: list[str]) -> dict:
+    """Build the insert row for an Environment-prefixed stream table.
+
+    Pure function: no DB, no filesystem. Receives the already-loaded
+    DataFrame (or None when no reader was resolved) and returns the dict
+    to insert.
+
+    Args:
+        df: DataFrame from io_api.load, or None when the Rig did not
+            expose the @data_reader for this stream (e.g., LightEvents
+            on non-foragingABC).
+        key: Chunk PK dict ({"experiment_name", "chunk_start"}).
+        chunk_window: (chunk_start, chunk_end, epoch_start) triple as
+            returned by (Chunk & key).fetch1("chunk_start", "chunk_end",
+            "epoch_start").
+        stream_type: PascalCase stream type name (e.g., "EnvironmentState").
+        columns: data column names whose JSON summary stats to compute.
+    """
+    from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+    chunk_start, chunk_end, epoch_start = chunk_window
+
+    if df is None:
+        return {
+            **key,
+            "sample_count": 0,
+            "timestamps": {},
+            **{c: {} for c in columns},
+            "stream_df": None,
+        }
+
+    return {
+        **key,
+        "sample_count": len(df),
+        "timestamps": timestamp_stats(df.index) if len(df) > 0 else {},
+        **{c: column_stats(df[c].values) if len(df) > 0 else {} for c in columns},
+        "stream_df": {
+            "stream_type": stream_type,
+            "experiment_name": key["experiment_name"],
+            "device_name": "Environment",
+            "chunk_start": str(chunk_start),
+            "chunk_end": str(chunk_end),
+            "epoch_start": str(epoch_start),
+        },
+    }
+
+
+def _make_environment_stream(table, key, *, stream_type: str, columns: list[str]):
+    """Populate one row of an Environment-prefixed stream table.
+
+    Resolves the reader via get_stream_reader_for_epoch (default=None),
+    loads the chunk window via swc.aeon.io.api.load, then delegates to
+    _environment_row to build the insert dict.
+    """
+    import pandas as pd
+
+    from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+
+    chunk_start, chunk_end, epoch_start = (Chunk & key).fetch1("chunk_start", "chunk_end", "epoch_start")
+    data_dirs = Experiment.get_data_directories(key)
+
+    stream_reader = get_stream_reader_for_epoch(
+        key["experiment_name"], "Environment", stream_type, epoch_start, default=None
+    )
+
+    if stream_reader is None:
+        df = None
+    else:
+        df = io_api.load(
+            root=data_dirs,
+            reader=stream_reader,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end),
+        )
+
+    row = _environment_row(
+        df,
+        key=key,
+        chunk_window=(chunk_start, chunk_end, epoch_start),
+        stream_type=stream_type,
+        columns=columns,
+    )
+    table.insert1(row, ignore_extra_fields=True)
+
+
+@schema
+class EnvironmentState(dj.Imported):
+    definition = """  # Per-chunk Environment_EnvironmentState_* stream
+    -> Chunk
+    ---
+    sample_count: int32           # number of data points in this chunk
+    timestamps: json              # {{min, max, count, sampling_rate_hz}}
+    state: json                   # column summary stats
+    stream_df=null: <aeon_stream> # codec ref for lazy DataFrame loading
+    """
+
+    def make(self, key):
+        """Populate from Environment_EnvironmentState_* CSV reader."""
+        _make_environment_stream(self, key, stream_type="EnvironmentState", columns=["state"])
+
+
+@schema
+class MessageLog(dj.Imported):
+    definition = """  # Per-chunk Environment_MessageLog_* stream
+    -> Chunk
+    ---
+    sample_count: int32
+    timestamps: json
+    priority: json
+    type: json
+    message: json
+    stream_df=null: <aeon_stream>
+    """
+
+    def make(self, key):
+        """Populate from Environment_MessageLog_* Log reader."""
+        _make_environment_stream(
+            self, key, stream_type="MessageLog", columns=["priority", "type", "message"]
+        )
+
+
+@schema
+class LightEvents(dj.Imported):
+    definition = """  # Per-chunk Environment_LightEvents_* stream (foragingABC only)
+    -> Chunk
+    ---
+    sample_count: int32
+    timestamps: json
+    channel: json
+    value: json
+    stream_df=null: <aeon_stream>
+    """
+
+    def make(self, key):
+        """Populate from Environment_LightEvents_* CSV reader.
+
+        Always inserts a row per chunk. For experiments whose Rig does not
+        expose `light_events` (anything other than foragingABC), the helper
+        inserts sample_count=0 with stream_df=None.
+        """
+        _make_environment_stream(self, key, stream_type="LightEvents", columns=["channel", "value"])
+
+
 # ---- HELPERS ----
 
 

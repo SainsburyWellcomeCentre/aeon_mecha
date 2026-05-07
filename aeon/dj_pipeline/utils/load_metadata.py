@@ -418,11 +418,40 @@ def _find_device_in_rig(rig, device_name: str):
     raise ValueError(f"Device '{device_name}' not found in Rig")
 
 
+_MISSING = object()
+
+
+def _load_rig_for_epoch(experiment_name: str, epoch_start):
+    """Reconstruct the Rig instance for a given epoch from EpochConfig.Meta.
+
+    Split out so it can be monkeypatched in unit tests of get_stream_reader_for_epoch
+    without standing up a real DataJoint connection.
+    """
+    from aeon.dj_pipeline import acquisition
+
+    schema_name = (acquisition.Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1(
+        "devices_schema_name"
+    )
+
+    epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
+    rig_metadata = (acquisition.EpochConfig.Meta & epoch_key).fetch1("metadata")
+
+    # MariaDB 10.3 aliases `json` columns to `longtext`, so DataJoint's auto
+    # json.loads() doesn't fire. Deserialize manually if needed.
+    if isinstance(rig_metadata, str):
+        rig_metadata = json.loads(rig_metadata)
+
+    experiment_class = get_experiment_pydantic(schema_name)
+    rig_class = experiment_class.model_fields["rig"].annotation
+    return rig_class.model_validate(rig_metadata)
+
+
 def get_stream_reader_for_epoch(
     experiment_name: str,
     device_name: str,
     stream_type: str,
     epoch_start,
+    default=_MISSING,
 ):
     """Get stream reader for a specific epoch.
 
@@ -434,35 +463,31 @@ def get_stream_reader_for_epoch(
         device_name: Name of device instance (e.g., "CameraTop")
         stream_type: Type of stream in PascalCase (e.g., "Video")
         epoch_start: Start time of the epoch
+        default: Value to return when the device is not present in the Rig
+            or the @data_reader method is missing on the device. If omitted,
+            the original ValueError / AttributeError propagates (backward
+            compatible).
 
     Returns:
-        Reader instance configured for the device/stream
+        Reader instance configured for the device/stream, or `default`
+        when not resolvable.
     """
-    from aeon.dj_pipeline import acquisition
+    rig = _load_rig_for_epoch(experiment_name, epoch_start)
 
-    # Get Experiment class path (e.g., "swc.aeon.exp.foragingABC.experiment:Experiment")
-    schema_name = (acquisition.Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1(
-        "devices_schema_name"
-    )
+    try:
+        device = _find_device_in_rig(rig, device_name)
+    except ValueError:
+        if default is _MISSING:
+            raise
+        return default
 
-    # Get rig metadata for the specific epoch
-    epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
-    rig_metadata = (acquisition.EpochConfig.Meta & epoch_key).fetch1("metadata")
-
-    # MariaDB 10.3 aliases `json` columns to `longtext`, so DataJoint's auto
-    # json.loads() doesn't fire. Deserialize manually if needed.
-    if isinstance(rig_metadata, str):
-        rig_metadata = json.loads(rig_metadata)
-
-    # Get Rig class from Experiment class and reconstruct directly
-    experiment_class = get_experiment_pydantic(schema_name)
-    rig_class = experiment_class.model_fields["rig"].annotation
-    rig = rig_class.model_validate(rig_metadata)
-
-    # Find device in Rig and access stream reader
-    device = _find_device_in_rig(rig, device_name)
     stream_method = to_snake_case(stream_type)  # "Video" → "video"
-    return getattr(device, stream_method)
+    try:
+        return getattr(device, stream_method)
+    except AttributeError:
+        if default is _MISSING:
+            raise
+        return default
 
 
 def insert_stream_types(rig: "BaseSchema") -> None:
