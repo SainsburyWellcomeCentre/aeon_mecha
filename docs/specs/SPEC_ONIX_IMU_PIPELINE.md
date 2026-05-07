@@ -71,8 +71,8 @@ EphysSyncModel  (Manual + ingest classmethod, cron)
        │       ├─► .File         (AmplifierData + Clock files)
        │       └─► .SyncModel    (Part — link table only)
        │
-       └─► OnixImuChunk  (Imported, key_source = EphysSyncModel)
-               └─► .Stream       (Part — 4 rows: Euler, GravityVector, LinearAcceleration, Quaternion)
+       └─► OnixImuChunk  (Imported, default key_source = EphysSyncModel)
+                                 — single row per sync window; all 4 Bno055 streams merged on sample index
 ```
 
 ### Why two different population mechanisms
@@ -81,7 +81,7 @@ EphysSyncModel  (Manual + ingest classmethod, cron)
 |----------------|---------------------------------|------------------------------------|--------------------------|
 | EphysSyncModel | Manual + classmethod            | Per ONIX chunk (~1hr, drifts)      | self                     |
 | EphysChunk     | Manual + classmethod            | HARP-aligned 1hr window            | 1↔1 typically, 1↔2 when straddling |
-| OnixImuChunk   | Imported, `key_source = SyncModel` | Per ONIX chunk (mirrors SyncModel) | 1↔1                      |
+| OnixImuChunk   | Imported (default `key_source`) | Per ONIX chunk (mirrors SyncModel) | 1↔1                      |
 
 `EphysChunk` keeps its existing HARP 1hr-aligned semantic and the 1↔N link to SyncModel — it can't cleanly be a `dj.Imported` keyed off SyncModel because of that 1↔2 straddling case. `OnixImuChunk` is greenfield and rides the natural ONIX cadence 1:1, so standard `dj.Imported` semantics work and no separate cron entrypoint is needed.
 
@@ -149,6 +149,10 @@ PK shape `(experiment_name, subject, insertion_number, chunk_start)` is preserve
 
 ### OnixImuChunk (new)
 
+The four Bno055 streams (Euler, GravityVector, LinearAcceleration, Quaternion) are sample-aligned by construction — they all index off the same `Bno055_Clock_N.bin`. They naturally collapse into a single DataFrame indexed by HARP time, with columns prefixed by their source stream (`euler_x`, `gravity_vector_y`, `quaternion_w`, etc.). One row per sync window, one codec reference, one fetch.
+
+Per-column summary stats live as JSON attributes on the master row — same pattern as `streams_maker`-generated stream tables (`utils/streams_maker.py:183-197`).
+
 ```python
 @schema
 class OnixImuChunk(dj.Imported):
@@ -157,22 +161,28 @@ class OnixImuChunk(dj.Imported):
     ---
     sample_count: int32
     timestamps: json                    # min/max HARP, sampling rate, dt stats; {} if no data
+    euler_x: json                       # per-column summary stats (min/max/mean/etc.)
+    euler_y: json
+    euler_z: json
+    gravity_vector_x: json
+    gravity_vector_y: json
+    gravity_vector_z: json
+    linear_acceleration_x: json
+    linear_acceleration_y: json
+    linear_acceleration_z: json
+    quaternion_w: json
+    quaternion_x: json
+    quaternion_y: json
+    quaternion_z: json
+    stream_df: <aeon_onix_stream>       # all 4 Bno055 streams merged on sample index
     """
-
-    class Stream(dj.Part):
-        definition = """
-        -> master
-        stream_name: enum('Euler', 'GravityVector', 'LinearAcceleration', 'Quaternion')
-        ---
-        stream_df: <aeon_onix_stream>   # codec reference for lazy fetch
-        """
-
-    @property
-    def key_source(self):
-        return EphysSyncModel
 ```
 
-**No-IMU rigs:** when `*_Bno055_Clock_*.bin` files are absent, `make()` inserts master with `sample_count=0` and skips the Stream Parts. Always populates the key — no infinite retries from `populate()`.
+**Column-prefix convention:** strip `Bno055` from each Stream class name, snake_case the remainder. `Bno055Euler` → `euler_*`, `Bno055GravityVector` → `gravity_vector_*`, `Bno055LinearAcceleration` → `linear_acceleration_*`, `Bno055Quaternion` → `quaternion_*`. The codec applies the same renaming on decode so summary-column names match `stream_df` columns.
+
+**No-IMU rigs:** when `*_Bno055_Clock_*.bin` files are absent, `make()` inserts master with `sample_count=0`, empty `{}` for `timestamps` and every per-column stats field, and a `stream_df` reference that the codec resolves to an empty DataFrame. Always populates the key — no infinite retries from `populate()`.
+
+**`key_source`:** default DJ behavior (cross-product of parent table PKs) already resolves to `EphysSyncModel`. No override needed.
 
 ---
 
@@ -180,15 +190,14 @@ class OnixImuChunk(dj.Imported):
 
 Sibling to the existing `<aeon_stream>` codec (`aeon/dj_pipeline/utils/codec.py`). The existing codec assumes Harp-style time-indexed binaries (`io_api.load(start=, end=)` natively trims). Bno055 binaries carry no embedded timestamps, so a separate codec handles ONIX-clock alignment + sync regression.
 
-**Stored JSON shape:**
+**Stored JSON shape** (one ref per OnixImuChunk row, covers all 4 streams):
 ```json
 {
-  "stream_type": "Bno055Euler",
   "experiment_name": "...",
   "epoch_start": "...",
   "sync_start": "...",
   "device_name": "NeuropixelsV2Beta",
-  "stream_name": "Euler"
+  "stream_group": "Bno055"
 }
 ```
 
@@ -196,12 +205,15 @@ Sibling to the existing `<aeon_stream>` codec (`aeon/dj_pipeline/utils/codec.py`
 1. Resolve raw_dir from experiment.
 2. Locate the ONIX device dir within the epoch (`NeuropixelsV2Beta/` or `NeuropixelsV2/`).
 3. Identify the chunk index N by matching `EphysSyncModel.onix_ts_start` to the corresponding `Bno055_Clock_N.bin`.
-4. Load `Bno055_Clock_N.bin` (uint64 ONIX timestamps) via `social_ephys.<device>.Bno055.Bno055Clock` reader.
-5. Load `Bno055_<stream_name>_N.bin` (float32 payload) via the matching `social_ephys.<device>.Bno055.Bno055<stream_name>` reader. Sample-align by index with the clock array.
-6. Download the `EphysSyncModel.sync_model` attach file, `joblib.load`, apply regression to convert ONIX → HARP datetimes per sample.
-7. Return a HARP-time-indexed `pd.DataFrame`.
+4. Load `Bno055_Clock_N.bin` (uint64 ONIX timestamps) via `social_ephys.<device>.<stream_group>.Bno055Clock` reader.
+5. For each non-clock Stream class on the named StreamGroup (`Bno055Euler`, `Bno055GravityVector`, `Bno055LinearAcceleration`, `Bno055Quaternion`):
+   - Load `Bno055_<StreamName>_N.bin` (float32 payload) via the matching reader.
+   - Rename its columns by prefixing with the snake_case stream name minus the `Bno055` prefix (e.g., `Bno055Euler`'s `x/y/z` → `euler_x/euler_y/euler_z`).
+6. Concat all stream DataFrames column-wise on the shared sample index.
+7. Download the `EphysSyncModel.sync_model` attach file, `joblib.load`, apply regression to convert ONIX → HARP datetimes; assign as the DataFrame index.
+8. Return the merged HARP-time-indexed `pd.DataFrame` (13 columns for Bno055).
 
-The codec is reusable for any future ONIX-clocked accessory (other IMUs, photodiodes, etc.).
+The `stream_group` knob makes the codec reusable for any future ONIX-clocked accessory whose dotmap StreamGroup follows the same `<Group>Clock` + sibling-stream-classes convention.
 
 ---
 
@@ -317,9 +329,16 @@ The fast path is the common case once SyncModel boundaries are derived from obse
 
 ### 3. `OnixImuChunk.populate()` — standard `dj.Imported`
 
-Triggered automatically by the same cron tick after `EphysSyncModel.ingest()`. No separate filesystem walk.
+Triggered automatically by the same cron tick after `EphysSyncModel.ingest()`. No separate filesystem walk, no override of `key_source`.
 
 ```python
+IMU_COLUMNS = (
+    "euler_x", "euler_y", "euler_z",
+    "gravity_vector_x", "gravity_vector_y", "gravity_vector_z",
+    "linear_acceleration_x", "linear_acceleration_y", "linear_acceleration_z",
+    "quaternion_w", "quaternion_x", "quaternion_y", "quaternion_z",
+)
+
 def make(self, key):
     # key has experiment_name, epoch_start, sync_start
     sm = (EphysSyncModel & key).fetch1()
@@ -327,44 +346,45 @@ def make(self, key):
     device_name = discover_device(epoch_path)        # NeuropixelsV2Beta or V2
     device_dir = epoch_path / device_name
 
-    chunk_index = locate_bno055_index(device_dir, sm)  # match to onix_ts_start
+    chunk_index = locate_bno055_index(device_dir, sm)  # match to sm.onix_ts_start
 
-    clock_files = list(device_dir.glob(f"{device_name}_Bno055_Clock_*.bin"))
-    if chunk_index is None or not clock_files:
-        # No-IMU rig
-        self.insert1({**key, "sample_count": 0, "timestamps": {}})
+    stream_df_ref = {
+        "experiment_name": key["experiment_name"],
+        "epoch_start": str(key["epoch_start"]),
+        "sync_start": str(key["sync_start"]),
+        "device_name": device_name,
+        "stream_group": "Bno055",
+    }
+
+    if chunk_index is None or not (device_dir / f"{device_name}_Bno055_Clock_{chunk_index}.bin").exists():
+        # No-IMU rig — insert empty row, codec returns empty DF on fetch
+        self.insert1({
+            **key,
+            "sample_count": 0,
+            "timestamps": {},
+            **{col: {} for col in IMU_COLUMNS},
+            "stream_df": stream_df_ref,
+        })
         return
 
-    clock_file = device_dir / f"{device_name}_Bno055_Clock_{chunk_index}.bin"
-    onix_clock = np.fromfile(clock_file, dtype=np.uint64)
+    # Load + merge all Bno055 streams (same logic the codec uses on decode)
+    df = load_and_merge_bno055(device_dir, device_name, chunk_index)
 
-    # Apply regression to get HARP per sample
+    # Apply regression to map ONIX → HARP for the index
+    onix_clock = df.index.values
     model = joblib.load(sm["sync_model"])
-    harp_per_sample = model.predict(onix_clock.reshape(-1, 1)).flatten()
+    df.index = pd.to_datetime(model.predict(onix_clock.reshape(-1, 1)).flatten(), ...)
 
     self.insert1({
         **key,
-        "sample_count": len(onix_clock),
-        "timestamps": timestamp_summary(harp_per_sample),
+        "sample_count": len(df),
+        "timestamps": timestamp_summary(df.index),
+        **{col: column_stats(df[col].values) for col in IMU_COLUMNS},
+        "stream_df": stream_df_ref,
     })
-
-    self.Stream.insert([
-        {
-            **key,
-            "stream_name": stream,
-            "stream_df": {
-                "stream_type": f"Bno055{stream}",
-                "experiment_name": key["experiment_name"],
-                "epoch_start": str(key["epoch_start"]),
-                "sync_start": str(key["sync_start"]),
-                "device_name": device_name,
-                "stream_name": stream,
-            },
-        }
-        for stream in ("Euler", "GravityVector", "LinearAcceleration", "Quaternion")
-        if (device_dir / f"{device_name}_Bno055_{stream}_{chunk_index}.bin").exists()
-    ])
 ```
+
+`load_and_merge_bno055` is shared between `make()` (for stats) and the codec's `decode()` (for lazy fetch) — single source of truth for column naming + merge logic.
 
 ---
 
@@ -397,7 +417,7 @@ These are flagged for awareness but not part of this work:
 ## Open questions
 
 1. **In-flight CSV handling.** Should `EphysSyncModel.ingest()` skip CSVs with recent mtime to avoid ingesting partial files? Current pre-refactor `ingest_chunks` doesn't address this; could be deferred.
-2. **Summary stats granularity for `OnixImuChunk`.** Per-stream summaries (mean/std/range) like the existing `<aeon_stream>` tables, or just sample count + time bounds? Lean toward minimal for v1.
+2. **Per-column stats helper.** `OnixImuChunk` reuses the auto-stream-table pattern of one JSON column per data column. The `column_stats()` helper from `utils/stats.py` should work as-is; verify shape during implementation.
 3. **Worker placement.** `streams_worker` vs. new `ephys_worker`. Driven by cadence and resource isolation requirements.
 
 ---
@@ -407,7 +427,7 @@ These are flagged for awareness but not part of this work:
 | File | Change |
 |------|--------|
 | `aeon/schema/ephys.py` | Extend `HarpSyncModel.Reader.read()` to return `harp_start`, `harp_end`, `n_samples` |
-| `aeon/dj_pipeline/ephys.py` | Add `EphysSyncModel`. Refactor `EphysChunk.SyncModel` to link Part. Thin `ingest_chunks`. Add `OnixImuChunk` + `OnixImuChunk.Stream`. |
+| `aeon/dj_pipeline/ephys.py` | Add `EphysSyncModel`. Refactor `EphysChunk.SyncModel` to link Part. Thin `ingest_chunks`. Add `OnixImuChunk` (single table, no Parts). |
 | `aeon/dj_pipeline/utils/codec.py` | Add `OnixStreamCodec` (registered as `<aeon_onix_stream>`) |
 | `aeon/dj_pipeline/utils/ephys_utils.py` | Drop `process_ephys_file` (logic moves into `EphysSyncModel.ingest` and slimmer `ingest_chunks`); add helpers for ONIX↔SyncModel index resolution |
 | `aeon/dj_pipeline/__init__.py` | Register `OnixStreamCodec` alongside `AeonStreamCodec` |
