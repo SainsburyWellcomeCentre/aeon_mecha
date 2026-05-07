@@ -547,88 +547,8 @@ class Chunk(dj.Manual):
 # Each table stores sample_count + timestamp stats for quick browsing,
 # plus an <aeon_stream> codec reference for lazy DataFrame loading. The
 # raw column values live in the codec payload, not as separate JSON
-# attributes.
-
-
-def _environment_row(df, *, key, chunk_window, stream_type: str) -> dict:
-    """Build the insert row for an Environment-prefixed stream table.
-
-    Pure function: no DB, no filesystem. Receives the already-loaded
-    DataFrame (or None when no reader was resolved) and returns the dict
-    to insert.
-
-    Args:
-        df: DataFrame from io_api.load, or None when the Rig did not
-            expose the @data_reader for this stream (e.g., LightEvents
-            on non-foragingABC).
-        key: Chunk PK dict ({"experiment_name", "chunk_start"}).
-        chunk_window: (chunk_start, chunk_end, epoch_start) triple as
-            returned by (Chunk & key).fetch1("chunk_start", "chunk_end",
-            "epoch_start").
-        stream_type: PascalCase stream type name (e.g., "EnvironmentState").
-    """
-    from aeon.dj_pipeline.utils.stats import timestamp_stats
-
-    chunk_start, chunk_end, epoch_start = chunk_window
-
-    if df is None:
-        return {
-            **key,
-            "sample_count": 0,
-            "timestamps": {},
-            "stream_df": None,
-        }
-
-    return {
-        **key,
-        "sample_count": len(df),
-        "timestamps": timestamp_stats(df.index) if len(df) > 0 else {},
-        "stream_df": {
-            "stream_type": stream_type,
-            "experiment_name": key["experiment_name"],
-            "device_name": "Environment",
-            "chunk_start": str(chunk_start),
-            "chunk_end": str(chunk_end),
-            "epoch_start": str(epoch_start),
-        },
-    }
-
-
-def _make_environment_stream(table, key, *, stream_type: str):
-    """Populate one row of an Environment-prefixed stream table.
-
-    Resolves the reader via get_stream_reader_for_epoch (default=None),
-    loads the chunk window via swc.aeon.io.api.load, then delegates to
-    _environment_row to build the insert dict.
-    """
-    import pandas as pd
-
-    from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
-
-    chunk_start, chunk_end, epoch_start = (Chunk & key).fetch1("chunk_start", "chunk_end", "epoch_start")
-    data_dirs = Experiment.get_data_directories(key)
-
-    stream_reader = get_stream_reader_for_epoch(
-        key["experiment_name"], "Environment", stream_type, epoch_start, default=None
-    )
-
-    if stream_reader is None:
-        df = None
-    else:
-        df = io_api.load(
-            root=data_dirs,
-            reader=stream_reader,
-            start=pd.Timestamp(chunk_start),
-            end=pd.Timestamp(chunk_end),
-        )
-
-    row = _environment_row(
-        df,
-        key=key,
-        chunk_window=(chunk_start, chunk_end, epoch_start),
-        stream_type=stream_type,
-    )
-    table.insert1(row, ignore_extra_fields=True)
+# attributes. The shared make() implementation lives in the HELPERS
+# section at the bottom of this file.
 
 
 @schema
@@ -743,3 +663,87 @@ def create_chunk_restriction(experiment_name, start_time, end_time):
         f' AND chunk_start < "{max(end_query.to_arrays("chunk_end"))}"'
     )
     return time_restriction
+
+
+# ---- Environment-stream helpers (used by EnvironmentState / MessageLog / LightEvents) ----
+
+
+def _environment_row(df, *, key, chunk_window, stream_type: str) -> dict:
+    """Build the insert row for an Environment-prefixed stream table.
+
+    Pure function: no DB, no filesystem. Receives the already-loaded
+    DataFrame (or None when no reader was resolved) and returns the dict
+    to insert.
+
+    Args:
+        df: DataFrame from io_api.load, or None when the Rig did not
+            expose the @data_reader for this stream (e.g., LightEvents
+            on non-foragingABC).
+        key: Chunk PK dict ({"experiment_name", "chunk_start"}).
+        chunk_window: (chunk_start, chunk_end, epoch_start) triple as
+            returned by (Chunk & key).fetch1("chunk_start", "chunk_end",
+            "epoch_start").
+        stream_type: PascalCase stream type name (e.g., "EnvironmentState").
+    """
+    from aeon.dj_pipeline.utils.stats import timestamp_stats
+
+    chunk_start, chunk_end, epoch_start = chunk_window
+
+    if df is None:
+        return {
+            **key,
+            "sample_count": 0,
+            "timestamps": {},
+            "stream_df": None,
+        }
+
+    return {
+        **key,
+        "sample_count": len(df),
+        "timestamps": timestamp_stats(df.index) if len(df) > 0 else {},
+        "stream_df": {
+            "stream_type": stream_type,
+            "experiment_name": key["experiment_name"],
+            "device_name": "Environment",
+            "chunk_start": str(chunk_start),
+            "chunk_end": str(chunk_end),
+            "epoch_start": str(epoch_start),
+        },
+    }
+
+
+def _make_environment_stream(table, key, *, stream_type: str):
+    """Populate one row of an Environment-prefixed stream table.
+
+    Resolves the reader via get_stream_reader_for_epoch (default=None),
+    loads the chunk window via swc.aeon.io.api.load, then delegates to
+    _environment_row to build the insert dict.
+    """
+    import pandas as pd
+
+    from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+
+    chunk_start, chunk_end, epoch_start = (Chunk & key).fetch1("chunk_start", "chunk_end", "epoch_start")
+    data_dirs = Experiment.get_data_directories(key)
+
+    stream_reader = get_stream_reader_for_epoch(
+        key["experiment_name"], "Environment", stream_type, epoch_start, default=None
+    )
+
+    if stream_reader is None:
+        df = None
+    else:
+        df = io_api.load(
+            root=data_dirs,
+            reader=stream_reader,
+            start=pd.Timestamp(chunk_start),
+            end=pd.Timestamp(chunk_end),
+        )
+
+    row = _environment_row(
+        df,
+        key=key,
+        chunk_window=(chunk_start, chunk_end, epoch_start),
+        stream_type=stream_type,
+    )
+    table.insert1(row, ignore_extra_fields=True)
