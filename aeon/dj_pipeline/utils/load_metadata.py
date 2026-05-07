@@ -422,7 +422,15 @@ _MISSING = object()
 
 
 def _load_rig_for_epoch(experiment_name: str, epoch_start):
-    """Reconstruct the Rig for a given epoch from EpochConfig.Meta."""
+    """Reconstruct the Rig for a given epoch from EpochConfig.Meta.
+
+    Args:
+        experiment_name: Name of the experiment.
+        epoch_start: Start time of the epoch.
+
+    Returns:
+        Rig instance validated from the epoch's stored metadata.
+    """
     from aeon.dj_pipeline import acquisition
 
     schema_name = (acquisition.Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1(
@@ -459,8 +467,10 @@ def get_stream_reader_for_epoch(
         device_name: Name of device instance (e.g., "CameraTop")
         stream_type: Type of stream in PascalCase (e.g., "Video")
         epoch_start: Start time of the epoch
-        default: Returned when the device or @data_reader is missing.
-            If omitted, the original ValueError / AttributeError propagates.
+        default: Value to return when the device is not present in the Rig
+            or the @data_reader method is missing on the device. If omitted,
+            the original ValueError / AttributeError propagates (backward
+            compatible).
 
     Returns:
         Reader instance configured for the device/stream, or `default`
