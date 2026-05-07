@@ -190,25 +190,32 @@ The codec returns ONIX-clock-indexed data (see `<aeon_onix_stream>` section). Fo
 
 ```python
 @classmethod
-def synced_df(cls, restriction) -> pd.DataFrame:
-    """Fetch stream_df and apply the chunk's HARP sync regression.
-    
-    Returns a HARP-time-indexed DataFrame. Downloads the EphysSyncModel
-    attach once (one MySQL round-trip), loads the joblib LinearRegression,
-    and applies it to the ONIX index.
-    
-    For raw ONIX-clock-indexed data, fetch ``stream_df`` directly instead
-    of using this helper.
+def synced_df(cls, key) -> pd.DataFrame:
+    """Fetch stream_df for a single chunk and apply its HARP sync regression.
+
+    Args:
+        key: A complete OnixImuChunk primary key dict — must resolve to
+             exactly one row. PK fields: experiment_name, epoch_start,
+             sync_start. (`fetch1()` raises if the key resolves to zero
+             or multiple rows.)
+
+    Returns:
+        HARP-time-indexed DataFrame. Downloads the EphysSyncModel attach
+        once (one MySQL round-trip), loads the joblib LinearRegression,
+        and applies it to the ONIX index.
+
+    For raw ONIX-clock-indexed data, fetch ``stream_df`` directly
+    instead of using this helper.
     """
-    df = (cls & restriction).fetch1("stream_df")              # ONIX-indexed
-    sync_attach = (EphysSyncModel & restriction).fetch1("sync_model")
+    df = (cls & key).fetch1("stream_df")                      # ONIX-indexed
+    sync_attach = (EphysSyncModel & key).fetch1("sync_model")
     model = joblib.load(sync_attach)
     harp_seconds = model.predict(df.index.values.reshape(-1, 1)).flatten()
     df.index = io_api.to_datetime(harp_seconds)
     return df
 ```
 
-Two-line user pattern:
+Two-line user pattern (where `key` is a complete OnixImuChunk PK dict):
 ```python
 df_raw    = (OnixImuChunk & key).fetch1("stream_df")    # ONIX-indexed, no sync model fetch
 df_synced = OnixImuChunk.synced_df(key)                 # HARP-indexed, applies regression
@@ -244,7 +251,8 @@ Sibling to the existing `<aeon_stream>` codec (`aeon/dj_pipeline/utils/codec.py`
    - Load `Bno055_<StreamName>_N.bin` (float32 payload) via the matching reader.
    - Rename its columns by prefixing with the snake_case stream name minus the `Bno055` prefix (e.g., `Bno055Euler`'s `x/y/z` → `euler_x/euler_y/euler_z`).
 6. Concat all stream DataFrames column-wise, using the ONIX clock array as the index.
-7. Return an **ONIX-clock-indexed** `pd.DataFrame` (13 columns for Bno055; index dtype `uint64`).
+7. Validate merged columns against `IMU_COLUMNS` (set equality); raise `ValueError` on mismatch. Reorder to canonical order.
+8. Return an **ONIX-clock-indexed** `pd.DataFrame` (13 columns for Bno055; index dtype `uint64`).
 
 The `stream_group` knob makes the codec reusable for any future ONIX-clocked accessory whose dotmap StreamGroup follows the same `<Group>Clock` + sibling-stream-classes convention.
 
@@ -427,6 +435,23 @@ def make(self, key):
 ```
 
 `load_and_merge_bno055` is shared between `make()` (for column stats) and the codec's `decode()` (for lazy fetch) — single source of truth for column naming + merge logic. Both produce ONIX-indexed output; HARP conversion happens in two distinct places: once in `make()` to populate the `timestamps` summary field, and once on demand in `synced_df` for user fetches.
+
+**Column validation.** Before returning, `load_and_merge_bno055` validates that the merged DataFrame's columns match `IMU_COLUMNS` exactly (set equality), then reorders to canonical order:
+
+```python
+def load_and_merge_bno055(device_dir, device_name, chunk_index):
+    # ... load Clock + 4 Bno055 binaries, prefix-rename, concat on ONIX index ...
+    if set(df.columns) != set(IMU_COLUMNS):
+        raise ValueError(
+            f"Bno055 stream column mismatch: expected {IMU_COLUMNS}, "
+            f"got {tuple(df.columns)}. Schema in aeon/schema/ephys.py "
+            f"may have drifted — update OnixImuChunk + IMU_COLUMNS to match, "
+            f"or revert the schema change."
+        )
+    return df[list(IMU_COLUMNS)]   # canonical column order
+```
+
+Because both `make()` (ingestion) and the codec's `decode()` (fetch) route through this function, validation runs at both times. Catches schema drift at ingestion (before bad data lands in DB) AND at fetch time (drift between historical data and a later schema change).
 
 ---
 
