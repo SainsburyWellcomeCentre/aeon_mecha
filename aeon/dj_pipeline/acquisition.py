@@ -5,6 +5,7 @@ import json
 import pathlib
 
 import datajoint as dj
+import pandas as pd
 from swc.aeon.io import api as io_api
 from swc.aeon.io import reader as io_reader
 
@@ -719,8 +720,6 @@ def _make_environment_stream(table, key, *, stream_type: str):
     loads the chunk window via swc.aeon.io.api.load, then delegates to
     _environment_row to build the insert dict.
     """
-    import pandas as pd
-
     from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
     chunk_start, chunk_end, epoch_start = (Chunk & key).fetch1("chunk_start", "chunk_end", "epoch_start")
