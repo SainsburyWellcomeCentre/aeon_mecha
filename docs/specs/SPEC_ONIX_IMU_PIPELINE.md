@@ -65,9 +65,9 @@ acquisition.Epoch
 EphysEpoch  ──────────────► .Insertion         (one-shot Imported per epoch)
        │
        ▼
-EphysSyncModel  (Manual + ingest classmethod, cron)
+EphysSyncModel  (Manual + ingest classmethod, re-runnable)
        │
-       ├─► EphysChunk  (Manual + ingest_chunks classmethod, cron)
+       ├─► EphysChunk  (Manual + ingest_chunks classmethod, re-runnable)
        │       ├─► .File         (AmplifierData + Clock files)
        │       └─► .SyncModel    (Part — link table only)
        │
@@ -83,7 +83,7 @@ EphysSyncModel  (Manual + ingest classmethod, cron)
 | EphysChunk     | Manual + classmethod            | HARP-aligned 1hr window            | 1↔1 typically, 1↔2 when straddling |
 | OnixImuChunk   | Imported (default `key_source`) | Per ONIX chunk (mirrors SyncModel) | 1↔1                      |
 
-`EphysChunk` keeps its existing HARP 1hr-aligned semantic and the 1↔N link to SyncModel — it can't cleanly be a `dj.Imported` keyed off SyncModel because of that 1↔2 straddling case. `OnixImuChunk` is greenfield and rides the natural ONIX cadence 1:1, so standard `dj.Imported` semantics work and no separate cron entrypoint is needed.
+`EphysChunk` keeps its existing HARP 1hr-aligned semantic and the 1↔N link to SyncModel — it can't cleanly be a `dj.Imported` keyed off SyncModel because of that 1↔2 straddling case. `OnixImuChunk` is greenfield and rides the natural ONIX cadence 1:1, so standard `dj.Imported` semantics work and it doesn't need its own classmethod entrypoint.
 
 ---
 
@@ -268,7 +268,7 @@ The `stream_group` knob makes the codec reusable for any future ONIX-clocked acc
 
 ## Ingestion flow
 
-### 1. `EphysSyncModel.ingest(experiment_name)` — cron
+### 1. `EphysSyncModel.ingest(experiment_name)` — re-runnable classmethod
 
 Replaces the in-memory `sync_models = {}` cache and the `process_ephys_file` model-fitting half.
 
@@ -316,7 +316,7 @@ def ingest(cls, experiment_name):
 
 **Required upstream change:** extend `HarpSyncModel.Reader.read()` in `aeon/schema/ephys.py:35-58` to return `harp_start`, `harp_end`, `n_samples` in addition to the existing `clock_start`/`clock_end`/`model`/`r2`. Backward-compatible (additive).
 
-### 2. `EphysChunk.ingest_chunks(experiment_name)` — cron, thinned
+### 2. `EphysChunk.ingest_chunks(experiment_name)` — re-runnable, thinned
 
 The existing classmethod sheds responsibility for sync-model fitting and persistence. It still walks AmplifierData files (probe-specific files not covered by SyncModel), but the sync work becomes a DB query.
 
@@ -378,7 +378,7 @@ The fast path is the common case once SyncModel boundaries are derived from obse
 
 ### 3. `OnixImuChunk.populate()` — standard `dj.Imported`
 
-Triggered automatically by the same cron tick after `EphysSyncModel.ingest()`. No separate filesystem walk, no override of `key_source`.
+Standard `dj.Imported.populate()` — runs after `EphysSyncModel.ingest()` has produced new sync rows, picks up new keys automatically. No separate filesystem walk, no override of `key_source`.
 
 ```python
 IMU_COLUMNS = (
@@ -455,17 +455,19 @@ Because both `make()` (ingestion) and the codec's `decode()` (fetch) route throu
 
 ---
 
-## Cron ordering
+## Ingestion ordering
+
+When invoked on a recurring schedule (every ~4hr) for ongoing epochs:
 
 ```
-1. acquisition.Epoch.populate                   (existing acquisition_worker)
+1. acquisition.Epoch.populate
 2. EphysEpoch.populate                          (one-shot per new epoch — pre-existing wrinkle, see below)
-3. EphysSyncModel.ingest(experiment_name)       (every tick, ~4hr)
-4. EphysChunk.ingest_chunks(experiment_name)    (every tick, depends on EphysSyncModel)
-5. OnixImuChunk.populate()                      (every tick, depends on EphysSyncModel via key_source)
+3. EphysSyncModel.ingest(experiment_name)       (re-runnable, idempotent)
+4. EphysChunk.ingest_chunks(experiment_name)    (re-runnable, depends on EphysSyncModel rows)
+5. OnixImuChunk.populate()                      (standard DJ populate, depends on EphysSyncModel via key_source)
 ```
 
-Likely fits in the existing `streams_worker`, or warrants a new `ephys_worker` if the cadence differs from streams ingestion.
+Steps 3–5 are safe to call at any cadence — each is idempotent and skips already-ingested keys.
 
 ---
 
@@ -485,7 +487,6 @@ These are flagged for awareness but not part of this work:
 
 1. **In-flight CSV handling.** Should `EphysSyncModel.ingest()` skip CSVs with recent mtime to avoid ingesting partial files? Current pre-refactor `ingest_chunks` doesn't address this; could be deferred.
 2. **Per-column stats helper.** `OnixImuChunk` reuses the auto-stream-table pattern of one JSON column per data column. The `column_stats()` helper from `utils/stats.py` should work as-is; verify shape during implementation.
-3. **Worker placement.** `streams_worker` vs. new `ephys_worker`. Driven by cadence and resource isolation requirements.
 
 ---
 
@@ -498,6 +499,5 @@ These are flagged for awareness but not part of this work:
 | `aeon/dj_pipeline/utils/codec.py` | Add `OnixStreamCodec` (registered as `<aeon_onix_stream>`) |
 | `aeon/dj_pipeline/utils/ephys_utils.py` | Drop `process_ephys_file` (logic moves into `EphysSyncModel.ingest` and slimmer `ingest_chunks`); add helpers for ONIX↔SyncModel index resolution |
 | `aeon/dj_pipeline/__init__.py` | Register `OnixStreamCodec` alongside `AeonStreamCodec` |
-| `aeon/dj_pipeline/populate/worker.py` | Wire `EphysSyncModel.ingest`, `EphysChunk.ingest_chunks`, `OnixImuChunk.populate` into the chosen worker |
-| `tests/dj_pipeline/...` | Unit tests for codec encode/decode; integration test for the three-table cron sequence using a golden ephys dataset |
+| `tests/dj_pipeline/...` | Unit tests for codec encode/decode; integration test for the three-table ingestion sequence using a golden ephys dataset |
 | Migration script | One-time conversion of existing `EphysChunk.SyncModel` data to `EphysSyncModel` |
