@@ -184,11 +184,45 @@ class OnixImuChunk(dj.Imported):
 
 **`key_source`:** default DJ behavior (cross-product of parent table PKs) already resolves to `EphysSyncModel`. No override needed.
 
+**Sync helper — `synced_df` classmethod**
+
+The codec returns ONIX-clock-indexed data (see `<aeon_onix_stream>` section). For HARP-indexed data, users call:
+
+```python
+@classmethod
+def synced_df(cls, restriction) -> pd.DataFrame:
+    """Fetch stream_df and apply the chunk's HARP sync regression.
+    
+    Returns a HARP-time-indexed DataFrame. Downloads the EphysSyncModel
+    attach once (one MySQL round-trip), loads the joblib LinearRegression,
+    and applies it to the ONIX index.
+    
+    For raw ONIX-clock-indexed data, fetch ``stream_df`` directly instead
+    of using this helper.
+    """
+    df = (cls & restriction).fetch1("stream_df")              # ONIX-indexed
+    sync_attach = (EphysSyncModel & restriction).fetch1("sync_model")
+    model = joblib.load(sync_attach)
+    harp_seconds = model.predict(df.index.values.reshape(-1, 1)).flatten()
+    df.index = io_api.to_datetime(harp_seconds)
+    return df
+```
+
+Two-line user pattern:
+```python
+df_raw    = (OnixImuChunk & key).fetch1("stream_df")    # ONIX-indexed, no sync model fetch
+df_synced = OnixImuChunk.synced_df(key)                 # HARP-indexed, applies regression
+```
+
+Sync logic lives in this one named place — easy to find, test, mock. The codec stays narrow.
+
 ---
 
 ## Codec: `<aeon_onix_stream>`
 
 Sibling to the existing `<aeon_stream>` codec (`aeon/dj_pipeline/utils/codec.py`). The existing codec assumes Harp-style time-indexed binaries (`io_api.load(start=, end=)` natively trims). Bno055 binaries carry no embedded timestamps, so a separate codec handles ONIX-clock alignment + sync regression.
+
+**Design choice — structural-only.** The codec performs raw-data and structural operations only: file loads, column renames, concat on sample index. It does **not** apply the HARP sync regression. This preserves parity with the existing `<aeon_stream>` codec contract (lazy load of raw data, byte-deterministic given the file bytes) and keeps the codec test surface narrow. Sync application is exposed as an explicit `OnixImuChunk.synced_df` classmethod (defined in the OnixImuChunk schema section) — users opt in when they want HARP-indexed data.
 
 **Stored JSON shape** (one ref per OnixImuChunk row, covers all 4 streams):
 ```json
@@ -209,11 +243,18 @@ Sibling to the existing `<aeon_stream>` codec (`aeon/dj_pipeline/utils/codec.py`
 5. For each non-clock Stream class on the named StreamGroup (`Bno055Euler`, `Bno055GravityVector`, `Bno055LinearAcceleration`, `Bno055Quaternion`):
    - Load `Bno055_<StreamName>_N.bin` (float32 payload) via the matching reader.
    - Rename its columns by prefixing with the snake_case stream name minus the `Bno055` prefix (e.g., `Bno055Euler`'s `x/y/z` → `euler_x/euler_y/euler_z`).
-6. Concat all stream DataFrames column-wise on the shared sample index.
-7. Download the `EphysSyncModel.sync_model` attach file, `joblib.load`, apply regression to convert ONIX → HARP datetimes; assign as the DataFrame index.
-8. Return the merged HARP-time-indexed `pd.DataFrame` (13 columns for Bno055).
+6. Concat all stream DataFrames column-wise, using the ONIX clock array as the index.
+7. Return an **ONIX-clock-indexed** `pd.DataFrame` (13 columns for Bno055; index dtype `uint64`).
 
 The `stream_group` knob makes the codec reusable for any future ONIX-clocked accessory whose dotmap StreamGroup follows the same `<Group>Clock` + sibling-stream-classes convention.
+
+**What the codec deliberately does not do:**
+
+| Operation | Why excluded |
+|-----------|--------------|
+| Apply the regression model | Derivational, not raw. Sklearn version drift could change historical decode results silently. Failure surface (model attach missing, version mismatch, extrapolation NaNs) shouldn't sit on every fetch. |
+| Convert ONIX → HARP timestamps | Same as above. Some downstream uses (aligning IMU samples with raw ONIX-clocked ephys events) need ONIX directly. |
+| Download `sync_model` attach | Hidden expensive I/O on every fetch. Sync helper opts into this cost when needed. |
 
 ---
 
@@ -367,24 +408,25 @@ def make(self, key):
         })
         return
 
-    # Load + merge all Bno055 streams (same logic the codec uses on decode)
+    # Load + merge all Bno055 streams (ONIX-clock-indexed) — same logic the codec uses on decode
     df = load_and_merge_bno055(device_dir, device_name, chunk_index)
 
-    # Apply regression to map ONIX → HARP for the index
-    onix_clock = df.index.values
+    # For DB summary fields only: apply sync regression to compute HARP timestamps.
+    # The stored stream_df ref points to the ONIX-indexed DataFrame; sync is applied
+    # only when users call OnixImuChunk.synced_df() — not on every codec fetch.
     model = joblib.load(sm["sync_model"])
-    df.index = pd.to_datetime(model.predict(onix_clock.reshape(-1, 1)).flatten(), ...)
+    harp_index = io_api.to_datetime(model.predict(df.index.values.reshape(-1, 1)).flatten())
 
     self.insert1({
         **key,
         "sample_count": len(df),
-        "timestamps": timestamp_summary(df.index),
-        **{col: column_stats(df[col].values) for col in IMU_COLUMNS},
+        "timestamps": timestamp_summary(harp_index),                   # HARP-domain stats
+        **{col: column_stats(df[col].values) for col in IMU_COLUMNS},  # sync-agnostic
         "stream_df": stream_df_ref,
     })
 ```
 
-`load_and_merge_bno055` is shared between `make()` (for stats) and the codec's `decode()` (for lazy fetch) — single source of truth for column naming + merge logic.
+`load_and_merge_bno055` is shared between `make()` (for column stats) and the codec's `decode()` (for lazy fetch) — single source of truth for column naming + merge logic. Both produce ONIX-indexed output; HARP conversion happens in two distinct places: once in `make()` to populate the `timestamps` summary field, and once on demand in `synced_df` for user fetches.
 
 ---
 
