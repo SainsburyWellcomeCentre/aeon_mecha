@@ -723,7 +723,6 @@ def _make_environment_stream(table, key, *, stream_type: str):
     from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
 
     chunk_start, chunk_end, epoch_start = (Chunk & key).fetch1("chunk_start", "chunk_end", "epoch_start")
-    data_dirs = Experiment.get_data_directories(key)
 
     stream_reader = get_stream_reader_for_epoch(
         key["experiment_name"], "Environment", stream_type, epoch_start, default=None
@@ -733,7 +732,7 @@ def _make_environment_stream(table, key, *, stream_type: str):
         df = None
     else:
         df = io_api.load(
-            root=data_dirs,
+            root=Experiment.get_data_directories(key),
             reader=stream_reader,
             start=pd.Timestamp(chunk_start),
             end=pd.Timestamp(chunk_end),
