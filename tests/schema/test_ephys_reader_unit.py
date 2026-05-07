@@ -8,6 +8,8 @@ import pytest
 
 from aeon.schema.ephys import HarpSyncModel
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def synthetic_harp_csv(tmp_path):
