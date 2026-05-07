@@ -544,12 +544,13 @@ class Chunk(dj.Manual):
 #   - MessageLog        (Environment_MessageLog_*)
 #   - LightEvents       (Environment_LightEvents_*, foragingABC-only)
 #
-# All three follow the same codec-based pattern as auto-generated stream
-# tables in `streams_maker`: per-column JSON summary stats plus an
-# <aeon_stream> reference for lazy DataFrame loading.
+# Each table stores sample_count + timestamp stats for quick browsing,
+# plus an <aeon_stream> codec reference for lazy DataFrame loading. The
+# raw column values live in the codec payload, not as separate JSON
+# attributes.
 
 
-def _environment_row(df, *, key, chunk_window, stream_type: str, columns: list[str]) -> dict:
+def _environment_row(df, *, key, chunk_window, stream_type: str) -> dict:
     """Build the insert row for an Environment-prefixed stream table.
 
     Pure function: no DB, no filesystem. Receives the already-loaded
@@ -565,9 +566,8 @@ def _environment_row(df, *, key, chunk_window, stream_type: str, columns: list[s
             returned by (Chunk & key).fetch1("chunk_start", "chunk_end",
             "epoch_start").
         stream_type: PascalCase stream type name (e.g., "EnvironmentState").
-        columns: data column names whose JSON summary stats to compute.
     """
-    from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+    from aeon.dj_pipeline.utils.stats import timestamp_stats
 
     chunk_start, chunk_end, epoch_start = chunk_window
 
@@ -576,7 +576,6 @@ def _environment_row(df, *, key, chunk_window, stream_type: str, columns: list[s
             **key,
             "sample_count": 0,
             "timestamps": {},
-            **{c: {} for c in columns},
             "stream_df": None,
         }
 
@@ -584,7 +583,6 @@ def _environment_row(df, *, key, chunk_window, stream_type: str, columns: list[s
         **key,
         "sample_count": len(df),
         "timestamps": timestamp_stats(df.index) if len(df) > 0 else {},
-        **{c: column_stats(df[c].values) if len(df) > 0 else {} for c in columns},
         "stream_df": {
             "stream_type": stream_type,
             "experiment_name": key["experiment_name"],
@@ -596,7 +594,7 @@ def _environment_row(df, *, key, chunk_window, stream_type: str, columns: list[s
     }
 
 
-def _make_environment_stream(table, key, *, stream_type: str, columns: list[str]):
+def _make_environment_stream(table, key, *, stream_type: str):
     """Populate one row of an Environment-prefixed stream table.
 
     Resolves the reader via get_stream_reader_for_epoch (default=None),
@@ -629,7 +627,6 @@ def _make_environment_stream(table, key, *, stream_type: str, columns: list[str]
         key=key,
         chunk_window=(chunk_start, chunk_end, epoch_start),
         stream_type=stream_type,
-        columns=columns,
     )
     table.insert1(row, ignore_extra_fields=True)
 
@@ -641,13 +638,12 @@ class EnvironmentState(dj.Imported):
     ---
     sample_count: int32           # number of data points in this chunk
     timestamps: json              # {{min, max, count, sampling_rate_hz}}
-    state: json                   # column summary stats
     stream_df=null: <aeon_stream> # codec ref for lazy DataFrame loading
     """
 
     def make(self, key):
         """Populate from Environment_EnvironmentState_* CSV reader."""
-        _make_environment_stream(self, key, stream_type="EnvironmentState", columns=["state"])
+        _make_environment_stream(self, key, stream_type="EnvironmentState")
 
 
 @schema
@@ -657,17 +653,12 @@ class MessageLog(dj.Imported):
     ---
     sample_count: int32
     timestamps: json
-    priority: json
-    type: json
-    message: json
     stream_df=null: <aeon_stream>
     """
 
     def make(self, key):
         """Populate from Environment_MessageLog_* Log reader."""
-        _make_environment_stream(
-            self, key, stream_type="MessageLog", columns=["priority", "type", "message"]
-        )
+        _make_environment_stream(self, key, stream_type="MessageLog")
 
 
 @schema
@@ -677,8 +668,6 @@ class LightEvents(dj.Imported):
     ---
     sample_count: int32
     timestamps: json
-    channel: json
-    value: json
     stream_df=null: <aeon_stream>
     """
 
@@ -689,7 +678,7 @@ class LightEvents(dj.Imported):
         expose `light_events` (anything other than foragingABC), the helper
         inserts sample_count=0 with stream_df=None.
         """
-        _make_environment_stream(self, key, stream_type="LightEvents", columns=["channel", "value"])
+        _make_environment_stream(self, key, stream_type="LightEvents")
 
 
 # ---- HELPERS ----

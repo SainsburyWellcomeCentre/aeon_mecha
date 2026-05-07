@@ -28,7 +28,8 @@ class TestEnvironmentStreamTableDefinitions:
             "experiment_name",
             "chunk_start",
         }
-        assert "state" in attrs
+        assert "sample_count" in attrs
+        assert "timestamps" in attrs
         assert "stream_df" in attrs
         assert attrs["stream_df"].nullable
 
@@ -38,8 +39,8 @@ class TestEnvironmentStreamTableDefinitions:
             "experiment_name",
             "chunk_start",
         }
-        for col in ("priority", "type", "message"):
-            assert col in attrs
+        assert "sample_count" in attrs
+        assert "timestamps" in attrs
         assert attrs["stream_df"].nullable
 
     def test_light_events_table_exists(self, acquisition_module):
@@ -48,8 +49,8 @@ class TestEnvironmentStreamTableDefinitions:
             "experiment_name",
             "chunk_start",
         }
-        for col in ("channel", "value"):
-            assert col in attrs
+        assert "sample_count" in attrs
+        assert "timestamps" in attrs
         assert attrs["stream_df"].nullable
 
 

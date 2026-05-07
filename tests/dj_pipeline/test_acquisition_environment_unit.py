@@ -38,14 +38,10 @@ class TestEnvironmentRow:
             key=chunk_key,
             chunk_window=chunk_window,
             stream_type="EnvironmentState",
-            columns=["state"],
         )
         assert row["sample_count"] == 2
-        # timestamp_stats / column_stats yield real dicts; we just assert non-empty
         assert isinstance(row["timestamps"], dict)
         assert row["timestamps"].get("count") == 2
-        assert isinstance(row["state"], dict)
-        assert row["state"].get("count") == 2
         assert row["stream_df"] == {
             "stream_type": "EnvironmentState",
             "experiment_name": "exp",
@@ -58,7 +54,7 @@ class TestEnvironmentRow:
     def test_builds_empty_stats_when_df_is_none(self, chunk_key, chunk_window):
         """df=None means no reader was resolved (e.g., LightEvents on non-foragingABC).
 
-        The row carries sample_count=0, empty stats, AND stream_df=None.
+        The row carries sample_count=0, empty timestamps, AND stream_df=None.
         """
         import aeon.dj_pipeline.acquisition as acquisition  # noqa: PLR0402
 
@@ -67,18 +63,15 @@ class TestEnvironmentRow:
             key=chunk_key,
             chunk_window=chunk_window,
             stream_type="LightEvents",
-            columns=["channel", "value"],
         )
         assert row["sample_count"] == 0
         assert row["timestamps"] == {}
-        assert row["channel"] == {}
-        assert row["value"] == {}
         assert row["stream_df"] is None
 
     def test_builds_empty_stats_when_df_is_empty(self, chunk_key, chunk_window):
         """Reader resolved but the chunk window contains no rows -> sample_count=0.
 
-        Empty stats dicts, but stream_df IS populated (decode will yield empty DataFrame).
+        Empty timestamps dict, but stream_df IS populated (decode will yield empty DataFrame).
         """
         import aeon.dj_pipeline.acquisition as acquisition  # noqa: PLR0402
 
@@ -88,11 +81,9 @@ class TestEnvironmentRow:
             key=chunk_key,
             chunk_window=chunk_window,
             stream_type="EnvironmentState",
-            columns=["state"],
         )
         assert row["sample_count"] == 0
         assert row["timestamps"] == {}
-        assert row["state"] == {}
         assert row["stream_df"]["stream_type"] == "EnvironmentState"
         assert row["stream_df"]["device_name"] == "Environment"
 
@@ -104,7 +95,6 @@ class TestEnvironmentRow:
             key=chunk_key,
             chunk_window=chunk_window,
             stream_type="MessageLog",
-            columns=["priority", "type", "message"],
         )
         assert row["experiment_name"] == "exp"
         assert row["chunk_start"] == chunk_key["chunk_start"]
