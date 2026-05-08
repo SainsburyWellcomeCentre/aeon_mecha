@@ -1,22 +1,14 @@
 """Utility functions for the ephys pipeline.
 
-Helpers for probe discovery, subject-probe mapping, sync model processing,
-and probe type creation. Used by ephys.py table classes.
+Helpers for probe discovery, subject-probe mapping, and probe type creation.
+Used by ephys.py table classes.
 """
 
 import json
 import re
-import tempfile
 from pathlib import Path
-from datetime import datetime
-
-import numpy as np
-import joblib
 
 import datajoint as dj
-
-from swc.aeon.io import api as io_api
-from aeon.schema.ephys import social_ephys
 
 logger = dj.logger
 
@@ -62,15 +54,18 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
                         serial = Path(gain_cal).parent.name
                         if serial and serial.isdigit():
                             return serial
-                    except Exception:
-                        pass
+                    except Exception:  # noqa: BLE001
+                        logger.debug(f"Failed to extract serial from GainCalibrationFileName: {gain_cal}")
 
     return default_id
 
 
 def find_or_create_probe_insertion(
-    experiment_name: str, subject: str, probe_id: str,
-    probe_insertion_table, probe_table,
+    experiment_name: str,
+    subject: str,
+    probe_id: str,
+    probe_insertion_table,
+    probe_table,
 ) -> dict:
     """Find existing or create new ProbeInsertion for this (experiment, subject, probe).
 
@@ -88,8 +83,7 @@ def find_or_create_probe_insertion(
     """
     # Check if a ProbeInsertion already exists for this probe + subject + experiment
     existing = (
-        probe_insertion_table
-        & {"experiment_name": experiment_name, "subject": subject, "probe": probe_id}
+        probe_insertion_table & {"experiment_name": experiment_name, "subject": subject, "probe": probe_id}
     ).to_dicts()
     if existing:
         row = existing[0]
@@ -101,17 +95,18 @@ def find_or_create_probe_insertion(
 
     # Create new ProbeInsertion with auto-assigned insertion_number
     existing_nums = (
-        probe_insertion_table
-        & {"experiment_name": experiment_name, "subject": subject}
+        probe_insertion_table & {"experiment_name": experiment_name, "subject": subject}
     ).to_arrays("insertion_number")
     new_num = int(existing_nums.max()) + 1 if len(existing_nums) > 0 else 1
 
-    probe_insertion_table.insert1({
-        "experiment_name": experiment_name,
-        "subject": subject,
-        "insertion_number": new_num,
-        "probe": probe_id,
-    })
+    probe_insertion_table.insert1(
+        {
+            "experiment_name": experiment_name,
+            "subject": subject,
+            "insertion_number": new_num,
+            "probe": probe_id,
+        }
+    )
     logger.info(
         f"Created ProbeInsertion: experiment={experiment_name}, "
         f"subject={subject}, insertion_number={new_num}, probe={probe_id}"
@@ -124,7 +119,9 @@ def find_or_create_probe_insertion(
 
 
 def read_probe_assignments(
-    key: dict, epoch_path: Path, probe_labels: list[str],
+    key: dict,
+    epoch_path: Path,
+    probe_labels: list[str],
     insertion_table,
 ) -> dict:
     """Read subject-probe mapping from file or carry forward from previous epoch.
@@ -172,7 +169,7 @@ def discover_epoch_probes(epoch_path: Path) -> tuple[str | None, Path | None, li
             device_dir = candidate
             break
 
-    if device_name is None:
+    if device_name is None or device_dir is None:
         return None, None, []
 
     amplifier_files = sorted(device_dir.glob(f"{device_name}_Probe*_AmplifierData_*.bin"))
@@ -204,125 +201,15 @@ def parse_epoch_metadata(epoch_path: Path) -> dict | None:
     try:
         with open(metadata_path) as f:
             return json.load(f)  # JSON despite .yml extension
-    except (json.JSONDecodeError, IOError) as e:
+    except (json.JSONDecodeError, OSError) as e:
         logger.warning(f"Failed to parse Metadata.yml at {metadata_path}: {e}")
         return None
 
 
-def process_ephys_file(
-    ephys_file: Path,
-    raw_dir: Path,
-    insertion_key: dict,
-    epoch_start: datetime,
-    probe_label: str,
-    probe_type: str,
-    electrode_config_name: str,
-    sync_models: dict,
-    chunk_table,
-) -> None:
-    """Process a single ephys binary file into a chunk entry with sync model.
-
-    Args:
-        ephys_file: Path to the amplifier data binary file
-        raw_dir: Root raw data directory
-        insertion_key: ProbeInsertion key (experiment_name, subject, insertion_number)
-        epoch_start: Epoch start datetime for this file's epoch
-        probe_label: File label (e.g., "ProbeA")
-        probe_type: Probe type string
-        electrode_config_name: Electrode configuration name
-        sync_models: Mutable dict cache for sync models (shared across files)
-        chunk_table: The EphysChunk table class (for inserts)
-    """
-    clock_file = ephys_file.with_name(
-        ephys_file.name.replace("AmplifierData", "Clock")
-    )
-    onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
-
-    model_parent_dir = raw_dir / ephys_file.relative_to(raw_dir).parents[-2]
-    if model_parent_dir.as_posix() not in sync_models:
-        device_prefix = ephys_file.name.split(f"_{probe_label}_")[0]
-        device_reader = getattr(social_ephys, device_prefix, None)
-        if device_reader is None:
-            raise ValueError(
-                f"No sync reader found for device '{device_prefix}'. "
-                f"Available devices: {list(social_ephys.keys())}"
-            )
-        sync_models[model_parent_dir.as_posix()] = io_api.load(
-            model_parent_dir,
-            device_reader.HarpSyncModel,
-        )
-
-    sync_model = sync_models[model_parent_dir.as_posix()]
-    matched_sync = sync_model.query(
-        f"(clock_start <= {onix_ts[0]} <= clock_end)"
-        f" | "
-        f"(clock_start <= {onix_ts[-1]} <= clock_end)"
-    )
-
-    sync_entries = []
-    with tempfile.TemporaryDirectory() as tmpdir:
-        for idx, (_, r) in enumerate(matched_sync.iterrows()):
-            if idx == 0:
-                chunk_start = r.model.predict(
-                    np.array(onix_ts[0]).reshape(-1, 1)
-                ).flatten()[0]
-                chunk_start = io_api.to_datetime(chunk_start)
-                if hasattr(chunk_start, "tz_localize"):
-                    chunk_start = chunk_start.tz_localize(None)
-            if idx == len(matched_sync) - 1:
-                chunk_end = r.model.predict(
-                    np.array(onix_ts[-1]).reshape(-1, 1)
-                ).flatten()[0]
-                chunk_end = io_api.to_datetime(chunk_end)
-                if hasattr(chunk_end, "tz_localize"):
-                    chunk_end = chunk_end.tz_localize(None)
-
-            model_path = Path(tmpdir) / (
-                ephys_file.stem + f"_{r.clock_start}.joblib"
-            )
-            joblib.dump(r.model, model_path)
-
-            harp_start = r.name
-            if hasattr(harp_start, "tz_localize"):
-                harp_start = harp_start.tz_localize(None)
-            sync_entries.append(
-                {
-                    "onix_ts_start": r.clock_start,
-                    "onix_ts_end": r.clock_end,
-                    "sync_model": model_path,
-                    "harp_start": harp_start,
-                }
-            )
-
-        chunk_entry = {
-            **insertion_key,
-            "chunk_start": chunk_start,
-            "chunk_end": chunk_end,
-            "epoch_start": epoch_start,
-            "probe_type": probe_type,
-            "electrode_config_name": electrode_config_name,
-        }
-        chunk_table.insert1(chunk_entry)
-        chunk_table.File.insert(
-            [
-                dict(
-                    **chunk_entry,
-                    directory_type="raw",
-                    file_name=f.name,
-                    file_path=f.relative_to(raw_dir).as_posix(),
-                )
-                for f in (ephys_file, clock_file)
-            ],
-            ignore_extra_fields=True,
-        )
-        chunk_table.SyncModel.insert(
-            [{**chunk_entry, **sync_entry} for sync_entry in sync_entries],
-            ignore_extra_fields=True,
-        )
-
-
 def create_probe_type(
-    probe_type: str, manufacturer: str, probe_name: str,
+    probe_type: str,
+    manufacturer: str,
+    probe_name: str,
     probe_type_table,
 ) -> None:
     """Create a new probe type with electrode geometry from probeinterface.
@@ -335,9 +222,7 @@ def create_probe_type(
     """
     import probeinterface as pi
 
-    electrode_df = pi.get_probe(
-        manufacturer=manufacturer, probe_name=probe_name
-    ).to_dataframe()
+    electrode_df = pi.get_probe(manufacturer=manufacturer, probe_name=probe_name).to_dataframe()
     electrode_df.rename(
         columns={
             "contact_ids": "electrode_name",
@@ -352,5 +237,5 @@ def create_probe_type(
     electrode_df["electrode"] = electrode_df.index
 
     with probe_type_table.connection.transaction:
-        probe_type_table.insert1(dict(probe_type=probe_type))
+        probe_type_table.insert1({"probe_type": probe_type})
         probe_type_table.Electrode.insert(electrode_df, ignore_extra_fields=True)

@@ -14,7 +14,6 @@ from aeon.dj_pipeline.utils.ephys_utils import (
     find_or_create_probe_insertion,
     get_probe_id,
     parse_epoch_metadata,
-    process_ephys_file,
     read_probe_assignments,
 )
 from aeon.dj_pipeline.utils.ephys_utils import (
@@ -23,6 +22,70 @@ from aeon.dj_pipeline.utils.ephys_utils import (
 
 schema = dj.Schema(get_schema_name("ephys"))
 logger = dj.logger
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers (used by EphysSyncModel.ingest and EphysChunk.ingest_chunks)
+# ---------------------------------------------------------------------------
+
+
+def _resolve_raw_dir_and_epochs(
+    experiment_name: str,
+) -> "tuple[Path, dict[str, datetime]] | None":
+    """Return (raw_dir, {epoch_dir_name: epoch_start}) or None if unavailable.
+
+    Centralises the filesystem + DB lookup that both ingest paths need.
+    """
+    exp_key = {"experiment_name": experiment_name}
+    raw_dir_result = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw")
+    if raw_dir_result is None:
+        logger.error(f"Raw data directory not found for {experiment_name}")
+        return None
+    raw_dir = Path(raw_dir_result)
+
+    epoch_dir_to_start: dict[str, datetime] = {}
+    for ep in (acquisition.Epoch & exp_key).proj("epoch_start", "epoch_dir").to_dicts():
+        if ep["epoch_dir"]:
+            top_dir = Path(ep["epoch_dir"]).parts[0]
+            epoch_dir_to_start[top_dir] = ep["epoch_start"]
+
+    return raw_dir, epoch_dir_to_start
+
+
+def _harp_to_naive(seconds: float) -> datetime:
+    """Convert HARP seconds-since-1904 to a timezone-naive datetime (DJ-compatible)."""
+    from swc.aeon.io import api as io_api
+
+    dt = io_api.to_datetime(float(seconds))
+    return dt.replace(tzinfo=None) if getattr(dt, "tzinfo", None) else dt
+
+
+def _resolve_harp(sync_row: dict, onix_ts: int) -> datetime:
+    """Compute the HARP equivalent of an ONIX timestamp from a SyncModel row.
+
+    Fast path: exact match against observed onix_ts_start/onix_ts_end boundaries
+    — return the stored harp datetime directly (no model load required).
+    Slow path: download the attached model bytes and call LinearRegression.predict.
+
+    Args:
+        sync_row: A dict from EphysSyncModel.to_dicts() with all column values.
+        onix_ts: ONIX hardware timestamp to convert.
+
+    Returns:
+        Timezone-naive datetime representing the HARP equivalent.
+    """
+    import joblib
+    import numpy as np
+
+    if onix_ts == int(sync_row["onix_ts_start"]):
+        harp_dt = sync_row["sync_start"]
+        return harp_dt.replace(tzinfo=None) if getattr(harp_dt, "tzinfo", None) else harp_dt
+    if onix_ts == int(sync_row["onix_ts_end"]):
+        harp_dt = sync_row["sync_end"]
+        return harp_dt.replace(tzinfo=None) if getattr(harp_dt, "tzinfo", None) else harp_dt
+    model = joblib.load(sync_row["sync_model"])
+    harp_seconds = float(model.predict(np.array([[onix_ts]])).flatten()[0])
+    return _harp_to_naive(harp_seconds)
 
 
 @schema
@@ -254,31 +317,20 @@ class EphysSyncModel(dj.Manual):
             experiment_name: Name of the experiment to process
         """
         import tempfile
-        from pathlib import Path
 
         import joblib
-        from swc.aeon.io import api as io_api
 
         from aeon.schema.ephys import social_ephys
 
-        exp_key = {"experiment_name": experiment_name}
-        raw_dir_result = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw")
-        if raw_dir_result is None:
-            logger.error(f"Raw data directory not found for {experiment_name}")
+        resolved = _resolve_raw_dir_and_epochs(experiment_name)
+        if resolved is None:
             return
-        raw_dir = Path(raw_dir_result)
-
-        # Build epoch_dir → epoch_start lookup
-        epochs = (acquisition.Epoch & exp_key).proj("epoch_start", "epoch_dir").to_dicts()
-        epoch_dir_to_start = {}
-        for ep in epochs:
-            if ep["epoch_dir"]:
-                top_dir = Path(ep["epoch_dir"]).parts[0]
-                epoch_dir_to_start[top_dir] = ep["epoch_start"]
+        raw_dir, epoch_dir_to_start = resolved
 
         csvs = sorted(raw_dir.rglob("*_HarpSync_*.csv"))
         for csv_path in csvs:
             rel_parts = csv_path.relative_to(raw_dir).parts
+            # Expect: epoch_dir / device_name / file → 3 parts minimum
             if len(rel_parts) < 3:
                 continue
             epoch_dir_name = rel_parts[0]
@@ -302,10 +354,7 @@ class EphysSyncModel(dj.Manual):
             reader = device_streams["HarpSyncModel"]
 
             df_row = reader.read(csv_path).iloc[0]
-            sync_start_dt = io_api.to_datetime(float(df_row["harp_start"]))
-            # Ensure timezone-naive datetime for DataJoint compatibility
-            if hasattr(sync_start_dt, "tzinfo") and sync_start_dt.tzinfo is not None:
-                sync_start_dt = sync_start_dt.replace(tzinfo=None)
+            sync_start_dt = _harp_to_naive(df_row["harp_start"])
 
             existing = cls & {
                 "experiment_name": experiment_name,
@@ -315,9 +364,7 @@ class EphysSyncModel(dj.Manual):
             if existing:
                 continue
 
-            sync_end_dt = io_api.to_datetime(float(df_row["harp_end"]))
-            if hasattr(sync_end_dt, "tzinfo") and sync_end_dt.tzinfo is not None:
-                sync_end_dt = sync_end_dt.replace(tzinfo=None)
+            sync_end_dt = _harp_to_naive(df_row["harp_end"])
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 model_path = Path(tmpdir) / f"{csv_path.stem}.joblib"
@@ -388,28 +435,20 @@ class EphysChunk(dj.Manual):
         Args:
             experiment_name: Name of the experiment to process
         """
-        exp_key = {"experiment_name": experiment_name}
-        raw_dir_result = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw")
-        if raw_dir_result is None:
-            logger.error(f"Raw data directory not found for {experiment_name}")
-            return
-        raw_dir = Path(raw_dir_result)
+        import numpy as np
 
-        # Build epoch lookup: {epoch_dir_name: epoch_start} from Epoch table
-        epochs = (acquisition.Epoch & exp_key).proj("epoch_start", "epoch_dir").to_dicts()
-        epoch_dir_to_start = {}
-        for ep in epochs:
-            if ep["epoch_dir"]:
-                top_dir = Path(ep["epoch_dir"]).parts[0]
-                epoch_dir_to_start[top_dir] = ep["epoch_start"]
+        resolved = _resolve_raw_dir_and_epochs(experiment_name)
+        if resolved is None:
+            return
+        raw_dir, epoch_dir_to_start = resolved
+
+        exp_key = {"experiment_name": experiment_name}
 
         # Build insertion lookup from EphysEpoch.Insertion:
         # {(epoch_start, probe_label): insertion_key}
-        insertion_lookup = {}
-        insertion_entries = (EphysEpoch.Insertion & exp_key).to_dicts()
-        for entry in insertion_entries:
-            lookup_key = (entry["epoch_start"], entry["probe_label"])
-            insertion_lookup[lookup_key] = {
+        insertion_lookup: dict[tuple[datetime, str], dict] = {}
+        for entry in (EphysEpoch.Insertion & exp_key).to_dicts():
+            insertion_lookup[(entry["epoch_start"], entry["probe_label"])] = {
                 "experiment_name": entry["experiment_name"],
                 "subject": entry["subject"],
                 "insertion_number": entry["insertion_number"],
@@ -432,9 +471,6 @@ class EphysChunk(dj.Manual):
             logger.info(f"No ephys amplifier files found in {raw_dir}")
             return
 
-        # Sync model cache (per parent directory)
-        sync_models = {}
-
         for ephys_file in all_ephys_files:
             rel_path = ephys_file.relative_to(raw_dir).as_posix()
 
@@ -452,6 +488,7 @@ class EphysChunk(dj.Manual):
             # Determine epoch from directory path
             # File path structure: raw_dir / epoch_dir / device_name / files
             rel_parts = ephys_file.relative_to(raw_dir).parts
+            # Expect: epoch_dir / device_name / file → 3 parts minimum
             if len(rel_parts) < 3:
                 logger.warning(f"Unexpected file path structure: {ephys_file}. Skipping.")
                 continue
@@ -466,8 +503,7 @@ class EphysChunk(dj.Manual):
                 continue
 
             # Look up ProbeInsertion via EphysEpoch.Insertion
-            lookup_key = (epoch_start, probe_label)
-            insertion_key = insertion_lookup.get(lookup_key)
+            insertion_key = insertion_lookup.get((epoch_start, probe_label))
             if insertion_key is None:
                 logger.warning(
                     f"Skipping {rel_path}: no subject-probe mapping for {probe_label} "
@@ -476,7 +512,43 @@ class EphysChunk(dj.Manual):
                 )
                 continue
 
-            # Resolve electrode config
+            # Read ONIX timestamps from the companion Clock binary
+            clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
+            if not clock_file.exists():
+                logger.warning(f"Clock file not found for {ephys_file.name}. Skipping.")
+                continue
+            onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
+            if len(onix_ts) == 0:
+                logger.warning(f"Empty Clock file for {ephys_file.name}. Skipping.")
+                continue
+            first_ts, last_ts = int(onix_ts[0]), int(onix_ts[-1])
+
+            # Query EphysSyncModel rows that cover the first OR last ONIX timestamp
+            matched = (
+                EphysSyncModel
+                & {"experiment_name": experiment_name, "epoch_start": epoch_start}
+                & (
+                    f"({first_ts} BETWEEN onix_ts_start AND onix_ts_end) "
+                    f"OR ({last_ts} BETWEEN onix_ts_start AND onix_ts_end)"
+                )
+            ).to_dicts(order_by="sync_start")
+
+            if not matched:
+                logger.warning(
+                    f"No EphysSyncModel row covers ONIX range [{first_ts}, {last_ts}] "
+                    f"for {ephys_file.name}. Run EphysSyncModel.ingest() first. Skipping."
+                )
+                continue
+
+            # Resolve HARP chunk_start / chunk_end via DB-backed sync model
+            try:
+                chunk_start = _resolve_harp(matched[0], first_ts)
+                chunk_end = _resolve_harp(matched[-1], last_ts)
+            except Exception as e:
+                logger.error(f"Failed to resolve HARP times for {ephys_file}: {e}")
+                continue
+
+            # Resolve electrode config (single config per probe_type required)
             probe_name = (ProbeInsertion & insertion_key).fetch1("probe")
             probe_type = (Probe & {"probe": probe_name}).fetch1("probe_type")
             configs = (ElectrodeConfig & {"probe_type": probe_type}).to_arrays("electrode_config_name")
@@ -489,21 +561,39 @@ class EphysChunk(dj.Manual):
                 )
             electrode_config_name = configs[0]
 
-            # Process the file into a chunk entry
+            chunk_entry = {
+                **insertion_key,
+                "chunk_start": chunk_start,
+                "chunk_end": chunk_end,
+                "epoch_start": epoch_start,
+                "probe_type": probe_type,
+                "electrode_config_name": electrode_config_name,
+            }
             try:
-                process_ephys_file(
-                    ephys_file=ephys_file,
-                    raw_dir=raw_dir,
-                    insertion_key=insertion_key,
-                    epoch_start=epoch_start,
-                    probe_label=probe_label,
-                    probe_type=probe_type,
-                    electrode_config_name=electrode_config_name,
-                    sync_models=sync_models,
-                    chunk_table=cls,
+                cls.insert1(chunk_entry)
+                cls.File.insert(
+                    [
+                        {
+                            **chunk_entry,
+                            "directory_type": "raw",
+                            "file_name": f.name,
+                            "file_path": f.relative_to(raw_dir).as_posix(),
+                        }
+                        for f in (ephys_file, clock_file)
+                    ],
+                    ignore_extra_fields=True,
+                )
+                cls.SyncModel.insert(
+                    [{**chunk_entry, "sync_start": m["sync_start"]} for m in matched],
+                    ignore_extra_fields=True,
+                )
+                logger.info(
+                    f"Inserted EphysChunk: {experiment_name} "
+                    f"subject={insertion_key['subject']} "
+                    f"chunk_start={chunk_start}"
                 )
             except Exception as e:
-                logger.error(f"Failed to process {ephys_file}: {e}")
+                logger.error(f"Failed to insert EphysChunk for {ephys_file}: {e}")
                 continue
 
 
