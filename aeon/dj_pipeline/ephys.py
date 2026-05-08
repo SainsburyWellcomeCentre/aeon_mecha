@@ -209,6 +209,125 @@ class EphysEpoch(dj.Imported):
 
 
 @schema
+class EphysSyncModel(dj.Manual):
+    """Per-chunk HARP↔ONIX sync regression for an ephys epoch.
+
+    One row per ``HarpSync_*.csv`` (one per ONIX chunk window). Both HARP and
+    ONIX bounds are observed values from the CSV (not predicted) — stable
+    across re-ingestion.
+    """
+
+    definition = """
+    -> EphysEpoch
+    sync_start: datetime(6)            # PK — observed harp_time[0] from CSV (master clock)
+    ---
+    sync_end: datetime(6)              # observed harp_time[-1] from CSV
+    onix_ts_start: bigint              # observed clock[0] from CSV
+    onix_ts_end: bigint                # observed clock[-1] from CSV
+    sync_model: <attach>               # joblib-serialized LinearRegression (onix→harp)
+    r2: float                          # regression fit quality
+    n_samples: int                     # rows in CSV after dropna()
+    unique index (experiment_name, epoch_start, onix_ts_start)
+    """
+
+    @classmethod
+    def ingest(cls, experiment_name: str) -> None:
+        """Discover new HarpSync CSVs across all epochs of the experiment and insert sync model rows.
+
+        Idempotent: skips CSVs whose ``(experiment_name, epoch_start, sync_start)``
+        is already present.
+
+        Args:
+            experiment_name: Name of the experiment to process
+        """
+        import tempfile
+        from pathlib import Path
+
+        import joblib
+        from swc.aeon.io import api as io_api
+
+        from aeon.schema.ephys import social_ephys
+
+        exp_key = {"experiment_name": experiment_name}
+        raw_dir = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw")
+        if raw_dir is None:
+            logger.error(f"Raw data directory not found for {experiment_name}")
+            return
+
+        # Build epoch_dir → epoch_start lookup
+        epochs = (acquisition.Epoch & exp_key).proj("epoch_start", "epoch_dir").to_dicts()
+        epoch_dir_to_start = {}
+        for ep in epochs:
+            if ep["epoch_dir"]:
+                top_dir = Path(ep["epoch_dir"]).parts[0]
+                epoch_dir_to_start[top_dir] = ep["epoch_start"]
+
+        csvs = sorted(raw_dir.rglob("*_HarpSync_*.csv"))
+        for csv_path in csvs:
+            rel_parts = csv_path.relative_to(raw_dir).parts
+            if len(rel_parts) < 3:
+                continue
+            epoch_dir_name = rel_parts[0]
+            device_name = rel_parts[1]
+
+            epoch_start = epoch_dir_to_start.get(epoch_dir_name)
+            if epoch_start is None:
+                logger.warning(
+                    f"Cannot resolve epoch for {csv_path} "
+                    f"(epoch_dir={epoch_dir_name} not in Epoch table). Skipping."
+                )
+                continue
+
+            if device_name not in social_ephys:
+                logger.debug(f"Device '{device_name}' not in social_ephys. Skipping {csv_path}.")
+                continue
+            device_streams = social_ephys[device_name]
+            if "HarpSyncModel" not in device_streams:
+                logger.debug(
+                    f"Device '{device_name}' has no HarpSyncModel stream. Skipping {csv_path}."
+                )
+                continue
+            reader = device_streams["HarpSyncModel"]
+
+            df_row = reader.read(csv_path).iloc[0]
+            sync_start_dt = io_api.to_datetime(float(df_row["harp_start"]))
+            # Ensure timezone-naive datetime for DataJoint compatibility
+            if hasattr(sync_start_dt, "tzinfo") and sync_start_dt.tzinfo is not None:
+                sync_start_dt = sync_start_dt.replace(tzinfo=None)
+
+            existing = cls & {
+                "experiment_name": experiment_name,
+                "epoch_start": epoch_start,
+                "sync_start": sync_start_dt,
+            }
+            if existing:
+                continue
+
+            sync_end_dt = io_api.to_datetime(float(df_row["harp_end"]))
+            if hasattr(sync_end_dt, "tzinfo") and sync_end_dt.tzinfo is not None:
+                sync_end_dt = sync_end_dt.replace(tzinfo=None)
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                model_path = Path(tmpdir) / f"{csv_path.stem}.joblib"
+                joblib.dump(df_row["model"], model_path)
+                cls.insert1({
+                    "experiment_name": experiment_name,
+                    "epoch_start": epoch_start,
+                    "sync_start": sync_start_dt,
+                    "sync_end": sync_end_dt,
+                    "onix_ts_start": int(df_row["clock_start"]),
+                    "onix_ts_end": int(df_row["clock_end"]),
+                    "sync_model": str(model_path),
+                    "r2": float(df_row["r2"]),
+                    "n_samples": int(df_row["n_samples"]),
+                })
+                logger.info(
+                    f"Inserted EphysSyncModel: {experiment_name} "
+                    f"epoch={epoch_start} sync_start={sync_start_dt}"
+                )
+
+
+@schema
 class EphysChunk(dj.Manual):
     definition = """  # A recording period corresponds to a 1-hour ephys data acquisition
     -> ProbeInsertion                      # (experiment_name, subject, insertion_number)
@@ -234,7 +353,7 @@ class EphysChunk(dj.Manual):
         onix_ts_start: bigint  # ONIX timestamp at the start of the sync
         ---
         onix_ts_end: bigint  # ONIX timestamp at the end of the sync
-        sync_model: attach  # serialized file containing the sync model
+        sync_model: <attach>  # serialized file containing the sync model
         harp_start: datetime(6)  # HARP start time of the sync
         """
 
