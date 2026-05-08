@@ -9,7 +9,10 @@ import datajoint as dj
 import pandas as pd
 
 # Register AeonStreamCodec BEFORE any schema activation
-from aeon.dj_pipeline.utils.codec import AeonStreamCodec  # pyright: ignore[reportUnusedImport]
+from aeon.dj_pipeline.utils.codec import (  # pyright: ignore[reportUnusedImport]
+    AeonStreamCodec,
+    OnixStreamCodec,
+)
 
 logger = dj.logger
 

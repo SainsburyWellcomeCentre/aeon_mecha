@@ -47,6 +47,9 @@ def pytest_configure(config):
         mock_dj.VirtualModule = MagicMock()
         mock_dj.Schema = MagicMock()
         mock_dj.DataJointError = Exception
+        # Codec must be a real class so subclasses (AeonStreamCodec, OnixStreamCodec)
+        # can be instantiated without turning into MagicMock objects.
+        mock_dj.Codec = type("Codec", (), {})
 
         sys.modules["datajoint"] = mock_dj
 
