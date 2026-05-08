@@ -470,6 +470,55 @@ def test_ephys_chunk_ingest_uses_sync_model_from_db(dj_config_integration, tmp_p
 
 
 # ============================================================================
+# Task 9: Bno055 fixture helper and OnixImuChunk.populate tests
+# ============================================================================
+
+
+def _make_synthetic_bno055_data(
+    raw_dir: Path,
+    epoch_dir_name: str,
+    device_name: str,
+    n_chunks: int,
+    samples_per_chunk: int = 100,
+):
+    """Write synthetic Bno055 Clock + 4 stream binaries.
+
+    Each chunk's Clock_N.bin first sample equals the HarpSync CSV's onix_ts_start
+    for that chunk (i.e. ``1000 * n * 60 + 1 = 60000*n + 1``) so that
+    ``locate_bno055_chunk_index`` can find each chunk by its first ONIX timestamp.
+
+    Layout matches ``aeon/schema/ephys.py`` Bno055 readers:
+    - Bno055_Clock_N.bin: uint64 ONIX timestamps
+    - Bno055_Euler_N.bin: float32, 3 columns (x, y, z)
+    - Bno055_GravityVector_N.bin: float32, 3 columns
+    - Bno055_LinearAcceleration_N.bin: float32, 3 columns
+    - Bno055_Quaternion_N.bin: float32, 4 columns (w, x, y, z)
+    """
+    device_dir = raw_dir / epoch_dir_name / device_name
+    device_dir.mkdir(parents=True, exist_ok=True)
+    rng = np.random.default_rng(42)
+
+    for n in range(n_chunks):
+        # Must start at exactly onix_ts_start[n] = 60000*n + 1 so
+        # locate_bno055_chunk_index finds the match.
+        chunk_ts_start = 60000 * n + 1
+        chunk_ts_end = 60000 * n + 59001
+        clocks = np.linspace(chunk_ts_start, chunk_ts_end, samples_per_chunk, dtype=np.float64).astype(
+            np.uint64
+        )
+        (device_dir / f"{device_name}_Bno055_Clock_{n}.bin").write_bytes(clocks.tobytes())
+
+        for stream, n_cols in [
+            ("Euler", 3),
+            ("GravityVector", 3),
+            ("LinearAcceleration", 3),
+            ("Quaternion", 4),
+        ]:
+            data = rng.standard_normal((samples_per_chunk, n_cols)).astype(np.float32)
+            (device_dir / f"{device_name}_Bno055_{stream}_{n}.bin").write_bytes(data.tobytes())
+
+
+# ============================================================================
 # Task 8: OnixImuChunk table definition
 # ============================================================================
 
@@ -486,3 +535,68 @@ def test_onix_imu_chunk_table_shape(dj_config_integration):
     assert {"sample_count", "timestamps", "stream_df"} <= attrs
     for col in IMU_COLUMNS:
         assert col in attrs, f"Missing per-column stat field: {col}"
+
+
+# ============================================================================
+# Task 9: OnixImuChunk.populate tests
+# ============================================================================
+
+
+def test_onix_imu_chunk_populate_with_data(dj_config_integration, tmp_path):
+    """OnixImuChunk.populate() ingests Bno055 streams when files exist."""
+    from aeon.dj_pipeline import ephys
+    from aeon.dj_pipeline.utils.onix_imu import IMU_COLUMNS
+
+    experiment_name = "test_onix_imu_with_data"
+    epoch_dir_name = "2024-06-07T10-24-07"
+    device_name = "NeuropixelsV2Beta"
+
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    _make_synthetic_ephys_epoch(raw_dir, experiment_name, epoch_dir_name, device_name, n_chunks=2)
+    _make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=2)
+    _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+
+    ephys.EphysSyncModel.ingest(experiment_name)
+    ephys.OnixImuChunk.populate()
+
+    rows = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).proj().to_dicts()
+    assert len(rows) == 2
+
+    full_rows = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).proj(
+        "sample_count", "timestamps", *IMU_COLUMNS
+    ).to_dicts()
+    for r in full_rows:
+        assert r["sample_count"] == 100
+        assert isinstance(r["timestamps"], dict)
+        for col in IMU_COLUMNS:
+            assert isinstance(r[col], dict)
+
+
+def test_onix_imu_chunk_populate_no_imu_rig(dj_config_integration, tmp_path):
+    """When Bno055 files are absent, OnixImuChunk inserts an empty row."""
+    from aeon.dj_pipeline import ephys
+    from aeon.dj_pipeline.utils.onix_imu import IMU_COLUMNS
+
+    experiment_name = "test_onix_imu_no_data"
+    epoch_dir_name = "2024-06-08T10-24-07"
+    device_name = "NeuropixelsV2Beta"
+
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    # HarpSync CSVs but NO Bno055 binaries
+    _make_synthetic_ephys_epoch(raw_dir, experiment_name, epoch_dir_name, device_name, n_chunks=2)
+    _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+
+    ephys.EphysSyncModel.ingest(experiment_name)
+    ephys.OnixImuChunk.populate()
+
+    full_rows = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).proj(
+        "sample_count", "timestamps", *IMU_COLUMNS
+    ).to_dicts()
+    assert len(full_rows) == 2
+    for r in full_rows:
+        assert r["sample_count"] == 0
+        assert r["timestamps"] == {}
+        for col in IMU_COLUMNS:
+            assert r[col] == {}

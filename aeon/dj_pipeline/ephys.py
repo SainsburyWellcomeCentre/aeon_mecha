@@ -788,3 +788,94 @@ class OnixImuChunk(dj.Imported):
     quaternion_z: json
     stream_df: <aeon_onix_stream>
     """
+
+    def make(self, key):
+        """Populate one OnixImuChunk row per EphysSyncModel key.
+
+        No-IMU rigs (Bno055 files absent) get a row with ``sample_count=0`` and
+        empty stat dicts. The ``stream_df`` reference is still valid; the codec
+        returns an empty DataFrame on fetch.
+        """
+        import joblib
+        import pandas as pd
+
+        from aeon.dj_pipeline.utils.onix_imu import (
+            IMU_COLUMNS,
+            load_and_merge_bno055,
+            locate_bno055_chunk_index,
+        )
+        from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+        sm = (EphysSyncModel & key).proj(
+            "onix_ts_start", "sync_model"
+        ).fetch1()
+        epoch_dir = (acquisition.Epoch & key).fetch1("epoch_dir")
+        raw_dir_result = acquisition.Experiment.get_data_directory(
+            {"experiment_name": key["experiment_name"]}, "raw"
+        )
+        if raw_dir_result is None:
+            raise FileNotFoundError(
+                f"No raw data directory registered for experiment {key['experiment_name']!r}"
+            )
+        raw_dir = Path(raw_dir_result)
+        epoch_path = raw_dir / epoch_dir
+
+        # Discover device directory
+        device_name = None
+        for candidate in ("NeuropixelsV2Beta", "NeuropixelsV2"):
+            if (epoch_path / candidate).is_dir():
+                device_name = candidate
+                break
+
+        stream_df_ref = {
+            "experiment_name": key["experiment_name"],
+            "epoch_start": str(key["epoch_start"]),
+            "sync_start": str(key["sync_start"]),
+            "device_name": device_name or "NeuropixelsV2Beta",
+            "stream_group": "Bno055",
+        }
+
+        if device_name is None:
+            self.insert1({
+                **key,
+                "sample_count": 0,
+                "timestamps": {},
+                **{col: {} for col in IMU_COLUMNS},
+                "stream_df": stream_df_ref,
+            })
+            return
+
+        device_dir = epoch_path / device_name
+        chunk_index = locate_bno055_chunk_index(
+            device_dir, device_name, int(sm["onix_ts_start"])
+        )
+
+        if chunk_index is None:
+            self.insert1({
+                **key,
+                "sample_count": 0,
+                "timestamps": {},
+                **{col: {} for col in IMU_COLUMNS},
+                "stream_df": stream_df_ref,
+            })
+            return
+
+        df = load_and_merge_bno055(device_dir, device_name, chunk_index)
+
+        # Apply regression to compute HARP timestamps for the timestamps summary field.
+        # The stored stream_df ref points to the ONIX-indexed DataFrame — sync is
+        # applied only when users call OnixImuChunk.synced_df().
+        model = joblib.load(sm["sync_model"])
+        onix_clock = df.index.values
+        harp_seconds = model.predict(onix_clock.reshape(-1, 1)).flatten()
+        harp_index = pd.to_datetime(
+            [_harp_to_naive(s) for s in harp_seconds]
+        )
+
+        self.insert1({
+            **key,
+            "sample_count": len(df),
+            "timestamps": timestamp_stats(harp_index),
+            **{col: column_stats(df[col].values) for col in IMU_COLUMNS},
+            "stream_df": stream_df_ref,
+        })
