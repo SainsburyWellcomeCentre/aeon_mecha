@@ -6,8 +6,6 @@ so a module-level import would trigger aeon/dj_pipeline/__init__.py, which
 activates the streams schema and attempts a DB connection.
 """
 
-from pathlib import Path
-
 import numpy as np
 import pytest
 

@@ -1,9 +1,7 @@
 """Unit tests for aeon/schema/ephys.py readers."""
 
 import csv
-from pathlib import Path
 
-import numpy as np
 import pytest
 
 from aeon.schema.ephys import HarpSyncModel

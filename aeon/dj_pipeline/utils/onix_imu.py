@@ -73,20 +73,15 @@ def load_and_merge_bno055(
     merged = pd.concat(pieces, axis=1)
     merged.index = onix_clock
 
-    # Read the constant via the module to honor monkeypatching in tests
-    from aeon.dj_pipeline.utils import onix_imu as _self
-
-    expected = _self.IMU_COLUMNS
-
-    if set(merged.columns) != set(expected):
+    if set(merged.columns) != set(IMU_COLUMNS):
         raise ValueError(
-            f"Bno055 stream column mismatch: expected {expected}, "
+            f"Bno055 stream column mismatch: expected {IMU_COLUMNS}, "
             f"got {tuple(merged.columns)}. Schema in aeon/schema/ephys.py "
             f"may have drifted — update OnixImuChunk + IMU_COLUMNS to match, "
             f"or revert the schema change."
         )
 
-    return merged[list(expected)]
+    return merged[list(IMU_COLUMNS)]
 
 
 def locate_bno055_chunk_index(
