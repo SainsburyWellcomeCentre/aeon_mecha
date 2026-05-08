@@ -60,9 +60,7 @@ def _harp_to_naive(seconds: float) -> datetime:
     return dt.replace(tzinfo=None) if getattr(dt, "tzinfo", None) else dt
 
 
-def _resolve_harp(
-    sync_row: dict, onix_ts: int, _model_cache: "dict | None" = None
-) -> datetime:
+def _resolve_harp(sync_row: dict, onix_ts: int, _model_cache: "dict | None" = None) -> datetime:
     """Compute the HARP equivalent of an ONIX timestamp from a SyncModel row.
 
     Fast path: exact match against observed onix_ts_start/onix_ts_end boundaries
@@ -485,9 +483,7 @@ class EphysChunk(dj.Manual):
                 continue
             probe_name = (ProbeInsertion & ins).fetch1("probe")
             probe_type = (Probe & {"probe": probe_name}).fetch1("probe_type")
-            configs = (ElectrodeConfig & {"probe_type": probe_type}).to_arrays(
-                "electrode_config_name"
-            )
+            configs = (ElectrodeConfig & {"probe_type": probe_type}).to_arrays("electrode_config_name")
             if len(configs) == 0:
                 raise ValueError(f"No electrode configs found for probe_type={probe_type}")
             if len(configs) > 1:
@@ -813,9 +809,7 @@ class OnixImuChunk(dj.Imported):
         sync_attach = (EphysSyncModel & key).fetch1("sync_model")
         model = joblib.load(sync_attach)
         harp_seconds = model.predict(df.index.values.reshape(-1, 1)).flatten()
-        df.index = pd.to_datetime(
-            [_harp_to_naive(s) for s in harp_seconds]
-        )
+        df.index = pd.to_datetime([_harp_to_naive(s) for s in harp_seconds])
         return df
 
     def make(self, key):
@@ -835,9 +829,7 @@ class OnixImuChunk(dj.Imported):
         )
         from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
 
-        sm = (EphysSyncModel & key).proj(
-            "onix_ts_start", "sync_model"
-        ).fetch1()
+        sm = (EphysSyncModel & key).proj("onix_ts_start", "sync_model").fetch1()
         epoch_dir = (acquisition.Epoch & key).fetch1("epoch_dir")
         raw_dir_result = acquisition.Experiment.get_data_directory(
             {"experiment_name": key["experiment_name"]}, "raw"
@@ -865,28 +857,30 @@ class OnixImuChunk(dj.Imported):
         }
 
         if device_name is None:
-            self.insert1({
-                **key,
-                "sample_count": 0,
-                "timestamps": {},
-                **{col: {} for col in IMU_COLUMNS},
-                "stream_df": stream_df_ref,
-            })
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": 0,
+                    "timestamps": {},
+                    **{col: {} for col in IMU_COLUMNS},
+                    "stream_df": stream_df_ref,
+                }
+            )
             return
 
         device_dir = epoch_path / device_name
-        chunk_index = locate_bno055_chunk_index(
-            device_dir, device_name, int(sm["onix_ts_start"])
-        )
+        chunk_index = locate_bno055_chunk_index(device_dir, device_name, int(sm["onix_ts_start"]))
 
         if chunk_index is None:
-            self.insert1({
-                **key,
-                "sample_count": 0,
-                "timestamps": {},
-                **{col: {} for col in IMU_COLUMNS},
-                "stream_df": stream_df_ref,
-            })
+            self.insert1(
+                {
+                    **key,
+                    "sample_count": 0,
+                    "timestamps": {},
+                    **{col: {} for col in IMU_COLUMNS},
+                    "stream_df": stream_df_ref,
+                }
+            )
             return
 
         df = load_and_merge_bno055(device_dir, device_name, chunk_index)
@@ -897,14 +891,14 @@ class OnixImuChunk(dj.Imported):
         model = joblib.load(sm["sync_model"])
         onix_clock = df.index.values
         harp_seconds = model.predict(onix_clock.reshape(-1, 1)).flatten()
-        harp_index = pd.to_datetime(
-            [_harp_to_naive(s) for s in harp_seconds]
-        )
+        harp_index = pd.to_datetime([_harp_to_naive(s) for s in harp_seconds])
 
-        self.insert1({
-            **key,
-            "sample_count": len(df),
-            "timestamps": timestamp_stats(harp_index),
-            **{col: column_stats(df[col].values) for col in IMU_COLUMNS},
-            "stream_df": stream_df_ref,
-        })
+        self.insert1(
+            {
+                **key,
+                "sample_count": len(df),
+                "timestamps": timestamp_stats(harp_index),
+                **{col: column_stats(df[col].values) for col in IMU_COLUMNS},
+                "stream_df": stream_df_ref,
+            }
+        )

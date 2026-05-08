@@ -563,9 +563,11 @@ def test_onix_imu_chunk_populate_with_data(dj_config_integration, tmp_path):
     rows = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).proj().to_dicts()
     assert len(rows) == 2
 
-    full_rows = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).proj(
-        "sample_count", "timestamps", *IMU_COLUMNS
-    ).to_dicts()
+    full_rows = (
+        (ephys.OnixImuChunk & {"experiment_name": experiment_name})
+        .proj("sample_count", "timestamps", *IMU_COLUMNS)
+        .to_dicts()
+    )
     for r in full_rows:
         assert r["sample_count"] == 100
         assert isinstance(r["timestamps"], dict)
@@ -591,9 +593,11 @@ def test_onix_imu_chunk_populate_no_imu_rig(dj_config_integration, tmp_path):
     ephys.EphysSyncModel.ingest(experiment_name)
     ephys.OnixImuChunk.populate()
 
-    full_rows = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).proj(
-        "sample_count", "timestamps", *IMU_COLUMNS
-    ).to_dicts()
+    full_rows = (
+        (ephys.OnixImuChunk & {"experiment_name": experiment_name})
+        .proj("sample_count", "timestamps", *IMU_COLUMNS)
+        .to_dicts()
+    )
     assert len(full_rows) == 2
     for r in full_rows:
         assert r["sample_count"] == 0
