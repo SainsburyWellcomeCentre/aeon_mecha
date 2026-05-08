@@ -600,3 +600,58 @@ def test_onix_imu_chunk_populate_no_imu_rig(dj_config_integration, tmp_path):
         assert r["timestamps"] == {}
         for col in IMU_COLUMNS:
             assert r[col] == {}
+
+
+# ============================================================================
+# Task 10: OnixImuChunk.synced_df classmethod
+# ============================================================================
+
+
+def test_synced_df_returns_harp_indexed_dataframe(dj_config_integration, tmp_path):
+    """synced_df fetches stream_df and applies the SyncModel regression."""
+    from aeon.dj_pipeline import ephys
+    from aeon.dj_pipeline.utils.onix_imu import IMU_COLUMNS
+
+    experiment_name = "test_onix_imu_synced"
+    epoch_dir_name = "2024-06-09T10-24-07"
+    device_name = "NeuropixelsV2Beta"
+
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    _make_synthetic_ephys_epoch(raw_dir, experiment_name, epoch_dir_name, device_name, n_chunks=1)
+    _make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=1)
+    _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+
+    ephys.EphysSyncModel.ingest(experiment_name)
+    ephys.OnixImuChunk.populate()
+
+    key = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).fetch1("KEY")
+    df = ephys.OnixImuChunk.synced_df(key)
+
+    assert tuple(df.columns) == IMU_COLUMNS
+    assert len(df) == 100
+    # HARP-indexed → datetime dtype, NOT uint64
+    assert df.index.dtype.kind == "M"
+
+
+def test_synced_df_raises_on_ambiguous_key(dj_config_integration, tmp_path):
+    """A non-PK restriction matching multiple rows raises (via fetch1)."""
+    import datajoint as dj
+    from aeon.dj_pipeline import ephys
+
+    experiment_name = "test_onix_imu_ambiguous"
+    epoch_dir_name = "2024-06-10T10-24-07"
+    device_name = "NeuropixelsV2Beta"
+
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    _make_synthetic_ephys_epoch(raw_dir, experiment_name, epoch_dir_name, device_name, n_chunks=2)
+    _make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=2)
+    _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+
+    ephys.EphysSyncModel.ingest(experiment_name)
+    ephys.OnixImuChunk.populate()
+
+    # Ambiguous key — matches 2 rows
+    with pytest.raises(dj.errors.DataJointError):
+        ephys.OnixImuChunk.synced_df({"experiment_name": experiment_name})

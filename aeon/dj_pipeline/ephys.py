@@ -789,6 +789,35 @@ class OnixImuChunk(dj.Imported):
     stream_df: <aeon_onix_stream>
     """
 
+    @classmethod
+    def synced_df(cls, key):
+        """Fetch stream_df for a single chunk and apply its HARP sync regression.
+
+        Args:
+            key: A complete OnixImuChunk primary key dict — must resolve to
+                exactly one row. PK fields: ``experiment_name``, ``epoch_start``,
+                ``sync_start``. ``fetch1()`` raises if the key resolves to zero
+                or multiple rows.
+
+        Returns:
+            HARP-time-indexed DataFrame with the columns in
+            :data:`aeon.dj_pipeline.utils.onix_imu.IMU_COLUMNS`.
+
+        For raw ONIX-clock-indexed data, fetch ``stream_df`` directly instead
+        of using this helper.
+        """
+        import joblib
+        import pandas as pd
+
+        df = (cls & key).fetch1("stream_df")
+        sync_attach = (EphysSyncModel & key).fetch1("sync_model")
+        model = joblib.load(sync_attach)
+        harp_seconds = model.predict(df.index.values.reshape(-1, 1)).flatten()
+        df.index = pd.to_datetime(
+            [_harp_to_naive(s) for s in harp_seconds]
+        )
+        return df
+
     def make(self, key):
         """Populate one OnixImuChunk row per EphysSyncModel key.
 
