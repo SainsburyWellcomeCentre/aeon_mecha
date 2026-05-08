@@ -1,19 +1,24 @@
+"""DataJoint schema for the ephys pipeline."""
+
 import re
-import datajoint as dj
-from typing import Dict, Any
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+
+import datajoint as dj
 
 from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import (
     DEVICE_PROBE_TYPE_MAP,
-    create_probe_type as _create_probe_type,
     discover_epoch_probes,
     find_or_create_probe_insertion,
     get_probe_id,
     parse_epoch_metadata,
     process_ephys_file,
     read_probe_assignments,
+)
+from aeon.dj_pipeline.utils.ephys_utils import (
+    create_probe_type as _create_probe_type,
 )
 
 schema = dj.Schema(get_schema_name("ephys"))
@@ -112,7 +117,7 @@ class EphysEpoch(dj.Imported):
         probe_label: varchar(32)  # file label discovered from this epoch's files (e.g., "ProbeA")
         """
 
-    def make(self, key: Dict[str, Any]) -> None:
+    def make(self, key: dict[str, Any]) -> None:
         """Discover ephys data in an epoch and register active probe insertions.
 
         For each epoch:
@@ -132,9 +137,7 @@ class EphysEpoch(dj.Imported):
             key: Dictionary containing experiment_name and epoch_start
         """
         # Get epoch directory
-        dir_type, epoch_dir = (acquisition.Epoch & key).fetch1(
-            "directory_type", "epoch_dir"
-        )
+        dir_type, epoch_dir = (acquisition.Epoch & key).fetch1("directory_type", "epoch_dir")
         if not epoch_dir:
             self.insert1({**key, "has_ephys": False, "n_probes": 0})
             return
@@ -148,19 +151,20 @@ class EphysEpoch(dj.Imported):
         epoch_path = data_dir / epoch_dir
 
         # Discover probes
-        device_name, device_dir, probe_labels = discover_epoch_probes(epoch_path)
+        device_name, _device_dir, probe_labels = discover_epoch_probes(epoch_path)
         if not probe_labels:
             self.insert1({**key, "has_ephys": False, "n_probes": 0})
             return
+        if device_name is None:  # shouldn't happen when probe_labels is non-empty
+            raise RuntimeError(
+                f"discover_epoch_probes returned probe_labels without device_name: {epoch_path}"
+            )
 
         # Parse metadata for probe identity (serial numbers)
         metadata = parse_epoch_metadata(epoch_path)
 
         # Build probe info: {label: probe_id}
-        probe_info = {
-            label: get_probe_id(metadata, device_name, label)
-            for label in probe_labels
-        }
+        probe_info = {label: get_probe_id(metadata, device_name, label) for label in probe_labels}
 
         # Auto-create Probe entries (probe_type derived from device directory name)
         probe_type = DEVICE_PROBE_TYPE_MAP.get(device_name)
@@ -185,7 +189,10 @@ class EphysEpoch(dj.Imported):
 
         # Read subject-probe mapping
         probe_assignments = read_probe_assignments(
-            key, epoch_path, probe_labels, self.Insertion,
+            key,
+            epoch_path,
+            probe_labels,
+            self.Insertion,
         )
 
         # Create/validate ProbeInsertion entries and build Insertion Part rows
@@ -195,13 +202,19 @@ class EphysEpoch(dj.Imported):
             subject = probe_assignments[label]["subject"]
 
             pi_key = find_or_create_probe_insertion(
-                key["experiment_name"], subject, probe_id, ProbeInsertion, Probe,
+                key["experiment_name"],
+                subject,
+                probe_id,
+                ProbeInsertion,
+                Probe,
             )
-            insertion_entries.append({
-                **key,
-                **pi_key,
-                "probe_label": label,
-            })
+            insertion_entries.append(
+                {
+                    **key,
+                    **pi_key,
+                    "probe_label": label,
+                }
+            )
 
         # Insert master + Part rows
         self.insert1({**key, "has_ephys": True, "n_probes": len(probe_labels)})
@@ -249,10 +262,11 @@ class EphysSyncModel(dj.Manual):
         from aeon.schema.ephys import social_ephys
 
         exp_key = {"experiment_name": experiment_name}
-        raw_dir = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw")
-        if raw_dir is None:
+        raw_dir_result = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw")
+        if raw_dir_result is None:
             logger.error(f"Raw data directory not found for {experiment_name}")
             return
+        raw_dir = Path(raw_dir_result)
 
         # Build epoch_dir → epoch_start lookup
         epochs = (acquisition.Epoch & exp_key).proj("epoch_start", "epoch_dir").to_dicts()
@@ -283,9 +297,7 @@ class EphysSyncModel(dj.Manual):
                 continue
             device_streams = social_ephys[device_name]
             if "HarpSyncModel" not in device_streams:
-                logger.debug(
-                    f"Device '{device_name}' has no HarpSyncModel stream. Skipping {csv_path}."
-                )
+                logger.debug(f"Device '{device_name}' has no HarpSyncModel stream. Skipping {csv_path}.")
                 continue
             reader = device_streams["HarpSyncModel"]
 
@@ -310,17 +322,19 @@ class EphysSyncModel(dj.Manual):
             with tempfile.TemporaryDirectory() as tmpdir:
                 model_path = Path(tmpdir) / f"{csv_path.stem}.joblib"
                 joblib.dump(df_row["model"], model_path)
-                cls.insert1({
-                    "experiment_name": experiment_name,
-                    "epoch_start": epoch_start,
-                    "sync_start": sync_start_dt,
-                    "sync_end": sync_end_dt,
-                    "onix_ts_start": int(df_row["clock_start"]),
-                    "onix_ts_end": int(df_row["clock_end"]),
-                    "sync_model": str(model_path),
-                    "r2": float(df_row["r2"]),
-                    "n_samples": int(df_row["n_samples"]),
-                })
+                cls.insert1(
+                    {
+                        "experiment_name": experiment_name,
+                        "epoch_start": epoch_start,
+                        "sync_start": sync_start_dt,
+                        "sync_end": sync_end_dt,
+                        "onix_ts_start": int(df_row["clock_start"]),
+                        "onix_ts_end": int(df_row["clock_end"]),
+                        "sync_model": str(model_path),
+                        "r2": float(df_row["r2"]),
+                        "n_samples": int(df_row["n_samples"]),
+                    }
+                )
                 logger.info(
                     f"Inserted EphysSyncModel: {experiment_name} "
                     f"epoch={epoch_start} sync_start={sync_start_dt}"
@@ -372,10 +386,11 @@ class EphysChunk(dj.Manual):
             experiment_name: Name of the experiment to process
         """
         exp_key = {"experiment_name": experiment_name}
-        raw_dir = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw")
-        if raw_dir is None:
+        raw_dir_result = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw")
+        if raw_dir_result is None:
             logger.error(f"Raw data directory not found for {experiment_name}")
             return
+        raw_dir = Path(raw_dir_result)
 
         # Build epoch lookup: {epoch_dir_name: epoch_start} from Epoch table
         epochs = (acquisition.Epoch & exp_key).proj("epoch_start", "epoch_dir").to_dicts()
@@ -406,7 +421,7 @@ class EphysChunk(dj.Manual):
 
         # Discover ALL ephys binary files across epochs
         all_ephys_files = sorted(
-            list(raw_dir.rglob("*_AmplifierData*.bin")),
+            raw_dir.rglob("*_AmplifierData*.bin"),
             key=lambda x: x.as_posix(),
         )
 
@@ -461,9 +476,7 @@ class EphysChunk(dj.Manual):
             # Resolve electrode config
             probe_name = (ProbeInsertion & insertion_key).fetch1("probe")
             probe_type = (Probe & {"probe": probe_name}).fetch1("probe_type")
-            configs = (ElectrodeConfig & {"probe_type": probe_type}).to_arrays(
-                "electrode_config_name"
-            )
+            configs = (ElectrodeConfig & {"probe_type": probe_type}).to_arrays("electrode_config_name")
             if len(configs) == 0:
                 raise ValueError(f"No electrode configs found for probe_type={probe_type}")
             elif len(configs) > 1:
@@ -526,7 +539,7 @@ class EphysBlockInfo(dj.Imported):
         channel_name="": varchar(64)  # alias of the channel
         """
 
-    def make(self, key: Dict[str, Any]) -> None:
+    def make(self, key: dict[str, Any]) -> None:
         """Compute ephys block metadata and channel mappings.
 
         Finds relevant ephys chunks for the given block and extracts:
@@ -554,19 +567,11 @@ class EphysBlockInfo(dj.Imported):
             start_query = EphysChunk & key & start_restriction
             end_query = EphysChunk & key & end_restriction
             if not start_query:
-                # No chunk contains the start time, need to find the first chunk that ends after the start time
-                start_query = (
-                    EphysChunk
-                    & key
-                    & f'chunk_start BETWEEN "{start_time}" AND "{end_time}"'
-                )
+                # No chunk contains the start time; find first chunk ending after start.
+                start_query = EphysChunk & key & f'chunk_start BETWEEN "{start_time}" AND "{end_time}"'
             if not end_query:
-                # No chunk contains the end time, need to find the last chunk that starts before the end time
-                end_query = (
-                    EphysChunk
-                    & key
-                    & f'chunk_end BETWEEN "{start_time}" AND "{end_time}"'
-                )
+                # No chunk contains the end time; find last chunk starting before end.
+                end_query = EphysChunk & key & f'chunk_end BETWEEN "{start_time}" AND "{end_time}"'
             if not (start_query and end_query):
                 raise ValueError(f"No Chunk found between {start_time} and {end_time}")
             time_restriction = (
@@ -575,23 +580,19 @@ class EphysBlockInfo(dj.Imported):
             )
             return time_restriction
 
-        chunk_restriction = create_ephys_chunk_restriction(
-            key["block_start"], key["block_end"]
-        )
+        chunk_restriction = create_ephys_chunk_restriction(key["block_start"], key["block_end"])
         chunk_query = EphysChunk & key & chunk_restriction
 
-        # validate durations
-        chunk_total_duration = float(
+        # compute total chunk duration (reserved for future validation)
+        _chunk_total_duration = float(
             sum(
-                chunk_query.proj(
-                    dur="TIMESTAMPDIFF(SECOND, chunk_start, chunk_end) / 3600"
-                ).to_arrays("dur")
+                chunk_query.proj(dur="TIMESTAMPDIFF(SECOND, chunk_start, chunk_end) / 3600").to_arrays(
+                    "dur"
+                )
             )
         )
 
-        block_duration = (
-            key["block_end"] - key["block_start"]
-        ).total_seconds() / 3600.0  # in hours
+        block_duration = (key["block_end"] - key["block_start"]).total_seconds() / 3600.0  # in hours
 
         # Read electrode config from the chunks in this block (set during ingest_chunks)
         probe_type, electrode_config_name = (chunk_query & dj.Top(limit=1)).fetch1(
@@ -607,9 +608,7 @@ class EphysBlockInfo(dj.Imported):
         )
         # EphysChunk
         self.Chunk.insert(
-            chunk_query.proj(
-                block_start=f"'{key['block_start']}'", block_end=f"'{key['block_end']}'"
-            )
+            chunk_query.proj(block_start=f"'{key['block_start']}'", block_end=f"'{key['block_end']}'")
         )
 
         # Channel

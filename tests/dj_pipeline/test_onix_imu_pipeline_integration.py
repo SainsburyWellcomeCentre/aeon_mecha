@@ -42,11 +42,13 @@ def _make_synthetic_ephys_epoch(
         csv_path = device_dir / f"{device_name}_HarpSync_{ts_str}.csv"
         rows = []
         for s in range(60):
-            rows.append({
-                "clock": 1000 * (n * 60 + s) + 1,
-                "hub_clock": s,
-                "harp_time": harp_base + n * 60 + s,
-            })
+            rows.append(
+                {
+                    "clock": 1000 * (n * 60 + s) + 1,
+                    "hub_clock": s,
+                    "harp_time": harp_base + n * 60 + s,
+                }
+            )
         with open(csv_path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=["clock", "hub_clock", "harp_time"])
             writer.writeheader()
@@ -80,9 +82,7 @@ def _register_synthetic_experiment(
     _pipeline.repository_config[repo_key] = str(tmp_path)
 
     # PipelineRepository is a Lookup table — insert if not present
-    acquisition.PipelineRepository.insert1(
-        {"repository_name": repo_key}, skip_duplicates=True
-    )
+    acquisition.PipelineRepository.insert1({"repository_name": repo_key}, skip_duplicates=True)
 
     # Lab fixtures (Lookup tables with pre-populated contents — just ensure present)
     lab.Arena.insert1(
@@ -189,9 +189,7 @@ def test_ephys_sync_model_table_exists(dj_config_integration):
 # ============================================================================
 
 
-def test_ephys_sync_model_ingest_inserts_one_row_per_csv(
-    dj_config_integration, tmp_path
-):
+def test_ephys_sync_model_ingest_inserts_one_row_per_csv(dj_config_integration, tmp_path):
     """ingest() walks HarpSync CSVs and inserts one row per CSV."""
     from aeon.dj_pipeline import ephys
 
@@ -207,9 +205,9 @@ def test_ephys_sync_model_ingest_inserts_one_row_per_csv(
     ephys.EphysSyncModel.ingest(experiment_name)
 
     # Project only non-attach columns to avoid triggering attachment extraction to cwd
-    query = (
-        ephys.EphysSyncModel & {"experiment_name": experiment_name}
-    ).proj("n_samples", "r2", "onix_ts_start", "onix_ts_end", "sync_start", "sync_end")
+    query = (ephys.EphysSyncModel & {"experiment_name": experiment_name}).proj(
+        "n_samples", "r2", "onix_ts_start", "onix_ts_end", "sync_start", "sync_end"
+    )
     rows = query.to_dicts()
     assert len(rows) == 3
     for row in rows:
@@ -219,9 +217,7 @@ def test_ephys_sync_model_ingest_inserts_one_row_per_csv(
         assert row["sync_end"] > row["sync_start"]
 
 
-def test_ephys_sync_model_ingest_is_idempotent(
-    dj_config_integration, tmp_path
-):
+def test_ephys_sync_model_ingest_is_idempotent(dj_config_integration, tmp_path):
     """Re-running ingest doesn't insert duplicate rows."""
     from aeon.dj_pipeline import ephys
 
