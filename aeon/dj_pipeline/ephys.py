@@ -362,13 +362,16 @@ class EphysChunk(dj.Manual):
         """
 
     class SyncModel(dj.Part):
+        """Link-only: each EphysChunk references 1+ EphysSyncModel rows.
+
+        The actual model bytes and ONIX bounds live on EphysSyncModel.
+        Multiple link rows are inserted when an AmplifierData_N.bin straddles a
+        HarpSync chunk boundary.
+        """
+
         definition = """
         -> master
-        onix_ts_start: bigint  # ONIX timestamp at the start of the sync
-        ---
-        onix_ts_end: bigint  # ONIX timestamp at the end of the sync
-        sync_model: <attach>  # serialized file containing the sync model
-        harp_start: datetime(6)  # HARP start time of the sync
+        -> EphysSyncModel
         """
 
     @classmethod

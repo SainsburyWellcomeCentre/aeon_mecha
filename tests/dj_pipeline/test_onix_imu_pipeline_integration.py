@@ -236,3 +236,29 @@ def test_ephys_sync_model_ingest_is_idempotent(dj_config_integration, tmp_path):
 
     ephys.EphysSyncModel.ingest(experiment_name)
     assert len(ephys.EphysSyncModel & {"experiment_name": experiment_name}) == initial_count
+
+
+# ============================================================================
+# Task 6: EphysChunk.SyncModel Part is link-only FK
+# ============================================================================
+
+
+def test_ephys_chunk_sync_model_part_is_link_only(dj_config_integration):
+    """EphysChunk.SyncModel exposes only FK columns, no attach or onix bounds."""
+    from aeon.dj_pipeline import ephys
+
+    sync_part = ephys.EphysChunk.SyncModel()
+    attrs = set(sync_part.heading.attributes.keys())
+
+    # FK to master (EphysChunk PK) + EphysSyncModel
+    expected = {
+        "experiment_name", "subject", "insertion_number",
+        "chunk_start", "epoch_start", "sync_start",
+    }
+    assert expected <= attrs, f"Missing FK columns: {expected - attrs}"
+
+    # No more attach / onix bounds / harp_start
+    assert "sync_model" not in attrs
+    assert "onix_ts_start" not in attrs
+    assert "onix_ts_end" not in attrs
+    assert "harp_start" not in attrs
