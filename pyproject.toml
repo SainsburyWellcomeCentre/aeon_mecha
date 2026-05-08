@@ -181,6 +181,7 @@ exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests", "docs", ".venv
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests/dj_pipeline"]
 markers = [
   "unit: Unit tests (no database, synthetic data)",
   "integration: Integration tests (DB via testcontainers, synthetic or golden datasets)",

@@ -5,22 +5,15 @@ on fetch (not HARP-indexed), catching any regression where the codec accidentall
 applies the sync regression.
 """
 
-import sys
-from pathlib import Path
-
 import numpy as np
 import pytest
-
-pytestmark = pytest.mark.integration
-
-# Import shared synthetic fixture helpers from the parent test file.
-_PARENT_DIR = Path(__file__).parent.parent
-sys.path.insert(0, str(_PARENT_DIR))
-from test_onix_imu_pipeline_integration import (  # noqa: E402
+from _synthetic_ephys_fixtures import (
     _make_synthetic_bno055_data,
     _make_synthetic_ephys_epoch,
     _register_synthetic_experiment,
 )
+
+pytestmark = pytest.mark.integration
 
 
 def test_round_trip_returns_onix_indexed_dataframe(dj_config_integration, tmp_path):

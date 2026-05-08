@@ -767,7 +767,7 @@ class OnixImuChunk(dj.Imported):
     definition = """
     -> EphysSyncModel
     ---
-    sample_count: int
+    sample_count: int32
     timestamps: json
     euler_x: json
     euler_y: json
@@ -803,13 +803,13 @@ class OnixImuChunk(dj.Imported):
         of using this helper.
         """
         import joblib
-        import pandas as pd
+        from swc.aeon.io import api as io_api
 
         df = (cls & key).fetch1("stream_df")
         sync_attach = (EphysSyncModel & key).fetch1("sync_model")
         model = joblib.load(sync_attach)
         harp_seconds = model.predict(df.index.values.reshape(-1, 1)).flatten()
-        df.index = pd.to_datetime([_harp_to_naive(s) for s in harp_seconds])
+        df.index = io_api.to_datetime(harp_seconds)
         return df
 
     def make(self, key):
