@@ -829,7 +829,7 @@ class OnixImuChunk(dj.Imported):
         )
         from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
 
-        sm = (EphysSyncModel & key).proj("onix_ts_start", "sync_model").fetch1()
+        onix_ts_start = (EphysSyncModel & key).fetch1("onix_ts_start")
         epoch_dir = (acquisition.Epoch & key).fetch1("epoch_dir")
         raw_dir_result = acquisition.Experiment.get_data_directory(
             {"experiment_name": key["experiment_name"]}, "raw"
@@ -869,7 +869,7 @@ class OnixImuChunk(dj.Imported):
             return
 
         device_dir = epoch_path / device_name
-        chunk_index = locate_bno055_chunk_index(device_dir, device_name, int(sm["onix_ts_start"]))
+        chunk_index = locate_bno055_chunk_index(device_dir, device_name, int(onix_ts_start))
 
         if chunk_index is None:
             self.insert1(
@@ -888,7 +888,8 @@ class OnixImuChunk(dj.Imported):
         # Apply regression to compute HARP timestamps for the timestamps summary field.
         # The stored stream_df ref points to the ONIX-indexed DataFrame — sync is
         # applied only when users call OnixImuChunk.synced_df().
-        model = joblib.load(sm["sync_model"])
+        sync_model_attach = (EphysSyncModel & key).fetch1("sync_model")
+        model = joblib.load(sync_model_attach)
         onix_clock = df.index.values
         harp_seconds = model.predict(onix_clock.reshape(-1, 1)).flatten()
         harp_index = pd.to_datetime([_harp_to_naive(s) for s in harp_seconds])

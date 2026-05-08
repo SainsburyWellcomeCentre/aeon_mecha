@@ -14,7 +14,6 @@ import numpy as np
 
 def _make_synthetic_ephys_epoch(
     raw_dir: Path,
-    experiment_name: str,
     epoch_dir_name: str,
     device_name: str,
     n_chunks: int,

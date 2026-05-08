@@ -27,7 +27,7 @@ def test_round_trip_returns_onix_indexed_dataframe(dj_config_integration, tmp_pa
 
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    _make_synthetic_ephys_epoch(raw_dir, experiment_name, epoch_dir_name, device_name, n_chunks=1)
+    _make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=1)
     _make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=1)
     _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
@@ -54,7 +54,7 @@ def test_round_trip_no_data_returns_empty_dataframe(dj_config_integration, tmp_p
 
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    _make_synthetic_ephys_epoch(raw_dir, experiment_name, epoch_dir_name, device_name, n_chunks=1)
+    _make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=1)
     # NO _make_synthetic_bno055_data — no IMU files
     _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
