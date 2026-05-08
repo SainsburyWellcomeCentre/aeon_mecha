@@ -637,6 +637,7 @@ def test_synced_df_returns_harp_indexed_dataframe(dj_config_integration, tmp_pat
 def test_synced_df_raises_on_ambiguous_key(dj_config_integration, tmp_path):
     """A non-PK restriction matching multiple rows raises (via fetch1)."""
     import datajoint as dj
+
     from aeon.dj_pipeline import ephys
 
     experiment_name = "test_onix_imu_ambiguous"
