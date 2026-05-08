@@ -1,13 +1,17 @@
-"""AeonStreamCodec — lazy-loading codec for stream data.
+"""Codecs for lazy-loading stream data.
 
-Stores a JSON reference in MySQL; on fetch, reconstructs the stream reader
-and calls io_api.load() to return the full DataFrame from raw files.
+Both codecs store JSON references in MySQL; on fetch, they reconstruct readers
+and return DataFrames built from the raw files on disk.
 
-This <aeon_stream> codec is used for the `stream_df` column in auto-generated
-stream tables for lazy DataFrame loading.
+- ``AeonStreamCodec`` (``<aeon_stream>``) — HARP-clocked time-indexed streams,
+  loaded via ``io_api.load(start, end)``.
+- ``OnixStreamCodec`` (``<aeon_onix_stream>``) — ONIX-clocked stream groups
+  (e.g., Bno055 IMU). Structural-only: loads + prefix-renames + concats. Does
+  NOT apply HARP sync regression — that's exposed via ``OnixImuChunk.synced_df``.
 """
 
 import datajoint as dj
+import numpy as np
 import pandas as pd
 
 
@@ -127,9 +131,6 @@ class OnixStreamCodec(dj.Codec):
     def decode(self, stored, *, key=None):
         """Load + merge the referenced ONIX-clocked stream group as an ONIX-indexed DataFrame."""
         # Lazy imports to avoid circular references at module load time.
-        import numpy as np
-        import pandas as pd
-
         from aeon.dj_pipeline import acquisition, ephys
         from aeon.dj_pipeline.utils.onix_imu import (
             IMU_COLUMNS,
@@ -137,28 +138,34 @@ class OnixStreamCodec(dj.Codec):
             locate_bno055_chunk_index,
         )
 
-        sm_key = {
-            "experiment_name": stored["experiment_name"],
-            "epoch_start": pd.Timestamp(stored["epoch_start"]),
-            "sync_start": pd.Timestamp(stored["sync_start"]),
-        }
-        sm = (ephys.EphysSyncModel & sm_key).fetch1()
-
-        epoch_dir = (acquisition.Epoch & sm_key).fetch1("epoch_dir")
-        raw_dir = acquisition.Experiment.get_data_directory(
-            {"experiment_name": stored["experiment_name"]}, "raw"
-        )
-        device_dir = raw_dir / epoch_dir / stored["device_name"]
-
-        chunk_index = locate_bno055_chunk_index(
-            device_dir, stored["device_name"], int(sm["onix_ts_start"])
-        )
-        if chunk_index is None:
-            return pd.DataFrame(columns=list(IMU_COLUMNS), index=pd.Index([], dtype=np.uint64))
-
         if stored["stream_group"] != "Bno055":
             raise NotImplementedError(
                 f"stream_group={stored['stream_group']!r} not supported. "
                 "Only 'Bno055' is wired today."
             )
+
+        sm_key = {
+            "experiment_name": stored["experiment_name"],
+            "epoch_start": pd.Timestamp(stored["epoch_start"]),
+            "sync_start": pd.Timestamp(stored["sync_start"]),
+        }
+        onix_ts_start = (ephys.EphysSyncModel & sm_key).fetch1("onix_ts_start")
+
+        epoch_dir = (acquisition.Epoch & sm_key).fetch1("epoch_dir")
+        raw_dir = acquisition.Experiment.get_data_directory(
+            {"experiment_name": stored["experiment_name"]}, "raw"
+        )
+        if raw_dir is None:
+            raise FileNotFoundError(
+                f"No raw data directory registered for experiment "
+                f"{stored['experiment_name']!r}"
+            )
+        device_dir = raw_dir / epoch_dir / stored["device_name"]
+
+        chunk_index = locate_bno055_chunk_index(
+            device_dir, stored["device_name"], int(onix_ts_start)
+        )
+        if chunk_index is None:
+            return pd.DataFrame(columns=list(IMU_COLUMNS), index=pd.Index([], dtype=np.uint64))
+
         return load_and_merge_bno055(device_dir, stored["device_name"], chunk_index)

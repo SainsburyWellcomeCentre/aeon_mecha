@@ -8,7 +8,7 @@ from typing import cast
 import datajoint as dj
 import pandas as pd
 
-# Register AeonStreamCodec BEFORE any schema activation
+# Register Aeon codecs BEFORE any schema activation
 from aeon.dj_pipeline.utils.codec import (  # pyright: ignore[reportUnusedImport]
     AeonStreamCodec,
     OnixStreamCodec,
