@@ -60,16 +60,23 @@ def _harp_to_naive(seconds: float) -> datetime:
     return dt.replace(tzinfo=None) if getattr(dt, "tzinfo", None) else dt
 
 
-def _resolve_harp(sync_row: dict, onix_ts: int) -> datetime:
+def _resolve_harp(
+    sync_row: dict, onix_ts: int, _model_cache: "dict | None" = None
+) -> datetime:
     """Compute the HARP equivalent of an ONIX timestamp from a SyncModel row.
 
     Fast path: exact match against observed onix_ts_start/onix_ts_end boundaries
     — return the stored harp datetime directly (no model load required).
     Slow path: download the attached model bytes and call LinearRegression.predict.
+    Caches loaded models in ``_model_cache`` if provided, keyed on
+    ``sync_row["sync_start"]``, to avoid reloading the same model across multiple
+    calls within a single ingestion iteration.
 
     Args:
         sync_row: A dict from EphysSyncModel.to_dicts() with all column values.
         onix_ts: ONIX hardware timestamp to convert.
+        _model_cache: Optional dict for caching loaded joblib models within one
+            ingestion iteration. Keyed on sync_row["sync_start"].
 
     Returns:
         Timezone-naive datetime representing the HARP equivalent.
@@ -83,7 +90,15 @@ def _resolve_harp(sync_row: dict, onix_ts: int) -> datetime:
     if onix_ts == int(sync_row["onix_ts_end"]):
         harp_dt = sync_row["sync_end"]
         return harp_dt.replace(tzinfo=None) if getattr(harp_dt, "tzinfo", None) else harp_dt
-    model = joblib.load(sync_row["sync_model"])
+
+    cache_key = sync_row["sync_start"]
+    if _model_cache is not None and cache_key in _model_cache:
+        model = _model_cache[cache_key]
+    else:
+        model = joblib.load(sync_row["sync_model"])
+        if _model_cache is not None:
+            _model_cache[cache_key] = model
+
     harp_seconds = float(model.predict(np.array([[onix_ts]])).flatten()[0])
     return _harp_to_naive(harp_seconds)
 
@@ -461,6 +476,27 @@ class EphysChunk(dj.Manual):
             )
             return
 
+        # Precompute probe→config cache: one set of 3 queries per unique insertion_key
+        # rather than 3 queries per AmplifierData file.
+        probe_config_cache: dict[tuple, tuple[str, str]] = {}
+        for ins in insertion_lookup.values():
+            cache_key = (ins["experiment_name"], ins["subject"], ins["insertion_number"])
+            if cache_key in probe_config_cache:
+                continue
+            probe_name = (ProbeInsertion & ins).fetch1("probe")
+            probe_type = (Probe & {"probe": probe_name}).fetch1("probe_type")
+            configs = (ElectrodeConfig & {"probe_type": probe_type}).to_arrays(
+                "electrode_config_name"
+            )
+            if len(configs) == 0:
+                raise ValueError(f"No electrode configs found for probe_type={probe_type}")
+            if len(configs) > 1:
+                raise ValueError(
+                    f"Multiple electrode configs for {probe_type}: {configs}. "
+                    "Please specify electrode_config_name."
+                )
+            probe_config_cache[cache_key] = (probe_type, configs[0])
+
         # Discover ALL ephys binary files across epochs
         all_ephys_files = sorted(
             raw_dir.rglob("*_AmplifierData*.bin"),
@@ -540,26 +576,24 @@ class EphysChunk(dj.Manual):
                 )
                 continue
 
-            # Resolve HARP chunk_start / chunk_end via DB-backed sync model
+            # Resolve HARP chunk_start / chunk_end via DB-backed sync model.
+            # Use a per-file model cache so both calls share one joblib.load when
+            # matched[0] and matched[-1] are the same SyncModel row.
+            model_cache: dict = {}
             try:
-                chunk_start = _resolve_harp(matched[0], first_ts)
-                chunk_end = _resolve_harp(matched[-1], last_ts)
+                chunk_start = _resolve_harp(matched[0], first_ts, _model_cache=model_cache)
+                chunk_end = _resolve_harp(matched[-1], last_ts, _model_cache=model_cache)
             except Exception as e:
                 logger.error(f"Failed to resolve HARP times for {ephys_file}: {e}")
                 continue
 
-            # Resolve electrode config (single config per probe_type required)
-            probe_name = (ProbeInsertion & insertion_key).fetch1("probe")
-            probe_type = (Probe & {"probe": probe_name}).fetch1("probe_type")
-            configs = (ElectrodeConfig & {"probe_type": probe_type}).to_arrays("electrode_config_name")
-            if len(configs) == 0:
-                raise ValueError(f"No electrode configs found for probe_type={probe_type}")
-            elif len(configs) > 1:
-                raise ValueError(
-                    f"Multiple electrode configs for {probe_type}: {configs}. "
-                    "Please specify electrode_config_name."
-                )
-            electrode_config_name = configs[0]
+            # Resolve electrode config from precomputed cache (no DB queries per file)
+            cache_key = (
+                insertion_key["experiment_name"],
+                insertion_key["subject"],
+                insertion_key["insertion_number"],
+            )
+            probe_type, electrode_config_name = probe_config_cache[cache_key]
 
             chunk_entry = {
                 **insertion_key,
@@ -570,23 +604,24 @@ class EphysChunk(dj.Manual):
                 "electrode_config_name": electrode_config_name,
             }
             try:
-                cls.insert1(chunk_entry)
-                cls.File.insert(
-                    [
-                        {
-                            **chunk_entry,
-                            "directory_type": "raw",
-                            "file_name": f.name,
-                            "file_path": f.relative_to(raw_dir).as_posix(),
-                        }
-                        for f in (ephys_file, clock_file)
-                    ],
-                    ignore_extra_fields=True,
-                )
-                cls.SyncModel.insert(
-                    [{**chunk_entry, "sync_start": m["sync_start"]} for m in matched],
-                    ignore_extra_fields=True,
-                )
+                with cls.connection.transaction:
+                    cls.insert1(chunk_entry)
+                    cls.File.insert(
+                        [
+                            {
+                                **chunk_entry,
+                                "directory_type": "raw",
+                                "file_name": f.name,
+                                "file_path": f.relative_to(raw_dir).as_posix(),
+                            }
+                            for f in (ephys_file, clock_file)
+                        ],
+                        ignore_extra_fields=True,
+                    )
+                    cls.SyncModel.insert(
+                        [{**chunk_entry, "sync_start": m["sync_start"]} for m in matched],
+                        ignore_extra_fields=True,
+                    )
                 logger.info(
                     f"Inserted EphysChunk: {experiment_name} "
                     f"subject={insertion_key['subject']} "
