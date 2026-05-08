@@ -758,3 +758,33 @@ def create_probe_type(probe_type: str, manufacturer: str, probe_name: str) -> No
         probe_name: Specific probe model name (e.g., "NP2004")
     """
     _create_probe_type(probe_type, manufacturer, probe_name, ProbeType)
+
+
+@schema
+class OnixImuChunk(dj.Imported):
+    """One row per ONIX sync window with all four Bno055 streams merged on sample index.
+
+    The codec column ``stream_df`` returns an ONIX-clock-indexed DataFrame.
+    For HARP-indexed data, use :meth:`OnixImuChunk.synced_df`.
+    """
+
+    definition = """
+    -> EphysSyncModel
+    ---
+    sample_count: int
+    timestamps: json
+    euler_x: json
+    euler_y: json
+    euler_z: json
+    gravity_vector_x: json
+    gravity_vector_y: json
+    gravity_vector_z: json
+    linear_acceleration_x: json
+    linear_acceleration_y: json
+    linear_acceleration_z: json
+    quaternion_w: json
+    quaternion_x: json
+    quaternion_y: json
+    quaternion_z: json
+    stream_df: <aeon_onix_stream>
+    """

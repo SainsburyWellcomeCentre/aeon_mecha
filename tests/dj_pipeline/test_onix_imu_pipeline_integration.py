@@ -467,3 +467,22 @@ def test_ephys_chunk_ingest_uses_sync_model_from_db(dj_config_integration, tmp_p
     # Idempotency: re-running ingest_chunks must not insert duplicate rows
     ephys.EphysChunk.ingest_chunks(experiment_name)
     assert len(ephys.EphysChunk & {"experiment_name": experiment_name}) == 3
+
+
+# ============================================================================
+# Task 8: OnixImuChunk table definition
+# ============================================================================
+
+
+def test_onix_imu_chunk_table_shape(dj_config_integration):
+    """OnixImuChunk has 13 IMU column attrs + sample_count + timestamps + stream_df."""
+    from aeon.dj_pipeline import ephys
+    from aeon.dj_pipeline.utils.onix_imu import IMU_COLUMNS
+
+    table = ephys.OnixImuChunk()
+    attrs = set(table.heading.attributes.keys())
+
+    assert {"experiment_name", "epoch_start", "sync_start"} <= set(table.primary_key)
+    assert {"sample_count", "timestamps", "stream_df"} <= attrs
+    for col in IMU_COLUMNS:
+        assert col in attrs, f"Missing per-column stat field: {col}"
