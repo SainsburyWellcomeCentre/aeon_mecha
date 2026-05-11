@@ -572,7 +572,7 @@ class MessageLog(dj.Imported):
 
 @schema
 class LightEvents(dj.Imported):
-    definition = """  # Per-chunk Environment_LightEvents_* stream (foragingABC only)
+    definition = """  # Per-chunk Environment_LightEvents_* stream
     -> Chunk
     ---
     sample_count: int32
@@ -581,11 +581,7 @@ class LightEvents(dj.Imported):
     """
 
     def make(self, key):
-        """Populate from Environment_LightEvents_* CSV reader.
-
-        On non-foragingABC rigs (no `light_events` reader), inserts
-        sample_count=0 with stream_df=None.
-        """
+        """Populate from Environment_LightEvents_* CSV reader."""
         _make_environment_stream(self, key, stream_type="LightEvents")
 
 
@@ -660,7 +656,7 @@ def _environment_row(df, *, key, chunk_window, stream_type: str) -> dict:
 
     Args:
         df: DataFrame from io_api.load, or None when no reader was resolved
-            (e.g., LightEvents on non-foragingABC).
+            for the given stream type on this experiment's rig.
         key: Chunk PK dict (``{"experiment_name", "chunk_start"}``).
         chunk_window: ``(chunk_start, chunk_end, epoch_start)`` triple.
         stream_type: PascalCase stream type name (e.g. ``"EnvironmentState"``).
@@ -703,6 +699,10 @@ def _make_environment_stream(table, key, *, stream_type: str):
     Resolves the reader via ``get_stream_reader_for_epoch(default=None)``,
     loads the chunk window via ``swc.aeon.io.api.load``, then delegates to
     ``_environment_row`` to build the insert dict.
+
+    When the experiment's rig doesn't expose a reader for ``stream_type``
+    (e.g. ``light_events`` on a non-foragingABC rig), inserts a row with
+    ``sample_count=0`` and ``stream_df=None`` instead of skipping.
 
     Args:
         table: The dj.Imported table instance whose make() is delegating here.
