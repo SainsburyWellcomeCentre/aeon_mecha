@@ -1,11 +1,13 @@
 """Utility functions for the ephys pipeline.
 
-Helpers for probe discovery, subject-probe mapping, and probe type creation.
+Helpers for probe discovery, subject-probe mapping, probe type creation,
+and ONIX/HARP timestamp resolution.
 Used by ephys.py table classes.
 """
 
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 
 import datajoint as dj
@@ -239,3 +241,83 @@ def create_probe_type(
     with probe_type_table.connection.transaction:
         probe_type_table.insert1({"probe_type": probe_type})
         probe_type_table.Electrode.insert(electrode_df, ignore_extra_fields=True)
+
+
+# ---------------------------------------------------------------------------
+# ONIX/HARP timestamp resolution helpers
+# (shared by EphysSyncModel.ingest and EphysChunk.ingest_chunks in ephys.py)
+# ---------------------------------------------------------------------------
+
+
+def resolve_raw_dir_and_epochs(
+    experiment_name: str,
+) -> "tuple[Path, dict[str, datetime]] | None":
+    """Return (raw_dir, {epoch_dir_name: epoch_start}) or None if unavailable.
+
+    Centralises the filesystem + DB lookup that both ingest paths need.
+    """
+    from aeon.dj_pipeline import acquisition
+
+    exp_key = {"experiment_name": experiment_name}
+    raw_dir_result = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw")
+    if raw_dir_result is None:
+        logger.error(f"Raw data directory not found for {experiment_name}")
+        return None
+    raw_dir = Path(raw_dir_result)
+
+    epoch_dir_to_start: dict[str, datetime] = {}
+    for ep in (acquisition.Epoch & exp_key).proj("epoch_start", "epoch_dir").to_dicts():
+        if ep["epoch_dir"]:
+            top_dir = Path(ep["epoch_dir"]).parts[0]
+            epoch_dir_to_start[top_dir] = ep["epoch_start"]
+
+    return raw_dir, epoch_dir_to_start
+
+
+def harp_to_naive(seconds: float) -> datetime:
+    """Convert HARP seconds-since-1904 to a timezone-naive datetime (DJ-compatible)."""
+    from swc.aeon.io import api as io_api
+
+    dt = io_api.to_datetime(float(seconds))
+    return dt.replace(tzinfo=None) if getattr(dt, "tzinfo", None) else dt
+
+
+def resolve_harp(sync_row: dict, onix_ts: int, _model_cache: "dict | None" = None) -> datetime:
+    """Compute the HARP equivalent of an ONIX timestamp from a SyncModel row.
+
+    Fast path: exact match against observed onix_ts_start/onix_ts_end boundaries
+    — return the stored harp datetime directly (no model load required).
+    Slow path: download the attached model bytes and call LinearRegression.predict.
+    Caches loaded models in ``_model_cache`` if provided, keyed on
+    ``sync_row["sync_start"]``, to avoid reloading the same model across multiple
+    calls within a single ingestion iteration.
+
+    Args:
+        sync_row: A dict from EphysSyncModel.to_dicts() with all column values.
+        onix_ts: ONIX hardware timestamp to convert.
+        _model_cache: Optional dict for caching loaded joblib models within one
+            ingestion iteration. Keyed on sync_row["sync_start"].
+
+    Returns:
+        Timezone-naive datetime representing the HARP equivalent.
+    """
+    import joblib
+    import numpy as np
+
+    if onix_ts == int(sync_row["onix_ts_start"]):
+        harp_dt = sync_row["sync_start"]
+        return harp_dt.replace(tzinfo=None) if getattr(harp_dt, "tzinfo", None) else harp_dt
+    if onix_ts == int(sync_row["onix_ts_end"]):
+        harp_dt = sync_row["sync_end"]
+        return harp_dt.replace(tzinfo=None) if getattr(harp_dt, "tzinfo", None) else harp_dt
+
+    cache_key = sync_row["sync_start"]
+    if _model_cache is not None and cache_key in _model_cache:
+        model = _model_cache[cache_key]
+    else:
+        model = joblib.load(sync_row["sync_model"])
+        if _model_cache is not None:
+            _model_cache[cache_key] = model
+
+    harp_seconds = float(model.predict(np.array([[onix_ts]])).flatten()[0])
+    return harp_to_naive(harp_seconds)
