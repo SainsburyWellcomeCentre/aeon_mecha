@@ -247,3 +247,66 @@ class TestExtractActiveRegionsWithForagingABC:
         regions = extract_active_regions(foraging_abc_rig_config)
         # CameraNest has cameraTracking: null, should not appear
         assert "CameraNest_Arena" not in regions
+
+
+class TestGetStreamReaderForEpochDefault:
+    """Test that get_stream_reader_for_epoch supports a default for missing readers."""
+
+    @staticmethod
+    def _fake_find_raises(_rig, device_name):
+        """Simulate _find_device_in_rig raising ValueError for missing device."""
+        raise ValueError(f"Device '{device_name}' not found in Rig")
+
+    class _DeviceWithoutMethod:
+        """Simulate a Device class that has no @data_reader methods."""
+
+    def test_returns_default_when_device_not_in_rig(self, monkeypatch):
+        """Device lookup raises ValueError -> return default sentinel."""
+        import aeon.dj_pipeline.utils.load_metadata as load_metadata  # noqa: PLR0402
+
+        sentinel = object()
+        monkeypatch.setattr(load_metadata, "_find_device_in_rig", self._fake_find_raises)
+        monkeypatch.setattr(load_metadata, "_load_rig_for_epoch", lambda *a, **kw: object())
+
+        result = load_metadata.get_stream_reader_for_epoch(
+            "exp", "MissingDevice", "Anything", "2025-01-01 00:00:00", default=sentinel
+        )
+        assert result is sentinel
+
+    def test_returns_default_when_method_missing_on_device(self, monkeypatch):
+        """Device exists but lacks the @data_reader -> return default sentinel."""
+        import aeon.dj_pipeline.utils.load_metadata as load_metadata  # noqa: PLR0402
+
+        device_factory = self._DeviceWithoutMethod
+        monkeypatch.setattr(load_metadata, "_find_device_in_rig", lambda rig, name: device_factory())
+        monkeypatch.setattr(load_metadata, "_load_rig_for_epoch", lambda *a, **kw: object())
+
+        result = load_metadata.get_stream_reader_for_epoch(
+            "exp", "Environment", "LightEvents", "2025-01-01 00:00:00", default=None
+        )
+        assert result is None
+
+    def test_raises_when_no_default_provided_and_device_missing(self, monkeypatch):
+        """Backward-compatible behavior: no default -> propagate the original error."""
+        import aeon.dj_pipeline.utils.load_metadata as load_metadata  # noqa: PLR0402
+
+        monkeypatch.setattr(load_metadata, "_find_device_in_rig", self._fake_find_raises)
+        monkeypatch.setattr(load_metadata, "_load_rig_for_epoch", lambda *a, **kw: object())
+
+        with pytest.raises(ValueError, match="not found"):
+            load_metadata.get_stream_reader_for_epoch(
+                "exp", "MissingDevice", "Anything", "2025-01-01 00:00:00"
+            )
+
+    def test_raises_when_no_default_provided_and_method_missing(self, monkeypatch):
+        """Backward-compatible behavior: no default -> propagate AttributeError."""
+        import aeon.dj_pipeline.utils.load_metadata as load_metadata  # noqa: PLR0402
+
+        device_factory = self._DeviceWithoutMethod
+        monkeypatch.setattr(load_metadata, "_find_device_in_rig", lambda rig, name: device_factory())
+        monkeypatch.setattr(load_metadata, "_load_rig_for_epoch", lambda *a, **kw: object())
+
+        with pytest.raises(AttributeError):
+            load_metadata.get_stream_reader_for_epoch(
+                "exp", "Environment", "LightEvents", "2025-01-01 00:00:00"
+            )

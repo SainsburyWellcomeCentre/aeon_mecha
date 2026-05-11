@@ -418,11 +418,44 @@ def _find_device_in_rig(rig, device_name: str):
     raise ValueError(f"Device '{device_name}' not found in Rig")
 
 
+_MISSING = object()
+
+
+def _load_rig_for_epoch(experiment_name: str, epoch_start):
+    """Reconstruct the Rig for a given epoch from EpochConfig.Meta.
+
+    Args:
+        experiment_name: Name of the experiment.
+        epoch_start: Start time of the epoch.
+
+    Returns:
+        Rig instance validated from the epoch's stored metadata.
+    """
+    from aeon.dj_pipeline import acquisition
+
+    schema_name = (acquisition.Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1(
+        "devices_schema_name"
+    )
+
+    epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
+    rig_metadata = (acquisition.EpochConfig.Meta & epoch_key).fetch1("metadata")
+
+    # MariaDB 10.3 aliases `json` columns to `longtext`, so DataJoint's auto
+    # json.loads() doesn't fire. Deserialize manually if needed.
+    if isinstance(rig_metadata, str):
+        rig_metadata = json.loads(rig_metadata)
+
+    experiment_class = get_experiment_pydantic(schema_name)
+    rig_class = experiment_class.model_fields["rig"].annotation
+    return rig_class.model_validate(rig_metadata)
+
+
 def get_stream_reader_for_epoch(
     experiment_name: str,
     device_name: str,
     stream_type: str,
     epoch_start,
+    default=_MISSING,
 ):
     """Get stream reader for a specific epoch.
 
@@ -434,35 +467,24 @@ def get_stream_reader_for_epoch(
         device_name: Name of device instance (e.g., "CameraTop")
         stream_type: Type of stream in PascalCase (e.g., "Video")
         epoch_start: Start time of the epoch
+        default: Value to return when the device is not present in the Rig
+            or the @data_reader method is missing on the device. If omitted,
+            the original ValueError / AttributeError propagates (backward
+            compatible).
 
     Returns:
-        Reader instance configured for the device/stream
+        Reader instance configured for the device/stream, or `default`
+        when not resolvable.
     """
-    from aeon.dj_pipeline import acquisition
+    rig = _load_rig_for_epoch(experiment_name, epoch_start)
 
-    # Get Experiment class path (e.g., "swc.aeon.exp.foragingABC.experiment:Experiment")
-    schema_name = (acquisition.Experiment.DevicesSchema & {"experiment_name": experiment_name}).fetch1(
-        "devices_schema_name"
-    )
-
-    # Get rig metadata for the specific epoch
-    epoch_key = {"experiment_name": experiment_name, "epoch_start": epoch_start}
-    rig_metadata = (acquisition.EpochConfig.Meta & epoch_key).fetch1("metadata")
-
-    # MariaDB 10.3 aliases `json` columns to `longtext`, so DataJoint's auto
-    # json.loads() doesn't fire. Deserialize manually if needed.
-    if isinstance(rig_metadata, str):
-        rig_metadata = json.loads(rig_metadata)
-
-    # Get Rig class from Experiment class and reconstruct directly
-    experiment_class = get_experiment_pydantic(schema_name)
-    rig_class = experiment_class.model_fields["rig"].annotation
-    rig = rig_class.model_validate(rig_metadata)
-
-    # Find device in Rig and access stream reader
-    device = _find_device_in_rig(rig, device_name)
-    stream_method = to_snake_case(stream_type)  # "Video" → "video"
-    return getattr(device, stream_method)
+    try:
+        device = _find_device_in_rig(rig, device_name)
+        return getattr(device, to_snake_case(stream_type))
+    except (ValueError, AttributeError):
+        if default is _MISSING:
+            raise
+        return default
 
 
 def insert_stream_types(rig: "BaseSchema") -> None:
@@ -506,7 +528,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
     streams = dj.VirtualModule("streams", get_schema_name("streams"))
 
     device_info: dict[str, dict] = get_device_info(rig)
-    device_type_mapper, device_sn = get_device_mapper_from_rig(rig)
+    device_type_mapper, _device_sn = get_device_mapper_from_rig(rig)
 
     # Add device type to device_info. Only include devices that:
     # 1. Have a device_type defined in metadata
@@ -740,12 +762,16 @@ def ingest_epoch_metadata_from_rig(
             current_device_query = table - table.RemovalTime & experiment_key & device_key
 
             if current_device_query:
-                current_device_config: list[dict] = (table.Attribute & current_device_query).proj(
-                    "experiment_name",
-                    "device_name",
-                    "attribute_name",
-                    "attribute_value",
-                ).to_dicts()
+                current_device_config: list[dict] = (
+                    (table.Attribute & current_device_query)
+                    .proj(
+                        "experiment_name",
+                        "device_name",
+                        "attribute_name",
+                        "attribute_value",
+                    )
+                    .to_dicts()
+                )
                 new_device_config: list[dict] = [
                     {k: v for k, v in entry.items() if dj.utils.from_camel_case(table.__name__) not in k}
                     for entry in table_attribute_entry
