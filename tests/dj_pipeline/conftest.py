@@ -218,11 +218,14 @@ def full_pipeline(dj_config_integration, streams_schema, golden_dataset_config):
     modules, all schemas (lab, subject, acquisition, streams) are already
     activated with test_aeon_* databases. No manual re-decoration needed.
 
+    Requires swc.aeon_exp (private package) — skips if not installed.
+
     Steps:
     1. Populate catalog from Pydantic class (populate_catalog_from_pydantic)
     2. Create ExperimentDevice and DeviceDataStream tables via streams_maker.main()
     3. Tests can then call EpochConfig.make() for DML
     """
+    pytest.importorskip("swc.aeon_exp", reason="requires swc.aeon_exp package")
     import datajoint as dj
 
     from aeon.dj_pipeline import acquisition, lab, subject

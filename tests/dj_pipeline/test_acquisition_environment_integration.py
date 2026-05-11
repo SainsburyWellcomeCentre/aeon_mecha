@@ -26,6 +26,7 @@ class TestEnvironmentStreamPopulate:
     """End-to-end populate against the foragingABC golden chunk.
 
     Skips when:
+      - swc.aeon_exp package is not installed, or
       - the golden dataset isn't on disk (require_golden_data fixture skips), or
       - the Pydantic Environment device doesn't expose @data_reader methods yet
         (upstream PR not merged).
