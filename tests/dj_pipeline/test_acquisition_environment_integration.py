@@ -69,28 +69,20 @@ class TestEnvironmentStreamPopulate:
             pytest.skip("No chunks ingested from golden dataset")
         return chunks
 
-    def test_environment_state_populates(self, full_pipeline, populated_chunks):
-        acquisition = full_pipeline["acquisition"]
-        acquisition.EnvironmentState.populate(populated_chunks[:1], display_progress=False)
-        assert len(acquisition.EnvironmentState & populated_chunks[0]) == 1
-        row = (acquisition.EnvironmentState & populated_chunks[0]).fetch1()
-        assert row["sample_count"] >= 0
-        assert isinstance(row["timestamps"], dict)
+    @pytest.mark.parametrize("table_name", ["EnvironmentState", "MessageLog", "LightEvents"])
+    def test_populates(self, full_pipeline, populated_chunks, table_name):
+        """Smoke test: populate the table for one chunk, confirm row exists with expected keys.
 
-    def test_message_log_populates(self, full_pipeline, populated_chunks):
-        acquisition = full_pipeline["acquisition"]
-        acquisition.MessageLog.populate(populated_chunks[:1], display_progress=False)
-        assert len(acquisition.MessageLog & populated_chunks[0]) == 1
-
-    def test_light_events_populates_foragingabc(self, full_pipeline, populated_chunks):
-        """ForagingABC golden dataset DOES have light_events.
-
-        Sample_count may be 0 for chunks where no light events fired, but the row must
+        LightEvents may not exist in all datasets but golden dataset (ForagingABC) HAS light_events.
+        Sample_count may be 0 for chunks where there are no events, but the row must
         exist and stream_df must NOT be null (reader was resolved).
         """
         acquisition = full_pipeline["acquisition"]
-        acquisition.LightEvents.populate(populated_chunks[:1], display_progress=False)
-        row = (acquisition.LightEvents & populated_chunks[0]).fetch1()
+        table = getattr(acquisition, table_name)
+        table.populate(populated_chunks[:1], display_progress=False)
+        row = (table & populated_chunks[0]).fetch1()
+        assert row["sample_count"] >= 0
+        assert isinstance(row["timestamps"], dict)
         assert row["stream_df"] is not None
-        assert row["stream_df"]["stream_type"] == "LightEvents"
+        assert row["stream_df"]["stream_type"] == table_name
         assert row["stream_df"]["device_name"] == "Environment"
