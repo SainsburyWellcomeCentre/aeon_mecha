@@ -38,7 +38,7 @@ Run from the repo root on an HPC compute node (Ceph must be visible):
 # Configuration -- edit these for your experiment
 # --------------------------------------------------------------------------
 
-EXPERIMENT_NAME = "abcEphysPilot02-aeonx1"
+EXPERIMENT_NAME = "abcGolden01-aeonx1"
 SUBJECT = "BAA-XXXXXXX"  # Replace with actual SWC subject ID from Adrian
 PARAMSET_ID = 400
 SORTING_METHOD = "kilosort4"
@@ -89,8 +89,10 @@ def setup_sorting_prerequisites(
 
     if not (spike_sorting.SortingParamSet & {"paramset_id": paramset_id_str}):
         params = {
-            # Which preprocessing function to use (defined in spike_sorting.py).
-            "SI_PREPROCESSING_METHOD": "ephys_preproc",
+            # NOTE: Preprocessing is fixed in the pipeline (bandpass 300-6000 Hz
+            # + median common average referencing, via ephys_preproc() in
+            # spike_sorting.py). It is not configurable through this params dict.
+            #
             # Parameters passed to SpikeInterface's run_sorter().
             "SI_SORTING_PARAMS": {
                 "n_pcs": 3,

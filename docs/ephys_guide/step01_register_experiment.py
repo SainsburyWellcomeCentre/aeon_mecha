@@ -27,11 +27,11 @@ from pathlib import Path
 # --------------------------------------------------------------------------
 
 # Name that identifies this experiment in the database.
-# Convention: <experiment_tag>-<arena>, e.g. "abcEphysPilot02-aeonx1".
-EXPERIMENT_NAME = "abcEphysPilot02-aeonx1"
+# Convention: <experiment_tag>-<arena>, e.g. "abcGolden01-aeonx1".
+EXPERIMENT_NAME = "abcGolden01-aeonx1"
 
 # Absolute path to the raw data on Ceph.
-RAW_DATA_DIR = "/ceph/aeon/aeon/data/raw/AEONX1/abcEphysPilot02"
+RAW_DATA_DIR = "/ceph/aeon/aeon/data/raw/AEONX1/abcGolden01"
 
 # SWC subject ID. Replace with the actual ID Adrian provides.
 SUBJECT = "BAA-XXXXXXX"
@@ -47,7 +47,7 @@ PROBE_TYPE = "neuropixels2.0"
 
 # Path to the channel mapping JSON (probeinterface format), relative to
 # the first epoch directory. This defines the 384 active electrodes.
-CHANNEL_MAP_FILE = "recording_configurations/M81_ProbeB_4Shanks_1000_to_1700_um.json"
+CHANNEL_MAP_FILE = "M81_ProbeB_4Shanks_1000_to_1700_um.json"
 
 
 # --------------------------------------------------------------------------
@@ -195,7 +195,7 @@ def ensure_probe_type(probe_type):
     #         from aeon.dj_pipeline.ephys import create_probe_type
     #         create_probe_type('neuropixels2.0', 'neuropixels', 'NP2014')
     #     "
-    create_probe_type(probe_type, "neuropixels", "NP2014")
+    create_probe_type(probe_type, "imec", "NP2014")
     n_electrodes = len(ProbeType.Electrode & {"probe_type": probe_type})
     print(f"ProbeType created: {probe_type} ({n_electrodes} electrodes)")
 

@@ -101,12 +101,12 @@ the `key` dictionary with your sorting task's primary key fields:
 ```python
 # Look up the exact values from the SpikeSorting table:
 from aeon.dj_pipeline import spike_sorting
-spike_sorting.SpikeSorting & {"experiment_name": "abcEphysPilot02-aeonx1"}
+spike_sorting.SpikeSorting & {"experiment_name": "abcGolden01-aeonx1"}
 
 # Then fill in the key with values from that query.
 # These 6 fields are the minimum needed to uniquely identify a sorting result:
 key = {
-    "experiment_name": "abcEphysPilot02-aeonx1",
+    "experiment_name": "abcGolden01-aeonx1",
     "insertion_number": 1,
     "block_start": "2026-05-05 15:15:51",  # Replace with actual block start
     "block_end": "2026-05-05 15:45:51",    # Replace with actual block end
@@ -119,7 +119,7 @@ The full primary key for a sorting task (all 9 fields) is:
 
 | Field | Description |
 |-------|-------------|
-| `experiment_name` | Experiment identifier (e.g., `"abcEphysPilot02-aeonx1"`) |
+| `experiment_name` | Experiment identifier (e.g., `"abcGolden01-aeonx1"`) |
 | `subject` | Subject name |
 | `insertion_number` | Probe insertion number |
 | `block_start` | Block start datetime |

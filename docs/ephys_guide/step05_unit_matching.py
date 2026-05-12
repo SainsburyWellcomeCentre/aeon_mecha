@@ -37,7 +37,7 @@ Run from the repo root on an HPC compute node (Ceph must be visible):
 # Configuration -- edit these for your experiment
 # --------------------------------------------------------------------------
 
-EXPERIMENT_NAME = "abcEphysPilot02-aeonx1"
+EXPERIMENT_NAME = "abcGolden01-aeonx1"
 SUBJECT = "BAA-XXXXXXX"  # Replace with actual SWC subject ID from Adrian
 MATCHING_PARAMSET_ID = 1
 

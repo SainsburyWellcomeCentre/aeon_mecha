@@ -137,7 +137,8 @@ Open the generated file and set these values:
   "stores": {
     "dj_store": {
       "protocol": "file",
-      "location": "/ceph/aeon/datajoint_stores"
+      "location": "/ceph/aeon/aeon/dj_store",
+      "stage": "/ceph/aeon/aeon/dj_store"
     }
   }
 }
@@ -193,7 +194,7 @@ structure follows a consistent pattern:
 For the golden baseline dataset used in this guide:
 
 ```
-/ceph/aeon/aeon/data/raw/AEONX1/abcEphysPilot02/
+/ceph/aeon/aeon/data/raw/AEONX1/abcGolden01/
 ```
 
 ### Directory structure
@@ -203,7 +204,7 @@ represents a continuous recording period and is named with an ISO 8601
 timestamp:
 
 ```
-abcEphysPilot02/
+abcGolden01/
   2026-05-05T15-15-51/          <-- epoch directory
     NeuropixelsV2/              <-- device directory (ephys data)
       ProbeB/                   <-- probe directory
