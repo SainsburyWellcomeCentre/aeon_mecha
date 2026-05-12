@@ -1,25 +1,23 @@
-# Remote set-up using pip and venv
+# Remote set-up using uv
 
-1. Ensure that python >=3.9 and pip are installed (if not, install python >=3.9)
+> **Note:** This guide uses `uv` as the package manager. If you encounter older references to pip/venv elsewhere, use the uv equivalents shown here.
+
+1. Load the uv module (this provides both `uv` and a managed Python):
 ```
-python -V          # should return >=3.9
-python -m pip -V
+module load uv
 ```
-2. Install virtualenv: `python -m pip install virtualenv`
-3. Create virtual environment: `python -m venv aeon`
-4. Activate the virtual environment and install the code dependencies:
+2. Create a virtual environment and sync the project dependencies:
 ```
-source aeon/bin/activate
-python -m pip install -e .
+uv venv
+uv sync
 ```
-5. Optionally install the development dependencies:
+3. Optionally install the development dependencies:
 ```
-source aeon/bin/activate
-python -m pip install -e .[dev]
+uv sync --extra dev
 ```
-6. Using the virtual environment:
-    - `source aeon/bin/activate` activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
-    - `deactivate` deactivates the virtual environment.
-7. (Optional) Add commands to the `.profile` file to add miniconda as an environment module and Bonsai and its dependencies to your system path on startup (this will be initialized each time you SSH into the HPC).
+4. Using the virtual environment:
+    - `uv run <command>`: runs a command within the project's virtual environment (e.g. `uv run python my_script.py`).
+    - The virtual environment is managed automatically by uv; no manual activate/deactivate is needed.
+5. (Optional) Add commands to the `.profile` file to load uv as an environment module and Bonsai and its dependencies to your system path on startup (this will be initialized each time you SSH into the HPC).
     - Copy the commands in the `.profile_example` file in this folder to your HPC home directory `.profile` file.
-8. For instructions on developing within the `aeon` environment, see [`developing_on_hpc.md`](./developing_on_hpc.md)
+6. For instructions on developing within the `aeon` environment, see [`developing_on_hpc.md`](./developing_on_hpc.md)

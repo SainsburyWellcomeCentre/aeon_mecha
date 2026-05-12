@@ -1,18 +1,19 @@
-# Remote set-up using miniconda and conda
+# Remote set-up using uv
 
-1. Add miniconda to your system path and create the `aeon` python env from the `env.yml` file:
+> **Note:** This guide uses `uv` as the package manager. If you encounter older references to conda or pip elsewhere, use the uv equivalents shown here.
+
+1. Load the uv module and sync the project dependencies:
 ```
-module load miniconda
-conda env create -f env_config/env.yml
+module load uv
+uv sync
 ```
 2. Optionally install development dependencies:
 ```
-conda activate aeon
-conda env update -f env_config/env_dev.yml
+uv sync --extra dev
 ```
 3. Using the virtual environment:
-    - `conda activate aeon`: activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
-    - `conda deactivate aeon`: deactivates the virtual environment.
-4. (Optional) Add commands to the `.profile` file to add miniconda as an environment module and Bonsai and its dependencies to your system path on startup (this will be initialized each time you SSH into the HPC).    
+    - `uv run <command>`: runs a command within the project's virtual environment (e.g. `uv run python my_script.py`).
+    - The virtual environment is managed automatically by uv; no manual activate/deactivate is needed.
+4. (Optional) Add commands to the `.profile` file to load uv as an environment module and Bonsai and its dependencies to your system path on startup (this will be initialized each time you SSH into the HPC).    
     - Copy the commands in the `.profile_example` file in this folder to your HPC home directory `.profile` file (you will have to create this file if it doesn't already exist).
 5. For instructions on developing within the `aeon` environment, see [`developing_on_hpc.md`](./developing_on_hpc.md)

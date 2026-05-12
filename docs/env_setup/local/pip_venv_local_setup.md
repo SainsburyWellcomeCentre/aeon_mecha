@@ -1,22 +1,20 @@
-# Local set-up using pip and venv
+# Local set-up using uv
 
-1. Ensure that python >=3.9 and pip are installed (if not, install python >=3.9)
+> **Note:** This guide uses `uv` as the package manager. If you encounter older references to pip/venv elsewhere, use the uv equivalents shown here.
+
+1. Install uv (if not already installed):
 ```
-python -V          # should return >=3.9
-python -m pip -V
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
-2. Install virtualenv: `python -m pip install virtualenv`
-3. Create virtual environment: `python -m venv aeon`
-4. Activate the virtual environment and install the code dependencies:
+2. Create a virtual environment and sync the project dependencies:
 ```
-source aeon/bin/activate
-python -m pip install -e .
+uv venv
+uv sync
 ```
-5. Optionally install the development dependencies:
+3. Optionally install the development dependencies:
 ```
-source aeon/bin/activate
-python -m pip install -e .[dev]
+uv sync --extra dev
 ```
-6. Using the virtual environment:
-    - `source aeon/bin/activate` activates the virtual environment; any commands now run within this terminal will take place within the virtual environment.
-    - `deactivate` deactivates the virtual environment.
+4. Using the virtual environment:
+    - `uv run <command>`: runs a command within the project's virtual environment (e.g. `uv run python my_script.py`).
+    - The virtual environment is managed automatically by uv; no manual activate/deactivate is needed.
