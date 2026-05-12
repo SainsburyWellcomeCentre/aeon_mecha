@@ -126,12 +126,15 @@ def read_probe_assignments(
     probe_labels: list[str],
     insertion_table,
     probe_info: dict[str, str],
+    *,
+    override_dir: "Path | None" = None,
 ) -> dict:
     """Read subject-probe mapping from file or carry forward from previous epoch.
 
     Priority:
-    1. probe_assignments.json in the current epoch directory
-    2. Carry-forward from most recent EphysEpoch (same experiment) with Insertion entries
+    1. probe_assignments.json in ``override_dir`` (if provided)
+    2. probe_assignments.json in the epoch directory on Ceph
+    3. Carry-forward from most recent EphysEpoch (same experiment) with Insertion entries
 
     Carry-forward is scoped to the current experiment (experiment_name in key).
     It cannot cross experiment boundaries.
@@ -144,11 +147,20 @@ def read_probe_assignments(
         probe_info: Dict mapping probe_label -> probe_serial (built by caller
             from get_probe_id()). Used to translate serial-keyed JSON to
             label-keyed dict.
+        override_dir: Optional local directory to check first. Useful when
+            the epoch directory is read-only (e.g. Ceph without write perms).
 
     Returns:
         Dict mapping probe_label -> {"subject": str}
     """
-    # Priority 1: JSON file in epoch directory
+    # Priority 1: override directory (local fallback for read-only Ceph)
+    if override_dir is not None:
+        override_path = Path(override_dir) / "probe_assignments.json"
+        if override_path.exists():
+            logger.info(f"Reading probe assignments from override: {override_path}")
+            return _parse_probe_assignments_file(override_path, probe_info)
+
+    # Priority 2: JSON file in epoch directory
     json_path = epoch_path / "probe_assignments.json"
     if json_path.exists():
         return _parse_probe_assignments_file(json_path, probe_info)

@@ -55,6 +55,11 @@ PROBE_TYPE = "neuropixels2.0"
 # the first epoch directory. This defines the 384 active electrodes.
 CHANNEL_MAP_FILE = "M81_ProbeB_4Shanks_1000_to_1700_um.json"
 
+# Local directory for probe_assignments.json when Ceph is read-only.
+# The file will be written here if the epoch directory on Ceph can't be
+# written to. EphysEpoch.populate() checks this location automatically.
+PROBE_ASSIGNMENTS_DIR = Path.home() / ".aeon_probe_assignments"
+
 
 # --------------------------------------------------------------------------
 # Functions
@@ -303,16 +308,16 @@ def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
 
 
 def create_probe_assignments(raw_ephys_dir, probe_serial, subject):
-    """Write probe_assignments.json to the first epoch directory."""
-    # The probe assignments file is the one thing the pipeline cannot
-    # auto-discover: which animal a given probe is implanted in. The pipeline
-    # reads this file during EphysEpoch.populate() to create ProbeInsertion
-    # entries linking each probe serial number to a subject.
-    #
-    # You only need to place this file in the *first* epoch directory.
-    # Subsequent epochs inherit the mapping automatically (carry-forward
-    # behavior in read_probe_assignments).
+    """Write probe_assignments.json to the epoch directory (or local fallback).
 
+    The probe assignments file tells the pipeline which animal a given probe
+    is implanted in. You only need one file — subsequent epochs inherit it
+    automatically (carry-forward in read_probe_assignments).
+
+    If the epoch directory on Ceph is read-only, the file is written to a
+    local override directory instead (~/.aeon_probe_assignments/<experiment>/).
+    Set PROBE_ASSIGNMENTS_DIR at the top of this script to use a custom path.
+    """
     raw_path = Path(raw_ephys_dir)
 
     # Find epoch directories (named like "2026-05-05T15-15-51")
@@ -323,14 +328,6 @@ def create_probe_assignments(raw_ephys_dir, probe_serial, subject):
     if not epoch_dirs:
         raise FileNotFoundError(f"No epoch directories found in {raw_ephys_dir}")
     first_epoch = epoch_dirs[0]
-
-    json_path = first_epoch / "probe_assignments.json"
-
-    # Safety: do not overwrite an existing file.
-    if json_path.exists():
-        print(f"probe_assignments.json already exists: {json_path}")
-        print("Skipping to avoid overwriting. Delete the file first if you need to regenerate.")
-        return
 
     # The JSON maps probe serial numbers to subjects. If you have multiple
     # probes, add one entry per serial.
@@ -343,14 +340,39 @@ def create_probe_assignments(raw_ephys_dir, probe_serial, subject):
         },
     }
 
-    with open(json_path, "w") as f:
+    # Try writing to the epoch directory on Ceph first.
+    json_path = first_epoch / "probe_assignments.json"
+    if json_path.exists():
+        print(f"probe_assignments.json already exists: {json_path}")
+        return str(json_path.parent)
+
+    try:
+        with open(json_path, "w") as f:
+            json.dump(assignments, f, indent=2)
+        print(f"Wrote probe_assignments.json: {json_path}")
+        print(f"  probe {probe_serial} -> subject {subject}")
+        return str(json_path.parent)
+    except PermissionError:
+        pass
+
+    # Ceph is read-only — write to a local override directory instead.
+    override_dir = PROBE_ASSIGNMENTS_DIR / Path(raw_ephys_dir).name
+    override_dir.mkdir(parents=True, exist_ok=True)
+    override_path = override_dir / "probe_assignments.json"
+
+    if override_path.exists():
+        print(f"probe_assignments.json already exists (local): {override_path}")
+        return str(override_dir)
+
+    with open(override_path, "w") as f:
         json.dump(assignments, f, indent=2)
-
-    print(f"Wrote probe_assignments.json: {json_path}")
+    print(f"Ceph is read-only. Wrote probe_assignments.json to local override:")
+    print(f"  {override_path}")
     print(f"  probe {probe_serial} -> subject {subject}")
+    return str(override_dir)
 
 
-def register_epochs(experiment_name):
+def register_epochs(experiment_name, probe_assignments_dir=None):
     """Ingest acquisition epochs and populate EphysEpoch."""
     from aeon.dj_pipeline import acquisition
     from aeon.dj_pipeline.ephys import EphysEpoch
@@ -384,12 +406,11 @@ def register_epochs(experiment_name):
             )
         )
 
-    # Populate EphysEpoch for all discovered epochs. For each Epoch,
-    # EphysEpoch.make() checks whether the epoch directory contains ephys
-    # data. Behavior epochs (directory_type="raw") will get has_ephys=False.
-    # Ephys epochs (directory_type="raw-ephys") will get has_ephys=True and
-    # trigger probe discovery, probe_assignments.json reading, and
-    # ProbeInsertion creation.
+    # Populate EphysEpoch. If probe_assignments.json was written to a local
+    # override directory (because Ceph is read-only), tell EphysEpoch where
+    # to find it.
+    if probe_assignments_dir is not None:
+        EphysEpoch.probe_assignments_override_dir = probe_assignments_dir
     print("Populating EphysEpoch...")
     EphysEpoch.populate(display_progress=True)
 
@@ -490,10 +511,10 @@ if __name__ == "__main__":
     create_electrode_config(RAW_EPHYS_DIR, CHANNEL_MAP_FILE, PROBE_TYPE)
 
     print("\n--- 4/7: Create probe assignments JSON ---")
-    create_probe_assignments(RAW_EPHYS_DIR, PROBE_SERIAL, SUBJECT)
+    assignments_dir = create_probe_assignments(RAW_EPHYS_DIR, PROBE_SERIAL, SUBJECT)
 
     print("\n--- 5/7: Register epochs ---")
-    register_epochs(EXPERIMENT_NAME)
+    register_epochs(EXPERIMENT_NAME, probe_assignments_dir=assignments_dir)
 
     print("\n--- 6/7: Ingest ephys chunks ---")
     ingest_chunks(EXPERIMENT_NAME)

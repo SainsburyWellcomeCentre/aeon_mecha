@@ -110,6 +110,11 @@ class EphysEpoch(dj.Imported):
     n_probes: int    # number of probes discovered (0 if no ephys)
     """
 
+    # Set this before calling populate() to read probe_assignments.json
+    # from a local directory instead of (or in addition to) the epoch dir
+    # on Ceph. Useful when Ceph is read-only.
+    probe_assignments_override_dir = None
+
     class Insertion(dj.Part):
         definition = """
         # Which ProbeInsertions are active in this epoch
@@ -196,6 +201,7 @@ class EphysEpoch(dj.Imported):
             probe_labels,
             self.Insertion,
             probe_info,
+            override_dir=self.probe_assignments_override_dir,
         )
 
         # Create/validate ProbeInsertion entries and build Insertion Part rows
