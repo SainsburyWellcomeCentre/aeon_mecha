@@ -99,36 +99,39 @@ Open `aeon/dj_pipeline/scripts/launch_si_gui.py` in your editor and fill in
 the `key` dictionary with your sorting task's primary key fields:
 
 ```python
+# Look up the exact values from the SpikeSorting table:
+from aeon.dj_pipeline import spike_sorting
+spike_sorting.SpikeSorting & {"experiment_name": "abcEphysPilot02-aeonx1"}
+
+# Then fill in the key with values from that query.
+# These 6 fields are the minimum needed to uniquely identify a sorting result:
 key = {
-    "experiment_name": "...",
+    "experiment_name": "abcEphysPilot02-aeonx1",
     "insertion_number": 1,
-    "block_start": "2026-05-05 15:15:51",
-    "block_end": "2026-05-05 19:15:51",
-    "electrode_group": "0-143",
-    "paramset_id": "250",
+    "block_start": "2026-05-05 15:15:51",  # Replace with actual block start
+    "block_end": "2026-05-05 15:45:51",    # Replace with actual block end
+    "electrode_group": "all",
+    "paramset_id": "400",
 }
 ```
 
-The full primary key for a sorting task includes:
+The full primary key for a sorting task (all 9 fields) is:
 
 | Field | Description |
 |-------|-------------|
-| `experiment_name` | Experiment identifier (e.g., `"abcEphysPilot02"`) |
+| `experiment_name` | Experiment identifier (e.g., `"abcEphysPilot02-aeonx1"`) |
 | `subject` | Subject name |
 | `insertion_number` | Probe insertion number |
 | `block_start` | Block start datetime |
 | `block_end` | Block end datetime |
-| `probe_type` | Probe hardware type |
+| `probe_type` | Probe hardware type (e.g., `"neuropixels2.0"`) |
 | `electrode_config_name` | Electrode configuration name |
-| `electrode_group` | Electrode group (e.g., `"0-143"`) |
-| `paramset_id` | Spike sorting parameter set ID |
+| `electrode_group` | Electrode group label (e.g., `"all"`) |
+| `paramset_id` | Sorting parameter set ID (e.g., `"400"` for Kilosort 4) |
 
-You can look up the exact values from the `SpikeSorting` table:
-
-```python
-from aeon.dj_pipeline import spike_sorting
-spike_sorting.SpikeSorting & {"experiment_name": EXPERIMENT_NAME}
-```
+The 6-field key above works because DataJoint can resolve the remaining fields
+(`subject`, `probe_type`, `electrode_config_name`) if the restriction uniquely
+identifies a single entry.
 
 Then run the script. The GUI opens with the raw sorting analyzer loaded. You
 can review waveforms, autocorrelograms, and quality metrics for each unit.

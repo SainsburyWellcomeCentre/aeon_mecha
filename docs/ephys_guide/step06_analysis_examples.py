@@ -135,11 +135,12 @@ def plot_raster(spike_times_dict, title="Raster Plot", save_path=None):
             Use this on headless HPC nodes.
     """
     import matplotlib
-    import matplotlib.pyplot as plt
 
     # Use non-interactive backend if saving to file (headless-safe).
+    # MUST be set before importing pyplot — the backend is locked on import.
     if save_path:
         matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -196,10 +197,11 @@ def plot_peth(
     """
     import numpy as np
     import matplotlib
-    import matplotlib.pyplot as plt
 
+    # MUST be set before importing pyplot — the backend is locked on import.
     if save_path:
         matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 
     # For each event, compute spike times relative to that event and
     # keep only spikes within the window. This is the core PETH
@@ -282,7 +284,7 @@ def fetch_behavioral_events(experiment_name):
     epochs = (acquisition.Epoch & restriction).fetch(as_dict=True)
     print(f"\n  Epochs: {len(epochs)}")
     for ep in epochs[:5]:  # Show first 5
-        print(f"    {ep['epoch_start']} (type: {ep.get('epoch_type', 'N/A')})")
+        print(f"    {ep['epoch_start']} (dir: {ep.get('epoch_dir', '')})")
     if len(epochs) > 5:
         print(f"    ... and {len(epochs) - 5} more")
 

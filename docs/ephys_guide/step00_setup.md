@@ -108,34 +108,70 @@ the system.
 
 ## Database Configuration
 
-The pipeline uses DataJoint to connect to a MariaDB database. Connection
-details are read from a `.env` file in the repository root (the directory you
-run commands from).
+The pipeline uses DataJoint to connect to a MariaDB database. DataJoint 2.x
+reads configuration from two sources in the repository root:
 
-Create a `.env` file with the following contents:
+- **`datajoint.json`** -- database host, prefix, and store definitions
+- **`.secrets/`** -- credentials (username and password), kept out of git
 
+### Creating the config files
+
+From the repo root on a compute node, generate both files in one command:
+
+```bash
+uv run python -c "import datajoint as dj; dj.config.save_template()"
 ```
-DJ_HOST=aeon-db
-DJ_USER=<your_username>
-DJ_PASS=<your_password>
-DJ_DATABASE_PREFIX=u_<yourname>_aeon_ephys_v2_test_
+
+This creates a `datajoint.json` template and a `.secrets/` directory with
+placeholder credential files. The `.secrets/` directory is automatically
+gitignored.
+
+### Editing `datajoint.json`
+
+Open the generated file and set these values:
+
+```json
+{
+  "database.host": "aeon-db",
+  "database.database_prefix": "u_<yourname>_aeon_ephys_v2_test_",
+  "stores": {
+    "dj_store": {
+      "protocol": "file",
+      "location": "/ceph/aeon/datajoint_stores"
+    }
+  }
+}
 ```
 
-Replace the placeholder values:
+What each field does:
 
-- `DJ_HOST` -- Use `aeon-db`. This is the primary database server. Do **not**
-  use `aeon-db2`, which only hosts old historical data from a previous
+- `database.host` -- Use `aeon-db`. This is the primary database server. Do
+  **not** use `aeon-db2`, which only hosts old historical data from a previous
   experiment.
-- `DJ_USER` / `DJ_PASS` -- Your database credentials.
-- `DJ_DATABASE_PREFIX` -- This prefix is prepended to every schema name the
-  pipeline creates. Using a test prefix like `u_yourname_aeon_ephys_v2_test_`
-  keeps your test schemas completely separate from production schemas (which
-  use the `aeon_` prefix). You can drop your test schemas without affecting
-  anyone else.
+- `database.database_prefix` -- Prepended to every schema name the pipeline
+  creates. Using a test prefix like `u_yourname_aeon_ephys_v2_test_` keeps your
+  test schemas completely separate from production schemas (which use the
+  `aeon_` prefix). You can drop your test schemas without affecting anyone else.
+- `stores.dj_store` -- The ephys pipeline stores spike data and sorting output
+  files in this location on Ceph. This entry is required for spike sorting
+  tables to work.
+
+### Setting credentials
+
+Edit the files in the `.secrets/` directory:
+
+```bash
+echo "your_username" > .secrets/database.user
+echo "your_password" > .secrets/database.password
+```
+
+DataJoint automatically reads these files at import time. Never commit the
+`.secrets/` directory to git (the generated `.gitignore` inside it prevents
+this).
 
 ### Verifying the connection
 
-After creating your `.env` file, verify the connection:
+After setting up the config and credentials, verify the connection:
 
 ```bash
 uv run python -c "import datajoint as dj; dj.conn()"
@@ -202,7 +238,8 @@ This guide assumes HPC access. The commands and paths are the same either way
 
 ## Next Steps
 
-Once you have a compute node session, your environment loaded, your `.env`
-file in place, and you've verified your database connection, you're ready to
+Once you have a compute node session, your environment loaded, your
+`datajoint.json` and `.secrets/` in place, and you've verified your database
+connection, you're ready to
 start processing data. Continue to
 [Step 1: Register Experiment](step01_register_experiment.py).

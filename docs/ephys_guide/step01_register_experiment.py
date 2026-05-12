@@ -87,6 +87,29 @@ def register_experiment(experiment_name, raw_data_dir, subject):
     )
     print("Location: AEONX1")
 
+    # --- Derive experiment_start_time from the first epoch directory ---
+    # Epoch directories are named with their start timestamp, e.g.
+    # "2026-05-05T15-15-51". The earliest one is the experiment start time.
+    raw_path = Path(raw_data_dir)
+    epoch_dirs = sorted(
+        d.name for d in raw_path.iterdir()
+        if d.is_dir() and "T" in d.name and not d.name.startswith(".")
+    )
+    if not epoch_dirs:
+        raise FileNotFoundError(f"No epoch directories found in {raw_data_dir}")
+    date_part, time_part = epoch_dirs[0].split("T")
+    experiment_start_time = f"{date_part} {time_part.replace('-', ':')}"
+
+    # --- Derive directory_path relative to ceph_aeon root ---
+    # The pipeline resolves full paths as:
+    #   get_repository_path("ceph_aeon") / directory_path
+    # where the ceph_aeon root is /ceph/aeon/. Strip that prefix.
+    ceph_root = "/ceph/aeon/"
+    if raw_data_dir.startswith(ceph_root):
+        directory_path = raw_data_dir[len(ceph_root):]
+    else:
+        directory_path = raw_data_dir.lstrip("/")
+
     # --- Experiment ---
     # The Experiment table is the root of the pipeline. Every downstream table
     # references it. Fields:
@@ -100,7 +123,7 @@ def register_experiment(experiment_name, raw_data_dir, subject):
     acquisition.Experiment.insert1(
         {
             "experiment_name": experiment_name,
-            "experiment_start_time": "2026-05-05 15:15:51",
+            "experiment_start_time": experiment_start_time,
             "experiment_description": "Ephys pilot experiment 02 - AEONX1",
             "arena_name": "circle-2m",
             "lab": "SWC",
@@ -109,7 +132,7 @@ def register_experiment(experiment_name, raw_data_dir, subject):
         },
         skip_duplicates=True,
     )
-    print(f"Experiment: {experiment_name}")
+    print(f"Experiment: {experiment_name} (start: {experiment_start_time})")
 
     # --- Experiment.Directory ---
     # Tells the pipeline where the raw data lives on Ceph. The directory_path
@@ -122,13 +145,13 @@ def register_experiment(experiment_name, raw_data_dir, subject):
                 "experiment_name": experiment_name,
                 "directory_type": "raw",
                 "repository_name": "ceph_aeon",
-                "directory_path": "aeon/data/raw/AEONX1/abcEphysPilot02",
+                "directory_path": directory_path,
                 "load_order": 0,
             },
         ],
         skip_duplicates=True,
     )
-    print("Directory: raw -> aeon/data/raw/AEONX1/abcEphysPilot02")
+    print(f"Directory: raw -> {directory_path}")
 
     # --- Experiment.Subject ---
     # Links the subject to this experiment. A Part table of Experiment.
@@ -334,6 +357,16 @@ def register_epochs(experiment_name):
 
     epoch_count = len(acquisition.Epoch & {"experiment_name": experiment_name})
     print(f"Epochs in database: {epoch_count}")
+
+    if epoch_count == 0:
+        raise RuntimeError(
+            f"No epochs found for '{experiment_name}'. This usually means "
+            f"the reference device (CameraTop) has no data in the epoch "
+            f"directories. Check which devices exist in your raw data:\n"
+            f"  ls {(acquisition.Experiment.Directory & {{'experiment_name': experiment_name}}).fetch1('directory_path')}/*/\n"
+            f"If CameraTop is missing, the pipeline's _ref_device_mapping "
+            f"in acquisition.py needs an entry for your experiment name."
+        )
 
     # Step 2: Populate EphysEpoch.
     # For each Epoch, EphysEpoch.make() checks whether the epoch directory

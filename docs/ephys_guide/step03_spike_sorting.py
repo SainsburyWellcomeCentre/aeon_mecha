@@ -40,7 +40,7 @@ Run from the repo root on an HPC compute node (Ceph must be visible):
 
 EXPERIMENT_NAME = "abcEphysPilot02-aeonx1"
 SUBJECT = "BAA-XXXXXXX"  # Replace with actual SWC subject ID from Adrian
-PARAMSET_ID = 1
+PARAMSET_ID = 400
 SORTING_METHOD = "kilosort4"
 ELECTRODE_GROUP_NAME = "all"  # or "0-383" -- groups all active channels
 
