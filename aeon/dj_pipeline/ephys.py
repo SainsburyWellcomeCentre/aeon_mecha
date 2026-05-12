@@ -195,6 +195,7 @@ class EphysEpoch(dj.Imported):
             epoch_path,
             probe_labels,
             self.Insertion,
+            probe_info,
         )
 
         # Create/validate ProbeInsertion entries and build Insertion Part rows

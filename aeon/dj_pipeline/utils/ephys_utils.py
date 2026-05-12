@@ -125,28 +125,113 @@ def read_probe_assignments(
     epoch_path: Path,
     probe_labels: list[str],
     insertion_table,
+    probe_info: dict[str, str],
 ) -> dict:
     """Read subject-probe mapping from file or carry forward from previous epoch.
 
     Priority:
-    1. probe_assignments.json in epoch directory
-    2. Carry-forward from most recent EphysEpoch with .Insertion entries
-    3. Pre-existing ProbeInsertion matched by probe serial (error if not found)
+    1. probe_assignments.json in the current epoch directory
+    2. Carry-forward from most recent EphysEpoch (same experiment) with Insertion entries
+
+    Carry-forward is scoped to the current experiment (experiment_name in key).
+    It cannot cross experiment boundaries.
 
     Args:
         key: Epoch key (experiment_name, epoch_start)
-        epoch_path: Path to epoch directory
+        epoch_path: Path to epoch directory on Ceph
         probe_labels: Sorted list of probe labels discovered in this epoch
         insertion_table: The EphysEpoch.Insertion Part table class
+        probe_info: Dict mapping probe_label -> probe_serial (built by caller
+            from get_probe_id()). Used to translate serial-keyed JSON to
+            label-keyed dict.
 
     Returns:
-        Dict mapping probe_label -> {"subject": str, ...}
+        Dict mapping probe_label -> {"subject": str}
     """
-    raise NotImplementedError(
-        "Probe-subject assignment resolution is not yet implemented. "
-        "The exact file format and carry-forward logic will be determined "
-        "once the experimental data conventions are finalized."
+    # Priority 1: JSON file in epoch directory
+    json_path = epoch_path / "probe_assignments.json"
+    if json_path.exists():
+        return _parse_probe_assignments_file(json_path, probe_info)
+
+    # Priority 2: Carry-forward from most recent epoch in same experiment
+    previous_insertions = (
+        insertion_table
+        & {"experiment_name": key["experiment_name"]}
+        & f'epoch_start < "{key["epoch_start"]}"'
+    ).fetch(
+        "epoch_start", "probe_label", "subject",
+        as_dict=True, order_by="epoch_start DESC",
     )
+
+    if previous_insertions:
+        # Use only entries from the most recent epoch (first row, ordered DESC)
+        latest_start = previous_insertions[0]["epoch_start"]
+        carried = {
+            row["probe_label"]: {"subject": row["subject"]}
+            for row in previous_insertions
+            if row["epoch_start"] == latest_start
+        }
+
+        if carried:
+            logger.info(
+                f"Carried forward probe assignments from epoch {latest_start} "
+                f"for {key['experiment_name']}: {carried}"
+            )
+            return carried
+
+    # Nothing found
+    raise FileNotFoundError(
+        f"No probe_assignments.json found in {epoch_path} and no previous "
+        f"EphysEpoch with probe insertions found for experiment "
+        f"'{key['experiment_name']}'. Create a probe_assignments.json file "
+        f"in the first epoch directory with format:\n"
+        f'{{\n  "version": 1,\n  "probe_assignments": {{\n'
+        f'    "<probe_serial>": {{"subject": "<subject_name>"}}\n  }}\n}}'
+    )
+
+
+def _parse_probe_assignments_file(json_path: Path, probe_info: dict[str, str]) -> dict:
+    """Parse probe_assignments.json and translate serial-keyed entries to label-keyed.
+
+    Args:
+        json_path: Path to the JSON file
+        probe_info: Dict mapping probe_label -> probe_serial (from EphysEpoch.make)
+
+    Returns:
+        Dict mapping probe_label -> {"subject": str}
+    """
+    data = json.loads(json_path.read_text())
+
+    if "version" not in data:
+        raise ValueError(
+            f"probe_assignments.json at {json_path} is missing 'version' field. "
+            f'Expected format: {{"version": 1, "probe_assignments": {{...}}}}'
+        )
+    if "probe_assignments" not in data:
+        raise ValueError(
+            f"probe_assignments.json at {json_path} is missing 'probe_assignments' "
+            f'field. Expected format: {{"version": 1, "probe_assignments": {{...}}}}'
+        )
+
+    assignments_by_serial = data["probe_assignments"]
+
+    # Translate serial -> label using probe_info (label -> serial)
+    result = {}
+    for label, serial in probe_info.items():
+        if serial not in assignments_by_serial:
+            raise ValueError(
+                f"Probe serial '{serial}' (label '{label}') not found in "
+                f"{json_path}. Available serials: {list(assignments_by_serial.keys())}. "
+                f"Add an entry for this serial in the probe_assignments section."
+            )
+        entry = assignments_by_serial[serial]
+        if "subject" not in entry:
+            raise ValueError(
+                f"Entry for serial '{serial}' in {json_path} is missing 'subject' field."
+            )
+        result[label] = {"subject": entry["subject"]}
+
+    return result
 
 
 def discover_epoch_probes(epoch_path: Path) -> tuple[str | None, Path | None, list[str]]:
