@@ -337,21 +337,33 @@ def create_probe_type(
 def resolve_raw_dir_and_epochs(
     experiment_name: str,
 ) -> "tuple[Path, dict[str, datetime]] | None":
-    """Return (raw_dir, {epoch_dir_name: epoch_start}) or None if unavailable.
+    """Return (raw_ephys_dir, {epoch_dir_name: epoch_start}) or None.
 
-    Centralises the filesystem + DB lookup that both ingest paths need.
+    Looks up the "raw-ephys" directory and returns only epochs with confirmed
+    ephys data (``EphysEpoch.has_ephys == True``).  This correctly handles
+    both split-directory experiments (behavior on AEON3, ephys on AEONX1) and
+    same-directory experiments where "raw" and "raw-ephys" point to the same
+    path.
     """
     from aeon.dj_pipeline import acquisition
+    from aeon.dj_pipeline.ephys import EphysEpoch
 
     exp_key = {"experiment_name": experiment_name}
-    raw_dir_result = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw")
+    raw_dir_result = acquisition.Experiment.get_data_directory(
+        exp_key, directory_type="raw-ephys"
+    )
     if raw_dir_result is None:
-        logger.error(f"Raw data directory not found for {experiment_name}")
+        logger.error(f"raw-ephys data directory not found for {experiment_name}")
         return None
     raw_dir = Path(raw_dir_result)
 
+    # Only include epochs where EphysEpoch confirmed ephys data exists.
+    ephys_epochs = (
+        acquisition.Epoch & exp_key & (EphysEpoch & {"has_ephys": True})
+    ).proj("epoch_dir").to_dicts()
+
     epoch_dir_to_start: dict[str, datetime] = {}
-    for ep in (acquisition.Epoch & exp_key).proj("epoch_start", "epoch_dir").to_dicts():
+    for ep in ephys_epochs:
         if ep["epoch_dir"]:
             top_dir = Path(ep["epoch_dir"]).parts[0]
             epoch_dir_to_start[top_dir] = ep["epoch_start"]

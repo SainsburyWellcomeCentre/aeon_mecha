@@ -33,7 +33,7 @@ from datetime import datetime, timedelta
 # --------------------------------------------------------------------------
 
 EXPERIMENT_NAME = "abcGolden01-aeonx1"
-SUBJECT = "BAA-XXXXXXX"  # Replace with actual SWC subject ID from Adrian
+SUBJECT = "IAA-1147881"
 
 # Test subset: small blocks for fast iteration.
 # 30-minute blocks with 10-minute overlap produce 3 blocks spanning ~70 min.

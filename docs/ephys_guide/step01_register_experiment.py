@@ -30,11 +30,17 @@ from pathlib import Path
 # Convention: <experiment_tag>-<arena>, e.g. "abcGolden01-aeonx1".
 EXPERIMENT_NAME = "abcGolden01-aeonx1"
 
-# Absolute path to the raw data on Ceph.
-RAW_DATA_DIR = "/ceph/aeon/aeon/data/raw/AEONX1/abcGolden01"
+# Absolute paths to raw data on Ceph.
+# abc experiments record behavior and ephys on separate acquisition machines:
+#   - AEON3 captures behavior (CameraTop, etc.)
+#   - AEONX1 captures ephys (NeuropixelsV2)
+# Each is registered as a separate directory type so the pipeline knows where
+# to look for each kind of data.
+RAW_BEHAVIOR_DIR = "/ceph/aeon/aeon/data/raw/AEON3/abcGolden01"
+RAW_EPHYS_DIR = "/ceph/aeon/aeon/data/raw/AEONX1/abcGolden01"
 
-# SWC subject ID. Replace with the actual ID Adrian provides.
-SUBJECT = "BAA-XXXXXXX"
+# SWC subject ID.
+SUBJECT = "IAA-1147881"
 
 # Serial number of the physical probe (from Metadata.yml / GainCalibrationFileName).
 PROBE_SERIAL = "23299108854"
@@ -54,14 +60,18 @@ CHANNEL_MAP_FILE = "M81_ProbeB_4Shanks_1000_to_1700_um.json"
 # Functions
 # --------------------------------------------------------------------------
 
-def register_experiment(experiment_name, raw_data_dir, subject):
-    """Insert experiment, subject, and data directory into the database."""
+def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subject):
+    """Insert experiment, subject, and data directories into the database.
+
+    For abc experiments, behavior and ephys data live on separate machines
+    (AEON3 and AEONX1 respectively). We register both directories:
+    - "raw"       -> behavior data (CameraTop, etc.)
+    - "raw-ephys" -> ephys data (NeuropixelsV2)
+    """
     # Deferred imports so there are no DB side effects at module load time.
     from aeon.dj_pipeline import acquisition, lab, subject as subject_mod
 
     # --- Subject ---
-    # The Subject table holds basic animal metadata. It must exist before we
-    # can add the subject to an experiment.
     subject_mod.Subject.insert1(
         {
             "subject": subject,
@@ -74,9 +84,6 @@ def register_experiment(experiment_name, raw_data_dir, subject):
     print(f"Subject: {subject}")
 
     # --- Location ---
-    # Location is a Lookup table seeded with known rigs. If your arena is not
-    # in the default list you need to insert it. "AEONX1" is the acquisition
-    # machine for this experiment.
     lab.Location.insert1(
         {
             "lab": "SWC",
@@ -88,15 +95,15 @@ def register_experiment(experiment_name, raw_data_dir, subject):
     print("Location: AEONX1")
 
     # --- Derive experiment_start_time from the first epoch directory ---
-    # Epoch directories are named with their start timestamp, e.g.
-    # "2026-05-05T15-15-51". The earliest one is the experiment start time.
-    raw_path = Path(raw_data_dir)
+    # Use the ephys directory to find the experiment start time, since that
+    # is the primary data source for this guide.
+    raw_path = Path(raw_ephys_dir)
     epoch_dirs = sorted(
         d.name for d in raw_path.iterdir()
         if d.is_dir() and "T" in d.name and not d.name.startswith(".")
     )
     if not epoch_dirs:
-        raise FileNotFoundError(f"No epoch directories found in {raw_data_dir}")
+        raise FileNotFoundError(f"No epoch directories found in {raw_ephys_dir}")
     date_part, time_part = epoch_dirs[0].split("T")
     experiment_start_time = f"{date_part} {time_part.replace('-', ':')}"
 
@@ -105,26 +112,21 @@ def register_experiment(experiment_name, raw_data_dir, subject):
     #   get_repository_path("ceph_aeon") / directory_path
     # where the ceph_aeon root is /ceph/aeon/. Strip that prefix.
     ceph_root = "/ceph/aeon/"
-    if raw_data_dir.startswith(ceph_root):
-        directory_path = raw_data_dir[len(ceph_root):]
-    else:
-        directory_path = raw_data_dir.lstrip("/")
+
+    def _relative_to_ceph(abs_path):
+        if abs_path.startswith(ceph_root):
+            return abs_path[len(ceph_root):]
+        return abs_path.lstrip("/")
+
+    behavior_dir_path = _relative_to_ceph(raw_behavior_dir)
+    ephys_dir_path = _relative_to_ceph(raw_ephys_dir)
 
     # --- Experiment ---
-    # The Experiment table is the root of the pipeline. Every downstream table
-    # references it. Fields:
-    #   experiment_name       -- unique identifier (PK)
-    #   experiment_start_time -- when recording began (first epoch timestamp)
-    #   experiment_description
-    #   arena_name            -- FK to lab.Arena (physical arena geometry)
-    #   lab                   -- FK to lab.Lab
-    #   location              -- FK to lab.Location (which rig / room)
-    #   experiment_type       -- FK to acquisition.ExperimentType
     acquisition.Experiment.insert1(
         {
             "experiment_name": experiment_name,
             "experiment_start_time": experiment_start_time,
-            "experiment_description": "Ephys pilot experiment 02 - AEONX1",
+            "experiment_description": "Golden baseline dataset - abc ephys (AEON3 + AEONX1)",
             "arena_name": "circle-2m",
             "lab": "SWC",
             "location": "AEONX1",
@@ -135,26 +137,32 @@ def register_experiment(experiment_name, raw_data_dir, subject):
     print(f"Experiment: {experiment_name} (start: {experiment_start_time})")
 
     # --- Experiment.Directory ---
-    # Tells the pipeline where the raw data lives on Ceph. The directory_path
-    # is *relative* to the ceph_aeon repository root (/ceph/aeon/). The
-    # pipeline resolves the full path at runtime using:
-    #   get_repository_path("ceph_aeon") / directory_path
+    # Register both directories. "raw" is for behavior data (CameraTop on
+    # AEON3), "raw-ephys" is for ephys data (NeuropixelsV2 on AEONX1).
+    # Epoch.ingest_epochs() automatically discovers epochs from each.
     acquisition.Experiment.Directory.insert(
         [
             {
                 "experiment_name": experiment_name,
                 "directory_type": "raw",
                 "repository_name": "ceph_aeon",
-                "directory_path": directory_path,
+                "directory_path": behavior_dir_path,
                 "load_order": 0,
+            },
+            {
+                "experiment_name": experiment_name,
+                "directory_type": "raw-ephys",
+                "repository_name": "ceph_aeon",
+                "directory_path": ephys_dir_path,
+                "load_order": 1,
             },
         ],
         skip_duplicates=True,
     )
-    print(f"Directory: raw -> {directory_path}")
+    print(f"Directory: raw       -> {behavior_dir_path}")
+    print(f"Directory: raw-ephys -> {ephys_dir_path}")
 
     # --- Experiment.Subject ---
-    # Links the subject to this experiment. A Part table of Experiment.
     acquisition.Experiment.Subject.insert1(
         {
             "experiment_name": experiment_name,
@@ -200,7 +208,7 @@ def ensure_probe_type(probe_type):
     print(f"ProbeType created: {probe_type} ({n_electrodes} electrodes)")
 
 
-def create_electrode_config(raw_data_dir, channel_map_file, probe_type):
+def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
     """Create ElectrodeConfig + Electrode entries from the channel mapping JSON."""
     from aeon.dj_pipeline.ephys import ElectrodeConfig
 
@@ -213,13 +221,13 @@ def create_electrode_config(raw_data_dir, channel_map_file, probe_type):
     # create this before ingesting chunks.
 
     # Find the first epoch directory (they are named like "2026-05-05T15-15-51")
-    raw_path = Path(raw_data_dir)
+    raw_path = Path(raw_ephys_dir)
     epoch_dirs = sorted(
         d for d in raw_path.iterdir()
         if d.is_dir() and "T" in d.name and not d.name.startswith(".")
     )
     if not epoch_dirs:
-        raise FileNotFoundError(f"No epoch directories found in {raw_data_dir}")
+        raise FileNotFoundError(f"No epoch directories found in {raw_ephys_dir}")
     first_epoch = epoch_dirs[0]
 
     json_path = first_epoch / channel_map_file
@@ -294,7 +302,7 @@ def create_electrode_config(raw_data_dir, channel_map_file, probe_type):
     )
 
 
-def create_probe_assignments(raw_data_dir, probe_serial, subject):
+def create_probe_assignments(raw_ephys_dir, probe_serial, subject):
     """Write probe_assignments.json to the first epoch directory."""
     # The probe assignments file is the one thing the pipeline cannot
     # auto-discover: which animal a given probe is implanted in. The pipeline
@@ -305,7 +313,7 @@ def create_probe_assignments(raw_data_dir, probe_serial, subject):
     # Subsequent epochs inherit the mapping automatically (carry-forward
     # behavior in read_probe_assignments).
 
-    raw_path = Path(raw_data_dir)
+    raw_path = Path(raw_ephys_dir)
 
     # Find epoch directories (named like "2026-05-05T15-15-51")
     epoch_dirs = sorted(
@@ -313,7 +321,7 @@ def create_probe_assignments(raw_data_dir, probe_serial, subject):
         if d.is_dir() and "T" in d.name and not d.name.startswith(".")
     )
     if not epoch_dirs:
-        raise FileNotFoundError(f"No epoch directories found in {raw_data_dir}")
+        raise FileNotFoundError(f"No epoch directories found in {raw_ephys_dir}")
     first_epoch = epoch_dirs[0]
 
     json_path = first_epoch / "probe_assignments.json"
@@ -347,38 +355,41 @@ def register_epochs(experiment_name):
     from aeon.dj_pipeline import acquisition
     from aeon.dj_pipeline.ephys import EphysEpoch
 
-    # Step 1: Ingest acquisition Epochs.
-    # Epoch.ingest_epochs() scans the raw data directory for epoch directories
-    # (each one is a continuous recording period) and inserts them into the
-    # Epoch table. It discovers epochs by looking for chunk files from a
-    # reference device (typically CameraTop).
+    # Epoch.ingest_epochs() automatically handles both directory types:
+    #   - "raw": scans for CameraTop CSV chunks (behavior epochs)
+    #   - "raw-ephys": enumerates dirs with NeuropixelsV2 subdirs (ephys epochs)
+    # All discovered epochs go into the same Epoch table, each tagged with
+    # its directory_type so downstream tables resolve the correct path.
     print("Ingesting acquisition epochs...")
     acquisition.Epoch.ingest_epochs(experiment_name)
 
     epoch_count = len(acquisition.Epoch & {"experiment_name": experiment_name})
-    print(f"Epochs in database: {epoch_count}")
+    behavior_epochs = len(
+        acquisition.Epoch & {"experiment_name": experiment_name, "directory_type": "raw"}
+    )
+    ephys_epochs = len(
+        acquisition.Epoch & {"experiment_name": experiment_name, "directory_type": "raw-ephys"}
+    )
+    print(f"Epochs in database: {epoch_count} ({behavior_epochs} behavior, {ephys_epochs} ephys)")
 
     if epoch_count == 0:
         raise RuntimeError(
-            f"No epochs found for '{experiment_name}'. This usually means "
-            f"the reference device (CameraTop) has no data in the epoch "
-            f"directories. Check which devices exist in your raw data:\n"
-            f"  ls {(acquisition.Experiment.Directory & {{'experiment_name': experiment_name}}).fetch1('directory_path')}/*/\n"
-            f"If CameraTop is missing, the pipeline's _ref_device_mapping "
-            f"in acquisition.py needs an entry for your experiment name."
+            f"No epochs found for '{experiment_name}'. Check that:\n"
+            f"  - The 'raw' directory has CameraTop data (behavior)\n"
+            f"  - The 'raw-ephys' directory has NeuropixelsV2 subdirs (ephys)\n"
+            f"Registered directories:\n"
+            + "\n".join(
+                f"  {d['directory_type']}: {d['directory_path']}"
+                for d in (acquisition.Experiment.Directory & {"experiment_name": experiment_name}).to_dicts()
+            )
         )
 
-    # Step 2: Populate EphysEpoch.
-    # For each Epoch, EphysEpoch.make() checks whether the epoch directory
-    # contains ephys data (a NeuropixelsV2 or NeuropixelsV2Beta subdirectory).
-    # If it does, it:
-    #   1. Discovers probes from the binary filenames (e.g. ProbeA, ProbeB)
-    #   2. Reads Metadata.yml to get probe serial numbers
-    #   3. Auto-creates Probe entries in the Probe table
-    #   4. Reads probe_assignments.json (or carries forward from a previous
-    #      epoch) to find the subject-probe mapping
-    #   5. Creates ProbeInsertion entries linking each probe to a subject
-    #   6. Inserts EphysEpoch.Insertion Part rows
+    # Populate EphysEpoch for all discovered epochs. For each Epoch,
+    # EphysEpoch.make() checks whether the epoch directory contains ephys
+    # data. Behavior epochs (directory_type="raw") will get has_ephys=False.
+    # Ephys epochs (directory_type="raw-ephys") will get has_ephys=True and
+    # trigger probe discovery, probe_assignments.json reading, and
+    # ProbeInsertion creation.
     print("Populating EphysEpoch...")
     EphysEpoch.populate(display_progress=True)
 
@@ -469,17 +480,17 @@ if __name__ == "__main__":
     print("  Step 1: Register Experiment")
     print("=" * 60)
 
-    print("\n--- 1/7: Register experiment, subject, and directory ---")
-    register_experiment(EXPERIMENT_NAME, RAW_DATA_DIR, SUBJECT)
+    print("\n--- 1/7: Register experiment, subject, and directories ---")
+    register_experiment(EXPERIMENT_NAME, RAW_BEHAVIOR_DIR, RAW_EPHYS_DIR, SUBJECT)
 
     print("\n--- 2/7: Ensure ProbeType exists ---")
     ensure_probe_type(PROBE_TYPE)
 
     print("\n--- 3/7: Create electrode configuration ---")
-    create_electrode_config(RAW_DATA_DIR, CHANNEL_MAP_FILE, PROBE_TYPE)
+    create_electrode_config(RAW_EPHYS_DIR, CHANNEL_MAP_FILE, PROBE_TYPE)
 
     print("\n--- 4/7: Create probe assignments JSON ---")
-    create_probe_assignments(RAW_DATA_DIR, PROBE_SERIAL, SUBJECT)
+    create_probe_assignments(RAW_EPHYS_DIR, PROBE_SERIAL, SUBJECT)
 
     print("\n--- 5/7: Register epochs ---")
     register_epochs(EXPERIMENT_NAME)
