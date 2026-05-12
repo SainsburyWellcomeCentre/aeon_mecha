@@ -9,55 +9,24 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-class TestEnvironmentStreamTableDefinitions:
-    """Confirm the three new tables are activated in the acquisition schema.
+@pytest.mark.parametrize("table_name", ["EnvironmentState", "MessageLog", "LightEvents"])
+def test_environment_table_schema(pipeline_integration, table_name):
+    """Confirm Environment table exists and has correct PK and nullable stream_df."""
+    from aeon.dj_pipeline import acquisition
 
-    Checks the expected primary key (-> Chunk only) and that stream_df is nullable.
-    """
-
-    @pytest.fixture
-    def acquisition_module(self, pipeline_integration):
-        from aeon.dj_pipeline import acquisition
-
-        return acquisition
-
-    def test_environment_state_table_exists(self, acquisition_module):
-        assert acquisition_module.EnvironmentState.full_table_name
-        attrs = acquisition_module.EnvironmentState.heading.attributes
-        assert set(acquisition_module.EnvironmentState.primary_key) == {
-            "experiment_name",
-            "chunk_start",
-        }
-        assert "sample_count" in attrs
-        assert "timestamps" in attrs
-        assert "stream_df" in attrs
-        assert attrs["stream_df"].nullable
-
-    def test_message_log_table_exists(self, acquisition_module):
-        attrs = acquisition_module.MessageLog.heading.attributes
-        assert set(acquisition_module.MessageLog.primary_key) == {
-            "experiment_name",
-            "chunk_start",
-        }
-        assert "sample_count" in attrs
-        assert "timestamps" in attrs
-        assert attrs["stream_df"].nullable
-
-    def test_light_events_table_exists(self, acquisition_module):
-        attrs = acquisition_module.LightEvents.heading.attributes
-        assert set(acquisition_module.LightEvents.primary_key) == {
-            "experiment_name",
-            "chunk_start",
-        }
-        assert "sample_count" in attrs
-        assert "timestamps" in attrs
-        assert attrs["stream_df"].nullable
+    table = getattr(acquisition, table_name)
+    attrs = table.heading.attributes
+    assert set(table.primary_key) == {"experiment_name", "chunk_start"}
+    assert "sample_count" in attrs
+    assert "timestamps" in attrs
+    assert attrs["stream_df"].nullable
 
 
 class TestEnvironmentStreamPopulate:
     """End-to-end populate against the foragingABC golden chunk.
 
     Skips when:
+      - swc.aeon_exp package is not installed, or
       - the golden dataset isn't on disk (require_golden_data fixture skips), or
       - the Pydantic Environment device doesn't expose @data_reader methods yet
         (upstream PR not merged).
@@ -101,28 +70,20 @@ class TestEnvironmentStreamPopulate:
             pytest.skip("No chunks ingested from golden dataset")
         return chunks
 
-    def test_environment_state_populates(self, full_pipeline, populated_chunks):
-        acquisition = full_pipeline["acquisition"]
-        acquisition.EnvironmentState.populate(populated_chunks[:1], display_progress=False)
-        assert len(acquisition.EnvironmentState & populated_chunks[0]) == 1
-        row = (acquisition.EnvironmentState & populated_chunks[0]).fetch1()
-        assert row["sample_count"] >= 0
-        assert isinstance(row["timestamps"], dict)
+    @pytest.mark.parametrize("table_name", ["EnvironmentState", "MessageLog", "LightEvents"])
+    def test_populates(self, full_pipeline, populated_chunks, table_name):
+        """Smoke test: populate the table for one chunk, confirm row exists with expected keys.
 
-    def test_message_log_populates(self, full_pipeline, populated_chunks):
-        acquisition = full_pipeline["acquisition"]
-        acquisition.MessageLog.populate(populated_chunks[:1], display_progress=False)
-        assert len(acquisition.MessageLog & populated_chunks[0]) == 1
-
-    def test_light_events_populates_foragingabc(self, full_pipeline, populated_chunks):
-        """ForagingABC golden dataset DOES have light_events.
-
-        Sample_count may be 0 for chunks where no light events fired, but the row must
+        LightEvents may not exist in all datasets but golden dataset (ForagingABC) HAS light_events.
+        Sample_count may be 0 for chunks where there are no events, but the row must
         exist and stream_df must NOT be null (reader was resolved).
         """
         acquisition = full_pipeline["acquisition"]
-        acquisition.LightEvents.populate(populated_chunks[:1], display_progress=False)
-        row = (acquisition.LightEvents & populated_chunks[0]).fetch1()
+        table = getattr(acquisition, table_name)
+        table.populate(populated_chunks[:1], display_progress=False)
+        row = (table & populated_chunks[0]).fetch1()
+        assert row["sample_count"] >= 0
+        assert isinstance(row["timestamps"], dict)
         assert row["stream_df"] is not None
-        assert row["stream_df"]["stream_type"] == "LightEvents"
+        assert row["stream_df"]["stream_type"] == table_name
         assert row["stream_df"]["device_name"] == "Environment"

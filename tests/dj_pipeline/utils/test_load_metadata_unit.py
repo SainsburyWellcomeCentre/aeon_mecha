@@ -252,17 +252,20 @@ class TestExtractActiveRegionsWithForagingABC:
 class TestGetStreamReaderForEpochDefault:
     """Test that get_stream_reader_for_epoch supports a default for missing readers."""
 
+    @staticmethod
+    def _fake_find_raises(_rig, device_name):
+        """Simulate _find_device_in_rig raising ValueError for missing device."""
+        raise ValueError(f"Device '{device_name}' not found in Rig")
+
+    class _DeviceWithoutMethod:
+        """Simulate a Device class that has no @data_reader methods."""
+
     def test_returns_default_when_device_not_in_rig(self, monkeypatch):
         """Device lookup raises ValueError -> return default sentinel."""
         import aeon.dj_pipeline.utils.load_metadata as load_metadata  # noqa: PLR0402
 
         sentinel = object()
-
-        def fake_find(rig, device_name):
-            raise ValueError(f"Device '{device_name}' not found in Rig")
-
-        # Short-circuit DB-touching parts so the unit test stays DB-free.
-        monkeypatch.setattr(load_metadata, "_find_device_in_rig", fake_find)
+        monkeypatch.setattr(load_metadata, "_find_device_in_rig", self._fake_find_raises)
         monkeypatch.setattr(load_metadata, "_load_rig_for_epoch", lambda *a, **kw: object())
 
         result = load_metadata.get_stream_reader_for_epoch(
@@ -274,10 +277,8 @@ class TestGetStreamReaderForEpochDefault:
         """Device exists but lacks the @data_reader -> return default sentinel."""
         import aeon.dj_pipeline.utils.load_metadata as load_metadata  # noqa: PLR0402
 
-        class DeviceWithoutMethod:
-            pass
-
-        monkeypatch.setattr(load_metadata, "_find_device_in_rig", lambda rig, name: DeviceWithoutMethod())
+        device_factory = self._DeviceWithoutMethod
+        monkeypatch.setattr(load_metadata, "_find_device_in_rig", lambda rig, name: device_factory())
         monkeypatch.setattr(load_metadata, "_load_rig_for_epoch", lambda *a, **kw: object())
 
         result = load_metadata.get_stream_reader_for_epoch(
@@ -289,10 +290,7 @@ class TestGetStreamReaderForEpochDefault:
         """Backward-compatible behavior: no default -> propagate the original error."""
         import aeon.dj_pipeline.utils.load_metadata as load_metadata  # noqa: PLR0402
 
-        def fake_find(rig, device_name):
-            raise ValueError("not found")
-
-        monkeypatch.setattr(load_metadata, "_find_device_in_rig", fake_find)
+        monkeypatch.setattr(load_metadata, "_find_device_in_rig", self._fake_find_raises)
         monkeypatch.setattr(load_metadata, "_load_rig_for_epoch", lambda *a, **kw: object())
 
         with pytest.raises(ValueError, match="not found"):
@@ -304,10 +302,8 @@ class TestGetStreamReaderForEpochDefault:
         """Backward-compatible behavior: no default -> propagate AttributeError."""
         import aeon.dj_pipeline.utils.load_metadata as load_metadata  # noqa: PLR0402
 
-        class DeviceWithoutMethod:
-            pass
-
-        monkeypatch.setattr(load_metadata, "_find_device_in_rig", lambda rig, name: DeviceWithoutMethod())
+        device_factory = self._DeviceWithoutMethod
+        monkeypatch.setattr(load_metadata, "_find_device_in_rig", lambda rig, name: device_factory())
         monkeypatch.setattr(load_metadata, "_load_rig_for_epoch", lambda *a, **kw: object())
 
         with pytest.raises(AttributeError):

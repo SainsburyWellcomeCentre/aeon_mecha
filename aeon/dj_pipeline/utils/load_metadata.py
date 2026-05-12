@@ -480,15 +480,8 @@ def get_stream_reader_for_epoch(
 
     try:
         device = _find_device_in_rig(rig, device_name)
-    except ValueError:
-        if default is _MISSING:
-            raise
-        return default
-
-    stream_method = to_snake_case(stream_type)  # "Video" → "video"
-    try:
-        return getattr(device, stream_method)
-    except AttributeError:
+        return getattr(device, to_snake_case(stream_type))
+    except (ValueError, AttributeError):
         if default is _MISSING:
             raise
         return default
@@ -535,7 +528,7 @@ def insert_device_types(rig: "BaseSchema", metadata_filepath: Path) -> None:
     streams = dj.VirtualModule("streams", get_schema_name("streams"))
 
     device_info: dict[str, dict] = get_device_info(rig)
-    device_type_mapper, device_sn = get_device_mapper_from_rig(rig)
+    device_type_mapper, _device_sn = get_device_mapper_from_rig(rig)
 
     # Add device type to device_info. Only include devices that:
     # 1. Have a device_type defined in metadata
@@ -769,12 +762,16 @@ def ingest_epoch_metadata_from_rig(
             current_device_query = table - table.RemovalTime & experiment_key & device_key
 
             if current_device_query:
-                current_device_config: list[dict] = (table.Attribute & current_device_query).proj(
-                    "experiment_name",
-                    "device_name",
-                    "attribute_name",
-                    "attribute_value",
-                ).to_dicts()
+                current_device_config: list[dict] = (
+                    (table.Attribute & current_device_query)
+                    .proj(
+                        "experiment_name",
+                        "device_name",
+                        "attribute_name",
+                        "attribute_value",
+                    )
+                    .to_dicts()
+                )
                 new_device_config: list[dict] = [
                     {k: v for k, v in entry.items() if dj.utils.from_camel_case(table.__name__) not in k}
                     for entry in table_attribute_entry
