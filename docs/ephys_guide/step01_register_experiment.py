@@ -214,12 +214,20 @@ def ensure_probe_type(probe_type):
 
 
 def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
-    """Create ElectrodeConfig + Electrode entries from the channel mapping JSON."""
+    """Create ElectrodeConfig + Electrode entries from the channel mapping JSON.
+
+    The probeinterface JSON describes the full probe geometry (e.g. 5120
+    contacts for a 4-shank NP2.0), but only a subset are actively recorded.
+    The ``device_channel_indices`` array marks active contacts (value >= 0
+    gives the raw channel index) and inactive ones (value == -1).
+
+    This function filters to active contacts only and creates an
+    ElectrodeConfig with one Electrode entry per active channel.
+    """
     from aeon.dj_pipeline.ephys import ElectrodeConfig
 
     # The channel mapping JSON (probeinterface format) lives inside the first
-    # epoch directory on Ceph. It defines which 384 electrodes out of the full
-    # probe were active during recording.
+    # epoch directory on Ceph.
     #
     # EphysChunk.ingest_chunks() requires at least one ElectrodeConfig entry
     # for the probe_type. If none exists, it raises a ValueError. So we must
@@ -242,35 +250,45 @@ def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
             f"Expected a probeinterface JSON at this path."
         )
 
-    # Parse the probeinterface JSON to extract active electrode IDs.
-    # The format has a "probes" array; each probe has "contact_ids" listing
-    # the electrode indices that were active during recording.
     with open(json_path) as f:
         pi_data = json.load(f)
 
-    contact_ids = []
+    # Extract active electrodes using device_channel_indices.
+    # Each probe in the JSON has:
+    #   contact_ids: electrode site indices on the physical probe (0-5119)
+    #   device_channel_indices: raw channel index for each contact, or -1
+    #     if the contact is not being recorded
+    active_electrodes = []  # (electrode_site_id, raw_channel_idx)
     for probe in pi_data.get("probes", []):
-        ids = probe.get("contact_ids", [])
-        contact_ids.extend(int(cid) for cid in ids)
+        contact_ids = probe.get("contact_ids", [])
+        dci = probe.get("device_channel_indices")
+        if dci is None:
+            raise ValueError(
+                f"No device_channel_indices in {json_path}. "
+                f"Cannot determine which contacts are active."
+            )
+        for cid, ch_idx in zip(contact_ids, dci):
+            if int(ch_idx) >= 0:
+                active_electrodes.append((int(cid), int(ch_idx)))
 
-    if not contact_ids:
+    if not active_electrodes:
         raise ValueError(
-            f"No contact_ids found in {json_path}. "
-            f"Check that the file is in probeinterface format."
+            f"No active contacts (device_channel_indices >= 0) in {json_path}."
         )
-    contact_ids = sorted(set(contact_ids))
-    n_electrodes = len(contact_ids)
 
-    # Build an electrode_config_name from the electrode range.
-    # For 384 consecutive electrodes starting at 0, this gives "0-383".
-    electrode_config_name = f"{contact_ids[0]}-{contact_ids[-1]}"
+    # Sort by raw channel index for readable output.
+    active_electrodes.sort(key=lambda x: x[1])
+    active_site_ids = [e[0] for e in active_electrodes]
+    n_channels = len(active_electrodes)
+
+    # Config name uses channel range (0-383), not site range (114-4049).
+    electrode_config_name = f"0-{n_channels - 1}"
 
     electrode_config_key = {
         "probe_type": probe_type,
         "electrode_config_name": electrode_config_name,
     }
 
-    # Check if already exists
     if ElectrodeConfig & electrode_config_key:
         existing = len(ElectrodeConfig.Electrode & electrode_config_key)
         print(
@@ -279,15 +297,11 @@ def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
         )
         return
 
-    # Insert the config. The hash is a random UUID -- it just needs to be
-    # unique. The pipeline uses the (probe_type, electrode_config_name)
-    # composite key to look up configs, not the hash.
     ElectrodeConfig.insert1(
         {
             **electrode_config_key,
             "electrode_config_description": (
-                f"Active electrodes from {channel_map_file} "
-                f"({n_electrodes} channels)"
+                f"{n_channels} active channels from {channel_map_file}"
             ),
             "electrode_config_hash": uuid.uuid4(),
         },
@@ -297,13 +311,14 @@ def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
     # Each Electrode entry links a (probe_type, electrode_config_name) to a
     # specific electrode on the ProbeType.Electrode table.
     ElectrodeConfig.Electrode.insert(
-        ({**electrode_config_key, "electrode": e} for e in contact_ids),
+        ({**electrode_config_key, "electrode": site_id}
+         for site_id in active_site_ids),
         skip_duplicates=True,
     )
 
     print(
         f"ElectrodeConfig created: {electrode_config_name} "
-        f"({n_electrodes} electrodes from {json_path.name})"
+        f"({n_channels} active channels from {json_path.name})"
     )
 
 

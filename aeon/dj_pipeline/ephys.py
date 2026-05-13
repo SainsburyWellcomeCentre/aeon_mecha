@@ -14,6 +14,7 @@ from aeon.dj_pipeline.utils.ephys_utils import (
     find_or_create_probe_insertion,
     get_probe_id,
     harp_to_naive,
+    load_device_channel_map,
     parse_epoch_metadata,
     read_probe_assignments,
     resolve_harp,
@@ -678,12 +679,33 @@ class EphysBlockInfo(dj.Imported):
             chunk_query.proj(block_start=f"'{key['block_start']}'", block_end=f"'{key['block_end']}'")
         )
 
-        # Channel
+        # Channel — use real hardware channel mapping from the probeinterface JSON.
+        # The JSON's device_channel_indices array maps each electrode site to its
+        # raw binary column index (0-383 for 384-channel recordings).
+        # Get the epoch directory from any chunk in this block.
+        epoch_start = (chunk_query & dj.Top(limit=1)).fetch1("epoch_start")
+        epoch_dir = (acquisition.Epoch & key & {"epoch_start": epoch_start}).fetch1(
+            "epoch_dir"
+        )
+        raw_dir_result = resolve_raw_dir_and_epochs(key["experiment_name"])
+        if raw_dir_result is None:
+            raise ValueError(
+                f"Cannot resolve raw-ephys directory for {key['experiment_name']}"
+            )
+        raw_dir = raw_dir_result[0]
+        epoch_path = raw_dir / Path(epoch_dir).parts[0]
+        channel_map = load_device_channel_map(epoch_path)
+
         electrode_df = (ElectrodeConfig.Electrode & econfig).keys(order_by="electrode")
         self.Channel.insert(
             (
-                {**key, "channel_idx": ch_idx, "channel_name": ch_idx, **ch_key}
-                for ch_idx, ch_key in enumerate(electrode_df)
+                {
+                    **key,
+                    "channel_idx": channel_map[ch_key["electrode"]],
+                    "channel_name": channel_map[ch_key["electrode"]],
+                    **ch_key,
+                }
+                for ch_key in electrode_df
             ),
         )
 
