@@ -264,7 +264,7 @@ class PreProcessing(dj.Computed):
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
         # write binary into recording.dat
-        job_kwargs = {"n_jobs": 4, "chunk_duration": "2s"}
+        job_kwargs = {"n_jobs": 0.8, "chunk_duration": "2s"}
         binary_file_path = recording_file.parent / "recording.dat"
         if binary_file_path.exists():
             load_and_verify_binary_file(
