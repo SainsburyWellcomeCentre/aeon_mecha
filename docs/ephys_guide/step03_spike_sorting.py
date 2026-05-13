@@ -345,15 +345,16 @@ def print_slurm_config(experiment_name, subject):
         )
     keys_block = "\n".join(keys_lines)
 
-    # ---- a) Python config file ----
+    # ---- a) Python config ----
     print()
     print("-" * 60)
-    print("  (a) Python config: run_aeon_spike_sorting.py")
+    print("  (a) Copy-paste into: submodules/aeon_mecha/aeon/dj_pipeline/scripts/run_aeon_spike_sorting.py")
     print("-" * 60)
     print(
         f"""
-# Copy this file to your working directory on the HPC, or edit the
-# existing one at aeon/dj_pipeline/scripts/run_aeon_spike_sorting.py
+# Replace the _base and keys sections in
+# submodules/aeon_mecha/aeon/dj_pipeline/scripts/run_aeon_spike_sorting.py
+# with these values:
 
 table_name = "SpikeSorting"
 
@@ -373,43 +374,17 @@ keys = [
 """
     )
 
-    # ---- b) SLURM submission script ----
+    # ---- b) Submit and monitor ----
     print("-" * 60)
-    print("  (b) SLURM script: run_aeon_spike_sorting.sh")
-    print("-" * 60)
-    print(
-        """
-#!/bin/bash
-#SBATCH --job-name=spike-sorting
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
-#SBATCH --time=12:00:00
-#SBATCH --output=slurm_output/%N_%j.out
-#SBATCH --error=slurm_output/%N_%j.err
-
-set -e
-mkdir -p slurm_output
-
-module load uv
-
-# Reduce GPU memory fragmentation for long kilosort4 runs.
-export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.6
-
-cd ~/ProjectAeon/aeon_mecha   # adjust to your repo path
-uv run python aeon/dj_pipeline/scripts/run_aeon_spike_sorting.py
-"""
-    )
-
-    # ---- c) How to submit ----
-    print("-" * 60)
-    print("  (c) Submit and monitor")
+    print("  (b) Submit and monitor")
     print("-" * 60)
     print(
         """
-  Submit:
-    sbatch run_aeon_spike_sorting.sh
+  The SLURM script is already in the repo:
+    submodules/aeon_mecha/run_aeon_spike_sorting.sh
+
+  Submit (from your analysis repo root):
+    sbatch submodules/aeon_mecha/run_aeon_spike_sorting.sh
 
   Monitor:
     squeue -u $USER                 # list your queued/running jobs
