@@ -549,7 +549,7 @@ class EphysChunk(dj.Manual):
                         [
                             {
                                 **chunk_entry,
-                                "directory_type": "raw",
+                                "directory_type": "raw-ephys",
                                 "file_name": f.name,
                                 "file_path": f.relative_to(raw_dir).as_posix(),
                             }
