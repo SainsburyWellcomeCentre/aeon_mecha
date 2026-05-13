@@ -21,11 +21,12 @@ DEVICE_PROBE_TYPE_MAP = {
 }
 
 
-def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> str:
+def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> str | None:
     """Extract probe identifier from metadata.
 
     For V2Beta hardware (no serial numbers): probe ID = "{device_name}_{label}"
-    For V2 hardware: probe ID = serial number from GainCalibrationFileName
+    For V2 hardware: probe ID = serial number from GainCalibrationFileName.
+        Returns None if the probe has no configuration (disabled/dummy probe).
 
     Args:
         metadata: Parsed Metadata.yml dict, or None
@@ -33,31 +34,37 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
         probe_label: Probe label from filename (e.g., "ProbeA", "ProbeB")
 
     Returns:
-        Probe identifier string
+        Probe identifier string, or None for V2 probes with no configuration.
     """
     default_id = f"{device_name}_{probe_label}"
 
     if metadata is None:
         return default_id
 
-    # V2 hardware: try to extract serial number
+    # V2 hardware: extract serial number, or None if probe is unconfigured
     if device_name == "NeuropixelsV2":
         v2e_config = metadata.get("NeuropixelsV2e")
-        if v2e_config:
-            config_key_map = {
-                "ProbeA": "ProbeConfigurationA",
-                "ProbeB": "ProbeConfigurationB",
-            }
-            config_key = config_key_map.get(probe_label)
-            if config_key and config_key in v2e_config:
-                gain_cal = v2e_config[config_key].get("GainCalibrationFileName")
-                if gain_cal:
-                    try:
-                        serial = Path(gain_cal).parent.name
-                        if serial and serial.isdigit():
-                            return serial
-                    except Exception:  # noqa: BLE001
-                        logger.debug(f"Failed to extract serial from GainCalibrationFileName: {gain_cal}")
+        if not v2e_config:
+            return default_id
+        config_key_map = {
+            "ProbeA": "ProbeConfigurationA",
+            "ProbeB": "ProbeConfigurationB",
+        }
+        config_key = config_key_map.get(probe_label)
+        if not config_key or config_key not in v2e_config:
+            return None
+        probe_config = v2e_config[config_key]
+        if not probe_config:
+            return None
+        gain_cal = probe_config.get("GainCalibrationFileName")
+        if gain_cal:
+            try:
+                serial = Path(gain_cal).parent.name
+                if serial and serial.isdigit():
+                    return serial
+            except Exception:  # noqa: BLE001
+                logger.debug(f"Failed to extract serial from GainCalibrationFileName: {gain_cal}")
+        return default_id
 
     return default_id
 

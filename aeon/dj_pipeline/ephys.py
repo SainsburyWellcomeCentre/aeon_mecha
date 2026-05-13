@@ -170,8 +170,18 @@ class EphysEpoch(dj.Imported):
         # Parse metadata for probe identity (serial numbers)
         metadata = parse_epoch_metadata(epoch_path)
 
-        # Build probe info: {label: probe_id}
-        probe_info = {label: get_probe_id(metadata, device_name, label) for label in probe_labels}
+        # Build probe info, filtering out unconfigured (dummy) probes
+        probe_info = {}
+        for label in probe_labels:
+            probe_id = get_probe_id(metadata, device_name, label)
+            if probe_id is None:
+                logger.info(f"Skipping {label}: no probe configuration found (disabled/dummy)")
+                continue
+            probe_info[label] = probe_id
+
+        if not probe_info:
+            self.insert1({**key, "has_ephys": False, "n_probes": 0})
+            return
 
         # Auto-create Probe entries (probe_type derived from device directory name)
         probe_type = DEVICE_PROBE_TYPE_MAP.get(device_name)
@@ -180,8 +190,7 @@ class EphysEpoch(dj.Imported):
                 f"Unknown device '{device_name}'. Cannot determine probe_type. "
                 f"Known devices: {list(DEVICE_PROBE_TYPE_MAP.keys())}"
             )
-        for label in probe_labels:
-            probe_id = probe_info[label]
+        for label, probe_id in probe_info.items():
             if not (Probe & {"probe": probe_id}):
                 if not (ProbeType & {"probe_type": probe_type}):
                     raise ValueError(
@@ -195,10 +204,11 @@ class EphysEpoch(dj.Imported):
                 logger.info(f"Auto-created Probe entry: {probe_id} (type={probe_type})")
 
         # Read subject-probe mapping
+        active_labels = list(probe_info.keys())
         probe_assignments = read_probe_assignments(
             key,
             epoch_path,
-            probe_labels,
+            active_labels,
             self.Insertion,
             probe_info,
             override_dir=self.probe_assignments_override_dir,
@@ -206,7 +216,7 @@ class EphysEpoch(dj.Imported):
 
         # Create/validate ProbeInsertion entries and build Insertion Part rows
         insertion_entries = []
-        for label in probe_labels:
+        for label in active_labels:
             probe_id = probe_info[label]
             subject = probe_assignments[label]["subject"]
 
@@ -226,7 +236,7 @@ class EphysEpoch(dj.Imported):
             )
 
         # Insert master + Part rows
-        self.insert1({**key, "has_ephys": True, "n_probes": len(probe_labels)})
+        self.insert1({**key, "has_ephys": True, "n_probes": len(active_labels)})
         self.Insertion.insert(insertion_entries)
 
 
