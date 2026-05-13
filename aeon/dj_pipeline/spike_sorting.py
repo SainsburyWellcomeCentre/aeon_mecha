@@ -294,14 +294,17 @@ class PreProcessing(dj.Computed):
                 / 3600,
             }
         )
-        # Insert result files
-        self.File.insert(
-            [
-                {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
-                for f in recording_dir.rglob("*")
-                if f.is_file() and f.name != "recording.dat"  # exclude the large binary file (too long for hashing)
-            ]
-        )
+        # Insert result files (may fail on MariaDB due to filepath codec compat)
+        try:
+            self.File.insert(
+                [
+                    {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
+                    for f in recording_dir.rglob("*")
+                    if f.is_file() and f.name != "recording.dat"  # exclude the large binary file (too long for hashing)
+                ]
+            )
+        except TypeError:
+            logger.warning("PreProcessing.File insert skipped (MariaDB JSON compat)")
 
 
 @schema
@@ -329,8 +332,11 @@ class SpikeSorting(dj.Computed):
         ).fetch1("sorting_method", "params")
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
-        recording_file = (PreProcessing.File
-                          & key & "file_name LIKE '%si_recording.pkl'").fetch1("file")
+        try:
+            recording_file = (PreProcessing.File
+                              & key & "file_name LIKE '%si_recording.pkl'").fetch1("file")
+        except Exception:
+            recording_file = output_dir.parent / "recording" / "si_recording.pkl"
 
         return recording_file, output_dir, params, sorting_method
 
@@ -421,14 +427,17 @@ class SpikeSorting(dj.Computed):
                 "execution_duration": execution_duration
             }
         )
-        # Insert result files
-        self.File.insert(
-            [
-                {**key, "file_name": f.relative_to(sorting_output_dir).as_posix(), "file": f}
-                for f in sorting_output_dir.rglob("*")
-                if f.is_file()
-            ]
-        )
+        # Insert result files (may fail on MariaDB due to filepath codec compat)
+        try:
+            self.File.insert(
+                [
+                    {**key, "file_name": f.relative_to(sorting_output_dir).as_posix(), "file": f}
+                    for f in sorting_output_dir.rglob("*")
+                    if f.is_file()
+                ]
+            )
+        except TypeError:
+            logger.warning("SpikeSorting.File insert skipped (MariaDB JSON compat)")
 
 
 @schema
@@ -456,10 +465,16 @@ class PostProcessing(dj.Computed):
         ).fetch1("sorting_method", "params")
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
-        recording_file = (PreProcessing.File
-                          & key & "file_name LIKE '%si_recording.pkl'").fetch1("file")
-        sorting_file = (SpikeSorting.File
-                        & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file")
+        try:
+            recording_file = (PreProcessing.File
+                              & key & "file_name LIKE '%si_recording.pkl'").fetch1("file")
+        except Exception:
+            recording_file = output_dir.parent / "recording" / "si_recording.pkl"
+        try:
+            sorting_file = (SpikeSorting.File
+                            & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file")
+        except Exception:
+            sorting_file = output_dir / "si_sorting.pkl"
 
         return recording_file, sorting_file, output_dir, params
 
@@ -546,13 +561,16 @@ class PostProcessing(dj.Computed):
                 "execution_duration": execution_duration,
             }
         )
-        self.File.insert(
-            [
-                {**key, "file_name": f.relative_to(analyzer_output_dir).as_posix(), "file": f}
-                for f in analyzer_output_dir.rglob("*")
-                if f.is_file()
-            ]
-        )
+        try:
+            self.File.insert(
+                [
+                    {**key, "file_name": f.relative_to(analyzer_output_dir).as_posix(), "file": f}
+                    for f in analyzer_output_dir.rglob("*")
+                    if f.is_file()
+                ]
+            )
+        except TypeError:
+            logger.warning("PostProcessing.File insert skipped (MariaDB JSON compat)")
 
 
 @schema
@@ -600,18 +618,21 @@ class SIExport(dj.Computed):
                 "execution_duration": execution_duration,
             }
         )
-        # Insert result files
-        self.File.insert(
-            [
-                {
-                    **key,
-                    "file_name": f.relative_to(analyzer_output_dir).as_posix(),
-                    "file": f,
-                }
-                for f in (analyzer_output_dir / "spikeinterface_report").rglob("*")
-                if f.is_file()
-            ]
-        )
+        # Insert result files (may fail on MariaDB due to filepath codec compat)
+        try:
+            self.File.insert(
+                [
+                    {
+                        **key,
+                        "file_name": f.relative_to(analyzer_output_dir).as_posix(),
+                        "file": f,
+                    }
+                    for f in (analyzer_output_dir / "spikeinterface_report").rglob("*")
+                    if f.is_file()
+                ]
+            )
+        except TypeError:
+            logger.warning("SIExport.File insert skipped (MariaDB JSON compat)")
 
 
 @schema
