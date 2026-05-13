@@ -8,7 +8,7 @@ Used by ephys.py table classes.
 import json
 import re
 from datetime import datetime
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import datajoint as dj
 
@@ -65,7 +65,7 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
             gain_cal = probe_config.get("GainCalibrationFileName")
             if gain_cal:
                 try:
-                    serial = Path(gain_cal).parent.name
+                    serial = PureWindowsPath(gain_cal).parent.name
                     if serial and serial.isdigit():
                         return serial
                 except Exception:  # noqa: BLE001
