@@ -422,6 +422,26 @@ def register_epochs(experiment_name, probe_assignments_dir=None):
     print(f"EphysEpoch total: {total}, with ephys data: {with_ephys}")
 
 
+def ingest_sync_models(experiment_name):
+    """Build ONIX-to-HARP sync models from HarpSync CSV files.
+
+    Each epoch's NeuropixelsV2 directory contains HarpSync CSV files that
+    record paired ONIX/HARP timestamps. EphysSyncModel.ingest() fits a
+    linear regression to each CSV, producing a model that converts ONIX
+    hardware timestamps to the HARP master clock.
+
+    These sync models MUST exist before ingest_chunks() can run — chunks
+    need them to compute their start/end times in the HARP clock.
+    """
+    from aeon.dj_pipeline.ephys import EphysSyncModel
+
+    print("Ingesting sync models (ONIX → HARP)...")
+    EphysSyncModel.ingest(experiment_name)
+
+    sync_count = len(EphysSyncModel & {"experiment_name": experiment_name})
+    print(f"EphysSyncModel entries: {sync_count}")
+
+
 def ingest_chunks(experiment_name):
     """Ingest ephys recording chunks for all probes."""
     from aeon.dj_pipeline.ephys import EphysChunk
@@ -429,8 +449,9 @@ def ingest_chunks(experiment_name):
     # EphysChunk.ingest_chunks() is a CLASS METHOD on a Manual table (not an
     # Imported table with .populate()). It scans the raw data directory for
     # all *_AmplifierData*.bin files, resolves each file's ProbeInsertion via
-    # the EphysEpoch.Insertion table, builds a sync model to convert ONIX
-    # timestamps to HARP clock, and inserts one chunk entry per file.
+    # the EphysEpoch.Insertion table, and creates one chunk entry per file.
+    # Chunk start/end times are converted from ONIX timestamps to HARP clock
+    # using EphysSyncModel entries (which must be ingested first).
     #
     # Each chunk corresponds to approximately one hour of recording. The
     # chunk_start and chunk_end times are in the synced HARP clock.
@@ -501,25 +522,28 @@ if __name__ == "__main__":
     print("  Step 1: Register Experiment")
     print("=" * 60)
 
-    print("\n--- 1/7: Register experiment, subject, and directories ---")
+    print("\n--- 1/8: Register experiment, subject, and directories ---")
     register_experiment(EXPERIMENT_NAME, RAW_BEHAVIOR_DIR, RAW_EPHYS_DIR, SUBJECT)
 
-    print("\n--- 2/7: Ensure ProbeType exists ---")
+    print("\n--- 2/8: Ensure ProbeType exists ---")
     ensure_probe_type(PROBE_TYPE)
 
-    print("\n--- 3/7: Create electrode configuration ---")
+    print("\n--- 3/8: Create electrode configuration ---")
     create_electrode_config(RAW_EPHYS_DIR, CHANNEL_MAP_FILE, PROBE_TYPE)
 
-    print("\n--- 4/7: Create probe assignments JSON ---")
+    print("\n--- 4/8: Create probe assignments JSON ---")
     assignments_dir = create_probe_assignments(RAW_EPHYS_DIR, PROBE_SERIAL, SUBJECT)
 
-    print("\n--- 5/7: Register epochs ---")
+    print("\n--- 5/8: Register epochs ---")
     register_epochs(EXPERIMENT_NAME, probe_assignments_dir=assignments_dir)
 
-    print("\n--- 6/7: Ingest ephys chunks ---")
+    print("\n--- 6/8: Ingest sync models ---")
+    ingest_sync_models(EXPERIMENT_NAME)
+
+    print("\n--- 7/8: Ingest ephys chunks ---")
     ingest_chunks(EXPERIMENT_NAME)
 
-    print("\n--- 7/7: Verify registration ---")
+    print("\n--- 8/8: Verify registration ---")
     verify_registration(EXPERIMENT_NAME)
 
     print("\n" + "=" * 60)
