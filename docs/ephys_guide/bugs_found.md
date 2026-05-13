@@ -77,10 +77,28 @@ This is a DJ 2.x framework issue: the filepath codec assumes native JSON column 
 
 **Proper fix:** Either DJ 2.x needs to json.dumps() the codec output before passing to pymysql on MariaDB, or SWC needs to upgrade from MariaDB 10.3.28 to MySQL 5.7+. The MySQL upgrade is already being discussed with the IT team.
 
+## 11. `spike_sorting.py` — `write_binary_recording` fork crashes on HPC
+
+**File:** `aeon/dj_pipeline/spike_sorting.py` (PreProcessing.make_compute)
+**Symptom:** `BrokenProcessPool: A process in the process pool was terminated abruptly` at chunk 0/90 or 1/90. Happens with both 16 and 4 workers. Workers die immediately on first computation.
+**Root cause:** Two issues compounded:
+1. `n_jobs=0.8` resolves to `int(0.8 * os.cpu_count())` inside SpikeInterface's `fix_job_kwargs()`. On SLURM nodes, `os.cpu_count()` returns all physical cores (not the cgroup allocation), so a 4-CPU allocation spawns 16 workers.
+2. Even with `n_jobs=4`, `ProcessPoolExecutor` with `fork` mp_context crashes immediately. This is a fork + NumPy/BLAS runtime incompatibility on the SWC HPC nodes — the BLAS threading state is not fork-safe, causing worker segfaults before any data is processed.
+**Fix:** Set `n_jobs=1` (sequential, no forking). Slower (~48 min per 30-min block) but reliable.
+
+## 12. `spike_sorting.py` — Pre-allocated `recording.dat` passes verification when corrupt
+
+**File:** `aeon/dj_pipeline/spike_sorting.py` (`load_and_verify_binary_file`)
+**Symptom:** After a crashed `write_binary_recording`, re-running `PreProcessing.populate()` silently accepts the corrupt file and inserts a PreProcessing entry. Downstream sorting produces garbage from mostly-zero data.
+**Root cause:** SpikeInterface's `write_binary_recording` pre-allocates the output file at full size (seeks to end, writes one zero byte) before writing chunks. A crash at chunk 4/90 leaves a full-sized file that is mostly zeros. `load_and_verify_binary_file` only checks `get_num_samples()` (derived from file size), not content. The file passes verification.
+**Status:** Known limitation. Manual workaround: always delete `recording.dat` after a crashed write before re-running. A proper fix would add a content checksum or write a completion marker file.
+
 ## Summary
 
-Bugs 1-3 are all in `get_probe_id()`, which was merged to main via PR #548 but never tested against actual Neuropixels data. Bug 4 is in the upstream schema reader / ingestion pipeline. Bug 5 is in the guide script (our code). Bugs 6-8 are DJ 2.x migration issues in spike_sorting.py. Bug 9 is a split-raw-directory oversight in ephys.py. Bug 10 is a DJ 2.x + MariaDB framework incompatibility.
+Bugs 1-3 are all in `get_probe_id()`, which was merged to main via PR #548 but never tested against actual Neuropixels data. Bug 4 is in the upstream schema reader / ingestion pipeline. Bug 5 is in the guide script (our code). Bugs 6-8 are DJ 2.x migration issues in spike_sorting.py. Bug 9 is a split-raw-directory oversight in ephys.py. Bug 10 is a DJ 2.x + MariaDB framework incompatibility. Bugs 11-12 are SpikeInterface + HPC environment issues.
 
 The common thread for bugs 1-5: none of this code was ever run against real data before it was merged. The metadata structure was assumed, the platform differences were assumed, the sync clock domains were assumed. Every assumption was wrong.
 
 The common thread for bugs 6-10: spike_sorting.py was written for DJ 0.14.x and never updated for DJ 2.x, and the split-raw-directory feature was not propagated to all code paths.
+
+The common thread for bugs 11-12: SpikeInterface's multiprocessing and file handling assumptions don't hold on the SWC HPC environment (SLURM cgroups, fork-unsafe BLAS, Ceph filesystem).
