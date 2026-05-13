@@ -30,7 +30,7 @@ class ElectrodeGroup(dj.Manual):
     electrode_group: varchar(16)  # e.g. 'all', 'shank1', etc.
     ---
     electrode_group_description: varchar(1000) 
-    electrode_count: int
+    electrode_count: int32
     """
 
     class Electrode(dj.Part):
@@ -106,7 +106,7 @@ class PreProcessing(dj.Computed):
     -> SortingTask
     ---
     execution_time: datetime   # datetime of the start of this step
-    execution_duration: float  # execution duration in hours
+    execution_duration: float64  # execution duration in hours
     sorting_output_dir: varchar(255)  #  sorting output directory relative to the sorting root data directory
     """
 
@@ -310,7 +310,7 @@ class SpikeSorting(dj.Computed):
     -> PreProcessing
     ---
     execution_time: datetime        # datetime of the start of this step
-    execution_duration: float       # execution duration in hours
+    execution_duration: float64     # execution duration in hours
     """
 
     class File(dj.Part):
@@ -437,7 +437,7 @@ class PostProcessing(dj.Computed):
     -> SpikeSorting
     ---
     execution_time: datetime   # datetime of the start of this step
-    execution_duration: float  # execution duration in hours
+    execution_duration: float64  # execution duration in hours
     """
 
     class File(dj.Part):
@@ -561,7 +561,7 @@ class SIExport(dj.Computed):
     -> PostProcessing
     ---
     execution_time: datetime   # datetime of the start of this step
-    execution_duration: float  # execution duration in hours
+    execution_duration: float64  # execution duration in hours
     """
 
     class File(dj.Part):
@@ -620,21 +620,21 @@ class SortedSpikes(dj.Imported):
     -> PostProcessing
     ---
     execution_time: datetime   # datetime of the start of this step
-    execution_duration: float  # execution duration in hours
-    curation_id=-1: int        # if -1, this is the raw spike sorting result without manual curation
+    execution_duration: float64  # execution duration in hours
+    curation_id=-1: int32      # if -1, this is the raw spike sorting result without manual curation
     """
 
     class Unit(dj.Part):
         definition = """  # Identified units and their properties
         -> master
-        unit: int
+        unit: int32
         ---
         -> ephys.ElectrodeConfig.Electrode  # electrode with highest waveform amplitude for this unit
         -> UnitQuality
-        spike_count: int         # how many spikes in this recording for this unit
-        spike_indices: blob@dj_store  # array of spike indices into the concatenated binary data (from preprocessing)
-        spike_sites : blob@dj_store   # array of electrode associated with each spike
-        spike_depths=null : blob@dj_store  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe
+        spike_count: int32       # how many spikes in this recording for this unit
+        spike_indices: <blob@dj_store>  # array of spike indices into the concatenated binary data (from preprocessing)
+        spike_sites : <blob@dj_store>   # array of electrode associated with each spike
+        spike_depths=null : <blob@dj_store>  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe
         """
 
     def make(self, key):
@@ -969,8 +969,8 @@ class SyncedSpikes(dj.Imported):
         -> SortedSpikes.Unit
         -> ephys.EphysChunk
         ---
-        spike_count: int       # how many spikes in this recording for this unit
-        spike_times: blob@dj_store  # datetime64[ns] synchronized spike times (in HARP clock) for the respective EphysChunk
+        spike_count: int32     # how many spikes in this recording for this unit
+        spike_times: <blob@dj_store>  # datetime64[ns] synchronized spike times (in HARP clock) for the respective EphysChunk
         """
 
     def make(self, key: Dict[str, Any]) -> None:
@@ -1107,7 +1107,7 @@ class GlobalUnit(dj.Manual):
     definition = """
     # Persistent neuron identity across ephys blocks for the same probe insertion
     -> ephys.ProbeInsertion
-    global_unit: int  # unique ID within this insertion
+    global_unit: int32  # unique ID within this insertion
     ---
     -> UnitMatchingParamSet
     -> ephys.ProbeType.Electrode  # peak electrode (denormalized, updated each block)
@@ -1122,7 +1122,7 @@ class UnitMatching(dj.Computed):
     -> UnitMatchingParamSet
     ---
     execution_time: datetime
-    execution_duration: float  # hours
+    execution_duration: float64  # hours
     """
 
     class Unit(dj.Part):
@@ -1131,7 +1131,7 @@ class UnitMatching(dj.Computed):
         -> SortedSpikes.Unit
         ---
         -> GlobalUnit
-        match_confidence=null: float
+        match_confidence=null: float64
         match_comment='': varchar(1000)
         """
 
@@ -1141,8 +1141,8 @@ class UnitMatching(dj.Computed):
         -> GlobalUnit
         -> ephys.EphysChunk
         ---
-        spike_times: blob@dj_store  # datetime64[ns] (UTC), HARP-synced
-        spike_count: int
+        spike_times: <blob@dj_store>  # datetime64[ns] (UTC), HARP-synced
+        spike_count: int32
         unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)
         """
 
