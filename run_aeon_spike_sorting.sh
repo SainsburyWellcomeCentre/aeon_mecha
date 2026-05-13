@@ -1,11 +1,16 @@
 #!/bin/bash
 
 # =============================================================================
-# AEON Spike Sorting SLURM Script
+# AEON Spike Sorting SLURM Script (Job Array)
 # =============================================================================
+# Submits as a job array — each task gets its own GPU and sorts one key.
+# Task number ($SLURM_ARRAY_TASK_ID) selects which key from the Python
+# script's keys list to process.
+#
 # Usage:  sbatch run_aeon_spike_sorting.sh
-# Check job status: squeue --start -j <job_id>
-# Cancel job: scancel <job_id>
+# Status: squeue --start -j <job_id>
+# Cancel: scancel <job_id>          (cancels all array tasks)
+#         scancel <job_id>_<task>    (cancels one task)
 # =============================================================================
 
 #SBATCH --job-name=aeon-spike-sorting         # job name
@@ -15,8 +20,9 @@
 #SBATCH --ntasks=1                            # total number of tasks across all nodes
 #SBATCH --mem=256G                            # total memory per node
 #SBATCH --time=7-08:00:00                     # total run time limit (DD-HH:MM:SS)
-#SBATCH --output=slurm_output/%N_%j.out       # output file path
-#SBATCH --error=slurm_output/%N_%j.err        # error file path
+#SBATCH --array=1-12                          # one task per key (edit to match keys list length)
+#SBATCH --output=slurm_output/%N_%j_%a.out    # output file path (%a = array task ID)
+#SBATCH --error=slurm_output/%N_%j_%a.err     # error file path
 
 # Exit on any error
 set -e
@@ -54,7 +60,7 @@ echo "Set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,garbage_collection_th
 PROFILER_PATH="submodules/aeon_mecha/aeon/dj_pipeline/scripts/start_resource_profiler.py"
 if [ -f "$PROFILER_PATH" ]; then
     echo "Starting resource profiler..."
-    .venv/bin/python "$PROFILER_PATH" -o "./slurm_output/resource_use_${SLURM_JOB_ID}.csv" & PROFILER_PID=$!
+    .venv/bin/python "$PROFILER_PATH" -o "./slurm_output/resource_use_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.csv" & PROFILER_PID=$!
     echo "Resource profiler started with PID: $PROFILER_PID"
 else
     echo "Resource profiler not found at $PROFILER_PATH, skipping."
@@ -68,9 +74,10 @@ if [ ! -f "$SCRIPT_PATH" ]; then
     exit 1
 fi
 
-# Run the spike sorting script
-echo "Starting spike sorting..."
-.venv/bin/python "$SCRIPT_PATH"
+# Run the spike sorting script for this array task
+TASK=${SLURM_ARRAY_TASK_ID:-1}
+echo "Starting spike sorting for task $TASK..."
+.venv/bin/python "$SCRIPT_PATH" --task "$TASK"
 
 # Stop the profiler
 if [ -n "$PROFILER_PID" ]; then
