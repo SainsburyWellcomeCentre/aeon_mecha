@@ -115,7 +115,7 @@ class PreProcessing(dj.Computed):
         -> master
         file_name: varchar(255)
         ---
-        file: filepath@dj_store
+        file: <filepath@dj_store>
         """
 
     @classmethod
@@ -318,7 +318,7 @@ class SpikeSorting(dj.Computed):
         -> master
         file_name: varchar(255)
         ---
-        file: filepath@dj_store
+        file: <filepath@dj_store>
         """
 
     def make_fetch(self, key):
@@ -445,7 +445,7 @@ class PostProcessing(dj.Computed):
         -> master
         file_name: varchar(255)
         ---
-        file: filepath@dj_store
+        file: <filepath@dj_store>
         """
 
     def make_fetch(self, key):
@@ -569,7 +569,7 @@ class SIExport(dj.Computed):
         -> master
         file_name: varchar(255)
         ---
-        file: filepath@dj_store
+        file: <filepath@dj_store>
         """
 
     def make(self, key):
