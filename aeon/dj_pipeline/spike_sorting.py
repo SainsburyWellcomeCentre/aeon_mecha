@@ -909,7 +909,7 @@ class SortingQuality(dj.Imported):
         -> master
         -> SortedSpikes.Unit
         ---
-        qc_metrics: JSON
+        qc_metrics: json
         """
 
     def make(self, key):
