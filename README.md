@@ -6,54 +6,28 @@ Project Aeon's main repository for manipulating acquired data. Includes modules 
 
 ## Set-up Instructions
 
-The various set-up tools mentioned below do some combination of python version, environment, package, and package dependency management. For basic information on the differences between these tools, see this [blog post](https://dev.to/bowmanjd/python-tools-for-managing-virtual-environments-3bko#hatch).
-
 ### Remote set-up on SWC's HPC
 
-#### Prereqs
-
-1. Ssh into the HPC and clone this repository to your home directory.
+1. SSH into the HPC and clone this repository:
 ```
 ssh <your_SWC_username>@ssh.swc.ucl.ac.uk
-mkdir ~/ProjectAeon
-cd ~/ProjectAeon
+mkdir ~/ProjectAeon && cd ~/ProjectAeon
 git clone https://github.com/SainsburyWellcomeCentre/aeon_mecha
 cd aeon_mecha
 ```
-
-#### Set-up
-
-Ensure you stay in the `~/ProjectAeon/aeon_mecha` directory for the rest of the set-up instructions, regardless of which set-up procedure you follow below.
-
-[Option 1](./docs/env_setup/remote/miniconda_conda_remote_setup.md): **miniconda** (python distribution) and **conda** (python version manager, environment manager, package manager, and package dependency manager)
-
-- *Note*: [mamba](https://mamba.readthedocs.io/en/latest/), a faster alternative to conda, is now installed as a module on the HPC, so the above instructions can be followed using 'mamba' instead of 'conda' if you prefer.
-
-[Option 2](./docs/env_setup/remote/pip_venv_remote_setup.md): **pip** (python package manager) and **venv** (python environment manager)
+2. Follow the [remote set-up](./docs/env_setup/remote/remote_setup.md) instructions.
 
 ### Local set-up
 
-#### Prereqs
+> Run commands in a bash shell. Windows users can use the 'mingw64' terminal included with git.
 
-All commands below should be run in a bash shell (Windows users can use the 'mingw64' terminal that is included when installing git).
-
-1. Clone this repository: create a 'ProjectAeon' directory in your home directory, clone this repository there, and `cd` into the cloned directory:
+1. Clone this repository:
 ```
-mkdir ~/ProjectAeon
-cd ~/ProjectAeon
+mkdir ~/ProjectAeon && cd ~/ProjectAeon
 git clone https://github.com/SainsburyWellcomeCentre/aeon_mecha
 cd aeon_mecha
 ```
-
-#### Set-up
-
-Ensure you stay in the `~/ProjectAeon/aeon_mecha` directory for the rest of the set-up instructions, regardless of which set-up procedure you follow below.
-
-[Option 1](./docs/env_setup/local/miniconda_conda_local_setup.md): **miniconda** (python distribution) and **conda** (python version manager, environment manager, package manager, and package dependency manager)
-
-- *Note*: **mambaforge** and **mamba** can be used as faster, drop-in replacements for 'miniconda' and 'conda', respectively. You can set up the Aeon environment using them, following roughly the same instructions as above. See [here](https://biapol.github.io/blog/mara_lampert/getting_started_with_mambaforge_and_python/readme.html) for more info.
-
-[Option 2](./docs/env_setup/local/pip_venv_local_setup.md): **pip** (python package manager) and **venv** (python environment manager)
+2. Follow the [local set-up](./docs/env_setup/local/local_setup.md) instructions.
 
 ## Repository Contents
 
