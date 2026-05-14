@@ -48,6 +48,10 @@ module load uv
 cd ~/ProjectAeon/foragingABC_analysis
 echo "Working directory: $(pwd)"
 
+# Ensure venv exists and deps match lockfile
+echo "Syncing dependencies..."
+uv sync
+
 # Set PyTorch CUDA memory allocator configuration to free reserved memory
 # This helps prevent CUDA out of memory errors during long-running Kilosort4 jobs
 # expandable_segments:True allows PyTorch to dynamically expand memory segments to reduce fragmentation
