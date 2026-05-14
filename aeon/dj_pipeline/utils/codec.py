@@ -152,11 +152,11 @@ class OnixStreamCodec(dj.Codec):
 
         epoch_dir = (acquisition.Epoch & sm_key).fetch1("epoch_dir")
         raw_dir = acquisition.Experiment.get_data_directory(
-            {"experiment_name": stored["experiment_name"]}, "raw"
+            {"experiment_name": stored["experiment_name"]}, "raw-ephys"
         )
         if raw_dir is None:
             raise FileNotFoundError(
-                f"No raw data directory registered for experiment {stored['experiment_name']!r}"
+                f"No raw-ephys data directory registered for experiment {stored['experiment_name']!r}"
             )
         device_dir = raw_dir / epoch_dir / stored["device_name"]
 

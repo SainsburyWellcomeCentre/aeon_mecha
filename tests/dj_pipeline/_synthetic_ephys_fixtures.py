@@ -31,20 +31,28 @@ def _make_synthetic_ephys_epoch(
     # HARP epoch base: arbitrary seconds-since-1904 for plausible wall-clock times.
     harp_base = 3000.0
 
+    # Aeon CSV convention: the first column is the Aeon timestamp (in seconds),
+    # promoted to the DataFrame index via ``index_col=0`` in ``Csv.read``. The
+    # remaining columns are named per ``HarpSync.Reader``'s ``columns=`` list.
+    # So real CSVs have 4 columns total even though only 3 are named.
     for n in range(n_chunks):
         ts_str = f"2024-06-04T1{n}-00-00"
         csv_path = device_dir / f"{device_name}_HarpSync_{ts_str}.csv"
         rows = []
         for s in range(60):
+            harp = harp_base + n * 60 + s
             rows.append(
                 {
+                    "aeon_time": harp,
                     "clock": 1000 * (n * 60 + s) + 1,
                     "hub_clock": s,
-                    "harp_time": harp_base + n * 60 + s,
+                    "harp_time": harp,
                 }
             )
         with open(csv_path, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["clock", "hub_clock", "harp_time"])
+            writer = csv.DictWriter(
+                f, fieldnames=["aeon_time", "clock", "hub_clock", "harp_time"]
+            )
             writer.writeheader()
             writer.writerows(rows)
 
@@ -120,22 +128,27 @@ def _register_synthetic_experiment(
 
     # Directory: directory_path is "raw" (relative to tmp_path), so
     # get_data_directory resolves to tmp_path / "raw" = raw_dir.
-    acquisition.Experiment.Directory.insert1(
-        {
-            "experiment_name": experiment_name,
-            "directory_type": "raw",
-            "repository_name": repo_key,
-            "directory_path": "raw",
-        },
-        skip_duplicates=True,
-    )
+    # Register the same path under both "raw" and "raw-ephys" — the ephys
+    # downstream (resolve_raw_dir_and_epochs) looks up "raw-ephys".
+    for dir_type in ("raw", "raw-ephys"):
+        acquisition.Experiment.Directory.insert1(
+            {
+                "experiment_name": experiment_name,
+                "directory_type": dir_type,
+                "repository_name": repo_key,
+                "directory_path": "raw",
+            },
+            skip_duplicates=True,
+        )
 
-    # Epoch — insert directly (skip ingest_epochs which scans camera files)
+    # Epoch — insert directly (skip ingest_epochs which scans camera files).
+    # Use "raw-ephys" since ephys downstream filters Epoch by EphysEpoch.has_ephys
+    # via resolve_raw_dir_and_epochs.
     acquisition.Epoch.insert1(
         {
             "experiment_name": experiment_name,
             "epoch_start": epoch_dt,
-            "directory_type": "raw",
+            "directory_type": "raw-ephys",
             "repository_name": repo_key,
             "epoch_dir": epoch_dir_name,
         },

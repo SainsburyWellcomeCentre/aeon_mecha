@@ -25,7 +25,9 @@ def _write_bno_chunk(tmp_path, device_name, n, n_samples, seed=0):
     device_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(seed)
 
-    clock = ((np.arange(n_samples) + 1) * 100).astype(np.uint64)
+    # Offset clocks by chunk index so each chunk has a distinct first sample
+    # (required by tests that locate a chunk by its starting ONIX timestamp).
+    clock = (((np.arange(n_samples) + 1) * 100) + n * 1_000_000).astype(np.uint64)
     (device_dir / f"{device_name}_Bno055_Clock_{n}.bin").write_bytes(clock.tobytes())
 
     payloads = {}
