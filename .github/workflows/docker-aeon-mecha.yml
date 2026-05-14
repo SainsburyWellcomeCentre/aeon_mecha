@@ -25,7 +25,7 @@ jobs:
           echo "image_build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >>$GITHUB_ENV
 
       - name: Setup QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v4
         with:
           platforms: linux/amd64,linux/arm64
 
