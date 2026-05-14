@@ -23,7 +23,7 @@ class AeonStreamCodec(dj.Codec):
     to reconstruct the stream reader and load data at fetch time.
     On fetch, returns the full pd.DataFrame from raw files.
 
-    Stored JSON format:
+    Stored JSON format::
 
         {
             "stream_type": "Encoder",
@@ -140,8 +140,7 @@ class OnixStreamCodec(dj.Codec):
 
         if stored["stream_group"] != "Bno055":
             raise NotImplementedError(
-                f"stream_group={stored['stream_group']!r} not supported. "
-                "Only 'Bno055' is wired today."
+                f"stream_group={stored['stream_group']!r} not supported. Only 'Bno055' is wired today."
             )
 
         sm_key = {
@@ -157,14 +156,11 @@ class OnixStreamCodec(dj.Codec):
         )
         if raw_dir is None:
             raise FileNotFoundError(
-                f"No raw data directory registered for experiment "
-                f"{stored['experiment_name']!r}"
+                f"No raw data directory registered for experiment {stored['experiment_name']!r}"
             )
         device_dir = raw_dir / epoch_dir / stored["device_name"]
 
-        chunk_index = locate_bno055_chunk_index(
-            device_dir, stored["device_name"], int(onix_ts_start)
-        )
+        chunk_index = locate_bno055_chunk_index(device_dir, stored["device_name"], int(onix_ts_start))
         if chunk_index is None:
             return pd.DataFrame(columns=list(IMU_COLUMNS), index=pd.Index([], dtype=np.uint64))
 
