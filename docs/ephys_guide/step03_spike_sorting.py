@@ -143,7 +143,7 @@ def setup_sorting_prerequisites(
                     "unit_locations": {},
                     "quality_metrics": {},
                 },
-                "job_kwargs": {"n_jobs": 0.8, "chunk_duration": "1s"},
+                "job_kwargs": {"n_jobs": 1, "chunk_duration": "1s"},
                 "export_to_phy": False,
                 "export_report": True,
             },
@@ -466,6 +466,10 @@ keys = [
   The SLURM script is already in the repo:
     submodules/aeon_mecha/run_aeon_spike_sorting.sh
 
+  IMPORTANT: Update the array size in the .sh file to match your
+  number of keys. Edit the line:
+    #SBATCH --array=1-{len(blocks)}
+
   Submit (from your analysis repo root):
     sbatch submodules/aeon_mecha/run_aeon_spike_sorting.sh
 
@@ -702,8 +706,9 @@ if __name__ == "__main__":
     print_slurm_config(EXPERIMENT_NAME, SUBJECT)
 
     print("\n--- STOP: Submit the SLURM job and wait for it to complete ---")
-    print("After sorting finishes, run this script with --post-sorting")
-    print("or call run_post_sorting() and verify_sorting() manually.\n")
+    print("After sorting finishes, uncomment the post-sorting lines below")
+    print("and re-run this script, or call run_post_sorting() and")
+    print("verify_sorting() interactively.\n")
 
     # Uncomment after SLURM sorting completes:
     # print("\n--- 4/5: Run post-sorting ---")

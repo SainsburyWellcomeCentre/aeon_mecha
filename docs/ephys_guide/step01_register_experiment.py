@@ -206,7 +206,7 @@ def ensure_probe_type(probe_type):
     #     module load uv
     #     uv run python -c "
     #         from aeon.dj_pipeline.ephys import create_probe_type
-    #         create_probe_type('neuropixels2.0', 'neuropixels', 'NP2014')
+    #         create_probe_type('neuropixels2.0', 'imec', 'NP2014')
     #     "
     create_probe_type(probe_type, "imec", "NP2014")
     n_electrodes = len(ProbeType.Electrode & {"probe_type": probe_type})
