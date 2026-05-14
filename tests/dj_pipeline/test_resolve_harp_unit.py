@@ -9,7 +9,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 
-def testresolve_harp_fast_path_start_returns_observed_sync_start():
+def test_resolve_harp_fast_path_start_returns_observed_sync_start():
     """When onix_ts == onix_ts_start exactly, returns observed sync_start (no joblib load)."""
     from aeon.dj_pipeline.utils.ephys_utils import resolve_harp
 
@@ -24,7 +24,7 @@ def testresolve_harp_fast_path_start_returns_observed_sync_start():
     assert result == datetime(2024, 6, 4, 11, 0, 0)
 
 
-def testresolve_harp_fast_path_end_returns_observed_sync_end():
+def test_resolve_harp_fast_path_end_returns_observed_sync_end():
     """When onix_ts == onix_ts_end exactly, returns observed sync_end (no joblib load)."""
     from aeon.dj_pipeline.utils.ephys_utils import resolve_harp
 
@@ -39,7 +39,7 @@ def testresolve_harp_fast_path_end_returns_observed_sync_end():
     assert result == datetime(2024, 6, 4, 12, 0, 0)
 
 
-def testresolve_harp_slow_path_uses_model_cache(monkeypatch):
+def test_resolve_harp_slow_path_uses_model_cache(monkeypatch):
     """When _model_cache is provided, repeated calls don't reload the model."""
     import joblib
 
@@ -72,7 +72,7 @@ def testresolve_harp_slow_path_uses_model_cache(monkeypatch):
     assert load_calls["count"] == 1, "Model should be loaded only once when cache is provided"
 
 
-def testresolve_harp_slow_path_without_cache_reloads(monkeypatch):
+def test_resolve_harp_slow_path_without_cache_reloads(monkeypatch):
     """Without _model_cache, every call hits joblib.load."""
     import joblib
 
