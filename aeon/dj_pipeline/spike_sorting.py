@@ -335,7 +335,7 @@ class SpikeSorting(dj.Computed):
         try:
             recording_file = (PreProcessing.File
                               & key & "file_name LIKE '%si_recording.pkl'").fetch1("file")
-        except Exception:
+        except dj.errors.DataJointError:
             recording_file = output_dir.parent / "recording" / "si_recording.pkl"
 
         return recording_file, output_dir, params, sorting_method
@@ -468,13 +468,13 @@ class PostProcessing(dj.Computed):
         try:
             recording_file = (PreProcessing.File
                               & key & "file_name LIKE '%si_recording.pkl'").fetch1("file")
-        except Exception:
+        except dj.errors.DataJointError:
             recording_file = output_dir.parent / "recording" / "si_recording.pkl"
         try:
             sorting_file = (SpikeSorting.File
                             & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file")
-        except Exception:
-            sorting_file = output_dir / "si_sorting.pkl"
+        except dj.errors.DataJointError:
+            sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
 
         return recording_file, sorting_file, output_dir, params
 
@@ -602,7 +602,7 @@ class SIExport(dj.Computed):
         analyzer_output_dir = output_dir / "sorting_analyzer"
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
 
-        job_kwargs = {"n_jobs": 0.8, "chunk_duration": "1s"}
+        job_kwargs = {"n_jobs": 1, "chunk_duration": "1s"}
         si.exporters.export_report(
             sorting_analyzer=sorting_analyzer,
             output_folder=analyzer_output_dir / "spikeinterface_report",

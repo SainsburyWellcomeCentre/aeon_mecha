@@ -179,7 +179,7 @@ def read_probe_assignments(
     if json_path.exists():
         return _parse_probe_assignments_file(json_path, probe_info)
 
-    # Priority 2: Carry-forward from most recent epoch in same experiment
+    # Priority 3: Carry-forward from most recent epoch in same experiment
     previous_insertions = (
         insertion_table
         & {"experiment_name": key["experiment_name"]}
@@ -232,6 +232,11 @@ def _parse_probe_assignments_file(json_path: Path, probe_info: dict[str, str]) -
         raise ValueError(
             f"probe_assignments.json at {json_path} is missing 'version' field. "
             f'Expected format: {{"version": 1, "probe_assignments": {{...}}}}'
+        )
+    if data["version"] != 1:
+        raise ValueError(
+            f"probe_assignments.json at {json_path} has unsupported version "
+            f"{data['version']}. Only version 1 is supported."
         )
     if "probe_assignments" not in data:
         raise ValueError(

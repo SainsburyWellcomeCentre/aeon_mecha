@@ -202,7 +202,7 @@ class EphysEpoch(dj.Imported):
                     {"probe": probe_id, "probe_type": probe_type},
                     skip_duplicates=True,
                 )
-                logger.info(f"Auto-created Probe entry: {probe_id} (type={probe_type})")
+                logger.info(f"Auto-created Probe entry: {label}={probe_id} (type={probe_type})")
 
         # Read subject-probe mapping
         active_labels = list(probe_info.keys())
@@ -219,6 +219,12 @@ class EphysEpoch(dj.Imported):
         insertion_entries = []
         for label in active_labels:
             probe_id = probe_info[label]
+            if label not in probe_assignments:
+                raise KeyError(
+                    f"Probe '{label}' (serial={probe_id}) is active in this epoch but "
+                    f"has no assignment. Available assignments: {list(probe_assignments.keys())}. "
+                    f"If this is a new probe, add it to probe_assignments.json."
+                )
             subject = probe_assignments[label]["subject"]
 
             pi_key = find_or_create_probe_insertion(
