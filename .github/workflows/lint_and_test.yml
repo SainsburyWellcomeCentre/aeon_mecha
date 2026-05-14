@@ -1,0 +1,75 @@
+# This workflow runs on all pushes, pull requests, and manually via workflow dispatch.
+# It does the following:
+# - lints (ruff, pyright)
+# - runs all tests on ubuntu (unit + integration), unit tests only on windows and macOS
+# - reports coverage via codecov (ubuntu only)
+
+name: Lint and Test
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+    
+# Cancel any in-progress runs if a new run is triggered for the same ref,
+# except for tags and main branch pushes.
+concurrency: 
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref_type != 'tag' }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Install uv and set Python version
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: uv sync --group dev
+      - name: ruff
+        run: uv run ruff check .
+      - name: pyright
+        run: uv run pyright --level error --project ./pyproject.toml .
+
+  tests:
+    name: Test ${{ matrix.os }} py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # Run all supported Python versions on linux
+        python-version: ["3.11", "3.12"]
+        os: [ubuntu-latest]
+        pytest_args: ["--tb=short -q --cov=aeon --cov-report=xml"]
+        # Include one windows and macos run
+        include:
+        - os: macos-latest
+          python-version: "3.12"
+          pytest_args: "-m unit --tb=short -q"
+        - os: windows-latest
+          python-version: "3.12"
+          pytest_args: "-m unit --tb=short -q"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - name: Install uv and set Python version
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: uv sync --group test
+      - name: Run tests
+        run: uv run pytest ${{ matrix.pytest_args }}
+      - name: Upload coverage to codecov
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
+        uses: codecov/codecov-action@v6
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
+          verbose: true
