@@ -17,7 +17,7 @@ in the ONIX hardware clock. This step:
                          window (delta_time).
 
 Prerequisites:
-    - SortedSpikes must exist for every block (step 3, post-sorting)
+    - SortedSpikes must exist for every block (step 4, post-sorting)
     - ApplyOfficialCuration must exist for every block (step 4, either
       auto-approval or manual curation satisfies this gate)
     - EphysBlock entries with overlapping time windows (step 2)
@@ -84,7 +84,7 @@ def sync_spikes(experiment_name):
     if sorted_count == 0:
         print(
             "No SortedSpikes entries found. "
-            "Run step 3 (post-sorting) first."
+            "Run step 4 (post-sorting) first."
         )
         return
 

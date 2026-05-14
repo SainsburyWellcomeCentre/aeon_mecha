@@ -456,14 +456,15 @@ keys = [
     print("-" * 60)
     print("  (b) Submit and monitor")
     print("-" * 60)
+    n_keys = len(blocks)
     print(
-        """
+        f"""
   The SLURM script is already in the repo:
     submodules/aeon_mecha/run_aeon_spike_sorting.sh
 
   IMPORTANT: Update the array size in the .sh file to match your
-  number of keys. Edit the line:
-    #SBATCH --array=1-{len(blocks)}
+  number of keys ({n_keys}). Edit the line:
+    #SBATCH --array=1-{n_keys}
 
   Submit (from your analysis repo root):
     sbatch submodules/aeon_mecha/run_aeon_spike_sorting.sh
@@ -476,8 +477,8 @@ keys = [
   Cancel:
     scancel <jobid>
 
-  After sorting completes successfully, return to this script and run
-  the post-sorting steps (run_post_sorting + verify_sorting).
+  After sorting completes, continue to Step 4 (post-processing
+  and curation).
 """
     )
 
