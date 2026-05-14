@@ -60,19 +60,21 @@ keys = [
 
 # =============================================================================
 
-CLEAR_JOB = True  # Clear any 'error' job state before re-running
+CLEAR_JOB = False  # Set True to clear 'error' job state before re-running
 
 
 def clear_job(dj_table, key):
     """Clear errored jobs for this table to allow re-running.
 
-    DJ 2.x removed dj.key_hash, so we clear all errored jobs for the table
-    rather than targeting a specific key. This is safe because we only run
-    one key per SLURM task.
+    Note: DJ 2.x changed schema.jobs API. If this fails, set CLEAR_JOB=False
+    and clear error jobs manually before resubmitting.
     """
-    (spike_sorting.schema.jobs & {
-        "table_name": dj_table.table_name,
-        "status": "error"}).delete()
+    try:
+        (spike_sorting.schema.jobs & {
+            "table_name": dj_table.table_name,
+            "status": "error"}).delete()
+    except Exception:
+        print(f"[WARNING] Could not clear error jobs: {dj_table.table_name}")
 
 
 def main():
