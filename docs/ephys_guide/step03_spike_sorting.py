@@ -14,14 +14,9 @@ After those are in place:
                       (CPU only, runs here in the script)
     SpikeSorting   -- runs kilosort4 on GPU (submitted via SLURM, NOT
                       called from this script)
-    PostProcessing -- computes quality metrics, waveforms, etc.
-    SortedSpikes   -- loads spike times and unit info into the DB
-    Waveform       -- loads waveform templates
-    SortingQuality -- loads quality metrics per unit
 
-The script walks through pre-SLURM setup (steps 1-3), prints the SLURM
-template you need to submit, then provides post-sorting steps (4-5) that
-you run after the SLURM job completes.
+This script handles everything up to SLURM submission. After sorting
+completes, continue to Step 4 for post-processing and curation.
 
 Run from the repo root on an HPC compute node (Ceph must be visible):
 
@@ -487,134 +482,6 @@ keys = [
     )
 
 
-def run_post_sorting(experiment_name):
-    """Populate all post-sorting tables in dependency order.
-
-    After SpikeSorting completes via SLURM, four more tables need to be
-    populated. They must run in order because each depends on the previous:
-
-        PostProcessing  -- runs SpikeInterface sorting analyzer to compute
-                           quality metrics, waveform templates, PCA, etc.
-                           Depends on: SpikeSorting
-        SortedSpikes    -- loads spike times, unit assignments, and electrode
-                           mappings into the database.
-                           Depends on: PostProcessing
-        Waveform        -- loads mean waveform templates per unit.
-                           Depends on: SortedSpikes
-        SortingQuality  -- loads per-unit quality metrics (SNR, ISI
-                           violations, firing rate, etc.).
-                           Depends on: SortedSpikes
-
-    Waveform and SortingQuality both depend on SortedSpikes but are
-    independent of each other, so their order does not matter.
-
-    Args:
-        experiment_name: The experiment to post-process.
-    """
-    # Deferred imports -- no DB side effects at module level.
-    from aeon.dj_pipeline import spike_sorting
-
-    restriction = {"experiment_name": experiment_name}
-
-    # Check that SpikeSorting has completed entries.
-    sorted_count = len(spike_sorting.SpikeSorting & restriction)
-    if sorted_count == 0:
-        print(
-            "No SpikeSorting entries found. "
-            "Has the SLURM job completed successfully?"
-        )
-        return
-
-    print(f"SpikeSorting entries found: {sorted_count}")
-
-    # 1. PostProcessing -- quality metrics and analyzer extensions.
-    print("\nPopulating PostProcessing...")
-    spike_sorting.PostProcessing.populate(
-        display_progress=True, suppress_errors=False
-    )
-
-    # 2. SortedSpikes -- spike times and unit info into DB.
-    print("\nPopulating SortedSpikes...")
-    spike_sorting.SortedSpikes.populate(
-        display_progress=True, suppress_errors=False
-    )
-
-    # 3. Waveform -- mean waveform templates per unit.
-    #    Depends on SortedSpikes but independent of SortingQuality.
-    print("\nPopulating Waveform...")
-    spike_sorting.Waveform.populate(
-        display_progress=True, suppress_errors=False
-    )
-
-    # 4. SortingQuality -- per-unit quality metrics.
-    #    Depends on SortedSpikes but independent of Waveform.
-    print("\nPopulating SortingQuality...")
-    spike_sorting.SortingQuality.populate(
-        display_progress=True, suppress_errors=False
-    )
-
-    print("\nPost-sorting population complete.")
-
-
-def verify_sorting(experiment_name):
-    """Query and display sorting pipeline status for this experiment.
-
-    Prints counts for each table in the sorting pipeline and, for
-    SortedSpikes, shows unit counts per block. This gives you a quick
-    overview of how far the pipeline has progressed.
-
-    Args:
-        experiment_name: The experiment to verify.
-    """
-    # Deferred imports -- no DB side effects at module level.
-    from aeon.dj_pipeline import spike_sorting
-
-    restriction = {"experiment_name": experiment_name}
-
-    # Count entries in each pipeline table.
-    task_count = len(spike_sorting.SortingTask & restriction)
-    preproc_count = len(spike_sorting.PreProcessing & restriction)
-    sorting_count = len(spike_sorting.SpikeSorting & restriction)
-    postproc_count = len(spike_sorting.PostProcessing & restriction)
-    sorted_count = len(spike_sorting.SortedSpikes & restriction)
-    waveform_count = len(spike_sorting.Waveform & restriction)
-    quality_count = len(spike_sorting.SortingQuality & restriction)
-
-    print(f"Pipeline status for '{experiment_name}':")
-    print(f"  SortingTask:    {task_count}")
-    print(f"  PreProcessing:  {preproc_count} / {task_count}")
-    print(f"  SpikeSorting:   {sorting_count} / {preproc_count}")
-    print(f"  PostProcessing: {postproc_count} / {sorting_count}")
-    print(f"  SortedSpikes:   {sorted_count} / {postproc_count}")
-    print(f"  Waveform:       {waveform_count} / {sorted_count}")
-    print(f"  SortingQuality: {quality_count} / {sorted_count}")
-
-    # Per-block unit counts (only if SortedSpikes has entries).
-    if sorted_count > 0:
-        print(f"\nUnit counts per block:")
-        sorted_entries = (
-            spike_sorting.SortedSpikes & restriction
-        ).to_dicts()
-
-        for entry in sorted(sorted_entries, key=lambda x: x["block_start"]):
-            unit_count = len(spike_sorting.SortedSpikes.Unit & entry)
-            has_waveform = bool(spike_sorting.Waveform & entry)
-            has_quality = bool(spike_sorting.SortingQuality & entry)
-            status_parts = []
-            if has_waveform:
-                status_parts.append("waveforms")
-            if has_quality:
-                status_parts.append("quality")
-            status = ", ".join(status_parts) if status_parts else "pending"
-
-            print(
-                f"  {entry['block_start']} to {entry['block_end']}: "
-                f"{unit_count} units [{status}]"
-            )
-    else:
-        print("\nNo SortedSpikes entries yet -- run post-sorting steps first.")
-
-
 # --------------------------------------------------------------------------
 # Advanced Configuration
 # --------------------------------------------------------------------------
@@ -691,7 +558,7 @@ if __name__ == "__main__":
     print("  Step 3: Spike Sorting")
     print("=" * 60)
 
-    print("\n--- 1/5: Setup sorting prerequisites ---")
+    print("\n--- 1/3: Setup sorting prerequisites ---")
     setup_sorting_prerequisites(
         EXPERIMENT_NAME, SUBJECT, PARAMSET_ID, SORTING_METHOD,
         sorting_groups=SORTING_GROUPS,
@@ -699,24 +566,14 @@ if __name__ == "__main__":
         channel_map_file=CHANNEL_MAP_FILE,
     )
 
-    print("\n--- 2/5: Run preprocessing ---")
+    print("\n--- 2/3: Run preprocessing ---")
     run_preprocessing(EXPERIMENT_NAME)
 
-    print("\n--- 3/5: SLURM config for spike sorting ---")
+    print("\n--- 3/3: SLURM config for spike sorting ---")
     print_slurm_config(EXPERIMENT_NAME, SUBJECT)
 
-    print("\n--- STOP: Submit the SLURM job and wait for it to complete ---")
-    print("After sorting finishes, uncomment the post-sorting lines below")
-    print("and re-run this script, or call run_post_sorting() and")
-    print("verify_sorting() interactively.\n")
-
-    # Uncomment after SLURM sorting completes:
-    # print("\n--- 4/5: Run post-sorting ---")
-    # run_post_sorting(EXPERIMENT_NAME)
-    # print("\n--- 5/5: Verify sorting results ---")
-    # verify_sorting(EXPERIMENT_NAME)
-
     print("=" * 60)
-    print("  Step 3 (pre-sorting) complete.")
-    print("  Submit SLURM job, then run post-sorting steps.")
+    print("  Step 3 complete.")
+    print("  Submit the SLURM job and wait for it to complete.")
+    print("  Then continue to Step 4 (post-processing and curation).")
     print("=" * 60)
