@@ -64,10 +64,14 @@ CLEAR_JOB = True  # Clear any 'error' job state before re-running
 
 
 def clear_job(dj_table, key):
-    """Clear this key from the jobs table (if errored) to allow re-running."""
+    """Clear errored jobs for this table to allow re-running.
+
+    DJ 2.x removed dj.key_hash, so we clear all errored jobs for the table
+    rather than targeting a specific key. This is safe because we only run
+    one key per SLURM task.
+    """
     (spike_sorting.schema.jobs & {
         "table_name": dj_table.table_name,
-        "key_hash": dj.key_hash(key),
         "status": "error"}).delete()
 
 
