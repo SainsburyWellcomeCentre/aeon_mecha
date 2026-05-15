@@ -227,7 +227,7 @@ def test_onix_imu_chunk_populate_with_data(dj_config_integration, tmp_path):
     _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
     ephys.EphysSyncModel.ingest(experiment_name)
-    ephys.OnixImuChunk.populate()
+    ephys.OnixImuChunk.populate({"experiment_name": experiment_name})
 
     rows = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).proj().to_dicts()
     assert len(rows) == 2
@@ -260,7 +260,7 @@ def test_onix_imu_chunk_populate_no_imu_rig(dj_config_integration, tmp_path):
     _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
     ephys.EphysSyncModel.ingest(experiment_name)
-    ephys.OnixImuChunk.populate()
+    ephys.OnixImuChunk.populate({"experiment_name": experiment_name})
 
     full_rows = (
         (ephys.OnixImuChunk & {"experiment_name": experiment_name})
@@ -296,7 +296,7 @@ def test_synced_df_returns_harp_indexed_dataframe(dj_config_integration, tmp_pat
     _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
     ephys.EphysSyncModel.ingest(experiment_name)
-    ephys.OnixImuChunk.populate()
+    ephys.OnixImuChunk.populate({"experiment_name": experiment_name})
 
     key = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).fetch1("KEY")
     df = ephys.OnixImuChunk.synced_df(key)
@@ -326,7 +326,7 @@ def test_synced_df_raises_on_ambiguous_key(dj_config_integration, tmp_path):
     _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
     ephys.EphysSyncModel.ingest(experiment_name)
-    ephys.OnixImuChunk.populate()
+    ephys.OnixImuChunk.populate({"experiment_name": experiment_name})
 
     # Ambiguous key — matches 2 rows
     with pytest.raises(dj.errors.DataJointError):

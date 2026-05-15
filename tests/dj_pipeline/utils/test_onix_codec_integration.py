@@ -32,7 +32,7 @@ def test_round_trip_returns_onix_indexed_dataframe(dj_config_integration, tmp_pa
     _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
     ephys.EphysSyncModel.ingest(experiment_name)
-    ephys.OnixImuChunk.populate()
+    ephys.OnixImuChunk.populate({"experiment_name": experiment_name})
 
     key = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).fetch1("KEY")
     df = (ephys.OnixImuChunk & key).fetch1("stream_df")
@@ -59,7 +59,7 @@ def test_round_trip_no_data_returns_empty_dataframe(dj_config_integration, tmp_p
     _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
     ephys.EphysSyncModel.ingest(experiment_name)
-    ephys.OnixImuChunk.populate()
+    ephys.OnixImuChunk.populate({"experiment_name": experiment_name})
 
     key = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).fetch1("KEY")
     df = (ephys.OnixImuChunk & key).fetch1("stream_df")
