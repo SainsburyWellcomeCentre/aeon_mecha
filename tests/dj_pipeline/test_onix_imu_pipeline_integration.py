@@ -57,7 +57,7 @@ def test_ephys_sync_model_ingest_inserts_one_row_per_csv(dj_config_integration, 
 
     ephys.EphysSyncModel.ingest(experiment_name)
 
-    # Project only non-attach columns to avoid triggering attachment extraction to cwd
+    # Project only non-attach columns
     query = (ephys.EphysSyncModel & {"experiment_name": experiment_name}).proj(
         "n_samples", "r2", "onix_ts_start", "onix_ts_end", "sync_start", "sync_end"
     )
