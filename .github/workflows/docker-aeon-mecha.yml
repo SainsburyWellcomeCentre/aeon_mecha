@@ -2,7 +2,7 @@ name: Aeon Mecha Container Environment
 
 on:
   push:
-    branches: [datajoint_pipeline]
+    branches: [main]
 
 jobs:
   build_and_push:
