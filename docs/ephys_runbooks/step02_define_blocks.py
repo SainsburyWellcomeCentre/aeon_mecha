@@ -20,7 +20,7 @@ This guide uses small test parameters for fast iteration:
 
 Run from the repo root on an HPC compute node (Ceph must be visible):
 
-    uv run python docs/ephys_guide/step02_define_blocks.py
+    uv run python docs/ephys_runbooks/step02_define_blocks.py
 """
 
 # --------------------------------------------------------------------------

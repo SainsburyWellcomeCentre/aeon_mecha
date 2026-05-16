@@ -5,8 +5,39 @@ import logging
 import os
 from typing import cast
 
+import pymysql.converters
+
 import datajoint as dj
 import pandas as pd
+
+
+# ---------------------------------------------------------------------------
+# MariaDB compatibility patch
+#
+# On MariaDB 10.x, the JSON type aliases to longtext. DataJoint's codec
+# columns (<filepath@dj_store>, <blob@dj_store>) produce Python dicts that
+# DataJoint expects to serialize via json.dumps when attr.json is True.
+# On MariaDB, attr.json is False (the column reports as longtext, not json),
+# so the raw dict reaches pymysql, which raises:
+#     TypeError: dict can not be used as parameter
+#
+# This patch teaches pymysql to serialize dicts as JSON strings. It must be
+# applied before any DataJoint connection is created (Connection.__init__
+# copies from converters.conversions at creation time).
+#
+# On MySQL 5.7+, this patch is inert: DataJoint serializes dicts to strings
+# before they reach pymysql, so the dict encoder is never invoked.
+#
+# Remove when: migrated to MySQL, or DataJoint fixes external store codec
+# handling on MariaDB (DJ 2.2.2 PR #1443 only fixes plain json columns).
+# ---------------------------------------------------------------------------
+def _escape_dict_as_json(val, charset, mapping=None):
+    return pymysql.converters.escape_str(json.dumps(val, default=str), charset)
+
+
+pymysql.converters.escape_dict = _escape_dict_as_json
+pymysql.converters.encoders[dict] = _escape_dict_as_json
+pymysql.converters.conversions[dict] = _escape_dict_as_json
 
 # Register Aeon codecs BEFORE any schema activation
 from aeon.dj_pipeline.utils.codec import (  # pyright: ignore[reportUnusedImport]

@@ -23,7 +23,7 @@ Two paths are supported:
 
 Run from the repo root on an HPC compute node:
 
-    uv run python docs/ephys_guide/step04_post_sorting_and_curation.py
+    uv run python docs/ephys_runbooks/step04_post_sorting_and_curation.py
 """
 
 # --------------------------------------------------------------------------

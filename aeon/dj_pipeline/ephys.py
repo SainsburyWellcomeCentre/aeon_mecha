@@ -657,15 +657,6 @@ class EphysBlockInfo(dj.Imported):
         chunk_restriction = create_ephys_chunk_restriction(key["block_start"], key["block_end"])
         chunk_query = EphysChunk & key & chunk_restriction
 
-        # compute total chunk duration (reserved for future validation)
-        _chunk_total_duration = float(
-            sum(
-                chunk_query.proj(dur="TIMESTAMPDIFF(SECOND, chunk_start, chunk_end) / 3600").to_arrays(
-                    "dur"
-                )
-            )
-        )
-
         block_duration = (key["block_end"] - key["block_start"]).total_seconds() / 3600.0  # in hours
 
         # Read electrode config from the chunks in this block (set during ingest_chunks)

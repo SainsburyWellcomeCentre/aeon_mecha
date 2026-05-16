@@ -12,7 +12,7 @@ block definition and spike sorting.
 
 Run from the repo root on an HPC compute node (Ceph must be visible):
 
-    uv run python docs/ephys_guide/step01_register_experiment.py
+    uv run python docs/ephys_runbooks/step01_register_experiment.py
 """
 
 # --------------------------------------------------------------------------
@@ -115,16 +115,11 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
     # --- Derive directory_path relative to ceph_aeon root ---
     # The pipeline resolves full paths as:
     #   get_repository_path("ceph_aeon") / directory_path
-    # where the ceph_aeon root is /ceph/aeon/. Strip that prefix.
-    ceph_root = "/ceph/aeon/"
+    from aeon.dj_pipeline.utils.paths import get_repository_path
 
-    def _relative_to_ceph(abs_path):
-        if abs_path.startswith(ceph_root):
-            return abs_path[len(ceph_root):]
-        return abs_path.lstrip("/")
-
-    behavior_dir_path = _relative_to_ceph(raw_behavior_dir)
-    ephys_dir_path = _relative_to_ceph(raw_ephys_dir)
+    ceph_root = get_repository_path("ceph_aeon")
+    behavior_dir_path = Path(raw_behavior_dir).relative_to(ceph_root).as_posix()
+    ephys_dir_path = Path(raw_ephys_dir).relative_to(ceph_root).as_posix()
 
     # --- Experiment ---
     acquisition.Experiment.insert1(

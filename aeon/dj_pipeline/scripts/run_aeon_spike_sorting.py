@@ -123,14 +123,14 @@ keys = [
 CLEAR_JOB = False  # Set True to clear 'error' job state before re-running
 
 
-def clear_job(dj_table):
+def clear_job(dj_table, key):
     """Clear errored jobs for this table to allow re-running.
 
     Note: DJ 2.x changed schema.jobs API. If this fails, set CLEAR_JOB=False
     and clear error jobs manually before resubmitting.
     """
     try:
-        (spike_sorting.schema.jobs & {"table_name": dj_table.table_name, "status": "error"}).delete()
+        (spike_sorting.schema.jobs & {"table_name": dj_table.table_name, "status": "error"} & key).delete()
     except Exception as e:
         print(f"[WARNING] Could not clear error jobs: {dj_table.table_name} — {e}")
 
@@ -165,7 +165,7 @@ def main():
     )
 
     if CLEAR_JOB:
-        clear_job(populate_table)
+        clear_job(populate_table, key)
     populate_table.populate(key, reserve_jobs=True, display_progress=True)
     print(f"=== Task {args.task} done ===")
 

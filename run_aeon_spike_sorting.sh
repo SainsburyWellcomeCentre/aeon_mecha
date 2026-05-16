@@ -18,8 +18,8 @@
 #SBATCH --gres=gpu:a100:1                    # Remove this line for CPU-only mode (options a100, p5000)
 #SBATCH --nodes=1                             # node count
 #SBATCH --ntasks=1                            # total number of tasks across all nodes
-#SBATCH --mem=256G                            # total memory per node
-#SBATCH --time=7-08:00:00                     # total run time limit (DD-HH:MM:SS)
+#SBATCH --mem=256G                            # total memory per node (typical: 64G for <2hr blocks)
+#SBATCH --time=7-08:00:00                     # total run time limit (typical: 0-04:00:00 for <2hr blocks)
 #SBATCH --array=1-12                          # one task per key (edit to match keys list length)
 #SBATCH --output=slurm_output/%N_%j_%a.out    # output file path (%a = array task ID)
 #SBATCH --error=slurm_output/%N_%j_%a.err     # error file path

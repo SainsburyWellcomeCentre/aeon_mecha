@@ -28,7 +28,7 @@ This script demonstrates:
 
 Run from the repo root on an HPC compute node (Ceph must be visible):
 
-    uv run python docs/ephys_guide/step06_analysis_examples.py
+    uv run python docs/ephys_runbooks/step06_analysis_examples.py
 """
 
 # --------------------------------------------------------------------------
@@ -63,7 +63,7 @@ def fetch_spike_times(experiment_name, unit_id=None):
 
     DataJoint query pattern used here:
         table & restriction  -- filters rows matching the restriction
-        .fetch("col1", "col2", as_dict=True)  -- returns list of dicts
+        .to_dicts()          -- returns list of dicts
 
     Args:
         experiment_name: The experiment to fetch from.
@@ -98,7 +98,7 @@ def fetch_spike_times(experiment_name, unit_id=None):
 
     # fetch() returns columns as separate arrays (positional) or as a
     # list of dicts (as_dict=True). The dict form is easier to iterate.
-    entries = query.fetch("block_start", "unit", "spike_times", as_dict=True)
+    entries = query.to_dicts()
 
     # Build the result dict keyed by (block_start, unit).
     spike_dict = {}
@@ -206,9 +206,14 @@ def plot_peth(
     # For each event, compute spike times relative to that event and
     # keep only spikes within the window. This is the core PETH
     # computation -- vectorized per event, concatenated across events.
+    # Spike times from SyncedSpikes are datetime64[ns], so subtraction
+    # produces timedelta64[ns]. Convert to float seconds for binning.
     aligned = []
     for event in event_times:
         relative = spike_times - event
+        # Convert timedelta64 to float seconds if needed.
+        if hasattr(relative.dtype, 'kind') and relative.dtype.kind == 'm':
+            relative = relative / np.timedelta64(1, 's')
         mask = (relative >= window[0]) & (relative <= window[1])
         aligned.extend(relative[mask])
 
@@ -281,7 +286,7 @@ def fetch_behavioral_events(experiment_name):
     # ------------------------------------------------------------------
     # 2. Show available epochs (time boundaries of the experiment)
     # ------------------------------------------------------------------
-    epochs = (acquisition.Epoch & restriction).fetch(as_dict=True)
+    epochs = (acquisition.Epoch & restriction).to_dicts()
     print(f"\n  Epochs: {len(epochs)}")
     for ep in epochs[:5]:  # Show first 5
         print(f"    {ep['epoch_start']} (dir: {ep.get('epoch_dir', '')})")
@@ -394,9 +399,12 @@ if __name__ == "__main__":
         example_spikes = spike_dict[first_key]
         # Create evenly spaced synthetic events for demonstration.
         # Replace with real event times from fetch_behavioral_events().
-        events = np.linspace(
-            example_spikes.min() + 1, example_spikes.max() - 1, 20
-        )
+        # np.linspace doesn't work with datetime64, so use arange with
+        # a timedelta step instead.
+        t_min, t_max = example_spikes.min(), example_spikes.max()
+        duration = t_max - t_min
+        step = duration // 20
+        events = np.arange(t_min + step, t_max - step, step)
         plot_peth(example_spikes, events)
 
     print("\n--- Behavioral events ---")

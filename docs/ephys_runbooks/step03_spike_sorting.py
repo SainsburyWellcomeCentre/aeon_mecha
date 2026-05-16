@@ -20,7 +20,7 @@ completes, continue to Step 4 for post-processing and curation.
 
 Run from the repo root on an HPC compute node (Ceph must be visible):
 
-    uv run python docs/ephys_guide/step03_spike_sorting.py
+    uv run python docs/ephys_runbooks/step03_spike_sorting.py
 """
 
 # --------------------------------------------------------------------------

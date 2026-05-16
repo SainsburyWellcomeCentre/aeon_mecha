@@ -45,7 +45,7 @@ class ManualCuration(dj.Manual):
         -> master
         file_name: varchar(255)
         ---
-        file: filepath@dj_store
+        file: <filepath@dj_store>
         """
 
 

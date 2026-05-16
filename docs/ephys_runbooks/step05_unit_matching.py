@@ -24,7 +24,7 @@ Prerequisites:
 
 Run from the repo root on an HPC compute node (Ceph must be visible):
 
-    uv run python docs/ephys_guide/step05_unit_matching.py
+    uv run python docs/ephys_runbooks/step05_unit_matching.py
 """
 
 # --------------------------------------------------------------------------
@@ -149,7 +149,7 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
     # ------------------------------------------------------------------
     # The seed block is the first block in time -- unit matching
     # propagates outward from here in both directions.
-    block_starts = (ephys.EphysBlock & restriction).fetch("block_start")
+    block_starts = (ephys.EphysBlock & restriction).to_arrays("block_start")[0]
 
     if len(block_starts) == 0:
         print(
@@ -275,10 +275,7 @@ def verify_matching(experiment_name):
     # Per-insertion summary of global units
     # ------------------------------------------------------------------
     print(f"\nGlobal unit summary:")
-    global_entries = (spike_sorting.GlobalUnit & restriction).fetch(
-        "experiment_name", "subject", "insertion_number", "global_unit",
-        as_dict=True,
-    )
+    global_entries = (spike_sorting.GlobalUnit & restriction).to_dicts()
 
     # Group by (subject, insertion_number)
     from collections import defaultdict
@@ -301,11 +298,7 @@ def verify_matching(experiment_name):
         print(f"\nPer-block unit matching breakdown:")
         matching_entries = (
             spike_sorting.UnitMatching & restriction
-        ).fetch(
-            "experiment_name", "subject", "insertion_number",
-            "block_start", "block_end", "execution_duration",
-            as_dict=True,
-        )
+        ).to_dicts()
 
         for entry in sorted(matching_entries, key=lambda x: x["block_start"]):
             unit_count = len(spike_sorting.UnitMatching.Unit & entry)

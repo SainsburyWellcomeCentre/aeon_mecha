@@ -264,6 +264,7 @@ class PreProcessing(dj.Computed):
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
         # write binary into recording.dat
+        # n_jobs=1: workaround for fork + BLAS crash on HPC (see docs/ephys_runbooks/bugs_found.md #11)
         job_kwargs = {"n_jobs": 1, "chunk_duration": "2s"}
         binary_file_path = recording_file.parent / "recording.dat"
         if binary_file_path.exists():
@@ -294,17 +295,13 @@ class PreProcessing(dj.Computed):
                 / 3600,
             }
         )
-        # Insert result files (may fail on MariaDB due to filepath codec compat)
-        try:
-            self.File.insert(
-                [
-                    {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
-                    for f in recording_dir.rglob("*")
-                    if f.is_file() and f.name != "recording.dat"  # exclude the large binary file (too long for hashing)
-                ]
-            )
-        except TypeError:
-            logger.warning("PreProcessing.File insert skipped (MariaDB JSON compat)")
+        self.File.insert(
+            [
+                {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
+                for f in recording_dir.rglob("*")
+                if f.is_file() and f.name != "recording.dat"  # exclude the large binary file (too long for hashing)
+            ]
+        )
 
 
 @schema
@@ -427,17 +424,13 @@ class SpikeSorting(dj.Computed):
                 "execution_duration": execution_duration
             }
         )
-        # Insert result files (may fail on MariaDB due to filepath codec compat)
-        try:
-            self.File.insert(
-                [
-                    {**key, "file_name": f.relative_to(sorting_output_dir).as_posix(), "file": f}
-                    for f in sorting_output_dir.rglob("*")
-                    if f.is_file()
-                ]
-            )
-        except TypeError:
-            logger.warning("SpikeSorting.File insert skipped (MariaDB JSON compat)")
+        self.File.insert(
+            [
+                {**key, "file_name": f.relative_to(sorting_output_dir).as_posix(), "file": f}
+                for f in sorting_output_dir.rglob("*")
+                if f.is_file()
+            ]
+        )
 
 
 @schema
@@ -526,7 +519,8 @@ class PostProcessing(dj.Computed):
         if not has_units:
             logger.info("No units found in sorting object. Skipping sorting analyzer.")
             analyzer_output_dir.mkdir(parents=True, exist_ok=True)  # create empty directory anyway, for consistency
-            return
+            execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
+            return analyzer_output_dir, execution_time, execution_duration
 
         # Sorting Analyzer
         sorting_analyzer = si.create_sorting_analyzer(
@@ -561,16 +555,13 @@ class PostProcessing(dj.Computed):
                 "execution_duration": execution_duration,
             }
         )
-        try:
-            self.File.insert(
-                [
-                    {**key, "file_name": f.relative_to(analyzer_output_dir).as_posix(), "file": f}
-                    for f in analyzer_output_dir.rglob("*")
-                    if f.is_file()
-                ]
-            )
-        except TypeError:
-            logger.warning("PostProcessing.File insert skipped (MariaDB JSON compat)")
+        self.File.insert(
+            [
+                {**key, "file_name": f.relative_to(analyzer_output_dir).as_posix(), "file": f}
+                for f in analyzer_output_dir.rglob("*")
+                if f.is_file()
+            ]
+        )
 
 
 @schema
@@ -602,6 +593,16 @@ class SIExport(dj.Computed):
         analyzer_output_dir = output_dir / "sorting_analyzer"
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
 
+        execution_duration_hours = (datetime.now(UTC) - execution_time).total_seconds() / 3600
+
+        if sorting_analyzer.sorting.unit_ids.size == 0:
+            logger.info("No units found. Inserting master row without report.")
+            self.insert1(
+                {**key, "execution_time": execution_time, "execution_duration": execution_duration_hours}
+            )
+            return
+
+        # n_jobs=1: workaround for fork + BLAS crash on HPC (see docs/ephys_runbooks/bugs_found.md #11)
         job_kwargs = {"n_jobs": 1, "chunk_duration": "1s"}
         si.exporters.export_report(
             sorting_analyzer=sorting_analyzer,
@@ -610,29 +611,25 @@ class SIExport(dj.Computed):
             **job_kwargs,
         )
 
-        execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
+        execution_duration_hours = (datetime.now(UTC) - execution_time).total_seconds() / 3600
         self.insert1(
             {
                 **key,
                 "execution_time": execution_time,
-                "execution_duration": execution_duration,
+                "execution_duration": execution_duration_hours,
             }
         )
-        # Insert result files (may fail on MariaDB due to filepath codec compat)
-        try:
-            self.File.insert(
-                [
-                    {
-                        **key,
-                        "file_name": f.relative_to(analyzer_output_dir).as_posix(),
-                        "file": f,
-                    }
-                    for f in (analyzer_output_dir / "spikeinterface_report").rglob("*")
-                    if f.is_file()
-                ]
-            )
-        except TypeError:
-            logger.warning("SIExport.File insert skipped (MariaDB JSON compat)")
+        self.File.insert(
+            [
+                {
+                    **key,
+                    "file_name": f.relative_to(analyzer_output_dir).as_posix(),
+                    "file": f,
+                }
+                for f in (analyzer_output_dir / "spikeinterface_report").rglob("*")
+                if f.is_file()
+            ]
+        )
 
 
 @schema
@@ -1015,7 +1012,7 @@ class SyncedSpikes(dj.Imported):
         # Load ephys sync models
         sync_models = {}
         with tempfile.TemporaryDirectory() as tempdir, dj.config.override(download_path=tempdir):
-            sync_ = (ephys.EphysChunk.SyncModel & (ephys.EphysBlockInfo.Chunk & key)).to_arrays(
+            sync_ = (ephys.EphysChunk.SyncModel * ephys.EphysSyncModel & (ephys.EphysBlockInfo.Chunk & key)).to_arrays(
                 "onix_ts_start", "onix_ts_end", "sync_model",
                 order_by="onix_ts_start"
             )
