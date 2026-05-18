@@ -339,6 +339,17 @@ def run_preprocessing(experiment_name):
           longer srun allocation. Consider submitting preprocessing itself
           as a SLURM job for large blocks.
 
+    TROUBLESHOOTING:
+        If PreProcessing crashes with ``BrokenProcessPool`` during the
+        ``write_binary_recording`` step, this is a known intermittent
+        issue where forked worker processes are killed by the OS (likely
+        a fork + BLAS threading incompatibility). We have seen this on
+        the SWC HPC but have not been able to reliably reproduce it. If
+        you hit this, please report it immediately — and as a temporary
+        workaround, you can set ``n_jobs=1`` in PreProcessing.make_compute
+        (spike_sorting.py line ~268). This disables multiprocessing and
+        is slower but reliable.
+
     Args:
         experiment_name: The experiment to preprocess.
     """

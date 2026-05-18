@@ -264,8 +264,7 @@ class PreProcessing(dj.Computed):
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
         # write binary into recording.dat
-        # n_jobs=1: workaround for fork + BLAS crash on HPC (see docs/ephys_runbooks/bugs_found.md #11)
-        job_kwargs = {"n_jobs": 1, "chunk_duration": "2s"}
+        job_kwargs = {"n_jobs": -1, "chunk_duration": "2s"}
         binary_file_path = recording_file.parent / "recording.dat"
         if binary_file_path.exists():
             load_and_verify_binary_file(
@@ -605,8 +604,7 @@ class SIExport(dj.Computed):
             )
             return
 
-        # n_jobs=1: workaround for fork + BLAS crash on HPC (see docs/ephys_runbooks/bugs_found.md #11)
-        job_kwargs = {"n_jobs": 1, "chunk_duration": "1s"}
+        job_kwargs = {"n_jobs": -1, "chunk_duration": "1s"}
         si.exporters.export_report(
             sorting_analyzer=sorting_analyzer,
             output_folder=analyzer_output_dir / "spikeinterface_report",
