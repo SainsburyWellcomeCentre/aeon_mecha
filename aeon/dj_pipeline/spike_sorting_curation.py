@@ -114,7 +114,7 @@ class ApplyOfficialCuration(dj.Imported):
 
         # Get the curation file path
         curation_file_path = Path(
-            (ManualCuration.File & key & {"curation_id": curation_id}).fetch1("file")
+            (ManualCuration.File & key & {"curation_id": curation_id}).fetch1("file").full_path
         )
 
         if not curation_file_path.exists():
@@ -312,7 +312,7 @@ def launch_spikeinterface_gui(
 
         # Get the parent curation file path
         parent_file = Path(
-            (ManualCuration.File & parent_curation_key).fetch1("file")
+            (ManualCuration.File & parent_curation_key).fetch1("file").full_path
         )
 
         if not parent_file.exists():

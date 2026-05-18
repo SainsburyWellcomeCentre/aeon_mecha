@@ -182,13 +182,21 @@ Where `_load_device_channel_map()` reads the probeinterface JSON from the epoch 
 **Root cause:** `SyncedSpikes.make()` queries `EphysChunk.SyncModel` for `onix_ts_start`, `onix_ts_end`, and `sync_model`, but `EphysChunk.SyncModel` is a link-only part table — it only contains primary keys from `EphysChunk` and `EphysSyncModel`. The actual data attributes (`onix_ts_start`, `onix_ts_end`, `sync_model`) live on `EphysSyncModel`. The query needs a join to bring them in.
 **Fix:** Changed `(ephys.EphysChunk.SyncModel & ...)` to `(ephys.EphysChunk.SyncModel * ephys.EphysSyncModel & ...)` to join the link table with the data table.
 
+## 19. `spike_sorting.py` / `spike_sorting_curation.py` — `fetch1("file")` returns `ObjectRef` in DJ 2.x, not a path
+
+**Files:** `aeon/dj_pipeline/spike_sorting.py` (6 locations), `aeon/dj_pipeline/spike_sorting_curation.py` (2 locations)
+**Symptom:** `TypeError: expected str, bytes or os.PathLike object, not ObjectRef` when `SpikeSorting.populate()` tries to load the preprocessed recording via `si.load()`. All 12 SLURM sorting jobs failed in under 60 seconds.
+**Root cause:** In DJ 0.14.x, `fetch1("file")` on a `<filepath@dj_store>` column returned the resolved file path as a string. In DJ 2.x, it returns an `ObjectRef` — a storage-agnostic handle with methods like `.read()`, `.download()`, `.full_path`. Code that passes the fetched value directly to `Path()` or `si.load()` breaks because `ObjectRef` doesn't implement `os.PathLike`. This went undetected in earlier testing because `PreProcessing.File` entries didn't exist yet (the code fell through to the except branch which constructs the path manually).
+**Fix:** Added `.full_path` to all 8 `fetch1("file")` calls to resolve the `ObjectRef` to an absolute filesystem path. For local storage (Ceph), `ObjectRef.full_path` returns the resolved path (e.g., `/ceph/aeon/.../si_recording.pkl`).
+**Masked by bug 16:** This bug was invisible during initial testing because bug 16 (pymysql/MariaDB JSON serialization) prevented `File` part table entries from being inserted. The code always fell through to the `except` branch which constructs paths manually. Only after fixing bug 16 AND rebuilding the database from scratch did `File` entries exist for the first time, exposing this bug.
+
 ## Summary
 
 Bugs 1-3 are all in `get_probe_id()`, which was merged to main via PR #548 but never tested against actual Neuropixels data. Bug 4 is in the upstream schema reader / ingestion pipeline. Bug 5 is in the guide script (our code). Bugs 6-8 are DJ 2.x migration issues in spike_sorting.py. Bug 9 is a split-raw-directory oversight in ephys.py. Bugs 10 and 16 are DJ 2.x + MariaDB framework incompatibilities, fixed upstream in DataJoint 2.2.2. Bugs 11-12 are SpikeInterface + HPC environment issues. Bug 13 is a guide script bug (our code) that caused garbled preprocessing by inserting all 5120 probe sites instead of 384 active channels. Bug 14 is a pipeline bug in ephys.py that assumes channel order matches electrode site order, which is only true for single-shank probes with contiguous electrode selection. Bug 15 is an operational issue with orphaned directories from killed SLURM jobs. Bug 18 is a missing join in SyncedSpikes that queried a link table without its data source.
 
 The common thread for bugs 1-5: none of this code was ever run against real data before it was merged. The metadata structure was assumed, the platform differences were assumed, the sync clock domains were assumed. Every assumption was wrong.
 
-The common thread for bugs 6-10, 16-17: spike_sorting.py and spike_sorting_curation.py were written for DJ 0.14.x and never updated for DJ 2.x. Type syntax, JSON handling, and external store codecs all behave differently on DJ 2.x + MariaDB. The split-raw-directory feature was not propagated to all code paths.
+The common thread for bugs 6-10, 16-17, 19: spike_sorting.py and spike_sorting_curation.py were written for DJ 0.14.x and never updated for DJ 2.x. Type syntax, JSON handling, and external store codecs all behave differently on DJ 2.x + MariaDB. The split-raw-directory feature was not propagated to all code paths.
 
 The common thread for bugs 11-12: SpikeInterface's multiprocessing and file handling assumptions don't hold on the SWC HPC environment (SLURM cgroups, fork-unsafe BLAS, Ceph filesystem).
 

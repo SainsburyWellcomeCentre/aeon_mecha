@@ -330,8 +330,9 @@ class SpikeSorting(dj.Computed):
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
         try:
-            recording_file = (PreProcessing.File
-                              & key & "file_name LIKE '%si_recording.pkl'").fetch1("file")
+            recording_file = Path(
+                (PreProcessing.File
+                 & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path)
         except dj.errors.DataJointError:
             recording_file = output_dir.parent / "recording" / "si_recording.pkl"
 
@@ -459,13 +460,15 @@ class PostProcessing(dj.Computed):
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
         try:
-            recording_file = (PreProcessing.File
-                              & key & "file_name LIKE '%si_recording.pkl'").fetch1("file")
+            recording_file = Path(
+                (PreProcessing.File
+                 & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path)
         except dj.errors.DataJointError:
             recording_file = output_dir.parent / "recording" / "si_recording.pkl"
         try:
-            sorting_file = (SpikeSorting.File
-                            & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file")
+            sorting_file = Path(
+                (SpikeSorting.File
+                 & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file").full_path)
         except dj.errors.DataJointError:
             sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
 
@@ -698,7 +701,7 @@ class SortedSpikes(dj.Imported):
                         spike_sorting_curation_module.ManualCuration.File
                         & key
                         & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                    ).fetch1("file")
+                    ).fetch1("file").full_path
                 )
                 logger.info(
                     f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
@@ -858,7 +861,7 @@ class Waveform(dj.Imported):
                     spike_sorting_curation_module.ManualCuration.File
                     & key
                     & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                ).fetch1("file")
+                ).fetch1("file").full_path
             )
             logger.info(
                 f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
@@ -949,7 +952,7 @@ class SortingQuality(dj.Imported):
                     spike_sorting_curation_module.ManualCuration.File
                     & key
                     & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                ).fetch1("file")
+                ).fetch1("file").full_path
             )
             logger.info(
                 f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
