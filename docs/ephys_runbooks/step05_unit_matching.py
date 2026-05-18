@@ -149,7 +149,7 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
     # ------------------------------------------------------------------
     # The seed block is the first block in time -- unit matching
     # propagates outward from here in both directions.
-    block_starts = (ephys.EphysBlock & restriction).to_arrays("block_start")[0]
+    block_starts = (ephys.EphysBlock & restriction).to_arrays("block_start")
 
     if len(block_starts) == 0:
         print(
