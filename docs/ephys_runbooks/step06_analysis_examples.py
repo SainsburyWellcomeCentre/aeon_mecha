@@ -248,7 +248,7 @@ def fetch_behavioral_events(experiment_name):
     and rig configuration. This function prints what is available and
     shows the query patterns you would use.
 
-    For the ephys guide, the key insight is: spike times from SyncedSpikes
+    For the ephys runbook, the key insight is: spike times from SyncedSpikes
     are on the HARP clock, and behavioral events are also on the HARP
     clock. This means you can directly compare them -- no additional
     alignment is needed.
