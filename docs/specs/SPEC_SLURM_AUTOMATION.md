@@ -1,5 +1,18 @@
 # SLURM Pipeline Automation Specifications
 
+## What's New (v2)
+
+Based on Thinh's feedback and alignment with the `datajoint-worker` spec:
+
+- **Unified worker model.** Every SLURM task runs a `DataJointWorker` internally. No separate "batch" vs "per-key" modes — tiers differ only in SLURM resources, DataJointWorker config, and how many instances to submit. DJ's `reserve_jobs=True` handles all key distribution.
+- **`datajoint-worker` is a dependency.** New Section 2 explains the relationship. This package is a SLURM scheduling layer on top of DataJointWorker, not a replacement for it.
+- **Adopted DataJointWorker features.** Transient error auto-clearing, orphan recovery via `stale_timeout_hours`, worker registration via `RegisteredWorker` tables, and progress reporting via `get_workflow_operation_overview()` — all used as-is from `datajoint-worker`.
+- **Kept WorkerErrorHistory.** Confirmed that DJ 2.x `~~jobs` tables delete error details when errors are cleared. This table fills that gap. Capture mechanism uses a DataJointWorker subclass.
+- **Dropped DJ 0.14.x support.** DJ 2.x only going forward.
+- **Repository under `datajoint-company`** alongside `datajoint-worker`, designed for eventual integration into a unified worker system.
+
+---
+
 ## Table of Contents
 1. [Overview](#overview)
 2. [Relationship to DataJointWorker](#relationship-to-datajointworker)
