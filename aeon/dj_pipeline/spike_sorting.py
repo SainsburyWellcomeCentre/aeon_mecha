@@ -706,8 +706,9 @@ class SortedSpikes(dj.Imported):
                 )
             else:
                 logger.info("Using raw analyzer (no official curation found)")
-        except Exception as e:
-            # If curation module not available or no official curation, use raw analyzer
+        except (dj.errors.DataJointError, ImportError, AttributeError) as e:
+            # Curation module not available, table mis-named, or no official curation — use raw analyzer.
+            # Narrow scope: other exceptions (network, permission, etc.) should propagate.
             logger.info(f"Using raw analyzer (curation check failed: {e})")
 
         sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
