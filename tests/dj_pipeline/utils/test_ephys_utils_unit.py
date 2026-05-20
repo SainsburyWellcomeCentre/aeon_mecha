@@ -179,3 +179,83 @@ class TestResolveHarp:
         resolve_harp(sync_row, onix_ts=6000, _model_cache=cache)
 
         assert load_calls["count"] == expected_loads
+
+
+class TestGetProbeId:
+    """Regression tests for get_probe_id — covers bugs 1, 2, 3 from bugs_found.md."""
+
+    def test_v2_extracts_serial_from_windows_path(self):
+        """V2 hardware: parses the Bonsai-written Windows path and returns the serial directory name.
+
+        Covers bug 1 (correct metadata path: Devices.NeuropixelsV2e.ConfigurationA/B) AND
+        bug 3 (PureWindowsPath correctly parses backslash separators on Linux).
+        """
+        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
+
+        metadata = {
+            "Devices": {
+                "ProbeA": "true",
+                "NeuropixelsV2e": {
+                    "ConfigurationA": {
+                        "GainCalibrationFileName": r"Z:\aeon\code\23299108854\file.csv",
+                    },
+                },
+            },
+        }
+        assert get_probe_id(metadata, "NeuropixelsV2", "ProbeA") == "23299108854"
+
+    def test_v2_returns_none_for_disabled_probe(self):
+        """V2 hardware: Devices.ProbeA = "false" signals a disabled/dummy probe → return None.
+
+        Covers bug 2 (downstream EphysEpoch.make filters None-returning probes).
+        """
+        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
+
+        metadata = {
+            "Devices": {
+                "ProbeA": "false",
+                "NeuropixelsV2e": {
+                    "ConfigurationA": {
+                        "GainCalibrationFileName": r"Z:\aeon\code\12345678\file.csv",
+                    },
+                },
+            },
+        }
+        assert get_probe_id(metadata, "NeuropixelsV2", "ProbeA") is None
+
+    def test_v2_falls_back_to_default_when_metadata_missing(self):
+        """V2 hardware with metadata=None: fall back to "{device_name}_{probe_label}"."""
+        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
+
+        assert get_probe_id(None, "NeuropixelsV2", "ProbeA") == "NeuropixelsV2_ProbeA"
+
+    def test_v2_falls_back_to_default_when_calibration_missing(self):
+        """V2 hardware where GainCalibrationFileName is absent: fall back to default ID."""
+        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
+
+        metadata = {
+            "Devices": {
+                "ProbeA": "true",
+                "NeuropixelsV2e": {
+                    "ConfigurationA": {},  # no GainCalibrationFileName
+                },
+            },
+        }
+        assert get_probe_id(metadata, "NeuropixelsV2", "ProbeA") == "NeuropixelsV2_ProbeA"
+
+    def test_v2beta_uses_default_id(self):
+        """V2Beta hardware has no per-probe serial; always returns the default ID."""
+        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
+
+        # Even with metadata present, V2Beta path is not exercised — default returned.
+        metadata = {
+            "Devices": {
+                "ProbeA": "true",
+                "NeuropixelsV2e": {
+                    "ConfigurationA": {
+                        "GainCalibrationFileName": r"Z:\aeon\code\99999999\file.csv",
+                    },
+                },
+            },
+        }
+        assert get_probe_id(metadata, "NeuropixelsV2Beta", "ProbeA") == "NeuropixelsV2Beta_ProbeA"

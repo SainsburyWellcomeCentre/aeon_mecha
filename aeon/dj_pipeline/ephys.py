@@ -794,11 +794,11 @@ class OnixImuChunk(dj.Imported):
         onix_ts_start = (EphysSyncModel & key).fetch1("onix_ts_start")
         epoch_dir = (acquisition.Epoch & key).fetch1("epoch_dir")
         raw_dir_result = acquisition.Experiment.get_data_directory(
-            {"experiment_name": key["experiment_name"]}, "raw"
+            {"experiment_name": key["experiment_name"]}, "raw-ephys"
         )
         if raw_dir_result is None:
             raise FileNotFoundError(
-                f"No raw data directory registered for experiment {key['experiment_name']!r}"
+                f"No raw-ephys data directory registered for experiment {key['experiment_name']!r}"
             )
         raw_dir = Path(raw_dir_result)
         epoch_path = raw_dir / epoch_dir
