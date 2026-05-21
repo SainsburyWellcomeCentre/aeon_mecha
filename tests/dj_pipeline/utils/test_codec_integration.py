@@ -5,10 +5,10 @@ Codec encode/decode tests require real datajoint and are marked integration.
 
 import numpy as np
 import pytest
-from _synthetic_ephys_fixtures import (
-    _make_synthetic_bno055_data,
-    _make_synthetic_ephys_epoch,
-    _register_synthetic_experiment,
+from ephys_factories import (
+    make_synthetic_bno055_data,
+    make_synthetic_ephys_epoch,
+    register_synthetic_experiment,
 )
 
 pytestmark = pytest.mark.integration
@@ -57,9 +57,9 @@ class TestOnixStreamCodecRoundTrip:
 
         raw_dir = tmp_path / "raw"
         raw_dir.mkdir()
-        _make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=1)
-        _make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=1)
-        _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+        make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=1)
+        make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=1)
+        register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
         ephys.EphysSyncModel.ingest(experiment_name)
         ephys.OnixImuChunk.populate({"experiment_name": experiment_name})
@@ -83,9 +83,9 @@ class TestOnixStreamCodecRoundTrip:
 
         raw_dir = tmp_path / "raw"
         raw_dir.mkdir()
-        _make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=1)
-        # NO _make_synthetic_bno055_data — no IMU files
-        _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+        make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=1)
+        # NO make_synthetic_bno055_data — no IMU files
+        register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
         ephys.EphysSyncModel.ingest(experiment_name)
         ephys.OnixImuChunk.populate({"experiment_name": experiment_name})
