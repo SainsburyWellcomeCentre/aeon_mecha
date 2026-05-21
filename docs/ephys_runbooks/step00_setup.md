@@ -25,16 +25,24 @@ walks through each one.
 
 ### Connecting to the gateway
 
-SSH into the SWC HPC gateway:
+To access the SWC HPC environment, first SSH into the bastion, then into the `hpc-gw2` gateway node:
+
+```bash
+ssh <SWC-USERNAME>@ssh.swc.ucl.ac.uk
+ssh hpc-gw2
+```
+
+Alternatively, if you have configured an [SSH alias](https://howto.neuroinformatics.dev/programming/SSH-SWC-cluster.html#ssh-config-file) (e.g. `aeon-hpc`) in your `~/.ssh/config`, you can connect directly to the gateway:
 
 ```bash
 ssh aeon-hpc
 ```
 
-This lands you on `hpc-gw2`, one of the gateway nodes. The gateway is fine for
-editing files and submitting jobs, but **Ceph (the shared filesystem where raw
-data lives) is not visible from the gateway.** To access data, you need a
-compute node.
+The gateway should only be used for light tasks such as editing files or submitting jobs.
+All computation must run on compute nodes, which are scheduled by SLURM and provide the appropriate CPU/GPU and memory resources. 
+
+> [!TIP]
+> See [here](https://howto.neuroinformatics.dev/programming/SSH-SWC-cluster.html#why-do-we-ssh-twice) for an explanation of bastion, gateway, and compute nodes.
 
 ### Getting a compute node
 
