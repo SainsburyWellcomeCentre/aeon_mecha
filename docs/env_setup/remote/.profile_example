@@ -1,5 +1,5 @@
 # Set env modules
-module load miniconda
+module load uv
 
 # Save Bonsai and deps to path
 export PATH=$PATH:/ceph/aeon/aeon/code/bonsai/Bonsai.Player/bin/Debug/net5.0

@@ -15,12 +15,12 @@ In the examples below, replace `<your_username>` with your SWC HPC username.
 ssh -L 9998:hpc-gw1:22 <your_username>@ssh.swc.ucl.ac.uk
 ```
 
-2. In a new shell, SSH into the HPC via the forwarded port on localhost, activate the aeon environment, disable the `nbclassic` jupyter server extension, and open the jupyterhub server on the HPC via its IP on port 2222:    
+2. In a new shell, SSH into the HPC via the forwarded port on localhost, load uv, disable the `nbclassic` jupyter server extension, and open the jupyterhub server on the HPC via its IP on port 2222:    
 ```
 ssh -Y <your_username>@localhost -p 9998
-conda activate aeon
-jupyter server extension disable nbclassic
-jupyter-lab --no-browser --ip 192.168.234.1 --port 2222
+module load uv
+uv run jupyter server extension disable nbclassic
+uv run jupyter-lab --no-browser --ip 192.168.234.1 --port 2222
 ```
 
 3. See the [aeon_analysis](https://github.com/sainsburyWellcomeCentre/aeon_analysis) repo for example notebooks that you can play with in the jupyterhub session.

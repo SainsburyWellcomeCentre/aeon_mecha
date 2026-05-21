@@ -111,7 +111,7 @@ class TestEpochConfigMake:
         acquisition = full_pipeline["acquisition"]
         cfg = golden_dataset_config
 
-        acquisition.EpochConfig.populate()
+        acquisition.EpochConfig.populate({"experiment_name": cfg["experiment_name"]})
 
         assert len(acquisition.EpochConfig & {"experiment_name": cfg["experiment_name"]}) >= 1
 
@@ -122,7 +122,7 @@ class TestEpochConfigMake:
         acquisition = full_pipeline["acquisition"]
         cfg = golden_dataset_config
 
-        acquisition.EpochConfig.populate()
+        acquisition.EpochConfig.populate({"experiment_name": cfg["experiment_name"]})
 
         meta = (acquisition.EpochConfig.Meta & {"experiment_name": cfg["experiment_name"]}).fetch1()
 
@@ -178,7 +178,7 @@ class TestStreamDataIngestion:
         cfg = golden_dataset_config
 
         # Ensure prerequisites
-        acquisition.EpochConfig.populate()
+        acquisition.EpochConfig.populate({"experiment_name": cfg["experiment_name"]})
         acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
 
         # Get all Computed tables in streams module (these are DeviceDataStream tables)
@@ -216,7 +216,7 @@ class TestStreamDataIngestion:
         cfg = golden_dataset_config
 
         # Ensure prerequisites
-        acquisition.EpochConfig.populate()
+        acquisition.EpochConfig.populate({"experiment_name": cfg["experiment_name"]})
         acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
 
         # Find video tables
@@ -250,7 +250,7 @@ class TestStreamDataIngestion:
         cfg = golden_dataset_config
 
         # Ensure prerequisites
-        acquisition.EpochConfig.populate()
+        acquisition.EpochConfig.populate({"experiment_name": cfg["experiment_name"]})
         acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
 
         # Find Harp-based tables (BeamBreak, Encoder, Weight, Pellet, etc.)
@@ -299,7 +299,7 @@ class TestFetchStream:
         streams = full_pipeline["streams"]
         cfg = golden_dataset_config
 
-        acquisition.EpochConfig.populate()
+        acquisition.EpochConfig.populate({"experiment_name": cfg["experiment_name"]})
         acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
 
         # Populate all stream tables
@@ -449,7 +449,7 @@ class TestCodecStreamData:
         streams = full_pipeline["streams"]
         cfg = golden_dataset_config
 
-        acquisition.EpochConfig.populate()
+        acquisition.EpochConfig.populate({"experiment_name": cfg["experiment_name"]})
         acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
 
         for name in dir(streams):

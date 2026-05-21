@@ -52,6 +52,9 @@ class HarpSyncModel(Stream):
                 data={
                     "clock_start": onix_clock[0],
                     "clock_end": onix_clock[-1],
+                    "harp_start": harp_time[0],
+                    "harp_end": harp_time[-1],
+                    "n_samples": len(data),
                     "model": [model],
                     "r2": [r2],
                 },

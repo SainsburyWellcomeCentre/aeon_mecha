@@ -30,7 +30,7 @@ class ElectrodeGroup(dj.Manual):
     electrode_group: varchar(16)  # e.g. 'all', 'shank1', etc.
     ---
     electrode_group_description: varchar(1000) 
-    electrode_count: int
+    electrode_count: int32
     """
 
     class Electrode(dj.Part):
@@ -106,7 +106,7 @@ class PreProcessing(dj.Computed):
     -> SortingTask
     ---
     execution_time: datetime   # datetime of the start of this step
-    execution_duration: float  # execution duration in hours
+    execution_duration: float64  # execution duration in hours
     sorting_output_dir: varchar(255)  #  sorting output directory relative to the sorting root data directory
     """
 
@@ -115,7 +115,7 @@ class PreProcessing(dj.Computed):
         -> master
         file_name: varchar(255)
         ---
-        file: filepath@dj_store
+        file: <filepath@dj_store>
         """
 
     @classmethod
@@ -264,7 +264,7 @@ class PreProcessing(dj.Computed):
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
         # write binary into recording.dat
-        job_kwargs = {"n_jobs": 0.8, "chunk_duration": "2s"}
+        job_kwargs = {"n_jobs": -1, "chunk_duration": "2s"}
         binary_file_path = recording_file.parent / "recording.dat"
         if binary_file_path.exists():
             load_and_verify_binary_file(
@@ -294,7 +294,6 @@ class PreProcessing(dj.Computed):
                 / 3600,
             }
         )
-        # Insert result files
         self.File.insert(
             [
                 {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
@@ -310,7 +309,7 @@ class SpikeSorting(dj.Computed):
     -> PreProcessing
     ---
     execution_time: datetime        # datetime of the start of this step
-    execution_duration: float       # execution duration in hours
+    execution_duration: float64     # execution duration in hours
     """
 
     class File(dj.Part):
@@ -318,7 +317,7 @@ class SpikeSorting(dj.Computed):
         -> master
         file_name: varchar(255)
         ---
-        file: filepath@dj_store
+        file: <filepath@dj_store>
         """
 
     def make_fetch(self, key):
@@ -329,8 +328,12 @@ class SpikeSorting(dj.Computed):
         ).fetch1("sorting_method", "params")
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
-        recording_file = (PreProcessing.File
-                          & key & "file_name LIKE '%si_recording.pkl'").fetch1("file")
+        try:
+            recording_file = Path(
+                (PreProcessing.File
+                 & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path)
+        except dj.errors.DataJointError:
+            recording_file = output_dir.parent / "recording" / "si_recording.pkl"
 
         return recording_file, output_dir, params, sorting_method
 
@@ -421,7 +424,6 @@ class SpikeSorting(dj.Computed):
                 "execution_duration": execution_duration
             }
         )
-        # Insert result files
         self.File.insert(
             [
                 {**key, "file_name": f.relative_to(sorting_output_dir).as_posix(), "file": f}
@@ -437,7 +439,7 @@ class PostProcessing(dj.Computed):
     -> SpikeSorting
     ---
     execution_time: datetime   # datetime of the start of this step
-    execution_duration: float  # execution duration in hours
+    execution_duration: float64  # execution duration in hours
     """
 
     class File(dj.Part):
@@ -445,7 +447,7 @@ class PostProcessing(dj.Computed):
         -> master
         file_name: varchar(255)
         ---
-        file: filepath@dj_store
+        file: <filepath@dj_store>
         """
 
     def make_fetch(self, key):
@@ -456,10 +458,18 @@ class PostProcessing(dj.Computed):
         ).fetch1("sorting_method", "params")
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
-        recording_file = (PreProcessing.File
-                          & key & "file_name LIKE '%si_recording.pkl'").fetch1("file")
-        sorting_file = (SpikeSorting.File
-                        & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file")
+        try:
+            recording_file = Path(
+                (PreProcessing.File
+                 & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path)
+        except dj.errors.DataJointError:
+            recording_file = output_dir.parent / "recording" / "si_recording.pkl"
+        try:
+            sorting_file = Path(
+                (SpikeSorting.File
+                 & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file").full_path)
+        except dj.errors.DataJointError:
+            sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
 
         return recording_file, sorting_file, output_dir, params
 
@@ -511,7 +521,8 @@ class PostProcessing(dj.Computed):
         if not has_units:
             logger.info("No units found in sorting object. Skipping sorting analyzer.")
             analyzer_output_dir.mkdir(parents=True, exist_ok=True)  # create empty directory anyway, for consistency
-            return
+            execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
+            return analyzer_output_dir, execution_time, execution_duration
 
         # Sorting Analyzer
         sorting_analyzer = si.create_sorting_analyzer(
@@ -561,7 +572,7 @@ class SIExport(dj.Computed):
     -> PostProcessing
     ---
     execution_time: datetime   # datetime of the start of this step
-    execution_duration: float  # execution duration in hours
+    execution_duration: float64  # execution duration in hours
     """
 
     class File(dj.Part):
@@ -569,7 +580,7 @@ class SIExport(dj.Computed):
         -> master
         file_name: varchar(255)
         ---
-        file: filepath@dj_store
+        file: <filepath@dj_store>
         """
 
     def make(self, key):
@@ -584,7 +595,16 @@ class SIExport(dj.Computed):
         analyzer_output_dir = output_dir / "sorting_analyzer"
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
 
-        job_kwargs = {"n_jobs": 0.8, "chunk_duration": "1s"}
+        execution_duration_hours = (datetime.now(UTC) - execution_time).total_seconds() / 3600
+
+        if sorting_analyzer.sorting.unit_ids.size == 0:
+            logger.info("No units found. Inserting master row without report.")
+            self.insert1(
+                {**key, "execution_time": execution_time, "execution_duration": execution_duration_hours}
+            )
+            return
+
+        job_kwargs = {"n_jobs": -1, "chunk_duration": "1s"}
         si.exporters.export_report(
             sorting_analyzer=sorting_analyzer,
             output_folder=analyzer_output_dir / "spikeinterface_report",
@@ -592,15 +612,14 @@ class SIExport(dj.Computed):
             **job_kwargs,
         )
 
-        execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
+        execution_duration_hours = (datetime.now(UTC) - execution_time).total_seconds() / 3600
         self.insert1(
             {
                 **key,
                 "execution_time": execution_time,
-                "execution_duration": execution_duration,
+                "execution_duration": execution_duration_hours,
             }
         )
-        # Insert result files
         self.File.insert(
             [
                 {
@@ -620,21 +639,21 @@ class SortedSpikes(dj.Imported):
     -> PostProcessing
     ---
     execution_time: datetime   # datetime of the start of this step
-    execution_duration: float  # execution duration in hours
-    curation_id=-1: int        # if -1, this is the raw spike sorting result without manual curation
+    execution_duration: float64  # execution duration in hours
+    curation_id=-1: int32      # if -1, this is the raw spike sorting result without manual curation
     """
 
     class Unit(dj.Part):
         definition = """  # Identified units and their properties
         -> master
-        unit: int
+        unit: int32
         ---
         -> ephys.ElectrodeConfig.Electrode  # electrode with highest waveform amplitude for this unit
         -> UnitQuality
-        spike_count: int         # how many spikes in this recording for this unit
-        spike_indices: blob@dj_store  # array of spike indices into the concatenated binary data (from preprocessing)
-        spike_sites : blob@dj_store   # array of electrode associated with each spike
-        spike_depths=null : blob@dj_store  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe
+        spike_count: int32       # how many spikes in this recording for this unit
+        spike_indices: <blob@dj_store>  # array of spike indices into the concatenated binary data (from preprocessing)
+        spike_sites : <blob@dj_store>   # array of electrode associated with each spike
+        spike_depths=null : <blob@dj_store>  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe
         """
 
     def make(self, key):
@@ -680,15 +699,16 @@ class SortedSpikes(dj.Imported):
                         spike_sorting_curation_module.ManualCuration.File
                         & key
                         & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                    ).fetch1("file")
+                    ).fetch1("file").full_path
                 )
                 logger.info(
                     f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
                 )
             else:
                 logger.info("Using raw analyzer (no official curation found)")
-        except Exception as e:
-            # If curation module not available or no official curation, use raw analyzer
+        except (dj.errors.DataJointError, ImportError, AttributeError) as e:
+            # Curation module not available, table mis-named, or no official curation — use raw analyzer.
+            # Narrow scope: other exceptions (network, permission, etc.) should propagate.
             logger.info(f"Using raw analyzer (curation check failed: {e})")
 
         sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
@@ -840,7 +860,7 @@ class Waveform(dj.Imported):
                     spike_sorting_curation_module.ManualCuration.File
                     & key
                     & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                ).fetch1("file")
+                ).fetch1("file").full_path
             )
             logger.info(
                 f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
@@ -909,7 +929,7 @@ class SortingQuality(dj.Imported):
         -> master
         -> SortedSpikes.Unit
         ---
-        qc_metrics: JSON
+        qc_metrics: json
         """
 
     def make(self, key):
@@ -931,7 +951,7 @@ class SortingQuality(dj.Imported):
                     spike_sorting_curation_module.ManualCuration.File
                     & key
                     & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                ).fetch1("file")
+                ).fetch1("file").full_path
             )
             logger.info(
                 f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
@@ -969,8 +989,8 @@ class SyncedSpikes(dj.Imported):
         -> SortedSpikes.Unit
         -> ephys.EphysChunk
         ---
-        spike_count: int       # how many spikes in this recording for this unit
-        spike_times: blob@dj_store  # datetime64[ns] synchronized spike times (in HARP clock) for the respective EphysChunk
+        spike_count: int32     # how many spikes in this recording for this unit
+        spike_times: <blob@dj_store>  # datetime64[ns] synchronized spike times (in HARP clock) for the respective EphysChunk
         """
 
     def make(self, key: Dict[str, Any]) -> None:
@@ -994,7 +1014,7 @@ class SyncedSpikes(dj.Imported):
         # Load ephys sync models
         sync_models = {}
         with tempfile.TemporaryDirectory() as tempdir, dj.config.override(download_path=tempdir):
-            sync_ = (ephys.EphysChunk.SyncModel & (ephys.EphysBlockInfo.Chunk & key)).to_arrays(
+            sync_ = (ephys.EphysChunk.SyncModel * ephys.EphysSyncModel & (ephys.EphysBlockInfo.Chunk & key)).to_arrays(
                 "onix_ts_start", "onix_ts_end", "sync_model",
                 order_by="onix_ts_start"
             )
@@ -1107,7 +1127,7 @@ class GlobalUnit(dj.Manual):
     definition = """
     # Persistent neuron identity across ephys blocks for the same probe insertion
     -> ephys.ProbeInsertion
-    global_unit: int  # unique ID within this insertion
+    global_unit: int32  # unique ID within this insertion
     ---
     -> UnitMatchingParamSet
     -> ephys.ProbeType.Electrode  # peak electrode (denormalized, updated each block)
@@ -1122,7 +1142,7 @@ class UnitMatching(dj.Computed):
     -> UnitMatchingParamSet
     ---
     execution_time: datetime
-    execution_duration: float  # hours
+    execution_duration: float64  # hours
     """
 
     class Unit(dj.Part):
@@ -1131,7 +1151,7 @@ class UnitMatching(dj.Computed):
         -> SortedSpikes.Unit
         ---
         -> GlobalUnit
-        match_confidence=null: float
+        match_confidence=null: float64
         match_comment='': varchar(1000)
         """
 
@@ -1141,8 +1161,8 @@ class UnitMatching(dj.Computed):
         -> GlobalUnit
         -> ephys.EphysChunk
         ---
-        spike_times: blob@dj_store  # datetime64[ns] (UTC), HARP-synced
-        spike_count: int
+        spike_times: <blob@dj_store>  # datetime64[ns] (UTC), HARP-synced
+        spike_count: int32
         unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)
         """
 

@@ -1,73 +1,173 @@
-"""
-Run spike sorting pipeline on specified blocks.
+"""Run spike sorting pipeline on a single key, selected by --task index.
 
-Edit the `keys` list below for your experiment/blocks, then submit via SLURM:
+Designed for SLURM job arrays: each array task gets its own GPU and
+processes one key from the list. The SLURM script passes
+$SLURM_ARRAY_TASK_ID as --task automatically.
+
+Edit the `keys` list below for your experiment, then submit via SLURM:
     sbatch run_aeon_spike_sorting.sh
 
-Change `table_name` to control which step to run:
-    "PreProcessing", "SpikeSorting", or "PostProcessing"
+To run a single task interactively (e.g. for debugging):
+    uv run python run_aeon_spike_sorting.py --task 1
+
+To select the pipeline step ("PreProcessing", "SpikeSorting", "PostProcessing"):
+  - Pass --table at runtime to override TABLE_NAME (e.g. PreProcessing):
+        uv run python run_aeon_spike_sorting.py --task 1 --table PreProcessing
+  - Or edit TABLE_NAME below to change the default for all tasks.
 """
 
-import datajoint as dj
-from aeon.dj_pipeline import acquisition, ephys, spike_sorting
+import argparse
+
+from aeon.dj_pipeline import spike_sorting
 
 # =============================================================================
 # Configuration — edit these for your experiment
 # =============================================================================
 
 # Which pipeline step to run
-table_name = "SpikeSorting"
+TABLE_NAME = "SpikeSorting"
 
-# Common key fields (shared across all blocks)
+# Common key fields (shared across all blocks/shanks)
 _base = {
-    "experiment_name": "social-ephys0.1-aeon3",
-    "subject": "test-subject-001",
+    "experiment_name": "abcGolden01-aeonx1",
+    "subject": "IAA-1147881",
     "insertion_number": 1,
-    "probe_type": "neuropixels - NP2004",
+    "probe_type": "neuropixels2.0",
     "electrode_config_name": "0-383",
-    "electrode_group": "0-95",
-    "paramset_id": 400,
+    "paramset_id": "400",
 }
 
-# --- Single block mode: one block per SLURM job (use for large/long blocks) ---
+# Golden dataset: 3 blocks × 4 shanks = 12 sorting jobs
+# Task numbers are 1-indexed (task 1 = keys[0], task 12 = keys[11])
 keys = [
-    {**_base, "block_start": "2024-06-04 11:00:00", "block_end": "2024-06-04 14:00:00"},
+    # --- shank0 (tasks 1-3) ---
+    {
+        **_base,
+        "electrode_group": "shank0",
+        "block_start": "2026-05-11 07:49:46.571574",
+        "block_end": "2026-05-11 08:19:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank0",
+        "block_start": "2026-05-11 08:09:46.571574",
+        "block_end": "2026-05-11 08:39:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank0",
+        "block_start": "2026-05-11 08:29:46.571574",
+        "block_end": "2026-05-11 08:59:46.571574",
+    },
+    # --- shank1 (tasks 4-6) ---
+    {
+        **_base,
+        "electrode_group": "shank1",
+        "block_start": "2026-05-11 07:49:46.571574",
+        "block_end": "2026-05-11 08:19:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank1",
+        "block_start": "2026-05-11 08:09:46.571574",
+        "block_end": "2026-05-11 08:39:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank1",
+        "block_start": "2026-05-11 08:29:46.571574",
+        "block_end": "2026-05-11 08:59:46.571574",
+    },
+    # --- shank2 (tasks 7-9) ---
+    {
+        **_base,
+        "electrode_group": "shank2",
+        "block_start": "2026-05-11 07:49:46.571574",
+        "block_end": "2026-05-11 08:19:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank2",
+        "block_start": "2026-05-11 08:09:46.571574",
+        "block_end": "2026-05-11 08:39:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank2",
+        "block_start": "2026-05-11 08:29:46.571574",
+        "block_end": "2026-05-11 08:59:46.571574",
+    },
+    # --- shank3 (tasks 10-12) ---
+    {
+        **_base,
+        "electrode_group": "shank3",
+        "block_start": "2026-05-11 07:49:46.571574",
+        "block_end": "2026-05-11 08:19:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank3",
+        "block_start": "2026-05-11 08:09:46.571574",
+        "block_end": "2026-05-11 08:39:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank3",
+        "block_start": "2026-05-11 08:29:46.571574",
+        "block_end": "2026-05-11 08:59:46.571574",
+    },
 ]
-
-# --- Multi block mode: multiple blocks in one SLURM job (use for small/short blocks) ---
-# keys = [
-#     {**_base, "block_start": "2024-06-04 11:00:00", "block_end": "2024-06-04 14:00:00"},
-#     {**_base, "block_start": "2024-06-04 13:00:00", "block_end": "2024-06-04 16:00:00"},
-#     {**_base, "block_start": "2024-06-04 15:00:00", "block_end": "2024-06-04 18:00:00"},
-#     {**_base, "block_start": "2024-06-04 17:00:00", "block_end": "2024-06-04 20:00:00"},
-# ]
 
 # =============================================================================
 
-_CLEAR_JOB = True  # Clear any existing 'error' job for each key before populating
+CLEAR_JOB = False  # Set True to clear 'error' job state before re-running
 
 
 def clear_job(dj_table, key):
-    """Clear this key from the jobs table (if errored) to allow re-running."""
-    (spike_sorting.schema.jobs & {
-        "table_name": dj_table.table_name,
-        "key_hash": dj.key_hash(key),
-        "status": "error"}).delete()
+    """Clear errored jobs for this table to allow re-running.
+
+    Note: DJ 2.x changed schema.jobs API. If this fails, set CLEAR_JOB=False
+    and clear error jobs manually before resubmitting.
+    """
+    try:
+        (spike_sorting.schema.jobs & {"table_name": dj_table.table_name, "status": "error"} & key).delete()
+    except Exception as e:
+        print(f"[WARNING] Could not clear error jobs: {dj_table.table_name} — {e}")
 
 
 def main():
+    """Run the selected pipeline step on the key corresponding to --task index."""
+    parser = argparse.ArgumentParser(description="Spike sorting worker")
+    parser.add_argument(
+        "--task", type=int, required=True, help=f"Task number (1-{len(keys)}), from SLURM_ARRAY_TASK_ID"
+    )
+    parser.add_argument(
+        "--table",
+        default=TABLE_NAME,
+        choices=["PreProcessing", "SpikeSorting", "PostProcessing"],
+        help=f"Pipeline step to run (default: {TABLE_NAME})",
+    )
+    args = parser.parse_args()
+
+    if not 1 <= args.task <= len(keys):
+        raise ValueError(f"Task must be 1-{len(keys)}, got {args.task}")
+
     populate_table = {
         "PreProcessing": spike_sorting.PreProcessing,
         "SpikeSorting": spike_sorting.SpikeSorting,
         "PostProcessing": spike_sorting.PostProcessing,
-    }[table_name]
+    }[args.table]
 
-    for i, key in enumerate(keys):
-        print(f"\n=== Block {i+1}/{len(keys)}: {key['block_start']} - {key['block_end']} ===")
-        if _CLEAR_JOB:
-            clear_job(populate_table, key)
-        populate_table.populate(key, reserve_jobs=True, display_progress=True)
-        print(f"=== Block {i+1} done ===")
+    key = keys[args.task - 1]
+    print(
+        f"\n=== Task {args.task}/{len(keys)}: {key['electrode_group']} "
+        f"{key['block_start']} - {key['block_end']} ==="
+    )
+
+    if CLEAR_JOB:
+        clear_job(populate_table, key)
+    populate_table.populate(key, reserve_jobs=True, display_progress=True)
+    print(f"=== Task {args.task} done ===")
 
 
 if __name__ == "__main__":
