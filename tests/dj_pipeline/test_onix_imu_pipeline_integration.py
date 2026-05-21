@@ -3,12 +3,12 @@
 import logging
 
 import pytest
-from _synthetic_ephys_fixtures import (
-    _make_synthetic_amplifier_data,
-    _make_synthetic_bno055_data,
-    _make_synthetic_ephys_epoch,
-    _register_synthetic_experiment,
-    _register_synthetic_probe_insertion,
+from ephys_factories import (
+    make_synthetic_amplifier_data,
+    make_synthetic_bno055_data,
+    make_synthetic_ephys_epoch,
+    register_synthetic_experiment,
+    register_synthetic_probe_insertion,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,8 +52,8 @@ def test_ephys_sync_model_ingest_inserts_one_row_per_csv(dj_config_integration, 
 
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    _make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=3)
-    _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+    make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=3)
+    register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
     ephys.EphysSyncModel.ingest(experiment_name)
 
@@ -80,8 +80,8 @@ def test_ephys_sync_model_ingest_is_idempotent(dj_config_integration, tmp_path):
 
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    _make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=2)
-    _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+    make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=2)
+    register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
     ephys.EphysSyncModel.ingest(experiment_name)
     initial_count = len(ephys.EphysSyncModel & {"experiment_name": experiment_name})
@@ -141,11 +141,11 @@ def test_ephys_chunk_ingest_uses_sync_model_from_db(dj_config_integration, tmp_p
     raw_dir.mkdir()
 
     # Write HarpSync CSVs and AmplifierData + Clock binaries
-    _make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=3)
-    _make_synthetic_amplifier_data(raw_dir, epoch_dir_name, device_name, probe_label, n_chunks=3)
+    make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=3)
+    make_synthetic_amplifier_data(raw_dir, epoch_dir_name, device_name, probe_label, n_chunks=3)
 
     # Register experiment (inserts Lab, Arena, DevicesSchema, Experiment, Epoch, EphysEpoch)
-    epoch_start = _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+    epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
     # Register subject and link to experiment
     subj_mod.Subject.insert1(
@@ -157,7 +157,7 @@ def test_ephys_chunk_ingest_uses_sync_model_from_db(dj_config_integration, tmp_p
         skip_duplicates=True,
     )
 
-    _register_synthetic_probe_insertion(experiment_name, subject, epoch_start, probe_label, device_name)
+    register_synthetic_probe_insertion(experiment_name, subject, epoch_start, probe_label, device_name)
 
     # Ingest SyncModel rows first, then chunks
     ephys.EphysSyncModel.ingest(experiment_name)
@@ -222,9 +222,9 @@ def test_onix_imu_chunk_populate_with_data(dj_config_integration, tmp_path):
 
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    _make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=2)
-    _make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=2)
-    _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+    make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=2)
+    make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=2)
+    register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
     ephys.EphysSyncModel.ingest(experiment_name)
     ephys.OnixImuChunk.populate({"experiment_name": experiment_name})
@@ -256,8 +256,8 @@ def test_onix_imu_chunk_populate_no_imu_rig(dj_config_integration, tmp_path):
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     # HarpSync CSVs but NO Bno055 binaries
-    _make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=2)
-    _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+    make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=2)
+    register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
     ephys.EphysSyncModel.ingest(experiment_name)
     ephys.OnixImuChunk.populate({"experiment_name": experiment_name})
@@ -291,9 +291,9 @@ def test_synced_df_returns_harp_indexed_dataframe(dj_config_integration, tmp_pat
 
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    _make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=1)
-    _make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=1)
-    _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+    make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=1)
+    make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=1)
+    register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
     ephys.EphysSyncModel.ingest(experiment_name)
     ephys.OnixImuChunk.populate({"experiment_name": experiment_name})
@@ -321,9 +321,9 @@ def test_synced_df_raises_on_ambiguous_key(dj_config_integration, tmp_path):
 
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
-    _make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=2)
-    _make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=2)
-    _register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+    make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=2)
+    make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=2)
+    register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
     ephys.EphysSyncModel.ingest(experiment_name)
     ephys.OnixImuChunk.populate({"experiment_name": experiment_name})

@@ -1,8 +1,6 @@
-"""Shared synthetic fixture helpers for ONIX IMU pipeline integration tests.
+"""Synthetic data factory helpers for ONIX ephys pipeline integration tests.
 
-Private module (leading underscore) — pytest does not collect tests from it.
-Imported by both test_onix_imu_pipeline_integration.py and
-utils/test_onix_codec_integration.py.
+Imported by test_onix_imu_pipeline_integration.py and utils/test_codec_integration.py.
 """
 
 import csv
@@ -12,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 
-def _make_synthetic_ephys_epoch(
+def make_synthetic_ephys_epoch(
     raw_dir: Path,
     epoch_dir_name: str,
     device_name: str,
@@ -50,14 +48,12 @@ def _make_synthetic_ephys_epoch(
                 }
             )
         with open(csv_path, "w", newline="") as f:
-            writer = csv.DictWriter(
-                f, fieldnames=["aeon_time", "clock", "hub_clock", "harp_time"]
-            )
+            writer = csv.DictWriter(f, fieldnames=["aeon_time", "clock", "hub_clock", "harp_time"])
             writer.writeheader()
             writer.writerows(rows)
 
 
-def _register_synthetic_experiment(
+def register_synthetic_experiment(
     tmp_path: Path,
     raw_dir: Path,
     experiment_name: str,
@@ -171,7 +167,7 @@ def _register_synthetic_experiment(
     return epoch_dt
 
 
-def _make_synthetic_amplifier_data(
+def make_synthetic_amplifier_data(
     raw_dir: Path,
     epoch_dir_name: str,
     device_name: str,
@@ -196,7 +192,7 @@ def _make_synthetic_amplifier_data(
     n_channels = 4  # minimal channel count (uint16 per sample)
 
     for n in range(n_chunks):
-        # ONIX clock range for this chunk (matches _make_synthetic_ephys_epoch)
+        # ONIX clock range for this chunk (matches make_synthetic_ephys_epoch)
         clock_start = 60000 * n + 1
         clock_end = 60000 * n + 59001
         # Keep timestamps strictly inside the SyncModel's ONIX range
@@ -214,7 +210,7 @@ def _make_synthetic_amplifier_data(
         amp_data.tofile(amp_path)
 
 
-def _register_synthetic_probe_insertion(
+def register_synthetic_probe_insertion(
     experiment_name: str,
     subject: str,
     epoch_start,
@@ -299,7 +295,7 @@ def _register_synthetic_probe_insertion(
     )
 
 
-def _make_synthetic_bno055_data(
+def make_synthetic_bno055_data(
     raw_dir: Path,
     epoch_dir_name: str,
     device_name: str,
