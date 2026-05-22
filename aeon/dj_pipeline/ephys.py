@@ -1,7 +1,7 @@
 """DataJoint schema for the ephys pipeline."""
 
 import re
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any
 
@@ -705,6 +705,148 @@ class EphysBlockInfo(dj.Imported):
                 for ch_key in electrode_df
             ),
         )
+
+
+@schema
+class CompressionTest(dj.Computed):
+    """Lossless compression test for raw ephys chunks.
+
+    Compresses each chunk's AmplifierData .bin to zarr (Blosc-zstd),
+    decompresses, and verifies the result matches the original byte-for-byte.
+    """
+
+    definition = """
+    -> EphysChunk
+    ---
+    original_size_bytes    : bigint        # size of the raw AmplifierData .bin file
+    compressed_size_bytes  : bigint        # size of the zarr output
+    compression_ratio      : float         # original / compressed
+    compression_time_s     : float         # wall-clock seconds to compress
+    decompression_time_s   : float         # wall-clock seconds to decompress
+    checksum_match         : bool          # True if decompressed == original
+    mismatch_details       : varchar(1000) # empty if match, error details if not
+    num_channels           : int32         # channels in this chunk
+    num_samples            : bigint        # total samples in this chunk
+    sampling_frequency     : float         # Hz
+    codec_name             : varchar(64)   # e.g. "blosc-zstd-5-bitshuffle"
+    execution_time         : datetime      # when this test ran
+    """
+
+    def make(self, key: dict[str, Any]) -> None:
+        import time
+        import shutil
+        import numpy as np
+        import spikeinterface as si
+        import spikeinterface.extractors as se
+        from numcodecs import Blosc
+
+        from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
+
+        execution_time = datetime.now(UTC)
+
+        # Find the AmplifierData .bin file for this chunk
+        chunk_file = (
+            EphysChunk.File & key & "file_name LIKE '%AmplifierData%.bin'"
+        ).fetch1()
+
+        data_dir = acquisition.Experiment.get_data_directory(
+            key, directory_type=chunk_file["directory_type"]
+        )
+        bin_path = data_dir / chunk_file["file_path"]
+        original_size = bin_path.stat().st_size
+
+        # NP2 constants (same as PreProcessing.make_compute)
+        num_channels = len(ElectrodeConfig.Electrode & key)
+        fs_hz = 30e3
+        gain_to_uV = 3.05176
+        offset_to_uV = -2048 * gain_to_uV
+
+        # Load via spikeinterface
+        si_recording = se.read_binary(
+            bin_path,
+            sampling_frequency=fs_hz,
+            dtype=np.uint16,
+            num_channels=num_channels,
+            gain_to_uV=gain_to_uV,
+            offset_to_uV=offset_to_uV,
+        )
+        num_samples = si_recording.get_num_samples()
+
+        # Build codec name from default zarr compressor
+        compressor = si.get_default_zarr_compressor()
+        shuffle_names = {Blosc.NOSHUFFLE: "noshuffle", Blosc.SHUFFLE: "shuffle", Blosc.BITSHUFFLE: "bitshuffle"}
+        codec_name = f"blosc-{compressor.cname}-{compressor.clevel}-{shuffle_names.get(compressor.shuffle, str(compressor.shuffle))}"
+
+        # Temp directory for zarr and decompressed binary
+        sorting_root = get_sorting_root_dir()
+        tmp_base = sorting_root / "compression_test_tmp" / f"{key['subject']}_{key['insertion_number']}_{key['chunk_start'].strftime('%Y%m%dT%H%M%S')}"
+        tmp_base.mkdir(parents=True, exist_ok=True)
+        zarr_path = tmp_base / "recording.zarr"
+        decompressed_path = tmp_base / "decompressed.bin"
+
+        try:
+            # Compress
+            t0 = time.perf_counter()
+            si_recording.save(format="zarr", folder=zarr_path)
+            compression_time = time.perf_counter() - t0
+
+            # Measure compressed size (sum all files in zarr dir)
+            compressed_size = sum(f.stat().st_size for f in zarr_path.rglob("*") if f.is_file())
+
+            # Decompress: load zarr, write back to binary
+            zarr_recording = si.load(zarr_path)
+            t0 = time.perf_counter()
+            si.core.write_binary_recording(
+                recording=zarr_recording,
+                file_paths=[decompressed_path],
+                dtype=si_recording.dtype,
+            )
+            decompression_time = time.perf_counter() - t0
+
+            # Byte-for-byte verification
+            checksum_match = True
+            mismatch_details = ""
+
+            orig_data = np.memmap(bin_path, dtype=np.uint16, mode="r")
+            decomp_data = np.memmap(decompressed_path, dtype=np.uint16, mode="r")
+
+            if orig_data.shape != decomp_data.shape:
+                checksum_match = False
+                mismatch_details = f"Shape mismatch: original {orig_data.shape} vs decompressed {decomp_data.shape}"
+            else:
+                diff_mask = orig_data != decomp_data
+                if diff_mask.any():
+                    checksum_match = False
+                    n_diff = int(diff_mask.sum())
+                    first_idx = int(np.argmax(diff_mask))
+                    mismatch_details = (
+                        f"{n_diff} differing values. "
+                        f"First at index {first_idx}: "
+                        f"original={orig_data[first_idx]}, decompressed={decomp_data[first_idx]}"
+                    )
+
+            del orig_data, decomp_data
+
+        finally:
+            # Clean up temp files
+            if tmp_base.exists():
+                shutil.rmtree(tmp_base)
+
+        self.insert1({
+            **key,
+            "original_size_bytes": original_size,
+            "compressed_size_bytes": compressed_size,
+            "compression_ratio": original_size / compressed_size,
+            "compression_time_s": compression_time,
+            "decompression_time_s": decompression_time,
+            "checksum_match": checksum_match,
+            "mismatch_details": mismatch_details,
+            "num_channels": num_channels,
+            "num_samples": num_samples,
+            "sampling_frequency": fs_hz,
+            "codec_name": codec_name,
+            "execution_time": execution_time,
+        })
 
 
 def create_probe_type(probe_type: str, manufacturer: str, probe_name: str) -> None:

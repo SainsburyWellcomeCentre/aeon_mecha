@@ -263,22 +263,38 @@ class PreProcessing(dj.Computed):
         si_recording = ephys_preproc(si_recording)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
-        # write binary into recording.dat
+        # Determine save format from paramset
+        params = (SortingParamSet & key).fetch1("params")
+        save_format = params.get("save_format", "binary")
+
         job_kwargs = {"n_jobs": -1, "chunk_duration": "2s"}
-        binary_file_path = recording_file.parent / "recording.dat"
-        if binary_file_path.exists():
-            load_and_verify_binary_file(
-                binary_file_path=binary_file_path,
-                se_recording_obj=si_recording)
-            logger.info(f"{binary_file_path} already exists. Skipping writing binary file.")
-        else:
-            logger.info(f"Writing binary recording to {binary_file_path}...")
-            si.core.write_binary_recording(
-                    recording=si_recording,
-                    file_paths=[binary_file_path],
-                    dtype="int16",
+
+        if save_format == "zarr":
+            zarr_path = recording_file.parent / "recording.zarr"
+            if zarr_path.exists():
+                logger.info(f"{zarr_path} already exists. Skipping zarr write.")
+            else:
+                logger.info(f"Writing zarr recording to {zarr_path}...")
+                si_recording.save(
+                    format="zarr",
+                    folder=zarr_path,
                     **sorters.basesorter.get_job_kwargs(job_kwargs, True),
                 )
+        else:
+            binary_file_path = recording_file.parent / "recording.dat"
+            if binary_file_path.exists():
+                load_and_verify_binary_file(
+                    binary_file_path=binary_file_path,
+                    se_recording_obj=si_recording)
+                logger.info(f"{binary_file_path} already exists. Skipping writing binary file.")
+            else:
+                logger.info(f"Writing binary recording to {binary_file_path}...")
+                si.core.write_binary_recording(
+                        recording=si_recording,
+                        file_paths=[binary_file_path],
+                        dtype="int16",
+                        **sorters.basesorter.get_job_kwargs(job_kwargs, True),
+                    )
 
         return output_dir, execution_time, recording_dir
 
@@ -294,11 +310,15 @@ class PreProcessing(dj.Computed):
                 / 3600,
             }
         )
+        # Insert result files — exclude large data files (binary and zarr chunks)
+        zarr_dir = recording_dir / "recording.zarr"
         self.File.insert(
             [
                 {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
                 for f in recording_dir.rglob("*")
-                if f.is_file() and f.name != "recording.dat"  # exclude the large binary file (too long for hashing)
+                if f.is_file()
+                and f.name != "recording.dat"
+                and not f.as_posix().startswith(zarr_dir.as_posix())
             ]
         )
 
@@ -375,32 +395,36 @@ class SpikeSorting(dj.Computed):
         si_recording: si.BaseRecording = si.load(
             recording_file, base_folder=output_dir
         )
-        # load the pre-generated binary file - recording.dat
-        binary_file_path = Path(recording_file).parent / "recording.dat"
-        binary_rec = load_and_verify_binary_file(
-            binary_file_path=binary_file_path,
-            se_recording_obj=si_recording)
 
+        save_format = params.get("save_format", "binary")
         sorting_params = params["SI_SORTING_PARAMS"].copy()
 
-        # explicitly set `skip_kilosort_preprocessing` to False
-        # to avoid SpikeInterface rerunning the `write_binary_recording` step
-        # https://github.com/SpikeInterface/spikeinterface/blob/705c9320c854f2a192fa200fe7866cec5a8ffca7/src/spikeinterface/sorters/external/kilosortbase.py#L124
-        sorting_params["skip_kilosort_preprocessing"] = False
-        
         # Add Kilosort4 memory optimization parameters to reduce GPU memory usage
-        # clear_cache=True forces PyTorch to clear cached CUDA memory after memory-intensive steps,
-        # which helps free reserved but unallocated memory (like the 7.69 GiB in the error)
         if sorting_method == "kilosort4":
             if "clear_cache" not in sorting_params:
                 sorting_params["clear_cache"] = True
-                
-        if not binary_rec.binary_compatible_with(dtype="int16", time_axis=0, file_paths_length=1):
-            raise ValueError(f"Incompatible binary file for spike sorting: {binary_file_path}")
+
+        if save_format == "zarr":
+            # Load zarr recording directly — probe geometry preserved from PreProcessing
+            zarr_path = Path(recording_file).parent / "recording.zarr"
+            recording_for_sorting = si.load(zarr_path)
+            # Kilosort wrapper will write a temporary binary internally via _setup_recording
+            sorting_params["skip_kilosort_preprocessing"] = False
+        else:
+            # Load the pre-generated binary file - recording.dat
+            binary_file_path = Path(recording_file).parent / "recording.dat"
+            recording_for_sorting = load_and_verify_binary_file(
+                binary_file_path=binary_file_path,
+                se_recording_obj=si_recording)
+            # explicitly set `skip_kilosort_preprocessing` to False
+            # to avoid SpikeInterface rerunning the `write_binary_recording` step
+            sorting_params["skip_kilosort_preprocessing"] = False
+            if not recording_for_sorting.binary_compatible_with(dtype="int16", time_axis=0, file_paths_length=1):
+                raise ValueError(f"Incompatible binary file for spike sorting: {binary_file_path}")
 
         si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
             sorter_name=sorter_name,
-            recording=binary_rec,
+            recording=recording_for_sorting,
             folder=sorting_output_dir,
             remove_existing_folder=True,
             verbose=True,
@@ -524,11 +548,14 @@ class PostProcessing(dj.Computed):
             execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
             return analyzer_output_dir, execution_time, execution_duration
 
-        # Sorting Analyzer
+        # Sorting Analyzer — use zarr format if paramset specifies it
+        save_format = params.get("save_format", "binary")
+        analyzer_format = "zarr" if save_format == "zarr" else "binary_folder"
+
         sorting_analyzer = si.create_sorting_analyzer(
             sorting=si_sorting,
             recording=si_recording,
-            format="binary_folder",
+            format=analyzer_format,
             folder=analyzer_output_dir,
             sparse=True,
             overwrite=True,
