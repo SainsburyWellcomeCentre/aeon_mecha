@@ -33,8 +33,9 @@ def dj_download_to_tmp(request):
         yield
 
 
-# Single test prefix for ALL integration tests
-TEST_DB_PREFIX = "test_aeon_"
+# Single test prefix for ALL integration tests.
+# Override via env var on systems where the DB user can only create specific prefixes.
+TEST_DB_PREFIX = os.environ.get("TEST_DB_PREFIX", "test_aeon_")
 
 # ============================================================================
 # Golden Dataset Registry
@@ -107,11 +108,15 @@ def dj_config_integration(mysql_container):
 
     # Set config BEFORE any pipeline imports
     dj.config.safemode = False
-    dj.config.database.host = os.environ.get("DJ_HOST", "localhost")
-    dj.config.database.port = int(os.environ.get("DJ_PORT", "3306"))
-    dj.config.database.user = os.environ.get("DJ_USER", "root")
-    dj.config.database.password = os.environ.get("DJ_PASS", "test_password")
     dj.config.database.database_prefix = TEST_DB_PREFIX
+
+    if mysql_container is not None:
+        # Testcontainers: use the container's connection details
+        dj.config.database.host = os.environ["DJ_HOST"]
+        dj.config.database.port = int(os.environ["DJ_PORT"])
+        dj.config.database.user = os.environ["DJ_USER"]
+        dj.config.database.password = os.environ["DJ_PASS"]
+    # External DB: connection details already loaded from datajoint.json
 
     # Now import pipeline — all module-level schema activations use test prefix
 
