@@ -259,3 +259,108 @@ class TestGetProbeId:
             },
         }
         assert get_probe_id(metadata, "NeuropixelsV2Beta", "ProbeA") == "NeuropixelsV2Beta_ProbeA"
+
+
+class TestDiscoverEpochProbes:
+    """Tests for discover_epoch_probes(epoch_path)."""
+
+    def test_single_probe(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
+
+        device_dir = tmp_path / "NeuropixelsV2Beta"
+        device_dir.mkdir()
+        (device_dir / "NeuropixelsV2Beta_ProbeA_AmplifierData_0.bin").touch()
+
+        device_name, device_path, labels = discover_epoch_probes(tmp_path)
+
+        assert device_name == "NeuropixelsV2Beta"
+        assert device_path == device_dir
+        assert labels == ["ProbeA"]
+
+    def test_two_probes(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
+
+        device_dir = tmp_path / "NeuropixelsV2Beta"
+        device_dir.mkdir()
+        (device_dir / "NeuropixelsV2Beta_ProbeA_AmplifierData_0.bin").touch()
+        (device_dir / "NeuropixelsV2Beta_ProbeB_AmplifierData_0.bin").touch()
+
+        device_name, _, labels = discover_epoch_probes(tmp_path)
+
+        assert device_name == "NeuropixelsV2Beta"
+        assert labels == ["ProbeA", "ProbeB"]
+
+    def test_no_device_directory(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
+
+        device_name, device_path, labels = discover_epoch_probes(tmp_path)
+
+        assert device_name is None
+        assert device_path is None
+        assert labels == []
+
+    def test_v2beta_preferred_over_v2(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
+
+        (tmp_path / "NeuropixelsV2Beta").mkdir()
+        (tmp_path / "NeuropixelsV2Beta" / "NeuropixelsV2Beta_ProbeA_AmplifierData_0.bin").touch()
+        (tmp_path / "NeuropixelsV2").mkdir()
+        (tmp_path / "NeuropixelsV2" / "NeuropixelsV2_ProbeA_AmplifierData_0.bin").touch()
+
+        device_name, _, _ = discover_epoch_probes(tmp_path)
+
+        assert device_name == "NeuropixelsV2Beta"
+
+    def test_no_amplifier_files(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
+
+        (tmp_path / "NeuropixelsV2Beta").mkdir()
+
+        device_name, _, labels = discover_epoch_probes(tmp_path)
+
+        assert device_name == "NeuropixelsV2Beta"
+        assert labels == []
+
+    def test_unexpected_filenames_ignored(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
+
+        device_dir = tmp_path / "NeuropixelsV2Beta"
+        device_dir.mkdir()
+        (device_dir / "NeuropixelsV2Beta_ProbeA_AmplifierData_0.bin").touch()
+        (device_dir / "NeuropixelsV2Beta_Clock_0.bin").touch()
+        (device_dir / "random_file.txt").touch()
+
+        _, _, labels = discover_epoch_probes(tmp_path)
+
+        assert labels == ["ProbeA"]
+
+
+class TestParseEpochMetadata:
+    """Tests for parse_epoch_metadata(epoch_path)."""
+
+    def test_valid_metadata(self, tmp_path):
+        import json
+
+        from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
+
+        metadata = {"Devices": {"NeuropixelsV2e": {"ConfigurationA": {}}}}
+        (tmp_path / "Metadata.yml").write_text(json.dumps(metadata))
+        result = parse_epoch_metadata(tmp_path)
+
+        assert result is not None
+        assert "Devices" in result
+
+    def test_missing_metadata(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
+
+        result = parse_epoch_metadata(tmp_path)
+
+        assert result is None
+
+    def test_malformed_metadata(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
+
+        (tmp_path / "Metadata.yml").write_text("not: valid: json: {{}")
+        result = parse_epoch_metadata(tmp_path)
+
+        assert result is None
