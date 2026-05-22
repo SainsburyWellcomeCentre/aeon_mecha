@@ -1,15 +1,15 @@
 # SLURM Pipeline Automation Specifications
 
-## What's New (v2)
+## What's New (v3)
 
-Based on Thinh's feedback and alignment with the `datajoint-worker` spec:
+Based on Thinh's review and clarification that `datajoint-worker` is proprietary:
 
-- **Unified worker model.** Every SLURM task runs a `DataJointWorker` internally. No separate "batch" vs "per-key" modes — tiers differ only in SLURM resources, DataJointWorker config, and how many instances to submit. DJ's `reserve_jobs=True` handles all key distribution.
-- **`datajoint-worker` is a dependency.** New Section 2 explains the relationship. This package is a SLURM scheduling layer on top of DataJointWorker, not a replacement for it.
-- **Adopted DataJointWorker features.** Transient error auto-clearing, orphan recovery via `stale_timeout_hours`, worker registration via `RegisteredWorker` tables, and progress reporting via `get_workflow_operation_overview()` — all used as-is from `datajoint-worker`.
-- **Kept WorkerErrorHistory.** Confirmed that DJ 2.x `~~jobs` tables delete error details when errors are cleared. This table fills that gap. Capture mechanism uses a DataJointWorker subclass.
+- **No `datajoint-worker` dependency.** This package implements its own lightweight populate loop, inspired by the patterns in `datajoint-worker` but fully open-source. The design is aligned so that the loop could be replaced by `DataJointWorker` in the future if this package is integrated into the broader DJ worker ecosystem.
+- **Own populate loop.** Each worker iterates over its tier's tables, calling `populate(reserve_jobs=True, suppress_errors=True)`, with idle detection, runtime limiting, transient error clearing, and SIGTERM handling — all implemented directly.
+- **No job arrays.** Workers are submitted as independent SLURM jobs, not job arrays. Without per-key assignment, arrays add no value over separate submissions.
+- **Unified worker model (unchanged from v2).** No separate "batch" vs "per-key" modes — tiers differ only in SLURM resources, worker config, and how many instances to submit. DJ's `reserve_jobs=True` handles all key distribution.
+- **Kept WorkerErrorHistory (unchanged from v2).** DJ 2.x `~~jobs` tables delete error details when cleared. Capture is simpler now — we own the loop and query `~~jobs` directly after each populate.
 - **Dropped DJ 0.14.x support.** DJ 2.x only going forward.
-- **Repository under `datajoint-company`** alongside `datajoint-worker`, designed for eventual integration into a unified worker system.
 
 ---
 
@@ -40,7 +40,7 @@ The package is not specific to any one pipeline. It is designed so that any Data
 
 ### What This Package Does
 
-- Periodically submits SLURM jobs that run DataJointWorker instances to call `populate()` on configured tables
+- Periodically submits SLURM jobs that call `populate()` on configured tables
 - Assigns different SLURM resource allocations (CPU, memory, GPU, wall time) to different groups of tables based on their computational requirements
 - Tracks orchestrator runs and maintains a historical log of populate errors, complementing DataJoint's built-in per-table jobs system
 - Provides a CLI for starting, stopping, and monitoring the automation
@@ -49,72 +49,50 @@ The package is not specific to any one pipeline. It is designed so that any Data
 
 - No web UI or dashboard (that is the domain of DataJoint Works)
 - No pipeline table definitions — those belong to the project's own codebase
-- No data processing logic — the package calls `populate()` via DataJointWorker and lets DataJoint handle the rest
+- No data processing logic — the package calls `populate()` and lets DataJoint handle the rest
 - No dependency orchestration between tables — DataJoint's `populate()` is idempotent and will simply return if upstream data is not ready, so the system relies on running frequently enough for data to cascade through the pipeline over successive cycles
-- No job reservation or key assignment logic — DataJoint's built-in `reserve_jobs=True` mechanism handles distributed key assignment, and DataJointWorker handles the populate loop. This package only determines what SLURM resources to allocate and how many worker instances to submit.
+- No job reservation or key assignment logic — DataJoint's built-in `reserve_jobs=True` mechanism handles distributed key assignment. This package only determines what SLURM resources to allocate and how many worker instances to submit.
 
 ### Design Principles
 
-**Leverage DataJointWorker.** The `datajoint-worker` package already handles the populate loop: iterating over registered tables, calling `populate(reserve_jobs=True)`, clearing transient errors, recovering orphaned jobs, and registering workers for external observability. This package does not replicate any of that. It is a SLURM scheduling and submission layer on top of DataJointWorker.
+**Leverage DataJoint's built-in features.** DataJoint 2.x provides per-key reservation (`reserve_jobs=True`), orphan recovery (`jobs.refresh(orphan_timeout=...)`), and error tracking via per-table `~~jobs` tables. This package uses all of these directly. The populate loop itself is lightweight — the heavy lifting is done by DataJoint.
 
-**Keep it simple.** The orchestrator's job is to count pending work and submit SLURM jobs. Each SLURM job runs a DataJointWorker that does the actual populate work. There is no complex state machine, no dependency graph resolution, and no inter-job communication.
+**Keep it simple.** The orchestrator's job is to count pending work and submit SLURM jobs. Each SLURM job runs a populate loop. There is no complex state machine, no dependency graph resolution, and no inter-job communication.
 
 **Be general, not Aeon-specific.** Every project-specific detail (table names, resource requirements, schedule interval) lives in the configuration file, not in the package code.
 
-**Align with the DataJoint worker ecosystem.** This package is designed so that it can eventually be integrated into a unified worker management system that supports multiple infrastructure backends (SLURM, AWS, Kubernetes). The SLURM-specific parts (sbatch generation, job arrays, partition management) are isolated from the worker logic (which is handled by `datajoint-worker`).
+**Align with the DataJoint worker ecosystem.** The worker loop implements the same patterns as `datajoint-worker` (idle detection, runtime limiting, transient error clearing, graceful shutdown). This is intentional — if this package is later integrated into a unified worker system, the loop can be replaced by `DataJointWorker` with minimal changes to the surrounding SLURM orchestration layer.
 
 ---
 
 ## Relationship to DataJointWorker
 
-This package depends on and extends `datajoint-worker` (`datajoint-company/datajoint-worker`), which provides the core `DataJointWorker` class for orchestrating DataJoint `populate()` operations.
+DataJoint's proprietary `datajoint-worker` package (`datajoint-company/datajoint-worker`) implements a general-purpose populate loop executor used internally by DataJoint Works for AWS-based deployments. This package does not depend on `datajoint-worker` — it implements its own populate loop. However, the design is intentionally aligned with `datajoint-worker`'s patterns so that the two can converge in the future.
 
-### What DataJointWorker Provides
+### Concepts Borrowed from DataJointWorker
 
-`DataJointWorker` is a configurable loop executor. You register tables as steps, call `run()`, and it loops: refresh jobs → populate each step → clear transient errors → sleep → repeat. It handles:
+The following patterns originate in `datajoint-worker` and are reimplemented here:
 
-- **Populate loop** — iterates over registered tables, calls `populate(reserve_jobs=True, suppress_errors=True)` on each
-- **Distributed key assignment** — DataJoint's `reserve_jobs=True` uses atomic SQL operations to ensure only one worker processes each key, even when multiple workers run concurrently
-- **Orphan recovery** — calls `jobs.refresh(orphan_timeout=...)` before each populate cycle to recover keys left in `reserved` status by workers that died
-- **Transient error auto-clearing** — automatically clears known infrastructure errors (deadlocks, lost connections, timeouts) so they retry on the next cycle
-- **Worker registration** — registers itself and its process steps in `RegisteredWorker` / `RegisteredWorker.Process` database tables for external observability
-- **Progress reporting** — `get_workflow_operation_overview()` returns pending/reserved/success/error/ignore counts per process
-- **Graceful shutdown** — SIGTERM handler finishes the current cycle then exits
-- **Idle detection** — `max_idled_cycle` stops the worker after N consecutive cycles with no work
-- **Runtime limiting** — `run_duration` stops the worker after N seconds
+- **Populate loop with `reserve_jobs=True`** — iterate over tables, call `populate(reserve_jobs=True, suppress_errors=True)`, sleep, repeat. Distributed key assignment is handled entirely by DataJoint's atomic SQL reservation — no key pre-assignment needed.
+- **Idle detection** (`max_idled_cycle`) — stop the worker after N consecutive cycles with no successful jobs. Frees SLURM allocations when there's nothing to do.
+- **Runtime limiting** (`run_duration`) — stop the worker after N seconds. Ensures graceful exit before SLURM wall-time kills.
+- **Transient error auto-clearing** — after each populate cycle, query `~~jobs` for errors matching known infrastructure patterns (deadlocks, lost connections, lock wait timeouts) and clear them so they retry automatically on the next cycle.
+- **Orphan recovery** — call `jobs.refresh(orphan_timeout=...)` before each cycle to recover keys left in `reserved` status by workers that died.
+- **Graceful shutdown** — SIGTERM handler sets a flag; the loop finishes its current cycle and exits cleanly.
 
-### What This Package Adds
+### What This Package Adds Beyond the Loop
 
-This SLURM package adds the infrastructure layer that DataJointWorker does not handle:
+- **SLURM resource allocation** — partition, CPUs, memory, GPU, and wall time per tier
+- **Tier-based configuration** — grouping tables by resource requirements
+- **Instance scaling** — determining how many parallel workers to submit based on pending work, with max concurrency caps
+- **Job submission** — generating sbatch scripts and submitting them to SLURM
+- **Orchestrator scheduling** — recurring schedule via SLURM or cron
+- **Persistent error history** — `WorkerErrorHistory` table (DataJoint's `~~jobs` tables lose error details when cleared)
+- **Orchestrator run logging** — `OrchestratorRunHistory` table
 
-- **SLURM resource allocation** — determining what partition, CPUs, memory, GPU, and wall time each worker needs
-- **Tier-based configuration** — grouping tables by resource requirements and defining SLURM specs per group
-- **Instance scaling** — determining how many parallel worker instances to submit for each tier based on pending work
-- **Job submission** — generating sbatch scripts and submitting them to SLURM, using job arrays for parallel instances
-- **Orchestrator scheduling** — firing the orchestrator on a recurring schedule via SLURM or cron
-- **Persistent error history** — `WorkerErrorHistory` table that preserves error details across retries (DataJoint's `~~jobs` tables lose error information when errors are cleared)
-- **Orchestrator run logging** — `OrchestratorRunHistory` table tracking each automation cycle
+### Future Integration Path
 
-### How They Fit Together
-
-```
-This package (datajoint-slurm)          datajoint-worker              datajoint-python 2.x
-─────────────────────────────           ────────────────              ────────────────────
-
-Orchestrator                            DataJointWorker               Per-table ~~jobs tables
-  reads YAML config                       add_step(table)               jobs.refresh()
-  counts pending work                     run()                         jobs.reserve(key)
-  submits SLURM jobs ──sbatch──►          populate loop                 populate(reserve_jobs=True)
-                                          error auto-clearing           error/success recording
-                                          orphan recovery
-                                          worker registration
-
-WorkerErrorHistory                      RegisteredWorker
-OrchestratorRunHistory                  RegisteredWorker.Process
-                                        get_workflow_operation_overview()
-```
-
-Each SLURM job submitted by the orchestrator runs a DataJointWorker instance. The SLURM package controls how many instances run and with what resources. DataJointWorker controls what each instance does once it starts.
+If this package is later integrated into a unified DataJoint worker system that supports multiple infrastructure backends (SLURM, AWS, Kubernetes), the populate loop can be replaced by `DataJointWorker.run()` with minimal changes. The SLURM-specific parts (sbatch generation, orchestrator, scaling logic) are cleanly separated from the loop logic, making this a straightforward refactor.
 
 ---
 
@@ -127,7 +105,7 @@ The system has three layers:
 A YAML configuration file, maintained by the project team, that declares:
 - What DataJoint tables exist in the pipeline
 - What SLURM resources each group of tables needs
-- How the DataJointWorker should be configured for each group
+- How each group's populate loop should behave (sleep interval, idle limits, key limits)
 - How many parallel workers to run for each group
 - How often the orchestrator should run
 
@@ -139,10 +117,10 @@ A lightweight process that reads the configuration, checks what work is pending,
 
 ### Worker Layer
 
-The SLURM jobs that do the actual `populate()` calls. Each worker runs a DataJointWorker instance configured with the tables and settings for its tier. Workers differ across tiers in their SLURM resource allocation and DataJointWorker configuration, but they all use the same underlying mechanism: DataJointWorker's populate loop with `reserve_jobs=True` for distributed key assignment.
+The SLURM jobs that do the actual `populate()` calls. Each worker runs a populate loop configured with the tables and settings for its tier. Workers differ across tiers in their SLURM resource allocation and loop configuration, but they all use the same underlying mechanism: `populate(reserve_jobs=True)` for distributed key assignment.
 
 - **Long-running workers** (for lightweight tables) loop through their tables multiple times, picking up new work each cycle. They exit after a few idle cycles or when their wall time approaches.
-- **Single-pass workers** (for heavy tables) grab one key, process it, and exit. Multiple instances run in parallel via SLURM job arrays, with DataJoint's reservation system sorting out who processes which key.
+- **Single-pass workers** (for heavy tables) grab one key, process it, and exit. Multiple instances run in parallel as independent SLURM jobs, with DataJoint's reservation system sorting out who processes which key.
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -162,12 +140,12 @@ The SLURM jobs that do the actual `populate()` calls. Each worker runs a DataJoi
 │         │                 (CPU, 2 cores, 8GB, 4hr)    │
 │         │                                            │
 │         ├──── sbatch ──── Workers (medium tier)        │
-│         │     --array     N instances via job array    │
+│         │     ×N          N independent instances      │
 │         │                 each processes multiple keys │
 │         │                 (CPU, 8 cores, 64GB, 8hr)   │
 │         │                                            │
 │         └──── sbatch ──── Workers (heavy tier)         │
-│               --array     N instances via job array    │
+│               ×N          N independent instances      │
 │                           each processes 1 key        │
 │                           (GPU, 8 cores, 256GB, 7d)   │
 │                                                      │
@@ -194,7 +172,7 @@ schedule:
 schema_name: slurm_worker
 
 # Named resource tiers. Each tier defines SLURM resource
-# requirements, DataJointWorker configuration, and scaling.
+# requirements, worker loop configuration, and scaling.
 tiers:
 
   light:
@@ -205,7 +183,7 @@ tiers:
       time: "4:00:00"
       # gpu is omitted — no GPU for this tier
 
-    # DataJointWorker configuration for this tier.
+    # Worker loop configuration for this tier.
     worker:
       sleep_duration: 60        # seconds between cycles
       max_idled_cycle: 3        # exit after 3 idle cycles
@@ -268,15 +246,15 @@ tiers:
 
 ### Configuration Details
 
-**Tiers** are user-defined and named. The package imposes no limit on the number of tiers or their names. Each tier has a SLURM resource spec, a DataJointWorker configuration, a scaling limit, and a list of tables.
+**Tiers** are user-defined and named. The package imposes no limit on the number of tiers or their names. Each tier has a SLURM resource spec, a worker loop configuration, a scaling limit, and a list of tables.
 
-**Worker configuration** maps directly to `DataJointWorker` constructor and `add_step()` parameters:
+**Worker configuration** controls the populate loop behavior:
 - `sleep_duration` — seconds between populate cycles
 - `max_idled_cycle` — stop the worker after this many consecutive cycles with no successful jobs. Use `-1` for unlimited (worker runs until wall time).
-- `max_calls` — limit how many keys each table processes per cycle. Omit for no limit. This is passed to `add_step()` as a keyword argument forwarded to `populate()`.
+- `max_calls` — limit how many keys each table processes per cycle. Omit for no limit. Passed to `populate()` as a keyword argument.
 - `stale_timeout_hours` — hours before a reserved job is considered orphaned and recovered. Should be slightly longer than the wall time for this tier.
 - `run_duration` — maximum seconds the worker should run before exiting gracefully. Should be set slightly below the SLURM wall time (e.g., 10 minutes less) so the worker finishes its current cycle and exits cleanly before SLURM sends SIGTERM/SIGKILL. Primarily relevant for long-running tiers where `max_idled_cycle` alone may not cause the worker to stop before the wall time.
-- `autoclear_error_patterns` — additional SQL LIKE patterns for transient errors to auto-clear (added to DataJointWorker's built-in list of deadlocks, lost connections, etc.)
+- `autoclear_error_patterns` — additional SQL LIKE patterns for transient errors to auto-clear (added to the built-in list of deadlocks, lost connections, etc.)
 
 **Scaling** (`max_concurrent`) controls how many parallel SLURM jobs the orchestrator submits for a tier. For tiers where `max_concurrent` is 1, the orchestrator submits a single SLURM job (if any pending keys exist). For tiers where `max_concurrent` is greater than 1, the orchestrator computes how many worker instances are needed based on the pending keys and `max_calls` setting:
 
@@ -285,9 +263,9 @@ tiers:
 - Since each worker processes all tables in its tier, take the *maximum* needed count across all tables in the tier (not the sum — a single worker instance handles all tables in its tier sequentially).
 - Cap at `max_concurrent`.
 
-For example, if a medium tier has Table D with 12 pending keys and Table E with 8 pending keys, and `max_calls: 5`, the needed count is `max(ceil(12/5), ceil(8/5)) = max(3, 2) = 3`. This submits a job array of 3 instances, each processing up to 5 keys from each table.
+For example, if a medium tier has Table D with 12 pending keys and Table E with 8 pending keys, and `max_calls: 5`, the needed count is `max(ceil(12/5), ceil(8/5)) = max(3, 2) = 3`. This submits 3 independent SLURM jobs, each processing up to 5 keys from each table.
 
-Each instance runs a DataJointWorker that uses `reserve_jobs=True` — DataJoint's atomic reservation system distributes keys dynamically at runtime, so there is no need for the orchestrator to pre-assign specific keys to specific instances.
+Each instance uses `populate(reserve_jobs=True)` — DataJoint's atomic reservation system distributes keys dynamically at runtime, so there is no need for the orchestrator to pre-assign specific keys to specific instances.
 
 **Table references** use dotted Python module paths (e.g., `aeon.dj_pipeline.spike_sorting.SpikeSorting`). The package imports these at runtime to resolve the actual DataJoint table classes.
 
@@ -309,15 +287,15 @@ The orchestrator is the central coordinator. It runs as a lightweight SLURM job 
 2. For each tier, in the order they appear in the config:
    - Before submitting, check `squeue` for any already-running jobs for this tier (matched by job name). Subtract running jobs from the needed count to avoid duplicate submissions. For `max_concurrent: 1` tiers, skip submission entirely if a worker is already running.
    - If `max_concurrent` is 1: submit a single SLURM job with the tier's resource spec (if no worker is already running and any pending keys exist).
-   - If `max_concurrent` is greater than 1: for each table, call `table.jobs.refresh()` and count pending keys. Compute the needed instance count as `max(ceil(pending_per_table / max_calls))` across tables in the tier (see [Scaling](#configuration-details) for the full formula), subtract already-running instances, cap at `max_concurrent`, and submit that many instances as a SLURM job array (`sbatch --array=0-N`).
-   - Each submitted job runs a DataJointWorker configured with the tier's tables and worker settings.
+   - If `max_concurrent` is greater than 1: for each table, call `table.jobs.refresh()` and count pending keys. Compute the needed instance count as `max(ceil(pending_per_table / max_calls))` across tables in the tier (see [Scaling](#configuration-details) for the full formula), subtract already-running instances, cap at `max_concurrent`, and submit that many independent SLURM jobs.
+   - Each submitted job runs a populate loop configured with the tier's tables and worker settings.
 3. Log a summary to the `OrchestratorRunHistory` table: timestamp, number of jobs submitted per tier, any errors encountered during submission.
 4. Schedule the next run (mechanism depends on chosen scheduling approach — see [Open Questions](#open-questions-for-discussion)).
 5. Exit.
 
 **Note on pending key counting:** The orchestrator calls `table.jobs.refresh()` before reading `table.jobs.pending` for two reasons: (1) `refresh()` discovers new pending keys by computing `key_source - target - jobs`, and (2) it recovers orphaned reserved jobs via `orphan_timeout`. The pending count determines how many SLURM tasks to submit, not which keys each task processes — DataJoint's reservation system handles key assignment at runtime.
 
-**Job arrays:** When the orchestrator submits multiple instances for a tier, it uses SLURM job arrays (`sbatch --array=0-N`). Each array task runs independently with its own resources. SLURM treats the array as a single unit — easier to monitor via `squeue` and cancel via `scancel`. If pending work changes between submission and execution (SLURM queue delays can be significant), the dynamic reservation system handles it gracefully: tasks that find no work simply exit after one idle cycle.
+**Multiple submissions:** When the orchestrator submits multiple instances for a tier, each is an independent `sbatch` call. If pending work changes between submission and execution (SLURM queue delays can be significant), the dynamic reservation system handles it gracefully: workers that find no work simply exit after one idle cycle.
 
 ### Robustness
 
@@ -331,32 +309,48 @@ The orchestrator needs minimal resources. It only runs Python code to query Data
 
 ## Workers
 
-Workers are the SLURM jobs that do the actual data processing. Each worker runs a DataJointWorker instance configured with the tables for its tier.
+Workers are the SLURM jobs that do the actual data processing. Each worker runs a populate loop configured with the tables and settings for its tier.
 
 ### How Workers Operate
 
 When a SLURM job starts, the worker script:
 
 1. Loads the YAML configuration for its tier
-2. Constructs a unique `worker_name` from the tier name and SLURM job identity: `{tier}_{SLURM_JOB_ID}` for single-instance tiers, `{tier}_{SLURM_ARRAY_JOB_ID}_{SLURM_ARRAY_TASK_ID}` for job array instances. This ensures each DataJointWorker registers with a distinct name in the `RegisteredWorker` table.
-3. Creates a `DataJointWorker` instance with the worker name, the `worker_schema_name` from the config (same schema as this package's tracking tables, e.g., `slurm_worker`), and the tier's settings (`sleep_duration`, `max_idled_cycle`, `run_duration`, `stale_timeout_hours`, `autoclear_error_patterns`). DataJointWorker's `RegisteredWorker` and `RegisteredWorker.Process` tables are created in this schema alongside our `WorkerErrorHistory` and `OrchestratorRunHistory` tables.
-4. Registers the tier's tables as steps via `add_step()`, passing `max_calls` if configured
-5. Calls `worker.run()`
+2. Installs a SIGTERM handler that sets a shutdown flag (so the current cycle can finish before exit)
+3. Enters the populate loop:
 
-From there, DataJointWorker takes over:
-- Each cycle, it calls `jobs.refresh(orphan_timeout=...)` then `populate(reserve_jobs=True, suppress_errors=True)` on each registered table
+```
+for each cycle (until shutdown):
+    for each table in the tier:
+        table.jobs.refresh(orphan_timeout=stale_timeout_hours)
+        table.populate(reserve_jobs=True, suppress_errors=True, max_calls=max_calls)
+        capture any new errors from ~~jobs → WorkerErrorHistory
+        clear transient errors from ~~jobs (matching autoclear patterns)
+
+    if no tables had successful jobs this cycle:
+        increment idle counter
+    else:
+        reset idle counter
+
+    if idle counter >= max_idled_cycle: exit
+    if elapsed time >= run_duration: exit
+    sleep(sleep_duration)
+```
+
+The key behaviors:
 - `reserve_jobs=True` ensures atomic key reservation — multiple concurrent workers safely distribute work without processing the same key twice
-- `suppress_errors=True` catches exceptions during `make()` and continues to the next key instead of aborting
-- After populate, transient errors (deadlocks, lost connections, etc.) are automatically cleared so they retry on the next cycle
-- The worker stops when `max_idled_cycle` consecutive idle cycles are reached, or `run_duration` is exceeded, or SIGTERM is received
+- `suppress_errors=True` catches exceptions during `make()` and records them in `~~jobs` instead of aborting
+- Transient errors (deadlocks, lost connections, lock wait timeouts) are cleared from `~~jobs` after each cycle so they retry automatically. The built-in patterns are supplemented by any `autoclear_error_patterns` from the tier config.
+- `jobs.refresh(orphan_timeout=...)` recovers keys left in `reserved` status by workers that died
+- The worker exits when `max_idled_cycle` consecutive idle cycles are reached, `run_duration` is exceeded, or SIGTERM is received
 
 ### Worker Configurations by Tier Pattern
 
-**Long-running workers** (typical for lightweight tables): `max_concurrent: 1`, `max_idled_cycle: 3`, no `max_calls` limit. One SLURM job runs a DataJointWorker that loops through all the tier's tables, processing whatever is available each cycle. It exits after 3 consecutive idle cycles, freeing the SLURM allocation when there's nothing to do.
+**Long-running workers** (typical for lightweight tables): `max_concurrent: 1`, `max_idled_cycle: 3`, no `max_calls` limit. One SLURM job loops through all the tier's tables, processing whatever is available each cycle. It exits after 3 consecutive idle cycles, freeing the SLURM allocation when there's nothing to do.
 
-**Multi-key workers** (typical for medium-weight tables): `max_concurrent: N`, `max_idled_cycle: 1`, `max_calls: 5`. Multiple SLURM jobs run as a job array. Each DataJointWorker does a single pass, processing up to 5 keys per table, then exits. DataJoint's reservation system distributes keys among the concurrent workers.
+**Multi-key workers** (typical for medium-weight tables): `max_concurrent: N`, `max_idled_cycle: 1`, `max_calls: 5`. Multiple independent SLURM jobs each do a single pass, processing up to 5 keys per table, then exit. DataJoint's reservation system distributes keys among the concurrent workers.
 
-**Single-key workers** (typical for heavy/GPU tables): `max_concurrent: N` (capped low), `max_idled_cycle: 1`, `max_calls: 1`. Multiple SLURM jobs run as a job array. Each DataJointWorker grabs one key, processes it (possibly over days), then exits. The low `max_concurrent` cap prevents monopolizing shared GPU resources.
+**Single-key workers** (typical for heavy/GPU tables): `max_concurrent: N` (capped low), `max_idled_cycle: 1`, `max_calls: 1`. Multiple independent SLURM jobs each grab one key, process it (possibly over days), then exit. The low `max_concurrent` cap prevents monopolizing shared GPU resources.
 
 These are not distinct modes enforced by the package — they are configuration patterns. A project can configure any combination of settings per tier.
 
@@ -391,9 +385,9 @@ The `jobs.refresh()` method updates the jobs queue by computing `(key_source - t
 
 **What the built-in system does not provide:** When an error entry is cleared (to allow retry), the error row is deleted from the `~~jobs` table and a new `pending` row is inserted. The error information — message, stack trace, timestamp — is lost. There is no history of past failures across retries. There is also no record of when populate runs happened or what SLURM jobs were involved.
 
-### DataJointWorker's Error Auto-Clearing
+### Transient Error Auto-Clearing
 
-DataJointWorker automatically clears known transient errors after each populate cycle. Permanent patterns (deadlocks, lost connections, lock wait timeouts, SIGTERM) are always cleared. Projects can add pipeline-specific patterns via `autoclear_error_patterns` in the tier config.
+After each populate cycle, the worker queries each table's `~~jobs` for rows with `error` status and clears any that match known transient infrastructure patterns. The built-in patterns cover: deadlocks, lost connections, lock wait timeouts, and SIGTERM signals. Projects can add pipeline-specific patterns via `autoclear_error_patterns` in the tier config (SQL LIKE patterns matched against the error message).
 
 This means transient infrastructure errors are retried automatically on the next cycle without manual intervention. Only genuine data/code errors require human attention.
 
@@ -401,7 +395,7 @@ This means transient infrastructure errors are retried automatically on the next
 
 This package adds a `WorkerErrorHistory` table that maintains a permanent, append-only log of all populate errors.
 
-**Capture mechanism:** The worker entry point subclasses `DataJointWorker` to insert an error-capture step into the populate cycle. DataJointWorker's `_run_once()` method follows the sequence: `refresh()` → `populate()` each step → auto-clear transient errors. The subclass overrides this to query each table's `~~jobs` for rows with `error` status *after* populate but *before* transient error auto-clearing. Any errors not already in `WorkerErrorHistory` (matched by table name, key, and error message) are appended. This ensures that even transient errors (deadlocks, lost connections) that DataJointWorker subsequently auto-clears are captured before they are deleted from `~~jobs`. If subclassing proves too brittle across `datajoint-worker` versions, an alternative is to request an upstream callback hook in DataJointWorker's cycle — but subclassing is sufficient for the initial implementation.
+**Capture mechanism:** Since this package owns the populate loop, error capture is straightforward. After each table's `populate()` call, the worker queries that table's `~~jobs` for rows with `error` status and appends any new errors to `WorkerErrorHistory`. This happens *before* transient error auto-clearing, so even transient errors (deadlocks, lost connections) are captured before they are deleted from `~~jobs`.
 
 Each captured error row contains:
 
@@ -450,9 +444,9 @@ The error history in `WorkerErrorHistory` is preserved regardless of whether the
 
 ### SLURM Wall-Time Kills and Orphaned Jobs
 
-When SLURM kills a worker that exceeds its wall-time limit, it sends SIGTERM followed (after a grace period) by SIGKILL. DataJoint 2.x installs a SIGTERM handler during `populate(reserve_jobs=True)` that raises `SystemExit`, allowing in-flight transactions to roll back. DataJointWorker also installs its own SIGTERM handler that finishes the current cycle and exits gracefully.
+When SLURM kills a worker that exceeds its wall-time limit, it sends SIGTERM followed (after a grace period) by SIGKILL. The worker's SIGTERM handler sets a shutdown flag, allowing the current populate cycle to finish and exit cleanly. DataJoint 2.x also installs its own SIGTERM handler during `populate(reserve_jobs=True)` that raises `SystemExit`, allowing in-flight transactions to roll back.
 
-If SIGKILL arrives before the key can be marked as `error`, it remains in `reserved` status. DataJointWorker's `stale_timeout_hours` parameter handles this: `jobs.refresh(orphan_timeout=...)` is called each cycle, automatically recovering reserved jobs older than the configured timeout. The orchestrator also calls `refresh()` when counting pending keys, so orphaned keys from killed workers are recovered on the next orchestrator cycle.
+If SIGKILL arrives before the key can be marked as `error`, it remains in `reserved` status. The `stale_timeout_hours` setting handles this: `jobs.refresh(orphan_timeout=...)` is called each cycle, automatically recovering reserved jobs older than the configured timeout. The orchestrator also calls `refresh()` when counting pending keys, so orphaned keys from killed workers are recovered on the next orchestrator cycle.
 
 The `stale_timeout_hours` should be set per tier based on expected processing time. For example, a heavy tier with a 7-day wall time should use a stale timeout of roughly 200 hours (~8.3 days), so that legitimately long-running jobs are not prematurely recovered.
 
@@ -491,7 +485,7 @@ The `--dry-run` flag prints what SLURM jobs would be submitted (tier, instance c
 
 ### `dj-slurm status`
 
-Show the current state of the automation: whether the orchestrator is scheduled, what workers are currently running (via `squeue`), the most recent orchestrator run summary, and progress across all registered workers (via `get_workflow_operation_overview()`).
+Show the current state of the automation: whether the orchestrator is scheduled, what workers are currently running (via `squeue`), the most recent orchestrator run summary, and pending/error counts across configured tables (via `table.jobs.progress()`).
 
 ```bash
 dj-slurm status
@@ -524,7 +518,7 @@ dj-slurm clear-errors --table SpikeSorting --all   # short name OK if unambiguou
 
 ### Package Structure
 
-The package is a standalone Python package with its own GitHub repository under the DataJoint company organization (e.g., `datajoint-company/datajoint-slurm`).
+The package is a standalone, open-source Python package. Repository location to be decided — likely under the project organization (e.g., `SainsburyWellcomeCentre`) initially, with the option to move under `datajoint-company` if the package is later integrated into the DataJoint worker ecosystem.
 
 ```
 datajoint-slurm/
@@ -535,7 +529,7 @@ datajoint-slurm/
 │       ├── __init__.py
 │       ├── config.py          # YAML config loading and validation
 │       ├── orchestrator.py    # Orchestrator logic
-│       ├── worker.py          # Worker entry point (creates DataJointWorker)
+│       ├── worker.py          # Worker entry point (populate loop)
 │       ├── tables.py          # WorkerErrorHistory, OrchestratorRunHistory
 │       ├── slurm.py           # sbatch generation and submission
 │       └── cli.py             # CLI entry points
@@ -559,7 +553,6 @@ dependencies = [
 
 ### Dependencies
 
-- `datajoint-worker` — for the DataJointWorker populate loop
 - `datajoint>=2.1.0` — for table definitions, populate, and the per-table `~~jobs` system
 - `pyyaml` — for configuration file parsing
 - `click` or `argparse` — for CLI (to be decided)
