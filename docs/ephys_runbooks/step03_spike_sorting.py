@@ -513,6 +513,14 @@ keys = [
 
 # =============================================================================
 
+# If a sorting job failed with "error" status, DataJoint will skip it on
+# resubmit. Set CLEAR_JOB = True to clear error entries before re-running.
+#
+# NOTE: If a job was killed externally (scancel, OOM killer, node crash),
+# it may be stuck as "reserved" instead of "error". CLEAR_JOB only handles
+# "error" entries. To clear "reserved" entries, run manually:
+#   from aeon.dj_pipeline import spike_sorting
+#   (spike_sorting.schema.jobs & {{"status": "reserved"}}).delete()
 CLEAR_JOB = False
 
 
@@ -671,8 +679,20 @@ fi
     print(f"Wrote: {py_path} ({n_keys} keys)")
     print(f"Wrote: {sh_path}")
     print()
-    print("  Submit with:")
+    print("  Submit:")
     print("      sbatch run_aeon_spike_sorting.sh")
+    print()
+    print("  Monitor:")
+    print("      squeue -u $USER                              # job status")
+    print("      tail -f slurm_output/<node>_<jobid>_<task>.out  # live log")
+    print()
+    print("  If jobs fail:")
+    print("      1. Re-run write_spike_sorting_scripts() to get fresh scripts")
+    print("         with only the remaining keys")
+    print("      2. If jobs are stuck, set CLEAR_JOB = True in the .py script")
+    print("         (see comments there for details)")
+    print()
+    print("  After all sorting completes, continue to Step 4.")
 
     return py_path, sh_path
 
