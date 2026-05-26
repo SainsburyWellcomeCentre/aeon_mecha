@@ -581,7 +581,12 @@ def ephys_test_epochs(
     ephys_test_experiment, ephys_full_pipeline, ephys_golden_dataset_config,
     require_ephys_golden_data, tmp_path_factory,
 ):
-    """Ingest epochs and populate EphysEpoch using the real pipeline code.
+    """Insert epoch and populate EphysEpoch using the real pipeline code.
+
+    Directly inserts the Epoch entry rather than calling ingest_epochs(),
+    which requires a "raw" behavior directory that ephys-only experiments
+    don't have. The ephys pipeline from EphysEpoch.populate() onward is
+    what these tests exercise.
 
     Creates a probe_assignments.json in a temp dir and sets
     EphysEpoch.probe_assignments_override_dir so that populate() can
@@ -589,16 +594,25 @@ def ephys_test_epochs(
     """
     import json
 
+    from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
+
     acquisition = ephys_full_pipeline["acquisition"]
     ephys = ephys_full_pipeline["ephys"]
     cfg = ephys_golden_dataset_config
     exp_name = cfg["experiment_name"]
+    epoch_start = parse_epoch_timestamp(cfg["epoch_dir"])
 
-    # Discover epochs from filesystem
-    acquisition.Epoch.ingest_epochs(exp_name)
-
-    epochs = (acquisition.Epoch & {"experiment_name": exp_name}).to_dicts()
-    assert len(epochs) >= 1, f"No epochs discovered for {exp_name}"
+    # Directly insert the epoch (ingest_epochs requires a "raw" directory)
+    acquisition.Epoch.insert1(
+        {
+            "experiment_name": exp_name,
+            "epoch_start": epoch_start,
+            "directory_type": "raw-ephys",
+            "repository_name": "ceph_aeon",
+            "epoch_dir": cfg["epoch_dir"],
+        },
+        skip_duplicates=True,
+    )
 
     # Write probe_assignments.json to temp dir for EphysEpoch.populate()
     override_dir = tmp_path_factory.mktemp("probe_assignments")
