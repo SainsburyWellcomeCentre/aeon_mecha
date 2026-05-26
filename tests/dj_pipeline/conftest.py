@@ -608,7 +608,6 @@ def ephys_test_epochs(
             "experiment_name": exp_name,
             "epoch_start": epoch_start,
             "directory_type": "raw-ephys",
-            "repository_name": "ceph_aeon",
             "epoch_dir": cfg["epoch_dir"],
         },
         skip_duplicates=True,
