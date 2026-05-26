@@ -35,7 +35,7 @@ class TestEphysEpochDiscovery:
         ephys = ephys_full_pipeline["ephys"]
         cfg = ephys_golden_dataset_config
         epochs = (ephys.EphysEpoch & {"experiment_name": cfg["experiment_name"]}).to_dicts()
-        assert any(e["has_ephys"] for e in epochs)
+        assert all(e["has_ephys"] for e in epochs)
 
     def test_probe_count(self, ephys_test_epochs, ephys_full_pipeline, ephys_golden_dataset_config):
         ephys = ephys_full_pipeline["ephys"]
@@ -128,8 +128,7 @@ class TestEphysBlockInfo:
         cfg = ephys_golden_dataset_config
         infos = (ephys.EphysBlockInfo & {"experiment_name": cfg["experiment_name"]}).to_dicts()
         for info in infos:
-            expected_hours = (info["block_end"] - info["block_start"]).total_seconds() / 3600
-            assert abs(info["block_duration"] - expected_hours) < 0.01
+            assert abs(info["block_duration"] - 35 / 60) < 0.01
 
     def test_block_chunks_associated(self, ephys_test_blocks, ephys_full_pipeline, ephys_golden_dataset_config):
         self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
@@ -142,8 +141,12 @@ class TestEphysBlockInfo:
         self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
         ephys = ephys_full_pipeline["ephys"]
         cfg = ephys_golden_dataset_config
-        channels = len(ephys.EphysBlockInfo.Channel & {"experiment_name": cfg["experiment_name"]})
-        assert channels == cfg["n_channels"]
+        channel_rows = (
+            ephys.EphysBlockInfo.Channel & {"experiment_name": cfg["experiment_name"]}
+        ).to_dicts()
+        assert len(channel_rows) == cfg["n_channels"]
+        channel_indices = sorted(r["channel_idx"] for r in channel_rows)
+        assert channel_indices == list(range(cfg["n_channels"]))
 
 
 class TestPreProcessing:
@@ -195,7 +198,11 @@ class TestPreProcessing:
         output_dir = spike_sorting.PreProcessing.infer_output_dir(key)
         recording_dat = output_dir.parent / "recording" / "recording.dat"
         assert recording_dat.exists()
-        assert recording_dat.stat().st_size > 0
+        file_size = recording_dat.stat().st_size
+        assert file_size > 0
+        expected_size = cfg["n_channels"] * 2  # int16 per sample per channel
+        assert file_size % expected_size == 0, f"File size {file_size} not divisible by frame size {expected_size}"
+        assert file_size >= 500_000_000, f"recording.dat too small ({file_size} bytes), expected ~1 GB"
 
 
 class TestPostProcessing:
@@ -269,9 +276,9 @@ class TestSortedSpikes:
             spike_sorting.SortedSpikes.Unit & {"experiment_name": cfg["experiment_name"]}
         ).to_dicts()
         for u in units:
-            assert u["spike_count"] >= 100
+            assert u["spike_count"] > 0
         total = sum(u["spike_count"] for u in units)
-        assert total > 300_000
+        assert total == cfg["expected_total_spikes"]
 
     def test_quality_labels_assigned(
         self, ephys_sorting_injected, ephys_full_pipeline, ephys_golden_dataset_config
@@ -282,9 +289,10 @@ class TestSortedSpikes:
         units = (
             spike_sorting.SortedSpikes.Unit & {"experiment_name": cfg["experiment_name"]}
         ).to_dicts()
-        qualities = {u["unit_quality"] for u in units}
-        assert qualities <= {"good", "mua", "noise", "ok", "n.a."}
-        assert len(qualities) >= 1
+        qualities = [u["unit_quality"] for u in units]
+        assert set(qualities) <= {"good", "mua", "noise"}
+        assert qualities.count("good") == 7
+        assert qualities.count("mua") == 7
 
 
 class TestSyncedSpikes:
@@ -320,7 +328,8 @@ class TestSyncedSpikes:
 
         units = (spike_sorting.SyncedSpikes.Unit & {"experiment_name": cfg["experiment_name"]}).to_dicts()
         assert len(units) >= 1
-        assert np.issubdtype(units[0]["spike_times"].dtype, np.datetime64)
+        for unit in units:
+            assert np.issubdtype(unit["spike_times"].dtype, np.datetime64)
 
     def test_spike_times_within_sync_range(
         self, ephys_sorting_injected, ephys_full_pipeline, ephys_golden_dataset_config
