@@ -729,6 +729,7 @@ class CompressionTest(dj.Computed):
     num_samples            : bigint        # total samples in this chunk
     sampling_frequency     : float         # Hz
     codec_name             : varchar(64)   # e.g. "blosc-zstd-5-bitshuffle"
+    n_jobs                 : int32         # number of parallel workers used
     execution_time         : datetime      # when this test ran
     """
 
@@ -777,6 +778,9 @@ class CompressionTest(dj.Computed):
         shuffle_names = {Blosc.NOSHUFFLE: "noshuffle", Blosc.SHUFFLE: "shuffle", Blosc.BITSHUFFLE: "bitshuffle"}
         codec_name = f"blosc-{compressor.cname}-{compressor.clevel}-{shuffle_names.get(compressor.shuffle, str(compressor.shuffle))}"
 
+        n_jobs = 1
+        job_kwargs = {"n_jobs": n_jobs, "chunk_duration": "2s"}
+
         # Temp directory for zarr and decompressed binary
         sorting_root = get_sorting_root_dir()
         tmp_base = sorting_root / "compression_test_tmp" / f"{key['subject']}_{key['insertion_number']}_{key['chunk_start'].strftime('%Y%m%dT%H%M%S')}"
@@ -787,7 +791,7 @@ class CompressionTest(dj.Computed):
         try:
             # Compress
             t0 = time.perf_counter()
-            si_recording.save(format="zarr", folder=zarr_path)
+            si_recording.save(format="zarr", folder=zarr_path, **job_kwargs)
             compression_time = time.perf_counter() - t0
 
             # Measure compressed size (sum all files in zarr dir)
@@ -800,6 +804,7 @@ class CompressionTest(dj.Computed):
                 recording=zarr_recording,
                 file_paths=[decompressed_path],
                 dtype=si_recording.dtype,
+                **job_kwargs,
             )
             decompression_time = time.perf_counter() - t0
 
@@ -845,6 +850,7 @@ class CompressionTest(dj.Computed):
             "num_samples": num_samples,
             "sampling_frequency": fs_hz,
             "codec_name": codec_name,
+            "n_jobs": n_jobs,
             "execution_time": execution_time,
         })
 

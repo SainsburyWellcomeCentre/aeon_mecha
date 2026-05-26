@@ -274,6 +274,12 @@ class PreProcessing(dj.Computed):
             if zarr_path.exists():
                 logger.info(f"{zarr_path} already exists. Skipping zarr write.")
             else:
+                # Remove object-dtype properties (e.g. contact_shapes="circle")
+                # that zarr can't serialize without an explicit object_codec
+                for prop in list(si_recording.get_property_keys()):
+                    values = si_recording.get_property(prop)
+                    if hasattr(values, "dtype") and values.dtype == object:
+                        si_recording.delete_property(prop)
                 logger.info(f"Writing zarr recording to {zarr_path}...")
                 si_recording.save(
                     format="zarr",
