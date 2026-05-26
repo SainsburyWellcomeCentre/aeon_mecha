@@ -156,22 +156,107 @@ A standalone script at `scripts/compression_report.py` that queries both workstr
 
 ## Execution Order
 
-### Before Wednesday (Elissa + Claude)
+### Completed (Elissa, 2026-05-26)
 
-1. **Implement CompressionTest table** in `ephys.py`
-2. **Implement PreProcessing/SpikeSorting/PostProcessing format branching** in `spike_sorting.py`
-3. **Implement report script** in `scripts/compression_report.py`
-4. **Push to `es/compression-spec`**
-5. **On HPC:** Run `CompressionTest.populate()` on a handful of chunks to validate raw compression testing works
-6. **On HPC:** Insert a zarr SortingParamSet entry, create a SortingTask, run one block through the pipeline to validate end-to-end
-7. **Push any fixes** from HPC testing
+1. **Implemented** CompressionTest table in `ephys.py`
+2. **Implemented** PreProcessing/SpikeSorting/PostProcessing/Curation format branching in `spike_sorting.py` and `spike_sorting_curation.py`
+3. **Implemented** report script at `scripts/compression_report.py`
+4. **Pushed** two commits to `es/compression-spec`:
+   - `647dbfa` — All spec docs + code implementation
+   - `9050730` — Fix zarr object-codec error (probe `contact_shapes` property is object dtype, stripped before zarr save) and add `n_jobs` field to CompressionTest
+5. **Workstream 1 tested (3/12 chunks):**
+   - Compression ratio: ~1.95x (better than the spec's 1.76x estimate from published benchmarks)
+   - Compress: ~77s per 13.82 GB chunk (n_jobs=1, single core)
+   - Decompress: ~13s per chunk
+   - All checksums pass (lossless verified)
+   - Codec: blosc-zstd-5-bitshuffle
+6. **Workstream 2 partially tested:**
+   - Inserted zarr paramset `400_zarr` (copy of `400` with `save_format: "zarr"`)
+   - Inserted SortingTask for block 2026-05-11T07:49:46, shank0
+   - PreProcessing completed (zarr write successful)
+   - SpikeSorting submitted as SLURM GPU job 3022011, pending GPU node availability
+   - PostProcessing and Curation not yet run
 
-### After Wednesday (Thinh picks up)
+### Remaining work (Thinh picks up)
 
-1. Run `CompressionTest.populate()` on a larger set of chunks (or all chunks from a test experiment)
-2. Run more blocks through the pipeline with zarr format
-3. Run `scripts/compression_report.py` to generate the full report
-4. Share report with team for decision-making
+**What still needs to happen:**
+
+1. SpikeSorting GPU job (3022011) needs to complete. If it's still pending or failed, resubmit it (see instructions below).
+2. Run PostProcessing on the zarr result (CPU only).
+3. Run Curation on the zarr result (CPU only).
+4. Run `scripts/compression_report.py` to get the full timing comparison between binary (paramset `400`) and zarr (`400_zarr`).
+5. Optionally, run `CompressionTest.populate()` on more chunks for a larger sample of compression ratios.
+
+**HPC setup:**
+
+The testing environment is already set up at `~/ProjectAeon/foragingABC_analysis` with `aeon_mecha` as a submodule on `es/compression-spec`. The database is `u_elissas_` on `aeon-db`. To get started:
+
+```bash
+ssh aeon-hpc
+
+srun --pty -c 4 --mem 32G -t 4:00:00 bash
+
+cd ~/ProjectAeon/foragingABC_analysis
+
+# Make sure the submodule is on the right branch
+git -C submodules/aeon_mecha fetch origin
+git -C submodules/aeon_mecha checkout es/compression-spec
+git -C submodules/aeon_mecha pull
+
+# Install
+module load uv
+uv pip install -e "./submodules/aeon_mecha[spike_sorting]"
+```
+
+**Check SpikeSorting job status:**
+
+```bash
+squeue -u elissas    # check if job 3022011 is still queued/running
+cat ~/ProjectAeon/foragingABC_analysis/slurm_output/*3022011*    # check output if finished
+```
+
+If the job failed or needs to be resubmitted, the SLURM script and Python script are already on the HPC at `~/zarr_spike_sorting.sh` and `~/zarr_spike_sorting.py`. Resubmit with `sbatch ~/zarr_spike_sorting.sh`.
+
+**Run PostProcessing (after SpikeSorting completes):**
+
+```bash
+.venv/bin/python << 'EOF'
+from aeon.dj_pipeline import spike_sorting as ss
+
+import sys, traceback
+sys.excepthook = lambda *args: traceback.print_exception(*args)
+
+ss.PostProcessing.populate(
+    ss.SortingTask & "paramset_id='400_zarr'",
+    display_progress=True,
+)
+EOF
+```
+
+**Run Curation (after PostProcessing completes):**
+
+```bash
+.venv/bin/python << 'EOF'
+from aeon.dj_pipeline import spike_sorting_curation as ssc
+
+import sys, traceback
+sys.excepthook = lambda *args: traceback.print_exception(*args)
+
+ssc.ApplyOfficialCuration.populate(display_progress=True)
+EOF
+```
+
+**Generate the report:**
+
+```bash
+.venv/bin/python scripts/compression_report.py
+```
+
+**Important notes:**
+
+- The `sys.excepthook` override must come AFTER the DataJoint import. DJ 2.x installs its own excepthook that swallows tracebacks.
+- Use `.venv/bin/python` directly, not `uv run` (which tries to resolve all extras and hits dependency conflicts).
+- The `u_elissas_` database prefix is set via `dj_local_conf.json` in the project directory.
 
 ### Cleaning up failed test runs
 
