@@ -322,20 +322,21 @@ class TestSyncedSpikes:
         assert len(units) >= 1
         assert np.issubdtype(units[0]["spike_times"].dtype, np.datetime64)
 
-    def test_spike_times_within_epoch_range(
+    def test_spike_times_within_sync_range(
         self, ephys_sorting_injected, ephys_full_pipeline, ephys_golden_dataset_config
     ):
         self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
         spike_sorting = ephys_full_pipeline["spike_sorting"]
+        ephys = ephys_full_pipeline["ephys"]
         cfg = ephys_golden_dataset_config
 
         import numpy as np
-        from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
 
-        epoch_start = np.datetime64(parse_epoch_timestamp(cfg["epoch_dir"]))
-        # Recording can start slightly before the epoch directory timestamp
-        tolerance = np.timedelta64(60, "s")
+        sync_rows = (ephys.EphysSyncModel & {"experiment_name": cfg["experiment_name"]}).to_dicts()
+        sync_start = np.datetime64(min(r["sync_start"] for r in sync_rows))
+        sync_end = np.datetime64(max(r["sync_end"] for r in sync_rows))
 
         units = (spike_sorting.SyncedSpikes.Unit & {"experiment_name": cfg["experiment_name"]}).to_dicts()
         for unit in units:
-            assert unit["spike_times"].min() >= epoch_start - tolerance
+            assert unit["spike_times"].min() >= sync_start
+            assert unit["spike_times"].max() <= sync_end
