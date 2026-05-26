@@ -631,6 +631,9 @@ def ephys_test_epochs(
     finally:
         ephys.EphysEpoch.probe_assignments_override_dir = None
 
+    # Ingest sync models from HarpSync CSVs — required before EphysChunk.ingest_chunks()
+    ephys.EphysSyncModel.ingest(exp_name)
+
     return (acquisition.Epoch & {"experiment_name": exp_name}).to_dicts()
 
 
