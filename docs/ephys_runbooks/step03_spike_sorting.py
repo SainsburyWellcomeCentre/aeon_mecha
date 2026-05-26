@@ -413,16 +413,34 @@ def write_spike_sorting_scripts(experiment_name, subject, outdir=None):
 
     from aeon.dj_pipeline import spike_sorting
 
-    # Query actual block info to fill in the template.
-    blocks = (
-        spike_sorting.SortingTask & {"experiment_name": experiment_name}
-    ).to_dicts()
+    # Query SortingTask entries that haven't been sorted yet.
+    restriction = {"experiment_name": experiment_name}
     if subject:
-        blocks = [b for b in blocks if b["subject"] == subject]
+        restriction["subject"] = subject
 
-    if not blocks:
+    all_tasks = spike_sorting.SortingTask & restriction
+    pending = (all_tasks - spike_sorting.SpikeSorting).to_dicts()
+    n_total = len(all_tasks)
+    n_done = n_total - len(pending)
+
+    if n_total == 0:
         print("No SortingTask entries found. Run setup_sorting_prerequisites first.")
         return None
+
+    if not pending:
+        print(
+            f"All {n_total} SortingTask entries already have SpikeSorting "
+            f"results. No scripts written."
+        )
+        return None
+
+    if n_done > 0:
+        print(
+            f"Generating scripts for {len(pending)} of {n_total} "
+            f"SortingTask entries ({n_done} already sorted)"
+        )
+
+    blocks = pending
 
     # Extract common fields from the first block.
     first = blocks[0]
