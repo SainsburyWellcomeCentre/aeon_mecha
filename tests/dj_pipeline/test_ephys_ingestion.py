@@ -333,7 +333,9 @@ class TestSyncedSpikes:
         from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
 
         epoch_start = np.datetime64(parse_epoch_timestamp(cfg["epoch_dir"]))
+        # Recording can start slightly before the epoch directory timestamp
+        tolerance = np.timedelta64(60, "s")
 
         units = (spike_sorting.SyncedSpikes.Unit & {"experiment_name": cfg["experiment_name"]}).to_dicts()
         for unit in units:
-            assert unit["spike_times"].min() >= epoch_start
+            assert unit["spike_times"].min() >= epoch_start - tolerance
