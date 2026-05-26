@@ -329,9 +329,10 @@ class TestSyncedSpikes:
         spike_sorting = ephys_full_pipeline["spike_sorting"]
         cfg = ephys_golden_dataset_config
 
+        import numpy as np
         from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
 
-        epoch_start = parse_epoch_timestamp(cfg["epoch_dir"])
+        epoch_start = np.datetime64(parse_epoch_timestamp(cfg["epoch_dir"]))
 
         units = (spike_sorting.SyncedSpikes.Unit & {"experiment_name": cfg["experiment_name"]}).to_dicts()
         for unit in units:
