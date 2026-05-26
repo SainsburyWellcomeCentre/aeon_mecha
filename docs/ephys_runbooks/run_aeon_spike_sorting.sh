@@ -1,8 +1,13 @@
 #!/bin/bash
 
 # =============================================================================
-# AEON Spike Sorting SLURM Script (Job Array)
+# Example output of write_spike_sorting_scripts() — golden dataset values.
 # =============================================================================
+# This file shows what the generated run_aeon_spike_sorting.sh looks like
+# for the abcGolden01 test dataset (12 keys = 3 blocks × 4 shanks). To
+# generate your own, run write_spike_sorting_scripts() from
+# step03_spike_sorting.py.
+#
 # Submits as a job array — each task gets its own GPU and sorts one key.
 # Task number ($SLURM_ARRAY_TASK_ID) selects which key from the Python
 # script's keys list to process.
@@ -43,9 +48,8 @@ mkdir -p slurm_output
 echo "Loading modules..."
 module load uv
 
-# Change to the analysis repo root (where the venv lives).
-# Adjust this path if your analysis repo is elsewhere.
-cd ~/ProjectAeon/foragingABC_analysis
+# Change to the directory where the scripts were submitted from.
+cd "$SLURM_SUBMIT_DIR"
 echo "Working directory: $(pwd)"
 
 # Ensure venv exists and deps match lockfile
@@ -72,7 +76,7 @@ else
 fi
 
 # Verify Python script exists
-SCRIPT_PATH="submodules/aeon_mecha/aeon/dj_pipeline/scripts/run_aeon_spike_sorting.py"
+SCRIPT_PATH="$SLURM_SUBMIT_DIR/run_aeon_spike_sorting.py"
 if [ ! -f "$SCRIPT_PATH" ]; then
     echo "ERROR: Python script not found: $SCRIPT_PATH"
     exit 1

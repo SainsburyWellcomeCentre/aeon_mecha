@@ -1,11 +1,12 @@
-"""Run spike sorting pipeline on a single key, selected by --task index.
+"""Example output of write_spike_sorting_scripts() — golden dataset values.
+
+This file shows what the generated run_aeon_spike_sorting.py looks like
+for the abcGolden01 test dataset. To generate your own, run
+write_spike_sorting_scripts() from step03_spike_sorting.py.
 
 Designed for SLURM job arrays: each array task gets its own GPU and
 processes one key from the list. The SLURM script passes
 $SLURM_ARRAY_TASK_ID as --task automatically.
-
-Edit the `keys` list below for your experiment, then submit via SLURM:
-    sbatch run_aeon_spike_sorting.sh
 
 To run a single task interactively (e.g. for debugging):
     uv run python run_aeon_spike_sorting.py --task 1
