@@ -26,5 +26,8 @@ scratch/
 scratch*.py
 **/*.nfs*
 
+# implementation plans (working artifacts; spec is the persistent record)
+docs/superpowers/plans/
+
 # Test
 .coverage

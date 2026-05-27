@@ -8,11 +8,30 @@ Test commands:
 
 import logging
 import os
+import tempfile
 from pathlib import Path
 
 import pytest
 
 logger = logging.getLogger(__name__)
+
+
+@pytest.fixture(autouse=True)
+def dj_download_to_tmp(request):
+    """Redirect DataJoint attach downloads to a per-test tmpdir.
+
+    DataJoint extracts <attach> columns to `dj.config["download_path"]` (cwd by
+    default). Without this fixture, fetching sync_model rows leaves .joblib files
+    in the repo root. Skipped for unit tests which mock datajoint entirely.
+    """
+    if request.node.get_closest_marker("unit"):
+        yield
+        return
+    import datajoint as dj
+
+    with tempfile.TemporaryDirectory() as tmpdir, dj.config.override(download_path=tmpdir):
+        yield
+
 
 # Single test prefix for ALL integration tests
 TEST_DB_PREFIX = "test_aeon_"

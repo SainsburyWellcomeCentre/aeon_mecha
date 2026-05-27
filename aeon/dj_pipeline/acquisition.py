@@ -95,6 +95,7 @@ class DirectoryType(dj.Lookup):
 
     contents = [
         {"directory_type": "raw"},
+        {"directory_type": "raw-ephys"},
         {"directory_type": "processed"},
         {"directory_type": "qc"},
     ]
@@ -215,9 +216,17 @@ class Epoch(dj.Manual):
 
     @classmethod
     def ingest_epochs(cls, experiment_name):
-        """Ingest epochs for the specified ``experiment_name``."""
+        """Ingest epochs for the specified ``experiment_name``.
+
+        Automatically discovers epochs from all registered directory types:
+
+        - "raw" directories: scans for CameraTop (or equivalent) CSV chunks
+        - "raw-ephys" directories: enumerates epoch directories containing an
+          ephys device subdirectory (NeuropixelsV2 / NeuropixelsV2Beta)
+        """
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
+        # --- Behavior epochs (from "raw" directory) ---
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
         all_chunks.index = all_chunks.index.tz_localize(None)
 
@@ -293,6 +302,47 @@ class Epoch(dj.Manual):
                         )
 
         logger.info(f"Insert {len(epoch_list)} new Epoch(s)")
+
+        # --- Ephys epochs (from "raw-ephys" directory) ---
+        raw_ephys_dir = Experiment.get_data_directory(
+            {"experiment_name": experiment_name},
+            directory_type="raw-ephys",
+            as_posix=False,
+        )
+        if raw_ephys_dir is None:
+            return
+
+        from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
+
+        ephys_epoch_list = []
+        for epoch_dir in sorted(raw_ephys_dir.iterdir()):
+            if not epoch_dir.is_dir():
+                continue
+            # Check for an ephys device subdirectory
+            ephys_device, _, _ = discover_epoch_probes(epoch_dir)
+            if ephys_device is None:
+                continue
+
+            epoch_start = parse_epoch_timestamp(epoch_dir.name)
+            epoch_key = {
+                "experiment_name": experiment_name,
+                "epoch_start": epoch_start,
+            }
+
+            # Skip if already inserted (same-directory case or re-run)
+            if cls & epoch_key or epoch_key in ephys_epoch_list:
+                continue
+
+            cls.insert1(
+                {
+                    **epoch_key,
+                    "directory_type": "raw-ephys",
+                    "epoch_dir": epoch_dir.relative_to(raw_ephys_dir).as_posix(),
+                }
+            )
+            ephys_epoch_list.append(epoch_key)
+
+        logger.info(f"Insert {len(ephys_epoch_list)} new ephys Epoch(s)")
 
 
 @schema

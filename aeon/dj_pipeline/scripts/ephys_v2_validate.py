@@ -102,6 +102,8 @@ def check_experiment(results):
     dirs = (acquisition.Experiment.Directory & {"experiment_name": EXPERIMENT_NAME}).to_dicts()
     has_raw = any(d["directory_type"] == "raw" for d in dirs)
     results.record("Experiment", "Raw directory registered", has_raw)
+    has_raw_ephys = any(d["directory_type"] == "raw-ephys" for d in dirs)
+    results.record("Experiment", "Raw-ephys directory registered (optional)", has_raw_ephys)
 
     subjects = (acquisition.Experiment.Subject & {"experiment_name": EXPERIMENT_NAME}).to_arrays("subject")
     results.record("Experiment", "Subject registered", len(subjects) > 0,
