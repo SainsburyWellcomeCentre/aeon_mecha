@@ -90,6 +90,56 @@ DEFAULT_GOLDEN_DATA_ROOT = Path.home() / "sciops-data/project_aeon/aeon/data"
 # (which mock datajoint) to run without triggering DB connections
 
 
+def _check_golden_data(dataset_config: dict) -> Path:
+    """Validate golden dataset files are present; call pytest.skip if not.
+
+    Returns the epoch path on success.
+    """
+    import aeon.dj_pipeline as pipeline
+
+    if "DJ_REPOSITORY_CONFIG" not in os.environ:
+        pipeline.repository_config = {"ceph_aeon": str(DEFAULT_GOLDEN_DATA_ROOT)}
+
+    if not Path(pipeline.repository_config["ceph_aeon"]).exists():
+        pytest.skip(f"Golden data root not found: {pipeline.repository_config['ceph_aeon']}")
+
+    from aeon.dj_pipeline.utils.paths import get_repository_path
+
+    repo_path = get_repository_path("ceph_aeon")
+    epoch_path = repo_path / "raw" / dataset_config["experiment_path"] / dataset_config["epoch_dir"]
+
+    if not epoch_path.exists():
+        pytest.skip(f"Golden dataset not found: {epoch_path}")
+
+    for f in dataset_config["required_files"]:
+        if not (epoch_path / f).exists():
+            pytest.skip(f"Missing required file: {f}")
+
+    return epoch_path
+
+
+def _drop_test_schemas() -> None:
+    """Drop all test-prefixed schemas, retrying to handle FK dependencies."""
+    import datajoint as dj
+
+    prefix = dj.config.database.database_prefix
+    schemas_to_drop = [s for s in dj.list_schemas() if s.startswith(prefix)]
+    max_attempts = len(schemas_to_drop) + 1
+    for _ in range(max_attempts):
+        if not schemas_to_drop:
+            break
+        remaining = []
+        for schema_name in schemas_to_drop:
+            try:
+                dj.Schema(schema_name).drop()
+            except Exception as e:
+                logger.warning(f"Failed to drop schema {schema_name}: {e}")
+                remaining.append(schema_name)
+        schemas_to_drop = remaining
+    if schemas_to_drop:
+        logger.error(f"Could not drop schemas after {max_attempts} attempts: {schemas_to_drop}")
+
+
 # ============================================================================
 # Integration Test Fixtures (testcontainers MySQL)
 # ============================================================================
@@ -229,30 +279,7 @@ def golden_dataset_config():
 @pytest.fixture(scope="session")
 def require_golden_data(dj_config_integration, golden_dataset_config):
     """Skip tests if golden dataset is unavailable. Returns epoch path."""
-    import aeon.dj_pipeline as pipeline
-
-    # If DJ_REPOSITORY_CONFIG env var is not set, use default golden data root
-    if "DJ_REPOSITORY_CONFIG" not in os.environ:
-        pipeline.repository_config = {"ceph_aeon": str(DEFAULT_GOLDEN_DATA_ROOT)}
-
-    if not Path(pipeline.repository_config["ceph_aeon"]).exists():
-        pytest.skip(f"Golden data root not found: {pipeline.repository_config['ceph_aeon']}")
-
-    from aeon.dj_pipeline.utils.paths import get_repository_path
-
-    repo_path = get_repository_path("ceph_aeon")
-    epoch_path = (
-        repo_path / "raw" / golden_dataset_config["experiment_path"] / golden_dataset_config["epoch_dir"]
-    )
-
-    if not epoch_path.exists():
-        pytest.skip(f"Golden dataset not found: {epoch_path}")
-
-    for f in golden_dataset_config["required_files"]:
-        if not (epoch_path / f).exists():
-            pytest.skip(f"Missing required file: {f}")
-
-    return epoch_path
+    return _check_golden_data(golden_dataset_config)
 
 
 @pytest.fixture(scope="session")
@@ -271,7 +298,6 @@ def full_pipeline(dj_config_integration, streams_schema, golden_dataset_config):
     3. Tests can then call EpochConfig.make() for DML
     """
     pytest.importorskip("swc.aeon_exp", reason="requires swc.aeon_exp package")
-    import datajoint as dj
 
     from aeon.dj_pipeline import acquisition, lab, subject
     from aeon.dj_pipeline.utils import streams_maker
@@ -294,23 +320,7 @@ def full_pipeline(dj_config_integration, streams_schema, golden_dataset_config):
     }
 
     # Teardown - drop all test schemas
-    prefix = dj.config.database.database_prefix
-    schemas_to_drop = [s for s in dj.list_schemas() if s.startswith(prefix)]
-    # Try multiple passes to handle foreign key dependencies
-    max_attempts = len(schemas_to_drop) + 1
-    for _ in range(max_attempts):
-        if not schemas_to_drop:
-            break
-        remaining = []
-        for schema_name in schemas_to_drop:
-            try:
-                dj.Schema(schema_name).drop()
-            except Exception as e:
-                logger.warning(f"Failed to drop schema {schema_name}: {e}")
-                remaining.append(schema_name)
-        schemas_to_drop = remaining
-    if schemas_to_drop:
-        logger.error(f"Could not drop schemas after {max_attempts} attempts: {schemas_to_drop}")
+    _drop_test_schemas()
 
 
 @pytest.fixture(scope="session")
@@ -408,30 +418,7 @@ def ephys_golden_dataset_config():
 @pytest.fixture(scope="session")
 def require_ephys_golden_data(dj_config_integration, ephys_golden_dataset_config):
     """Skip tests if ephys golden dataset is unavailable. Returns epoch path."""
-    import aeon.dj_pipeline as pipeline
-
-    if "DJ_REPOSITORY_CONFIG" not in os.environ:
-        pipeline.repository_config = {"ceph_aeon": str(DEFAULT_GOLDEN_DATA_ROOT)}
-
-    if not Path(pipeline.repository_config["ceph_aeon"]).exists():
-        pytest.skip(
-            f"Golden data root not found: {pipeline.repository_config['ceph_aeon']}"
-        )
-
-    from aeon.dj_pipeline.utils.paths import get_repository_path
-
-    repo_path = get_repository_path("ceph_aeon")
-    cfg = ephys_golden_dataset_config
-    epoch_path = repo_path / "raw" / cfg["experiment_path"] / cfg["epoch_dir"]
-
-    if not epoch_path.exists():
-        pytest.skip(f"Ephys golden dataset not found: {epoch_path}")
-
-    for f in cfg["required_files"]:
-        if not (epoch_path / f).exists():
-            pytest.skip(f"Missing required ephys file: {f}")
-
-    return epoch_path
+    return _check_golden_data(ephys_golden_dataset_config)
 
 
 @pytest.fixture(scope="session")
@@ -450,13 +437,9 @@ def ephys_full_pipeline(dj_config_integration, tmp_path_factory):
 
     sorting_root = tmp_path_factory.mktemp("sorting_root")
 
-    from aeon.dj_pipeline import acquisition, lab, subject
-    from aeon.dj_pipeline import ephys
-    from aeon.dj_pipeline import spike_sorting
-    from aeon.dj_pipeline import spike_sorting_curation
-
     # Patch get_sorting_root_dir to return our temp directory
     import aeon.dj_pipeline.spike_sorting as ss_module
+    from aeon.dj_pipeline import acquisition, ephys, lab, spike_sorting, spike_sorting_curation, subject
 
     _original_get_sorting_root = ss_module.get_sorting_root_dir
     ss_module.get_sorting_root_dir = lambda: sorting_root
@@ -485,10 +468,7 @@ def ephys_full_pipeline(dj_config_integration, tmp_path_factory):
         skip_duplicates=True,
     )
     ephys.ElectrodeConfig.Electrode.insert(
-        (
-            {**electrode_config_key, "electrode": e}
-            for e in golden_electrodes
-        ),
+        ({**electrode_config_key, "electrode": e} for e in golden_electrodes),
         skip_duplicates=True,
     )
 
@@ -505,21 +485,7 @@ def ephys_full_pipeline(dj_config_integration, tmp_path_factory):
 
     # Teardown
     ss_module.get_sorting_root_dir = _original_get_sorting_root
-
-    prefix = dj.config.database.database_prefix
-    schemas_to_drop = [s for s in dj.list_schemas() if s.startswith(prefix)]
-    max_attempts = len(schemas_to_drop) + 1
-    for _ in range(max_attempts):
-        if not schemas_to_drop:
-            break
-        remaining = []
-        for schema_name in schemas_to_drop:
-            try:
-                dj.Schema(schema_name).drop()
-            except Exception as e:
-                logger.warning(f"Failed to drop schema {schema_name}: {e}")
-                remaining.append(schema_name)
-        schemas_to_drop = remaining
+    _drop_test_schemas()
 
 
 @pytest.fixture(scope="session")
@@ -578,8 +544,11 @@ def ephys_test_experiment(ephys_full_pipeline, require_ephys_golden_data, ephys_
 
 @pytest.fixture(scope="session")
 def ephys_test_epochs(
-    ephys_test_experiment, ephys_full_pipeline, ephys_golden_dataset_config,
-    require_ephys_golden_data, tmp_path_factory,
+    ephys_test_experiment,
+    ephys_full_pipeline,
+    ephys_golden_dataset_config,
+    require_ephys_golden_data,
+    tmp_path_factory,
 ):
     """Insert epoch and populate EphysEpoch using the real pipeline code.
 
@@ -765,7 +734,7 @@ def ephys_sorting_injected(
     (PostProcessing, SortedSpikes, SyncedSpikes) can then populate normally.
     """
     import shutil
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
 
     spike_sorting = ephys_full_pipeline["spike_sorting"]
     ephys = ephys_full_pipeline["ephys"]
@@ -777,9 +746,7 @@ def ephys_sorting_injected(
     spike_sorting.PreProcessing.populate(display_progress=True, suppress_errors=False)
 
     # Find the output_dir that PreProcessing created
-    sorting_task_keys = (
-        spike_sorting.SortingTask & {"experiment_name": cfg["experiment_name"]}
-    ).to_dicts()
+    sorting_task_keys = (spike_sorting.SortingTask & {"experiment_name": cfg["experiment_name"]}).to_dicts()
     assert len(sorting_task_keys) >= 1, "No SortingTask entries found"
 
     key = sorting_task_keys[0]
@@ -802,9 +769,7 @@ def ephys_sorting_injected(
 
     si_native_dir = test_sorting_dir / "in_container_sorting"
     sorting = si.load(si_native_dir)
-    sorting.dump_to_pickle(
-        test_sorting_dir / "si_sorting.pkl", relative_to=output_dir
-    )
+    sorting.dump_to_pickle(test_sorting_dir / "si_sorting.pkl", relative_to=output_dir)
 
     # Force-inject SpikeSorting entry
     if not (spike_sorting.SpikeSorting & key):
