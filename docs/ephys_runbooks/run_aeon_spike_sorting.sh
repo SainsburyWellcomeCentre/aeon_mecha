@@ -1,16 +1,14 @@
 #!/bin/bash
 
 # =============================================================================
-# Example output of write_spike_sorting_scripts() — golden dataset values.
+# AEON Spike Sorting SLURM Script (Job Array)
 # =============================================================================
-# This file shows what the generated run_aeon_spike_sorting.sh looks like
-# for the abcGolden01 test dataset (12 keys = 3 blocks × 4 shanks). To
-# generate your own, run write_spike_sorting_scripts() from
-# step03_spike_sorting.py.
-#
 # Submits as a job array — each task gets its own GPU and sorts one key.
 # Task number ($SLURM_ARRAY_TASK_ID) selects which key from the Python
 # script's keys list to process.
+#
+# Example output of write_spike_sorting_scripts() — golden dataset values.
+# Generated for experiment "abcGolden01-aeonx1", subject "IAA-1147881".
 #
 # Usage:  sbatch run_aeon_spike_sorting.sh
 # Status: squeue --start -j <job_id>
@@ -25,7 +23,7 @@
 #SBATCH --ntasks=1                            # total number of tasks across all nodes
 #SBATCH --mem=256G                            # total memory per node (typical: 64G for <2hr blocks)
 #SBATCH --time=7-08:00:00                     # total run time limit (typical: 0-04:00:00 for <2hr blocks)
-#SBATCH --array=1-12                          # one task per key (edit to match keys list length)
+#SBATCH --array=1-12                          # one task per key
 #SBATCH --output=slurm_output/%N_%j_%a.out    # output file path (%a = array task ID)
 #SBATCH --error=slurm_output/%N_%j_%a.err     # error file path
 
