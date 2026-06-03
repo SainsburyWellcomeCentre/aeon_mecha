@@ -1,5 +1,4 @@
-"""
-03 -- Spike Sorting
+"""03 -- Spike Sorting
 ===================
 Set up spike sorting prerequisites, preprocess ephys data, generate
 SLURM submission scripts, and submit GPU sorting.
@@ -62,9 +61,15 @@ CHANNEL_MAP_FILE = "M81_ProbeB_4Shanks_1000_to_1700_um.json"
 # Functions
 # --------------------------------------------------------------------------
 
+
 def setup_sorting_prerequisites(
-    experiment_name, subject, paramset_id, sorting_method,
-    sorting_groups="per_shank", raw_ephys_dir=None, channel_map_file=None,
+    experiment_name,
+    subject,
+    paramset_id,
+    sorting_method,
+    sorting_groups="per_shank",
+    raw_ephys_dir=None,
+    channel_map_file=None,
 ):
     """Populate the three manual/lookup tables that must exist before sorting.
 
@@ -99,8 +104,7 @@ def setup_sorting_prerequisites(
     import json as _json
     from pathlib import Path
 
-    from aeon.dj_pipeline import ephys
-    from aeon.dj_pipeline import spike_sorting
+    from aeon.dj_pipeline import ephys, spike_sorting
 
     # ------------------------------------------------------------------
     # a) SortingParamSet -- insert once globally
@@ -154,9 +158,7 @@ def setup_sorting_prerequisites(
             {
                 "paramset_id": paramset_id_str,
                 "sorting_method": sorting_method,
-                "paramset_description": (
-                    "Default parameter set for Kilosort4 with SpikeInterface"
-                ),
+                "paramset_description": ("Default parameter set for Kilosort4 with SpikeInterface"),
                 "params": params,
             }
         )
@@ -170,15 +172,12 @@ def setup_sorting_prerequisites(
     # We need the (probe_type, electrode_config_name) key. Rather than
     # hard-coding it, query from EphysBlockInfo which was populated in
     # step 2 -- it already knows the electrode configuration.
-    block_info = (
-        ephys.EphysBlockInfo & {"experiment_name": experiment_name}
-    ).fetch("probe_type", "electrode_config_name", as_dict=True, limit=1)
+    block_info = (ephys.EphysBlockInfo & {"experiment_name": experiment_name}).fetch(
+        "probe_type", "electrode_config_name", as_dict=True, limit=1
+    )
 
     if not block_info:
-        print(
-            "ERROR: No EphysBlockInfo entries found. "
-            "Run step 2 (define_blocks) first."
-        )
+        print("ERROR: No EphysBlockInfo entries found. Run step 2 (define_blocks) first.")
         return
 
     probe_type = block_info[0]["probe_type"]
@@ -187,34 +186,25 @@ def setup_sorting_prerequisites(
         "probe_type": probe_type,
         "electrode_config_name": electrode_config_name,
     }
-    print(
-        f"Using electrode config: probe_type={probe_type}, "
-        f"electrode_config_name={electrode_config_name}"
-    )
+    print(f"Using electrode config: probe_type={probe_type}, electrode_config_name={electrode_config_name}")
 
     # Get all electrodes in this config.
-    all_electrodes = (
-        ephys.ElectrodeConfig.Electrode & electrode_config_key
-    ).fetch("electrode")
+    all_electrodes = (ephys.ElectrodeConfig.Electrode & electrode_config_key).fetch("electrode")
 
     # Build groups based on the sorting strategy.
     if sorting_groups == "per_shank":
         if not raw_ephys_dir or not channel_map_file:
             raise ValueError(
-                "raw_ephys_dir and channel_map_file are required "
-                "when sorting_groups='per_shank'."
+                "raw_ephys_dir and channel_map_file are required when sorting_groups='per_shank'."
             )
 
         # Read the probeinterface JSON for shank assignments.
         raw_path = Path(raw_ephys_dir)
         epoch_dirs = sorted(
-            d for d in raw_path.iterdir()
-            if d.is_dir() and "T" in d.name and not d.name.startswith(".")
+            d for d in raw_path.iterdir() if d.is_dir() and "T" in d.name and not d.name.startswith(".")
         )
         if not epoch_dirs:
-            raise FileNotFoundError(
-                f"No epoch directories found in {raw_ephys_dir}"
-            )
+            raise FileNotFoundError(f"No epoch directories found in {raw_ephys_dir}")
         json_path = epoch_dirs[0] / channel_map_file
         if not json_path.exists():
             raise FileNotFoundError(f"Channel map not found: {json_path}")
@@ -228,12 +218,12 @@ def setup_sorting_prerequisites(
             contact_ids = probe.get("contact_ids", [])
             dci = probe.get("device_channel_indices", [])
             shank_ids = probe.get("shank_ids", [])
-            for cid, ch_idx, shank in zip(contact_ids, dci, shank_ids):
+            for cid, ch_idx, shank in zip(contact_ids, dci, shank_ids, strict=True):
                 if int(ch_idx) >= 0:
                     shank_map[int(cid)] = str(shank)
 
         # Group electrodes by shank (only those in the ElectrodeConfig).
-        active_set = set(int(e) for e in all_electrodes)
+        active_set = {int(e) for e in all_electrodes}
         shanks = {}
         for site, shank in sorted(shank_map.items()):
             if site in active_set:
@@ -249,10 +239,7 @@ def setup_sorting_prerequisites(
         groups = [("all", list(all_electrodes))]
 
     else:
-        raise ValueError(
-            f"Unknown sorting_groups: {sorting_groups!r}. "
-            f"Use 'per_shank' or 'all'."
-        )
+        raise ValueError(f"Unknown sorting_groups: {sorting_groups!r}. Use 'per_shank' or 'all'.")
 
     # Insert groups.
     for group_name, sites in groups:
@@ -261,8 +248,7 @@ def setup_sorting_prerequisites(
                 **electrode_config_key,
                 "electrode_group": group_name,
                 "electrode_group_description": (
-                    f"Shank {group_name.replace('shank', '')}: "
-                    f"{len(sites)} channels"
+                    f"Shank {group_name.replace('shank', '')}: {len(sites)} channels"
                     if sorting_groups == "per_shank"
                     else f"All {len(sites)} active channels"
                 ),
@@ -281,16 +267,12 @@ def setup_sorting_prerequisites(
             ),
             skip_duplicates=True,
         )
-        print(
-            f"  ElectrodeGroup '{group_name}': {len(sites)} electrodes"
-        )
+        print(f"  ElectrodeGroup '{group_name}': {len(sites)} electrodes")
 
     # ------------------------------------------------------------------
     # c) SortingTask -- one per (block, group)
     # ------------------------------------------------------------------
-    blocks = (
-        ephys.EphysBlock & {"experiment_name": experiment_name}
-    ).to_dicts()
+    blocks = (ephys.EphysBlock & {"experiment_name": experiment_name}).to_dicts()
     if subject:
         blocks = [b for b in blocks if b["subject"] == subject]
 
@@ -318,9 +300,7 @@ def setup_sorting_prerequisites(
             spike_sorting.SortingTask.insert1(task_key, skip_duplicates=True)
             insert_count += 1
 
-    total = len(
-        spike_sorting.SortingTask & {"experiment_name": experiment_name}
-    )
+    total = len(spike_sorting.SortingTask & {"experiment_name": experiment_name})
     print(f"SortingTask: inserted {insert_count} entries ({total} total)")
 
 
@@ -363,12 +343,8 @@ def run_preprocessing(experiment_name):
     # Deferred imports -- no DB side effects at module level.
     from aeon.dj_pipeline import spike_sorting
 
-    pending = len(
-        spike_sorting.SortingTask
-        & {"experiment_name": experiment_name}
-    ) - len(
-        spike_sorting.PreProcessing
-        & {"experiment_name": experiment_name}
+    pending = len(spike_sorting.SortingTask & {"experiment_name": experiment_name}) - len(
+        spike_sorting.PreProcessing & {"experiment_name": experiment_name}
     )
     print(f"Pending PreProcessing entries: {pending}")
 
@@ -377,13 +353,8 @@ def run_preprocessing(experiment_name):
         return
 
     print("Running PreProcessing.populate()...")
-    print(
-        "  (This writes preprocessed binary data to Ceph. "
-        "It may take a while for large blocks.)"
-    )
-    spike_sorting.PreProcessing.populate(
-        display_progress=True, suppress_errors=False
-    )
+    print("  (This writes preprocessed binary data to Ceph. It may take a while for large blocks.)")
+    spike_sorting.PreProcessing.populate(display_progress=True, suppress_errors=False)
     print("PreProcessing complete.")
 
 
@@ -428,10 +399,7 @@ def write_spike_sorting_scripts(experiment_name, subject, outdir=None):
         return None
 
     if not pending:
-        print(
-            f"All {n_total} SortingTask entries already have SpikeSorting "
-            f"results. No scripts written."
-        )
+        print(f"All {n_total} SortingTask entries already have SpikeSorting results. No scripts written.")
         return None
 
     if n_done > 0:
@@ -775,7 +743,10 @@ if __name__ == "__main__":
 
     print("\n--- 1/3: Setup sorting prerequisites ---")
     setup_sorting_prerequisites(
-        EXPERIMENT_NAME, SUBJECT, PARAMSET_ID, SORTING_METHOD,
+        EXPERIMENT_NAME,
+        SUBJECT,
+        PARAMSET_ID,
+        SORTING_METHOD,
         sorting_groups=SORTING_GROUPS,
         raw_ephys_dir=RAW_EPHYS_DIR,
         channel_map_file=CHANNEL_MAP_FILE,

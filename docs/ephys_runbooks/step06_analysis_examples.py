@@ -1,5 +1,4 @@
-"""
-06 -- Analysis Examples
+"""06 -- Analysis Examples
 =======================
 Starter examples showing how to query spike sorting output and create
 common visualizations. These patterns are building blocks for custom
@@ -73,8 +72,9 @@ def fetch_spike_times(experiment_name, unit_id=None):
         dict mapping (block_start, unit) -> spike_times numpy array.
     """
     # Deferred imports -- no DB side effects at module level.
-    from aeon.dj_pipeline import spike_sorting
     import numpy as np
+
+    from aeon.dj_pipeline import spike_sorting
 
     restriction = {"experiment_name": experiment_name}
 
@@ -171,8 +171,12 @@ def plot_raster(spike_times_dict, title="Raster Plot", save_path=None):
 
 
 def plot_peth(
-    spike_times, event_times, window=(-0.5, 1.0), bin_size=0.01,
-    title="Peri-Event Time Histogram", save_path=None,
+    spike_times,
+    event_times,
+    window=(-0.5, 1.0),
+    bin_size=0.01,
+    title="Peri-Event Time Histogram",
+    save_path=None,
 ):
     """Peri-event time histogram: align spikes to behavioral events.
 
@@ -195,8 +199,8 @@ def plot_peth(
         title: Plot title string.
         save_path: If given, save figure to this path instead of showing.
     """
-    import numpy as np
     import matplotlib
+    import numpy as np
 
     # MUST be set before importing pyplot — the backend is locked on import.
     if save_path:
@@ -212,8 +216,8 @@ def plot_peth(
     for event in event_times:
         relative = spike_times - event
         # Convert timedelta64 to float seconds if needed.
-        if hasattr(relative.dtype, 'kind') and relative.dtype.kind == 'm':
-            relative = relative / np.timedelta64(1, 's')
+        if hasattr(relative.dtype, "kind") and relative.dtype.kind == "m":
+            relative = relative / np.timedelta64(1, "s")
         mask = (relative >= window[0]) & (relative <= window[1])
         aligned.extend(relative[mask])
 
