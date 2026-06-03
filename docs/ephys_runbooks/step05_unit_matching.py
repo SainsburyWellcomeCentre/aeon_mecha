@@ -1,5 +1,4 @@
-"""
-05 -- Unit Matching
+"""05 -- Unit Matching
 ===================
 Synchronize spike times to the behavioral clock, then match units across
 overlapping ephys blocks to establish persistent neuron identities.
@@ -82,10 +81,7 @@ def sync_spikes(experiment_name):
     print(f"SyncedSpikes entries (pre): {synced_before}")
 
     if sorted_count == 0:
-        print(
-            "No SortedSpikes entries found. "
-            "Run step 4 (post-sorting) first."
-        )
+        print("No SortedSpikes entries found. Run step 4 (post-sorting) first.")
         return
 
     pending = sorted_count - synced_before
@@ -100,9 +96,7 @@ def sync_spikes(experiment_name):
         "converts spike indices to HARP timestamps. May take a while "
         "for blocks with many units.)"
     )
-    spike_sorting.SyncedSpikes.populate(
-        display_progress=True, suppress_errors=False
-    )
+    spike_sorting.SyncedSpikes.populate(display_progress=True, suppress_errors=False)
 
     synced_after = len(spike_sorting.SyncedSpikes & restriction)
     print(f"SyncedSpikes entries (post): {synced_after}")
@@ -139,8 +133,7 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
         matching_paramset_id: Integer ID for the parameter set.
     """
     # Deferred imports -- no DB side effects at module level.
-    from aeon.dj_pipeline import ephys
-    from aeon.dj_pipeline import spike_sorting
+    from aeon.dj_pipeline import ephys, spike_sorting
 
     restriction = {"experiment_name": experiment_name}
 
@@ -152,9 +145,7 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
     block_starts = (ephys.EphysBlock & restriction).to_arrays("block_start")
 
     if len(block_starts) == 0:
-        print(
-            "No EphysBlock entries found. Run step 2 (define_blocks) first."
-        )
+        print("No EphysBlock entries found. Run step 2 (define_blocks) first.")
         return
 
     first_block_start = min(block_starts)
@@ -167,9 +158,7 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
                 "matching_paramset_id": matching_paramset_id,
                 "matching_method": "spike_time_overlap",
                 "seed_block_start": first_block_start,
-                "matching_paramset_description": (
-                    "Spike time overlap matching, delta=0.4ms"
-                ),
+                "matching_paramset_description": ("Spike time overlap matching, delta=0.4ms"),
                 # delta_time is the maximum time difference (in ms) for
                 # two spikes to be considered a match. 0.4ms is a
                 # conservative default that works well for Neuropixels.
@@ -183,10 +172,7 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
             f"method=spike_time_overlap, delta_time=0.4ms"
         )
     else:
-        print(
-            f"UnitMatchingParamSet already exists: "
-            f"matching_paramset_id={matching_paramset_id}"
-        )
+        print(f"UnitMatchingParamSet already exists: matching_paramset_id={matching_paramset_id}")
 
     # ------------------------------------------------------------------
     # b) Check the ApplyOfficialCuration prerequisite
@@ -194,9 +180,7 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
     from aeon.dj_pipeline import spike_sorting_curation
 
     synced_count = len(spike_sorting.SyncedSpikes & restriction)
-    curated_count = len(
-        spike_sorting_curation.ApplyOfficialCuration & restriction
-    )
+    curated_count = len(spike_sorting_curation.ApplyOfficialCuration & restriction)
     print(f"\nSyncedSpikes entries:           {synced_count}")
     print(f"ApplyOfficialCuration entries:  {curated_count}")
 
@@ -227,9 +211,7 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
         "compares spike trains in the overlap window with previously "
         "matched blocks to assign global unit IDs.)"
     )
-    spike_sorting.UnitMatching.populate(
-        display_progress=True, suppress_errors=False
-    )
+    spike_sorting.UnitMatching.populate(display_progress=True, suppress_errors=False)
 
     matched_after = len(spike_sorting.UnitMatching & restriction)
     print(f"UnitMatching entries (post): {matched_after}")
@@ -274,11 +256,12 @@ def verify_matching(experiment_name):
     # ------------------------------------------------------------------
     # Per-insertion summary of global units
     # ------------------------------------------------------------------
-    print(f"\nGlobal unit summary:")
+    print("\nGlobal unit summary:")
     global_entries = (spike_sorting.GlobalUnit & restriction).to_dicts()
 
     # Group by (subject, insertion_number)
     from collections import defaultdict
+
     by_insertion = defaultdict(list)
     for entry in global_entries:
         key = (entry["subject"], entry["insertion_number"])
@@ -295,10 +278,8 @@ def verify_matching(experiment_name):
     # Per-block breakdown: how many units matched vs. new
     # ------------------------------------------------------------------
     if matching_count > 0:
-        print(f"\nPer-block unit matching breakdown:")
-        matching_entries = (
-            spike_sorting.UnitMatching & restriction
-        ).to_dicts()
+        print("\nPer-block unit matching breakdown:")
+        matching_entries = (spike_sorting.UnitMatching & restriction).to_dicts()
 
         for entry in sorted(matching_entries, key=lambda x: x["block_start"]):
             unit_count = len(spike_sorting.UnitMatching.Unit & entry)

@@ -1,5 +1,4 @@
-"""
-02 -- Define Blocks
+"""02 -- Define Blocks
 ===================
 Define time windows ("blocks") for spike sorting.
 
@@ -26,7 +25,7 @@ Run from the repo root on an HPC compute node (Ceph must be visible):
 # --------------------------------------------------------------------------
 # Imports
 # --------------------------------------------------------------------------
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 # --------------------------------------------------------------------------
 # Configuration -- edit these for your experiment
@@ -49,6 +48,7 @@ N_BLOCKS = 3
 # --------------------------------------------------------------------------
 # Functions
 # --------------------------------------------------------------------------
+
 
 def query_available_data(experiment_name):
     """Fetch EphysChunk data and print a summary of the available recording window.
@@ -83,13 +83,11 @@ def query_available_data(experiment_name):
     print(f"Total span:           {total_duration}")
 
     # Per-ProbeInsertion breakdown (useful when multiple probes are implanted).
-    insertions = (
-        ProbeInsertion & {"experiment_name": experiment_name}
-    ).to_dicts()
+    insertions = (ProbeInsertion & {"experiment_name": experiment_name}).to_dicts()
     if len(insertions) > 1:
         print(f"\nPer-ProbeInsertion breakdown ({len(insertions)} probes):")
     else:
-        print(f"\nProbeInsertion breakdown:")
+        print("\nProbeInsertion breakdown:")
 
     for pi in insertions:
         pi_key = {
@@ -108,10 +106,7 @@ def query_available_data(experiment_name):
                 f"{min(pi_starts)} to {max(pi_ends)}"
             )
         else:
-            print(
-                f"  insertion {pi['insertion_number']} "
-                f"(subject={pi['subject']}): 0 chunks"
-            )
+            print(f"  insertion {pi['insertion_number']} (subject={pi['subject']}): 0 chunks")
 
 
 def calculate_block_boundaries(start_time, block_duration, overlap, n_blocks=None):
@@ -161,12 +156,11 @@ def calculate_block_boundaries(start_time, block_duration, overlap, n_blocks=Non
             # Fixed number of blocks: stop when we have enough.
             if i >= n_blocks:
                 break
-        else:
-            # No fixed count: the caller should stop us externally, but
-            # as a safety valve, break if we have generated 1000 blocks.
-            if i >= 1000:
-                print("WARNING: hit 1000-block safety limit. Stopping.")
-                break
+        # No fixed count: the caller should stop us externally, but
+        # as a safety valve, break if we have generated 1000 blocks.
+        elif i >= 1000:
+            print("WARNING: hit 1000-block safety limit. Stopping.")
+            break
 
         blocks.append((block_start, block_end))
         i += 1
@@ -221,10 +215,7 @@ def create_blocks(
 
     print(f"Found {len(probe_insertions)} probe insertion(s):")
     for pi in probe_insertions:
-        print(
-            f"  insertion {pi['insertion_number']}: "
-            f"subject={pi['subject']}, probe={pi['probe']}"
-        )
+        print(f"  insertion {pi['insertion_number']}: subject={pi['subject']}, probe={pi['probe']}")
 
     # --- 2. Find the earliest chunk start ---
     chunks = (EphysChunk & {"experiment_name": experiment_name}).to_dicts()
@@ -239,14 +230,14 @@ def create_blocks(
     block_duration = timedelta(minutes=block_duration_min)
     overlap = timedelta(minutes=overlap_min)
 
-    blocks_to_create = calculate_block_boundaries(
-        start_time, block_duration, overlap, n_blocks
-    )
+    blocks_to_create = calculate_block_boundaries(start_time, block_duration, overlap, n_blocks)
 
     print(f"\nBlock schedule ({len(blocks_to_create)} blocks):")
     advance = block_duration - overlap
-    print(f"  Duration: {block_duration_min} min, Overlap: {overlap_min} min, "
-          f"Advance: {advance.total_seconds() / 60:.0f} min")
+    print(
+        f"  Duration: {block_duration_min} min, Overlap: {overlap_min} min, "
+        f"Advance: {advance.total_seconds() / 60:.0f} min"
+    )
     for i, (bstart, bend) in enumerate(blocks_to_create):
         print(f"  Block {i}: {bstart} to {bend}")
 
@@ -269,8 +260,7 @@ def create_blocks(
             insert_count += 1
 
     total_in_db = len(EphysBlock & {"experiment_name": experiment_name})
-    print(f"\nInserted {insert_count} EphysBlock entries "
-          f"({total_in_db} total in DB for this experiment).")
+    print(f"\nInserted {insert_count} EphysBlock entries ({total_in_db} total in DB for this experiment).")
 
     # --- 5. Populate EphysBlockInfo ---
     # EphysBlockInfo is an Imported table that computes metadata for each
@@ -305,21 +295,14 @@ def verify_blocks(experiment_name):
     print()
 
     for b in sorted(blocks, key=lambda x: (x["insertion_number"], x["block_start"])):
-        label = (
-            f"  insertion {b['insertion_number']} | "
-            f"{b['block_start']} to {b['block_end']}"
-        )
+        label = f"  insertion {b['insertion_number']} | {b['block_start']} to {b['block_end']}"
 
         # Check whether EphysBlockInfo has been populated for this block.
         info_query = EphysBlockInfo & b
         if info_query:
             duration_hrs = info_query.fetch1("block_duration")
             chunk_count = len(EphysBlockInfo.Chunk & b)
-            print(
-                f"{label} | "
-                f"duration={duration_hrs:.2f} hrs | "
-                f"{chunk_count} chunk(s)"
-            )
+            print(f"{label} | duration={duration_hrs:.2f} hrs | {chunk_count} chunk(s)")
         else:
             print(f"{label} | EphysBlockInfo not yet populated")
 

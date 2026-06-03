@@ -1,5 +1,4 @@
-"""
-04 -- Post-Sorting and Curation
+"""04 -- Post-Sorting and Curation
 ================================
 After the SLURM spike sorting job completes, this script:
   1. Populates post-sorting tables (PostProcessing, SortedSpikes,
@@ -30,12 +29,15 @@ Run from the repo root on an HPC compute node:
 # Configuration -- edit these for your experiment
 # --------------------------------------------------------------------------
 
+from datetime import UTC
+
 EXPERIMENT_NAME = "abcGolden01-aeonx1"
 
 
 # --------------------------------------------------------------------------
 # Post-sorting functions
 # --------------------------------------------------------------------------
+
 
 def run_post_sorting(experiment_name):
     """Populate all post-sorting tables in dependency order.
@@ -65,37 +67,26 @@ def run_post_sorting(experiment_name):
     # Check that SpikeSorting has completed entries.
     sorted_count = len(spike_sorting.SpikeSorting & restriction)
     if sorted_count == 0:
-        print(
-            "No SpikeSorting entries found. "
-            "Has the SLURM job completed successfully?"
-        )
+        print("No SpikeSorting entries found. Has the SLURM job completed successfully?")
         return
 
     print(f"SpikeSorting entries found: {sorted_count}")
 
     # 1. PostProcessing -- quality metrics and analyzer extensions.
     print("\nPopulating PostProcessing...")
-    spike_sorting.PostProcessing.populate(
-        display_progress=True, suppress_errors=False
-    )
+    spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
 
     # 2. SortedSpikes -- spike times and unit info into DB.
     print("\nPopulating SortedSpikes...")
-    spike_sorting.SortedSpikes.populate(
-        display_progress=True, suppress_errors=False
-    )
+    spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
 
     # 3. Waveform -- mean waveform templates per unit.
     print("\nPopulating Waveform...")
-    spike_sorting.Waveform.populate(
-        display_progress=True, suppress_errors=False
-    )
+    spike_sorting.Waveform.populate(display_progress=True, suppress_errors=False)
 
     # 4. SortingQuality -- per-unit quality metrics.
     print("\nPopulating SortingQuality...")
-    spike_sorting.SortingQuality.populate(
-        display_progress=True, suppress_errors=False
-    )
+    spike_sorting.SortingQuality.populate(display_progress=True, suppress_errors=False)
 
     print("\nPost-sorting population complete.")
 
@@ -124,10 +115,8 @@ def verify_sorting(experiment_name):
     print(f"  SortingQuality: {quality_count} / {sorted_count}")
 
     if sorted_count > 0:
-        print(f"\nUnit counts per block:")
-        sorted_entries = (
-            spike_sorting.SortedSpikes & restriction
-        ).to_dicts()
+        print("\nUnit counts per block:")
+        sorted_entries = (spike_sorting.SortedSpikes & restriction).to_dicts()
 
         for entry in sorted(sorted_entries, key=lambda x: x["block_start"]):
             unit_count = len(spike_sorting.SortedSpikes.Unit & entry)
@@ -140,10 +129,7 @@ def verify_sorting(experiment_name):
                 status_parts.append("quality")
             status = ", ".join(status_parts) if status_parts else "pending"
 
-            print(
-                f"  {entry['block_start']} to {entry['block_end']}: "
-                f"{unit_count} units [{status}]"
-            )
+            print(f"  {entry['block_start']} to {entry['block_end']}: {unit_count} units [{status}]")
     else:
         print("\nNo SortedSpikes entries yet.")
 
@@ -151,6 +137,7 @@ def verify_sorting(experiment_name):
 # --------------------------------------------------------------------------
 # Curation functions
 # --------------------------------------------------------------------------
+
 
 def auto_approve_curation(experiment_name):
     """Auto-approve all sorting results (Path A).
@@ -164,7 +151,8 @@ def auto_approve_curation(experiment_name):
     on existing SortedSpikes entries -- no spike data is deleted or
     re-computed.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
+
     from aeon.dj_pipeline import spike_sorting
     from aeon.dj_pipeline import spike_sorting_curation as curation
 
@@ -175,26 +163,24 @@ def auto_approve_curation(experiment_name):
             skip_duplicates=True,
         )
 
-    sorting_entries = (
-        spike_sorting.SpikeSorting & {"experiment_name": experiment_name}
-    ).keys()
-    now = datetime.now(timezone.utc)
+    sorting_entries = (spike_sorting.SpikeSorting & {"experiment_name": experiment_name}).keys()
+    now = datetime.now(UTC)
 
     for sorting_key in sorting_entries:
         mc_key = {**sorting_key, "curation_id": 0}
         if not (curation.ManualCuration & mc_key):
-            curation.ManualCuration.insert1({
-                **mc_key,
-                "curation_datetime": now,
-                "parent_curation_id": -1,
-                "curation_method": "SpikeInterface",
-                "description": "Auto-approved: no manual curation applied",
-            }, skip_duplicates=True)
+            curation.ManualCuration.insert1(
+                {
+                    **mc_key,
+                    "curation_datetime": now,
+                    "parent_curation_id": -1,
+                    "curation_method": "SpikeInterface",
+                    "description": "Auto-approved: no manual curation applied",
+                },
+                skip_duplicates=True,
+            )
 
-        sorted_pk = {
-            k: sorting_key[k]
-            for k in spike_sorting.SortedSpikes.primary_key
-        }
+        sorted_pk = {k: sorting_key[k] for k in spike_sorting.SortedSpikes.primary_key}
         if not (curation.OfficialCuration & sorted_pk):
             curation.OfficialCuration.insert1(
                 {**sorted_pk, "curation_id": 0},
