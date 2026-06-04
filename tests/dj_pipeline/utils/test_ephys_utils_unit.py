@@ -444,6 +444,80 @@ class TestCreateElectrodeConfig:
         assert config_name == "custom-name"
 
 
+class TestParseMetadataProbeConfigs:
+    """Tests for parse_metadata_probe_configs — Metadata.yml → {probe_label: basename}."""
+
+    def _write_metadata(self, tmp_path, npx_configs):
+        """Build a minimal Metadata.yml with given Configuration* mapping."""
+        data = {
+            "Devices": {
+                "NeuropixelsV2e": {
+                    "DeviceName": "test",
+                    **npx_configs,
+                },
+            },
+        }
+        path = tmp_path / "Metadata.yml"
+        path.write_text(json.dumps(data))
+        return tmp_path
+
+    def test_probe_a_and_b_both_active(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+
+        ep = self._write_metadata(tmp_path, {
+            "ConfigurationA": {"ProbeInterfaceFileName": r"Z:\dir\probeA.json"},
+            "ConfigurationB": {"ProbeInterfaceFileName": r"Z:\dir\probeB.json"},
+        })
+        result = parse_metadata_probe_configs(ep)
+        assert result == {"ProbeA": "probeA.json", "ProbeB": "probeB.json"}
+
+    def test_probe_a_disabled(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+
+        ep = self._write_metadata(tmp_path, {
+            "ConfigurationA": {"ProbeInterfaceFileName": None},
+            "ConfigurationB": {"ProbeInterfaceFileName": r"Z:\dir\probeB.json"},
+        })
+        result = parse_metadata_probe_configs(ep)
+        assert result == {"ProbeA": None, "ProbeB": "probeB.json"}
+
+    def test_missing_metadata_raises(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+
+        with pytest.raises(FileNotFoundError):
+            parse_metadata_probe_configs(tmp_path)
+
+    def test_real_golden_metadata(self):
+        """Verify against the actual golden epoch's Metadata.yml if available."""
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+
+        epoch_path = (
+            Path.home() / "sciops-data" / "project_aeon" / "aeon" / "data"
+            / "raw" / "AEONX1" / "abcGolden01" / "2026-05-11T07-50-11"
+        )
+        if not epoch_path.exists():
+            pytest.skip(f"Golden epoch not on disk: {epoch_path}")
+        result = parse_metadata_probe_configs(epoch_path)
+        assert result["ProbeA"] is None
+        assert result["ProbeB"] == "M81_ProbeB_4Shanks_1000_to_1700_um.json"
+
+
+class TestResolveProbeConfigPath:
+    """Tests for resolve_probe_config_path — joins under recording_configurations/."""
+
+    def test_joins_path(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_probe_config_path
+
+        p = resolve_probe_config_path(tmp_path / "AEONX1", "foo.json")
+        assert p == tmp_path / "AEONX1" / "recording_configurations" / "foo.json"
+
+    def test_accepts_str(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_probe_config_path
+
+        p = resolve_probe_config_path(str(tmp_path), "foo.json")
+        assert p == tmp_path / "recording_configurations" / "foo.json"
+
+
 class TestLoadDeviceChannelMap:
     """Tests for load_device_channel_map — takes JSON path directly."""
 

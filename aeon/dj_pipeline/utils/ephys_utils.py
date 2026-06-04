@@ -324,6 +324,66 @@ def parse_epoch_metadata(epoch_path: Path) -> dict | None:
         return None
 
 
+def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
+    """Extract per-probe config-file basenames from an epoch's Metadata.yml.
+
+    Reads ``Devices.NeuropixelsV2e.ConfigurationA/B.ProbeInterfaceFileName``
+    and converts each entry to a (probe_label, basename) pair.
+
+    Args:
+        epoch_path: Path to the epoch directory containing Metadata.yml.
+
+    Returns:
+        Dict mapping ``"ProbeA" | "ProbeB" | ...`` to JSON basename or None.
+        None indicates a disabled/spoofed probe (ProbeInterfaceFileName is
+        null in the metadata).
+
+    Raises:
+        FileNotFoundError: If Metadata.yml doesn't exist.
+    """
+    metadata_path = Path(epoch_path) / "Metadata.yml"
+    with open(metadata_path) as f:
+        data = json.load(f)  # JSON despite .yml extension
+
+    npx = data.get("Devices", {}).get("NeuropixelsV2e", {})
+    result: dict[str, str | None] = {}
+    for cfg_key, cfg_value in npx.items():
+        if not cfg_key.startswith("Configuration"):
+            continue
+        suffix = cfg_key[len("Configuration"):]  # "A", "B", ...
+        probe_label = f"Probe{suffix}"
+        if not isinstance(cfg_value, dict):
+            result[probe_label] = None
+            continue
+        pifn = cfg_value.get("ProbeInterfaceFileName")
+        if pifn is None or pifn == "":
+            result[probe_label] = None
+        else:
+            # Path may be Windows-style; extract basename robustly
+            basename = PureWindowsPath(pifn).name or Path(pifn).name
+            result[probe_label] = basename
+    return result
+
+
+def resolve_probe_config_path(raw_ephys_dir, config_file_name: str) -> Path:
+    """Resolve the absolute path to a per-epoch probeinterface JSON.
+
+    The JSON lives in the rig's ``recording_configurations/`` directory,
+    a sibling of the per-epoch dirs under ``raw_ephys_dir``.
+
+    Args:
+        raw_ephys_dir: The rig-level raw-ephys directory
+            (e.g. ``/ceph/aeon/data/raw/AEONX1``). Accepts str or Path.
+        config_file_name: Basename like
+            ``"M81_ProbeB_4Shanks_1000_to_1700_um.json"``.
+
+    Returns:
+        Resolved Path. Existence is NOT checked here — callers decide whether
+        to raise.
+    """
+    return Path(raw_ephys_dir) / "recording_configurations" / config_file_name
+
+
 def load_device_channel_map(json_path: Path) -> dict[int, int]:
     """Read a probeinterface JSON and return the hardware channel mapping.
 
