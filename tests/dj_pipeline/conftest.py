@@ -501,6 +501,27 @@ def ephys_full_pipeline(dj_config_integration, tmp_path_factory):
 
 
 @pytest.fixture(scope="session")
+def ctx(ephys_full_pipeline, ephys_golden_dataset_config):
+    """Bundle (ephys module, spike_sorting modules, dataset config) for tests.
+
+    Shrinks test signatures from
+        def test_x(self, ephys_test_*, ephys_full_pipeline, ephys_golden_dataset_config):
+    to
+        def test_x(self, ephys_test_*, ctx):
+    where ``ctx.ephys``, ``ctx.spike_sorting``, ``ctx.cfg`` are the
+    commonly-used attributes.
+    """
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        ephys=ephys_full_pipeline["ephys"],
+        spike_sorting=ephys_full_pipeline["spike_sorting"],
+        spike_sorting_curation=ephys_full_pipeline["spike_sorting_curation"],
+        cfg=ephys_golden_dataset_config,
+    )
+
+
+@pytest.fixture(scope="session")
 def ephys_test_experiment(ephys_full_pipeline, require_ephys_golden_data, ephys_golden_dataset_config):
     """Create experiment, subject, and directory for ephys golden dataset."""
     from aeon.dj_pipeline import subject as subject_module

@@ -25,128 +25,109 @@ pytest.importorskip("aeon.schema.ephys", reason="Ephys tests require aeon.schema
 class TestEphysEpochDiscovery:
     """Verify ephys epoch and probe discovery setup."""
 
-    def test_ephys_epoch_exists(self, ephys_test_epochs, ephys_full_pipeline, ephys_golden_dataset_config):
-        ephys = ephys_full_pipeline["ephys"]
-        cfg = ephys_golden_dataset_config
-        count = len(ephys.EphysEpoch & {"experiment_name": cfg["experiment_name"]})
+    def test_ephys_epoch_exists(self, ephys_test_epochs, ctx):
+        count = len(ctx.ephys.EphysEpoch & {"experiment_name": ctx.cfg["experiment_name"]})
         assert count >= 1
 
-    def test_has_ephys_flag(self, ephys_test_epochs, ephys_full_pipeline, ephys_golden_dataset_config):
-        ephys = ephys_full_pipeline["ephys"]
-        cfg = ephys_golden_dataset_config
-        epochs = (ephys.EphysEpoch & {"experiment_name": cfg["experiment_name"]}).to_dicts()
+    def test_has_ephys_flag(self, ephys_test_epochs, ctx):
+        epochs = (
+            ctx.ephys.EphysEpoch & {"experiment_name": ctx.cfg["experiment_name"]}
+        ).to_dicts()
         assert all(e["has_ephys"] for e in epochs)
 
-    def test_probe_count(self, ephys_test_epochs, ephys_full_pipeline, ephys_golden_dataset_config):
-        ephys = ephys_full_pipeline["ephys"]
-        cfg = ephys_golden_dataset_config
+    def test_probe_count(self, ephys_test_epochs, ctx):
         ephys_epochs = (
-            ephys.EphysEpoch & {"experiment_name": cfg["experiment_name"], "has_ephys": True}
+            ctx.ephys.EphysEpoch
+            & {"experiment_name": ctx.cfg["experiment_name"], "has_ephys": True}
         ).to_dicts()
         assert len(ephys_epochs) >= 1
-        assert ephys_epochs[0]["n_probes"] == cfg["expected_probe_count"]
+        assert ephys_epochs[0]["n_probes"] == ctx.cfg["expected_probe_count"]
 
-    def test_probe_insertions_created(self, ephys_test_epochs, ephys_full_pipeline, ephys_golden_dataset_config):
-        ephys = ephys_full_pipeline["ephys"]
-        cfg = ephys_golden_dataset_config
+    def test_probe_insertions_created(self, ephys_test_epochs, ctx):
         insertions = (
-            ephys.EphysEpoch.Insertion & {"experiment_name": cfg["experiment_name"]}
+            ctx.ephys.EphysEpoch.Insertion & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
-        assert len(insertions) == cfg["expected_probe_count"]
+        assert len(insertions) == ctx.cfg["expected_probe_count"]
 
-    def test_probe_insertion_links_correct_subject(
-        self, ephys_test_epochs, ephys_full_pipeline, ephys_golden_dataset_config
-    ):
-        ephys = ephys_full_pipeline["ephys"]
-        cfg = ephys_golden_dataset_config
+    def test_probe_insertion_links_correct_subject(self, ephys_test_epochs, ctx):
         pis = (
-            ephys.ProbeInsertion & {"experiment_name": cfg["experiment_name"]}
+            ctx.ephys.ProbeInsertion & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         assert len(pis) >= 1
-        assert all(pi["subject"] == cfg["subject"] for pi in pis)
+        assert all(pi["subject"] == ctx.cfg["subject"] for pi in pis)
 
-    def test_discover_epoch_probes_on_golden_data(
-        self, require_ephys_golden_data, ephys_golden_dataset_config
-    ):
+    def test_discover_epoch_probes_on_golden_data(self, require_ephys_golden_data, ctx):
         from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
 
         epoch_path = require_ephys_golden_data
         device_name, _, labels = discover_epoch_probes(epoch_path)
         assert device_name is not None
-        assert len(labels) == ephys_golden_dataset_config["expected_probe_count"]
+        assert len(labels) == ctx.cfg["expected_probe_count"]
 
 
 class TestEphysChunkIngestion:
     """Verify EphysChunk.ingest_chunks() output."""
 
-    def _ensure_chunks_ingested(self, ephys_full_pipeline, cfg):
-        ephys = ephys_full_pipeline["ephys"]
-        ephys.EphysChunk.ingest_chunks(cfg["experiment_name"])
+    def _ensure_chunks_ingested(self, ctx):
+        ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
 
-    def test_chunks_ingested(self, ephys_test_epochs, ephys_full_pipeline, ephys_golden_dataset_config):
-        self._ensure_chunks_ingested(ephys_full_pipeline, ephys_golden_dataset_config)
-        ephys = ephys_full_pipeline["ephys"]
-        cfg = ephys_golden_dataset_config
-        count = len(ephys.EphysChunk & {"experiment_name": cfg["experiment_name"]})
+    def test_chunks_ingested(self, ephys_test_epochs, ctx):
+        self._ensure_chunks_ingested(ctx)
+        count = len(ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]})
         assert count >= 1
 
-    def test_chunk_timestamps_valid(self, ephys_test_epochs, ephys_full_pipeline, ephys_golden_dataset_config):
-        self._ensure_chunks_ingested(ephys_full_pipeline, ephys_golden_dataset_config)
-        ephys = ephys_full_pipeline["ephys"]
-        cfg = ephys_golden_dataset_config
-        chunks = (ephys.EphysChunk & {"experiment_name": cfg["experiment_name"]}).to_dicts()
+    def test_chunk_timestamps_valid(self, ephys_test_epochs, ctx):
+        self._ensure_chunks_ingested(ctx)
+        chunks = (
+            ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}
+        ).to_dicts()
         for chunk in chunks:
             assert chunk["chunk_start"] < chunk["chunk_end"]
 
-    def test_chunk_files_registered(self, ephys_test_epochs, ephys_full_pipeline, ephys_golden_dataset_config):
-        self._ensure_chunks_ingested(ephys_full_pipeline, ephys_golden_dataset_config)
-        ephys = ephys_full_pipeline["ephys"]
-        cfg = ephys_golden_dataset_config
-        files = (ephys.EphysChunk.File & {"experiment_name": cfg["experiment_name"]}).to_dicts()
+    def test_chunk_files_registered(self, ephys_test_epochs, ctx):
+        self._ensure_chunks_ingested(ctx)
+        files = (
+            ctx.ephys.EphysChunk.File & {"experiment_name": ctx.cfg["experiment_name"]}
+        ).to_dicts()
         assert len(files) >= 2
 
 
 class TestEphysBlockInfo:
     """Verify EphysBlockInfo.populate() output."""
 
-    def _ensure_prerequisites(self, ephys_full_pipeline, cfg):
-        ephys = ephys_full_pipeline["ephys"]
-        ephys.EphysChunk.ingest_chunks(cfg["experiment_name"])
-        ephys.EphysBlockInfo.populate()
+    def _ensure_prerequisites(self, ctx):
+        ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
+        ctx.ephys.EphysBlockInfo.populate()
 
-    def test_block_info_populated(self, ephys_test_blocks, ephys_full_pipeline, ephys_golden_dataset_config):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        ephys = ephys_full_pipeline["ephys"]
-        cfg = ephys_golden_dataset_config
-        blocks = len(ephys.EphysBlock & {"experiment_name": cfg["experiment_name"]})
-        infos = len(ephys.EphysBlockInfo & {"experiment_name": cfg["experiment_name"]})
+    def test_block_info_populated(self, ephys_test_blocks, ctx):
+        self._ensure_prerequisites(ctx)
+        blocks = len(ctx.ephys.EphysBlock & {"experiment_name": ctx.cfg["experiment_name"]})
+        infos = len(ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]})
         assert infos == blocks
 
-    def test_block_duration_correct(self, ephys_test_blocks, ephys_full_pipeline, ephys_golden_dataset_config):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        ephys = ephys_full_pipeline["ephys"]
-        cfg = ephys_golden_dataset_config
-        infos = (ephys.EphysBlockInfo & {"experiment_name": cfg["experiment_name"]}).to_dicts()
+    def test_block_duration_correct(self, ephys_test_blocks, ctx):
+        self._ensure_prerequisites(ctx)
+        infos = (
+            ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}
+        ).to_dicts()
         for info in infos:
             assert abs(info["block_duration"] - 35 / 60) < 0.01
 
-    def test_block_chunks_associated(self, ephys_test_blocks, ephys_full_pipeline, ephys_golden_dataset_config):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        ephys = ephys_full_pipeline["ephys"]
-        cfg = ephys_golden_dataset_config
-        chunk_links = len(ephys.EphysBlockInfo.Chunk & {"experiment_name": cfg["experiment_name"]})
+    def test_block_chunks_associated(self, ephys_test_blocks, ctx):
+        self._ensure_prerequisites(ctx)
+        chunk_links = len(
+            ctx.ephys.EphysBlockInfo.Chunk & {"experiment_name": ctx.cfg["experiment_name"]}
+        )
         assert chunk_links >= 1
 
-    def test_channel_mappings_created(self, ephys_test_blocks, ephys_full_pipeline, ephys_golden_dataset_config):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        ephys = ephys_full_pipeline["ephys"]
-        cfg = ephys_golden_dataset_config
+    def test_channel_mappings_created(self, ephys_test_blocks, ctx):
+        self._ensure_prerequisites(ctx)
         channel_rows = (
-            ephys.EphysBlockInfo.Channel & {"experiment_name": cfg["experiment_name"]}
+            ctx.ephys.EphysBlockInfo.Channel & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
-        assert len(channel_rows) == cfg["n_channels"]
+        assert len(channel_rows) == ctx.cfg["n_channels"]
         channel_indices = sorted(r["channel_idx"] for r in channel_rows)
-        assert channel_indices == list(range(cfg["n_channels"]))
+        assert channel_indices == list(range(ctx.cfg["n_channels"]))
 
 
 class TestPreProcessing:
@@ -157,52 +138,50 @@ class TestPreProcessing:
     recording.dat + si_recording.pkl.
     """
 
-    def _ensure_prerequisites(self, ephys_full_pipeline, cfg):
-        ephys = ephys_full_pipeline["ephys"]
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        ephys.EphysChunk.ingest_chunks(cfg["experiment_name"])
-        ephys.EphysBlockInfo.populate()
-        spike_sorting.PreProcessing.populate(display_progress=True, suppress_errors=False)
+    def _ensure_prerequisites(self, ctx):
+        ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
+        ctx.ephys.EphysBlockInfo.populate()
+        ctx.spike_sorting.PreProcessing.populate(display_progress=True, suppress_errors=False)
 
     def test_preprocessing_populated(
-        self, ephys_sorting_setup, ephys_full_pipeline, ephys_golden_dataset_config, require_ephys_golden_data
+        self, ephys_sorting_setup, require_ephys_golden_data, ctx
     ):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        cfg = ephys_golden_dataset_config
-        count = len(spike_sorting.PreProcessing & {"experiment_name": cfg["experiment_name"]})
+        self._ensure_prerequisites(ctx)
+        count = len(
+            ctx.spike_sorting.PreProcessing & {"experiment_name": ctx.cfg["experiment_name"]}
+        )
         assert count >= 1
 
     def test_recording_files_registered(
-        self, ephys_sorting_setup, ephys_full_pipeline, ephys_golden_dataset_config, require_ephys_golden_data
+        self, ephys_sorting_setup, require_ephys_golden_data, ctx
     ):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        cfg = ephys_golden_dataset_config
+        self._ensure_prerequisites(ctx)
         files = (
-            spike_sorting.PreProcessing.File
-            & {"experiment_name": cfg["experiment_name"]}
+            ctx.spike_sorting.PreProcessing.File
+            & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         file_names = [f["file_name"] for f in files]
         assert any("si_recording.pkl" in fn for fn in file_names)
 
     def test_recording_binary_exists(
-        self, ephys_sorting_setup, ephys_full_pipeline, ephys_golden_dataset_config, require_ephys_golden_data
+        self, ephys_sorting_setup, require_ephys_golden_data, ctx
     ):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        cfg = ephys_golden_dataset_config
+        self._ensure_prerequisites(ctx)
         key = (
-            spike_sorting.SortingTask & {"experiment_name": cfg["experiment_name"]}
+            ctx.spike_sorting.SortingTask & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()[0]
-        output_dir = spike_sorting.PreProcessing.infer_output_dir(key)
+        output_dir = ctx.spike_sorting.PreProcessing.infer_output_dir(key)
         recording_dat = output_dir.parent / "recording" / "recording.dat"
         assert recording_dat.exists()
         file_size = recording_dat.stat().st_size
         assert file_size > 0
-        expected_size = cfg["n_channels"] * 2  # int16 per sample per channel
-        assert file_size % expected_size == 0, f"File size {file_size} not divisible by frame size {expected_size}"
-        assert file_size >= 500_000_000, f"recording.dat too small ({file_size} bytes), expected ~1 GB"
+        expected_size = ctx.cfg["n_channels"] * 2  # int16 per sample per channel
+        assert file_size % expected_size == 0, (
+            f"File size {file_size} not divisible by frame size {expected_size}"
+        )
+        assert file_size >= 500_000_000, (
+            f"recording.dat too small ({file_size} bytes), expected ~1 GB"
+        )
 
 
 class TestPostProcessing:
@@ -213,23 +192,18 @@ class TestPostProcessing:
     Depends on SpikeSorting being force-injected from golden data.
     """
 
-    def _ensure_prerequisites(self, ephys_full_pipeline, cfg):
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
+    def _ensure_prerequisites(self, ctx):
+        ctx.spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
 
-    def test_postprocessing_populated(
-        self, ephys_sorting_injected, ephys_full_pipeline, ephys_golden_dataset_config
-    ):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        cfg = ephys_golden_dataset_config
-        count = len(spike_sorting.PostProcessing & {"experiment_name": cfg["experiment_name"]})
+    def test_postprocessing_populated(self, ephys_sorting_injected, ctx):
+        self._ensure_prerequisites(ctx)
+        count = len(
+            ctx.spike_sorting.PostProcessing & {"experiment_name": ctx.cfg["experiment_name"]}
+        )
         assert count >= 1
 
-    def test_sorting_analyzer_created(
-        self, ephys_sorting_injected, ephys_full_pipeline, ephys_golden_dataset_config
-    ):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
+    def test_sorting_analyzer_created(self, ephys_sorting_injected, ctx):
+        self._ensure_prerequisites(ctx)
         output_dir = ephys_sorting_injected["output_dir"]
         analyzer_dir = output_dir / "sorting_analyzer"
         assert analyzer_dir.exists()
@@ -243,51 +217,41 @@ class TestSortedSpikes:
     spike indices, electrode assignments, quality labels.
     """
 
-    def _ensure_prerequisites(self, ephys_full_pipeline, cfg):
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
-        spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
+    def _ensure_prerequisites(self, ctx):
+        ctx.spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
+        ctx.spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
 
-    def test_sorted_spikes_populated(
-        self, ephys_sorting_injected, ephys_full_pipeline, ephys_golden_dataset_config
-    ):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        cfg = ephys_golden_dataset_config
-        count = len(spike_sorting.SortedSpikes & {"experiment_name": cfg["experiment_name"]})
+    def test_sorted_spikes_populated(self, ephys_sorting_injected, ctx):
+        self._ensure_prerequisites(ctx)
+        count = len(
+            ctx.spike_sorting.SortedSpikes & {"experiment_name": ctx.cfg["experiment_name"]}
+        )
         assert count >= 1
 
-    def test_unit_count(
-        self, ephys_sorting_injected, ephys_full_pipeline, ephys_golden_dataset_config
-    ):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        cfg = ephys_golden_dataset_config
-        units = len(spike_sorting.SortedSpikes.Unit & {"experiment_name": cfg["experiment_name"]})
-        assert units == cfg["expected_unit_count"]
+    def test_unit_count(self, ephys_sorting_injected, ctx):
+        self._ensure_prerequisites(ctx)
+        units = len(
+            ctx.spike_sorting.SortedSpikes.Unit
+            & {"experiment_name": ctx.cfg["experiment_name"]}
+        )
+        assert units == ctx.cfg["expected_unit_count"]
 
-    def test_spike_counts_reasonable(
-        self, ephys_sorting_injected, ephys_full_pipeline, ephys_golden_dataset_config
-    ):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        cfg = ephys_golden_dataset_config
+    def test_spike_counts_reasonable(self, ephys_sorting_injected, ctx):
+        self._ensure_prerequisites(ctx)
         units = (
-            spike_sorting.SortedSpikes.Unit & {"experiment_name": cfg["experiment_name"]}
+            ctx.spike_sorting.SortedSpikes.Unit
+            & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         for u in units:
             assert u["spike_count"] > 0
         total = sum(u["spike_count"] for u in units)
-        assert total == cfg["expected_total_spikes"]
+        assert total == ctx.cfg["expected_total_spikes"]
 
-    def test_quality_labels_assigned(
-        self, ephys_sorting_injected, ephys_full_pipeline, ephys_golden_dataset_config
-    ):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        cfg = ephys_golden_dataset_config
+    def test_quality_labels_assigned(self, ephys_sorting_injected, ctx):
+        self._ensure_prerequisites(ctx)
         units = (
-            spike_sorting.SortedSpikes.Unit & {"experiment_name": cfg["experiment_name"]}
+            ctx.spike_sorting.SortedSpikes.Unit
+            & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         qualities = [u["unit_quality"] for u in units]
         assert set(qualities) <= {"good", "mua", "noise"}
@@ -302,50 +266,44 @@ class TestSyncedSpikes:
     spike sample indices to absolute datetime timestamps.
     """
 
-    def _ensure_prerequisites(self, ephys_full_pipeline, cfg):
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
-        spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
-        spike_sorting.SyncedSpikes.populate(display_progress=True, suppress_errors=False)
+    def _ensure_prerequisites(self, ctx):
+        ctx.spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
+        ctx.spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
+        ctx.spike_sorting.SyncedSpikes.populate(display_progress=True, suppress_errors=False)
 
-    def test_synced_spikes_populated(
-        self, ephys_sorting_injected, ephys_full_pipeline, ephys_golden_dataset_config
-    ):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        cfg = ephys_golden_dataset_config
-        count = len(spike_sorting.SyncedSpikes & {"experiment_name": cfg["experiment_name"]})
+    def test_synced_spikes_populated(self, ephys_sorting_injected, ctx):
+        self._ensure_prerequisites(ctx)
+        count = len(
+            ctx.spike_sorting.SyncedSpikes & {"experiment_name": ctx.cfg["experiment_name"]}
+        )
         assert count >= 1
 
-    def test_spike_times_are_datetimes(
-        self, ephys_sorting_injected, ephys_full_pipeline, ephys_golden_dataset_config
-    ):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        cfg = ephys_golden_dataset_config
-
+    def test_spike_times_are_datetimes(self, ephys_sorting_injected, ctx):
+        self._ensure_prerequisites(ctx)
         import numpy as np
 
-        units = (spike_sorting.SyncedSpikes.Unit & {"experiment_name": cfg["experiment_name"]}).to_dicts()
+        units = (
+            ctx.spike_sorting.SyncedSpikes.Unit
+            & {"experiment_name": ctx.cfg["experiment_name"]}
+        ).to_dicts()
         assert len(units) >= 1
         for unit in units:
             assert np.issubdtype(unit["spike_times"].dtype, np.datetime64)
 
-    def test_spike_times_within_sync_range(
-        self, ephys_sorting_injected, ephys_full_pipeline, ephys_golden_dataset_config
-    ):
-        self._ensure_prerequisites(ephys_full_pipeline, ephys_golden_dataset_config)
-        spike_sorting = ephys_full_pipeline["spike_sorting"]
-        ephys = ephys_full_pipeline["ephys"]
-        cfg = ephys_golden_dataset_config
-
+    def test_spike_times_within_sync_range(self, ephys_sorting_injected, ctx):
+        self._ensure_prerequisites(ctx)
         import numpy as np
 
-        sync_rows = (ephys.EphysSyncModel & {"experiment_name": cfg["experiment_name"]}).to_dicts()
+        sync_rows = (
+            ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}
+        ).to_dicts()
         sync_start = np.datetime64(min(r["sync_start"] for r in sync_rows))
         sync_end = np.datetime64(max(r["sync_end"] for r in sync_rows))
 
-        units = (spike_sorting.SyncedSpikes.Unit & {"experiment_name": cfg["experiment_name"]}).to_dicts()
+        units = (
+            ctx.spike_sorting.SyncedSpikes.Unit
+            & {"experiment_name": ctx.cfg["experiment_name"]}
+        ).to_dicts()
         for unit in units:
             assert unit["spike_times"].min() >= sync_start
             assert unit["spike_times"].max() <= sync_end
