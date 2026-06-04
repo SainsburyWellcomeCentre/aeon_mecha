@@ -17,6 +17,8 @@ Pipeline cascade tested (all live except SpikeSorting):
 
 import pytest
 
+INT16_BYTES = 2  # sizeof(int16); recording.dat stores int16 per channel-sample
+
 pytestmark = pytest.mark.integration
 pytest.importorskip("probeinterface", reason="Ephys tests require probeinterface")
 pytest.importorskip("aeon.schema.ephys", reason="Ephys tests require aeon.schema.ephys (from swc-aeon)")
@@ -36,12 +38,15 @@ class TestEphysEpochDiscovery:
         assert all(e["has_ephys"] for e in epochs)
 
     def test_probe_count(self, ephys_test_epochs, ctx):
-        ephys_epochs = (
+        n_probes = (
             ctx.ephys.EphysEpoch
-            & {"experiment_name": ctx.cfg["experiment_name"], "has_ephys": True}
-        ).to_dicts()
-        assert len(ephys_epochs) >= 1
-        assert ephys_epochs[0]["n_probes"] == ctx.cfg["expected_probe_count"]
+            & {
+                "experiment_name": ctx.cfg["experiment_name"],
+                "epoch_start": ephys_test_epochs[0]["epoch_start"],
+                "has_ephys": True,
+            }
+        ).fetch1("n_probes")
+        assert n_probes == ctx.cfg["expected_probe_count"]
 
     def test_probe_insertions_created(self, ephys_test_epochs, ctx):
         insertions = (
@@ -80,10 +85,20 @@ class TestEphysChunkIngestion:
             assert chunk["chunk_start"] < chunk["chunk_end"]
 
     def test_chunk_files_registered(self, ephys_chunks_ingested, ctx):
-        files = (
-            ctx.ephys.EphysChunk.File & {"experiment_name": ctx.cfg["experiment_name"]}
-        ).to_dicts()
-        assert len(files) >= 2
+        files = list(
+            (
+                ctx.ephys.EphysChunk.File & {"experiment_name": ctx.cfg["experiment_name"]}
+            ).fetch("file_name")
+        )
+        assert any("AmplifierData_0.bin" in fn for fn in files), (
+            f"AmplifierData_0.bin not registered. Got first 5: {files[:5]}"
+        )
+        assert any("Clock_0.bin" in fn for fn in files), (
+            f"Clock_0.bin not registered. Got first 5: {files[:5]}"
+        )
+        assert len(files) % 2 == 0, (
+            f"Expected even file count (Amp+Clock pairs), got {len(files)}"
+        )
 
 
 class TestEphysBlockInfo:
@@ -161,7 +176,7 @@ class TestPreProcessing:
         assert recording_dat.exists()
         file_size = recording_dat.stat().st_size
         assert file_size > 0
-        expected_size = ctx.cfg["n_channels"] * 2  # int16 per sample per channel
+        expected_size = ctx.cfg["n_channels"] * INT16_BYTES
         assert file_size % expected_size == 0, (
             f"File size {file_size} not divisible by frame size {expected_size}"
         )
