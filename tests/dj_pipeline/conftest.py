@@ -71,7 +71,8 @@ GOLDEN_DATASETS = {
         "location": "AEON3",
         "experiment_type": "foraging",
         "device_name": "NeuropixelsV2",
-        "probe_type": "neuropixels2.0",
+        "probe_type": "neuropixels2.0-multishank",
+        "electrode_config_name": "M81_ProbeB_4Shanks_1000_to_1700",
         "probe_serial": "23299108854",
         "n_channels": 8,
         "electrodes": list(range(3982, 3990)),
@@ -455,32 +456,22 @@ def ephys_full_pipeline(dj_config_integration, tmp_path_factory):
     ss_module.get_sorting_root_dir = lambda: sorting_root
 
     try:
-        # Create ProbeType with electrode geometry via probeinterface
-        ephys.create_probe_type(
-            probe_type="neuropixels2.0",
-            manufacturer="imec",
-            probe_name="NP2014",
-        )
+        # Populate ProbeType + ElectrodeConfig from the per-epoch probeinterface JSON.
+        # ProbeType.Electrode gets full geometry (5120 contacts for NP 2.0 multishank);
+        # ElectrodeConfig.Electrode gets the 384 active contacts (device_channel_indices != -1).
+        from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
 
-        # Create ElectrodeConfig for golden dataset's 8 electrodes (3982-3989)
-        import uuid
-
-        golden_electrodes = list(range(3982, 3990))
-        electrode_config_key = {
-            "probe_type": "neuropixels2.0",
-            "electrode_config_name": "3982-3989",
-        }
-        ephys.ElectrodeConfig.insert1(
-            {
-                **electrode_config_key,
-                "electrode_config_description": "8 electrodes on shank3 (golden dataset)",
-                "electrode_config_hash": uuid.uuid4(),
-            },
-            skip_duplicates=True,
+        probe_config_json = (
+            Path(__file__).parent.parent / "fixtures" / "ephys"
+            / "M81_ProbeB_4Shanks_1000_to_1700_um.json"
         )
-        ephys.ElectrodeConfig.Electrode.insert(
-            ({**electrode_config_key, "electrode": e} for e in golden_electrodes),
-            skip_duplicates=True,
+        # electrode_config_name from cfg (varchar(32) limit — JSON stem is too long)
+        cfg_data = GOLDEN_DATASETS["foraging_abc_ephys_2026_05_11"]
+        create_electrode_config(
+            json_path=probe_config_json,
+            probe_type_table=ephys.ProbeType,
+            electrode_config_table=ephys.ElectrodeConfig,
+            config_name=cfg_data["electrode_config_name"],
         )
 
         yield {
@@ -698,24 +689,25 @@ def ephys_sorting_setup(ephys_test_blocks, ephys_full_pipeline, ephys_golden_dat
     cfg = ephys_golden_dataset_config
     exp_name = cfg["experiment_name"]
 
+    # ElectrodeConfig was populated by create_electrode_config from the JSON.
     electrode_config_key = {
-        "probe_type": "neuropixels2.0",
-        "electrode_config_name": "3982-3989",
+        "probe_type": cfg["probe_type"],
+        "electrode_config_name": cfg["electrode_config_name"],
     }
     spike_sorting.ElectrodeGroup.insert1(
         {
             **electrode_config_key,
             "electrode_group": "shank3",
             "electrode_group_description": "8 electrodes on shank3 (golden dataset)",
-            "electrode_count": 8,
+            "electrode_count": len(cfg["electrodes"]),
         },
         skip_duplicates=True,
     )
-    golden_electrodes = (ephys.ElectrodeConfig.Electrode & electrode_config_key).to_dicts()
+    # 8-electrode subset from cfg (3982-3989), not the full 384 in ElectrodeConfig.
     spike_sorting.ElectrodeGroup.Electrode.insert(
         (
-            {**electrode_config_key, "electrode_group": "shank3", "electrode": e["electrode"]}
-            for e in golden_electrodes
+            {**electrode_config_key, "electrode_group": "shank3", "electrode": e}
+            for e in cfg["electrodes"]
         ),
         skip_duplicates=True,
     )
