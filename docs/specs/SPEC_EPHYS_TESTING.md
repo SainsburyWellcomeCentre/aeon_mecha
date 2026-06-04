@@ -317,15 +317,15 @@ is idempotent — re-running tests doesn't duplicate rows.
 If a future epoch uses a different probe configuration, copy its JSON into
 `tests/fixtures/ephys/` and update the conftest path / config to reference it.
 
-> **Note on `ephys_test_epochs`:** the fixture directly inserts an
-> `acquisition.Epoch` row instead of calling `Epoch.ingest_epochs()`, because
-> `ingest_epochs()` scans for behavior CSVs that don't exist in the ephys-only
-> golden dataset. Tracked separately (issue #583).
-
-> **Follow-up:** wiring `create_electrode_config` into production
-> `EphysEpoch.populate()` so per-epoch JSON discovery happens automatically is
-> tracked as a follow-up design item — production currently treats
-> `ElectrodeConfig` as a pre-populated lookup table.
+> **Schema architecture:** the ephys schema was restructured (#583 + #584)
+> so that `EphysEpoch` is a peer of `acquisition.Epoch`, with its own
+> HARP-native `epoch_start`, and `ElectrodeConfig` carries a structured
+> `config_file_name` for per-epoch-per-probe resolution. See
+> `SPEC_EPHYS_PIPELINE.md` for the full architecture.
+>
+> The `ephys_test_epochs` fixture drives the new ingest chain end-to-end:
+> `EphysEpoch.ingest_epochs() → EphysEpochConfig.populate() →
+> EphysSyncModel.ingest()`. No manual `acquisition.Epoch` insert needed.
 
 > **Note on `golden_test_sorting/`:** the pre-computed Kilosort output
 > directory used by `ephys_sorting_injected` is not yet uploaded to S3. When
