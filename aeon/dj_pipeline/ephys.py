@@ -104,149 +104,113 @@ class InsertionTargetArea(dj.Manual):
 
 
 @schema
-class EphysEpoch(dj.Imported):
+class EphysEpoch(dj.Manual):
     definition = """
-    # Per-epoch probe registry. Discovers probes, reads subject-probe mapping, records active insertions.
-    -> acquisition.Epoch
+    # An ephys epoch — peer of acquisition.Epoch, anchored to the ONIX/AEONX1 rig.
+    # ``epoch_start`` is HARP-clock-native: observed from the first row of the
+    # first ``*_HarpSync_*.csv`` in the epoch directory (the ``harp_start``
+    # field). NOT the wall-clock timestamp parsed from the directory name.
+    -> acquisition.Experiment
+    epoch_start: datetime(6)            # HARP-clock at acquisition start
     ---
-    has_ephys: bool  # whether ephys data was found in this epoch
-    n_probes: int    # number of probes discovered (0 if no ephys)
+    -> [nullable] acquisition.Experiment.Directory
+    epoch_dir='': varchar(255)          # ONIX-wall-clock dir name (label only)
     """
 
-    # Set this before calling populate() to read probe_assignments.json
-    # from a local directory instead of (or in addition to) the epoch dir
-    # on Ceph. Useful when Ceph is read-only.
-    probe_assignments_override_dir = None
+    @classmethod
+    def ingest_epochs(cls, experiment_name: str) -> None:
+        """Discover raw-ephys epoch directories and insert EphysEpoch rows.
 
-    class Insertion(dj.Part):
-        definition = """
-        # Which ProbeInsertions are active in this epoch
-        -> master
-        -> ProbeInsertion
-        ---
-        probe_label: varchar(32)  # file label discovered from this epoch's files (e.g., "ProbeA")
-        """
+        For each epoch dir, reads the first row of the first ``*_HarpSync_*.csv``
+        to determine the HARP-clock ``epoch_start``. Backfills
+        ``EphysEpochEnd`` for the previous epoch via look-back (mirror of
+        ``acquisition.Epoch.ingest_epochs``).
 
-    def make(self, key: dict[str, Any]) -> None:
-        """Discover ephys data in an epoch and register active probe insertions.
-
-        For each epoch:
-        1. Check for ephys device subdirectory (NeuropixelsV2Beta/ or NeuropixelsV2/)
-        2. If found, discover probes from binary files and parse Metadata.yml
-        3. Auto-create Probe entries (probe_type derived from device directory name)
-        4. Read subject-probe mapping from probe_assignments.json or carry forward
-        5. Create/validate ProbeInsertion entries (with subject)
-        6. Insert EphysEpoch.Insertion Part rows
-
-        Subject-probe mapping sources (in priority order):
-        - Per-epoch file: probe_assignments.json in the epoch directory
-        - Carry-forward: reuse mapping from the most recent EphysEpoch with has_ephys=True
-        - Pre-existing: manually inserted ProbeInsertion matched by probe serial
+        Skipped silently:
+        - Epoch dirs with no HarpSync CSVs (cannot HARP-align → unusable).
+        - Epoch dirs whose first HarpSync CSV cannot be parsed.
 
         Args:
-            key: Dictionary containing experiment_name and epoch_start
+            experiment_name: Name of the experiment to process.
         """
-        # Get epoch directory
-        dir_type, epoch_dir = (acquisition.Epoch & key).fetch1("directory_type", "epoch_dir")
-        if not epoch_dir:
-            self.insert1({**key, "has_ephys": False, "n_probes": 0})
-            return
+        from aeon.schema.ephys import social_ephys
 
-        data_dir = acquisition.Experiment.get_data_directory(key, dir_type)
-        if data_dir is None:
-            logger.warning(f"Data directory not found for {key}")
-            self.insert1({**key, "has_ephys": False, "n_probes": 0})
-            return
-
-        epoch_path = data_dir / epoch_dir
-
-        # Discover probes
-        device_name, _device_dir, probe_labels = discover_epoch_probes(epoch_path)
-        if not probe_labels:
-            self.insert1({**key, "has_ephys": False, "n_probes": 0})
-            return
-        if device_name is None:  # shouldn't happen when probe_labels is non-empty
-            raise RuntimeError(
-                f"discover_epoch_probes returned probe_labels without device_name: {epoch_path}"
-            )
-
-        # Parse metadata for probe identity (serial numbers)
-        metadata = parse_epoch_metadata(epoch_path)
-
-        # Build probe info, filtering out unconfigured (dummy) probes
-        probe_info = {}
-        for label in probe_labels:
-            probe_id = get_probe_id(metadata, device_name, label)
-            if probe_id is None:
-                logger.info(f"Skipping {label}: no probe configuration found (disabled/dummy)")
-                continue
-            probe_info[label] = probe_id
-
-        if not probe_info:
-            self.insert1({**key, "has_ephys": False, "n_probes": 0})
-            return
-
-        # Auto-create Probe entries (probe_type derived from device directory name)
-        probe_type = DEVICE_PROBE_TYPE_MAP.get(device_name)
-        if probe_type is None:
-            raise ValueError(
-                f"Unknown device '{device_name}'. Cannot determine probe_type. "
-                f"Known devices: {list(DEVICE_PROBE_TYPE_MAP.keys())}"
-            )
-        for label, probe_id in probe_info.items():
-            if not (Probe & {"probe": probe_id}):
-                if not (ProbeType & {"probe_type": probe_type}):
-                    raise ValueError(
-                        f"ProbeType '{probe_type}' not found. Create it first using "
-                        f"create_probe_type('{probe_type}', ...)."
-                    )
-                Probe.insert1(
-                    {"probe": probe_id, "probe_type": probe_type},
-                    skip_duplicates=True,
-                )
-                logger.info(f"Auto-created Probe entry: {label}={probe_id} (type={probe_type})")
-
-        # Read subject-probe mapping
-        active_labels = list(probe_info.keys())
-        probe_assignments = read_probe_assignments(
-            key,
-            epoch_path,
-            active_labels,
-            self.Insertion,
-            probe_info,
-            override_dir=self.probe_assignments_override_dir,
+        exp_key = {"experiment_name": experiment_name}
+        raw_ephys_dir = acquisition.Experiment.get_data_directory(
+            exp_key, directory_type="raw-ephys", as_posix=False
         )
+        if raw_ephys_dir is None:
+            logger.warning(f"raw-ephys directory not found for {experiment_name}")
+            return
 
-        # Create/validate ProbeInsertion entries and build Insertion Part rows
-        insertion_entries = []
-        for label in active_labels:
-            probe_id = probe_info[label]
-            if label not in probe_assignments:
-                raise KeyError(
-                    f"Probe '{label}' (serial={probe_id}) is active in this epoch but "
-                    f"has no assignment. Available assignments: {list(probe_assignments.keys())}. "
-                    f"If this is a new probe, add it to probe_assignments.json."
+        epoch_dirs = sorted(d for d in raw_ephys_dir.iterdir() if d.is_dir())
+        previous_epoch_start = None
+
+        for epoch_dir in epoch_dirs:
+            harp_sync_csvs = sorted(epoch_dir.rglob("*_HarpSync_*.csv"))
+            if not harp_sync_csvs:
+                logger.warning(
+                    f"No HarpSync CSV in {epoch_dir.name}; cannot HARP-align. Skipping."
                 )
-            subject = probe_assignments[label]["subject"]
+                continue
 
-            pi_key = find_or_create_probe_insertion(
-                key["experiment_name"],
-                subject,
-                probe_id,
-                ProbeInsertion,
-                Probe,
-            )
-            insertion_entries.append(
+            # Read first row of first CSV to get HARP-clock epoch_start
+            first_csv = harp_sync_csvs[0]
+            device_name = first_csv.parent.name
+            if device_name not in social_ephys:
+                logger.debug(f"Device '{device_name}' not in social_ephys. Skipping.")
+                continue
+            device_streams = social_ephys[device_name]
+            if "HarpSyncModel" not in device_streams:
+                logger.debug(
+                    f"Device '{device_name}' has no HarpSyncModel stream. Skipping."
+                )
+                continue
+            reader = device_streams["HarpSyncModel"]
+            try:
+                first_row = reader.read(first_csv).iloc[0]
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to read {first_csv}: {e}. Skipping.")
+                continue
+            harp_epoch_start = harp_to_naive(first_row["harp_start"])
+
+            # Look-back: backfill EphysEpochEnd for the previous epoch
+            if previous_epoch_start is not None:
+                previous_key = {**exp_key, "epoch_start": previous_epoch_start}
+                if (cls & previous_key) and not (EphysEpochEnd & previous_key):
+                    EphysEpochEnd.insert1(
+                        {
+                            **previous_key,
+                            "epoch_end": harp_epoch_start,
+                            "epoch_duration": (
+                                harp_epoch_start - previous_epoch_start
+                            ).total_seconds() / 3600,
+                        }
+                    )
+
+            # Insert this epoch
+            cls.insert1(
                 {
-                    **key,
-                    **pi_key,
-                    "probe_label": label,
-                }
+                    **exp_key,
+                    "epoch_start": harp_epoch_start,
+                    "directory_type": "raw-ephys",
+                    "epoch_dir": epoch_dir.relative_to(raw_ephys_dir).as_posix(),
+                },
+                skip_duplicates=True,
             )
 
-        # Insert master + Part rows
-        self.insert1({**key, "has_ephys": True, "n_probes": len(active_labels)})
-        self.Insertion.insert(insertion_entries)
+            previous_epoch_start = harp_epoch_start
+
+
+@schema
+class EphysEpochEnd(dj.Manual):
+    definition = """
+    # End time of an ephys epoch (backfilled by EphysEpoch.ingest_epochs look-back)
+    -> EphysEpoch
+    ---
+    epoch_end: datetime(6)              # HARP-clock at acquisition end
+    epoch_duration: float               # hours; (epoch_end - epoch_start) / 3600
+    """
 
 
 @schema
