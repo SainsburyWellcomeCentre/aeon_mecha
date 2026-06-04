@@ -214,6 +214,183 @@ class EphysEpochEnd(dj.Manual):
 
 
 @schema
+class EphysEpochConfig(dj.Imported):
+    definition = """
+    # Per-epoch probe registry. Discovers probes, parses Metadata.yml,
+    # auto-populates Probe/ProbeInsertion and per-probe ElectrodeConfig.
+    -> EphysEpoch
+    ---
+    has_ephys: bool                     # whether ephys data was found in this epoch
+    n_probes: int                       # number of active probes (0 if no ephys)
+    """
+
+    # Set this before calling populate() to read probe_assignments.json
+    # from a local directory instead of (or in addition to) the epoch dir
+    # on Ceph. Useful when Ceph is read-only.
+    probe_assignments_override_dir = None
+
+    class Insertion(dj.Part):
+        definition = """
+        # Which ProbeInsertions are active in this epoch
+        -> master
+        -> ProbeInsertion
+        ---
+        probe_label: varchar(32)        # file label (e.g., "ProbeA")
+        """
+
+    def make(self, key: dict[str, Any]) -> None:
+        """Discover probes for an epoch, register ProbeInsertion + ElectrodeConfig.
+
+        For each epoch:
+        1. Resolve the raw-ephys epoch path via the parent EphysEpoch row.
+        2. Discover probes from binary files (``discover_epoch_probes``).
+        3. Parse Metadata.yml for probe serial numbers.
+        4. Auto-create Probe entries (probe_type derived from device dir name).
+        5. Read subject-probe mapping (probe_assignments.json or carry-forward).
+        6. Create/validate ProbeInsertion entries.
+        7. Register per-probe ElectrodeConfig from each probe's
+           ProbeInterfaceFileName (via ``create_electrode_config``).
+        8. Insert master row and Insertion part rows.
+
+        Subject-probe mapping sources (in priority order):
+        - Per-epoch file: probe_assignments.json in the epoch directory
+        - Carry-forward: most recent EphysEpochConfig with has_ephys=True
+        - Pre-existing: ProbeInsertion already in DB, matched by probe serial
+
+        Args:
+            key: (experiment_name, epoch_start) — parent EphysEpoch row.
+        """
+        from aeon.dj_pipeline.utils.ephys_utils import (
+            create_electrode_config,
+            parse_metadata_probe_configs,
+            resolve_probe_config_path,
+        )
+
+        # Get epoch directory from the EphysEpoch parent
+        epoch_dir = (EphysEpoch & key).fetch1("epoch_dir")
+        if not epoch_dir:
+            self.insert1({**key, "has_ephys": False, "n_probes": 0})
+            return
+
+        raw_ephys_dir = acquisition.Experiment.get_data_directory(
+            key, directory_type="raw-ephys"
+        )
+        if raw_ephys_dir is None:
+            logger.warning(f"raw-ephys directory not found for {key}")
+            self.insert1({**key, "has_ephys": False, "n_probes": 0})
+            return
+
+        epoch_path = raw_ephys_dir / epoch_dir
+
+        # Discover probes
+        device_name, _device_dir, probe_labels = discover_epoch_probes(epoch_path)
+        if not probe_labels:
+            self.insert1({**key, "has_ephys": False, "n_probes": 0})
+            return
+        if device_name is None:
+            raise RuntimeError(
+                f"discover_epoch_probes returned probe_labels without device_name: {epoch_path}"
+            )
+
+        # Parse metadata for probe identity (serial numbers)
+        metadata = parse_epoch_metadata(epoch_path)
+
+        # Build probe info, filtering out unconfigured (dummy) probes
+        probe_info = {}
+        for label in probe_labels:
+            probe_id = get_probe_id(metadata, device_name, label)
+            if probe_id is None:
+                logger.info(f"Skipping {label}: no probe configuration found (disabled/dummy)")
+                continue
+            probe_info[label] = probe_id
+
+        if not probe_info:
+            self.insert1({**key, "has_ephys": False, "n_probes": 0})
+            return
+
+        # Auto-create Probe entries (probe_type derived from device directory name)
+        probe_type = DEVICE_PROBE_TYPE_MAP.get(device_name)
+        if probe_type is None:
+            raise ValueError(
+                f"Unknown device '{device_name}'. Cannot determine probe_type. "
+                f"Known devices: {list(DEVICE_PROBE_TYPE_MAP.keys())}"
+            )
+
+        # Register per-probe ElectrodeConfig from per-epoch JSONs
+        probe_configs = parse_metadata_probe_configs(epoch_path)
+        for label, basename in probe_configs.items():
+            if basename is None:
+                continue  # disabled/spoofed probe
+            json_path = resolve_probe_config_path(raw_ephys_dir, basename)
+            if not json_path.exists():
+                # Fall back to the epoch dir itself (e.g. golden test fixture).
+                # Production layout puts JSONs in recording_configurations/, but
+                # the golden epoch has a copy at the root.
+                fallback = epoch_path / basename
+                if fallback.exists():
+                    json_path = fallback
+                else:
+                    logger.warning(
+                        f"Probe config JSON not found at {json_path} or {fallback}. "
+                        f"Skipping ElectrodeConfig registration for {label}."
+                    )
+                    continue
+            create_electrode_config(
+                json_path=json_path,
+                probe_type_table=ProbeType,
+                electrode_config_table=ElectrodeConfig,
+            )
+
+        for label, probe_id in probe_info.items():
+            if not (Probe & {"probe": probe_id}):
+                if not (ProbeType & {"probe_type": probe_type}):
+                    raise ValueError(
+                        f"ProbeType '{probe_type}' not found. Create it first."
+                    )
+                Probe.insert1(
+                    {"probe": probe_id, "probe_type": probe_type},
+                    skip_duplicates=True,
+                )
+                logger.info(f"Auto-created Probe entry: {label}={probe_id} (type={probe_type})")
+
+        # Read subject-probe mapping
+        active_labels = list(probe_info.keys())
+        probe_assignments = read_probe_assignments(
+            key,
+            epoch_path,
+            active_labels,
+            self.Insertion,
+            probe_info,
+            override_dir=self.probe_assignments_override_dir,
+        )
+
+        # Create/validate ProbeInsertion entries and build Insertion Part rows
+        insertion_entries = []
+        for label in active_labels:
+            probe_id = probe_info[label]
+            if label not in probe_assignments:
+                raise KeyError(
+                    f"Probe '{label}' (serial={probe_id}) is active in this epoch but "
+                    f"has no assignment. Available: {list(probe_assignments.keys())}. "
+                    f"If this is a new probe, add it to probe_assignments.json."
+                )
+            subject = probe_assignments[label]["subject"]
+
+            pi_key = find_or_create_probe_insertion(
+                key["experiment_name"],
+                subject,
+                probe_id,
+                ProbeInsertion,
+                Probe,
+            )
+            insertion_entries.append({**key, **pi_key, "probe_label": label})
+
+        # Insert master + Part rows
+        self.insert1({**key, "has_ephys": True, "n_probes": len(active_labels)})
+        self.Insertion.insert(insertion_entries)
+
+
+@schema
 class EphysSyncModel(dj.Manual):
     """Per-chunk HARP↔ONIX sync regression for an ephys epoch.
 
