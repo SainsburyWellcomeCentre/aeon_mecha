@@ -669,6 +669,28 @@ def ephys_test_blocks(ephys_test_epochs, ephys_full_pipeline, ephys_golden_datas
 
 
 @pytest.fixture(scope="session")
+def ephys_chunks_ingested(ephys_test_epochs, ctx):
+    """Run EphysChunk.ingest_chunks once for the golden dataset."""
+    ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
+    return (
+        ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}
+    ).to_dicts()
+
+
+@pytest.fixture(scope="session")
+def ephys_block_info_populated(ephys_chunks_ingested, ephys_test_blocks, ctx):
+    """Run EphysBlockInfo.populate restricted to the golden experiment."""
+    ctx.ephys.EphysBlockInfo.populate(
+        {"experiment_name": ctx.cfg["experiment_name"]},
+        display_progress=False,
+        suppress_errors=False,
+    )
+    return (
+        ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}
+    ).to_dicts()
+
+
+@pytest.fixture(scope="session")
 def ephys_sorting_setup(ephys_test_blocks, ephys_full_pipeline, ephys_golden_dataset_config):
     """Set up sorting prerequisites: ElectrodeGroup, SortingParamSet, SortingTask."""
     spike_sorting = ephys_full_pipeline["spike_sorting"]

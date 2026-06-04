@@ -68,24 +68,18 @@ class TestEphysEpochDiscovery:
 class TestEphysChunkIngestion:
     """Verify EphysChunk.ingest_chunks() output."""
 
-    def _ensure_chunks_ingested(self, ctx):
-        ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
-
-    def test_chunks_ingested(self, ephys_test_epochs, ctx):
-        self._ensure_chunks_ingested(ctx)
+    def test_chunks_ingested(self, ephys_chunks_ingested, ctx):
         count = len(ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]})
         assert count >= 1
 
-    def test_chunk_timestamps_valid(self, ephys_test_epochs, ctx):
-        self._ensure_chunks_ingested(ctx)
+    def test_chunk_timestamps_valid(self, ephys_chunks_ingested, ctx):
         chunks = (
             ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         for chunk in chunks:
             assert chunk["chunk_start"] < chunk["chunk_end"]
 
-    def test_chunk_files_registered(self, ephys_test_epochs, ctx):
-        self._ensure_chunks_ingested(ctx)
+    def test_chunk_files_registered(self, ephys_chunks_ingested, ctx):
         files = (
             ctx.ephys.EphysChunk.File & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
@@ -95,33 +89,25 @@ class TestEphysChunkIngestion:
 class TestEphysBlockInfo:
     """Verify EphysBlockInfo.populate() output."""
 
-    def _ensure_prerequisites(self, ctx):
-        ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
-        ctx.ephys.EphysBlockInfo.populate()
-
-    def test_block_info_populated(self, ephys_test_blocks, ctx):
-        self._ensure_prerequisites(ctx)
+    def test_block_info_populated(self, ephys_block_info_populated, ctx):
         blocks = len(ctx.ephys.EphysBlock & {"experiment_name": ctx.cfg["experiment_name"]})
         infos = len(ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]})
         assert infos == blocks
 
-    def test_block_duration_correct(self, ephys_test_blocks, ctx):
-        self._ensure_prerequisites(ctx)
+    def test_block_duration_correct(self, ephys_block_info_populated, ctx):
         infos = (
             ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         for info in infos:
             assert abs(info["block_duration"] - 35 / 60) < 0.01
 
-    def test_block_chunks_associated(self, ephys_test_blocks, ctx):
-        self._ensure_prerequisites(ctx)
+    def test_block_chunks_associated(self, ephys_block_info_populated, ctx):
         chunk_links = len(
             ctx.ephys.EphysBlockInfo.Chunk & {"experiment_name": ctx.cfg["experiment_name"]}
         )
         assert chunk_links >= 1
 
-    def test_channel_mappings_created(self, ephys_test_blocks, ctx):
-        self._ensure_prerequisites(ctx)
+    def test_channel_mappings_created(self, ephys_block_info_populated, ctx):
         channel_rows = (
             ctx.ephys.EphysBlockInfo.Channel & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
