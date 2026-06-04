@@ -442,3 +442,45 @@ class TestCreateElectrodeConfig:
             config_name="custom-name",
         )
         assert config_name == "custom-name"
+
+
+class TestLoadDeviceChannelMap:
+    """Tests for load_device_channel_map — takes JSON path directly."""
+
+    FIXTURE_JSON = (
+        Path(__file__).parent.parent.parent
+        / "fixtures" / "ephys" / "M81_ProbeB_4Shanks_1000_to_1700_um.json"
+    )
+
+    def test_returns_active_contacts_mapping(self):
+        from aeon.dj_pipeline.utils.ephys_utils import load_device_channel_map
+
+        channel_map = load_device_channel_map(self.FIXTURE_JSON)
+        assert len(channel_map) == 384  # 384 active contacts on NP2.0 single-bank
+        # 3982-3989 map to channels 94-149 per JSON
+        assert channel_map[3982] == 94
+        assert channel_map[3989] == 149
+
+    def test_raises_on_missing_file(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import load_device_channel_map
+
+        with pytest.raises(FileNotFoundError):
+            load_device_channel_map(tmp_path / "does_not_exist.json")
+
+    def test_raises_on_no_device_channel_indices(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import load_device_channel_map
+
+        bad = tmp_path / "bad.json"
+        bad.write_text('{"probes": [{"contact_ids": ["0"]}]}')
+        with pytest.raises(ValueError, match="No device_channel_indices"):
+            load_device_channel_map(bad)
+
+    def test_raises_on_no_active_contacts(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import load_device_channel_map
+
+        all_inactive = tmp_path / "inactive.json"
+        all_inactive.write_text(
+            '{"probes": [{"contact_ids": ["0", "1"], "device_channel_indices": [-1, -1]}]}'
+        )
+        with pytest.raises(ValueError, match="No active contacts"):
+            load_device_channel_map(all_inactive)

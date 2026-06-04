@@ -324,9 +324,8 @@ def parse_epoch_metadata(epoch_path: Path) -> dict | None:
         return None
 
 
-def load_device_channel_map(epoch_path: Path) -> dict[int, int]:
-    """Read the probeinterface JSON from an epoch directory and return the
-    hardware channel-to-electrode mapping.
+def load_device_channel_map(json_path: Path) -> dict[int, int]:
+    """Read a probeinterface JSON and return the hardware channel mapping.
 
     The probeinterface JSON describes the full probe geometry (e.g. 5120
     contacts for a 4-shank NP2.0). The ``device_channel_indices`` array marks
@@ -334,8 +333,9 @@ def load_device_channel_map(epoch_path: Path) -> dict[int, int]:
     column index (0-383 for 384-channel recordings), and -1 means inactive.
 
     Args:
-        epoch_path: Path to the epoch directory on Ceph (contains the
-            probeinterface JSON at its root level).
+        json_path: Path to the probeinterface JSON file (typically resolved
+            from ``ElectrodeConfig.config_file_name`` under the rig's
+            ``recording_configurations/`` directory).
 
     Returns:
         Dict mapping ``{electrode_site_id: raw_channel_idx}`` for all active
@@ -344,30 +344,11 @@ def load_device_channel_map(epoch_path: Path) -> dict[int, int]:
         from site 114.
 
     Raises:
-        FileNotFoundError: If no probeinterface JSON is found.
-        ValueError: If the JSON has no ``device_channel_indices``.
+        FileNotFoundError: If json_path doesn't exist.
+        ValueError: If the JSON has no ``device_channel_indices`` or no
+            active contacts.
     """
-    # Find the probeinterface JSON — it's the only .json file at the epoch
-    # root (probe_assignments.json is also there, but we filter by content).
-    json_files = sorted(epoch_path.glob("*.json"))
-    pi_path = None
-    for jf in json_files:
-        try:
-            with open(jf) as f:
-                data = json.load(f)
-            if "probes" in data:
-                pi_path = jf
-                break
-        except (json.JSONDecodeError, OSError):
-            continue
-
-    if pi_path is None:
-        raise FileNotFoundError(
-            f"No probeinterface JSON found in {epoch_path}. "
-            f"Expected a JSON file with a 'probes' key."
-        )
-
-    with open(pi_path) as f:
+    with open(json_path) as f:
         pi_data = json.load(f)
 
     channel_map: dict[int, int] = {}
@@ -376,17 +357,17 @@ def load_device_channel_map(epoch_path: Path) -> dict[int, int]:
         dci = probe.get("device_channel_indices")
         if dci is None:
             raise ValueError(
-                f"No device_channel_indices in {pi_path}. "
+                f"No device_channel_indices in {json_path}. "
                 f"Cannot determine hardware channel mapping."
             )
-        for cid, ch_idx in zip(contact_ids, dci):
-            ch_idx = int(ch_idx)
+        for cid, ch_idx_raw in zip(contact_ids, dci, strict=False):
+            ch_idx = int(ch_idx_raw)
             if ch_idx >= 0:
                 channel_map[int(cid)] = ch_idx
 
     if not channel_map:
         raise ValueError(
-            f"No active contacts (device_channel_indices >= 0) in {pi_path}."
+            f"No active contacts (device_channel_indices >= 0) in {json_path}."
         )
 
     return channel_map
