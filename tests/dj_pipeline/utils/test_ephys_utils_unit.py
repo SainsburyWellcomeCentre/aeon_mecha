@@ -11,6 +11,7 @@ activates the streams schema and attempts a DB connection.
 
 import json
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -364,3 +365,80 @@ class TestParseEpochMetadata:
         result = parse_epoch_metadata(tmp_path)
 
         assert result is None
+
+
+def _mock_table_with_transaction():
+    """Build a MagicMock table whose .connection.transaction is a no-op context manager."""
+    table = MagicMock()
+    table.connection.transaction.__enter__ = MagicMock(return_value=None)
+    table.connection.transaction.__exit__ = MagicMock(return_value=False)
+    return table
+
+
+class TestCreateElectrodeConfig:
+    """Unit tests for create_electrode_config — uses the fixture JSON, mocks tables."""
+
+    FIXTURE_JSON = (
+        Path(__file__).parent.parent.parent
+        / "fixtures" / "ephys" / "M81_ProbeB_4Shanks_1000_to_1700_um.json"
+    )
+
+    def test_returns_canonical_keys(self):
+        from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
+
+        probe_type_table = _mock_table_with_transaction()
+        probe_type_table.Electrode = MagicMock()
+        electrode_config_table = _mock_table_with_transaction()
+        electrode_config_table.Electrode = MagicMock()
+
+        probe_type, config_name = create_electrode_config(
+            json_path=self.FIXTURE_JSON,
+            probe_type_table=probe_type_table,
+            electrode_config_table=electrode_config_table,
+        )
+        assert probe_type == "neuropixels2.0-multishank"
+        assert config_name == "M81_ProbeB_4Shanks_1000_to_1700_um"
+
+    def test_inserts_full_geometry_and_active_subset(self):
+        from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
+
+        probe_type_table = _mock_table_with_transaction()
+        probe_type_table.Electrode = MagicMock()
+        electrode_config_table = _mock_table_with_transaction()
+        electrode_config_table.Electrode = MagicMock()
+
+        create_electrode_config(
+            json_path=self.FIXTURE_JSON,
+            probe_type_table=probe_type_table,
+            electrode_config_table=electrode_config_table,
+        )
+        # ProbeType.Electrode.insert called with a DataFrame of 5120 rows
+        pt_call = probe_type_table.Electrode.insert.call_args
+        pt_df = pt_call.args[0]
+        assert len(pt_df) == 5120
+
+        # ElectrodeConfig.Electrode.insert called with 384 entries
+        ec_call = electrode_config_table.Electrode.insert.call_args
+        ec_rows = list(ec_call.args[0])
+        assert len(ec_rows) == 384
+        # All 384 should have probe_type + electrode_config_name + electrode keys
+        assert all(
+            {"probe_type", "electrode_config_name", "electrode"} <= set(r.keys())
+            for r in ec_rows
+        )
+
+    def test_config_name_override(self):
+        from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
+
+        probe_type_table = _mock_table_with_transaction()
+        probe_type_table.Electrode = MagicMock()
+        electrode_config_table = _mock_table_with_transaction()
+        electrode_config_table.Electrode = MagicMock()
+
+        _, config_name = create_electrode_config(
+            json_path=self.FIXTURE_JSON,
+            probe_type_table=probe_type_table,
+            electrode_config_table=electrode_config_table,
+            config_name="custom-name",
+        )
+        assert config_name == "custom-name"

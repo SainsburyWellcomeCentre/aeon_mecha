@@ -17,7 +17,7 @@ logger = dj.logger
 # Mapping from device directory name to probe_type
 DEVICE_PROBE_TYPE_MAP = {
     "NeuropixelsV2Beta": "neuropixels2.0_beta",
-    "NeuropixelsV2": "neuropixels2.0",
+    "NeuropixelsV2": "neuropixels2.0-multishank",
 }
 
 
@@ -425,6 +425,107 @@ def create_probe_type(
     with probe_type_table.connection.transaction:
         probe_type_table.insert1({"probe_type": probe_type})
         probe_type_table.Electrode.insert(electrode_df, ignore_extra_fields=True)
+
+
+def create_electrode_config(
+    json_path,
+    probe_type_table,
+    electrode_config_table,
+    *,
+    config_name: str | None = None,
+    probe_type_name: str | None = None,
+) -> tuple[str, str]:
+    """Populate ProbeType + ElectrodeConfig from a per-epoch probeinterface JSON.
+
+    Reads a per-epoch probe configuration JSON (probeinterface schema). Populates:
+
+      - ProbeType + ProbeType.Electrode with the full contact geometry (e.g.
+        5120 contacts for Neuropixels 2.0 multishank).
+      - ElectrodeConfig + ElectrodeConfig.Electrode with the SUBSET of contacts
+        where ``device_channel_indices != -1`` (the actively-recorded
+        electrodes — 384 for a standard NP 2.0 single-bank readout).
+
+    Idempotent: re-running with the same JSON is a no-op (skip_duplicates=True
+    on all inserts). Mirrors create_probe_type's style — caller passes the
+    table classes explicitly.
+
+    Args:
+        json_path: Path to the per-epoch probeinterface JSON file.
+        probe_type_table: ProbeType table class.
+        electrode_config_table: ElectrodeConfig table class.
+        config_name: Override electrode_config_name. Defaults to json_path.stem.
+        probe_type_name: Override probe_type. Default: canonical-cased version
+            of ``annotations["name"]`` (e.g. "Neuropixels 2.0 - multishank" →
+            "neuropixels2.0-multishank").
+
+    Returns:
+        (probe_type, electrode_config_name) — keys identifying the inserted rows.
+    """
+    import uuid
+
+    import probeinterface as pi
+
+    json_path = Path(json_path)
+    probe_group = pi.read_probeinterface(str(json_path))
+    if len(probe_group.probes) != 1:
+        raise ValueError(
+            f"Expected exactly one probe in {json_path}, got {len(probe_group.probes)}."
+        )
+    probe = probe_group.probes[0]
+
+    if probe_type_name is None:
+        raw_name = probe.annotations.get("name", "")
+        probe_type_name = raw_name.lower().replace(" - ", "-").replace(" ", "")
+    if not probe_type_name:
+        raise ValueError(f"Cannot derive probe_type from {json_path} annotations")
+
+    # Build electrode geometry dataframe for ProbeType.Electrode
+    electrode_df = probe.to_dataframe()
+    electrode_df.rename(
+        columns={
+            "contact_ids": "electrode_name",
+            "shank_ids": "shank",
+            "x": "x_coord",
+            "y": "y_coord",
+        },
+        inplace=True,
+    )
+    electrode_df["shank"] = electrode_df["shank"].apply(lambda x: x if x else 0)
+    electrode_df["probe_type"] = probe_type_name
+    electrode_df["electrode"] = electrode_df.index
+
+    with probe_type_table.connection.transaction:
+        probe_type_table.insert1({"probe_type": probe_type_name}, skip_duplicates=True)
+        probe_type_table.Electrode.insert(
+            electrode_df, ignore_extra_fields=True, skip_duplicates=True
+        )
+
+    # ElectrodeConfig: subset where device_channel_indices != -1
+    if config_name is None:
+        config_name = json_path.stem
+
+    dci = probe.device_channel_indices
+    active_electrode_ids = [i for i, ch in enumerate(dci) if ch != -1]
+
+    electrode_config_key = {
+        "probe_type": probe_type_name,
+        "electrode_config_name": config_name,
+    }
+    with electrode_config_table.connection.transaction:
+        electrode_config_table.insert1(
+            {
+                **electrode_config_key,
+                "electrode_config_description": f"From {json_path.name}",
+                "electrode_config_hash": uuid.uuid4(),
+            },
+            skip_duplicates=True,
+        )
+        electrode_config_table.Electrode.insert(
+            ({**electrode_config_key, "electrode": int(e)} for e in active_electrode_ids),
+            skip_duplicates=True,
+        )
+
+    return probe_type_name, config_name
 
 
 # ---------------------------------------------------------------------------
