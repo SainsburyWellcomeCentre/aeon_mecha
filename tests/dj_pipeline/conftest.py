@@ -123,6 +123,12 @@ def _drop_test_schemas() -> None:
     import datajoint as dj
 
     prefix = dj.config.database.database_prefix
+    if not prefix or not prefix.endswith("_"):
+        raise RuntimeError(
+            f"Refusing to drop schemas: prefix={prefix!r} is not a safe test prefix. "
+            "Set TEST_DB_PREFIX to a value ending in '_' (e.g. 'test_aeon_')."
+        )
+
     schemas_to_drop = [s for s in dj.list_schemas() if s.startswith(prefix)]
     max_attempts = len(schemas_to_drop) + 1
     for _ in range(max_attempts):
