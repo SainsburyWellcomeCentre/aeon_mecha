@@ -450,48 +450,50 @@ def ephys_full_pipeline(dj_config_integration, tmp_path_factory):
     _original_get_sorting_root = ss_module.get_sorting_root_dir
     ss_module.get_sorting_root_dir = lambda: sorting_root
 
-    # Create ProbeType with electrode geometry via probeinterface
-    ephys.create_probe_type(
-        probe_type="neuropixels2.0",
-        manufacturer="imec",
-        probe_name="NP2014",
-    )
+    try:
+        # Create ProbeType with electrode geometry via probeinterface
+        ephys.create_probe_type(
+            probe_type="neuropixels2.0",
+            manufacturer="imec",
+            probe_name="NP2014",
+        )
 
-    # Create ElectrodeConfig for golden dataset's 8 electrodes (3982-3989)
-    import uuid
+        # Create ElectrodeConfig for golden dataset's 8 electrodes (3982-3989)
+        import uuid
 
-    golden_electrodes = list(range(3982, 3990))
-    electrode_config_key = {
-        "probe_type": "neuropixels2.0",
-        "electrode_config_name": "3982-3989",
-    }
-    ephys.ElectrodeConfig.insert1(
-        {
-            **electrode_config_key,
-            "electrode_config_description": "8 electrodes on shank3 (golden dataset)",
-            "electrode_config_hash": uuid.uuid4(),
-        },
-        skip_duplicates=True,
-    )
-    ephys.ElectrodeConfig.Electrode.insert(
-        ({**electrode_config_key, "electrode": e} for e in golden_electrodes),
-        skip_duplicates=True,
-    )
+        golden_electrodes = list(range(3982, 3990))
+        electrode_config_key = {
+            "probe_type": "neuropixels2.0",
+            "electrode_config_name": "3982-3989",
+        }
+        ephys.ElectrodeConfig.insert1(
+            {
+                **electrode_config_key,
+                "electrode_config_description": "8 electrodes on shank3 (golden dataset)",
+                "electrode_config_hash": uuid.uuid4(),
+            },
+            skip_duplicates=True,
+        )
+        ephys.ElectrodeConfig.Electrode.insert(
+            ({**electrode_config_key, "electrode": e} for e in golden_electrodes),
+            skip_duplicates=True,
+        )
 
-    yield {
-        "lab": lab,
-        "subject": subject,
-        "acquisition": acquisition,
-        "ephys": ephys,
-        "spike_sorting": spike_sorting,
-        "spike_sorting_curation": spike_sorting_curation,
-        "store_dir": store_dir,
-        "sorting_root": sorting_root,
-    }
-
-    # Teardown
-    ss_module.get_sorting_root_dir = _original_get_sorting_root
-    _drop_test_schemas()
+        yield {
+            "lab": lab,
+            "subject": subject,
+            "acquisition": acquisition,
+            "ephys": ephys,
+            "spike_sorting": spike_sorting,
+            "spike_sorting_curation": spike_sorting_curation,
+            "store_dir": store_dir,
+            "sorting_root": sorting_root,
+        }
+    finally:
+        # Restore the original function and drop test schemas, regardless of
+        # whether the fixture body or any consumer test raised.
+        ss_module.get_sorting_root_dir = _original_get_sorting_root
+        _drop_test_schemas()
 
 
 @pytest.fixture(scope="session")
