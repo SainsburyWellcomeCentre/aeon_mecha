@@ -550,41 +550,70 @@ class EphysChunk(dj.Manual):
 
         exp_key = {"experiment_name": experiment_name}
 
-        # Build insertion lookup from EphysEpoch.Insertion:
-        # {(epoch_start, probe_label): insertion_key}
+        # Build insertion lookup from EphysEpochConfig.Insertion:
+        # {(epoch_start, probe_label): insertion_key + probe_label}
         insertion_lookup: dict[tuple[datetime, str], dict] = {}
-        for entry in (EphysEpoch.Insertion & exp_key).to_dicts():
+        for entry in (EphysEpochConfig.Insertion & exp_key).to_dicts():
             insertion_lookup[(entry["epoch_start"], entry["probe_label"])] = {
                 "experiment_name": entry["experiment_name"],
                 "subject": entry["subject"],
                 "insertion_number": entry["insertion_number"],
+                "probe_label": entry["probe_label"],
             }
 
         if not insertion_lookup:
             logger.warning(
-                f"No EphysEpoch.Insertion entries found for {experiment_name}. "
-                "Run EphysEpoch.populate() first."
+                f"No EphysEpochConfig.Insertion entries found for {experiment_name}. "
+                "Run EphysEpochConfig.populate() first."
             )
             return
 
-        # Precompute probe→config cache: one set of 3 queries per unique insertion_key
-        # rather than 3 queries per AmplifierData file.
+        # Per-epoch-per-probe config resolution (issue #584).
+        # Cache: (epoch_dir_name) → {probe_label: config_file_name basename or None}
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+
+        epoch_metadata_cache: dict[str, dict[str, str | None]] = {}
+
+        # Cache: (experiment, subject, insertion_number, epoch_start) → (probe_type, electrode_config_name)
         probe_config_cache: dict[tuple, tuple[str, str]] = {}
-        for ins in insertion_lookup.values():
-            cache_key = (ins["experiment_name"], ins["subject"], ins["insertion_number"])
+        for (epoch_start, probe_label), ins in insertion_lookup.items():
+            cache_key = (
+                ins["experiment_name"],
+                ins["subject"],
+                ins["insertion_number"],
+                epoch_start,
+            )
             if cache_key in probe_config_cache:
+                continue
+            # Parse Metadata.yml once per epoch_dir
+            epoch_dir_rel = (
+                EphysEpoch & exp_key & {"epoch_start": epoch_start}
+            ).fetch1("epoch_dir")
+            epoch_dir_name = Path(epoch_dir_rel).parts[0]
+            if epoch_dir_name not in epoch_metadata_cache:
+                epoch_metadata_cache[epoch_dir_name] = parse_metadata_probe_configs(
+                    raw_dir / epoch_dir_name
+                )
+            basename = epoch_metadata_cache[epoch_dir_name].get(probe_label)
+            if basename is None:
+                logger.warning(
+                    f"No ProbeInterfaceFileName for {probe_label} in {epoch_dir_name}. "
+                    f"Skipping config resolution."
+                )
                 continue
             probe_name = (ProbeInsertion & ins).fetch1("probe")
             probe_type = (Probe & {"probe": probe_name}).fetch1("probe_type")
-            configs = (ElectrodeConfig & {"probe_type": probe_type}).to_arrays("electrode_config_name")
-            if len(configs) == 0:
-                raise ValueError(f"No electrode configs found for probe_type={probe_type}")
-            if len(configs) > 1:
+            ec_row = ElectrodeConfig & {
+                "probe_type": probe_type,
+                "config_file_name": basename,
+            }
+            if not ec_row:
                 raise ValueError(
-                    f"Multiple electrode configs for {probe_type}: {configs}. "
-                    "Please specify electrode_config_name."
+                    f"No ElectrodeConfig for (probe_type={probe_type}, "
+                    f"config_file_name={basename}). Run EphysEpochConfig.populate() first."
                 )
-            probe_config_cache[cache_key] = (probe_type, configs[0])
+            electrode_config_name = ec_row.fetch1("electrode_config_name")
+            probe_config_cache[cache_key] = (probe_type, electrode_config_name)
 
         # Discover ALL ephys binary files across epochs
         all_ephys_files = sorted(
@@ -676,12 +705,19 @@ class EphysChunk(dj.Manual):
                 logger.error(f"Failed to resolve HARP times for {ephys_file}: {e}")
                 continue
 
-            # Resolve electrode config from precomputed cache (no DB queries per file)
+            # Resolve electrode config from precomputed cache (per-epoch-per-probe).
             cache_key = (
                 insertion_key["experiment_name"],
                 insertion_key["subject"],
                 insertion_key["insertion_number"],
+                epoch_start,
             )
+            if cache_key not in probe_config_cache:
+                logger.warning(
+                    f"No config resolved for {probe_label} in epoch {epoch_start}. "
+                    f"Skipping {ephys_file.name}."
+                )
+                continue
             probe_type, electrode_config_name = probe_config_cache[cache_key]
 
             chunk_entry = {
