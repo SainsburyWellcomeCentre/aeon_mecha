@@ -443,6 +443,23 @@ class TestCreateElectrodeConfig:
         )
         assert config_name == "custom-name"
 
+    def test_sets_config_file_name(self):
+        from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
+
+        probe_type_table = _mock_table_with_transaction()
+        probe_type_table.Electrode = MagicMock()
+        electrode_config_table = _mock_table_with_transaction()
+        electrode_config_table.Electrode = MagicMock()
+
+        create_electrode_config(
+            json_path=self.FIXTURE_JSON,
+            probe_type_table=probe_type_table,
+            electrode_config_table=electrode_config_table,
+        )
+        ec_call = electrode_config_table.insert1.call_args
+        inserted_row = ec_call.args[0]
+        assert inserted_row["config_file_name"] == "M81_ProbeB_4Shanks_1000_to_1700_um.json"
+
 
 class TestParseMetadataProbeConfigs:
     """Tests for parse_metadata_probe_configs — Metadata.yml → {probe_label: basename}."""

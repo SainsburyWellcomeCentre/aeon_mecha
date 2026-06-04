@@ -62,8 +62,10 @@ class ElectrodeConfig(dj.Lookup):
     -> ProbeType
     electrode_config_name: varchar(32)  # e.g. 0-383
     ---
-    electrode_config_description: varchar(4000)  # description of the electrode configuration
-    electrode_config_hash: uuid  # hash of the electrode configuration
+    electrode_config_description='': varchar(4000)
+    electrode_config_hash=null: uuid
+    config_file_name=null: varchar(255)  # basename of the probeinterface JSON
+    unique index (probe_type, config_file_name)
     """
 
     class Electrode(dj.Part):
