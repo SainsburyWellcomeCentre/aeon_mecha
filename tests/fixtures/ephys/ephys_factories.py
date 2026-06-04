@@ -21,10 +21,28 @@ def make_synthetic_ephys_epoch(
     Each CSV has 60 rows (one per second). ONIX clock advances at 1000 ticks/sec;
     HARP time advances at 1 sec increments. CSV filenames carry hourly HARP
     timestamps, but actual content covers an hour-long window.
+
+    Also writes a minimal Metadata.yml with per-probe ProbeInterfaceFileName
+    entries (required by EphysChunk.ingest_chunks's per-epoch config lookup).
     """
+    import json as _json
+
     epoch_dir = raw_dir / epoch_dir_name
     device_dir = epoch_dir / device_name
     device_dir.mkdir(parents=True, exist_ok=True)
+
+    # Minimal Metadata.yml — Devices.NeuropixelsV2e.ConfigurationA.ProbeInterfaceFileName
+    # matches the synthetic ElectrodeConfig.config_file_name from
+    # register_synthetic_probe_insertion ("test-config-0.json").
+    metadata = {
+        "Devices": {
+            "NeuropixelsV2e": {
+                "DeviceName": device_name,
+                "ConfigurationA": {"ProbeInterfaceFileName": "test-config-0.json"},
+            },
+        },
+    }
+    (epoch_dir / "Metadata.yml").write_text(_json.dumps(metadata))
 
     # HARP epoch base: arbitrary seconds-since-1904 for plausible wall-clock times.
     harp_base = 3000.0
@@ -63,7 +81,8 @@ def register_synthetic_experiment(
 
     Inserts: lab.Arena, acquisition.PipelineRepository, acquisition.DevicesSchema,
     acquisition.Experiment, acquisition.Experiment.Directory pointing at raw_dir,
-    acquisition.Epoch, and a minimal ephys.EphysEpoch (has_ephys=True, n_probes=0).
+    ephys.EphysEpoch (Manual peer post-#583, no has_ephys/n_probes), and
+    ephys.EphysEpochConfig (with has_ephys=True, n_probes=0).
 
     Returns the epoch_start datetime.
     """
@@ -137,10 +156,9 @@ def register_synthetic_experiment(
             skip_duplicates=True,
         )
 
-    # Epoch — insert directly (skip ingest_epochs which scans camera files).
-    # Use "raw-ephys" since ephys downstream filters Epoch by EphysEpoch.has_ephys
-    # via resolve_raw_dir_and_epochs.
-    acquisition.Epoch.insert1(
+    # EphysEpoch (Manual peer post-#583) — insert directly; no has_ephys/n_probes
+    # on the master row (those moved to EphysEpochConfig).
+    ephys.EphysEpoch.insert1(
         {
             "experiment_name": experiment_name,
             "epoch_start": epoch_dt,
@@ -152,8 +170,9 @@ def register_synthetic_experiment(
         ignore_extra_fields=True,
     )
 
-    # EphysEpoch is dj.Imported — must use allow_direct_insert=True outside of make()
-    ephys.EphysEpoch.insert1(
+    # EphysEpochConfig is dj.Imported — direct insert with allow_direct_insert=True.
+    # n_probes=0 is fine for sync-model-only tests that don't exercise probe discovery.
+    ephys.EphysEpochConfig.insert1(
         {
             "experiment_name": experiment_name,
             "epoch_start": epoch_dt,
@@ -217,7 +236,7 @@ def register_synthetic_probe_insertion(
     probe_label: str,
     device_name: str = "NeuropixelsV2Beta",
 ):
-    """Insert ProbeType, ElectrodeConfig, Probe, ProbeInsertion, EphysEpoch.Insertion.
+    """Insert ProbeType, ElectrodeConfig, Probe, ProbeInsertion, EphysEpochConfig.Insertion.
 
     Uses minimal valid data to satisfy FKs without exercising probe semantics.
     """
@@ -250,7 +269,8 @@ def register_synthetic_probe_insertion(
         skip_duplicates=True,
     )
 
-    # ElectrodeConfig (Lookup)
+    # ElectrodeConfig (Lookup) — config_file_name is required for the new
+    # (probe_type, config_file_name) unique-index lookup used by ingest_chunks.
     config_hash = uuid.uuid5(uuid.NAMESPACE_DNS, f"{probe_type}-{electrode_config_name}")
     ephys.ElectrodeConfig.insert1(
         {
@@ -258,6 +278,7 @@ def register_synthetic_probe_insertion(
             "electrode_config_name": electrode_config_name,
             "electrode_config_description": "synthetic test config",
             "electrode_config_hash": config_hash,
+            "config_file_name": f"{electrode_config_name}.json",
         },
         skip_duplicates=True,
     )
@@ -281,8 +302,9 @@ def register_synthetic_probe_insertion(
         skip_duplicates=True,
     )
 
-    # EphysEpoch.Insertion (Part, allow_direct_insert)
-    ephys.EphysEpoch.Insertion.insert1(
+    # EphysEpochConfig.Insertion (Part, allow_direct_insert) — moved from
+    # EphysEpoch.Insertion in #583 restructure.
+    ephys.EphysEpochConfig.Insertion.insert1(
         {
             "experiment_name": experiment_name,
             "epoch_start": epoch_start,
