@@ -270,3 +270,66 @@ for s in dj.list_schemas():
         dj.Schema(s).drop()
 EOF
 ```
+
+---
+
+## Updating Golden Data
+
+The golden dataset (`/ceph/aeon/aeon/data/golden_tests/AEONX1/abcGolden01/`) is
+the source of truth for the exact-equality assertions in `test_ephys_ingestion.py`
+(`expected_unit_count`, `expected_total_spikes`, and the per-quality-label
+counts). Any change to the upstream data — Kilosort version bump, parameter
+change, channel-subset change, regeneration of `golden_test_sorting/` — MUST be
+paired with an update to the matching constants in the
+`foraging_abc_ephys_2026_05_11` entry of `GOLDEN_DATASETS` (in
+`tests/dj_pipeline/conftest.py`).
+
+Workflow:
+
+1. Regenerate `golden_test_sorting/sorting_output/` on the HPC compute node.
+2. Read the new counts:
+   ```python
+   import spikeinterface as si
+   s = si.load(
+       "/ceph/aeon/aeon/data/golden_tests/AEONX1/abcGolden01/"
+       "golden_test_sorting/sorting_output/in_container_sorting"
+   )
+   units = s.get_unit_ids()
+   print(f"unit_count={len(units)}")
+   print(f"total_spikes={sum(len(s.get_unit_spike_train(u)) for u in units)}")
+   ```
+3. Update `expected_unit_count`, `expected_total_spikes`, and the quality-label
+   counts in the same PR that touches upstream data.
+
+### Probe-electrode-config JSON fixture
+
+The integration tests use `tests/fixtures/ephys/M81_ProbeB_4Shanks_1000_to_1700_um.json`
+— a copy of the per-epoch probeinterface JSON from the `2026-05-11T07-50-11`
+golden epoch. It's the source of truth for the probe geometry (5120 contacts on
+NP 2.0 multishank) and the active electrode subset (384 contacts where
+`device_channel_indices != -1`).
+
+The conftest uses
+`aeon.dj_pipeline.utils.ephys_utils.create_electrode_config()` to populate the
+test DB's `ProbeType` and `ElectrodeConfig` tables from this JSON. The helper
+is idempotent — re-running tests doesn't duplicate rows.
+
+If a future epoch uses a different probe configuration, copy its JSON into
+`tests/fixtures/ephys/` and update the conftest path / config to reference it.
+
+> **Note on `ephys_test_epochs`:** the fixture directly inserts an
+> `acquisition.Epoch` row instead of calling `Epoch.ingest_epochs()`, because
+> `ingest_epochs()` scans for behavior CSVs that don't exist in the ephys-only
+> golden dataset. Tracked separately (issue #583).
+
+> **Follow-up:** wiring `create_electrode_config` into production
+> `EphysEpoch.populate()` so per-epoch JSON discovery happens automatically is
+> tracked as a follow-up design item — production currently treats
+> `ElectrodeConfig` as a pre-populated lookup table.
+
+> **Note on `golden_test_sorting/`:** the pre-computed Kilosort output
+> directory used by `ephys_sorting_injected` is not yet uploaded to S3. When
+> the local copy is missing, the 9 spike-sorting-cascade tests
+> (PostProcessing/SortedSpikes/SyncedSpikes) skip cleanly via the existing
+> `pytest.skip` in the fixture. The remaining 16 tests cover EphysEpoch
+> through PreProcessing.
