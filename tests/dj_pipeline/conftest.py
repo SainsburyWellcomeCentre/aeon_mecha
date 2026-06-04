@@ -72,7 +72,7 @@ GOLDEN_DATASETS = {
         "experiment_type": "foraging",
         "device_name": "NeuropixelsV2",
         "probe_type": "neuropixels2.0-multishank",
-        "electrode_config_name": "M81_ProbeB_4Shanks_1000_to_1700",
+        "electrode_config_name": "M81_ProbeB_4Shanks_1000_to_1700_um",
         "probe_serial": "23299108854",
         "n_channels": 8,                       # sorting subset (ElectrodeGroup)
         "n_recording_channels": 384,           # full recording width (active subset of probe)
@@ -458,23 +458,9 @@ def ephys_full_pipeline(dj_config_integration, tmp_path_factory):
     ss_module.get_sorting_root_dir = lambda: sorting_root
 
     try:
-        # Populate ProbeType + ElectrodeConfig from the per-epoch probeinterface JSON.
-        # ProbeType.Electrode gets full geometry (5120 contacts for NP 2.0 multishank);
-        # ElectrodeConfig.Electrode gets the 384 active contacts (device_channel_indices != -1).
-        from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
-
-        probe_config_json = (
-            Path(__file__).parent.parent / "fixtures" / "ephys"
-            / "M81_ProbeB_4Shanks_1000_to_1700_um.json"
-        )
-        # electrode_config_name from cfg (varchar(32) limit — JSON stem is too long)
-        cfg_data = GOLDEN_DATASETS["foraging_abc_ephys_2026_05_11"]
-        create_electrode_config(
-            json_path=probe_config_json,
-            probe_type_table=ephys.ProbeType,
-            electrode_config_table=ephys.ElectrodeConfig,
-            config_name=cfg_data["electrode_config_name"],
-        )
+        # NOTE: ProbeType + ElectrodeConfig are now populated automatically
+        # by EphysEpochConfig.populate() from each epoch's ProbeInterface JSON
+        # (see ephys.EphysEpochConfig.make).
 
         yield {
             "lab": lab,
@@ -576,39 +562,23 @@ def ephys_test_epochs(
     require_ephys_golden_data,
     tmp_path_factory,
 ):
-    """Insert epoch and populate EphysEpoch using the real pipeline code.
+    """Drive the ephys ingest chain end-to-end against the golden epoch.
 
-    Directly inserts the Epoch entry rather than calling ingest_epochs(),
-    which requires a "raw" behavior directory that ephys-only experiments
-    don't have. The ephys pipeline from EphysEpoch.populate() onward is
-    what these tests exercise.
+    1. ``EphysEpoch.ingest_epochs(exp)`` — reads first HarpSync CSV to compute
+       HARP-clock epoch_start. No behavior CSV dependency.
+    2. ``EphysEpochConfig.populate()`` — probe discovery, ProbeInsertion setup,
+       per-probe ElectrodeConfig registration via create_electrode_config.
+    3. ``EphysSyncModel.ingest(exp)`` — HARP↔ONIX regression per chunk.
 
-    Creates a probe_assignments.json in a temp dir and sets
-    EphysEpoch.probe_assignments_override_dir so that populate() can
-    read the subject-probe mapping without the file existing on Ceph.
+    Returns the EphysEpoch rows for the experiment.
     """
     import json
 
-    from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
-
-    acquisition = ephys_full_pipeline["acquisition"]
     ephys = ephys_full_pipeline["ephys"]
     cfg = ephys_golden_dataset_config
     exp_name = cfg["experiment_name"]
-    epoch_start = parse_epoch_timestamp(cfg["epoch_dir"])
 
-    # Directly insert the epoch (ingest_epochs requires a "raw" directory)
-    acquisition.Epoch.insert1(
-        {
-            "experiment_name": exp_name,
-            "epoch_start": epoch_start,
-            "directory_type": "raw-ephys",
-            "epoch_dir": cfg["epoch_dir"],
-        },
-        skip_duplicates=True,
-    )
-
-    # Write probe_assignments.json to temp dir for EphysEpoch.populate()
+    # Write probe_assignments.json to temp dir for EphysEpochConfig.populate()
     override_dir = tmp_path_factory.mktemp("probe_assignments")
     assignments = {
         "version": 1,
@@ -618,33 +588,37 @@ def ephys_test_epochs(
     }
     (override_dir / "probe_assignments.json").write_text(json.dumps(assignments))
 
-    # Set override dir and populate — this runs the full EphysEpoch.make() pipeline:
-    # discover probes, parse metadata, get probe IDs, read assignments, create ProbeInsertions
-    ephys.EphysEpoch.probe_assignments_override_dir = override_dir
-    try:
-        ephys.EphysEpoch.populate(suppress_errors=False)
-    finally:
-        ephys.EphysEpoch.probe_assignments_override_dir = None
+    # Step 1: discover epochs (HARP-native epoch_start from first HarpSync CSV)
+    ephys.EphysEpoch.ingest_epochs(exp_name)
 
-    # Ingest sync models from HarpSync CSVs — required before EphysChunk.ingest_chunks()
+    # Step 2: probe discovery + per-probe ElectrodeConfig registration
+    ephys.EphysEpochConfig.probe_assignments_override_dir = override_dir
+    try:
+        ephys.EphysEpochConfig.populate(suppress_errors=False)
+    finally:
+        ephys.EphysEpochConfig.probe_assignments_override_dir = None
+
+    # Step 3: sync models from HarpSync CSVs — required before EphysChunk.ingest_chunks
     ephys.EphysSyncModel.ingest(exp_name)
 
-    return (acquisition.Epoch & {"experiment_name": exp_name}).to_dicts()
+    return (ephys.EphysEpoch & {"experiment_name": exp_name}).to_dicts()
 
 
 @pytest.fixture(scope="session")
 def ephys_test_blocks(ephys_test_epochs, ephys_full_pipeline, ephys_golden_dataset_config):
-    """Create EphysBlock entry for the golden dataset — single 35-minute block."""
-    from datetime import timedelta
+    """Create EphysBlock entry for the golden dataset — single 35-minute block.
 
-    from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
+    Uses the HARP-native ``epoch_start`` from the EphysEpoch row (not the dir
+    name, which is ONIX-wall-clock).
+    """
+    from datetime import timedelta
 
     ephys = ephys_full_pipeline["ephys"]
     cfg = ephys_golden_dataset_config
     exp_name = cfg["experiment_name"]
 
     probe_insertions = (ephys.ProbeInsertion & {"experiment_name": exp_name}).to_dicts()
-    epoch_start = parse_epoch_timestamp(cfg["epoch_dir"])
+    epoch_start = ephys_test_epochs[0]["epoch_start"]  # HARP-native
 
     for pi in probe_insertions:
         ephys.EphysBlock.insert1(

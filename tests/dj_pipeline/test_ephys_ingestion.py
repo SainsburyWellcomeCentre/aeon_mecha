@@ -32,14 +32,14 @@ class TestEphysEpochDiscovery:
         assert count >= 1
 
     def test_has_ephys_flag(self, ephys_test_epochs, ctx):
-        epochs = (
-            ctx.ephys.EphysEpoch & {"experiment_name": ctx.cfg["experiment_name"]}
+        configs = (
+            ctx.ephys.EphysEpochConfig & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
-        assert all(e["has_ephys"] for e in epochs)
+        assert all(c["has_ephys"] for c in configs)
 
     def test_probe_count(self, ephys_test_epochs, ctx):
         n_probes = (
-            ctx.ephys.EphysEpoch
+            ctx.ephys.EphysEpochConfig
             & {
                 "experiment_name": ctx.cfg["experiment_name"],
                 "epoch_start": ephys_test_epochs[0]["epoch_start"],
@@ -50,7 +50,8 @@ class TestEphysEpochDiscovery:
 
     def test_probe_insertions_created(self, ephys_test_epochs, ctx):
         insertions = (
-            ctx.ephys.EphysEpoch.Insertion & {"experiment_name": ctx.cfg["experiment_name"]}
+            ctx.ephys.EphysEpochConfig.Insertion
+            & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         assert len(insertions) == ctx.cfg["expected_probe_count"]
 

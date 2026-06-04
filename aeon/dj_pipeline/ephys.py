@@ -60,7 +60,7 @@ class Probe(dj.Lookup):
 class ElectrodeConfig(dj.Lookup):
     definition = """  # The electrode configuration on a given probe used for recording
     -> ProbeType
-    electrode_config_name: varchar(32)  # e.g. 0-383
+    electrode_config_name: varchar(128)  # typically the stem of the ProbeInterface JSON
     ---
     electrode_config_description='': varchar(4000)
     electrode_config_hash=null: uuid
@@ -551,14 +551,15 @@ class EphysChunk(dj.Manual):
         exp_key = {"experiment_name": experiment_name}
 
         # Build insertion lookup from EphysEpochConfig.Insertion:
-        # {(epoch_start, probe_label): insertion_key + probe_label}
+        # {(epoch_start, probe_label): insertion_key}
+        # (probe_label stays in the tuple key — NOT inside the value, since
+        # EphysChunk's heading has no probe_label column.)
         insertion_lookup: dict[tuple[datetime, str], dict] = {}
         for entry in (EphysEpochConfig.Insertion & exp_key).to_dicts():
             insertion_lookup[(entry["epoch_start"], entry["probe_label"])] = {
                 "experiment_name": entry["experiment_name"],
                 "subject": entry["subject"],
                 "insertion_number": entry["insertion_number"],
-                "probe_label": entry["probe_label"],
             }
 
         if not insertion_lookup:
@@ -576,28 +577,28 @@ class EphysChunk(dj.Manual):
 
         # Cache: (experiment, subject, insertion_number, epoch_start) → (probe_type, electrode_config_name)
         probe_config_cache: dict[tuple, tuple[str, str]] = {}
-        for (epoch_start, probe_label), ins in insertion_lookup.items():
+        for (epoch_start_key, probe_label_key), ins in insertion_lookup.items():
             cache_key = (
                 ins["experiment_name"],
                 ins["subject"],
                 ins["insertion_number"],
-                epoch_start,
+                epoch_start_key,
             )
             if cache_key in probe_config_cache:
                 continue
             # Parse Metadata.yml once per epoch_dir
             epoch_dir_rel = (
-                EphysEpoch & exp_key & {"epoch_start": epoch_start}
+                EphysEpoch & exp_key & {"epoch_start": epoch_start_key}
             ).fetch1("epoch_dir")
             epoch_dir_name = Path(epoch_dir_rel).parts[0]
             if epoch_dir_name not in epoch_metadata_cache:
                 epoch_metadata_cache[epoch_dir_name] = parse_metadata_probe_configs(
                     raw_dir / epoch_dir_name
                 )
-            basename = epoch_metadata_cache[epoch_dir_name].get(probe_label)
+            basename = epoch_metadata_cache[epoch_dir_name].get(probe_label_key)
             if basename is None:
                 logger.warning(
-                    f"No ProbeInterfaceFileName for {probe_label} in {epoch_dir_name}. "
+                    f"No ProbeInterfaceFileName for {probe_label_key} in {epoch_dir_name}. "
                     f"Skipping config resolution."
                 )
                 continue

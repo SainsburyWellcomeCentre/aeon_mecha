@@ -535,11 +535,13 @@ def create_electrode_config(
     electrode_df["probe_type"] = probe_type_name
     electrode_df["electrode"] = electrode_df.index
 
-    with probe_type_table.connection.transaction:
-        probe_type_table.insert1({"probe_type": probe_type_name}, skip_duplicates=True)
-        probe_type_table.Electrode.insert(
-            electrode_df, ignore_extra_fields=True, skip_duplicates=True
-        )
+    # No explicit transaction — this helper may be called from inside a populate()
+    # transaction (e.g. EphysEpochConfig.make), and DataJoint forbids nesting.
+    # skip_duplicates=True keeps the inserts idempotent.
+    probe_type_table.insert1({"probe_type": probe_type_name}, skip_duplicates=True)
+    probe_type_table.Electrode.insert(
+        electrode_df, ignore_extra_fields=True, skip_duplicates=True
+    )
 
     # ElectrodeConfig: subset where device_channel_indices != -1
     if config_name is None:
@@ -552,20 +554,19 @@ def create_electrode_config(
         "probe_type": probe_type_name,
         "electrode_config_name": config_name,
     }
-    with electrode_config_table.connection.transaction:
-        electrode_config_table.insert1(
-            {
-                **electrode_config_key,
-                "electrode_config_description": f"From {json_path.name}",
-                "electrode_config_hash": uuid.uuid4(),
-                "config_file_name": json_path.name,
-            },
-            skip_duplicates=True,
-        )
-        electrode_config_table.Electrode.insert(
-            ({**electrode_config_key, "electrode": int(e)} for e in active_electrode_ids),
-            skip_duplicates=True,
-        )
+    electrode_config_table.insert1(
+        {
+            **electrode_config_key,
+            "electrode_config_description": f"From {json_path.name}",
+            "electrode_config_hash": uuid.uuid4(),
+            "config_file_name": json_path.name,
+        },
+        skip_duplicates=True,
+    )
+    electrode_config_table.Electrode.insert(
+        ({**electrode_config_key, "electrode": int(e)} for e in active_electrode_ids),
+        skip_duplicates=True,
+    )
 
     return probe_type_name, config_name
 
