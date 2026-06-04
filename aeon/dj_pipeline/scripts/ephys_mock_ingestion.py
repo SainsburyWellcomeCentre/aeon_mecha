@@ -33,12 +33,15 @@ ephys.Probe.insert1(
 )
 
 # ElectrodeConfig
+# NOTE (#583/#584): config_file_name is the lookup key used by
+# EphysChunk.ingest_chunks. Mock script inserts a synthetic basename.
 ephys.ElectrodeConfig.insert1(
     dict(
         probe_type=probe_type,
         electrode_config_name='0-383',
         electrode_config_description='',
         electrode_config_hash=uuid.uuid4(),
+        config_file_name='0-383.json',
     )
 )
 ephys.ElectrodeConfig.Electrode.insert(

@@ -274,6 +274,12 @@ def step_insert_probe_config(dry_run=False):
     print_ok(f"Probe registered: {PROBE_NAME}")
 
     # ElectrodeConfig
+    # NOTE (#583/#584): post-restructure, EphysChunk.ingest_chunks looks up
+    # ElectrodeConfig by (probe_type, config_file_name) where config_file_name
+    # is the basename of the per-epoch ProbeInterface JSON from Metadata.yml.
+    # This setup script inserts a placeholder config_file_name derived from
+    # ELECTRODE_CONFIG_NAME — Metadata.yml's ProbeInterfaceFileName must match
+    # this basename for ingest_chunks to resolve correctly.
     electrode_config_key = {
         "probe_type": PROBE_TYPE,
         "electrode_config_name": ELECTRODE_CONFIG_NAME,
@@ -283,6 +289,7 @@ def step_insert_probe_config(dry_run=False):
             **electrode_config_key,
             "electrode_config_description": "",
             "electrode_config_hash": uuid.uuid4(),
+            "config_file_name": f"{ELECTRODE_CONFIG_NAME}.json",
         },
         skip_duplicates=True,
     )
