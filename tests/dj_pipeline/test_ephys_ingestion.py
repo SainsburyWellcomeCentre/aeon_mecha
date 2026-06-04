@@ -67,7 +67,9 @@ class TestEphysEpochDiscovery:
         epoch_path = require_ephys_golden_data
         device_name, _, labels = discover_epoch_probes(epoch_path)
         assert device_name is not None
-        assert len(labels) == ctx.cfg["expected_probe_count"]
+        # discover_epoch_probes returns raw-discovery (ProbeA + ProbeB).
+        # expected_probe_count is for REGISTERED insertions (ProbeB only).
+        assert len(labels) == ctx.cfg["expected_discovered_probes"]
 
 
 class TestEphysChunkIngestion:
@@ -123,12 +125,15 @@ class TestEphysBlockInfo:
         assert chunk_links >= 1
 
     def test_channel_mappings_created(self, ephys_block_info_populated, ctx):
+        # EphysBlockInfo.Channel records the recording's channels (full active set,
+        # not the sorting subset), so we check n_recording_channels (384), not
+        # n_channels (8 — the sorting subset in ElectrodeGroup.Electrode).
         channel_rows = (
             ctx.ephys.EphysBlockInfo.Channel & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
-        assert len(channel_rows) == ctx.cfg["n_channels"]
+        assert len(channel_rows) == ctx.cfg["n_recording_channels"]
         channel_indices = sorted(r["channel_idx"] for r in channel_rows)
-        assert channel_indices == list(range(ctx.cfg["n_channels"]))
+        assert channel_indices == list(range(ctx.cfg["n_recording_channels"]))
 
 
 class TestPreProcessing:

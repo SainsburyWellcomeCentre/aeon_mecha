@@ -74,14 +74,16 @@ GOLDEN_DATASETS = {
         "probe_type": "neuropixels2.0-multishank",
         "electrode_config_name": "M81_ProbeB_4Shanks_1000_to_1700",
         "probe_serial": "23299108854",
-        "n_channels": 8,
+        "n_channels": 8,                       # sorting subset (ElectrodeGroup)
+        "n_recording_channels": 384,           # full recording width (active subset of probe)
         "electrodes": list(range(3982, 3990)),
         "required_files": [
             "Metadata.yml",
             "NeuropixelsV2/NeuropixelsV2_ProbeB_AmplifierData_0.bin",
             "NeuropixelsV2/NeuropixelsV2_ProbeB_Clock_0.bin",
         ],
-        "expected_probe_count": 1,  # ProbeB only; ProbeA is disabled/spoofed
+        "expected_probe_count": 1,            # registered ProbeInsertion: ProbeB only (A disabled)
+        "expected_discovered_probes": 2,      # raw discovery from epoch dir: ProbeA + ProbeB
         "golden_sorting_dir": "golden_test_sorting",
         "expected_unit_count": 14,
         "expected_total_spikes": 357_480,
