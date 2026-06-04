@@ -27,6 +27,7 @@ dependencies = [
   "swc-aeon>=0.1.0",
   "fastparquet",
   "graphviz",
+  "h5netcdf[h5py]",
   "ipykernel",
   "jupyter",
   "jupyterlab",
