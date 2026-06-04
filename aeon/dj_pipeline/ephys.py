@@ -855,22 +855,41 @@ class EphysBlockInfo(dj.Imported):
             chunk_query.proj(block_start=f"'{key['block_start']}'", block_end=f"'{key['block_end']}'")
         )
 
-        # Channel — use real hardware channel mapping from the probeinterface JSON.
-        # The JSON's device_channel_indices array maps each electrode site to its
-        # raw binary column index (0-383 for 384-channel recordings).
-        # Get the epoch directory from any chunk in this block.
+        # Channel — use real hardware channel mapping from the per-epoch
+        # probeinterface JSON. The JSON's device_channel_indices array maps
+        # each electrode site to its raw binary column index (0-383 for
+        # 384-channel recordings).
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_probe_config_path
+
         epoch_start = (chunk_query & dj.Top(limit=1)).fetch1("epoch_start")
-        epoch_dir = (acquisition.Epoch & key & {"epoch_start": epoch_start}).fetch1(
-            "epoch_dir"
-        )
+        config_file_name = (ElectrodeConfig & econfig).fetch1("config_file_name")
+        if not config_file_name:
+            raise ValueError(
+                f"ElectrodeConfig {econfig} has no config_file_name. "
+                f"Re-register via create_electrode_config or run EphysEpochConfig.populate()."
+            )
         raw_dir_result = resolve_raw_dir_and_epochs(key["experiment_name"])
         if raw_dir_result is None:
             raise ValueError(
                 f"Cannot resolve raw-ephys directory for {key['experiment_name']}"
             )
         raw_dir = raw_dir_result[0]
-        epoch_path = raw_dir / Path(epoch_dir).parts[0]
-        channel_map = load_device_channel_map(epoch_path)
+
+        # Prefer production layout (recording_configurations/<name>); fall back
+        # to the epoch dir itself for test/golden datasets.
+        json_path = resolve_probe_config_path(raw_dir, config_file_name)
+        if not json_path.exists():
+            epoch_dir = (EphysEpoch & key & {"epoch_start": epoch_start}).fetch1(
+                "epoch_dir"
+            )
+            fallback = raw_dir / Path(epoch_dir).parts[0] / config_file_name
+            if fallback.exists():
+                json_path = fallback
+            else:
+                raise FileNotFoundError(
+                    f"Probe config JSON not found at {json_path} or {fallback}"
+                )
+        channel_map = load_device_channel_map(json_path)
 
         electrode_df = (ElectrodeConfig.Electrode & econfig).keys(order_by="electrode")
         self.Channel.insert(
@@ -971,7 +990,7 @@ class OnixImuChunk(dj.Imported):
         from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
 
         onix_ts_start = (EphysSyncModel & key).fetch1("onix_ts_start")
-        epoch_dir = (acquisition.Epoch & key).fetch1("epoch_dir")
+        epoch_dir = (EphysEpoch & key).fetch1("epoch_dir")
         raw_dir_result = acquisition.Experiment.get_data_directory(
             {"experiment_name": key["experiment_name"]}, "raw-ephys"
         )

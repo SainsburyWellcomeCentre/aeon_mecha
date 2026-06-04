@@ -582,13 +582,11 @@ def resolve_raw_dir_and_epochs(
     """Return (raw_ephys_dir, {epoch_dir_name: epoch_start}) or None.
 
     Looks up the "raw-ephys" directory and returns only epochs with confirmed
-    ephys data (``EphysEpoch.has_ephys == True``).  This correctly handles
-    both split-directory experiments (behavior on AEON3, ephys on AEONX1) and
-    same-directory experiments where "raw" and "raw-ephys" point to the same
-    path.
+    ephys data (``EphysEpochConfig.has_ephys == True``). Reads from
+    ``ephys.EphysEpoch`` (peer of ``acquisition.Epoch`` post-#583).
     """
     from aeon.dj_pipeline import acquisition
-    from aeon.dj_pipeline.ephys import EphysEpoch
+    from aeon.dj_pipeline.ephys import EphysEpoch, EphysEpochConfig
 
     exp_key = {"experiment_name": experiment_name}
     raw_dir_result = acquisition.Experiment.get_data_directory(
@@ -599,9 +597,9 @@ def resolve_raw_dir_and_epochs(
         return None
     raw_dir = Path(raw_dir_result)
 
-    # Only include epochs where EphysEpoch confirmed ephys data exists.
+    # Only include epochs where EphysEpochConfig confirmed ephys data exists.
     ephys_epochs = (
-        acquisition.Epoch & exp_key & (EphysEpoch & {"has_ephys": True})
+        EphysEpoch & exp_key & (EphysEpochConfig & {"has_ephys": True})
     ).proj("epoch_dir").to_dicts()
 
     epoch_dir_to_start: dict[str, datetime] = {}
