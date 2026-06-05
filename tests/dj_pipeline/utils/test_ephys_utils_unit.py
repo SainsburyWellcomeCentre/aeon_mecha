@@ -519,20 +519,55 @@ class TestParseMetadataProbeConfigs:
         assert result["ProbeB"] == "M81_ProbeB_4Shanks_1000_to_1700_um.json"
 
 
-class TestResolveProbeConfigPath:
-    """Tests for resolve_probe_config_path — joins under recording_configurations/."""
+class TestResolveEpochProbeJson:
+    """Tests for resolve_epoch_probe_json — central → epoch-local fallback."""
 
-    def test_joins_path(self, tmp_path):
-        from aeon.dj_pipeline.utils.ephys_utils import resolve_probe_config_path
+    def test_prefers_central_when_both_exist(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
 
-        p = resolve_probe_config_path(tmp_path / "AEONX1", "foo.json")
-        assert p == tmp_path / "AEONX1" / "recording_configurations" / "foo.json"
+        raw = tmp_path / "AEONX1"
+        epoch = raw / "2024-01-01T00-00-00"
+        (raw / "recording_configurations").mkdir(parents=True)
+        epoch.mkdir(parents=True)
+        central = raw / "recording_configurations" / "probe.json"
+        local = epoch / "probe.json"
+        central.write_text("{}")
+        local.write_text("{}")
 
-    def test_accepts_str(self, tmp_path):
-        from aeon.dj_pipeline.utils.ephys_utils import resolve_probe_config_path
+        assert resolve_epoch_probe_json(raw, epoch, "probe.json") == central
 
-        p = resolve_probe_config_path(str(tmp_path), "foo.json")
-        assert p == tmp_path / "recording_configurations" / "foo.json"
+    def test_falls_back_to_epoch_local(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
+
+        raw = tmp_path / "AEONX1"
+        epoch = raw / "2024-01-01T00-00-00"
+        epoch.mkdir(parents=True)
+        local = epoch / "probe.json"
+        local.write_text("{}")
+        # No recording_configurations/ dir at all
+
+        assert resolve_epoch_probe_json(raw, epoch, "probe.json") == local
+
+    def test_raises_when_neither_exists(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
+
+        raw = tmp_path / "AEONX1"
+        epoch = raw / "2024-01-01T00-00-00"
+        epoch.mkdir(parents=True)
+        with pytest.raises(FileNotFoundError, match="not found at"):
+            resolve_epoch_probe_json(raw, epoch, "probe.json")
+
+    def test_accepts_str_args(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
+
+        raw = tmp_path / "AEONX1"
+        epoch = raw / "2024-01-01T00-00-00"
+        epoch.mkdir(parents=True)
+        (epoch / "probe.json").write_text("{}")
+
+        # Both args as strings (not Path) — common from older callers
+        p = resolve_epoch_probe_json(str(raw), str(epoch), "probe.json")
+        assert p == epoch / "probe.json"
 
 
 class TestLoadDeviceChannelMap:

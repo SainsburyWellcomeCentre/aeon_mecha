@@ -365,23 +365,42 @@ def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
     return result
 
 
-def resolve_probe_config_path(raw_ephys_dir, config_file_name: str) -> Path:
-    """Resolve the absolute path to a per-epoch probeinterface JSON.
+def resolve_epoch_probe_json(
+    raw_ephys_dir,
+    epoch_path,
+    config_file_name: str,
+) -> Path:
+    """Find the probeinterface JSON for a given basename.
 
-    The JSON lives in the rig's ``recording_configurations/`` directory,
-    a sibling of the per-epoch dirs under ``raw_ephys_dir``.
+    Searches in order:
+    1. ``<raw_ephys_dir>/recording_configurations/<config_file_name>`` —
+       the production canonical layout.
+    2. ``<epoch_path>/<config_file_name>`` — a local copy alongside the raw
+       data, used for test fixtures and golden datasets.
 
     Args:
         raw_ephys_dir: The rig-level raw-ephys directory
             (e.g. ``/ceph/aeon/data/raw/AEONX1``). Accepts str or Path.
+        epoch_path: The per-epoch directory under ``raw_ephys_dir``.
+            Accepts str or Path.
         config_file_name: Basename like
             ``"M81_ProbeB_4Shanks_1000_to_1700_um.json"``.
 
     Returns:
-        Resolved Path. Existence is NOT checked here — callers decide whether
-        to raise.
+        Resolved Path to an existing file.
+
+    Raises:
+        FileNotFoundError: If the JSON is not found in either location.
     """
-    return Path(raw_ephys_dir) / "recording_configurations" / config_file_name
+    central = Path(raw_ephys_dir) / "recording_configurations" / config_file_name
+    if central.exists():
+        return central
+    epoch_local = Path(epoch_path) / config_file_name
+    if epoch_local.exists():
+        return epoch_local
+    raise FileNotFoundError(
+        f"Probe config JSON not found at {central} or {epoch_local}"
+    )
 
 
 def load_device_channel_map(json_path: Path) -> dict[int, int]:

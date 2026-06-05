@@ -132,9 +132,10 @@ disabled/spoofed probes; the ingest skips them.
 | Production | `<raw-ephys-root>/<rig>/recording_configurations/<name>.json` |
 | Golden test fixture | `tests/fixtures/ephys/M81_ProbeB_4Shanks_1000_to_1700_um.json` |
 
-`resolve_probe_config_path(raw_ephys_dir, basename)` returns the production
-path. Callers fall back to the epoch directory if the production path
-doesn't exist (test/golden datasets typically have a copy at the epoch root).
+`resolve_epoch_probe_json(raw_ephys_dir, epoch_path, basename)` searches the
+production location first, then falls back to the epoch directory itself
+(test/golden datasets typically have a local copy alongside raw data).
+Raises `FileNotFoundError` if neither location has the file.
 
 ### `create_electrode_config` helper
 
@@ -225,7 +226,7 @@ ephys.schema.drop()        # confirms with the operator
 | File | Role |
 |---|---|
 | `aeon/dj_pipeline/ephys.py` | All ephys tables: `EphysEpoch`, `EphysEpochEnd`, `EphysEpochConfig`, `EphysChunk`, `EphysSyncModel`, `EphysBlock`, `EphysBlockInfo`, `OnixImuChunk`. |
-| `aeon/dj_pipeline/utils/ephys_utils.py` | `create_electrode_config`, `parse_metadata_probe_configs`, `resolve_probe_config_path`, `load_device_channel_map`, `discover_epoch_probes`, ProbeInsertion helpers, HARP↔ONIX time helpers. |
+| `aeon/dj_pipeline/utils/ephys_utils.py` | `create_electrode_config`, `parse_metadata_probe_configs`, `resolve_epoch_probe_json`, `load_device_channel_map`, `discover_epoch_probes`, ProbeInsertion helpers, HARP↔ONIX time helpers. |
 | `aeon/dj_pipeline/acquisition.py` | `acquisition.Epoch.ingest_epochs()` — behavior side ONLY (raw-ephys branch removed). |
 | `aeon/dj_pipeline/scripts/ephys_v2_setup.py` | Manual setup script for synthetic-geometry probes (HPC-friendly). Sets `config_file_name` placeholder. |
 | `aeon/dj_pipeline/scripts/ephys_mock_ingestion.py` | Mock ingestion for `social-ephys0.1` dataset. Sets `config_file_name` placeholder. |

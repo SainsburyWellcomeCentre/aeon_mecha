@@ -263,7 +263,7 @@ class EphysEpochConfig(dj.Imported):
         from aeon.dj_pipeline.utils.ephys_utils import (
             create_electrode_config,
             parse_metadata_probe_configs,
-            resolve_probe_config_path,
+            resolve_epoch_probe_json,
         )
 
         # Get epoch directory from the EphysEpoch parent
@@ -321,20 +321,11 @@ class EphysEpochConfig(dj.Imported):
         for label, basename in probe_configs.items():
             if basename is None:
                 continue  # disabled/spoofed probe
-            json_path = resolve_probe_config_path(raw_ephys_dir, basename)
-            if not json_path.exists():
-                # Fall back to the epoch dir itself (e.g. golden test fixture).
-                # Production layout puts JSONs in recording_configurations/, but
-                # the golden epoch has a copy at the root.
-                fallback = epoch_path / basename
-                if fallback.exists():
-                    json_path = fallback
-                else:
-                    logger.warning(
-                        f"Probe config JSON not found at {json_path} or {fallback}. "
-                        f"Skipping ElectrodeConfig registration for {label}."
-                    )
-                    continue
+            try:
+                json_path = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, basename)
+            except FileNotFoundError as e:
+                logger.warning(f"{e}. Skipping ElectrodeConfig registration for {label}.")
+                continue
             create_electrode_config(
                 json_path=json_path,
                 probe_type_table=ProbeType,
@@ -863,7 +854,7 @@ class EphysBlockInfo(dj.Imported):
         # probeinterface JSON. The JSON's device_channel_indices array maps
         # each electrode site to its raw binary column index (0-383 for
         # 384-channel recordings).
-        from aeon.dj_pipeline.utils.ephys_utils import resolve_probe_config_path
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
 
         epoch_start = (chunk_query & dj.Top(limit=1)).fetch1("epoch_start")
         config_file_name = (ElectrodeConfig & econfig).fetch1("config_file_name")
@@ -878,21 +869,9 @@ class EphysBlockInfo(dj.Imported):
                 f"Cannot resolve raw-ephys directory for {key['experiment_name']}"
             )
         raw_dir = raw_dir_result[0]
-
-        # Prefer production layout (recording_configurations/<name>); fall back
-        # to the epoch dir itself for test/golden datasets.
-        json_path = resolve_probe_config_path(raw_dir, config_file_name)
-        if not json_path.exists():
-            epoch_dir = (EphysEpoch & key & {"epoch_start": epoch_start}).fetch1(
-                "epoch_dir"
-            )
-            fallback = raw_dir / Path(epoch_dir).parts[0] / config_file_name
-            if fallback.exists():
-                json_path = fallback
-            else:
-                raise FileNotFoundError(
-                    f"Probe config JSON not found at {json_path} or {fallback}"
-                )
+        epoch_dir = (EphysEpoch & key & {"epoch_start": epoch_start}).fetch1("epoch_dir")
+        epoch_path = raw_dir / Path(epoch_dir).parts[0]
+        json_path = resolve_epoch_probe_json(raw_dir, epoch_path, config_file_name)
         channel_map = load_device_channel_map(json_path)
 
         electrode_df = (ElectrodeConfig.Electrode & econfig).keys(order_by="electrode")
