@@ -90,13 +90,19 @@ def find_overlapping_bno055_chunks(
     onix_ts_start: int,
     onix_ts_end: int,
 ) -> list[int]:
-    """Return sorted indices of Bno055 chunks that overlap the given ONIX window.
+    """Return sorted Bno055 chunk indices whose ONIX range overlaps the window.
 
-    A chunk's [first_sample, last_sample] range must intersect
-    [onix_ts_start, onix_ts_end] (inclusive on both ends). Sync windows
-    (hourly HarpSync CSVs) and Bno055 chunks (~10 min firmware-flushed)
-    partition the ONIX clock on different cadences, so each sync window
-    typically overlaps multiple Bno055 files.
+    For each ``Bno055_Clock_N.bin`` file, reads just the first and last uint64
+    sample (the binaries are monotonic, so those two values fully bound the
+    chunk's coverage — no need to scan the rest). A standard interval-overlap
+    test selects chunks where
+    ``first <= onix_ts_end and last >= onix_ts_start`` — inclusive on both ends.
+
+    Why this exists: HarpSync sync windows (one per ``EphysSyncModel`` row,
+    hourly cadence) and Bno055 binary chunks (~10 min, firmware-flushed)
+    partition the ONIX clock on independent boundaries, so each sync window
+    typically overlaps multiple Bno055 files. ``OnixImuChunk.make`` uses this
+    helper to gather all overlapping chunks before concatenating + filtering.
     """
     device_dir = Path(device_dir)
     pattern = f"{device_name}_Bno055_Clock_*.bin"
