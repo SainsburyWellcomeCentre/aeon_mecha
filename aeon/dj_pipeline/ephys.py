@@ -231,11 +231,12 @@ class EphysEpochConfig(dj.Imported):
 
     class Insertion(dj.Part):
         definition = """
-        # Which ProbeInsertions are active in this epoch
+        # Which ProbeInsertions are active in this epoch, with their active ElectrodeConfig
         -> master
         -> ProbeInsertion
         ---
         probe_label: varchar(32)        # file label (e.g., "ProbeA")
+        -> ElectrodeConfig              # the ElectrodeConfig active for this probe in this epoch
         """
 
     def make(self, key: dict[str, Any]) -> None:
@@ -316,21 +317,26 @@ class EphysEpochConfig(dj.Imported):
                 f"Known devices: {list(DEVICE_PROBE_TYPE_MAP.keys())}"
             )
 
-        # Register per-probe ElectrodeConfig from per-epoch JSONs
+        # Register per-probe ElectrodeConfig from per-epoch JSONs.
+        # Fail loud if a configured probe's JSON can't be resolved — without an
+        # ElectrodeConfig we can't insert a complete Insertion row, and silently
+        # skipping leaves a downstream gap that's hard to diagnose.
         probe_configs = parse_metadata_probe_configs(epoch_path)
+        probe_to_econfig: dict[str, dict[str, str]] = {}
         for label, basename in probe_configs.items():
             if basename is None:
-                continue  # disabled/spoofed probe
-            try:
-                json_path = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, basename)
-            except FileNotFoundError as e:
-                logger.warning(f"{e}. Skipping ElectrodeConfig registration for {label}.")
-                continue
-            create_electrode_config(
+                continue  # disabled/spoofed probe — no Insertion row expected
+            # Raises FileNotFoundError if neither central nor epoch-local exists
+            json_path = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, basename)
+            ec_probe_type, ec_config_name = create_electrode_config(
                 json_path=json_path,
                 probe_type_table=ProbeType,
                 electrode_config_table=ElectrodeConfig,
             )
+            probe_to_econfig[label] = {
+                "probe_type": ec_probe_type,
+                "electrode_config_name": ec_config_name,
+            }
 
         for label, probe_id in probe_info.items():
             if not (Probe & {"probe": probe_id}):
@@ -365,6 +371,12 @@ class EphysEpochConfig(dj.Imported):
                     f"has no assignment. Available: {list(probe_assignments.keys())}. "
                     f"If this is a new probe, add it to probe_assignments.json."
                 )
+            if label not in probe_to_econfig:
+                raise RuntimeError(
+                    f"Probe '{label}' is active but has no resolved ElectrodeConfig. "
+                    f"Metadata.yml's ProbeInterfaceFileName for {label} may be missing "
+                    f"or its JSON cannot be located. This is an invariant violation."
+                )
             subject = probe_assignments[label]["subject"]
 
             pi_key = find_or_create_probe_insertion(
@@ -374,7 +386,9 @@ class EphysEpochConfig(dj.Imported):
                 ProbeInsertion,
                 Probe,
             )
-            insertion_entries.append({**key, **pi_key, "probe_label": label})
+            insertion_entries.append(
+                {**key, **pi_key, "probe_label": label, **probe_to_econfig[label]}
+            )
 
         # Insert master + Part rows
         self.insert1({**key, "has_ephys": True, "n_probes": len(active_labels)})
@@ -541,16 +555,19 @@ class EphysChunk(dj.Manual):
 
         exp_key = {"experiment_name": experiment_name}
 
-        # Build insertion lookup from EphysEpochConfig.Insertion:
-        # {(epoch_start, probe_label): insertion_key}
-        # (probe_label stays in the tuple key — NOT inside the value, since
-        # EphysChunk's heading has no probe_label column.)
+        # Build insertion lookup from EphysEpochConfig.Insertion.
+        # The Insertion row already carries the resolved (probe_type,
+        # electrode_config_name) — set during EphysEpochConfig.make from each
+        # epoch's Metadata.yml ProbeInterfaceFileName — so no filesystem
+        # access is needed here for config resolution.
         insertion_lookup: dict[tuple[datetime, str], dict] = {}
         for entry in (EphysEpochConfig.Insertion & exp_key).to_dicts():
             insertion_lookup[(entry["epoch_start"], entry["probe_label"])] = {
                 "experiment_name": entry["experiment_name"],
                 "subject": entry["subject"],
                 "insertion_number": entry["insertion_number"],
+                "probe_type": entry["probe_type"],
+                "electrode_config_name": entry["electrode_config_name"],
             }
 
         if not insertion_lookup:
@@ -559,56 +576,6 @@ class EphysChunk(dj.Manual):
                 "Run EphysEpochConfig.populate() first."
             )
             return
-
-        # Per-epoch-per-probe config resolution: a single probe_type can have
-        # multiple ElectrodeConfig rows (one per recording configuration), so
-        # we look up the active config via Metadata.yml's per-probe
-        # ProbeInterfaceFileName instead of by probe_type alone.
-        # Cache: (epoch_dir_name) → {probe_label: config_file_name basename or None}
-        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
-
-        epoch_metadata_cache: dict[str, dict[str, str | None]] = {}
-
-        # Cache: (experiment, subject, insertion_number, epoch_start) → (probe_type, electrode_config_name)
-        probe_config_cache: dict[tuple, tuple[str, str]] = {}
-        for (epoch_start_key, probe_label_key), ins in insertion_lookup.items():
-            cache_key = (
-                ins["experiment_name"],
-                ins["subject"],
-                ins["insertion_number"],
-                epoch_start_key,
-            )
-            if cache_key in probe_config_cache:
-                continue
-            # Parse Metadata.yml once per epoch_dir
-            epoch_dir_rel = (
-                EphysEpoch & exp_key & {"epoch_start": epoch_start_key}
-            ).fetch1("epoch_dir")
-            epoch_dir_name = Path(epoch_dir_rel).parts[0]
-            if epoch_dir_name not in epoch_metadata_cache:
-                epoch_metadata_cache[epoch_dir_name] = parse_metadata_probe_configs(
-                    raw_dir / epoch_dir_name
-                )
-            basename = epoch_metadata_cache[epoch_dir_name].get(probe_label_key)
-            if basename is None:
-                logger.warning(
-                    f"No ProbeInterfaceFileName for {probe_label_key} in {epoch_dir_name}. "
-                    f"Skipping config resolution."
-                )
-                continue
-            probe_name = (ProbeInsertion & ins).fetch1("probe")
-            probe_type = (Probe & {"probe": probe_name}).fetch1("probe_type")
-            ec_row = ElectrodeConfig & {
-                "probe_type": probe_type,
-                "config_file_name": basename,
-            }
-            if not ec_row:
-                raise ValueError(
-                    f"No ElectrodeConfig for (probe_type={probe_type}, "
-                    f"config_file_name={basename}). Run EphysEpochConfig.populate() first."
-                )
-            electrode_config_name = ec_row.fetch1("electrode_config_name")
-            probe_config_cache[cache_key] = (probe_type, electrode_config_name)
 
         # Discover ALL ephys binary files across epochs
         all_ephys_files = sorted(
@@ -700,28 +667,13 @@ class EphysChunk(dj.Manual):
                 logger.error(f"Failed to resolve HARP times for {ephys_file}: {e}")
                 continue
 
-            # Resolve electrode config from precomputed cache (per-epoch-per-probe).
-            cache_key = (
-                insertion_key["experiment_name"],
-                insertion_key["subject"],
-                insertion_key["insertion_number"],
-                epoch_start,
-            )
-            if cache_key not in probe_config_cache:
-                logger.warning(
-                    f"No config resolved for {probe_label} in epoch {epoch_start}. "
-                    f"Skipping {ephys_file.name}."
-                )
-                continue
-            probe_type, electrode_config_name = probe_config_cache[cache_key]
-
+            # ElectrodeConfig already resolved on the Insertion row — read it
+            # directly from insertion_key (built above from EphysEpochConfig.Insertion).
             chunk_entry = {
                 **insertion_key,
                 "chunk_start": chunk_start,
                 "chunk_end": chunk_end,
                 "epoch_start": epoch_start,
-                "probe_type": probe_type,
-                "electrode_config_name": electrode_config_name,
             }
             try:
                 with cls.connection.transaction:

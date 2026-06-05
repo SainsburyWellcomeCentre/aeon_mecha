@@ -303,6 +303,8 @@ def register_synthetic_probe_insertion(
     )
 
     # EphysEpochConfig.Insertion (Part, allow_direct_insert).
+    # Carries the ElectrodeConfig FK that downstream lookups (EphysChunk.ingest_chunks)
+    # depend on — must match the synthetic ElectrodeConfig inserted above.
     ephys.EphysEpochConfig.Insertion.insert1(
         {
             "experiment_name": experiment_name,
@@ -310,6 +312,8 @@ def register_synthetic_probe_insertion(
             "subject": subject,
             "insertion_number": 1,
             "probe_label": probe_label,
+            "probe_type": probe_type,
+            "electrode_config_name": electrode_config_name,
         },
         skip_duplicates=True,
         allow_direct_insert=True,
