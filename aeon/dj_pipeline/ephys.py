@@ -507,8 +507,10 @@ class EphysChunk(dj.Manual):
     ---
     -> EphysEpoch                          # adds epoch_start — "this chunk came from this epoch"
     chunk_end: datetime(6)                 # end of an ephys chunk (in HARP clock)
-    -> ElectrodeConfig                     # the electrode configuration used for this ephys recording
     """
+    # ElectrodeConfig for this chunk is derivable via EphysEpochConfig.Insertion
+    # joined on (experiment_name, epoch_start, subject, insertion_number).
+    # Not stored locally to avoid denormalized duplication.
 
     class File(dj.Part):
         definition = """
@@ -556,18 +558,12 @@ class EphysChunk(dj.Manual):
         exp_key = {"experiment_name": experiment_name}
 
         # Build insertion lookup from EphysEpochConfig.Insertion.
-        # The Insertion row already carries the resolved (probe_type,
-        # electrode_config_name) — set during EphysEpochConfig.make from each
-        # epoch's Metadata.yml ProbeInterfaceFileName — so no filesystem
-        # access is needed here for config resolution.
         insertion_lookup: dict[tuple[datetime, str], dict] = {}
         for entry in (EphysEpochConfig.Insertion & exp_key).to_dicts():
             insertion_lookup[(entry["epoch_start"], entry["probe_label"])] = {
                 "experiment_name": entry["experiment_name"],
                 "subject": entry["subject"],
                 "insertion_number": entry["insertion_number"],
-                "probe_type": entry["probe_type"],
-                "electrode_config_name": entry["electrode_config_name"],
             }
 
         if not insertion_lookup:
@@ -785,10 +781,20 @@ class EphysBlockInfo(dj.Imported):
 
         block_duration = (key["block_end"] - key["block_start"]).total_seconds() / 3600.0  # in hours
 
-        # Read electrode config from the chunks in this block (set during ingest_chunks)
-        probe_type, electrode_config_name = (chunk_query & dj.Top(limit=1)).fetch1(
-            "probe_type", "electrode_config_name"
-        )
+        # Derive ElectrodeConfig for this block via the Insertion FK on each chunk's
+        # parent epoch. All chunks in a single EphysBlock MUST share the same
+        # (probe_type, electrode_config_name) — mixing configs would mean
+        # concatenating recordings from different probe/electrode setups, which
+        # is meaningless for downstream spike sorting and analysis.
+        chunk_insertions = chunk_query * EphysEpochConfig.Insertion
+        arr_pt, arr_ecn = chunk_insertions.to_arrays("probe_type", "electrode_config_name")
+        unique_configs = set(zip(arr_pt, arr_ecn, strict=False))
+        if len(unique_configs) != 1:
+            raise ValueError(
+                f"EphysBlock {key} spans multiple ElectrodeConfigs: {sorted(unique_configs)}. "
+                f"All chunks in a block must share one (probe_type, electrode_config_name)."
+            )
+        probe_type, electrode_config_name = next(iter(unique_configs))
         econfig = {
             "probe_type": probe_type,
             "electrode_config_name": electrode_config_name,
