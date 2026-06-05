@@ -370,27 +370,11 @@ def resolve_epoch_probe_json(
     epoch_path,
     config_file_name: str,
 ) -> Path:
-    """Find the probeinterface JSON for a given basename.
+    """Resolve a probeinterface JSON path by basename.
 
-    Searches in order:
-    1. ``<raw_ephys_dir>/recording_configurations/<config_file_name>`` —
-       the production canonical layout.
-    2. ``<epoch_path>/<config_file_name>`` — a local copy alongside the raw
-       data, used for test fixtures and golden datasets.
-
-    Args:
-        raw_ephys_dir: The rig-level raw-ephys directory
-            (e.g. ``/ceph/aeon/data/raw/AEONX1``). Accepts str or Path.
-        epoch_path: The per-epoch directory under ``raw_ephys_dir``.
-            Accepts str or Path.
-        config_file_name: Basename like
-            ``"M81_ProbeB_4Shanks_1000_to_1700_um.json"``.
-
-    Returns:
-        Resolved Path to an existing file.
-
-    Raises:
-        FileNotFoundError: If the JSON is not found in either location.
+    Searches ``<raw_ephys_dir>/recording_configurations/`` (production layout)
+    first, then ``<epoch_path>/`` (local-copy fallback for test/golden data).
+    Raises FileNotFoundError if neither has the file.
     """
     central = Path(raw_ephys_dir) / "recording_configurations" / config_file_name
     if central.exists():
@@ -404,28 +388,17 @@ def resolve_epoch_probe_json(
 
 
 def load_device_channel_map(json_path: Path) -> dict[int, int]:
-    """Read a probeinterface JSON and return the hardware channel mapping.
+    """Return {electrode_site_id: raw_channel_idx} for active contacts.
 
-    The probeinterface JSON describes the full probe geometry (e.g. 5120
-    contacts for a 4-shank NP2.0). The ``device_channel_indices`` array marks
-    which contacts are actively recorded: values >= 0 give the raw binary
-    column index (0-383 for 384-channel recordings), and -1 means inactive.
+    Active contacts are those with ``device_channel_indices >= 0`` in the
+    probeinterface JSON (-1 marks inactive).
 
     Args:
-        json_path: Path to the probeinterface JSON file (typically resolved
-            from ``ElectrodeConfig.config_file_name`` under the rig's
-            ``recording_configurations/`` directory).
-
-    Returns:
-        Dict mapping ``{electrode_site_id: raw_channel_idx}`` for all active
-        contacts. For example, ``{3954: 0, 114: 210, ...}`` means raw binary
-        column 0 records from electrode site 3954, and column 210 records
-        from site 114.
+        json_path: Path to the probeinterface JSON.
 
     Raises:
         FileNotFoundError: If json_path doesn't exist.
-        ValueError: If the JSON has no ``device_channel_indices`` or no
-            active contacts.
+        ValueError: If the JSON has no device_channel_indices or no active contacts.
     """
     with open(json_path) as f:
         pi_data = json.load(f)
@@ -497,29 +470,16 @@ def create_electrode_config(
 ) -> tuple[str, str]:
     """Populate ProbeType + ElectrodeConfig from a per-epoch probeinterface JSON.
 
-    Reads a per-epoch probe configuration JSON (probeinterface schema). Populates:
+    ProbeType.Electrode gets the full contact geometry (e.g. 5120 contacts for
+    NP 2.0 multishank); ElectrodeConfig.Electrode gets the active subset where
+    ``device_channel_indices != -1`` (typically 384). Idempotent.
 
-      - ProbeType + ProbeType.Electrode with the full contact geometry (e.g.
-        5120 contacts for Neuropixels 2.0 multishank).
-      - ElectrodeConfig + ElectrodeConfig.Electrode with the SUBSET of contacts
-        where ``device_channel_indices != -1`` (the actively-recorded
-        electrodes — 384 for a standard NP 2.0 single-bank readout).
-
-    Idempotent: re-running with the same JSON is a no-op (skip_duplicates=True
-    on all inserts). Mirrors create_probe_type's style — caller passes the
-    table classes explicitly.
-
-    Args:
-        json_path: Path to the per-epoch probeinterface JSON file.
-        probe_type_table: ProbeType table class.
-        electrode_config_table: ElectrodeConfig table class.
-        config_name: Override electrode_config_name. Defaults to json_path.stem.
-        probe_type_name: Override probe_type. Default: canonical-cased version
-            of ``annotations["name"]`` (e.g. "Neuropixels 2.0 - multishank" →
-            "neuropixels2.0-multishank").
+    Defaults: ``probe_type`` from canonical-cased ``annotations["name"]`` (e.g.
+    "Neuropixels 2.0 - multishank" → "neuropixels2.0-multishank");
+    ``electrode_config_name`` from ``json_path.stem``.
 
     Returns:
-        (probe_type, electrode_config_name) — keys identifying the inserted rows.
+        (probe_type, electrode_config_name).
     """
     import uuid
 
@@ -554,15 +514,13 @@ def create_electrode_config(
     electrode_df["probe_type"] = probe_type_name
     electrode_df["electrode"] = electrode_df.index
 
-    # No explicit transaction — this helper may be called from inside a populate()
-    # transaction (e.g. EphysEpochConfig.make), and DataJoint forbids nesting.
-    # skip_duplicates=True keeps the inserts idempotent.
+    # No explicit transaction — callers like EphysEpochConfig.make are already
+    # inside a populate() transaction, and DataJoint forbids nesting.
     probe_type_table.insert1({"probe_type": probe_type_name}, skip_duplicates=True)
     probe_type_table.Electrode.insert(
         electrode_df, ignore_extra_fields=True, skip_duplicates=True
     )
 
-    # ElectrodeConfig: subset where device_channel_indices != -1
     if config_name is None:
         config_name = json_path.stem
 
@@ -601,9 +559,7 @@ def resolve_raw_dir_and_epochs(
 ) -> "tuple[Path, dict[str, datetime]] | None":
     """Return (raw_ephys_dir, {epoch_dir_name: epoch_start}) or None.
 
-    Looks up the "raw-ephys" directory and returns only epochs with confirmed
-    ephys data (``EphysEpochConfig.has_ephys == True``). Reads from
-    ``ephys.EphysEpoch`` — the ephys-side peer of ``acquisition.Epoch``.
+    Only includes EphysEpoch rows whose EphysEpochConfig.has_ephys is True.
     """
     from aeon.dj_pipeline import acquisition
     from aeon.dj_pipeline.ephys import EphysEpoch, EphysEpochConfig

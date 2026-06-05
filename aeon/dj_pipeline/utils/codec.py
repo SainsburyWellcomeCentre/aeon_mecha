@@ -129,12 +129,10 @@ class OnixStreamCodec(dj.Codec):
         return value
 
     def decode(self, stored, *, key=None):
-        """Load + merge the referenced ONIX-clocked stream group as an ONIX-indexed DataFrame.
+        """Load + merge the referenced ONIX stream group as an ONIX-indexed DataFrame.
 
-        Uses ``chunk_indices``, ``onix_ts_start``, and ``onix_ts_end`` from the
-        stored reference to reload exactly the data the populate-time row was
-        built from: load every overlapping Bno055 binary chunk, concatenate,
-        then filter to the sync window.
+        Reloads the same Bno055 chunks the populate-time row was built from
+        (via ``chunk_indices``), then filters to ``[onix_ts_start, onix_ts_end]``.
         """
         # Lazy imports to avoid circular references at module load time.
         from aeon.dj_pipeline import acquisition, ephys
@@ -155,8 +153,6 @@ class OnixStreamCodec(dj.Codec):
             "sync_start": pd.Timestamp(stored["sync_start"]),
         }
 
-        # EphysEpoch is the ephys-side peer of acquisition.Epoch and owns its
-        # own epoch_dir; acquisition.Epoch holds behavior epochs only.
         epoch_dir = (ephys.EphysEpoch & sm_key).fetch1("epoch_dir")
         raw_dir = acquisition.Experiment.get_data_directory(
             {"experiment_name": stored["experiment_name"]}, "raw-ephys"
@@ -167,8 +163,8 @@ class OnixStreamCodec(dj.Codec):
             )
         device_dir = raw_dir / epoch_dir / stored["device_name"]
 
-        # Prefer the chunk_indices captured at populate time. Fall back to a
-        # fresh overlap scan if absent (for backward-compat with older rows).
+        # Prefer chunk_indices captured at populate time; fall back to a
+        # fresh overlap scan for backward-compat with older rows.
         chunk_indices = stored.get("chunk_indices")
         onix_ts_start = stored.get("onix_ts_start")
         onix_ts_end = stored.get("onix_ts_end")

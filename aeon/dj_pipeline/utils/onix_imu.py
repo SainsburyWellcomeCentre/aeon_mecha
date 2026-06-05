@@ -90,27 +90,13 @@ def find_overlapping_bno055_chunks(
     onix_ts_start: int,
     onix_ts_end: int,
 ) -> list[int]:
-    """Return Bno055 chunk indices whose ONIX range overlaps [onix_ts_start, onix_ts_end].
+    """Return sorted indices of Bno055 chunks that overlap the given ONIX window.
 
-    HarpSync CSVs (one per ``EphysSyncModel`` row) partition the ONIX clock on
-    an hourly cadence set by the Bonsai workflow on the host. Bno055 binary
-    files partition the same clock on a firmware-determined cadence (~10 min
-    per file). The two partitions don't align, so each ``EphysSyncModel``
-    window overlaps multiple Bno055 files and each Bno055 file may straddle
-    multiple sync windows.
-
-    Each returned chunk is one whose [first_sample, last_sample] window
-    intersects [onix_ts_start, onix_ts_end].
-
-    Args:
-        device_dir: Path to the ONIX device directory containing the binaries.
-        device_name: ``"NeuropixelsV2Beta"`` or ``"NeuropixelsV2"``.
-        onix_ts_start: Start of the ONIX window of interest (inclusive).
-        onix_ts_end: End of the ONIX window of interest (inclusive).
-
-    Returns:
-        Sorted list of chunk indices whose data spans into the window.
-        Empty list if no Bno055 files exist or none overlap.
+    A chunk's [first_sample, last_sample] range must intersect
+    [onix_ts_start, onix_ts_end] (inclusive on both ends). Sync windows
+    (hourly HarpSync CSVs) and Bno055 chunks (~10 min firmware-flushed)
+    partition the ONIX clock on different cadences, so each sync window
+    typically overlaps multiple Bno055 files.
     """
     device_dir = Path(device_dir)
     pattern = f"{device_name}_Bno055_Clock_*.bin"

@@ -106,32 +106,22 @@ class InsertionTargetArea(dj.Manual):
 @schema
 class EphysEpoch(dj.Manual):
     definition = """
-    # An ephys epoch — peer of acquisition.Epoch, anchored to the ONIX/AEONX1 rig.
-    # ``epoch_start`` is HARP-clock-native: observed from the first row of the
-    # first ``*_HarpSync_*.csv`` in the epoch directory (the ``harp_start``
-    # field). NOT the wall-clock timestamp parsed from the directory name.
+    # Ephys epoch — peer of acquisition.Epoch. epoch_start is HARP-clock,
+    # observed from harp_start of the first HarpSync CSV in the epoch dir.
     -> acquisition.Experiment
     epoch_start: datetime(6)            # HARP-clock at acquisition start
     ---
     -> [nullable] acquisition.Experiment.Directory
-    epoch_dir='': varchar(255)          # ONIX-wall-clock dir name (label only)
+    epoch_dir='': varchar(255)          # ONIX wall-clock dir name (label only)
     """
 
     @classmethod
     def ingest_epochs(cls, experiment_name: str) -> None:
-        """Discover raw-ephys epoch directories and insert EphysEpoch rows.
+        """Insert EphysEpoch rows by scanning raw-ephys directories.
 
-        For each epoch dir, reads the first row of the first ``*_HarpSync_*.csv``
-        to determine the HARP-clock ``epoch_start``. Backfills
-        ``EphysEpochEnd`` for the previous epoch via look-back (mirror of
-        ``acquisition.Epoch.ingest_epochs``).
-
-        Skipped silently:
-        - Epoch dirs with no HarpSync CSVs (cannot HARP-align → unusable).
-        - Epoch dirs whose first HarpSync CSV cannot be parsed.
-
-        Args:
-            experiment_name: Name of the experiment to process.
+        Reads the first HarpSync CSV per epoch dir to get the HARP epoch_start,
+        and look-back-inserts EphysEpochEnd for the previous epoch. Epoch dirs
+        without a parseable HarpSync CSV are skipped (cannot HARP-align).
         """
         from aeon.schema.ephys import social_ephys
 
@@ -154,7 +144,6 @@ class EphysEpoch(dj.Manual):
                 )
                 continue
 
-            # Read first row of first CSV to get HARP-clock epoch_start
             first_csv = harp_sync_csvs[0]
             device_name = first_csv.parent.name
             if device_name not in social_ephys:
@@ -174,7 +163,7 @@ class EphysEpoch(dj.Manual):
                 continue
             harp_epoch_start = harp_to_naive(first_row["harp_start"])
 
-            # Look-back: backfill EphysEpochEnd for the previous epoch
+            # Backfill EphysEpochEnd for the previous epoch
             if previous_epoch_start is not None:
                 previous_key = {**exp_key, "epoch_start": previous_epoch_start}
                 if (cls & previous_key) and not (EphysEpochEnd & previous_key):
@@ -188,7 +177,6 @@ class EphysEpoch(dj.Manual):
                         }
                     )
 
-            # Insert this epoch
             cls.insert1(
                 {
                     **exp_key,
@@ -216,50 +204,33 @@ class EphysEpochEnd(dj.Manual):
 @schema
 class EphysEpochConfig(dj.Imported):
     definition = """
-    # Per-epoch probe registry. Discovers probes, parses Metadata.yml,
-    # auto-populates Probe/ProbeInsertion and per-probe ElectrodeConfig.
+    # Per-epoch probe registry — discovers probes, populates Probe/ProbeInsertion
+    # and per-probe ElectrodeConfig from Metadata.yml.
     -> EphysEpoch
     ---
-    has_ephys: bool                     # whether ephys data was found in this epoch
-    n_probes: int                       # number of active probes (0 if no ephys)
+    has_ephys: bool
+    n_probes: int
     """
 
-    # Set this before calling populate() to read probe_assignments.json
-    # from a local directory instead of (or in addition to) the epoch dir
-    # on Ceph. Useful when Ceph is read-only.
+    # Override probe_assignments.json source dir (used when Ceph is read-only).
     probe_assignments_override_dir = None
 
     class Insertion(dj.Part):
         definition = """
-        # Which ProbeInsertions are active in this epoch, with their active ElectrodeConfig
+        # Active ProbeInsertions in this epoch, with their ElectrodeConfig
         -> master
         -> ProbeInsertion
         ---
-        probe_label: varchar(32)        # file label (e.g., "ProbeA")
-        -> ElectrodeConfig              # the ElectrodeConfig active for this probe in this epoch
+        probe_label: varchar(32)        # e.g. "ProbeA"
+        -> ElectrodeConfig
         """
 
     def make(self, key: dict[str, Any]) -> None:
-        """Discover probes for an epoch, register ProbeInsertion + ElectrodeConfig.
+        """Discover probes for an epoch; register ProbeInsertion + ElectrodeConfig.
 
-        For each epoch:
-        1. Resolve the raw-ephys epoch path via the parent EphysEpoch row.
-        2. Discover probes from binary files (``discover_epoch_probes``).
-        3. Parse Metadata.yml for probe serial numbers.
-        4. Auto-create Probe entries (probe_type derived from device dir name).
-        5. Read subject-probe mapping (probe_assignments.json or carry-forward).
-        6. Create/validate ProbeInsertion entries.
-        7. Register per-probe ElectrodeConfig from each probe's
-           ProbeInterfaceFileName (via ``create_electrode_config``).
-        8. Insert master row and Insertion part rows.
-
-        Subject-probe mapping sources (in priority order):
-        - Per-epoch file: probe_assignments.json in the epoch directory
-        - Carry-forward: most recent EphysEpochConfig with has_ephys=True
-        - Pre-existing: ProbeInsertion already in DB, matched by probe serial
-
-        Args:
-            key: (experiment_name, epoch_start) — parent EphysEpoch row.
+        Subject-probe mapping resolved (in priority order): per-epoch
+        probe_assignments.json, then carry-forward from the most recent
+        has_ephys=True epoch, then existing ProbeInsertion matched by serial.
         """
         from aeon.dj_pipeline.utils.ephys_utils import (
             create_electrode_config,
@@ -267,7 +238,6 @@ class EphysEpochConfig(dj.Imported):
             resolve_epoch_probe_json,
         )
 
-        # Get epoch directory from the EphysEpoch parent
         epoch_dir = (EphysEpoch & key).fetch1("epoch_dir")
         if not epoch_dir:
             self.insert1({**key, "has_ephys": False, "n_probes": 0})
@@ -309,7 +279,6 @@ class EphysEpochConfig(dj.Imported):
             self.insert1({**key, "has_ephys": False, "n_probes": 0})
             return
 
-        # Auto-create Probe entries (probe_type derived from device directory name)
         probe_type = DEVICE_PROBE_TYPE_MAP.get(device_name)
         if probe_type is None:
             raise ValueError(
@@ -317,16 +286,13 @@ class EphysEpochConfig(dj.Imported):
                 f"Known devices: {list(DEVICE_PROBE_TYPE_MAP.keys())}"
             )
 
-        # Register per-probe ElectrodeConfig from per-epoch JSONs.
-        # Fail loud if a configured probe's JSON can't be resolved — without an
-        # ElectrodeConfig we can't insert a complete Insertion row, and silently
-        # skipping leaves a downstream gap that's hard to diagnose.
+        # Register per-probe ElectrodeConfig — fail loud on missing JSON
+        # (silently skipping leaves a downstream gap that's hard to diagnose).
         probe_configs = parse_metadata_probe_configs(epoch_path)
         probe_to_econfig: dict[str, dict[str, str]] = {}
         for label, basename in probe_configs.items():
             if basename is None:
-                continue  # disabled/spoofed probe — no Insertion row expected
-            # Raises FileNotFoundError if neither central nor epoch-local exists
+                continue  # disabled/spoofed probe
             json_path = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, basename)
             ec_probe_type, ec_config_name = create_electrode_config(
                 json_path=json_path,
@@ -501,16 +467,15 @@ class EphysSyncModel(dj.Manual):
 
 @schema
 class EphysChunk(dj.Manual):
-    definition = """  # A recording period corresponds to a 1-hour ephys data acquisition
-    -> ProbeInsertion                      # (experiment_name, subject, insertion_number)
-    chunk_start: datetime(6)               # start of an ephys chunk (in HARP clock)
+    definition = """  # One ~hour-long ephys recording period
+    -> ProbeInsertion
+    chunk_start: datetime(6)               # HARP clock
     ---
-    -> EphysEpoch                          # adds epoch_start — "this chunk came from this epoch"
-    chunk_end: datetime(6)                 # end of an ephys chunk (in HARP clock)
+    -> EphysEpoch
+    chunk_end: datetime(6)                 # HARP clock
     """
-    # ElectrodeConfig for this chunk is derivable via EphysEpochConfig.Insertion
-    # joined on (experiment_name, epoch_start, subject, insertion_number).
-    # Not stored locally to avoid denormalized duplication.
+    # ElectrodeConfig is derivable via EphysEpochConfig.Insertion (joined on
+    # experiment_name + epoch_start + subject + insertion_number).
 
     class File(dj.Part):
         definition = """
@@ -557,7 +522,7 @@ class EphysChunk(dj.Manual):
 
         exp_key = {"experiment_name": experiment_name}
 
-        # Build insertion lookup from EphysEpochConfig.Insertion.
+        # {(epoch_start, probe_label): ProbeInsertion key}
         insertion_lookup: dict[tuple[datetime, str], dict] = {}
         for entry in (EphysEpochConfig.Insertion & exp_key).to_dicts():
             insertion_lookup[(entry["epoch_start"], entry["probe_label"])] = {
@@ -573,7 +538,6 @@ class EphysChunk(dj.Manual):
             )
             return
 
-        # Discover ALL ephys binary files across epochs
         all_ephys_files = sorted(
             raw_dir.rglob("*_AmplifierData*.bin"),
             key=lambda x: x.as_posix(),
@@ -586,9 +550,8 @@ class EphysChunk(dj.Manual):
         for ephys_file in all_ephys_files:
             rel_path = ephys_file.relative_to(raw_dir).as_posix()
 
-            # Skip already-ingested files
             if cls.File & exp_key & {"file_path": rel_path}:
-                continue
+                continue  # already ingested
 
             # Parse probe_label from filename
             name_match = re.search(r"_(Probe[A-Z])_AmplifierData", ephys_file.name)
@@ -736,16 +699,9 @@ class EphysBlockInfo(dj.Imported):
         """
 
     def make(self, key: dict[str, Any]) -> None:
-        """Compute ephys block metadata and channel mappings.
+        """Compute block metadata: chunk associations, channel mappings, duration.
 
-        Finds relevant ephys chunks for the given block and extracts:
-        - Chunk associations (may span more chunks due to clock sync)
-        - Electrode configuration validation
-        - Channel-to-electrode mappings
-        - Block duration calculations
-
-        Args:
-            key: Dictionary containing experiment_name, subject, insertion_number, block_start, block_end
+        Raises if chunks in this block span multiple ElectrodeConfigs.
         """
 
         def create_ephys_chunk_restriction(start_time: datetime, end_time: datetime) -> str:
@@ -779,13 +735,10 @@ class EphysBlockInfo(dj.Imported):
         chunk_restriction = create_ephys_chunk_restriction(key["block_start"], key["block_end"])
         chunk_query = EphysChunk & key & chunk_restriction
 
-        block_duration = (key["block_end"] - key["block_start"]).total_seconds() / 3600.0  # in hours
+        block_duration = (key["block_end"] - key["block_start"]).total_seconds() / 3600.0  # hours
 
-        # Derive ElectrodeConfig for this block via the Insertion FK on each chunk's
-        # parent epoch. All chunks in a single EphysBlock MUST share the same
-        # (probe_type, electrode_config_name) — mixing configs would mean
-        # concatenating recordings from different probe/electrode setups, which
-        # is meaningless for downstream spike sorting and analysis.
+        # All chunks in a block must share one ElectrodeConfig (derived via
+        # the Insertion FK on each chunk's parent epoch).
         chunk_insertions = chunk_query * EphysEpochConfig.Insertion
         arr_pt, arr_ecn = chunk_insertions.to_arrays("probe_type", "electrode_config_name")
         unique_configs = set(zip(arr_pt, arr_ecn, strict=False))
@@ -803,15 +756,11 @@ class EphysBlockInfo(dj.Imported):
         self.insert1(
             {**key, "block_duration": block_duration, **econfig},
         )
-        # EphysChunk
         self.Chunk.insert(
             chunk_query.proj(block_start=f"'{key['block_start']}'", block_end=f"'{key['block_end']}'")
         )
 
-        # Channel — use real hardware channel mapping from the per-epoch
-        # probeinterface JSON. The JSON's device_channel_indices array maps
-        # each electrode site to its raw binary column index (0-383 for
-        # 384-channel recordings).
+        # Channel-to-electrode mapping from the per-epoch ProbeInterface JSON.
         from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
 
         epoch_start = (chunk_query & dj.Top(limit=1)).fetch1("epoch_start")
@@ -914,17 +863,11 @@ class OnixImuChunk(dj.Imported):
         return df
 
     def make(self, key):
-        """Populate one OnixImuChunk row per EphysSyncModel key.
+        """Populate one OnixImuChunk row per EphysSyncModel.
 
-        Each ``EphysSyncModel`` row covers an hourly HARP/ONIX window. The
-        Bno055 firmware partitions the same ONIX clock on its own (~10-min)
-        cadence, so each sync window overlaps multiple Bno055 binary chunks
-        on disk. We load all overlapping chunks, concatenate, then filter to
-        the sync window's ONIX range.
-
-        No-IMU rigs (no overlapping Bno055 files) get a row with
-        ``sample_count=0`` and empty stat dicts. The ``stream_df`` reference
-        is still valid; the codec returns an empty DataFrame on fetch.
+        Loads all Bno055 binary chunks overlapping the sync window's ONIX
+        range, concatenates, filters to that range. No-IMU rigs (or no
+        overlap) get a row with sample_count=0 and empty stat dicts.
         """
         import joblib
         import pandas as pd
@@ -989,8 +932,6 @@ class OnixImuChunk(dj.Imported):
             self.insert1(_empty_row([]))
             return
 
-        # Concatenate all overlapping chunks (sorted by index → ONIX-monotonic),
-        # then filter to the sync window.
         df = pd.concat(
             [load_and_merge_bno055(device_dir, device_name, n) for n in chunk_indices]
         )
@@ -1000,9 +941,8 @@ class OnixImuChunk(dj.Imported):
             self.insert1(_empty_row(chunk_indices))
             return
 
-        # Apply regression to compute HARP timestamps for the timestamps summary
-        # field. The stored stream_df ref points to the ONIX-indexed DataFrame —
-        # sync is applied only when users call OnixImuChunk.synced_df().
+        # HARP timestamps for the summary stats only — stream_df stays
+        # ONIX-indexed (synced_df() applies the regression on fetch).
         model = joblib.load(sync_model_attach)
         onix_clock = df.index.values
         harp_seconds = model.predict(onix_clock.reshape(-1, 1)).flatten()
