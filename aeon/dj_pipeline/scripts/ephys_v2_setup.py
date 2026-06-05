@@ -1,5 +1,15 @@
 """Setup and run script for the ephys v2 pipeline test.
 
+.. warning::
+
+    This script is **not currently compatible with the post-restructure ephys
+    schema**. It writes to ``EphysEpoch`` with fields (``has_ephys``,
+    ``n_probes``) that moved to ``EphysEpochConfig``, and references
+    ``EphysEpoch.Insertion`` which is now ``EphysEpochConfig.Insertion``.
+    Running it will fail at the first ``insert1``. Modernization is tracked
+    as a follow-up; for the current pipeline see SPEC_EPHYS_PIPELINE.md or
+    the ``docs/ephys_runbooks/step01_register_experiment.py`` runbook.
+
 Tests the full ephys pipeline end-to-end using AEONX1/social-ephys0.1 data,
 with the v2 PK structure (experiment_name, subject, insertion_number).
 

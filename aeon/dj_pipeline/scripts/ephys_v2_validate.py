@@ -1,5 +1,13 @@
 """Validation script for the ephys v2 pipeline test.
 
+.. warning::
+
+    This script is **not currently compatible with the post-restructure ephys
+    schema**. It validates ``EphysEpoch.Insertion.heading``, which no longer
+    exists — the part table moved to ``EphysEpochConfig.Insertion``. Running
+    it will ``AttributeError``. Modernization is tracked as a follow-up; for
+    the current pipeline see SPEC_EPHYS_PIPELINE.md.
+
 Checks that the pipeline ran correctly by verifying table contents,
 PK structure, and data integrity.
 
