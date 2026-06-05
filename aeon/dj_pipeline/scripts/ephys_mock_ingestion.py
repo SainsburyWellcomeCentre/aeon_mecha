@@ -33,8 +33,9 @@ ephys.Probe.insert1(
 )
 
 # ElectrodeConfig
-# NOTE (#583/#584): config_file_name is the lookup key used by
-# EphysChunk.ingest_chunks. Mock script inserts a synthetic basename.
+# config_file_name is the lookup key used by EphysChunk.ingest_chunks to
+# resolve the per-epoch active config from Metadata.yml. Mock script inserts
+# a synthetic basename since there's no real probeinterface JSON.
 ephys.ElectrodeConfig.insert1(
     dict(
         probe_type=probe_type,

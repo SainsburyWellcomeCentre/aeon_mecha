@@ -584,7 +584,7 @@ def resolve_raw_dir_and_epochs(
 
     Looks up the "raw-ephys" directory and returns only epochs with confirmed
     ephys data (``EphysEpochConfig.has_ephys == True``). Reads from
-    ``ephys.EphysEpoch`` (peer of ``acquisition.Epoch`` post-#583).
+    ``ephys.EphysEpoch`` — the ephys-side peer of ``acquisition.Epoch``.
     """
     from aeon.dj_pipeline import acquisition
     from aeon.dj_pipeline.ephys import EphysEpoch, EphysEpochConfig

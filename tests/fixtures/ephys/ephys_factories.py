@@ -81,8 +81,8 @@ def register_synthetic_experiment(
 
     Inserts: lab.Arena, acquisition.PipelineRepository, acquisition.DevicesSchema,
     acquisition.Experiment, acquisition.Experiment.Directory pointing at raw_dir,
-    ephys.EphysEpoch (Manual peer post-#583, no has_ephys/n_probes), and
-    ephys.EphysEpochConfig (with has_ephys=True, n_probes=0).
+    ephys.EphysEpoch (Manual peer, no has_ephys/n_probes on the master row),
+    and ephys.EphysEpochConfig (with has_ephys=True, n_probes=0).
 
     Returns the epoch_start datetime.
     """
@@ -156,8 +156,8 @@ def register_synthetic_experiment(
             skip_duplicates=True,
         )
 
-    # EphysEpoch (Manual peer post-#583) — insert directly; no has_ephys/n_probes
-    # on the master row (those moved to EphysEpochConfig).
+    # EphysEpoch is a Manual peer of acquisition.Epoch — insert directly.
+    # has_ephys/n_probes live on EphysEpochConfig, not on the master row.
     ephys.EphysEpoch.insert1(
         {
             "experiment_name": experiment_name,
@@ -302,8 +302,7 @@ def register_synthetic_probe_insertion(
         skip_duplicates=True,
     )
 
-    # EphysEpochConfig.Insertion (Part, allow_direct_insert) — moved from
-    # EphysEpoch.Insertion in #583 restructure.
+    # EphysEpochConfig.Insertion (Part, allow_direct_insert).
     ephys.EphysEpochConfig.Insertion.insert1(
         {
             "experiment_name": experiment_name,

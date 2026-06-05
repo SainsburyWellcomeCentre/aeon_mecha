@@ -150,7 +150,8 @@ class OnixStreamCodec(dj.Codec):
         }
         onix_ts_start = (ephys.EphysSyncModel & sm_key).fetch1("onix_ts_start")
 
-        # Read epoch_dir from ephys.EphysEpoch (peer of acquisition.Epoch post-#583).
+        # EphysEpoch is the ephys-side peer of acquisition.Epoch and owns its
+        # own epoch_dir; acquisition.Epoch holds behavior epochs only.
         epoch_dir = (ephys.EphysEpoch & sm_key).fetch1("epoch_dir")
         raw_dir = acquisition.Experiment.get_data_directory(
             {"experiment_name": stored["experiment_name"]}, "raw-ephys"

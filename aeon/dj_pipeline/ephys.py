@@ -569,7 +569,10 @@ class EphysChunk(dj.Manual):
             )
             return
 
-        # Per-epoch-per-probe config resolution (issue #584).
+        # Per-epoch-per-probe config resolution: a single probe_type can have
+        # multiple ElectrodeConfig rows (one per recording configuration), so
+        # we look up the active config via Metadata.yml's per-probe
+        # ProbeInterfaceFileName instead of by probe_type alone.
         # Cache: (epoch_dir_name) → {probe_label: config_file_name basename or None}
         from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
 
