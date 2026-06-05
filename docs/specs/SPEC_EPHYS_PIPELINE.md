@@ -2,7 +2,7 @@
 
 Design spec for the electrophysiology pipeline tables, ingestion flow, clock
 alignment, and auxiliary ONIX streams (Bno055 IMU). Companion to
-`SPEC_EPHYS_TESTING.md` (which covers the golden-dataset integration tests).
+`SPEC_TESTING.md` (which covers the test infrastructure and golden-dataset integration tests).
 
 **Status:** Reflects the schema restructure (symmetric epoch design,
 per-epoch ElectrodeConfig resolution) and the ONIX IMU pipeline. Earlier
