@@ -301,10 +301,6 @@ class Epoch(dj.Manual):
                         )
 
         logger.info(f"Insert {len(epoch_list)} new Epoch(s)")
-        # Note: ephys epochs are NOT ingested here. They live in ephys.EphysEpoch
-        # (a peer of acquisition.Epoch under acquisition.Experiment) and are
-        # discovered via ``ephys.EphysEpoch.ingest_epochs(experiment_name)``.
-        # See SPEC_EPHYS_PIPELINE.md.
 
 
 @schema
