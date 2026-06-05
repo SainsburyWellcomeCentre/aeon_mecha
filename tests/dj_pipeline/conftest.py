@@ -87,6 +87,7 @@ GOLDEN_DATASETS = {
         "golden_sorting_dir": "golden_test_sorting",
         "expected_unit_count": 14,
         "expected_total_spikes": 357_480,
+        "expected_quality_counts": {"good": 7, "mua": 7},
     },
 }
 

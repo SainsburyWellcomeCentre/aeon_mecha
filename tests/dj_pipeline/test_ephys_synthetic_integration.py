@@ -191,6 +191,13 @@ class TestEphysEpochEndLookback:
             f"next epoch's epoch_start ({epochs[1]['epoch_start']})"
         )
 
+        # And — positively assert the LAST epoch has NO EphysEpochEnd row
+        # (it should only get one when a newer epoch arrives).
+        exp_key = {"experiment_name": experiment_name}
+        assert not (
+            ephys.EphysEpochEnd & {**exp_key, "epoch_start": epochs[1]["epoch_start"]}
+        ), "Most recent epoch must have no EphysEpochEnd until a successor is discovered"
+
         # Duration is in hours
         expected_duration_hours = (
             epochs[1]["epoch_start"] - epochs[0]["epoch_start"]
@@ -377,7 +384,7 @@ class TestEphysBlockInfoMultiConfigValidation:
         )
 
         # populate() must refuse: chunks reference different ElectrodeConfigs
-        with pytest.raises(Exception, match="multiple ElectrodeConfigs"):
+        with pytest.raises(ValueError, match="multiple ElectrodeConfigs"):
             ephys.EphysBlockInfo.populate(
                 {"experiment_name": experiment_name},
                 display_progress=False,

@@ -113,11 +113,14 @@ class TestEphysBlockInfo:
         assert infos == blocks
 
     def test_block_duration_correct(self, ephys_block_info_populated, ctx):
+        # Block is set up as exactly 35 minutes (block_end - block_start in the
+        # ephys_test_blocks fixture); block_duration in hours is exactly 35/60.
+        # Tight tolerance to catch any conversion drift.
         infos = (
             ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         for info in infos:
-            assert abs(info["block_duration"] - 35 / 60) < 0.01
+            assert info["block_duration"] == pytest.approx(35 / 60, abs=1e-6)
 
     def test_block_chunks_associated(self, ephys_block_info_populated, ctx):
         chunk_links = len(
@@ -262,8 +265,12 @@ class TestSortedSpikes:
         ).to_dicts()
         qualities = [u["unit_quality"] for u in units]
         assert set(qualities) <= {"good", "mua", "noise"}
-        assert qualities.count("good") == 7
-        assert qualities.count("mua") == 7
+        expected = ctx.cfg["expected_quality_counts"]
+        for label, count in expected.items():
+            assert qualities.count(label) == count, (
+                f"Quality label '{label}' count mismatch: expected {count}, "
+                f"got {qualities.count(label)}"
+            )
 
 
 class TestSyncedSpikes:
