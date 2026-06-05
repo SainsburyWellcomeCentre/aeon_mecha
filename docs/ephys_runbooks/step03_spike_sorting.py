@@ -1,8 +1,7 @@
-"""
-03 -- Spike Sorting
+"""03 -- Spike Sorting
 ===================
-Set up spike sorting prerequisites, preprocess ephys data, submit GPU
-sorting via SLURM, and ingest the results.
+Set up spike sorting prerequisites, preprocess ephys data, generate
+SLURM submission scripts, and submit GPU sorting.
 
 Before you can sort spikes, three manual/lookup tables must be populated:
     SortingParamSet  -- kilosort4 parameters (insert once globally)
@@ -15,8 +14,15 @@ After those are in place:
     SpikeSorting   -- runs kilosort4 on GPU (submitted via SLURM, NOT
                       called from this script)
 
-This script handles everything up to SLURM submission. After sorting
-completes, continue to Step 4 for post-processing and curation.
+This script handles everything up to SLURM submission:
+    1. setup_sorting_prerequisites() -- populates the three manual tables
+    2. run_preprocessing()           -- runs PreProcessing.populate()
+    3. write_spike_sorting_scripts() -- generates run_aeon_spike_sorting.py
+       and .sh in the working directory, pre-filled from DB state
+
+After sorting completes, continue to Step 4 for post-processing and
+curation. See docs/ephys_runbooks/run_aeon_spike_sorting.{py,sh} for
+example output (golden dataset values).
 
 Run from the repo root on an HPC compute node (Ceph must be visible):
 
@@ -55,9 +61,15 @@ CHANNEL_MAP_FILE = "M81_ProbeB_4Shanks_1000_to_1700_um.json"
 # Functions
 # --------------------------------------------------------------------------
 
+
 def setup_sorting_prerequisites(
-    experiment_name, subject, paramset_id, sorting_method,
-    sorting_groups="per_shank", raw_ephys_dir=None, channel_map_file=None,
+    experiment_name,
+    subject,
+    paramset_id,
+    sorting_method,
+    sorting_groups="per_shank",
+    raw_ephys_dir=None,
+    channel_map_file=None,
 ):
     """Populate the three manual/lookup tables that must exist before sorting.
 
@@ -92,8 +104,7 @@ def setup_sorting_prerequisites(
     import json as _json
     from pathlib import Path
 
-    from aeon.dj_pipeline import ephys
-    from aeon.dj_pipeline import spike_sorting
+    from aeon.dj_pipeline import ephys, spike_sorting
 
     # ------------------------------------------------------------------
     # a) SortingParamSet -- insert once globally
@@ -147,9 +158,7 @@ def setup_sorting_prerequisites(
             {
                 "paramset_id": paramset_id_str,
                 "sorting_method": sorting_method,
-                "paramset_description": (
-                    "Default parameter set for Kilosort4 with SpikeInterface"
-                ),
+                "paramset_description": ("Default parameter set for Kilosort4 with SpikeInterface"),
                 "params": params,
             }
         )
@@ -163,15 +172,12 @@ def setup_sorting_prerequisites(
     # We need the (probe_type, electrode_config_name) key. Rather than
     # hard-coding it, query from EphysBlockInfo which was populated in
     # step 2 -- it already knows the electrode configuration.
-    block_info = (
-        ephys.EphysBlockInfo & {"experiment_name": experiment_name}
-    ).fetch("probe_type", "electrode_config_name", as_dict=True, limit=1)
+    block_info = (ephys.EphysBlockInfo & {"experiment_name": experiment_name}).fetch(
+        "probe_type", "electrode_config_name", as_dict=True, limit=1
+    )
 
     if not block_info:
-        print(
-            "ERROR: No EphysBlockInfo entries found. "
-            "Run step 2 (define_blocks) first."
-        )
+        print("ERROR: No EphysBlockInfo entries found. Run step 2 (define_blocks) first.")
         return
 
     probe_type = block_info[0]["probe_type"]
@@ -180,34 +186,25 @@ def setup_sorting_prerequisites(
         "probe_type": probe_type,
         "electrode_config_name": electrode_config_name,
     }
-    print(
-        f"Using electrode config: probe_type={probe_type}, "
-        f"electrode_config_name={electrode_config_name}"
-    )
+    print(f"Using electrode config: probe_type={probe_type}, electrode_config_name={electrode_config_name}")
 
     # Get all electrodes in this config.
-    all_electrodes = (
-        ephys.ElectrodeConfig.Electrode & electrode_config_key
-    ).fetch("electrode")
+    all_electrodes = (ephys.ElectrodeConfig.Electrode & electrode_config_key).fetch("electrode")
 
     # Build groups based on the sorting strategy.
     if sorting_groups == "per_shank":
         if not raw_ephys_dir or not channel_map_file:
             raise ValueError(
-                "raw_ephys_dir and channel_map_file are required "
-                "when sorting_groups='per_shank'."
+                "raw_ephys_dir and channel_map_file are required when sorting_groups='per_shank'."
             )
 
         # Read the probeinterface JSON for shank assignments.
         raw_path = Path(raw_ephys_dir)
         epoch_dirs = sorted(
-            d for d in raw_path.iterdir()
-            if d.is_dir() and "T" in d.name and not d.name.startswith(".")
+            d for d in raw_path.iterdir() if d.is_dir() and "T" in d.name and not d.name.startswith(".")
         )
         if not epoch_dirs:
-            raise FileNotFoundError(
-                f"No epoch directories found in {raw_ephys_dir}"
-            )
+            raise FileNotFoundError(f"No epoch directories found in {raw_ephys_dir}")
         json_path = epoch_dirs[0] / channel_map_file
         if not json_path.exists():
             raise FileNotFoundError(f"Channel map not found: {json_path}")
@@ -221,12 +218,12 @@ def setup_sorting_prerequisites(
             contact_ids = probe.get("contact_ids", [])
             dci = probe.get("device_channel_indices", [])
             shank_ids = probe.get("shank_ids", [])
-            for cid, ch_idx, shank in zip(contact_ids, dci, shank_ids):
+            for cid, ch_idx, shank in zip(contact_ids, dci, shank_ids, strict=True):
                 if int(ch_idx) >= 0:
                     shank_map[int(cid)] = str(shank)
 
         # Group electrodes by shank (only those in the ElectrodeConfig).
-        active_set = set(int(e) for e in all_electrodes)
+        active_set = {int(e) for e in all_electrodes}
         shanks = {}
         for site, shank in sorted(shank_map.items()):
             if site in active_set:
@@ -242,10 +239,7 @@ def setup_sorting_prerequisites(
         groups = [("all", list(all_electrodes))]
 
     else:
-        raise ValueError(
-            f"Unknown sorting_groups: {sorting_groups!r}. "
-            f"Use 'per_shank' or 'all'."
-        )
+        raise ValueError(f"Unknown sorting_groups: {sorting_groups!r}. Use 'per_shank' or 'all'.")
 
     # Insert groups.
     for group_name, sites in groups:
@@ -254,8 +248,7 @@ def setup_sorting_prerequisites(
                 **electrode_config_key,
                 "electrode_group": group_name,
                 "electrode_group_description": (
-                    f"Shank {group_name.replace('shank', '')}: "
-                    f"{len(sites)} channels"
+                    f"Shank {group_name.replace('shank', '')}: {len(sites)} channels"
                     if sorting_groups == "per_shank"
                     else f"All {len(sites)} active channels"
                 ),
@@ -274,16 +267,12 @@ def setup_sorting_prerequisites(
             ),
             skip_duplicates=True,
         )
-        print(
-            f"  ElectrodeGroup '{group_name}': {len(sites)} electrodes"
-        )
+        print(f"  ElectrodeGroup '{group_name}': {len(sites)} electrodes")
 
     # ------------------------------------------------------------------
     # c) SortingTask -- one per (block, group)
     # ------------------------------------------------------------------
-    blocks = (
-        ephys.EphysBlock & {"experiment_name": experiment_name}
-    ).to_dicts()
+    blocks = (ephys.EphysBlock & {"experiment_name": experiment_name}).to_dicts()
     if subject:
         blocks = [b for b in blocks if b["subject"] == subject]
 
@@ -311,9 +300,7 @@ def setup_sorting_prerequisites(
             spike_sorting.SortingTask.insert1(task_key, skip_duplicates=True)
             insert_count += 1
 
-    total = len(
-        spike_sorting.SortingTask & {"experiment_name": experiment_name}
-    )
+    total = len(spike_sorting.SortingTask & {"experiment_name": experiment_name})
     print(f"SortingTask: inserted {insert_count} entries ({total} total)")
 
 
@@ -356,12 +343,8 @@ def run_preprocessing(experiment_name):
     # Deferred imports -- no DB side effects at module level.
     from aeon.dj_pipeline import spike_sorting
 
-    pending = len(
-        spike_sorting.SortingTask
-        & {"experiment_name": experiment_name}
-    ) - len(
-        spike_sorting.PreProcessing
-        & {"experiment_name": experiment_name}
+    pending = len(spike_sorting.SortingTask & {"experiment_name": experiment_name}) - len(
+        spike_sorting.PreProcessing & {"experiment_name": experiment_name}
     )
     print(f"Pending PreProcessing entries: {pending}")
 
@@ -370,52 +353,70 @@ def run_preprocessing(experiment_name):
         return
 
     print("Running PreProcessing.populate()...")
-    print(
-        "  (This writes preprocessed binary data to Ceph. "
-        "It may take a while for large blocks.)"
-    )
-    spike_sorting.PreProcessing.populate(
-        display_progress=True, suppress_errors=False
-    )
+    print("  (This writes preprocessed binary data to Ceph. It may take a while for large blocks.)")
+    spike_sorting.PreProcessing.populate(display_progress=True, suppress_errors=False)
     print("PreProcessing complete.")
 
 
-def print_slurm_config(experiment_name, subject):
-    """Print SLURM job configuration for submitting spike sorting.
+def write_spike_sorting_scripts(experiment_name, subject, outdir=None):
+    """Generate run_aeon_spike_sorting.py and .sh scripts from DB state.
 
-    SpikeSorting requires a GPU and is submitted as a SLURM batch job,
-    NOT run interactively from this script. This function prints:
-        a) A Python config file to create/edit (run_aeon_spike_sorting.py)
-        b) A SLURM submission script template (run_aeon_spike_sorting.sh)
-        c) How to submit and monitor the job
+    SpikeSorting requires a GPU and is submitted as a SLURM batch job.
+    This function queries SortingTask for the experiment, generates a
+    Python worker script and a SLURM submission script pre-filled with
+    the correct keys, and writes both to the output directory.
 
-    The templates are pre-filled with actual values from the database
-    where possible (block boundaries, probe type, electrode config).
+    See docs/ephys_runbooks/run_aeon_spike_sorting.{py,sh} for example
+    output (golden dataset values).
 
     Args:
-        experiment_name: The experiment to generate config for.
+        experiment_name: The experiment to generate scripts for.
         subject: Filter blocks to this subject.
+        outdir: Directory to write scripts into. Defaults to cwd.
+            Created if it doesn't exist.
+
+    Returns:
+        Tuple of (py_path, sh_path) for the written files,
+        or None if no SortingTask entries were found.
     """
     # Deferred imports -- no DB side effects at module level.
-    from aeon.dj_pipeline import ephys
+    from pathlib import Path
+
     from aeon.dj_pipeline import spike_sorting
 
-    # Query actual block info to fill in the template.
-    blocks = (
-        spike_sorting.SortingTask & {"experiment_name": experiment_name}
-    ).to_dicts()
+    # Query SortingTask entries that haven't been sorted yet.
+    restriction = {"experiment_name": experiment_name}
     if subject:
-        blocks = [b for b in blocks if b["subject"] == subject]
+        restriction["subject"] = subject
 
-    if not blocks:
+    all_tasks = spike_sorting.SortingTask & restriction
+    pending = (all_tasks - spike_sorting.SpikeSorting).to_dicts()
+    n_total = len(all_tasks)
+    n_done = n_total - len(pending)
+
+    if n_total == 0:
         print("No SortingTask entries found. Run setup_sorting_prerequisites first.")
-        return
+        return None
+
+    if not pending:
+        print(f"All {n_total} SortingTask entries already have SpikeSorting results. No scripts written.")
+        return None
+
+    if n_done > 0:
+        print(
+            f"Generating scripts for {len(pending)} of {n_total} "
+            f"SortingTask entries ({n_done} already sorted)"
+        )
+
+    blocks = pending
 
     # Extract common fields from the first block.
     first = blocks[0]
     probe_type = first["probe_type"]
     electrode_config_name = first["electrode_config_name"]
     paramset_id = first["paramset_id"]
+    insertion_number = first["insertion_number"]
+    n_keys = len(blocks)
 
     # Group entries by electrode_group for organized output.
     by_group = {}
@@ -435,23 +436,40 @@ def print_slurm_config(experiment_name, subject):
             )
     keys_block = "\n".join(keys_lines)
 
-    # ---- a) Python config ----
-    print()
-    print("-" * 60)
-    print("  (a) Copy-paste into: submodules/aeon_mecha/aeon/dj_pipeline/scripts/run_aeon_spike_sorting.py")
-    print("-" * 60)
-    print(
-        f"""
-# Replace the _base and keys sections in
-# submodules/aeon_mecha/aeon/dj_pipeline/scripts/run_aeon_spike_sorting.py
-# with these values:
+    # ---- Resolve output directory ----
+    outdir = Path(outdir) if outdir else Path.cwd()
+    outdir.mkdir(parents=True, exist_ok=True)
 
-table_name = "SpikeSorting"
+    py_path = outdir / "run_aeon_spike_sorting.py"
+    sh_path = outdir / "run_aeon_spike_sorting.sh"
+
+    # ---- Generate Python script ----
+    py_content = f'''\
+"""Run spike sorting on a single key, selected by --task index.
+
+Designed for SLURM job arrays: each array task gets its own GPU and
+processes one key from the list. The SLURM script passes
+$SLURM_ARRAY_TASK_ID as --task automatically.
+
+Generated by write_spike_sorting_scripts() for experiment
+"{experiment_name}", subject "{subject}".
+
+To run a single task interactively (e.g. for debugging):
+    uv run python run_aeon_spike_sorting.py --task 1
+"""
+
+import argparse
+
+from aeon.dj_pipeline import spike_sorting
+
+# =============================================================================
+# Configuration
+# =============================================================================
 
 _base = {{
     "experiment_name": "{experiment_name}",
     "subject": "{subject}",
-    "insertion_number": {first['insertion_number']},
+    "insertion_number": {insertion_number},
     "probe_type": "{probe_type}",
     "electrode_config_name": "{electrode_config_name}",
     "paramset_id": "{paramset_id}",
@@ -460,38 +478,191 @@ _base = {{
 keys = [
 {keys_block}
 ]
-"""
-    )
 
-    # ---- b) Submit and monitor ----
-    print("-" * 60)
-    print("  (b) Submit and monitor")
-    print("-" * 60)
-    n_keys = len(blocks)
+# =============================================================================
+
+# If a sorting job failed with "error" status, DataJoint will skip it on
+# resubmit. Set CLEAR_JOB = True to clear error entries before re-running.
+#
+# NOTE: If a job was killed externally (scancel, OOM killer, node crash),
+# it may be stuck as "reserved" instead of "error". CLEAR_JOB only handles
+# "error" entries. To clear "reserved" entries, run manually:
+#   from aeon.dj_pipeline import spike_sorting
+#   (spike_sorting.schema.jobs & {{"status": "reserved"}}).delete()
+CLEAR_JOB = False
+
+
+def clear_job(key):
+    """Clear errored jobs for SpikeSorting to allow re-running."""
+    try:
+        (spike_sorting.schema.jobs & {{"table_name": spike_sorting.SpikeSorting.table_name, "status": "error"}} & key).delete()
+    except Exception as e:
+        print(f"[WARNING] Could not clear error jobs: {{e}}")
+
+
+def main():
+    """Run spike sorting on the key corresponding to --task index."""
+    parser = argparse.ArgumentParser(description="Spike sorting worker")
+    parser.add_argument(
+        "--task", type=int, required=True, help=f"Task number (1-{{len(keys)}}), from SLURM_ARRAY_TASK_ID"
+    )
+    args = parser.parse_args()
+
+    if not 1 <= args.task <= len(keys):
+        raise ValueError(f"Task must be 1-{{len(keys)}}, got {{args.task}}")
+
+    key = keys[args.task - 1]
     print(
-        f"""
-  The SLURM script is already in the repo:
-    submodules/aeon_mecha/run_aeon_spike_sorting.sh
-
-  IMPORTANT: Update the array size in the .sh file to match your
-  number of keys ({n_keys}). Edit the line:
-    #SBATCH --array=1-{n_keys}
-
-  Submit (from your analysis repo root):
-    sbatch submodules/aeon_mecha/run_aeon_spike_sorting.sh
-
-  Monitor:
-    squeue -u $USER                 # list your queued/running jobs
-    sacct -j <jobid> --format=JobID,Elapsed,State,MaxRSS
-    tail -f slurm_output/<node>_<jobid>.out   # live log
-
-  Cancel:
-    scancel <jobid>
-
-  After sorting completes, continue to Step 4 (post-processing
-  and curation).
-"""
+        f"\\n=== Task {{args.task}}/{{len(keys)}}: {{key[\'electrode_group\']}} "
+        f"{{key[\'block_start\']}} - {{key[\'block_end\']}} ==="
     )
+
+    if CLEAR_JOB:
+        clear_job(key)
+    spike_sorting.SpikeSorting.populate(key, reserve_jobs=True, display_progress=True)
+    print(f"=== Task {{args.task}} done ===")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+    # ---- Generate shell script ----
+    sh_content = f'''\
+#!/bin/bash
+
+# =============================================================================
+# AEON Spike Sorting SLURM Script (Job Array)
+# =============================================================================
+# Submits as a job array — each task gets its own GPU and sorts one key.
+# Task number ($SLURM_ARRAY_TASK_ID) selects which key from the Python
+# script's keys list to process.
+#
+# Generated by write_spike_sorting_scripts() for experiment
+# "{experiment_name}", subject "{subject}".
+#
+# Usage:  sbatch run_aeon_spike_sorting.sh
+# Status: squeue --start -j <job_id>
+# Cancel: scancel <job_id>          (cancels all array tasks)
+#         scancel <job_id>_<task>    (cancels one task)
+# =============================================================================
+
+#SBATCH --job-name=aeon-spike-sorting         # job name
+#SBATCH --partition=gpu                       # Change to 'cpu' for CPU-only mode
+#SBATCH --gres=gpu:a100:1                    # Remove this line for CPU-only mode (options a100, p5000)
+#SBATCH --nodes=1                             # node count
+#SBATCH --ntasks=1                            # total number of tasks across all nodes
+#SBATCH --mem=256G                            # total memory per node (typical: 64G for <2hr blocks)
+#SBATCH --time=7-08:00:00                     # total run time limit (typical: 0-04:00:00 for <2hr blocks)
+#SBATCH --array=1-{n_keys}                          # one task per key
+#SBATCH --output=slurm_output/%N_%j_%a.out    # output file path (%a = array task ID)
+#SBATCH --error=slurm_output/%N_%j_%a.err     # error file path
+
+# Exit on any error
+set -e
+
+# Print job information
+echo "=== SLURM Job Information ==="
+echo "Job ID: $SLURM_JOB_ID"
+echo "Job Name: $SLURM_JOB_NAME"
+echo "Node: $SLURM_NODELIST"
+echo "Working Directory: $(pwd)"
+echo "Start Time: $(date)"
+echo "================================"
+
+# Create output directory
+mkdir -p slurm_output
+
+# Load modules
+echo "Loading modules..."
+module load uv
+
+# Change to the directory where the scripts were submitted from.
+cd "$SLURM_SUBMIT_DIR"
+echo "Working directory: $(pwd)"
+
+# Ensure venv exists and deps match lockfile
+echo "Syncing dependencies..."
+uv sync
+
+# Set PyTorch CUDA memory allocator configuration to free reserved memory
+# This helps prevent CUDA out of memory errors during long-running Kilosort4 jobs
+# expandable_segments:True allows PyTorch to dynamically expand memory segments to reduce fragmentation
+# garbage_collection_threshold:0.6 triggers GC when 60% of reserved memory is unused,
+#   which should free the 7.69 GiB reserved but unallocated memory
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.6
+echo "Set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.6"
+
+# Start resource profiler in the background
+PROFILER_PATH="submodules/aeon_mecha/aeon/dj_pipeline/scripts/start_resource_profiler.py"
+if [ -f "$PROFILER_PATH" ]; then
+    echo "Starting resource profiler..."
+    .venv/bin/python "$PROFILER_PATH" -o "./slurm_output/resource_use_${{SLURM_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}.csv" & PROFILER_PID=$!
+    echo "Resource profiler started with PID: $PROFILER_PID"
+else
+    echo "Resource profiler not found at $PROFILER_PATH, skipping."
+    PROFILER_PID=""
+fi
+
+# Verify Python script exists
+SCRIPT_PATH="$SLURM_SUBMIT_DIR/run_aeon_spike_sorting.py"
+if [ ! -f "$SCRIPT_PATH" ]; then
+    echo "ERROR: Python script not found: $SCRIPT_PATH"
+    exit 1
+fi
+
+# Run the spike sorting script for this array task
+TASK=${{SLURM_ARRAY_TASK_ID:-1}}
+echo "Starting spike sorting for task $TASK..."
+.venv/bin/python "$SCRIPT_PATH" --task "$TASK"
+
+# Stop the profiler
+if [ -n "$PROFILER_PID" ]; then
+    echo "Stopping resource profiler..."
+    kill $PROFILER_PID
+fi
+
+# Check exit status
+if [ $? -eq 0 ]; then
+    echo "=== Job completed successfully ==="
+    echo "End Time: $(date)"
+    exit 0
+else
+    echo "=== Job failed ==="
+    echo "End Time: $(date)"
+    exit 1
+fi
+'''
+
+    # ---- Write files ----
+    if py_path.exists():
+        print(f"  WARNING: Overwriting existing {py_path.name}")
+    py_path.write_text(py_content)
+
+    if sh_path.exists():
+        print(f"  WARNING: Overwriting existing {sh_path.name}")
+    sh_path.write_text(sh_content)
+
+    # ---- Confirmation ----
+    print(f"Wrote: {py_path} ({n_keys} keys)")
+    print(f"Wrote: {sh_path}")
+    print()
+    print("  Submit:")
+    print("      sbatch run_aeon_spike_sorting.sh")
+    print()
+    print("  Monitor:")
+    print("      squeue -u $USER                              # job status")
+    print("      tail -f slurm_output/<node>_<jobid>_<task>.out  # live log")
+    print()
+    print("  If jobs fail:")
+    print("      1. Re-run write_spike_sorting_scripts() to get fresh scripts")
+    print("         with only the remaining keys")
+    print("      2. If jobs are stuck, set CLEAR_JOB = True in the .py script")
+    print("         (see comments there for details)")
+    print()
+    print("  After all sorting completes, continue to Step 4.")
+
+    return py_path, sh_path
 
 
 # --------------------------------------------------------------------------
@@ -572,7 +743,10 @@ if __name__ == "__main__":
 
     print("\n--- 1/3: Setup sorting prerequisites ---")
     setup_sorting_prerequisites(
-        EXPERIMENT_NAME, SUBJECT, PARAMSET_ID, SORTING_METHOD,
+        EXPERIMENT_NAME,
+        SUBJECT,
+        PARAMSET_ID,
+        SORTING_METHOD,
         sorting_groups=SORTING_GROUPS,
         raw_ephys_dir=RAW_EPHYS_DIR,
         channel_map_file=CHANNEL_MAP_FILE,
@@ -581,8 +755,8 @@ if __name__ == "__main__":
     print("\n--- 2/3: Run preprocessing ---")
     run_preprocessing(EXPERIMENT_NAME)
 
-    print("\n--- 3/3: SLURM config for spike sorting ---")
-    print_slurm_config(EXPERIMENT_NAME, SUBJECT)
+    print("\n--- 3/3: Generate SLURM scripts ---")
+    write_spike_sorting_scripts(EXPERIMENT_NAME, SUBJECT)
 
     print("=" * 60)
     print("  Step 3 complete.")

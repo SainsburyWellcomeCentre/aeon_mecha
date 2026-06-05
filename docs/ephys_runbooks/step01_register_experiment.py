@@ -1,5 +1,4 @@
-"""
-01 -- Register Experiment
+"""01 -- Register Experiment
 ========================
 Register the experiment, subject, probe type, electrode configuration,
 and probe assignments needed before any ephys data can be ingested.
@@ -65,6 +64,7 @@ PROBE_ASSIGNMENTS_DIR = Path.home() / ".aeon_probe_assignments"
 # Functions
 # --------------------------------------------------------------------------
 
+
 def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subject):
     """Insert experiment, subject, and data directories into the database.
 
@@ -74,7 +74,8 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
     - "raw-ephys" -> ephys data (NeuropixelsV2)
     """
     # Deferred imports so there are no DB side effects at module load time.
-    from aeon.dj_pipeline import acquisition, lab, subject as subject_mod
+    from aeon.dj_pipeline import acquisition, lab
+    from aeon.dj_pipeline import subject as subject_mod
 
     # --- Subject ---
     subject_mod.Subject.insert1(
@@ -104,8 +105,7 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
     # is the primary data source for this guide.
     raw_path = Path(raw_ephys_dir)
     epoch_dirs = sorted(
-        d.name for d in raw_path.iterdir()
-        if d.is_dir() and "T" in d.name and not d.name.startswith(".")
+        d.name for d in raw_path.iterdir() if d.is_dir() and "T" in d.name and not d.name.startswith(".")
     )
     if not epoch_dirs:
         raise FileNotFoundError(f"No epoch directories found in {raw_ephys_dir}")
@@ -231,8 +231,7 @@ def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
     # Find the first epoch directory (they are named like "2026-05-05T15-15-51")
     raw_path = Path(raw_ephys_dir)
     epoch_dirs = sorted(
-        d for d in raw_path.iterdir()
-        if d.is_dir() and "T" in d.name and not d.name.startswith(".")
+        d for d in raw_path.iterdir() if d.is_dir() and "T" in d.name and not d.name.startswith(".")
     )
     if not epoch_dirs:
         raise FileNotFoundError(f"No epoch directories found in {raw_ephys_dir}")
@@ -241,8 +240,7 @@ def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
     json_path = first_epoch / channel_map_file
     if not json_path.exists():
         raise FileNotFoundError(
-            f"Channel map file not found: {json_path}\n"
-            f"Expected a probeinterface JSON at this path."
+            f"Channel map file not found: {json_path}\nExpected a probeinterface JSON at this path."
         )
 
     with open(json_path) as f:
@@ -259,17 +257,14 @@ def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
         dci = probe.get("device_channel_indices")
         if dci is None:
             raise ValueError(
-                f"No device_channel_indices in {json_path}. "
-                f"Cannot determine which contacts are active."
+                f"No device_channel_indices in {json_path}. Cannot determine which contacts are active."
             )
-        for cid, ch_idx in zip(contact_ids, dci):
+        for cid, ch_idx in zip(contact_ids, dci, strict=True):
             if int(ch_idx) >= 0:
                 active_electrodes.append((int(cid), int(ch_idx)))
 
     if not active_electrodes:
-        raise ValueError(
-            f"No active contacts (device_channel_indices >= 0) in {json_path}."
-        )
+        raise ValueError(f"No active contacts (device_channel_indices >= 0) in {json_path}.")
 
     # Sort by raw channel index for readable output.
     active_electrodes.sort(key=lambda x: x[1])
@@ -286,18 +281,13 @@ def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
 
     if ElectrodeConfig & electrode_config_key:
         existing = len(ElectrodeConfig.Electrode & electrode_config_key)
-        print(
-            f"ElectrodeConfig already exists: {electrode_config_name} "
-            f"({existing} electrodes)"
-        )
+        print(f"ElectrodeConfig already exists: {electrode_config_name} ({existing} electrodes)")
         return
 
     ElectrodeConfig.insert1(
         {
             **electrode_config_key,
-            "electrode_config_description": (
-                f"{n_channels} active channels from {channel_map_file}"
-            ),
+            "electrode_config_description": (f"{n_channels} active channels from {channel_map_file}"),
             "electrode_config_hash": uuid.uuid4(),
         },
         skip_duplicates=True,
@@ -306,8 +296,7 @@ def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
     # Each Electrode entry links a (probe_type, electrode_config_name) to a
     # specific electrode on the ProbeType.Electrode table.
     ElectrodeConfig.Electrode.insert(
-        ({**electrode_config_key, "electrode": site_id}
-         for site_id in active_site_ids),
+        ({**electrode_config_key, "electrode": site_id} for site_id in active_site_ids),
         skip_duplicates=True,
     )
 
@@ -332,8 +321,7 @@ def create_probe_assignments(raw_ephys_dir, probe_serial, subject):
 
     # Find epoch directories (named like "2026-05-05T15-15-51")
     epoch_dirs = sorted(
-        d for d in raw_path.iterdir()
-        if d.is_dir() and "T" in d.name and not d.name.startswith(".")
+        d for d in raw_path.iterdir() if d.is_dir() and "T" in d.name and not d.name.startswith(".")
     )
     if not epoch_dirs:
         raise FileNotFoundError(f"No epoch directories found in {raw_ephys_dir}")
@@ -376,7 +364,7 @@ def create_probe_assignments(raw_ephys_dir, probe_serial, subject):
 
     with open(override_path, "w") as f:
         json.dump(assignments, f, indent=2)
-    print(f"Ceph is read-only. Wrote probe_assignments.json to local override:")
+    print("Ceph is read-only. Wrote probe_assignments.json to local override:")
     print(f"  {override_path}")
     print(f"  probe {probe_serial} -> subject {subject}")
     return str(override_dir)
@@ -409,7 +397,9 @@ def register_epochs(experiment_name, probe_assignments_dir=None):
             f"Registered directories:\n"
             + "\n".join(
                 f"  {d['directory_type']}: {d['directory_path']}"
-                for d in (acquisition.Experiment.Directory & {"experiment_name": experiment_name}).to_dicts()
+                for d in (
+                    acquisition.Experiment.Directory & {"experiment_name": experiment_name}
+                ).to_dicts()
             )
         )
 
@@ -424,9 +414,7 @@ def register_epochs(experiment_name, probe_assignments_dir=None):
 
     # Report results
     total = len(EphysEpochConfig & {"experiment_name": experiment_name})
-    with_ephys = len(
-        EphysEpochConfig & {"experiment_name": experiment_name, "has_ephys": True}
-    )
+    with_ephys = len(EphysEpochConfig & {"experiment_name": experiment_name, "has_ephys": True})
     print(f"EphysEpochConfig: {total} row(s), {with_ephys} with ephys data")
 
 
@@ -479,7 +467,11 @@ def verify_registration(experiment_name):
     """Print a summary of everything registered for this experiment."""
     from aeon.dj_pipeline import acquisition
     from aeon.dj_pipeline.ephys import (
-        EphysChunk, EphysEpoch, EphysEpochConfig, Probe, ProbeInsertion,
+        EphysChunk,
+        EphysEpoch,
+        EphysEpochConfig,
+        Probe,
+        ProbeInsertion,
     )
 
     print(f"Experiment: {experiment_name}")
@@ -487,18 +479,14 @@ def verify_registration(experiment_name):
     # Epochs
     behavior_count = len(acquisition.Epoch & {"experiment_name": experiment_name})
     ephys_epoch_count = len(EphysEpoch & {"experiment_name": experiment_name})
-    ephys_with_data = len(
-        EphysEpochConfig & {"experiment_name": experiment_name, "has_ephys": True}
-    )
+    ephys_with_data = len(EphysEpochConfig & {"experiment_name": experiment_name, "has_ephys": True})
     print(
         f"Epochs: {behavior_count} behavior, {ephys_epoch_count} ephys "
         f"({ephys_with_data} with ephys data)"
     )
 
     # Probe insertions
-    insertions = (
-        ProbeInsertion & {"experiment_name": experiment_name}
-    ).to_dicts()
+    insertions = (ProbeInsertion & {"experiment_name": experiment_name}).to_dicts()
     print(f"ProbeInsertions: {len(insertions)}")
     for pi in insertions:
         probe_type = (Probe & {"probe": pi["probe"]}).fetch1("probe_type")
@@ -518,12 +506,9 @@ def verify_registration(experiment_name):
         if chunk_count > 0:
             chunk_starts = (EphysChunk & pi_key).to_arrays("chunk_start")
             chunk_ends = (EphysChunk & pi_key).to_arrays("chunk_end")
-            print(
-                f"  -> {chunk_count} chunks: "
-                f"{min(chunk_starts)} to {max(chunk_ends)}"
-            )
+            print(f"  -> {chunk_count} chunks: {min(chunk_starts)} to {max(chunk_ends)}")
         else:
-            print(f"  -> 0 chunks")
+            print("  -> 0 chunks")
 
 
 # --------------------------------------------------------------------------

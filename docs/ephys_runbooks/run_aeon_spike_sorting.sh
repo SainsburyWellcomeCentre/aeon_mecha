@@ -7,6 +7,9 @@
 # Task number ($SLURM_ARRAY_TASK_ID) selects which key from the Python
 # script's keys list to process.
 #
+# Example output of write_spike_sorting_scripts() — golden dataset values.
+# Generated for experiment "abcGolden01-aeonx1", subject "IAA-1147881".
+#
 # Usage:  sbatch run_aeon_spike_sorting.sh
 # Status: squeue --start -j <job_id>
 # Cancel: scancel <job_id>          (cancels all array tasks)
@@ -20,7 +23,7 @@
 #SBATCH --ntasks=1                            # total number of tasks across all nodes
 #SBATCH --mem=256G                            # total memory per node (typical: 64G for <2hr blocks)
 #SBATCH --time=7-08:00:00                     # total run time limit (typical: 0-04:00:00 for <2hr blocks)
-#SBATCH --array=1-12                          # one task per key (edit to match keys list length)
+#SBATCH --array=1-12                          # one task per key
 #SBATCH --output=slurm_output/%N_%j_%a.out    # output file path (%a = array task ID)
 #SBATCH --error=slurm_output/%N_%j_%a.err     # error file path
 
@@ -43,9 +46,8 @@ mkdir -p slurm_output
 echo "Loading modules..."
 module load uv
 
-# Change to the analysis repo root (where the venv lives).
-# Adjust this path if your analysis repo is elsewhere.
-cd ~/ProjectAeon/foragingABC_analysis
+# Change to the directory where the scripts were submitted from.
+cd "$SLURM_SUBMIT_DIR"
 echo "Working directory: $(pwd)"
 
 # Ensure venv exists and deps match lockfile
@@ -72,7 +74,7 @@ else
 fi
 
 # Verify Python script exists
-SCRIPT_PATH="submodules/aeon_mecha/aeon/dj_pipeline/scripts/run_aeon_spike_sorting.py"
+SCRIPT_PATH="$SLURM_SUBMIT_DIR/run_aeon_spike_sorting.py"
 if [ ! -f "$SCRIPT_PATH" ]; then
     echo "ERROR: Python script not found: $SCRIPT_PATH"
     exit 1
