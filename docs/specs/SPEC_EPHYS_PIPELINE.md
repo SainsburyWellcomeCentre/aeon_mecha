@@ -103,12 +103,11 @@ A single Neuropixels 2.0 probe is routinely re-banked across recordings
 `ElectrodeConfig` row. Pre-restructure, `EphysChunk.ingest_chunks` couldn't
 disambiguate when multiple configs existed for a `probe_type` — it errored.
 
-**Resolution: structured config-file lookup.**
+**Resolution: per-(epoch, probe) FK on `EphysEpochConfig.Insertion`.**
 
-`ElectrodeConfig` carries a `config_file_name` attribute (basename of the
-ProbeInterface JSON) with a unique index on `(probe_type, config_file_name)`.
-
-The active config for a given (epoch, probe) is recorded in `Metadata.yml`:
+Each `EphysEpochConfig.Insertion` row records, for one probe in one epoch,
+both the `ElectrodeConfig` FK and the source JSON basename (`config_file_name`).
+The mapping comes from `Metadata.yml`:
 
 ```yaml
 Devices:
@@ -117,13 +116,18 @@ Devices:
     ConfigurationB: { ProbeInterfaceFileName: "Z:\...\recording_configurations\probeB.json" }
 ```
 
-`EphysChunk.ingest_chunks()` reads `Metadata.yml` for each epoch, extracts
-the per-probe basename, and looks up `ElectrodeConfig` by
-`(probe_type, config_file_name)`. The `ConfigurationA/B` keys map to probe
-labels `ProbeA/B` by convention.
+`EphysEpochConfig.make()` reads `Metadata.yml` once per epoch, parses each
+`ConfigurationA/B` (mapping `ProbeA/B` by convention), and:
+- Calls `create_electrode_config(json_path, ...)` to dedup-insert the
+  `ElectrodeConfig` (pure probe-geometry table — no filename or provenance).
+- Records the JSON basename on the `Insertion` row alongside the FK.
 
-ProbeInsertion configurations with `ProbeInterfaceFileName: null` indicate
-disabled/spoofed probes; the ingest skips them.
+`ProbeInterfaceFileName: null` indicates a disabled/spoofed probe; the
+ingest skips it.
+
+Downstream consumers (`EphysChunk.ingest_chunks`, `EphysBlockInfo.make`) read
+the resolved `(probe_type, electrode_config_name, config_file_name)` directly
+from `Insertion` — no further `Metadata.yml` parsing at chunk- or block-time.
 
 ### Where the JSON lives
 
@@ -148,7 +152,11 @@ is the canonical entry point. It:
 3. Populates `ElectrodeConfig` + `ElectrodeConfig.Electrode` with the
    subset of contacts where `device_channel_indices != -1` (the actively-
    recorded electrodes, typically 384 per recording).
-4. Sets `electrode_config_name = json_path.stem`, `config_file_name = json_path.name`.
+4. Sets `electrode_config_name = json_path.stem` (override via `config_name`).
+
+The helper does NOT record the JSON basename on `ElectrodeConfig` — that
+provenance belongs on the per-(epoch, probe) `EphysEpochConfig.Insertion`
+row, set by the caller.
 
 The helper is idempotent (all inserts use `skip_duplicates=True`). It does
 NOT wrap its inserts in an explicit transaction, so it can be called from
@@ -228,6 +236,6 @@ ephys.schema.drop()        # confirms with the operator
 | `aeon/dj_pipeline/ephys.py` | All ephys tables: `EphysEpoch`, `EphysEpochEnd`, `EphysEpochConfig`, `EphysChunk`, `EphysSyncModel`, `EphysBlock`, `EphysBlockInfo`, `OnixImuChunk`. |
 | `aeon/dj_pipeline/utils/ephys_utils.py` | `create_electrode_config`, `parse_metadata_probe_configs`, `resolve_epoch_probe_json`, `load_device_channel_map`, `discover_epoch_probes`, ProbeInsertion helpers, HARP↔ONIX time helpers. |
 | `aeon/dj_pipeline/acquisition.py` | `acquisition.Epoch.ingest_epochs()` — behavior side ONLY (raw-ephys branch removed). |
-| `aeon/dj_pipeline/scripts/ephys_v2_setup.py` | Manual setup script for synthetic-geometry probes (HPC-friendly). Sets `config_file_name` placeholder. |
+| `aeon/dj_pipeline/scripts/ephys_v2_setup.py` | Manual setup script for synthetic-geometry probes (HPC-friendly). |
 | `aeon/dj_pipeline/scripts/ephys_mock_ingestion.py` | Mock ingestion for `social-ephys0.1` dataset. Sets `config_file_name` placeholder. |
 | `tests/fixtures/ephys/M81_ProbeB_4Shanks_1000_to_1700_um.json` | Per-epoch probeinterface JSON used by integration tests. |

@@ -31,9 +31,8 @@ def make_synthetic_ephys_epoch(
     device_dir = epoch_dir / device_name
     device_dir.mkdir(parents=True, exist_ok=True)
 
-    # Minimal Metadata.yml — Devices.NeuropixelsV2e.ConfigurationA.ProbeInterfaceFileName
-    # matches the synthetic ElectrodeConfig.config_file_name from
-    # register_synthetic_probe_insertion ("test-config-0.json").
+    # Minimal Metadata.yml — ProbeInterfaceFileName matches the basename
+    # set on EphysEpochConfig.Insertion by register_synthetic_probe_insertion.
     metadata = {
         "Devices": {
             "NeuropixelsV2e": {
@@ -269,8 +268,7 @@ def register_synthetic_probe_insertion(
         skip_duplicates=True,
     )
 
-    # ElectrodeConfig (Lookup) — config_file_name is required for the new
-    # (probe_type, config_file_name) unique-index lookup used by ingest_chunks.
+    # ElectrodeConfig (Lookup)
     config_hash = uuid.uuid5(uuid.NAMESPACE_DNS, f"{probe_type}-{electrode_config_name}")
     ephys.ElectrodeConfig.insert1(
         {
@@ -278,7 +276,6 @@ def register_synthetic_probe_insertion(
             "electrode_config_name": electrode_config_name,
             "electrode_config_description": "synthetic test config",
             "electrode_config_hash": config_hash,
-            "config_file_name": f"{electrode_config_name}.json",
         },
         skip_duplicates=True,
     )
@@ -302,9 +299,8 @@ def register_synthetic_probe_insertion(
         skip_duplicates=True,
     )
 
-    # EphysEpochConfig.Insertion (Part, allow_direct_insert).
-    # Carries the ElectrodeConfig FK that downstream lookups (EphysChunk.ingest_chunks)
-    # depend on — must match the synthetic ElectrodeConfig inserted above.
+    # EphysEpochConfig.Insertion (Part, allow_direct_insert) — carries the
+    # ElectrodeConfig FK + the source JSON basename for downstream lookups.
     ephys.EphysEpochConfig.Insertion.insert1(
         {
             "experiment_name": experiment_name,
@@ -314,6 +310,7 @@ def register_synthetic_probe_insertion(
             "probe_label": probe_label,
             "probe_type": probe_type,
             "electrode_config_name": electrode_config_name,
+            "config_file_name": f"{electrode_config_name}.json",
         },
         skip_duplicates=True,
         allow_direct_insert=True,

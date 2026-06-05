@@ -64,8 +64,6 @@ class ElectrodeConfig(dj.Lookup):
     ---
     electrode_config_description='': varchar(4000)
     electrode_config_hash=null: uuid
-    config_file_name=null: varchar(255)  # basename of the probeinterface JSON
-    unique index (probe_type, config_file_name)
     """
 
     class Electrode(dj.Part):
@@ -217,12 +215,13 @@ class EphysEpochConfig(dj.Imported):
 
     class Insertion(dj.Part):
         definition = """
-        # Active ProbeInsertions in this epoch, with their ElectrodeConfig
+        # Active ProbeInsertions in this epoch, with their ElectrodeConfig + source JSON
         -> master
         -> ProbeInsertion
         ---
         probe_label: varchar(32)        # e.g. "ProbeA"
         -> ElectrodeConfig
+        config_file_name: varchar(255)  # basename of this probe's ProbeInterface JSON
         """
 
     def make(self, key: dict[str, Any]) -> None:
@@ -302,6 +301,7 @@ class EphysEpochConfig(dj.Imported):
             probe_to_econfig[label] = {
                 "probe_type": ec_probe_type,
                 "electrode_config_name": ec_config_name,
+                "config_file_name": basename,
             }
 
         for label, probe_id in probe_info.items():
@@ -763,13 +763,9 @@ class EphysBlockInfo(dj.Imported):
         # Channel-to-electrode mapping from the per-epoch ProbeInterface JSON.
         from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
 
-        epoch_start = (chunk_query & dj.Top(limit=1)).fetch1("epoch_start")
-        config_file_name = (ElectrodeConfig & econfig).fetch1("config_file_name")
-        if not config_file_name:
-            raise ValueError(
-                f"ElectrodeConfig {econfig} has no config_file_name. "
-                f"Re-register via create_electrode_config or run EphysEpochConfig.populate()."
-            )
+        epoch_start, config_file_name = (
+            chunk_insertions & dj.Top(limit=1)
+        ).fetch1("epoch_start", "config_file_name")
         raw_dir_result = resolve_raw_dir_and_epochs(key["experiment_name"])
         if raw_dir_result is None:
             raise ValueError(

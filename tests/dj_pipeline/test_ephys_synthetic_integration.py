@@ -248,7 +248,6 @@ class TestEphysBlockInfoMultiConfigValidation:
                     "electrode_config_name": name,
                     "electrode_config_description": f"synthetic {name}",
                     "electrode_config_hash": uuid.uuid5(uuid.NAMESPACE_DNS, name),
-                    "config_file_name": f"{name}.json",
                 },
                 skip_duplicates=True,
             )
@@ -338,6 +337,7 @@ class TestEphysBlockInfoMultiConfigValidation:
                     "probe_label": "ProbeB",
                     "probe_type": probe_type_name,
                     "electrode_config_name": config_name,
+                    "config_file_name": f"{config_name}.json",
                 },
                 skip_duplicates=True,
                 allow_direct_insert=True,
