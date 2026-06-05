@@ -84,29 +84,53 @@ def load_and_merge_bno055(
     return merged[list(IMU_COLUMNS)]
 
 
-def locate_bno055_chunk_index(
+def find_overlapping_bno055_chunks(
     device_dir: Path,
     device_name: str,
     onix_ts_start: int,
-) -> int | None:
-    """Find the Bno055_Clock_N.bin file whose first sample matches ``onix_ts_start``.
+    onix_ts_end: int,
+) -> list[int]:
+    """Return Bno055 chunk indices whose ONIX range overlaps [onix_ts_start, onix_ts_end].
+
+    HarpSync CSVs (one per ``EphysSyncModel`` row) partition the ONIX clock on
+    an hourly cadence set by the Bonsai workflow on the host. Bno055 binary
+    files partition the same clock on a firmware-determined cadence (~10 min
+    per file). The two partitions don't align, so each ``EphysSyncModel``
+    window overlaps multiple Bno055 files and each Bno055 file may straddle
+    multiple sync windows.
+
+    Each returned chunk is one whose [first_sample, last_sample] window
+    intersects [onix_ts_start, onix_ts_end].
 
     Args:
         device_dir: Path to the ONIX device directory containing the binaries.
         device_name: ``"NeuropixelsV2Beta"`` or ``"NeuropixelsV2"``.
-        onix_ts_start: ONIX clock timestamp (uint64) expected at position 0.
+        onix_ts_start: Start of the ONIX window of interest (inclusive).
+        onix_ts_end: End of the ONIX window of interest (inclusive).
 
     Returns:
-        The integer chunk index ``N``, or ``None`` if no match.
+        Sorted list of chunk indices whose data spans into the window.
+        Empty list if no Bno055 files exist or none overlap.
     """
     device_dir = Path(device_dir)
     pattern = f"{device_name}_Bno055_Clock_*.bin"
+    overlapping: list[int] = []
     for clock_file in device_dir.glob(pattern):
-        first_clock_arr = np.fromfile(clock_file, dtype=np.uint64, count=1)
-        if len(first_clock_arr) == 0:
+        size = clock_file.stat().st_size
+        if size < 8:
+            continue  # need at least one sample
+        match = re.search(r"_Clock_(\d+)\.bin$", clock_file.name)
+        if not match:
             continue
-        if int(first_clock_arr[0]) == int(onix_ts_start):
-            match = re.search(r"_Clock_(\d+)\.bin$", clock_file.name)
-            if match:
-                return int(match.group(1))
-    return None
+        n = int(match.group(1))
+        first = int(np.fromfile(clock_file, dtype=np.uint64, count=1)[0])
+        if size >= 16:
+            with open(clock_file, "rb") as f:
+                f.seek(size - 8)
+                last = int(np.frombuffer(f.read(8), dtype=np.uint64)[0])
+        else:
+            last = first
+        # Standard half-open interval overlap test, treated as inclusive on both ends.
+        if first <= onix_ts_end and last >= onix_ts_start:
+            overlapping.append(n)
+    return sorted(overlapping)

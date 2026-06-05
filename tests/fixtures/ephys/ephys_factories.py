@@ -329,9 +329,15 @@ def make_synthetic_bno055_data(
 ):
     """Write synthetic Bno055 Clock + 4 stream binaries.
 
-    Each chunk's Clock_N.bin first sample equals the HarpSync CSV's onix_ts_start
-    for that chunk (i.e. ``1000 * n * 60 + 1 = 60000*n + 1``) so that
-    ``locate_bno055_chunk_index`` can find each chunk by its first ONIX timestamp.
+    Bno055 chunks are staggered against the HarpSync CSV cadence to mirror the
+    real-world acquisition pattern: each HarpSync window covers a 60000-tick
+    ONIX range, but Bno055 chunks are emitted on their own ~90000-tick boundary
+    (start offset 15000 ticks from the HarpSync window's start). This forces
+    OnixImuChunk.make to exercise its overlap → concat → filter logic — a
+    chunk-aligned layout would mask any breakage in that path.
+
+    Total ONIX span covered: ``[15000, 90000*n_chunks + 15000]``, which
+    contains the HarpSync windows ``[1, 60000*n_chunks + 1]``.
 
     Layout matches ``aeon/schema/ephys.py`` Bno055 readers:
     - Bno055_Clock_N.bin: uint64 ONIX timestamps
@@ -344,14 +350,15 @@ def make_synthetic_bno055_data(
     device_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(42)
 
+    bno_chunk_span = 90000  # different from HarpSync's 60000-tick window
+    bno_chunk_offset = 15000  # start later than first HarpSync window
+
     for n in range(n_chunks):
-        # Must start at exactly onix_ts_start[n] = 60000*n + 1 so
-        # locate_bno055_chunk_index finds the match.
-        chunk_ts_start = 60000 * n + 1
-        chunk_ts_end = 60000 * n + 59001
-        clocks = np.linspace(chunk_ts_start, chunk_ts_end, samples_per_chunk, dtype=np.float64).astype(
-            np.uint64
-        )
+        chunk_ts_start = bno_chunk_offset + bno_chunk_span * n
+        chunk_ts_end = bno_chunk_offset + bno_chunk_span * (n + 1) - 1
+        clocks = np.linspace(
+            chunk_ts_start, chunk_ts_end, samples_per_chunk, dtype=np.float64
+        ).astype(np.uint64)
         (device_dir / f"{device_name}_Bno055_Clock_{n}.bin").write_bytes(clocks.tobytes())
 
         for stream, n_cols in [

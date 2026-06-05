@@ -237,8 +237,16 @@ def test_onix_imu_chunk_populate_with_data(dj_config_integration, tmp_path):
         .proj("sample_count", "timestamps", *IMU_COLUMNS)
         .to_dicts()
     )
+    # Bno055 chunks are staggered against HarpSync windows (90k vs 60k tick
+    # cadence). Each sync window overlaps part of one or more Bno055 chunks,
+    # and the filter step trims samples to the sync window's ONIX range. So
+    # sample_count is non-zero (data was loaded) but less than the per-chunk
+    # total (proving the overlap → concat → filter pipeline ran end-to-end).
     for r in full_rows:
-        assert r["sample_count"] == 100
+        assert 0 < r["sample_count"] < 100, (
+            f"sample_count={r['sample_count']} — expected >0 (load+filter worked) "
+            f"and <100 (filter actually trimmed something)"
+        )
         assert isinstance(r["timestamps"], dict)
         for col in IMU_COLUMNS:
             assert isinstance(r[col], dict)
@@ -302,7 +310,9 @@ def test_synced_df_returns_harp_indexed_dataframe(dj_config_integration, tmp_pat
     df = ephys.OnixImuChunk.synced_df(key)
 
     assert tuple(df.columns) == IMU_COLUMNS
-    assert len(df) == 100
+    # Bno055 chunks staggered against HarpSync windows; sync filter yields
+    # a strict subset of the per-chunk samples.
+    assert 0 < len(df) < 100
     # HARP-indexed → datetime dtype, NOT uint64
     assert df.index.dtype.kind == "M"
     assert df.index.tz is not None  # UTC-aware per spec

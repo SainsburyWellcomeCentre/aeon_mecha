@@ -916,21 +916,31 @@ class OnixImuChunk(dj.Imported):
     def make(self, key):
         """Populate one OnixImuChunk row per EphysSyncModel key.
 
-        No-IMU rigs (Bno055 files absent) get a row with ``sample_count=0`` and
-        empty stat dicts. The ``stream_df`` reference is still valid; the codec
-        returns an empty DataFrame on fetch.
+        Each ``EphysSyncModel`` row covers an hourly HARP/ONIX window. The
+        Bno055 firmware partitions the same ONIX clock on its own (~10-min)
+        cadence, so each sync window overlaps multiple Bno055 binary chunks
+        on disk. We load all overlapping chunks, concatenate, then filter to
+        the sync window's ONIX range.
+
+        No-IMU rigs (no overlapping Bno055 files) get a row with
+        ``sample_count=0`` and empty stat dicts. The ``stream_df`` reference
+        is still valid; the codec returns an empty DataFrame on fetch.
         """
         import joblib
         import pandas as pd
 
         from aeon.dj_pipeline.utils.onix_imu import (
             IMU_COLUMNS,
+            find_overlapping_bno055_chunks,
             load_and_merge_bno055,
-            locate_bno055_chunk_index,
         )
         from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
 
-        onix_ts_start = (EphysSyncModel & key).fetch1("onix_ts_start")
+        onix_ts_start_raw, onix_ts_end_raw, sync_model_attach = (
+            EphysSyncModel & key
+        ).fetch1("onix_ts_start", "onix_ts_end", "sync_model")
+        onix_ts_start = int(onix_ts_start_raw)
+        onix_ts_end = int(onix_ts_end_raw)
         epoch_dir = (EphysEpoch & key).fetch1("epoch_dir")
         raw_dir_result = acquisition.Experiment.get_data_directory(
             {"experiment_name": key["experiment_name"]}, "raw-ephys"
@@ -949,47 +959,50 @@ class OnixImuChunk(dj.Imported):
                 device_name = candidate
                 break
 
-        stream_df_ref = {
-            "experiment_name": key["experiment_name"],
-            "epoch_start": str(key["epoch_start"]),
-            "sync_start": str(key["sync_start"]),
-            "device_name": device_name or "NeuropixelsV2Beta",
-            "stream_group": "Bno055",
-        }
+        def _empty_row(chunk_indices: list[int]) -> dict:
+            return {
+                **key,
+                "sample_count": 0,
+                "timestamps": {},
+                **{col: {} for col in IMU_COLUMNS},
+                "stream_df": {
+                    "experiment_name": key["experiment_name"],
+                    "epoch_start": str(key["epoch_start"]),
+                    "sync_start": str(key["sync_start"]),
+                    "device_name": device_name or "NeuropixelsV2Beta",
+                    "stream_group": "Bno055",
+                    "chunk_indices": chunk_indices,
+                    "onix_ts_start": onix_ts_start,
+                    "onix_ts_end": onix_ts_end,
+                },
+            }
 
         if device_name is None:
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": 0,
-                    "timestamps": {},
-                    **{col: {} for col in IMU_COLUMNS},
-                    "stream_df": stream_df_ref,
-                }
-            )
+            self.insert1(_empty_row([]))
             return
 
         device_dir = epoch_path / device_name
-        chunk_index = locate_bno055_chunk_index(device_dir, device_name, int(onix_ts_start))
-
-        if chunk_index is None:
-            self.insert1(
-                {
-                    **key,
-                    "sample_count": 0,
-                    "timestamps": {},
-                    **{col: {} for col in IMU_COLUMNS},
-                    "stream_df": stream_df_ref,
-                }
-            )
+        chunk_indices = find_overlapping_bno055_chunks(
+            device_dir, device_name, onix_ts_start, onix_ts_end
+        )
+        if not chunk_indices:
+            self.insert1(_empty_row([]))
             return
 
-        df = load_and_merge_bno055(device_dir, device_name, chunk_index)
+        # Concatenate all overlapping chunks (sorted by index → ONIX-monotonic),
+        # then filter to the sync window.
+        df = pd.concat(
+            [load_and_merge_bno055(device_dir, device_name, n) for n in chunk_indices]
+        )
+        df = df[(df.index >= onix_ts_start) & (df.index <= onix_ts_end)]
 
-        # Apply regression to compute HARP timestamps for the timestamps summary field.
-        # The stored stream_df ref points to the ONIX-indexed DataFrame — sync is
-        # applied only when users call OnixImuChunk.synced_df().
-        sync_model_attach = (EphysSyncModel & key).fetch1("sync_model")
+        if df.empty:
+            self.insert1(_empty_row(chunk_indices))
+            return
+
+        # Apply regression to compute HARP timestamps for the timestamps summary
+        # field. The stored stream_df ref points to the ONIX-indexed DataFrame —
+        # sync is applied only when users call OnixImuChunk.synced_df().
         model = joblib.load(sync_model_attach)
         onix_clock = df.index.values
         harp_seconds = model.predict(onix_clock.reshape(-1, 1)).flatten()
@@ -1001,6 +1014,15 @@ class OnixImuChunk(dj.Imported):
                 "sample_count": len(df),
                 "timestamps": timestamp_stats(harp_index),
                 **{col: column_stats(df[col].values) for col in IMU_COLUMNS},
-                "stream_df": stream_df_ref,
+                "stream_df": {
+                    "experiment_name": key["experiment_name"],
+                    "epoch_start": str(key["epoch_start"]),
+                    "sync_start": str(key["sync_start"]),
+                    "device_name": device_name,
+                    "stream_group": "Bno055",
+                    "chunk_indices": chunk_indices,
+                    "onix_ts_start": onix_ts_start,
+                    "onix_ts_end": onix_ts_end,
+                },
             }
         )

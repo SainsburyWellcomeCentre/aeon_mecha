@@ -367,13 +367,11 @@ class TestEphysSyncModel:
 class TestOnixImuChunkOnGoldenData:
     """Exercise OnixImuChunk.populate against the actual golden dataset.
 
-    The current populate path looks up a Bno055_Clock_N.bin file whose first
-    sample equals EphysSyncModel.onix_ts_start (the ONIX clock at the start of
-    the matching HarpSync window). On the golden data this lookup currently
-    returns None for every chunk, producing rows with sample_count=0. The
-    second test below is marked strict-xfail to document that known gap — when
-    the underlying alignment bug is fixed, that test will start passing and
-    the strict xfail will force removal of the marker.
+    Each EphysSyncModel row corresponds to a HarpSync sync window. The populate
+    finds Bno055 binary chunks whose ONIX range overlaps the window, loads
+    them, and filters to the window's ONIX bounds. Every sync window in the
+    golden recording overlaps at least one Bno055 chunk, so every OnixImuChunk
+    row should carry sample_count > 0.
     """
 
     def test_one_imu_chunk_per_sync_model(self, ephys_test_epochs, ctx):
@@ -392,17 +390,7 @@ class TestOnixImuChunkOnGoldenData:
             f"Expected one OnixImuChunk per EphysSyncModel ({n_sync}); got {n_imu}."
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "OnixImuChunk produces sample_count=0 on the golden data because "
-            "locate_bno055_chunk_index cannot match EphysSyncModel.onix_ts_start "
-            "against any Bno055_Clock_*.bin first sample. When the underlying "
-            "clock-alignment bug is fixed, this test will pass and the strict "
-            "xfail marker must be removed."
-        ),
-    )
-    def test_at_least_one_chunk_has_imu_samples(self, ephys_test_epochs, ctx):
+    def test_all_chunks_have_imu_samples(self, ephys_test_epochs, ctx):
         ctx.ephys.OnixImuChunk.populate(
             {"experiment_name": ctx.cfg["experiment_name"]},
             display_progress=False,
@@ -414,8 +402,10 @@ class TestOnixImuChunkOnGoldenData:
                 & {"experiment_name": ctx.cfg["experiment_name"]}
             ).to_arrays("sample_count")
         )
-        assert any(c > 0 for c in sample_counts), (
-            "All OnixImuChunk rows have sample_count=0. IMU data could not be "
-            "located — Bno055_Clock_*.bin first samples do not match the "
-            "EphysSyncModel.onix_ts_start values used for lookup."
+        # The golden recording is fully covered by Bno055 chunks, so every
+        # sync window overlaps real IMU data.
+        assert all(c > 0 for c in sample_counts), (
+            f"At least one OnixImuChunk row has sample_count=0. "
+            f"Per-row counts: {sample_counts}. Expected all > 0 for the golden "
+            f"recording whose Bno055 chunks cover the entire ONIX range."
         )
