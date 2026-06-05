@@ -417,7 +417,8 @@ class EphysSyncModel(dj.Manual):
             if epoch_start is None:
                 logger.warning(
                     f"Cannot resolve epoch for {csv_path} "
-                    f"(epoch_dir={epoch_dir_name} not in Epoch table). Skipping."
+                    f"(epoch_dir={epoch_dir_name} not in EphysEpoch — or "
+                    f"EphysEpochConfig.has_ephys=False). Skipping."
                 )
                 continue
 
@@ -504,10 +505,10 @@ class EphysChunk(dj.Manual):
         """Ingest ephys recording chunks with clock synchronization.
 
         Discovers ephys binary files across all epochs, resolves each file's
-        ProbeInsertion (with subject) via EphysEpoch.Insertion, and creates
+        ProbeInsertion (with subject) via EphysEpochConfig.Insertion, and creates
         chunk entries with sync models.
 
-        Files without a subject-probe mapping (no EphysEpoch.Insertion) are
+        Files without a subject-probe mapping (no EphysEpochConfig.Insertion) are
         skipped with a warning.
 
         Args:
@@ -573,17 +574,18 @@ class EphysChunk(dj.Manual):
             if epoch_start is None:
                 logger.warning(
                     f"Cannot resolve epoch for {ephys_file} "
-                    f"(epoch_dir={epoch_dir_name} not found in Epoch table). Skipping."
+                    f"(epoch_dir={epoch_dir_name} not in EphysEpoch — or "
+                    f"EphysEpochConfig.has_ephys=False). Skipping."
                 )
                 continue
 
-            # Look up ProbeInsertion via EphysEpoch.Insertion
+            # Look up ProbeInsertion via EphysEpochConfig.Insertion
             insertion_key = insertion_lookup.get((epoch_start, probe_label))
             if insertion_key is None:
                 logger.warning(
                     f"Skipping {rel_path}: no subject-probe mapping for {probe_label} "
                     f"in epoch {epoch_start}. Register via probe_assignments.json or "
-                    f"manual ProbeInsertion insert, then run EphysEpoch.populate()."
+                    f"manual ProbeInsertion insert, then run EphysEpochConfig.populate()."
                 )
                 continue
 

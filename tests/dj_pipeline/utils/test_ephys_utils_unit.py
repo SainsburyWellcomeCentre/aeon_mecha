@@ -1,7 +1,7 @@
 """Unit tests for ephys_utils pure helpers: probe assignment parsing and resolve_harp.
 
 Tests target pure functions with no database dependencies. Carry-forward logic
-(which queries EphysEpoch.Insertion) is tested during HPC validation.
+(which queries EphysEpochConfig.Insertion) is tested during HPC validation.
 
 Note: imports from aeon.dj_pipeline are done inside test methods, not at module
 level. pytest imports test modules during collection -- before any fixtures run --

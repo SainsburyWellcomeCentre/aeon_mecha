@@ -157,7 +157,7 @@ def read_probe_assignments(
         key: Epoch key (experiment_name, epoch_start)
         epoch_path: Path to epoch directory on Ceph
         probe_labels: Sorted list of probe labels discovered in this epoch
-        insertion_table: The EphysEpoch.Insertion Part table class
+        insertion_table: The EphysEpochConfig.Insertion Part table class
         probe_info: Dict mapping probe_label -> probe_serial (built by caller
             from get_probe_id()). Used to translate serial-keyed JSON to
             label-keyed dict.
