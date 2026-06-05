@@ -314,3 +314,108 @@ class TestSyncedSpikes:
         for unit in units:
             assert unit["spike_times"].min() >= sync_start
             assert unit["spike_times"].max() <= sync_end
+
+
+class TestEphysSyncModel:
+    """Verify EphysSyncModel.ingest produces sensible rows on golden data.
+
+    The golden epoch has 3 HarpSync CSVs (hourly cadence: 07-00, 08-00, 09-00),
+    so we expect 3 sync model rows. Each should have a high-quality regression
+    (r² very close to 1.0 for clean NTP-synced clocks) and monotonically
+    increasing ONIX/HARP bounds.
+    """
+
+    def test_one_sync_row_per_harpsync_csv(self, ephys_test_epochs, ctx):
+        rows = (
+            ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}
+        ).to_dicts()
+        assert len(rows) == 3, (
+            f"Expected 3 EphysSyncModel rows (one per hourly HarpSync CSV in the "
+            f"golden epoch); got {len(rows)}."
+        )
+
+    def test_sync_model_regression_quality(self, ephys_test_epochs, ctx):
+        rows = (
+            ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}
+        ).to_dicts()
+        for row in rows:
+            assert row["r2"] > 0.99, (
+                f"HARP↔ONIX regression r² is suspiciously low: r²={row['r2']:.6f} "
+                f"at sync_start={row['sync_start']}. NTP-synced clocks should give "
+                f"r² > 0.99; a low value suggests stale or corrupt sync data."
+            )
+
+    def test_sync_model_bounds_monotonic(self, ephys_test_epochs, ctx):
+        rows = (
+            ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}
+        ).to_dicts(order_by="sync_start")
+        # Per-row: start < end on both clocks.
+        for row in rows:
+            assert row["sync_start"] < row["sync_end"], (
+                f"Inverted HARP bounds at sync_start={row['sync_start']}"
+            )
+            assert row["onix_ts_start"] < row["onix_ts_end"], (
+                f"Inverted ONIX bounds at sync_start={row['sync_start']}"
+            )
+        # Across rows: monotonically increasing on both clocks.
+        harp_starts = [r["sync_start"] for r in rows]
+        onix_starts = [r["onix_ts_start"] for r in rows]
+        assert harp_starts == sorted(harp_starts), "sync_start values not monotonic"
+        assert onix_starts == sorted(onix_starts), "onix_ts_start values not monotonic"
+
+
+class TestOnixImuChunkOnGoldenData:
+    """Exercise OnixImuChunk.populate against the actual golden dataset.
+
+    The current populate path looks up a Bno055_Clock_N.bin file whose first
+    sample equals EphysSyncModel.onix_ts_start (the ONIX clock at the start of
+    the matching HarpSync window). On the golden data this lookup currently
+    returns None for every chunk, producing rows with sample_count=0. The
+    second test below is marked strict-xfail to document that known gap — when
+    the underlying alignment bug is fixed, that test will start passing and
+    the strict xfail will force removal of the marker.
+    """
+
+    def test_one_imu_chunk_per_sync_model(self, ephys_test_epochs, ctx):
+        ctx.ephys.OnixImuChunk.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]},
+            display_progress=False,
+            suppress_errors=False,
+        )
+        n_sync = len(
+            ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}
+        )
+        n_imu = len(
+            ctx.ephys.OnixImuChunk & {"experiment_name": ctx.cfg["experiment_name"]}
+        )
+        assert n_imu == n_sync, (
+            f"Expected one OnixImuChunk per EphysSyncModel ({n_sync}); got {n_imu}."
+        )
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "OnixImuChunk produces sample_count=0 on the golden data because "
+            "locate_bno055_chunk_index cannot match EphysSyncModel.onix_ts_start "
+            "against any Bno055_Clock_*.bin first sample. When the underlying "
+            "clock-alignment bug is fixed, this test will pass and the strict "
+            "xfail marker must be removed."
+        ),
+    )
+    def test_at_least_one_chunk_has_imu_samples(self, ephys_test_epochs, ctx):
+        ctx.ephys.OnixImuChunk.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]},
+            display_progress=False,
+            suppress_errors=False,
+        )
+        sample_counts = list(
+            (
+                ctx.ephys.OnixImuChunk
+                & {"experiment_name": ctx.cfg["experiment_name"]}
+            ).to_arrays("sample_count")
+        )
+        assert any(c > 0 for c in sample_counts), (
+            "All OnixImuChunk rows have sample_count=0. IMU data could not be "
+            "located — Bno055_Clock_*.bin first samples do not match the "
+            "EphysSyncModel.onix_ts_start values used for lookup."
+        )
