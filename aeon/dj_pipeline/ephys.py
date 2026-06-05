@@ -594,10 +594,11 @@ class EphysChunk(dj.Manual):
             if not clock_file.exists():
                 logger.warning(f"Clock file not found for {ephys_file.name}. Skipping.")
                 continue
-            onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
-            if len(onix_ts) == 0:
-                logger.warning(f"Empty Clock file for {ephys_file.name}. Skipping.")
+            # Guard before memmap — np.memmap raises ValueError on 0-byte files.
+            if clock_file.stat().st_size < 8:
+                logger.warning(f"Empty/short Clock file for {ephys_file.name}. Skipping.")
                 continue
+            onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
             first_ts, last_ts = int(onix_ts[0]), int(onix_ts[-1])
 
             # Query EphysSyncModel rows that cover the first OR last ONIX timestamp
@@ -765,8 +766,11 @@ class EphysBlockInfo(dj.Imported):
         # Channel-to-electrode mapping from the per-epoch ProbeInterface JSON.
         from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
 
+        # Pick the earliest chunk's epoch (deterministic; all chunks in this
+        # block share the same ElectrodeConfig per the uniform-config check
+        # above, so any chunk would yield the same config_file_name).
         epoch_start, config_file_name = (
-            chunk_insertions & dj.Top(limit=1)
+            chunk_insertions & dj.Top(limit=1, order_by="chunk_start")
         ).fetch1("epoch_start", "config_file_name")
         raw_dir_result = resolve_raw_dir_and_epochs(key["experiment_name"])
         if raw_dir_result is None:

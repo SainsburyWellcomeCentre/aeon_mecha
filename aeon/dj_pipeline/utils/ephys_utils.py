@@ -184,10 +184,7 @@ def read_probe_assignments(
         insertion_table
         & {"experiment_name": key["experiment_name"]}
         & f'epoch_start < "{key["epoch_start"]}"'
-    ).fetch(
-        "epoch_start", "probe_label", "subject",
-        as_dict=True, order_by="epoch_start DESC",
-    )
+    ).proj("probe_label", "subject").to_dicts(order_by="epoch_start DESC")
 
     if previous_insertions:
         # Use only entries from the most recent epoch (first row, ordered DESC)

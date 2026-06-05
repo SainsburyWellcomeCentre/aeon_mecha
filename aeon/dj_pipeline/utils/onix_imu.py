@@ -14,8 +14,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from aeon.schema.ephys import social_ephys
-
 IMU_COLUMNS: tuple[str, ...] = (
     "euler_x", "euler_y", "euler_z",
     "gravity_vector_x", "gravity_vector_y", "gravity_vector_z",
@@ -52,6 +50,10 @@ def load_and_merge_bno055(
         ValueError: If the merged DataFrame's columns don't match :data:`IMU_COLUMNS`
             exactly — a sign of schema drift in ``aeon/schema/ephys.py``.
     """
+    # Lazy import — avoids triggering aeon.schema.ephys at module load time,
+    # consistent with the pattern in aeon/dj_pipeline/ephys.py.
+    from aeon.schema.ephys import social_ephys
+
     device_dir = Path(device_dir)
     clock_file = device_dir / f"{device_name}_Bno055_Clock_{chunk_index}.bin"
     if not clock_file.exists():
@@ -109,20 +111,24 @@ def find_overlapping_bno055_chunks(
     overlapping: list[int] = []
     for clock_file in device_dir.glob(pattern):
         size = clock_file.stat().st_size
-        if size < 8:
-            continue  # need at least one sample
+        # Floor to a uint64 boundary in case a trailing partial sample was
+        # left behind by an interrupted acquisition. Skip files with no
+        # whole samples.
+        whole = (size // 8) * 8
+        if whole < 8:
+            continue
         match = re.search(r"_Clock_(\d+)\.bin$", clock_file.name)
         if not match:
             continue
         n = int(match.group(1))
         first = int(np.fromfile(clock_file, dtype=np.uint64, count=1)[0])
-        if size >= 16:
+        if whole >= 16:
             with open(clock_file, "rb") as f:
-                f.seek(size - 8)
+                f.seek(whole - 8)
                 last = int(np.frombuffer(f.read(8), dtype=np.uint64)[0])
         else:
             last = first
-        # Standard half-open interval overlap test, treated as inclusive on both ends.
+        # Inclusive interval overlap test on both ends.
         if first <= onix_ts_end and last >= onix_ts_start:
             overlapping.append(n)
     return sorted(overlapping)
