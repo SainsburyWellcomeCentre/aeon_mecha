@@ -376,12 +376,19 @@ def _mock_table_with_transaction():
 
 
 class TestCreateElectrodeConfig:
-    """Unit tests for create_electrode_config — uses the fixture JSON, mocks tables."""
+    """Unit tests for create_electrode_config — uses the fixture JSON, mocks tables.
+
+    The fixture is a synthetic 4-shank NP2.0 probeinterface JSON with 16 total
+    contacts and 8 active (odd contact_ids are active). The end-to-end check
+    against a real probe lives in the ephys golden-dataset integration suite.
+    """
 
     FIXTURE_JSON = (
         Path(__file__).parent.parent.parent
-        / "fixtures" / "ephys" / "M81_ProbeB_4Shanks_1000_to_1700_um.json"
+        / "fixtures" / "ephys" / "synthetic_np2_multishank.json"
     )
+    N_TOTAL_CONTACTS = 16
+    N_ACTIVE_CONTACTS = 8
 
     def test_returns_canonical_keys(self):
         from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
@@ -397,7 +404,7 @@ class TestCreateElectrodeConfig:
             electrode_config_table=electrode_config_table,
         )
         assert probe_type == "neuropixels2.0-multishank"
-        assert config_name == "M81_ProbeB_4Shanks_1000_to_1700_um"
+        assert config_name == "synthetic_np2_multishank"
 
     def test_inserts_full_geometry_and_active_subset(self):
         from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
@@ -412,16 +419,13 @@ class TestCreateElectrodeConfig:
             probe_type_table=probe_type_table,
             electrode_config_table=electrode_config_table,
         )
-        # ProbeType.Electrode.insert called with a DataFrame of 5120 rows
         pt_call = probe_type_table.Electrode.insert.call_args
         pt_df = pt_call.args[0]
-        assert len(pt_df) == 5120
+        assert len(pt_df) == self.N_TOTAL_CONTACTS
 
-        # ElectrodeConfig.Electrode.insert called with 384 entries
         ec_call = electrode_config_table.Electrode.insert.call_args
         ec_rows = list(ec_call.args[0])
-        assert len(ec_rows) == 384
-        # All 384 should have probe_type + electrode_config_name + electrode keys
+        assert len(ec_rows) == self.N_ACTIVE_CONTACTS
         assert all(
             {"probe_type", "electrode_config_name", "electrode"} <= set(r.keys())
             for r in ec_rows
@@ -577,21 +581,25 @@ class TestResolveEpochProbeJson:
 
 
 class TestLoadDeviceChannelMap:
-    """Tests for load_device_channel_map — takes JSON path directly."""
+    """Tests for load_device_channel_map — takes JSON path directly.
+
+    The fixture is a synthetic 4-shank NP2.0 probeinterface JSON: 16 contacts,
+    odd contact_ids active, mapped sequentially to channels 0..7. So contact
+    1 → channel 0, contact 3 → channel 1, ..., contact 15 → channel 7.
+    """
 
     FIXTURE_JSON = (
         Path(__file__).parent.parent.parent
-        / "fixtures" / "ephys" / "M81_ProbeB_4Shanks_1000_to_1700_um.json"
+        / "fixtures" / "ephys" / "synthetic_np2_multishank.json"
     )
 
     def test_returns_active_contacts_mapping(self):
         from aeon.dj_pipeline.utils.ephys_utils import load_device_channel_map
 
         channel_map = load_device_channel_map(self.FIXTURE_JSON)
-        assert len(channel_map) == 384  # 384 active contacts on NP2.0 single-bank
-        # 3982-3989 map to channels 94-149 per JSON
-        assert channel_map[3982] == 94
-        assert channel_map[3989] == 149
+        assert len(channel_map) == 8
+        assert channel_map[1] == 0
+        assert channel_map[15] == 7
 
     def test_raises_on_missing_file(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import load_device_channel_map
