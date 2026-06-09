@@ -105,9 +105,9 @@ datasets — every behavior test runs once per dataset:
 | `foraging_abc_2025_11_18` | `abcBehav0-aeon3` | ~1 hour | Full 13 cameras + 6 feeders writing data; rich stream samples (`FeederEncoder` 848k, `CameraPosition` 12k) | Behavior only |
 | `foraging_abc_2026_05_11` | `abcGolden01-aeon3` | ~2 hours | 5 cameras + 4 feeders writing data; sparser samples; paired with the ephys golden | Paired with `foraging_abc_ephys_2026_05_11` |
 
-**Locations:**
-- `~/sciops-data/project_aeon/aeon/data/raw/AEON3/abcBehav0/2025-11-18T10-13-15/`
-- `~/sciops-data/project_aeon/aeon/data/raw/AEON3/abcGolden01/2026-05-11T075134Z/`
+**Locations** (relative to `DEFAULT_GOLDEN_DATA_ROOT`):
+- `<data-root>/raw/AEON3/abcBehav0/2025-11-18T10-13-15/`
+- `<data-root>/raw/AEON3/abcGolden01/2026-05-11T075134Z/`
 
 **Test modules:** `tests/dj_pipeline/test_full_ingestion.py`,
 `tests/dj_pipeline/test_acquisition_environment_integration.py`
