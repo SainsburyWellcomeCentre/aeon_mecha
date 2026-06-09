@@ -62,6 +62,7 @@ class ElectrodeConfig(dj.Lookup):
     -> ProbeType
     electrode_config_name: varchar(128)  # typically the stem of the ProbeInterface JSON
     ---
+    config_file_name='': varchar(255)    # basename of the source ProbeInterface JSON (with .json)
     electrode_config_description='': varchar(4000)
     electrode_config_hash=null: uuid
     """
