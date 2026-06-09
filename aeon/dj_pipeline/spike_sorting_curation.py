@@ -32,10 +32,10 @@ class ManualCuration(dj.Manual):
     definition = """
     # Manual curation from a SortedSpikes
     -> spike_sorting.SpikeSorting
-    curation_id: int
+    curation_id: int32
     ---
     curation_datetime: datetime    # UTC time when the curation was performed
-    parent_curation_id=-1: int     # if -1, this curation is based on the raw spike sorting results
+    parent_curation_id=-1: int32   # if -1, this curation is based on the raw spike sorting results
     -> CurationMethod              # which method/package used for manual curation (inform how to ingest the results)
     description="": varchar(1000)  # user-defined description/note of the curation
     """
@@ -64,8 +64,8 @@ class ApplyOfficialCuration(dj.Imported):
     -> OfficialCuration
     ---
     execution_time: datetime        # datetime of the start of this step
-    new_unit_count: int             # number of new units added
-    removed_unit_count: int         # number of units removed
+    new_unit_count: int32           # number of new units added
+    removed_unit_count: int32       # number of units removed
     """
 
     def make(self, key):

@@ -37,11 +37,11 @@ class ProbeType(dj.Lookup):
     class Electrode(dj.Part):
         definition = """  # Electrode site on a probe
         -> master
-        electrode: int       # electrode id, starts at 0
+        electrode: int32     # electrode id, starts at 0
         ---
-        shank: int           # shank idx, starts at 0, advance left to right
-        x_coord: float  # (um) x coordinate of the electrode within the probe
-        y_coord: float  # (um) y coordinate of the electrode within the probe
+        shank: int32         # shank idx, starts at 0, advance left to right
+        x_coord: float32     # (um) x coordinate of the electrode within the probe
+        y_coord: float32     # (um) y coordinate of the electrode within the probe
         electrode_name='': varchar(64)  # name of the electrode (e.g. "A1", "B2", etc.)
         """
 
@@ -85,7 +85,7 @@ class ProbeInsertion(dj.Manual):
     definition = """
     -> acquisition.Experiment
     -> acquisition.Experiment.Subject
-    insertion_number: int  # unique per (experiment, subject)
+    insertion_number: int32  # unique per (experiment, subject)
     ---
     -> Probe
     implantation_date=null: datetime(6)
@@ -195,7 +195,7 @@ class EphysEpochEnd(dj.Manual):
     -> EphysEpoch
     ---
     epoch_end: datetime(6)              # HARP-clock at acquisition end
-    epoch_duration: float               # hours; (epoch_end - epoch_start) / 3600
+    epoch_duration: float32             # hours; (epoch_end - epoch_start) / 3600
     """
 
 
@@ -375,11 +375,11 @@ class EphysSyncModel(dj.Manual):
     sync_start: datetime(6)            # PK — observed harp_time[0] from CSV (master clock)
     ---
     sync_end: datetime(6)              # observed harp_time[-1] from CSV
-    onix_ts_start: bigint              # observed clock[0] from CSV
-    onix_ts_end: bigint                # observed clock[-1] from CSV
+    onix_ts_start: int64               # observed clock[0] from CSV
+    onix_ts_end: int64                 # observed clock[-1] from CSV
     sync_model: <attach>               # joblib-serialized LinearRegression (onix→harp)
-    r2: float                          # regression fit quality
-    n_samples: int                     # rows in CSV after dropna()
+    r2: float32                        # regression fit quality
+    n_samples: int32                   # rows in CSV after dropna()
     unique index (experiment_name, epoch_start, onix_ts_start)
     """
 
@@ -682,7 +682,7 @@ class EphysBlockInfo(dj.Imported):
     definition = """
     -> EphysBlock
     ---
-    block_duration: float  # (hour)
+    block_duration: float32  # (hour)
     -> ElectrodeConfig
     """
 
@@ -695,7 +695,7 @@ class EphysBlockInfo(dj.Imported):
     class Channel(dj.Part):
         definition = """  # Electrode-channel mapping
         -> master
-        channel_idx: int  # channel idx (idx of the raw data)
+        channel_idx: int32  # channel idx (idx of the raw data)
         ---
         -> ElectrodeConfig.Electrode
         channel_name="": varchar(64)  # alias of the channel
