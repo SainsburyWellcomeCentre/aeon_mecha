@@ -95,21 +95,28 @@ Override the root with the `DJ_REPOSITORY_CONFIG` env var (used on HPC). The `_c
 
 ---
 
-## Behavior golden dataset
+## Behavior golden datasets
 
-**Active dataset:** `foraging_abc_2026_05_11` — ~2 hours of `abcGolden01-aeon3`,
-13 cameras + 6 feeders declared, 5 cameras + 4 feeders writing data to disk.
-Paired with the ephys golden (`foraging_abc_ephys_2026_05_11`): same experiment,
-same wall-clock window, AEON3 acquires behavior while AEONX1 acquires ephys.
+Tests parametrize the `golden_dataset_config` fixture over both registered
+datasets — every behavior test runs once per dataset:
 
-**Location:** `~/sciops-data/project_aeon/aeon/data/raw/AEON3/abcGolden01/2026-05-11T075134Z/`
+| Key | Experiment | Duration | On-disk profile | Pair |
+|---|---|---|---|---|
+| `foraging_abc_2025_11_18` | `abcBehav0-aeon3` | ~1 hour | Full 13 cameras + 6 feeders writing data; rich stream samples (`FeederEncoder` 848k, `CameraPosition` 12k) | Behavior only |
+| `foraging_abc_2026_05_11` | `abcGolden01-aeon3` | ~2 hours | 5 cameras + 4 feeders writing data; sparser samples; paired with the ephys golden | Paired with `foraging_abc_ephys_2026_05_11` |
 
-**Test module:** `tests/dj_pipeline/test_full_ingestion.py`
+**Locations:**
+- `~/sciops-data/project_aeon/aeon/data/raw/AEON3/abcBehav0/2025-11-18T10-13-15/`
+- `~/sciops-data/project_aeon/aeon/data/raw/AEON3/abcGolden01/2026-05-11T075134Z/`
 
-**Reference device:** `CameraNest` (set via `_ref_device_mapping` in
-`acquisition.py`). This rig doesn't have CameraTop on-disk.
+**Test modules:** `tests/dj_pipeline/test_full_ingestion.py`,
+`tests/dj_pipeline/test_acquisition_environment_integration.py`
 
-**Mixed file-name formats** within the epoch dir — CSVs use `T07-00-00`, newer
+**Reference device:** `CameraTop` by default; `abcGolden01-aeon3` overrides
+to `CameraNest` via `_ref_device_mapping` in `acquisition.py` (that rig has
+no `CameraTop` on disk).
+
+**Mixed file-name formats** in abcGolden01 — CSVs use `T07-00-00`, newer
 bins use `T070000Z`. Both parse via `swc.aeon.io.api.chunk_key`.
 
 **Covers:**
@@ -117,9 +124,8 @@ bins use `T070000Z`. Both parse via `swc.aeon.io.api.chunk_key`.
 - `EpochConfig.populate()` — Metadata.json parsing via foragingABC Pydantic schema
 - `Chunk.ingest_chunks()` — chunk file detection
 - All `DeviceDataStream` tables — `populate(max_calls=10)` per stream
-
-**Deprecated:** `foraging_abc_2025_11_18` (`abcBehav0-aeon3`, 1 hour, retained
-as a rollback fallback for one release; removal in a follow-up PR).
+- The 3 `acquisition.Environment*` tables (`EnvironmentState`, `MessageLog`, `LightEvents`)
+- `TestStreamPopulationInventory` — diagnostic inventory of which streams populate
 
 **Run:**
 ```bash
