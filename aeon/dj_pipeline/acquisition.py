@@ -24,6 +24,9 @@ _ref_device_mapping = {
     "exp0.1-r0": "FrameTop",
     "social0-r1": "FrameTop",
     "exp0.2-r0": "CameraTop",
+    # abcGolden01 behavior arm: CameraTop isn't part of this rig's active set,
+    # so use CameraNest as the chunk-discovery reference.
+    "abcGolden01-aeon3": "CameraNest",
 }
 
 

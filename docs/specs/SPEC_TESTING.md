@@ -97,11 +97,20 @@ Override the root with the `DJ_REPOSITORY_CONFIG` env var (used on HPC). The `_c
 
 ## Behavior golden dataset
 
-**Active dataset:** `foraging_abc_2025_11_18` — 1 hour of `abcBehav0-aeon3`, 13 cameras + 6 feeders.
+**Active dataset:** `foraging_abc_2026_05_11` — ~2 hours of `abcGolden01-aeon3`,
+13 cameras + 6 feeders declared, 5 cameras + 4 feeders writing data to disk.
+Paired with the ephys golden (`foraging_abc_ephys_2026_05_11`): same experiment,
+same wall-clock window, AEON3 acquires behavior while AEONX1 acquires ephys.
 
-**Location:** `~/sciops-data/project_aeon/aeon/data/raw/AEON3/abcBehav0/2025-11-18T10-13-15/`
+**Location:** `~/sciops-data/project_aeon/aeon/data/raw/AEON3/abcGolden01/2026-05-11T075134Z/`
 
 **Test module:** `tests/dj_pipeline/test_full_ingestion.py`
+
+**Reference device:** `CameraNest` (set via `_ref_device_mapping` in
+`acquisition.py`). This rig doesn't have CameraTop on-disk.
+
+**Mixed file-name formats** within the epoch dir — CSVs use `T07-00-00`, newer
+bins use `T070000Z`. Both parse via `swc.aeon.io.api.chunk_key`.
 
 **Covers:**
 - `Epoch.ingest_epochs()` — filesystem detection of epoch directories
@@ -109,10 +118,16 @@ Override the root with the `DJ_REPOSITORY_CONFIG` env var (used on HPC). The `_c
 - `Chunk.ingest_chunks()` — chunk file detection
 - All `DeviceDataStream` tables — `populate(max_calls=10)` per stream
 
+**Deprecated:** `foraging_abc_2025_11_18` (`abcBehav0-aeon3`, 1 hour, retained
+as a rollback fallback for one release; removal in a follow-up PR).
+
 **Run:**
 ```bash
 uv run pytest -m integration tests/dj_pipeline/test_full_ingestion.py -v
 ```
+
+**Required deps:** `uv sync --group test-golden` (installs `swc-aeon-rigs-foragingabc`).
+Without it, the test module skips at import time via `pytest.importorskip`.
 
 ---
 

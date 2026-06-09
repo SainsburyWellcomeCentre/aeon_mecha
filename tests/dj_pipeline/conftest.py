@@ -42,6 +42,10 @@ TEST_DB_PREFIX = os.environ.get("TEST_DB_PREFIX", "test_aeon_")
 # ============================================================================
 
 GOLDEN_DATASETS = {
+    # DEPRECATED: kept for one release as a rollback fallback. Superseded by
+    # foraging_abc_2026_05_11, which is the behavior arm of the same experiment
+    # as the ephys golden dataset (abcGolden01). Scheduled for removal in a
+    # follow-up PR once the new dataset has stabilized.
     "foraging_abc_2025_11_18": {
         "experiment_name": "abcBehav0-aeon3",
         "experiment_path": "AEON3/abcBehav0",
@@ -55,6 +59,28 @@ GOLDEN_DATASETS = {
             "Metadata.json",
             "CameraTop/CameraTop_2025-11-18T10-00-00.csv",
             "Feeder1/Feeder1_32_2025-11-18T10-00-00.bin",
+        ],
+        "expected_camera_count": 13,
+        "expected_feeder_count": 6,
+    },
+    # Behavior arm of abcGolden01 — paired with foraging_abc_ephys_2026_05_11
+    # (same experiment, same wall-clock window, AEON3 acquires behavior while
+    # AEONX1 acquires ephys). Mixed file-name formats within the epoch dir
+    # (T07-00-00 for CSVs, T070000Z for newer bins) — both parse cleanly via
+    # swc.aeon.io.api.chunk_key.
+    "foraging_abc_2026_05_11": {
+        "experiment_name": "abcGolden01-aeon3",
+        "experiment_path": "AEON3/abcGolden01",
+        "epoch_dir": "2026-05-11T075134Z",
+        "devices_schema": "swc.aeon_exp.foragingABC.experiment:Experiment",
+        "arena_name": "circle-2m",
+        "lab": "SWC",
+        "location": "AEON3",
+        "experiment_type": "foraging",
+        "required_files": [
+            "Metadata.json",
+            "CameraNest/CameraNest_2026-05-11T07-00-00.csv",
+            "Feeder3/Feeder3_32_2026-05-11T070000Z.bin",
         ],
         "expected_camera_count": 13,
         "expected_feeder_count": 6,
@@ -286,8 +312,8 @@ def clean_streams_tables(pipeline_integration):
 
 @pytest.fixture(scope="session")
 def golden_dataset_config():
-    """Get the active golden dataset configuration."""
-    return GOLDEN_DATASETS["foraging_abc_2025_11_18"]
+    """Get the active behavior golden dataset configuration."""
+    return GOLDEN_DATASETS["foraging_abc_2026_05_11"]
 
 
 @pytest.fixture(scope="session")
