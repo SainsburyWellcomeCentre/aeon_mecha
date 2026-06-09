@@ -160,11 +160,15 @@ Devices:
 `EphysEpochConfig.make()` reads `Metadata.yml` once per epoch, parses each
 `ConfigurationA/B` (mapping `ProbeA/B` by convention), and:
 - Calls `create_electrode_config(json_path, ...)` to dedup-insert the
-  `ElectrodeConfig` (pure probe-geometry table — no filename or provenance).
-- Records the JSON basename on the `Insertion` row alongside the FK.
+  `ElectrodeConfig` (electrode geometry + `config_file_name` for the source
+  JSON's canonical basename).
+- Records the JSON basename on the `Insertion` row alongside the FK
+  (per-(epoch, probe) provenance — may differ from the dedup'd canonical
+  filename when `config_name` overrides are used).
 
 `ProbeInterfaceFileName: null` indicates a disabled/spoofed probe; the
-ingest skips it.
+ingest skips it. If every probe in an epoch is disabled/spoofed,
+`EphysEpochConfig.make()` raises — there is no longer a sentinel row.
 
 Downstream consumers (`EphysChunk.ingest_chunks`, `EphysBlockInfo.make`) read
 the resolved `(probe_type, electrode_config_name, config_file_name)` directly
@@ -175,7 +179,7 @@ from `Insertion` — no further `Metadata.yml` parsing at chunk- or block-time.
 | Layout | Location |
 |---|---|
 | Production | `<raw-ephys-root>/<rig>/recording_configurations/<name>.json` |
-| Golden test fixture | `tests/fixtures/ephys/M81_ProbeB_4Shanks_1000_to_1700_um.json` |
+| Synthetic unit-test fixture | `tests/fixtures/ephys/synthetic_np2_multishank.json` |
 
 `resolve_epoch_probe_json(raw_ephys_dir, epoch_path, basename)` searches the
 production location first, then falls back to the epoch directory itself
@@ -194,10 +198,12 @@ is the canonical entry point. It:
    subset of contacts where `device_channel_indices != -1` (the actively-
    recorded electrodes, typically 384 per recording).
 4. Sets `electrode_config_name = json_path.stem` (override via `config_name`).
+5. Sets `config_file_name = json_path.name` on the `ElectrodeConfig` row
+   (canonical source provenance — with `.json` extension).
 
-The helper does NOT record the JSON basename on `ElectrodeConfig` — that
-provenance belongs on the per-(epoch, probe) `EphysEpochConfig.Insertion`
-row, set by the caller.
+`EphysEpochConfig.Insertion.config_file_name` records the per-(epoch, probe)
+provenance separately and may differ from the dedup'd canonical filename
+when the same `ElectrodeConfig` is reused across epochs via custom names.
 
 The helper is idempotent (all inserts use `skip_duplicates=True`). It does
 NOT wrap its inserts in an explicit transaction, so it can be called from
