@@ -329,6 +329,7 @@ class TestEphysBlockInfoMultiConfigValidation:
                 {
                     "experiment_name": experiment_name,
                     "epoch_start": es,
+                    "n_probes": 1,
                 },
                 skip_duplicates=True,
                 allow_direct_insert=True,

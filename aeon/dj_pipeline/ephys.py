@@ -206,6 +206,8 @@ class EphysEpochConfig(dj.Imported):
     # Per-epoch probe registry — discovers probes, populates Probe/ProbeInsertion
     # and per-probe ElectrodeConfig from Metadata.yml.
     -> EphysEpoch
+    ---
+    n_probes: int32  # number of probes discovered + registered in this epoch
     """
 
     # Override probe_assignments.json source dir (used when Ceph is read-only).
@@ -369,7 +371,7 @@ class EphysEpochConfig(dj.Imported):
             )
 
         # Insert master + Part rows
-        self.insert1(key)
+        self.insert1({**key, "n_probes": len(active_labels)})
         self.Insertion.insert(insertion_entries)
 
 

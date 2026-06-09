@@ -137,7 +137,8 @@ EphysEpoch (Manual peer of acquisition.Epoch)
 
 EphysEpochConfig (Imported)
     -> EphysEpoch
-    # No secondary attrs — config failures raise rather than insert sentinel rows.
+    ---
+    n_probes: int32                        # number of probes discovered in this epoch
 
     EphysEpochConfig.Insertion (Part)
         -> master

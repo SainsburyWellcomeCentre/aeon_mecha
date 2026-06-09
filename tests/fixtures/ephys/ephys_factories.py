@@ -169,11 +169,13 @@ def register_synthetic_experiment(
     )
 
     # EphysEpochConfig is dj.Imported — direct insert with allow_direct_insert=True.
-    # No Insertion children — sync-model tests don't exercise probe discovery.
+    # No Insertion children — sync-model tests don't exercise probe discovery,
+    # so n_probes=0 is fine.
     ephys.EphysEpochConfig.insert1(
         {
             "experiment_name": experiment_name,
             "epoch_start": epoch_dt,
+            "n_probes": 0,
         },
         skip_duplicates=True,
         allow_direct_insert=True,
