@@ -410,6 +410,4 @@ ephys.schema.drop()        # confirms with the operator
 | `aeon/dj_pipeline/utils/onix_imu.py` | `find_overlapping_bno055_chunks`, `load_and_merge_bno055`, `IMU_COLUMNS`. |
 | `aeon/dj_pipeline/utils/codec.py` | `<aeon_stream>` and `<aeon_onix_stream>` codecs. |
 | `aeon/dj_pipeline/acquisition.py` | `acquisition.Epoch.ingest_epochs()` — behavior side only (raw-ephys branch removed). |
-| `aeon/dj_pipeline/scripts/ephys_v2_setup.py` | Manual setup script for synthetic-geometry probes (HPC-friendly). |
-| `aeon/dj_pipeline/scripts/ephys_mock_ingestion.py` | Mock ingestion for `social-ephys0.1` dataset. |
-| `tests/fixtures/ephys/M81_ProbeB_4Shanks_1000_to_1700_um.json` | Per-epoch probeinterface JSON used by integration tests. |
+| `tests/fixtures/ephys/synthetic_np2_multishank.json` | Synthetic 4-shank NP2.0 probeinterface JSON used by integration tests. |
