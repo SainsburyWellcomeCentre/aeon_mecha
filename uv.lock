@@ -136,7 +136,7 @@ test = [
 test-golden = [
     { name = "pytest", specifier = ">=7.0" },
     { name = "pytest-cov" },
-    { name = "swc-aeon-rigs-foragingabc", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main" },
+    { name = "swc-aeon-rigs-foragingabc", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=tn%2Fenv-data-readers" },
     { name = "testcontainers", extras = ["mysql"], specifier = ">=3.7" },
 ]
 
@@ -3335,7 +3335,7 @@ dependencies = [
 [[package]]
 name = "swc-aeon-rigs-foragingabc"
 version = "0.0.1"
-source = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main#d75a553ad90b06f2206415760e0d9c917c51faa1" }
+source = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=tn%2Fenv-data-readers#d1e612d81766c9460127e4f3e645066349147726" }
 dependencies = [
     { name = "dotmap" },
     { name = "gitpython" },

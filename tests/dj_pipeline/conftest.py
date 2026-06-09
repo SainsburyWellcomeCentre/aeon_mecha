@@ -42,6 +42,9 @@ TEST_DB_PREFIX = os.environ.get("TEST_DB_PREFIX", "test_aeon_")
 # ============================================================================
 
 GOLDEN_DATASETS = {
+    # Original behavior golden: ~1h of abcBehav0 on AEON3, full 13 cameras + 6
+    # feeders writing data to disk. Richest stream coverage (FeederEncoder
+    # 848k samples, CameraPosition 12k samples). No paired ephys.
     "foraging_abc_2025_11_18": {
         "experiment_name": "abcBehav0-aeon3",
         "experiment_path": "AEON3/abcBehav0",
@@ -55,6 +58,29 @@ GOLDEN_DATASETS = {
             "Metadata.json",
             "CameraTop/CameraTop_2025-11-18T10-00-00.csv",
             "Feeder1/Feeder1_32_2025-11-18T10-00-00.bin",
+        ],
+        "expected_camera_count": 13,
+        "expected_feeder_count": 6,
+    },
+    # Behavior arm of abcGolden01 — paired with foraging_abc_ephys_2026_05_11
+    # (same experiment, same wall-clock window, AEON3 acquires behavior while
+    # AEONX1 acquires ephys). Sparser on-disk data than abcBehav0 (5 cameras,
+    # 4 feeders writing data) but exercises the newer file-name conventions:
+    # mixed T07-00-00 for CSVs and T070000Z for bins (both parse cleanly via
+    # swc.aeon.io.api.chunk_key).
+    "foraging_abc_2026_05_11": {
+        "experiment_name": "abcGolden01-aeon3",
+        "experiment_path": "AEON3/abcGolden01",
+        "epoch_dir": "2026-05-11T075134Z",
+        "devices_schema": "swc.aeon_exp.foragingABC.experiment:Experiment",
+        "arena_name": "circle-2m",
+        "lab": "SWC",
+        "location": "AEON3",
+        "experiment_type": "foraging",
+        "required_files": [
+            "Metadata.json",
+            "CameraNest/CameraNest_2026-05-11T07-00-00.csv",
+            "Feeder3/Feeder3_32_2026-05-11T070000Z.bin",
         ],
         "expected_camera_count": 13,
         "expected_feeder_count": 6,
@@ -284,10 +310,21 @@ def clean_streams_tables(pipeline_integration):
 # ============================================================================
 
 
-@pytest.fixture(scope="session")
-def golden_dataset_config():
-    """Get the active golden dataset configuration."""
-    return GOLDEN_DATASETS["foraging_abc_2025_11_18"]
+@pytest.fixture(
+    scope="session",
+    params=[
+        pytest.param("foraging_abc_2025_11_18", id="abcBehav0_2025-11-18"),
+        pytest.param("foraging_abc_2026_05_11", id="abcGolden01_2026-05-11"),
+    ],
+)
+def golden_dataset_config(request):
+    """Behavior golden dataset configuration.
+
+    Parametrized over both registered behavior goldens — every test consuming
+    this fixture (and its session-scoped dependents like ``full_pipeline``,
+    ``test_experiment``, ``test_epochs``) runs once per dataset.
+    """
+    return GOLDEN_DATASETS[request.param]
 
 
 @pytest.fixture(scope="session")
@@ -333,8 +370,10 @@ def full_pipeline(dj_config_integration, streams_schema, golden_dataset_config):
         "streams": streams_module,
     }
 
-    # Teardown - drop all test schemas
-    _drop_test_schemas()
+    # No per-iteration teardown — golden_dataset_config is parametrized, so
+    # this fixture runs once per dataset. Dropping schemas between iterations
+    # would invalidate the cached streams_schema fixture. Final cleanup
+    # happens when the MySQL testcontainer shuts down at session end.
 
 
 @pytest.fixture(scope="session")

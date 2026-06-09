@@ -462,6 +462,10 @@ class TestCodecStreamData:
                 obj.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
                 query = obj & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
                 if len(query):
+                    # Restrict to a single row — datasets may span multiple chunks
+                    # per (epoch, device); these tests only check codec correctness
+                    # on any one row.
+                    query = query & dj.Top(limit=1, order_by="chunk_start")
                     return name, obj, query
         return None
 
@@ -542,3 +546,66 @@ class TestCodecStreamData:
                     assert not attr.is_blob, (
                         f"{name}.{attr_name} is still a blob column — expected json or codec"
                     )
+
+
+class TestStreamPopulationInventory:
+    """Inventory which stream tables actually populate from the golden dataset.
+
+    Diagnostic — run with `-s` to see the printed inventory:
+
+        uv run pytest -m integration tests/dj_pipeline/test_full_ingestion.py::TestStreamPopulationInventory -s
+    """
+
+    POPULATE_LIMIT = 50
+
+    def test_inventory(self, test_epochs, full_pipeline, golden_dataset_config):
+        """Populate every stream table and report row + sample counts."""
+        import datajoint as dj
+
+        acquisition = full_pipeline["acquisition"]
+        streams = full_pipeline["streams"]
+        cfg = golden_dataset_config
+
+        acquisition.EpochConfig.populate({"experiment_name": cfg["experiment_name"]})
+        acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
+
+        # Acquisition-module Environment streams (hand-written, not auto-generated)
+        acq_tables = {
+            "acquisition.EnvironmentState": acquisition.EnvironmentState,
+            "acquisition.MessageLog": acquisition.MessageLog,
+            "acquisition.LightEvents": acquisition.LightEvents,
+        }
+        # Dynamic streams tables (auto-generated from Pydantic schema)
+        stream_tables = {}
+        for name in dir(streams):
+            if name.startswith("_"):
+                continue
+            obj = getattr(streams, name, None)
+            if isinstance(obj, type) and issubclass(obj, dj.Imported) and obj is not dj.Imported:
+                stream_tables[f"streams.{name}"] = obj
+
+        all_tables = {**acq_tables, **stream_tables}
+        results: list[tuple[str, int, int]] = []
+        for label, tbl in all_tables.items():
+            tbl.populate(
+                max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True
+            )
+            q = tbl & {"experiment_name": cfg["experiment_name"]}
+            row_count = len(q)
+            sample_total = 0
+            if row_count > 0 and "sample_count" in tbl.heading.attributes:
+                sample_total = sum(q.to_arrays("sample_count"))
+            results.append((label, row_count, sample_total))
+
+        # Print human-readable inventory
+        results.sort(key=lambda r: (-r[2], -r[1], r[0]))
+        print(f"\n=== Stream population inventory: {cfg['experiment_name']} ===")
+        print(f"{'table':<60} {'rows':>6} {'samples':>12}")
+        print("-" * 80)
+        for label, rows, samples in results:
+            print(f"{label:<60} {rows:>6} {samples:>12}")
+
+        # Only MessageLog is common to both old and new golden datasets;
+        # EnvironmentState exists in abcBehav0 only, LightEvents in neither.
+        msg_rows = next(r for n, r, _ in results if n == "acquisition.MessageLog")
+        assert msg_rows > 0, "acquisition.MessageLog did not populate from golden dataset"
