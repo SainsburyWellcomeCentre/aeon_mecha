@@ -206,9 +206,6 @@ class EphysEpochConfig(dj.Imported):
     # Per-epoch probe registry — discovers probes, populates Probe/ProbeInsertion
     # and per-probe ElectrodeConfig from Metadata.yml.
     -> EphysEpoch
-    ---
-    has_ephys: bool
-    n_probes: int
     """
 
     # Override probe_assignments.json source dir (used when Ceph is read-only).
@@ -230,7 +227,12 @@ class EphysEpochConfig(dj.Imported):
 
         Subject-probe mapping resolved (in priority order): per-epoch
         probe_assignments.json, then carry-forward from the most recent
-        has_ephys=True epoch, then existing ProbeInsertion matched by serial.
+        populated epoch, then existing ProbeInsertion matched by serial.
+
+        Raises on any failure to resolve the epoch's probe configuration —
+        EphysEpoch rows are only created for epochs with NeuropixelsV2 data,
+        so a config failure here represents a real data/setup problem worth
+        surfacing rather than silently swallowing.
         """
         from aeon.dj_pipeline.utils.ephys_utils import (
             create_electrode_config,
@@ -240,24 +242,30 @@ class EphysEpochConfig(dj.Imported):
 
         epoch_dir = (EphysEpoch & key).fetch1("epoch_dir")
         if not epoch_dir:
-            self.insert1({**key, "has_ephys": False, "n_probes": 0})
-            return
+            raise RuntimeError(
+                f"EphysEpoch {key} has empty epoch_dir. This is an invariant "
+                f"violation — EphysEpoch.ingest_epochs() always sets epoch_dir."
+            )
 
         raw_ephys_dir = acquisition.Experiment.get_data_directory(
             key, directory_type="raw-ephys"
         )
         if raw_ephys_dir is None:
-            logger.warning(f"raw-ephys directory not found for {key}")
-            self.insert1({**key, "has_ephys": False, "n_probes": 0})
-            return
+            raise FileNotFoundError(
+                f"raw-ephys directory not registered for experiment {key['experiment_name']}. "
+                f"Add an Experiment.Directory row with directory_type='raw-ephys'."
+            )
 
         epoch_path = raw_ephys_dir / epoch_dir
 
         # Discover probes
         device_name, _device_dir, probe_labels = discover_epoch_probes(epoch_path)
         if not probe_labels:
-            self.insert1({**key, "has_ephys": False, "n_probes": 0})
-            return
+            raise FileNotFoundError(
+                f"No NeuropixelsV2/Beta probe directories found in {epoch_path}. "
+                f"EphysEpoch was created from this dir, but probe discovery now "
+                f"finds nothing — likely data was removed or moved after ingestion."
+            )
         if device_name is None:
             raise RuntimeError(
                 f"discover_epoch_probes returned probe_labels without device_name: {epoch_path}"
@@ -276,8 +284,11 @@ class EphysEpochConfig(dj.Imported):
             probe_info[label] = probe_id
 
         if not probe_info:
-            self.insert1({**key, "has_ephys": False, "n_probes": 0})
-            return
+            raise ValueError(
+                f"All probes in {epoch_path} are disabled/dummy (no probe configuration "
+                f"in Metadata.yml). Either enable probes in the rig metadata or remove "
+                f"the empty probe directories before re-running EphysEpoch.ingest_epochs()."
+            )
 
         probe_type = DEVICE_PROBE_TYPE_MAP.get(device_name)
         if probe_type is None:
@@ -358,7 +369,7 @@ class EphysEpochConfig(dj.Imported):
             )
 
         # Insert master + Part rows
-        self.insert1({**key, "has_ephys": True, "n_probes": len(active_labels)})
+        self.insert1(key)
         self.Insertion.insert(insertion_entries)
 
 
@@ -418,8 +429,8 @@ class EphysSyncModel(dj.Manual):
             if epoch_start is None:
                 logger.warning(
                     f"Cannot resolve epoch for {csv_path} "
-                    f"(epoch_dir={epoch_dir_name} not in EphysEpoch — or "
-                    f"EphysEpochConfig.has_ephys=False). Skipping."
+                    f"(epoch_dir={epoch_dir_name} not in EphysEpoch or "
+                    f"EphysEpochConfig not yet populated). Skipping."
                 )
                 continue
 
@@ -575,8 +586,8 @@ class EphysChunk(dj.Manual):
             if epoch_start is None:
                 logger.warning(
                     f"Cannot resolve epoch for {ephys_file} "
-                    f"(epoch_dir={epoch_dir_name} not in EphysEpoch — or "
-                    f"EphysEpochConfig.has_ephys=False). Skipping."
+                    f"(epoch_dir={epoch_dir_name} not in EphysEpoch or "
+                    f"EphysEpochConfig not yet populated). Skipping."
                 )
                 continue
 

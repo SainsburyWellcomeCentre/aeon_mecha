@@ -412,10 +412,10 @@ def register_epochs(experiment_name, probe_assignments_dir=None):
     print("Populating EphysEpochConfig...")
     EphysEpochConfig.populate(display_progress=True)
 
-    # Report results
+    # Report results — every populated EphysEpochConfig row has resolved probes
+    # (config failures raise rather than insert sentinel rows).
     total = len(EphysEpochConfig & {"experiment_name": experiment_name})
-    with_ephys = len(EphysEpochConfig & {"experiment_name": experiment_name, "has_ephys": True})
-    print(f"EphysEpochConfig: {total} row(s), {with_ephys} with ephys data")
+    print(f"EphysEpochConfig: {total} row(s)")
 
 
 def ingest_sync_models(experiment_name):
@@ -479,10 +479,10 @@ def verify_registration(experiment_name):
     # Epochs
     behavior_count = len(acquisition.Epoch & {"experiment_name": experiment_name})
     ephys_epoch_count = len(EphysEpoch & {"experiment_name": experiment_name})
-    ephys_with_data = len(EphysEpochConfig & {"experiment_name": experiment_name, "has_ephys": True})
+    ephys_populated = len(EphysEpochConfig & {"experiment_name": experiment_name})
     print(
         f"Epochs: {behavior_count} behavior, {ephys_epoch_count} ephys "
-        f"({ephys_with_data} with ephys data)"
+        f"({ephys_populated} configured)"
     )
 
     # Probe insertions

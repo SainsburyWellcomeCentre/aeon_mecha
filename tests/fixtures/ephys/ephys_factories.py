@@ -80,8 +80,8 @@ def register_synthetic_experiment(
 
     Inserts: lab.Arena, acquisition.PipelineRepository, acquisition.DevicesSchema,
     acquisition.Experiment, acquisition.Experiment.Directory pointing at raw_dir,
-    ephys.EphysEpoch (Manual peer, no has_ephys/n_probes on the master row),
-    and ephys.EphysEpochConfig (with has_ephys=True, n_probes=0).
+    ephys.EphysEpoch (Manual peer), and an empty ephys.EphysEpochConfig row
+    (no Insertion children — sync-model tests don't exercise probe discovery).
 
     Returns the epoch_start datetime.
     """
@@ -156,7 +156,6 @@ def register_synthetic_experiment(
         )
 
     # EphysEpoch is a Manual peer of acquisition.Epoch — insert directly.
-    # has_ephys/n_probes live on EphysEpochConfig, not on the master row.
     ephys.EphysEpoch.insert1(
         {
             "experiment_name": experiment_name,
@@ -170,13 +169,11 @@ def register_synthetic_experiment(
     )
 
     # EphysEpochConfig is dj.Imported — direct insert with allow_direct_insert=True.
-    # n_probes=0 is fine for sync-model-only tests that don't exercise probe discovery.
+    # No Insertion children — sync-model tests don't exercise probe discovery.
     ephys.EphysEpochConfig.insert1(
         {
             "experiment_name": experiment_name,
             "epoch_start": epoch_dt,
-            "has_ephys": True,
-            "n_probes": 0,
         },
         skip_duplicates=True,
         allow_direct_insert=True,

@@ -556,7 +556,8 @@ def resolve_raw_dir_and_epochs(
 ) -> "tuple[Path, dict[str, datetime]] | None":
     """Return (raw_ephys_dir, {epoch_dir_name: epoch_start}) or None.
 
-    Only includes EphysEpoch rows whose EphysEpochConfig.has_ephys is True.
+    Only includes EphysEpoch rows that have a populated EphysEpochConfig
+    (i.e. probe discovery succeeded — config failures raise during populate).
     """
     from aeon.dj_pipeline import acquisition
     from aeon.dj_pipeline.ephys import EphysEpoch, EphysEpochConfig
@@ -570,9 +571,8 @@ def resolve_raw_dir_and_epochs(
         return None
     raw_dir = Path(raw_dir_result)
 
-    # Only include epochs where EphysEpochConfig confirmed ephys data exists.
     ephys_epochs = (
-        EphysEpoch & exp_key & (EphysEpochConfig & {"has_ephys": True})
+        EphysEpoch & exp_key & EphysEpochConfig
     ).proj("epoch_dir").to_dicts()
 
     epoch_dir_to_start: dict[str, datetime] = {}

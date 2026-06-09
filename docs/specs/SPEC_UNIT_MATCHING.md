@@ -132,18 +132,24 @@ ProbeInsertion (Manual)
 **Change**: `EphysEpoch` is redesigned from a probe auto-creator to a per-epoch probe registry. It discovers probes in each epoch's files, reads subject-probe mapping (from file or carry-forward), and records which ProbeInsertions are active in each epoch.
 
 ```
-EphysEpoch (Imported)
-    -> acquisition.Epoch                   # experiment_name, epoch_start
-    ---
-    has_ephys: bool                        # whether ephys data was found in this epoch
-    n_probes: int                          # number of probes discovered (0 if no ephys)
+EphysEpoch (Manual peer of acquisition.Epoch)
+    experiment_name, epoch_start           # PK
 
-    EphysEpoch.Insertion (Part)
+EphysEpochConfig (Imported)
+    -> EphysEpoch
+    # No secondary attrs — config failures raise rather than insert sentinel rows.
+
+    EphysEpochConfig.Insertion (Part)
         -> master
         -> ProbeInsertion                  # which insertion is active in this epoch
         ---
         probe_label: varchar(32)           # file label discovered from this epoch's files (e.g., "ProbeA")
+        -> ElectrodeConfig                 # per-(epoch, probe) electrode configuration
+        config_file_name: varchar(255)     # basename of this probe's ProbeInterface JSON
 ```
+
+See `SPEC_EPHYS_PIPELINE.md` for the full design; this section is a summary
+of what unit matching consumes.
 
 **EphysEpoch.make() responsibilities**:
 
