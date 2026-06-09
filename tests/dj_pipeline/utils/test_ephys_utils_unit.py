@@ -447,11 +447,12 @@ class TestCreateElectrodeConfig:
         )
         assert config_name == "custom-name"
 
-    def test_sets_config_file_name_on_electrode_config(self):
-        """ElectrodeConfig records the source JSON filename (with .json).
+    def test_does_not_set_config_file_name_on_electrode_config(self):
+        """ElectrodeConfig has no JSON-provenance column.
 
-        The PK stays derived from json_path.stem; config_file_name is the
-        canonical provenance attribute for the dedup'd row.
+        The JSON basename belongs on EphysEpochConfig.Insertion (per-(epoch,
+        probe) record), recorded by the caller — not on the dedup'd
+        ElectrodeConfig row.
         """
         from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
 
@@ -467,7 +468,7 @@ class TestCreateElectrodeConfig:
         )
         ec_call = electrode_config_table.insert1.call_args
         inserted_row = ec_call.args[0]
-        assert inserted_row["config_file_name"] == self.FIXTURE_JSON.name
+        assert "config_file_name" not in inserted_row
 
 
 class TestParseMetadataProbeConfigs:

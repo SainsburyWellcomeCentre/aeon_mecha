@@ -531,7 +531,6 @@ def create_electrode_config(
     electrode_config_table.insert1(
         {
             **electrode_config_key,
-            "config_file_name": json_path.name,
             "electrode_config_description": f"From {json_path.name}",
             "electrode_config_hash": uuid.uuid4(),
         },
