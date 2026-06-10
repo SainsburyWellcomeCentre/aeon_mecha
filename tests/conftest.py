@@ -15,16 +15,18 @@ import pytest
 
 logger = logging.getLogger(__name__)
 
-# Set default DataJoint connection env vars (for imports to work)
-# These will be overridden by mysql_container fixture for integration tests
-if "DJ_HOST" not in os.environ:
-    os.environ["DJ_HOST"] = "localhost"
-if "DJ_USER" not in os.environ:
-    os.environ["DJ_USER"] = "root"
-if "DJ_PASS" not in os.environ:
-    os.environ["DJ_PASS"] = "test_password"
-if "DJ_PORT" not in os.environ:
-    os.environ["DJ_PORT"] = "3306"
+# Set default DataJoint connection env vars for testcontainers mode.
+# Skipped when TEST_DB_PREFIX is set (external DB — credentials come from
+# datajoint.json + .secrets/).
+if not os.environ.get("TEST_DB_PREFIX"):
+    if "DJ_HOST" not in os.environ:
+        os.environ["DJ_HOST"] = "localhost"
+    if "DJ_USER" not in os.environ:
+        os.environ["DJ_USER"] = "root"
+    if "DJ_PASS" not in os.environ:
+        os.environ["DJ_PASS"] = "test_password"
+    if "DJ_PORT" not in os.environ:
+        os.environ["DJ_PORT"] = "3306"
 
 
 def _make_mock_dj():
@@ -99,20 +101,38 @@ def pytest_collection_modifyitems(items):
 
 @pytest.fixture(scope="session")
 def mysql_container():
-    """Auto-provision MySQL via testcontainers.
+    """Provide a MySQL backend for integration tests.
 
-    Session-scoped to share container across all integration tests.
-    Container is automatically cleaned up when session ends.
+    When TEST_DB_PREFIX is set in the environment, uses the pre-configured
+    external DB (connection details from datajoint.json + .secrets/).
+    Otherwise, auto-provisions a MySQL 8.0 container via testcontainers.
     """
-    from testcontainers.mysql import MySqlContainer
+    if os.environ.get("TEST_DB_PREFIX"):
+        logger.info(
+            f"Using external DB with prefix {os.environ['TEST_DB_PREFIX']}"
+        )
+        yield None
+        return
 
-    container = MySqlContainer(
-        image="mysql:8.0",
-        username="root",
-        password="test_password",
-        dbname="test_db",
-    )
-    container.start()
+    try:
+        from testcontainers.mysql import MySqlContainer
+
+        container = MySqlContainer(
+            image="mysql:8.0",
+            username="root",
+            password="test_password",
+            dbname="test_db",
+        )
+        container.start()
+    except Exception as e:
+        pytest.exit(
+            f"Could not start MySQL container: {e}\n\n"
+            "If Docker is not available (e.g. on HPC), set TEST_DB_PREFIX to\n"
+            "use an external database with your datajoint.json credentials:\n\n"
+            "    export TEST_DB_PREFIX=u_<username>_golden_tests_\n"
+            "    pytest -m integration tests/dj_pipeline/ -v\n",
+            returncode=1,
+        )
 
     # Update environment variables with container details
     host = container.get_container_host_ip()

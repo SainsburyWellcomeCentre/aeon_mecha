@@ -1,7 +1,7 @@
 """Unit tests for ephys_utils pure helpers: probe assignment parsing and resolve_harp.
 
 Tests target pure functions with no database dependencies. Carry-forward logic
-(which queries EphysEpoch.Insertion) is tested during HPC validation.
+(which queries EphysEpochConfig.Insertion) is tested during HPC validation.
 
 Note: imports from aeon.dj_pipeline are done inside test methods, not at module
 level. pytest imports test modules during collection -- before any fixtures run --
@@ -11,6 +11,7 @@ activates the streams schema and attempts a DB connection.
 
 import json
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -259,3 +260,367 @@ class TestGetProbeId:
             },
         }
         assert get_probe_id(metadata, "NeuropixelsV2Beta", "ProbeA") == "NeuropixelsV2Beta_ProbeA"
+
+
+class TestDiscoverEpochProbes:
+    """Tests for discover_epoch_probes(epoch_path)."""
+
+    def test_single_probe(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
+
+        device_dir = tmp_path / "NeuropixelsV2Beta"
+        device_dir.mkdir()
+        (device_dir / "NeuropixelsV2Beta_ProbeA_AmplifierData_0.bin").touch()
+
+        device_name, device_path, labels = discover_epoch_probes(tmp_path)
+
+        assert device_name == "NeuropixelsV2Beta"
+        assert device_path == device_dir
+        assert labels == ["ProbeA"]
+
+    def test_two_probes(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
+
+        device_dir = tmp_path / "NeuropixelsV2Beta"
+        device_dir.mkdir()
+        (device_dir / "NeuropixelsV2Beta_ProbeA_AmplifierData_0.bin").touch()
+        (device_dir / "NeuropixelsV2Beta_ProbeB_AmplifierData_0.bin").touch()
+
+        device_name, _, labels = discover_epoch_probes(tmp_path)
+
+        assert device_name == "NeuropixelsV2Beta"
+        assert labels == ["ProbeA", "ProbeB"]
+
+    def test_no_device_directory(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
+
+        device_name, device_path, labels = discover_epoch_probes(tmp_path)
+
+        assert device_name is None
+        assert device_path is None
+        assert labels == []
+
+    def test_v2beta_preferred_over_v2(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
+
+        (tmp_path / "NeuropixelsV2Beta").mkdir()
+        (tmp_path / "NeuropixelsV2Beta" / "NeuropixelsV2Beta_ProbeA_AmplifierData_0.bin").touch()
+        (tmp_path / "NeuropixelsV2").mkdir()
+        (tmp_path / "NeuropixelsV2" / "NeuropixelsV2_ProbeA_AmplifierData_0.bin").touch()
+
+        device_name, _, _ = discover_epoch_probes(tmp_path)
+
+        assert device_name == "NeuropixelsV2Beta"
+
+    def test_no_amplifier_files(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
+
+        (tmp_path / "NeuropixelsV2Beta").mkdir()
+
+        device_name, _, labels = discover_epoch_probes(tmp_path)
+
+        assert device_name == "NeuropixelsV2Beta"
+        assert labels == []
+
+    def test_unexpected_filenames_ignored(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import discover_epoch_probes
+
+        device_dir = tmp_path / "NeuropixelsV2Beta"
+        device_dir.mkdir()
+        (device_dir / "NeuropixelsV2Beta_ProbeA_AmplifierData_0.bin").touch()
+        (device_dir / "NeuropixelsV2Beta_Clock_0.bin").touch()
+        (device_dir / "random_file.txt").touch()
+
+        _, _, labels = discover_epoch_probes(tmp_path)
+
+        assert labels == ["ProbeA"]
+
+
+class TestParseEpochMetadata:
+    """Tests for parse_epoch_metadata(epoch_path)."""
+
+    def test_valid_metadata(self, tmp_path):
+        import json
+
+        from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
+
+        metadata = {"Devices": {"NeuropixelsV2e": {"ConfigurationA": {}}}}
+        (tmp_path / "Metadata.yml").write_text(json.dumps(metadata))
+        result = parse_epoch_metadata(tmp_path)
+
+        assert result is not None
+        assert "Devices" in result
+
+    def test_missing_metadata(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
+
+        result = parse_epoch_metadata(tmp_path)
+
+        assert result is None
+
+    def test_malformed_metadata(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
+
+        (tmp_path / "Metadata.yml").write_text("not: valid: json: {{}")
+        result = parse_epoch_metadata(tmp_path)
+
+        assert result is None
+
+
+def _mock_table_with_transaction():
+    """Build a MagicMock table whose .connection.transaction is a no-op context manager."""
+    table = MagicMock()
+    table.connection.transaction.__enter__ = MagicMock(return_value=None)
+    table.connection.transaction.__exit__ = MagicMock(return_value=False)
+    return table
+
+
+class TestCreateElectrodeConfig:
+    """Unit tests for create_electrode_config — uses the fixture JSON, mocks tables.
+
+    The fixture is a synthetic 4-shank NP2.0 probeinterface JSON with 16 total
+    contacts and 8 active (odd contact_ids are active). The end-to-end check
+    against a real probe lives in the ephys golden-dataset integration suite.
+    """
+
+    FIXTURE_JSON = (
+        Path(__file__).parent.parent.parent
+        / "fixtures" / "ephys" / "synthetic_np2_multishank.json"
+    )
+    N_TOTAL_CONTACTS = 16
+    N_ACTIVE_CONTACTS = 8
+
+    def test_returns_canonical_keys(self):
+        from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
+
+        probe_type_table = _mock_table_with_transaction()
+        probe_type_table.Electrode = MagicMock()
+        electrode_config_table = _mock_table_with_transaction()
+        electrode_config_table.Electrode = MagicMock()
+
+        probe_type, config_name = create_electrode_config(
+            json_path=self.FIXTURE_JSON,
+            probe_type_table=probe_type_table,
+            electrode_config_table=electrode_config_table,
+        )
+        assert probe_type == "neuropixels2.0-multishank"
+        assert config_name == "synthetic_np2_multishank"
+
+    def test_inserts_full_geometry_and_active_subset(self):
+        from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
+
+        probe_type_table = _mock_table_with_transaction()
+        probe_type_table.Electrode = MagicMock()
+        electrode_config_table = _mock_table_with_transaction()
+        electrode_config_table.Electrode = MagicMock()
+
+        create_electrode_config(
+            json_path=self.FIXTURE_JSON,
+            probe_type_table=probe_type_table,
+            electrode_config_table=electrode_config_table,
+        )
+        pt_call = probe_type_table.Electrode.insert.call_args
+        pt_df = pt_call.args[0]
+        assert len(pt_df) == self.N_TOTAL_CONTACTS
+
+        ec_call = electrode_config_table.Electrode.insert.call_args
+        ec_rows = list(ec_call.args[0])
+        assert len(ec_rows) == self.N_ACTIVE_CONTACTS
+        assert all(
+            {"probe_type", "electrode_config_name", "electrode"} <= set(r.keys())
+            for r in ec_rows
+        )
+
+    def test_config_name_override(self):
+        from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
+
+        probe_type_table = _mock_table_with_transaction()
+        probe_type_table.Electrode = MagicMock()
+        electrode_config_table = _mock_table_with_transaction()
+        electrode_config_table.Electrode = MagicMock()
+
+        _, config_name = create_electrode_config(
+            json_path=self.FIXTURE_JSON,
+            probe_type_table=probe_type_table,
+            electrode_config_table=electrode_config_table,
+            config_name="custom-name",
+        )
+        assert config_name == "custom-name"
+
+    def test_does_not_set_config_file_name_on_electrode_config(self):
+        """ElectrodeConfig has no JSON-provenance column.
+
+        The JSON basename belongs on EphysEpochConfig.Insertion (per-(epoch,
+        probe) record), recorded by the caller — not on the dedup'd
+        ElectrodeConfig row.
+        """
+        from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
+
+        probe_type_table = _mock_table_with_transaction()
+        probe_type_table.Electrode = MagicMock()
+        electrode_config_table = _mock_table_with_transaction()
+        electrode_config_table.Electrode = MagicMock()
+
+        create_electrode_config(
+            json_path=self.FIXTURE_JSON,
+            probe_type_table=probe_type_table,
+            electrode_config_table=electrode_config_table,
+        )
+        ec_call = electrode_config_table.insert1.call_args
+        inserted_row = ec_call.args[0]
+        assert "config_file_name" not in inserted_row
+
+
+class TestParseMetadataProbeConfigs:
+    """Tests for parse_metadata_probe_configs — Metadata.yml → {probe_label: basename}."""
+
+    def _write_metadata(self, tmp_path, npx_configs):
+        """Build a minimal Metadata.yml with given Configuration* mapping."""
+        data = {
+            "Devices": {
+                "NeuropixelsV2e": {
+                    "DeviceName": "test",
+                    **npx_configs,
+                },
+            },
+        }
+        path = tmp_path / "Metadata.yml"
+        path.write_text(json.dumps(data))
+        return tmp_path
+
+    def test_probe_a_and_b_both_active(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+
+        ep = self._write_metadata(tmp_path, {
+            "ConfigurationA": {"ProbeInterfaceFileName": r"Z:\dir\probeA.json"},
+            "ConfigurationB": {"ProbeInterfaceFileName": r"Z:\dir\probeB.json"},
+        })
+        result = parse_metadata_probe_configs(ep)
+        assert result == {"ProbeA": "probeA.json", "ProbeB": "probeB.json"}
+
+    def test_probe_a_disabled(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+
+        ep = self._write_metadata(tmp_path, {
+            "ConfigurationA": {"ProbeInterfaceFileName": None},
+            "ConfigurationB": {"ProbeInterfaceFileName": r"Z:\dir\probeB.json"},
+        })
+        result = parse_metadata_probe_configs(ep)
+        assert result == {"ProbeA": None, "ProbeB": "probeB.json"}
+
+    def test_missing_metadata_raises(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+
+        with pytest.raises(FileNotFoundError):
+            parse_metadata_probe_configs(tmp_path)
+
+    def test_real_golden_metadata(self):
+        """Verify against the actual golden epoch's Metadata.yml if available."""
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+
+        epoch_path = (
+            Path.home() / "sciops-data" / "project_aeon" / "aeon" / "data"
+            / "raw" / "AEONX1" / "abcGolden01" / "2026-05-11T07-50-11"
+        )
+        if not epoch_path.exists():
+            pytest.skip(f"Golden epoch not on disk: {epoch_path}")
+        result = parse_metadata_probe_configs(epoch_path)
+        assert result["ProbeA"] is None
+        assert result["ProbeB"] == "M81_ProbeB_4Shanks_1000_to_1700_um.json"
+
+
+class TestResolveEpochProbeJson:
+    """Tests for resolve_epoch_probe_json — central → epoch-local fallback."""
+
+    def test_prefers_central_when_both_exist(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
+
+        raw = tmp_path / "AEONX1"
+        epoch = raw / "2024-01-01T00-00-00"
+        (raw / "recording_configurations").mkdir(parents=True)
+        epoch.mkdir(parents=True)
+        central = raw / "recording_configurations" / "probe.json"
+        local = epoch / "probe.json"
+        central.write_text("{}")
+        local.write_text("{}")
+
+        assert resolve_epoch_probe_json(raw, epoch, "probe.json") == central
+
+    def test_falls_back_to_epoch_local(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
+
+        raw = tmp_path / "AEONX1"
+        epoch = raw / "2024-01-01T00-00-00"
+        epoch.mkdir(parents=True)
+        local = epoch / "probe.json"
+        local.write_text("{}")
+        # No recording_configurations/ dir at all
+
+        assert resolve_epoch_probe_json(raw, epoch, "probe.json") == local
+
+    def test_raises_when_neither_exists(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
+
+        raw = tmp_path / "AEONX1"
+        epoch = raw / "2024-01-01T00-00-00"
+        epoch.mkdir(parents=True)
+        with pytest.raises(FileNotFoundError, match="not found at"):
+            resolve_epoch_probe_json(raw, epoch, "probe.json")
+
+    def test_accepts_str_args(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
+
+        raw = tmp_path / "AEONX1"
+        epoch = raw / "2024-01-01T00-00-00"
+        epoch.mkdir(parents=True)
+        (epoch / "probe.json").write_text("{}")
+
+        # Both args as strings (not Path) — common from older callers
+        p = resolve_epoch_probe_json(str(raw), str(epoch), "probe.json")
+        assert p == epoch / "probe.json"
+
+
+class TestLoadDeviceChannelMap:
+    """Tests for load_device_channel_map — takes JSON path directly.
+
+    The fixture is a synthetic 4-shank NP2.0 probeinterface JSON: 16 contacts,
+    odd contact_ids active, mapped sequentially to channels 0..7. So contact
+    1 → channel 0, contact 3 → channel 1, ..., contact 15 → channel 7.
+    """
+
+    FIXTURE_JSON = (
+        Path(__file__).parent.parent.parent
+        / "fixtures" / "ephys" / "synthetic_np2_multishank.json"
+    )
+
+    def test_returns_active_contacts_mapping(self):
+        from aeon.dj_pipeline.utils.ephys_utils import load_device_channel_map
+
+        channel_map = load_device_channel_map(self.FIXTURE_JSON)
+        assert len(channel_map) == 8
+        assert channel_map[1] == 0
+        assert channel_map[15] == 7
+
+    def test_raises_on_missing_file(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import load_device_channel_map
+
+        with pytest.raises(FileNotFoundError):
+            load_device_channel_map(tmp_path / "does_not_exist.json")
+
+    def test_raises_on_no_device_channel_indices(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import load_device_channel_map
+
+        bad = tmp_path / "bad.json"
+        bad.write_text('{"probes": [{"contact_ids": ["0"]}]}')
+        with pytest.raises(ValueError, match="No device_channel_indices"):
+            load_device_channel_map(bad)
+
+    def test_raises_on_no_active_contacts(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import load_device_channel_map
+
+        all_inactive = tmp_path / "inactive.json"
+        all_inactive.write_text(
+            '{"probes": [{"contact_ids": ["0", "1"], "device_channel_indices": [-1, -1]}]}'
+        )
+        with pytest.raises(ValueError, match="No active contacts"):
+            load_device_channel_map(all_inactive)

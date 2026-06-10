@@ -129,13 +129,17 @@ class OnixStreamCodec(dj.Codec):
         return value
 
     def decode(self, stored, *, key=None):
-        """Load + merge the referenced ONIX-clocked stream group as an ONIX-indexed DataFrame."""
+        """Load + merge the referenced ONIX stream group as an ONIX-indexed DataFrame.
+
+        Reloads the same Bno055 chunks the populate-time row was built from
+        (via ``chunk_indices``), then filters to ``[onix_ts_start, onix_ts_end]``.
+        """
         # Lazy imports to avoid circular references at module load time.
         from aeon.dj_pipeline import acquisition, ephys
         from aeon.dj_pipeline.utils.onix_imu import (
             IMU_COLUMNS,
+            find_overlapping_bno055_chunks,
             load_and_merge_bno055,
-            locate_bno055_chunk_index,
         )
 
         if stored["stream_group"] != "Bno055":
@@ -148,9 +152,8 @@ class OnixStreamCodec(dj.Codec):
             "epoch_start": pd.Timestamp(stored["epoch_start"]),
             "sync_start": pd.Timestamp(stored["sync_start"]),
         }
-        onix_ts_start = (ephys.EphysSyncModel & sm_key).fetch1("onix_ts_start")
 
-        epoch_dir = (acquisition.Epoch & sm_key).fetch1("epoch_dir")
+        epoch_dir = (ephys.EphysEpoch & sm_key).fetch1("epoch_dir")
         raw_dir = acquisition.Experiment.get_data_directory(
             {"experiment_name": stored["experiment_name"]}, "raw-ephys"
         )
@@ -160,8 +163,28 @@ class OnixStreamCodec(dj.Codec):
             )
         device_dir = raw_dir / epoch_dir / stored["device_name"]
 
-        chunk_index = locate_bno055_chunk_index(device_dir, stored["device_name"], int(onix_ts_start))
-        if chunk_index is None:
+        # Prefer chunk_indices captured at populate time; fall back to a
+        # fresh overlap scan for backward-compat with older rows.
+        chunk_indices = stored.get("chunk_indices")
+        onix_ts_start = stored.get("onix_ts_start")
+        onix_ts_end = stored.get("onix_ts_end")
+        if onix_ts_start is None or onix_ts_end is None:
+            ts_start_raw, ts_end_raw = (ephys.EphysSyncModel & sm_key).fetch1(
+                "onix_ts_start", "onix_ts_end"
+            )
+            onix_ts_start = int(ts_start_raw)
+            onix_ts_end = int(ts_end_raw)
+        if chunk_indices is None:
+            chunk_indices = find_overlapping_bno055_chunks(
+                device_dir, stored["device_name"],
+                int(onix_ts_start), int(onix_ts_end),
+            )
+
+        if not chunk_indices:
             return pd.DataFrame(columns=list(IMU_COLUMNS), index=pd.Index([], dtype=np.uint64))
 
-        return load_and_merge_bno055(device_dir, stored["device_name"], chunk_index)
+        df = pd.concat(
+            [load_and_merge_bno055(device_dir, stored["device_name"], n)
+             for n in chunk_indices]
+        )
+        return df[(df.index >= int(onix_ts_start)) & (df.index <= int(onix_ts_end))]

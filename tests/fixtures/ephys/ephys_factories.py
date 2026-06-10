@@ -21,10 +21,27 @@ def make_synthetic_ephys_epoch(
     Each CSV has 60 rows (one per second). ONIX clock advances at 1000 ticks/sec;
     HARP time advances at 1 sec increments. CSV filenames carry hourly HARP
     timestamps, but actual content covers an hour-long window.
+
+    Also writes a minimal Metadata.yml with per-probe ProbeInterfaceFileName
+    entries (required by EphysChunk.ingest_chunks's per-epoch config lookup).
     """
+    import json as _json
+
     epoch_dir = raw_dir / epoch_dir_name
     device_dir = epoch_dir / device_name
     device_dir.mkdir(parents=True, exist_ok=True)
+
+    # Minimal Metadata.yml — ProbeInterfaceFileName matches the basename
+    # set on EphysEpochConfig.Insertion by register_synthetic_probe_insertion.
+    metadata = {
+        "Devices": {
+            "NeuropixelsV2e": {
+                "DeviceName": device_name,
+                "ConfigurationA": {"ProbeInterfaceFileName": "test-config-0.json"},
+            },
+        },
+    }
+    (epoch_dir / "Metadata.yml").write_text(_json.dumps(metadata))
 
     # HARP epoch base: arbitrary seconds-since-1904 for plausible wall-clock times.
     harp_base = 3000.0
@@ -63,7 +80,8 @@ def register_synthetic_experiment(
 
     Inserts: lab.Arena, acquisition.PipelineRepository, acquisition.DevicesSchema,
     acquisition.Experiment, acquisition.Experiment.Directory pointing at raw_dir,
-    acquisition.Epoch, and a minimal ephys.EphysEpoch (has_ephys=True, n_probes=0).
+    ephys.EphysEpoch (Manual peer), and an empty ephys.EphysEpochConfig row
+    (no Insertion children — sync-model tests don't exercise probe discovery).
 
     Returns the epoch_start datetime.
     """
@@ -137,10 +155,8 @@ def register_synthetic_experiment(
             skip_duplicates=True,
         )
 
-    # Epoch — insert directly (skip ingest_epochs which scans camera files).
-    # Use "raw-ephys" since ephys downstream filters Epoch by EphysEpoch.has_ephys
-    # via resolve_raw_dir_and_epochs.
-    acquisition.Epoch.insert1(
+    # EphysEpoch is a Manual peer of acquisition.Epoch — insert directly.
+    ephys.EphysEpoch.insert1(
         {
             "experiment_name": experiment_name,
             "epoch_start": epoch_dt,
@@ -152,12 +168,13 @@ def register_synthetic_experiment(
         ignore_extra_fields=True,
     )
 
-    # EphysEpoch is dj.Imported — must use allow_direct_insert=True outside of make()
-    ephys.EphysEpoch.insert1(
+    # EphysEpochConfig is dj.Imported — direct insert with allow_direct_insert=True.
+    # No Insertion children — sync-model tests don't exercise probe discovery,
+    # so n_probes=0 is fine.
+    ephys.EphysEpochConfig.insert1(
         {
             "experiment_name": experiment_name,
             "epoch_start": epoch_dt,
-            "has_ephys": True,
             "n_probes": 0,
         },
         skip_duplicates=True,
@@ -217,7 +234,7 @@ def register_synthetic_probe_insertion(
     probe_label: str,
     device_name: str = "NeuropixelsV2Beta",
 ):
-    """Insert ProbeType, ElectrodeConfig, Probe, ProbeInsertion, EphysEpoch.Insertion.
+    """Insert ProbeType, ElectrodeConfig, Probe, ProbeInsertion, EphysEpochConfig.Insertion.
 
     Uses minimal valid data to satisfy FKs without exercising probe semantics.
     """
@@ -281,14 +298,18 @@ def register_synthetic_probe_insertion(
         skip_duplicates=True,
     )
 
-    # EphysEpoch.Insertion (Part, allow_direct_insert)
-    ephys.EphysEpoch.Insertion.insert1(
+    # EphysEpochConfig.Insertion (Part, allow_direct_insert) — carries the
+    # ElectrodeConfig FK + the source JSON basename for downstream lookups.
+    ephys.EphysEpochConfig.Insertion.insert1(
         {
             "experiment_name": experiment_name,
             "epoch_start": epoch_start,
             "subject": subject,
             "insertion_number": 1,
             "probe_label": probe_label,
+            "probe_type": probe_type,
+            "electrode_config_name": electrode_config_name,
+            "config_file_name": f"{electrode_config_name}.json",
         },
         skip_duplicates=True,
         allow_direct_insert=True,
@@ -304,9 +325,15 @@ def make_synthetic_bno055_data(
 ):
     """Write synthetic Bno055 Clock + 4 stream binaries.
 
-    Each chunk's Clock_N.bin first sample equals the HarpSync CSV's onix_ts_start
-    for that chunk (i.e. ``1000 * n * 60 + 1 = 60000*n + 1``) so that
-    ``locate_bno055_chunk_index`` can find each chunk by its first ONIX timestamp.
+    Bno055 chunks are staggered against the HarpSync CSV cadence to mirror the
+    real-world acquisition pattern: each HarpSync window covers a 60000-tick
+    ONIX range, but Bno055 chunks are emitted on their own ~90000-tick boundary
+    (start offset 15000 ticks from the HarpSync window's start). This forces
+    OnixImuChunk.make to exercise its overlap → concat → filter logic — a
+    chunk-aligned layout would mask any breakage in that path.
+
+    Total ONIX span covered: ``[15000, 90000*n_chunks + 15000]``, which
+    contains the HarpSync windows ``[1, 60000*n_chunks + 1]``.
 
     Layout matches ``aeon/schema/ephys.py`` Bno055 readers:
     - Bno055_Clock_N.bin: uint64 ONIX timestamps
@@ -319,14 +346,15 @@ def make_synthetic_bno055_data(
     device_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(42)
 
+    bno_chunk_span = 90000  # different from HarpSync's 60000-tick window
+    bno_chunk_offset = 15000  # start later than first HarpSync window
+
     for n in range(n_chunks):
-        # Must start at exactly onix_ts_start[n] = 60000*n + 1 so
-        # locate_bno055_chunk_index finds the match.
-        chunk_ts_start = 60000 * n + 1
-        chunk_ts_end = 60000 * n + 59001
-        clocks = np.linspace(chunk_ts_start, chunk_ts_end, samples_per_chunk, dtype=np.float64).astype(
-            np.uint64
-        )
+        chunk_ts_start = bno_chunk_offset + bno_chunk_span * n
+        chunk_ts_end = bno_chunk_offset + bno_chunk_span * (n + 1) - 1
+        clocks = np.linspace(
+            chunk_ts_start, chunk_ts_end, samples_per_chunk, dtype=np.float64
+        ).astype(np.uint64)
         (device_dir / f"{device_name}_Bno055_Clock_{n}.bin").write_bytes(clocks.tobytes())
 
         for stream, n_cols in [

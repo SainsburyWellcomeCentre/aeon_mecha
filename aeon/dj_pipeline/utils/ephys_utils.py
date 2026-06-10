@@ -17,7 +17,7 @@ logger = dj.logger
 # Mapping from device directory name to probe_type
 DEVICE_PROBE_TYPE_MAP = {
     "NeuropixelsV2Beta": "neuropixels2.0_beta",
-    "NeuropixelsV2": "neuropixels2.0",
+    "NeuropixelsV2": "neuropixels2.0-multishank",
 }
 
 
@@ -157,7 +157,7 @@ def read_probe_assignments(
         key: Epoch key (experiment_name, epoch_start)
         epoch_path: Path to epoch directory on Ceph
         probe_labels: Sorted list of probe labels discovered in this epoch
-        insertion_table: The EphysEpoch.Insertion Part table class
+        insertion_table: The EphysEpochConfig.Insertion Part table class
         probe_info: Dict mapping probe_label -> probe_serial (built by caller
             from get_probe_id()). Used to translate serial-keyed JSON to
             label-keyed dict.
@@ -184,10 +184,7 @@ def read_probe_assignments(
         insertion_table
         & {"experiment_name": key["experiment_name"]}
         & f'epoch_start < "{key["epoch_start"]}"'
-    ).fetch(
-        "epoch_start", "probe_label", "subject",
-        as_dict=True, order_by="epoch_start DESC",
-    )
+    ).proj("probe_label", "subject").to_dicts(order_by="epoch_start DESC")
 
     if previous_insertions:
         # Use only entries from the most recent epoch (first row, ordered DESC)
@@ -324,50 +321,83 @@ def parse_epoch_metadata(epoch_path: Path) -> dict | None:
         return None
 
 
-def load_device_channel_map(epoch_path: Path) -> dict[int, int]:
-    """Read the probeinterface JSON from an epoch directory and return the
-    hardware channel-to-electrode mapping.
+def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
+    """Extract per-probe config-file basenames from an epoch's Metadata.yml.
 
-    The probeinterface JSON describes the full probe geometry (e.g. 5120
-    contacts for a 4-shank NP2.0). The ``device_channel_indices`` array marks
-    which contacts are actively recorded: values >= 0 give the raw binary
-    column index (0-383 for 384-channel recordings), and -1 means inactive.
+    Reads ``Devices.NeuropixelsV2e.ConfigurationA/B.ProbeInterfaceFileName``
+    and converts each entry to a (probe_label, basename) pair.
 
     Args:
-        epoch_path: Path to the epoch directory on Ceph (contains the
-            probeinterface JSON at its root level).
+        epoch_path: Path to the epoch directory containing Metadata.yml.
 
     Returns:
-        Dict mapping ``{electrode_site_id: raw_channel_idx}`` for all active
-        contacts. For example, ``{3954: 0, 114: 210, ...}`` means raw binary
-        column 0 records from electrode site 3954, and column 210 records
-        from site 114.
+        Dict mapping ``"ProbeA" | "ProbeB" | ...`` to JSON basename or None.
+        None indicates a disabled/spoofed probe (ProbeInterfaceFileName is
+        null in the metadata).
 
     Raises:
-        FileNotFoundError: If no probeinterface JSON is found.
-        ValueError: If the JSON has no ``device_channel_indices``.
+        FileNotFoundError: If Metadata.yml doesn't exist.
     """
-    # Find the probeinterface JSON — it's the only .json file at the epoch
-    # root (probe_assignments.json is also there, but we filter by content).
-    json_files = sorted(epoch_path.glob("*.json"))
-    pi_path = None
-    for jf in json_files:
-        try:
-            with open(jf) as f:
-                data = json.load(f)
-            if "probes" in data:
-                pi_path = jf
-                break
-        except (json.JSONDecodeError, OSError):
+    metadata_path = Path(epoch_path) / "Metadata.yml"
+    with open(metadata_path) as f:
+        data = json.load(f)  # JSON despite .yml extension
+
+    npx = data.get("Devices", {}).get("NeuropixelsV2e", {})
+    result: dict[str, str | None] = {}
+    for cfg_key, cfg_value in npx.items():
+        if not cfg_key.startswith("Configuration"):
             continue
+        suffix = cfg_key[len("Configuration"):]  # "A", "B", ...
+        probe_label = f"Probe{suffix}"
+        if not isinstance(cfg_value, dict):
+            result[probe_label] = None
+            continue
+        pifn = cfg_value.get("ProbeInterfaceFileName")
+        if pifn is None or pifn == "":
+            result[probe_label] = None
+        else:
+            # Path may be Windows-style; extract basename robustly
+            basename = PureWindowsPath(pifn).name or Path(pifn).name
+            result[probe_label] = basename
+    return result
 
-    if pi_path is None:
-        raise FileNotFoundError(
-            f"No probeinterface JSON found in {epoch_path}. "
-            f"Expected a JSON file with a 'probes' key."
-        )
 
-    with open(pi_path) as f:
+def resolve_epoch_probe_json(
+    raw_ephys_dir,
+    epoch_path,
+    config_file_name: str,
+) -> Path:
+    """Resolve a probeinterface JSON path by basename.
+
+    Searches ``<raw_ephys_dir>/recording_configurations/`` (production layout)
+    first, then ``<epoch_path>/`` (local-copy fallback for test/golden data).
+    Raises FileNotFoundError if neither has the file.
+    """
+    central = Path(raw_ephys_dir) / "recording_configurations" / config_file_name
+    if central.exists():
+        return central
+    epoch_local = Path(epoch_path) / config_file_name
+    if epoch_local.exists():
+        return epoch_local
+    raise FileNotFoundError(
+        f"Probe config JSON not found at {central} or {epoch_local}"
+    )
+
+
+def load_device_channel_map(json_path: Path) -> dict[int, int]:
+    """Return {electrode_site_id: raw_channel_idx} for active contacts.
+
+    Active contacts are those with ``device_channel_indices >= 0`` in the
+    probeinterface JSON (-1 marks inactive).
+
+    Args:
+        json_path: Path to the probeinterface JSON.
+
+    Raises:
+        FileNotFoundError: If json_path doesn't exist.
+        ValueError: If the JSON has no device_channel_indices or no active contacts.
+    """
+    with open(json_path) as f:
         pi_data = json.load(f)
 
     channel_map: dict[int, int] = {}
@@ -376,17 +406,17 @@ def load_device_channel_map(epoch_path: Path) -> dict[int, int]:
         dci = probe.get("device_channel_indices")
         if dci is None:
             raise ValueError(
-                f"No device_channel_indices in {pi_path}. "
+                f"No device_channel_indices in {json_path}. "
                 f"Cannot determine hardware channel mapping."
             )
-        for cid, ch_idx in zip(contact_ids, dci):
-            ch_idx = int(ch_idx)
+        for cid, ch_idx_raw in zip(contact_ids, dci, strict=False):
+            ch_idx = int(ch_idx_raw)
             if ch_idx >= 0:
                 channel_map[int(cid)] = ch_idx
 
     if not channel_map:
         raise ValueError(
-            f"No active contacts (device_channel_indices >= 0) in {pi_path}."
+            f"No active contacts (device_channel_indices >= 0) in {json_path}."
         )
 
     return channel_map
@@ -427,6 +457,93 @@ def create_probe_type(
         probe_type_table.Electrode.insert(electrode_df, ignore_extra_fields=True)
 
 
+def create_electrode_config(
+    json_path,
+    probe_type_table,
+    electrode_config_table,
+    *,
+    config_name: str | None = None,
+    probe_type_name: str | None = None,
+) -> tuple[str, str]:
+    """Populate ProbeType + ElectrodeConfig from a per-epoch probeinterface JSON.
+
+    ProbeType.Electrode gets the full contact geometry (e.g. 5120 contacts for
+    NP 2.0 multishank); ElectrodeConfig.Electrode gets the active subset where
+    ``device_channel_indices != -1`` (typically 384). Idempotent.
+
+    Defaults: ``probe_type`` from canonical-cased ``annotations["name"]`` (e.g.
+    "Neuropixels 2.0 - multishank" → "neuropixels2.0-multishank");
+    ``electrode_config_name`` from ``json_path.stem``.
+
+    Returns:
+        (probe_type, electrode_config_name).
+    """
+    import uuid
+
+    import probeinterface as pi
+
+    json_path = Path(json_path)
+    probe_group = pi.read_probeinterface(str(json_path))
+    if len(probe_group.probes) != 1:
+        raise ValueError(
+            f"Expected exactly one probe in {json_path}, got {len(probe_group.probes)}."
+        )
+    probe = probe_group.probes[0]
+
+    if probe_type_name is None:
+        raw_name = probe.annotations.get("name", "")
+        probe_type_name = raw_name.lower().replace(" - ", "-").replace(" ", "")
+    if not probe_type_name:
+        raise ValueError(f"Cannot derive probe_type from {json_path} annotations")
+
+    # Build electrode geometry dataframe for ProbeType.Electrode
+    electrode_df = probe.to_dataframe()
+    electrode_df.rename(
+        columns={
+            "contact_ids": "electrode_name",
+            "shank_ids": "shank",
+            "x": "x_coord",
+            "y": "y_coord",
+        },
+        inplace=True,
+    )
+    electrode_df["shank"] = electrode_df["shank"].apply(lambda x: x if x else 0)
+    electrode_df["probe_type"] = probe_type_name
+    electrode_df["electrode"] = electrode_df.index
+
+    # No explicit transaction — callers like EphysEpochConfig.make are already
+    # inside a populate() transaction, and DataJoint forbids nesting.
+    probe_type_table.insert1({"probe_type": probe_type_name}, skip_duplicates=True)
+    probe_type_table.Electrode.insert(
+        electrode_df, ignore_extra_fields=True, skip_duplicates=True
+    )
+
+    if config_name is None:
+        config_name = json_path.stem
+
+    dci = probe.device_channel_indices
+    active_electrode_ids = [i for i, ch in enumerate(dci) if ch != -1]
+
+    electrode_config_key = {
+        "probe_type": probe_type_name,
+        "electrode_config_name": config_name,
+    }
+    electrode_config_table.insert1(
+        {
+            **electrode_config_key,
+            "electrode_config_description": f"From {json_path.name}",
+            "electrode_config_hash": uuid.uuid4(),
+        },
+        skip_duplicates=True,
+    )
+    electrode_config_table.Electrode.insert(
+        ({**electrode_config_key, "electrode": int(e)} for e in active_electrode_ids),
+        skip_duplicates=True,
+    )
+
+    return probe_type_name, config_name
+
+
 # ---------------------------------------------------------------------------
 # ONIX/HARP timestamp resolution helpers
 # (shared by EphysSyncModel.ingest and EphysChunk.ingest_chunks in ephys.py)
@@ -438,14 +555,11 @@ def resolve_raw_dir_and_epochs(
 ) -> "tuple[Path, dict[str, datetime]] | None":
     """Return (raw_ephys_dir, {epoch_dir_name: epoch_start}) or None.
 
-    Looks up the "raw-ephys" directory and returns only epochs with confirmed
-    ephys data (``EphysEpoch.has_ephys == True``).  This correctly handles
-    both split-directory experiments (behavior on AEON3, ephys on AEONX1) and
-    same-directory experiments where "raw" and "raw-ephys" point to the same
-    path.
+    Only includes EphysEpoch rows that have a populated EphysEpochConfig
+    (i.e. probe discovery succeeded — config failures raise during populate).
     """
     from aeon.dj_pipeline import acquisition
-    from aeon.dj_pipeline.ephys import EphysEpoch
+    from aeon.dj_pipeline.ephys import EphysEpoch, EphysEpochConfig
 
     exp_key = {"experiment_name": experiment_name}
     raw_dir_result = acquisition.Experiment.get_data_directory(
@@ -456,9 +570,8 @@ def resolve_raw_dir_and_epochs(
         return None
     raw_dir = Path(raw_dir_result)
 
-    # Only include epochs where EphysEpoch confirmed ephys data exists.
     ephys_epochs = (
-        acquisition.Epoch & exp_key & (EphysEpoch & {"has_ephys": True})
+        EphysEpoch & exp_key & EphysEpochConfig
     ).proj("epoch_dir").to_dicts()
 
     epoch_dir_to_start: dict[str, datetime] = {}

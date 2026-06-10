@@ -56,7 +56,7 @@ CHANNEL_MAP_FILE = "M81_ProbeB_4Shanks_1000_to_1700_um.json"
 
 # Local directory for probe_assignments.json when Ceph is read-only.
 # The file will be written here if the epoch directory on Ceph can't be
-# written to. EphysEpoch.populate() checks this location automatically.
+# written to. EphysEpochConfig.populate() checks this location automatically.
 PROBE_ASSIGNMENTS_DIR = Path.home() / ".aeon_probe_assignments"
 
 
@@ -371,26 +371,25 @@ def create_probe_assignments(raw_ephys_dir, probe_serial, subject):
 
 
 def register_epochs(experiment_name, probe_assignments_dir=None):
-    """Ingest acquisition epochs and populate EphysEpoch."""
+    """Ingest behavior + ephys epochs and populate per-epoch probe configs."""
     from aeon.dj_pipeline import acquisition
-    from aeon.dj_pipeline.ephys import EphysEpoch
+    from aeon.dj_pipeline.ephys import EphysEpoch, EphysEpochConfig
 
-    # Epoch.ingest_epochs() automatically handles both directory types:
-    #   - "raw": scans for CameraTop CSV chunks (behavior epochs)
-    #   - "raw-ephys": enumerates dirs with NeuropixelsV2 subdirs (ephys epochs)
-    # All discovered epochs go into the same Epoch table, each tagged with
-    # its directory_type so downstream tables resolve the correct path.
-    print("Ingesting acquisition epochs...")
+    # acquisition.Epoch.ingest_epochs() now handles behavior ("raw") only.
+    # Ephys epochs live in their own peer table ephys.EphysEpoch and are
+    # discovered separately, with HARP-native epoch_start observed from each
+    # epoch's first HarpSync CSV.
+    print("Ingesting acquisition (behavior) epochs...")
     acquisition.Epoch.ingest_epochs(experiment_name)
+    behavior_epochs = len(acquisition.Epoch & {"experiment_name": experiment_name})
+    print(f"acquisition.Epoch: {behavior_epochs} behavior epoch(s)")
 
-    epoch_count = len(acquisition.Epoch & {"experiment_name": experiment_name})
-    behavior_epochs = len(acquisition.Epoch & {"experiment_name": experiment_name, "directory_type": "raw"})
-    ephys_epochs = len(
-        acquisition.Epoch & {"experiment_name": experiment_name, "directory_type": "raw-ephys"}
-    )
-    print(f"Epochs in database: {epoch_count} ({behavior_epochs} behavior, {ephys_epochs} ephys)")
+    print("Ingesting ephys epochs...")
+    EphysEpoch.ingest_epochs(experiment_name)
+    ephys_epochs = len(EphysEpoch & {"experiment_name": experiment_name})
+    print(f"EphysEpoch: {ephys_epochs} ephys epoch(s)")
 
-    if epoch_count == 0:
+    if behavior_epochs == 0 and ephys_epochs == 0:
         raise RuntimeError(
             f"No epochs found for '{experiment_name}'. Check that:\n"
             f"  - The 'raw' directory has CameraTop data (behavior)\n"
@@ -404,18 +403,19 @@ def register_epochs(experiment_name, probe_assignments_dir=None):
             )
         )
 
-    # Populate EphysEpoch. If probe_assignments.json was written to a local
-    # override directory (because Ceph is read-only), tell EphysEpoch where
-    # to find it.
+    # Populate EphysEpochConfig — probe discovery + ProbeInsertion +
+    # per-probe ElectrodeConfig from each epoch's ProbeInterface JSON.
+    # If probe_assignments.json was written to a local override directory
+    # (because Ceph is read-only), point the make() body at it.
     if probe_assignments_dir is not None:
-        EphysEpoch.probe_assignments_override_dir = probe_assignments_dir
-    print("Populating EphysEpoch...")
-    EphysEpoch.populate(display_progress=True)
+        EphysEpochConfig.probe_assignments_override_dir = probe_assignments_dir
+    print("Populating EphysEpochConfig...")
+    EphysEpochConfig.populate(display_progress=True)
 
-    # Report results
-    total = len(EphysEpoch & {"experiment_name": experiment_name})
-    with_ephys = len(EphysEpoch & {"experiment_name": experiment_name, "has_ephys": True})
-    print(f"EphysEpoch total: {total}, with ephys data: {with_ephys}")
+    # Report results — every populated EphysEpochConfig row has resolved probes
+    # (config failures raise rather than insert sentinel rows).
+    total = len(EphysEpochConfig & {"experiment_name": experiment_name})
+    print(f"EphysEpochConfig: {total} row(s)")
 
 
 def ingest_sync_models(experiment_name):
@@ -445,7 +445,7 @@ def ingest_chunks(experiment_name):
     # EphysChunk.ingest_chunks() is a CLASS METHOD on a Manual table (not an
     # Imported table with .populate()). It scans the raw data directory for
     # all *_AmplifierData*.bin files, resolves each file's ProbeInsertion via
-    # the EphysEpoch.Insertion table, and creates one chunk entry per file.
+    # the EphysEpochConfig.Insertion table, and creates one chunk entry per file.
     # Chunk start/end times are converted from ONIX timestamps to HARP clock
     # using EphysSyncModel entries (which must be ingested first).
     #
@@ -469,6 +469,7 @@ def verify_registration(experiment_name):
     from aeon.dj_pipeline.ephys import (
         EphysChunk,
         EphysEpoch,
+        EphysEpochConfig,
         Probe,
         ProbeInsertion,
     )
@@ -476,9 +477,13 @@ def verify_registration(experiment_name):
     print(f"Experiment: {experiment_name}")
 
     # Epochs
-    epoch_count = len(acquisition.Epoch & {"experiment_name": experiment_name})
-    ephys_epoch_count = len(EphysEpoch & {"experiment_name": experiment_name, "has_ephys": True})
-    print(f"Epochs: {epoch_count} total, {ephys_epoch_count} with ephys data")
+    behavior_count = len(acquisition.Epoch & {"experiment_name": experiment_name})
+    ephys_epoch_count = len(EphysEpoch & {"experiment_name": experiment_name})
+    ephys_populated = len(EphysEpochConfig & {"experiment_name": experiment_name})
+    print(
+        f"Epochs: {behavior_count} behavior, {ephys_epoch_count} ephys "
+        f"({ephys_populated} configured)"
+    )
 
     # Probe insertions
     insertions = (ProbeInsertion & {"experiment_name": experiment_name}).to_dicts()

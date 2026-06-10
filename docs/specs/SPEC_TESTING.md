@@ -1,808 +1,259 @@
-# Testing Specification for streams_maker & load_metadata
+# Testing Specification
 
-Testing strategy for the Pydantic-based metadata loading and DataJoint table generation pipeline.
-
-**Last Updated:** 2026-02-19
+How tests are organized, what they cover, how to run them, and how to add new ones.
 
 ---
 
-## Architecture
+## Test tiers
 
-**Three tiers:**
+Three tiers, distinguished by what they need and what they cover:
 
-| Tier | Scope | Database | Data | CI |
-|------|-------|----------|------|-----|
-| Unit | Pure functions | None | Synthetic dicts + sample fixtures | Yes |
-| Integration | DB operations, `populate()` | MySQL (testcontainers) | Synthetic Pydantic OR golden datasets | Yes |
-| Specialized | GPU/high-RAM `populate()` | MySQL (testcontainers) | Golden datasets | No |
+| Tier | Database | Data | Marker | Runs in CI? |
+|---|---|---|---|---|
+| Unit | None | Synthetic / sample fixtures | `@pytest.mark.unit` | All OSes |
+| Integration | MySQL (testcontainers) | Synthetic or golden datasets | `@pytest.mark.integration` | Linux only |
+| Specialized | MySQL | Golden datasets + GPU | `@pytest.mark.specialized` | No (manual) |
 
-**Key patterns:**
-- Golden datasets (real data, strict assertions) for integration/specialized tests
-- Testcontainers (zero-config MySQL)
-- Auto-marking (no manual `@pytest.mark` needed)
-- Graceful skipping when data unavailable
+Markers are declared in `pyproject.toml` under `[tool.pytest.ini_options]`. Tests using integration fixtures (`mysql_container`, `dj_config_integration`, `pipeline_integration`) are **auto-marked** as integration by a `pytest_collection_modifyitems` hook in `tests/conftest.py` — no manual marker needed for those.
 
 ---
 
-## Test Classification
-
-### What makes a test "integration"?
-
-Integration tests verify that components work together correctly. They require external systems (database, file system) and can use different data sources:
-
-| Test Type | Database | Data Source | What it tests |
-|-----------|----------|-------------|---------------|
-| Unit | No | Synthetic/fixtures | Pure functions, logic |
-| Integration | Yes | Synthetic OR golden datasets | DB operations, `populate()` |
-| Specialized | Yes | Golden datasets | GPU/high-RAM operations |
-
-**Integration tests have two sub-categories:**
-
-1. **Schema/catalog integration** - Tests DB operations with synthetic data
-   - Example: `insert_stream_types()`, FK constraint handling
-   - Data: Synthetic Pydantic fixtures
-   - No file I/O
-
-2. **Data ingestion integration** - Tests `populate()` with real files
-   - Example: `acquisition.Chunk.populate()`, `streams.Video.populate()`
-   - Data: Golden datasets (real experiment data)
-   - Reads Harp binary, video, CSV files
-
-### Current test coverage
-
-| Category | What it tests | Data Source | Status |
-|----------|--------------|-------------|--------|
-| Unit tests | Pure functions | Synthetic | ✅ Implemented |
-| Integration (schema) | `insert_stream_types()`, FK handling | Synthetic Pydantic | ✅ Implemented |
-| Integration (ingestion) | `EpochConfig.make()`, `Chunk.populate()`, `streams.*.populate()` | Golden datasets | 🔄 In Progress |
-| Specialized | SLEAP/DLC tracking | Golden datasets | ❌ Needs GPU |
-
-**Note:** Current tests in `test_load_metadata_integration.py` test schema/catalog operations with synthetic data. Golden dataset tests in `test_full_ingestion.py` test full `populate()` flow.
-
----
-
-## Data Types for Testing
-
-### Sample Fixtures (in git)
-
-Small configuration files checked into `tests/fixtures/`:
-
-```
-tests/fixtures/
-├── metadata/
-│   └── ForagingABC_Metadata.json   # ~15KB sample metadata config
-└── manifests/                       # File manifests for golden datasets
-```
-
-**Characteristics:**
-- Small enough for git (< 1MB typically)
-- Configuration samples, schema examples, manifests
-- Used for unit and integration tests of parsing logic
-- Can be modified when format changes
-
-### Golden Datasets (external storage)
-
-**A golden dataset is a frozen, representative sample of real production data designated for testing.**
-
-Unlike synthetic test data or sample fixtures, golden datasets:
-
-- Come from actual experiment sessions with known, validated outputs
-- Are **never modified** once designated - any data issues are documented, not fixed
-- Enable **strict assertions** (exact expected values, not ranges or approximations)
-- Are **versioned by session** (e.g., `exp02-aeon3/2024.05.15`) so tests are reproducible
-- Are **large** (GBs) - video files, Harp binary streams, pose estimation outputs
-- Stored outside git (S3, NFS, or similar)
-- Tests gracefully skip when data is unavailable
-
-**Why golden datasets instead of synthetic data for `populate()` tests?**
-- DataJoint `populate()` reads real files with complex formats (Harp binary, video, CSV)
-- Mocking file I/O at this scale is fragile and misleading
-- Real data catches edge cases synthetic data misses
-
-### Comparison
-
-| Aspect | Sample Fixtures | Golden Datasets |
-|--------|-----------------|-----------------|
-| Size | KB-MB | GB+ |
-| Storage | In git (`tests/fixtures/`) | External (S3, NFS) |
-| Purpose | Test parsing, config validation | Test full `populate()` flow |
-| Mutability | Can be updated | Never modified |
-| CI availability | Always | Optional / scheduled |
-
----
-
-## Design Decisions
-
-### Why testcontainers?
-- Zero configuration - no "start MySQL first" instructions
-- Isolated - each test session gets fresh database
-- CI-friendly - works in GitHub Actions without setup
-- Same code works locally and in CI
-
-### Why real Pydantic classes + real @data_reader?
-
-| Package | Stability | Test Dependency? | Usage |
-|---------|-----------|------------------|-------|
-| `swc-aeon` (aeon_api) | Stable | Yes (existing) | `@data_reader`, `BaseSchema`, Reader classes, Device classes |
-| `swc-aeon-rigs` (aeon_swc_rigs) | Stable | **No** | Pydantic config classes (different from `swc.aeon.schema`) |
-| `aeon_exp_foragingABC` | **Volatile** | **No** | Experiment-specific, changes frequently |
-
-**Rationale:**
-- Use `swc.aeon.schema` classes (from `swc-aeon`) which have `_resolve_pattern_prefix()` required by `@data_reader`
-- Use real `@data_reader` decorator - no mocking needed, tests actual production patterns
-- Reader classes (`Video`, `Harp`, `Csv`) are stable and don't do file I/O until `load()` is called
-- Test fixtures mirror production code (e.g., `aeon_exp_foragingABC/rig.py`)
-
-**Important:** Do NOT use `swc.aeon.rigs` classes for `@data_reader` tests - they lack `_resolve_pattern_prefix()`.
-
-### Why session-scoped DB fixtures?
-- Creating/dropping schemas is expensive
-- Integration tests build on each other (insert StreamType → insert DeviceType.Stream)
-- Matches production flow where tables persist across operations
-
----
-
-## Directory Structure
+## Where tests live
 
 ```
 tests/
-├── conftest.py                           # Root: DJ env vars, DJ mocking, testcontainers, auto-marking
+├── conftest.py                                       # testcontainers MySQL, auto-marking
+├── fixtures/
+│   ├── metadata/                                     # sample Metadata.json files (in git)
+│   └── ephys/                                        # ProbeInterface JSON, synthetic factories
 ├── dj_pipeline/
-│   ├── conftest.py                       # Golden dataset registry, DB fixtures, integration setup
-│   ├── test_full_ingestion.py            # Golden dataset integration tests
+│   ├── conftest.py                                   # GOLDEN_DATASETS registry, golden-data fixtures
+│   ├── test_full_ingestion.py                        # behavior golden dataset
+│   ├── test_ephys_ingestion.py                       # ephys golden dataset
+│   ├── test_ephys_synthetic_integration.py           # ephys schema-invariant tests (no golden data)
+│   ├── test_onix_imu_pipeline_integration.py         # synthetic IMU
+│   ├── test_acquisition_environment_integration.py
 │   └── utils/
-│       ├── conftest.py                   # Test Rig fixtures (real @data_reader)
-│       ├── test_load_metadata_unit.py    # Unit tests (no DB)
-│       └── test_load_metadata_integration.py  # Schema integration tests (DB)
-└── fixtures/
-    └── metadata/                         # Sample Metadata.json files
+│       ├── conftest.py                               # test Rig fixtures (real @data_reader)
+│       ├── test_*_unit.py
+│       └── test_*_integration.py
+└── schema/
+    └── test_ephys_reader_unit.py
 ```
 
 ---
 
-## Test Categories
+## Test infrastructure
 
-### 1. Unit Tests (`test_load_metadata_unit.py`)
+**Testcontainers MySQL.** `tests/conftest.py:mysql_container` spins up a fresh MySQL container per test session and exports its host/port/user/pass as env vars. The `dj_config_integration` fixture (in `tests/dj_pipeline/conftest.py`) reads those and configures DataJoint with `TEST_DB_PREFIX = "test_aeon_"`. Zero local setup; works the same in CI.
 
-Pure function tests - no database, no external packages required:
+**Session-scoped DB fixtures.** Test schemas are expensive to create/drop, and most integration tests build on each other (insert StreamType → insert DeviceType.Stream → ...). The schema lives for the whole session and is dropped at teardown via `_drop_test_schemas()` (which guards against unsafe prefixes — see `tests/dj_pipeline/test_conftest_unit.py`).
 
-| Function | Test Cases |
-|----------|------------|
-| `to_pascal_case()` | `"video"` → `"Video"`, `"beam_break"` → `"BeamBreak"` |
-| `flatten_rig_devices()` | Walk typed Rig → flat `{device_name: config}` dict (only Device classes with `@data_reader`) |
-| `get_device_mapper_from_rig()` | Walk typed Rig → device_type/serial mappings via `type(device).__name__` |
-| `extract_active_regions()` | Extract ActiveRegion data from rig config |
-
-**Example:**
-```python
-@pytest.mark.unit
-class TestToPascalCase:
-    def test_single_word(self):
-        assert to_pascal_case("video") == "Video"
-
-    def test_two_words(self):
-        assert to_pascal_case("beam_break") == "BeamBreak"
-
-    def test_three_words(self):
-        assert to_pascal_case("weight_raw_data") == "WeightRawData"
-
-    def test_already_pascal(self):
-        assert to_pascal_case("Video") == "Video"
-
-
-@pytest.mark.unit
-class TestFlattenRigDevices:
-    def test_extracts_cameras(self, test_rig):
-        result = flatten_rig_devices(test_rig)
-        assert "CameraTop" in result
-        assert result["CameraTop"]["serialNumber"] == "21053810"
-
-    def test_extracts_feeders(self, test_rig):
-        result = flatten_rig_devices(test_rig)
-        assert "Feeder1" in result
-        assert result["Feeder1"]["portName"] == "COM3"
-```
-
-### 2. Integration Tests (`test_load_metadata_integration.py`)
-
-Database operations using real Pydantic classes with real `@data_reader` decorator:
-
-| Function | Test Cases |
-|----------|------------|
-| `get_data_reader_methods()` | Extract @data_reader methods from Device class |
-| `get_device_info()` | Extract device/stream info from test Rig |
-| `get_stream_entries()` | Generate StreamType entries from test Rig |
-| `get_device_mapper_from_rig()` | Extract device type and serial number mappings |
-| `insert_stream_types()` | Insert into StreamType, handle duplicates |
-| `insert_device_types()` | Insert DeviceType, DeviceType.Stream, Device; FK handling |
-
-**Example:**
-```python
-@pytest.mark.integration
-class TestInsertStreamTypes:
-    def test_inserts_stream_types(self, pipeline_integration, test_rig):
-        """Verify StreamType entries are inserted from Rig."""
-        streams = dj.VirtualModule("streams", streams_maker.schema_name)
-        initial_count = len(streams.StreamType())
-
-        insert_stream_types(test_rig)
-
-        assert len(streams.StreamType()) > initial_count
-
-    def test_handles_duplicates(self, pipeline_integration, test_rig):
-        """Verify duplicate insertions are handled gracefully (skip_duplicates)."""
-        streams = dj.VirtualModule("streams", streams_maker.schema_name)
-
-        insert_stream_types(test_rig)
-        count_after_first = len(streams.StreamType())
-
-        # Second call should not raise or create duplicates
-        insert_stream_types(test_rig)
-
-        assert len(streams.StreamType()) == count_after_first
-
-
-@pytest.mark.integration
-class TestInsertDeviceTypesFKHandling:
-    def test_fk_constraint_triggers_stream_type_insert(self, pipeline_integration, test_rig, tmp_path):
-        """Verify FK failure triggers insert_stream_types()."""
-        streams = dj.VirtualModule("streams", streams_maker.schema_name)
-
-        # Ensure StreamType is empty to force FK failure
-        # (DeviceType.Stream references StreamType)
-
-        # This should succeed by calling insert_stream_types() on FK failure
-        metadata_filepath = tmp_path / "Metadata.json"
-        insert_device_types(test_rig, metadata_filepath)
-
-        # Verify both StreamType and DeviceType.Stream are populated
-        assert len(streams.StreamType()) > 0
-        assert len(streams.DeviceType.Stream()) > 0
-
-    def test_non_fk_errors_are_reraised(self, pipeline_integration, test_rig, tmp_path, monkeypatch):
-        """Verify non-FK DataJointErrors are re-raised."""
-        streams = dj.VirtualModule("streams", streams_maker.schema_name)
-
-        def mock_insert(entries):
-            raise dj.DataJointError("Connection refused")
-
-        monkeypatch.setattr(streams.DeviceType.Stream, "insert", mock_insert)
-
-        with pytest.raises(dj.DataJointError, match="Connection refused"):
-            insert_device_types(test_rig, tmp_path / "Metadata.json")
-```
+**Real Pydantic + real `@data_reader`.** The test Rig classes in `tests/dj_pipeline/utils/conftest.py` use the actual `swc-aeon` base classes (`BaseSchema`, `SpinnakerCamera`, `UndergroundFeeder`) and the real `@data_reader` decorator — no mocking. Reader classes do no I/O until `load()` is called, so unit tests stay fast.
 
 ---
 
-## Key Fixtures
+## Sample fixtures vs golden datasets
 
-### Testcontainers MySQL
+| | Sample fixtures | Golden datasets |
+|---|---|---|
+| Where | In git (`tests/fixtures/`) | On disk, configured per machine |
+| Size | < 2 MB | 100+ GB |
+| Purpose | Test parsing, config validation, schema invariants | Test full `populate()` flow against real files |
+| Mutability | Edit freely | Never modified — issues get documented |
+| Available in CI | Always | No (graceful skip) |
+
+Golden datasets enable **exact-equality assertions** (e.g. expected unit count, expected spike count). Synthetic data tests structural correctness; golden data tests numerical correctness.
+
+---
+
+## Golden dataset registry
+
+All golden datasets are configured in one dict in `tests/dj_pipeline/conftest.py`:
 
 ```python
-# tests/conftest.py
-
-import os
-import pytest
-
-
-@pytest.fixture(scope="session")
-def mysql_container():
-    """Auto-provision MySQL via testcontainers."""
-    from testcontainers.mysql import MySqlContainer
-
-    container = MySqlContainer(
-        image="mysql:8.0",
-        username="root",
-        password="test_password",
-        dbname="test_db",
-    )
-    container.start()
-
-    # Update environment variables with container details
-    host = container.get_container_host_ip()
-    port = container.get_exposed_port(3306)
-    os.environ["DJ_HOST"] = host
-    os.environ["DJ_PORT"] = str(port)
-    os.environ["DJ_USER"] = "root"
-    os.environ["DJ_PASS"] = "test_password"
-
-    yield container
-    container.stop()
-```
-
-The `dj_config_integration` fixture (in `tests/dj_pipeline/conftest.py`) reads from these env vars and configures DataJoint:
-
-```python
-@pytest.fixture(scope="session")
-def dj_config_integration(mysql_container):
-    """Configure DataJoint to use testcontainers MySQL."""
-    import datajoint as dj
-
-    dj.config.safemode = False
-    dj.config.database.host = os.environ.get("DJ_HOST", "localhost")
-    dj.config.database.port = int(os.environ.get("DJ_PORT", "3306"))
-    dj.config.database.user = os.environ.get("DJ_USER", "root")
-    dj.config.database.password = os.environ.get("DJ_PASS", "test_password")
-    dj.config.database.database_prefix = TEST_DB_PREFIX
-    return {"database_prefix": TEST_DB_PREFIX}
-```
-
-### Test Rig with Real @data_reader
-
-We use **real `@data_reader` decorator** and **real Reader classes** from `swc-aeon` - no mocking needed.
-
-```python
-# tests/dj_pipeline/utils/conftest.py
-
-import pytest
-
-# Real Reader classes from swc-aeon (no file I/O until load() is called)
-from swc.aeon.io.reader import Csv, Harp, Video
-
-# Real Pydantic base classes from swc-aeon (has _resolve_pattern_prefix)
-from swc.aeon.schema import BaseSchema, data_reader
-from swc.aeon.schema.foraging import UndergroundFeeder
-from swc.aeon.schema.video import SpinnakerCamera
-
-
-class TestCamera(SpinnakerCamera):
-    """Test camera using real @data_reader decorator."""
-
-    @data_reader
-    def video(self, pattern) -> Video:
-        return Video(f"{pattern}")
-
-    @data_reader
-    def position(self, pattern) -> Harp:
-        return Harp(f"{pattern}_200", columns=["x", "y"])
-
-
-class TestFeeder(UndergroundFeeder):
-    """Test feeder using real @data_reader decorator."""
-
-    @data_reader
-    def beam_break(self, pattern) -> Harp:
-        return Harp(f"{pattern}_32", columns=["state"])
-
-    @data_reader
-    def encoder(self, pattern) -> Csv:
-        return Csv(f"{pattern}_90", columns=["angle", "intensity"])
-
-
-class TestRig(BaseSchema):
-    """Test Rig using real Pydantic base classes with real @data_reader."""
-
-    cameras: dict[str, TestCamera] = {}
-    feeders: dict[str, TestFeeder] = {}
-
-
-@pytest.fixture
-def test_rig():
-    """Create a test Rig with real Pydantic structure and real @data_reader."""
-    return TestRig(
-        cameras={
-            "CameraTop": TestCamera(serial_number="21053810"),
-            "CameraSide": TestCamera(serial_number="21053811"),
-        },
-        feeders={
-            "Feeder1": TestFeeder(port_name="COM3"),
-            "Feeder2": TestFeeder(port_name="COM4"),
-        },
-    )
-
-
-```
-
-**Note:** Import from `swc.aeon.schema` (not `swc.aeon.rigs`) - these classes have `_resolve_pattern_prefix()` required by `@data_reader`.
-
-### Auto-Marking Hook
-
-```python
-# tests/conftest.py
-
-def pytest_collection_modifyitems(items):
-    """Auto-mark tests that use integration fixtures."""
-    integration_fixtures = {"mysql_container", "pipeline_integration", "dj_config_integration"}
-    for item in items:
-        if integration_fixtures & set(item.fixturenames):
-            item.add_marker(pytest.mark.integration)
-```
-
----
-
-## Pytest Markers
-
-Register in `pyproject.toml`:
-
-```toml
-[tool.pytest.ini_options]
-markers = [
-    "unit: Unit tests (no database, synthetic data)",
-    "integration: Integration tests (DB via testcontainers, synthetic or golden datasets)",
-    "specialized: Specialized tests (GPU/high-RAM, golden datasets)",
-]
-testpaths = ["tests"]
-```
-
----
-
-## CI Strategy
-
-### Trigger Matrix
-
-| Event | Unit Tests | Integration Tests (Schema) | Integration Tests (Golden) |
-|-------|------------|---------------------------|---------------------------|
-| PR to `datajoint_pipeline` | Yes | Yes | Skip (no data) |
-| `workflow_dispatch` | Yes | Yes | Skip (no data) |
-
-### GitHub Actions Workflow
-
-Two parallel jobs using `uv` (not `pip`):
-
-```yaml
-name: test_dj_pipeline
-
-on:
-  pull_request:
-    branches: [datajoint_pipeline]
-    types: [opened, reopened, synchronize]
-  workflow_dispatch:
-
-jobs:
-  unit-tests:
-    name: Unit tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
-    strategy:
-      matrix:
-        python-version: ["3.11"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv python install ${{ matrix.python-version }}
-      - run: uv sync --extra test
-      - run: uv run pytest -m unit --tb=short -q
-
-  integration-tests:
-    name: Integration tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
-    strategy:
-      matrix:
-        python-version: ["3.11"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - run: uv python install ${{ matrix.python-version }}
-      - run: uv sync --extra test
-      - run: uv run pytest -m integration --tb=short -q
-```
-
-**Note:** Testcontainers automatically handles MySQL provisioning - no `services:` block needed. Golden dataset tests skip automatically when data is unavailable.
-
----
-
-## Commands
-
-```bash
-# Unit tests only (fast, no database)
-uv run pytest -m unit -v
-
-# Integration tests only (auto-provisions MySQL)
-uv run pytest -m integration -v
-
-# All tests
-uv run pytest -v
-
-# Specific test file
-uv run pytest tests/dj_pipeline/utils/test_load_metadata_unit.py -v
-
-# With coverage
-uv run pytest --cov=aeon.dj_pipeline.utils --cov-report=html
-
-# Debug single test
-uv run pytest tests/dj_pipeline/utils/test_load_metadata_unit.py::TestToPascalCase -v --pdb
-```
-
----
-
-## Implementation Plan
-
-### Phase 2.1: Setup & Unit Tests
-
-1. Add `testcontainers[mysql]` to test dependencies (swc-aeon is already a main dependency)
-2. Create `tests/dj_pipeline/utils/conftest.py` with fixtures
-3. Create `tests/dj_pipeline/utils/test_load_metadata_unit.py`:
-   - `TestToPascalCase`
-   - `TestFlattenRigDevices`
-   - `TestInferDeviceTypeFromRig`
-   - `TestExtractDeviceMapperFromRig`
-   - `TestExtractActiveRegions`
-
-### Phase 2.2: Integration Tests
-
-1. Update root `tests/conftest.py` with testcontainers MySQL fixture
-2. Create `tests/dj_pipeline/utils/test_load_metadata_integration.py`:
-   - `TestExtractStreamTypesFromDevice`
-   - `TestGetDeviceInfo`
-   - `TestGetStreamEntries`
-   - `TestInsertStreamTypes`
-   - `TestInsertDeviceTypes`
-   - `TestInsertDeviceTypesFKHandling`
-
-### Phase 2.3: CI Integration
-
-1. Add pytest markers to `pyproject.toml`
-2. Update GitHub Actions workflow
-3. Verify tests pass in CI
-
----
-
-## Test Coverage Targets
-
-| Module | Target | Priority |
-|--------|--------|----------|
-| `load_metadata.py` | 80% | High |
-| `streams_maker.py` | 60% | Medium |
-| FK handling logic | 100% | Critical |
-
----
-
-## Dependencies
-
-Add to `pyproject.toml` under `[project.optional-dependencies]`:
-
-```toml
-[project.optional-dependencies]
-test = [
-    "pytest>=7.0",
-    "pytest-cov",
-    "testcontainers[mysql]>=3.7",
-]
-```
-
-Install with: `uv sync --extra test`
-
-**Note:** `swc-aeon` (aeon_api) is already a main dependency and provides `@data_reader`, `BaseSchema`, device classes, and Reader classes needed for all tests.
-
----
-
-## Implementation Notes
-
-### `get_data_reader_methods()` closure handling
-
-The `@data_reader` decorator wraps the original function in a closure. The `get_data_reader_methods()` function checks both the direct signature AND closure contents to detect @data_reader methods:
-
-```python
-# After decoration, cached_property.func is the wrapper
-# The original function with (self, pattern) signature is in func.__closure__
-closure = getattr(func, '__closure__', None)
-if closure:
-    for cell in closure:
-        orig_func = cell.cell_contents
-        if callable(orig_func):
-            orig_sig = inspect.signature(orig_func)
-            orig_params = list(orig_sig.parameters.keys())
-            if len(orig_params) == 2 and orig_params[1] == 'pattern':
-                # Found @data_reader method
-                break
-```
-
----
-
-## Golden Dataset Integration Tests
-
-This section details integration tests that validate the full ingestion pipeline using golden datasets.
-
-### Overview
-
-Golden dataset tests validate:
-1. `EpochConfig.make()` - Parse real Metadata.json with experiment-specific Pydantic schema
-2. `Chunk.ingest_chunks()` - Detect and ingest chunk files from filesystem
-3. `DeviceDataStream.make()` - Load ALL stream types with `populate(max_calls=10)`
-
-### Golden Dataset Registry
-
-Datasets are configured via a plain dict registry to support multiple datasets:
-
-```python
-# tests/dj_pipeline/conftest.py
-
-from pathlib import Path
-
 GOLDEN_DATASETS = {
-    "foraging_abc_2025_11_18": {
-        "experiment_name": "abcBehav0-aeon3",
-        "experiment_path": "AEON3/abcBehav0",
-        "epoch_dir": "2025-11-18T10-13-15",
-        "devices_schema": "swc.aeon.exp.foragingABC.experiment:Experiment",
-        "arena_name": "arena-aeon3",
-        "lab": "SWC",
-        "location": "room-0",
-        "experiment_type": "foraging",
-        "required_files": [
-            "Metadata.json",
-            "CameraTop/CameraTop_2025-11-18T10-00-00.csv",
-            "Feeder1/Feeder1_32_2025-11-18T10-00-00.bin",
-        ],
-        "expected_camera_count": 13,
-        "expected_feeder_count": 6,
+    "<dataset_key>": {
+        "experiment_name": ...,
+        "experiment_path": ...,
+        "epoch_dir": ...,
+        "required_files": [...],   # tests skip if any of these are missing
+        # ...dataset-specific keys (expected counts, probe info, etc.)
     },
-    # Future datasets can be added here
 }
-
 DEFAULT_GOLDEN_DATA_ROOT = Path.home() / "sciops-data/project_aeon/aeon/data"
 ```
 
-### Path Configuration
+Override the root with the `DJ_REPOSITORY_CONFIG` env var (used on HPC). The `_check_golden_data` helper validates `required_files` and calls `pytest.skip(...)` if anything's missing — so tests just don't run when the data isn't there.
 
-Golden dataset tests use aeon_mecha's existing `repository_config` pattern:
+### Adding a new golden dataset
 
-```python
-# In fixture - override repository_config on the pipeline module
-import aeon.dj_pipeline as pipeline
-pipeline.repository_config = {"ceph_aeon": str(golden_data_root)}
+1. `rsync` the data into `~/sciops-data/project_aeon/aeon/data/...` (or wherever your `DEFAULT_GOLDEN_DATA_ROOT` points).
+2. Add an entry to `GOLDEN_DATASETS` with `required_files` and any expected-value constants.
+3. Add a fixture chain in `tests/dj_pipeline/conftest.py` modeled on the existing ones (`*_test_experiment` → `*_test_epochs` → ...).
+4. Add a test module that consumes those fixtures and asserts against the expected constants.
 
-# In production code (unchanged)
-from aeon.dj_pipeline.utils.paths import get_repository_path
-repo_path = get_repository_path("ceph_aeon")
+---
+
+## Behavior golden datasets
+
+Tests parametrize the `golden_dataset_config` fixture over both registered
+datasets — every behavior test runs once per dataset:
+
+| Key | Experiment | Duration | On-disk profile | Pair |
+|---|---|---|---|---|
+| `foraging_abc_2025_11_18` | `abcBehav0-aeon3` | ~1 hour | Full 13 cameras + 6 feeders writing data; rich stream samples (`FeederEncoder` 848k, `CameraPosition` 12k) | Behavior only |
+| `foraging_abc_2026_05_11` | `abcGolden01-aeon3` | ~2 hours | 5 cameras + 4 feeders writing data; sparser samples; paired with the ephys golden | Paired with `foraging_abc_ephys_2026_05_11` |
+
+**Locations** (relative to `DEFAULT_GOLDEN_DATA_ROOT`):
+- `<data-root>/raw/AEON3/abcBehav0/2025-11-18T10-13-15/`
+- `<data-root>/raw/AEON3/abcGolden01/2026-05-11T075134Z/`
+
+**Test modules:** `tests/dj_pipeline/test_full_ingestion.py`,
+`tests/dj_pipeline/test_acquisition_environment_integration.py`
+
+**Reference device:** `CameraTop` by default; `abcGolden01-aeon3` overrides
+to `CameraNest` via `_ref_device_mapping` in `acquisition.py` (that rig has
+no `CameraTop` on disk).
+
+**Mixed file-name formats** in abcGolden01 — CSVs use `T07-00-00`, newer
+bins use `T070000Z`. Both parse via `swc.aeon.io.api.chunk_key`.
+
+**Covers:**
+- `Epoch.ingest_epochs()` — filesystem detection of epoch directories
+- `EpochConfig.populate()` — Metadata.json parsing via foragingABC Pydantic schema
+- `Chunk.ingest_chunks()` — chunk file detection
+- All `DeviceDataStream` tables — `populate(max_calls=10)` per stream
+- The 3 `acquisition.Environment*` tables (`EnvironmentState`, `MessageLog`, `LightEvents`)
+- `TestStreamPopulationInventory` — diagnostic inventory of which streams populate
+
+**Run:**
+```bash
+uv run pytest -m integration tests/dj_pipeline/test_full_ingestion.py -v
 ```
 
-This maintains consistency with how paths are configured via environment variables for production deployments.
+**Required deps:** `uv sync --group test-golden` (installs `swc-aeon-rigs-foragingabc`).
+Without it, the test module skips at import time via `pytest.importorskip`.
 
-### Key Fixtures
+---
 
-| Fixture | Scope | Purpose |
-|---------|-------|---------|
-| `golden_dataset_config` | session | Active dataset configuration from registry |
-| `dj_config_with_golden_data` | session | Configure `repository_config` for golden data |
-| `require_golden_data` | session | Skip tests if data unavailable, validate files |
-| `full_pipeline` | session | All schema modules (lab, subject, acquisition, streams) + catalog + table creation |
-| `test_experiment` | session | Insert experiment, arena, directories from config |
-| `test_epochs` | session | Ingest epochs using `Epoch.ingest_epochs()` |
+## Ephys golden dataset
 
-### Test Classes
+**Active dataset:** `foraging_abc_ephys_2026_05_11` — 35 min of `abcGolden01-aeonx1`, NeuropixelsV2 ProbeB, 8-channel sorting subset on shank 3.
 
-| Class | Tests | Description |
-|-------|-------|-------------|
-| `TestStep1CatalogPopulation` | 3 | Verify StreamType, DeviceType, DeviceType.Stream populated |
-| `TestStep2TableCreation` | 2 | Verify ExperimentDevice and DeviceDataStream tables exist |
-| `TestEpochIngestion` | 2 | `Epoch.ingest_epochs()` filesystem detection |
-| `TestEpochConfigMake` | 3 | `EpochConfig.populate()` with metadata assertions |
-| `TestChunkIngestion` | 2 | `Chunk.ingest_chunks()` file detection |
-| `TestStreamDataIngestion` | 3 | ALL streams with `populate(max_calls=10)` |
+**Location:** `~/sciops-data/project_aeon/aeon/data/raw/AEONX1/abcGolden01/2026-05-11T07-50-11/`
 
-### Stream Testing Strategy
+**Test modules:**
+- `tests/dj_pipeline/test_ephys_ingestion.py` — golden-data tests
+- `tests/dj_pipeline/test_ephys_synthetic_integration.py` — schema invariants (no golden data)
 
-**Key insight:** Test ALL stream types, but limit entries per stream.
+**Covers (golden):**
+- `EphysEpoch.ingest_epochs()` + `EphysEpochConfig.populate()` — probe discovery
+- `EphysSyncModel.ingest()` — HARP↔ONIX regression per HarpSync CSV
+- `EphysChunk.ingest_chunks()` — chunk file detection + per-epoch-probe config resolution
+- `EphysBlockInfo.populate()` — block-level channel mapping (multi-config validation enforced)
+- `OnixImuChunk.populate()` — Bno055 IMU streams (overlap-based chunk selection)
+- `PreProcessing.populate()` — bandpass + CAR
+- `PostProcessing` / `SortedSpikes` / `SyncedSpikes` (when `golden_test_sorting/` is present — currently skipped on most setups)
 
-```python
-POPULATE_LIMIT = 10
+**Probe-electrode-config JSON fixture:** `tests/fixtures/ephys/M81_ProbeB_4Shanks_1000_to_1700_um.json` — copy of the per-epoch ProbeInterface JSON, source of truth for the probe geometry (5120 contacts) and active electrode subset (384). Used by `create_electrode_config` in tests.
 
-def test_all_stream_tables_populate(self, ...):
-    """Verify ALL stream tables can populate with limit."""
-    stream_tables = [...]  # All DeviceDataStream tables
+### HPC setup
 
-    for table in stream_tables:
-        table.populate(max_calls=POPULATE_LIMIT, display_progress=False)
+The full ephys suite runs on the HPC against `/ceph` data. From `aeon-hpc`:
 
-    # Assert at least some tables have data
-    populated = [t for t in stream_tables if len(t) > 0]
-    assert len(populated) > 0
-```
-
-This validates:
-- Every `DeviceDataStream` table can be created
-- Every reader can parse its file format
-- FK relationships are correct
-
-Without:
-- Ingesting gigabytes of data
-- Long test execution times
-
-### Directory Structure
-
-```
-tests/
-├── conftest.py                              # Root: testcontainers, markers
-├── dj_pipeline/
-│   ├── conftest.py                          # Golden dataset registry + DB fixtures
-│   ├── test_full_ingestion.py               # Golden dataset integration tests
-│   └── utils/
-│       ├── conftest.py                      # Test Rig fixtures
-│       ├── test_load_metadata_unit.py       # Unit tests
-│       └── test_load_metadata_integration.py # Schema integration tests
-└── fixtures/
-    └── metadata/                            # Sample fixtures (in git)
-```
-
-### Adding New Golden Datasets
-
-1. **Copy data** to golden data root:
+1. **Get onto a compute node** (Ceph isn't visible from the gateway):
    ```bash
-   rsync -avP aeon-hpc:/ceph/aeon/aeon/data/raw/EXPERIMENT/epoch/ \
-       ~/sciops-data/project_aeon/aeon/data/raw/EXPERIMENT/epoch/
+   srun --cpus-per-task=2 --mem=8G --time=2:00:00 --pty bash
+   ```
+2. **Get the golden data** (rsync from Ceph to your home; or symlink if you trust the path):
+   ```bash
+   rsync -avP /ceph/aeon/aeon/data/golden_tests/AEONX1/abcGolden01/ \
+       ~/sciops-data/project_aeon/aeon/data/raw/AEONX1/abcGolden01/
+   ```
+3. **Set test DB prefix** to your username so tests don't collide with others:
+   ```bash
+   export TEST_DB_PREFIX=u_${USER}_golden_tests_
+   ```
+4. **Run:**
+   ```bash
+   module load uv
+   uv run pytest -m integration tests/dj_pipeline/test_ephys_ingestion.py -v --tb=short
    ```
 
-2. **Add to registry** in `tests/dj_pipeline/conftest.py`:
-   ```python
-   GOLDEN_DATASETS["new_dataset_name"] = {
-       "experiment_name": "expName-aeonN",
-       "experiment_path": "AEONN/expName",
-       "epoch_dir": "YYYY-MM-DDTHH-MM-SS",
-       "devices_schema": "swc.aeon.exp.expName.experiment:Experiment",
-       "arena_name": "arena-aeonN",
-       "lab": "SWC",
-       "location": "room-0",
-       "experiment_type": "foraging",
-       "required_files": ["Metadata.json", ...],
-       "expected_camera_count": N,
-       "expected_feeder_count": N,
-   }
-   ```
+Without `TEST_DB_PREFIX`, tests fall back to testcontainers (Docker), which isn't available on HPC.
 
-3. **Update active dataset** (optional) or **parametrize** to test multiple:
-   ```python
-   @pytest.mark.parametrize("dataset_name", list(GOLDEN_DATASETS.keys()))
-   def test_with_all_datasets(dataset_name, ...):
-       cfg = GOLDEN_DATASETS[dataset_name]
-   ```
+### Refreshing golden data
 
-### CI Strategy (Golden Datasets)
+The exact-equality assertions (`expected_unit_count`, `expected_total_spikes`, per-quality-label counts) are tied to a specific Kilosort version + params. When upstream data changes — Kilosort upgrade, parameter change, channel subset change, regeneration of `golden_test_sorting/` — update the matching constants in `GOLDEN_DATASETS["foraging_abc_ephys_2026_05_11"]` in the **same PR** that touches the data.
 
-| Event | Unit | Integration (Schema) | Integration (Golden) |
-|-------|------|---------------------|---------------------|
-| PR to `datajoint_pipeline` | Yes | Yes | Skip (no data) |
-| `workflow_dispatch` | Yes | Yes | Skip (no data) |
-| Local dev | Yes | Yes | Yes (if available) |
-
-Golden dataset tests gracefully skip with clear messages when data is unavailable.
-
-### Implementation Phases
-
-#### Phase 3.1: Infrastructure
-
-1. Add `aeon_exp_foragingABC` as test dependency in `pyproject.toml`
-2. Add `GoldenDataset` dataclass and registry to `tests/dj_pipeline/conftest.py`
-3. Add `dj_config_with_golden_data` and `require_golden_data` fixtures
-
-#### Phase 3.2: Experiment Setup
-
-1. Add `full_pipeline` fixture with all schemas
-2. Add `test_experiment` fixture (generic, from config)
-3. Add `test_epoch` fixture (generic, from config)
-
-#### Phase 3.3: Core Tests
-
-1. Create `tests/dj_pipeline/test_full_ingestion.py`
-2. Implement `TestEpochConfigMake` (4 tests)
-3. Implement `TestChunkIngestion` (2 tests)
-4. Implement `TestStreamDataIngestion` (3 tests, uses `populate(max_calls=10)`)
-
-### Dependencies (Additional)
-
-Add to `pyproject.toml`:
-
-```toml
-[tool.uv.sources]
-swc-aeon-exp-foragingabc = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git", branch = "data-api" }
+To read the new counts from a regenerated sorting:
+```python
+import spikeinterface as si
+s = si.load("/ceph/aeon/aeon/data/golden_tests/AEONX1/abcGolden01/"
+            "golden_test_sorting/sorting_output/in_container_sorting")
+units = s.get_unit_ids()
+print(f"unit_count={len(units)}")
+print(f"total_spikes={sum(len(s.get_unit_spike_train(u)) for u in units)}")
 ```
 
-### Commands (Golden Dataset Tests)
+---
+
+## CI
+
+Workflow: `.github/workflows/lint_and_test.yml`.
+
+| Job | Matrix | Triggers |
+|---|---|---|
+| **lint** | Ubuntu + Python 3.12 (ruff + pyright) | All pushes, all PRs, manual, `v*` tags |
+| **tests** (full) | Ubuntu + Python 3.11/3.12 — unit + integration + coverage | Same as above |
+| **tests** (smoke) | macOS + Windows, Python 3.12 — `-m unit` only | Same as above |
+
+Coverage is uploaded to codecov from the Ubuntu + Python 3.12 run. Concurrency cancels in-flight runs on the same ref except for `main` and tags.
+
+Golden dataset tests skip cleanly on CI (no data) — no need to disable them by marker.
+
+---
+
+## Common commands
 
 ```bash
-# Run golden dataset tests (skips if data unavailable)
-uv run pytest tests/dj_pipeline/test_full_ingestion.py -v
+# Unit tests only (fast, no DB)
+uv run pytest -m unit
 
-# Run all integration tests (schema + golden, golden skips if no data)
-uv run pytest -m integration -v
+# Integration tests only (testcontainers spins up MySQL automatically)
+uv run pytest -m integration
+
+# Full ephys suite
+uv run pytest -m integration tests/dj_pipeline/test_ephys_ingestion.py -v
+
+# Single test class
+uv run pytest tests/dj_pipeline/test_ephys_ingestion.py::TestEphysSyncModel -v
+
+# With coverage
+uv run pytest --cov=aeon --cov-report=html
 ```
 
-### Success Criteria
+---
 
-- [ ] `EpochConfig.make()` completes with golden Metadata.json
-- [ ] `Chunk.ingest_chunks()` detects and ingests chunk
-- [ ] ALL stream tables can `populate(max_calls=10)`
-- [ ] Tests skip gracefully when data unavailable
-- [ ] No modification to production `streams.py`
-- [ ] Existing tests still pass
+## Troubleshooting
+
+**"Cannot connect to Docker daemon" on local runs.** Testcontainers needs Docker. On HPC use `TEST_DB_PREFIX` against an external DB instead (see HPC setup).
+
+**"Cannot touch /ceph/..." / Ceph not visible.** You're on the gateway. `srun` onto a compute node first.
+
+**Stale test schemas from a crashed run.** Manually drop:
+```bash
+uv run python -c "
+import datajoint as dj
+dj.config.safemode = False
+for s in dj.list_schemas():
+    if s.startswith('u_${USER}_golden_tests_'):
+        print(f'Dropping {s}')
+        dj.Schema(s).drop()
+"
+```
+
+**Schema-drop teardown warnings.** The teardown drops schemas in arbitrary order, which can hit FK constraints. The retry loop handles it but emits warnings — cosmetic, can be ignored.
+
+**`ephys_test_epochs` fixture takes a long time.** First run sets up the whole DB + downloads `<attach>` columns. Subsequent runs reuse the session-scoped fixture; only the actual test bodies re-run.

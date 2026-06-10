@@ -1113,7 +1113,7 @@ class UnitMatchingMethod(dj.Lookup):
 @schema
 class UnitMatchingParamSet(dj.Lookup):
     definition = """  # Parameter set for unit matching
-    matching_paramset_id: smallint
+    matching_paramset_id: int16
     ---
     -> UnitMatchingMethod
     seed_block_start: datetime(6)  # block_start of the seed block (first to process)

@@ -14,8 +14,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from aeon.schema.ephys import social_ephys
-
 IMU_COLUMNS: tuple[str, ...] = (
     "euler_x", "euler_y", "euler_z",
     "gravity_vector_x", "gravity_vector_y", "gravity_vector_z",
@@ -52,6 +50,10 @@ def load_and_merge_bno055(
         ValueError: If the merged DataFrame's columns don't match :data:`IMU_COLUMNS`
             exactly — a sign of schema drift in ``aeon/schema/ephys.py``.
     """
+    # Lazy import — avoids triggering aeon.schema.ephys at module load time,
+    # consistent with the pattern in aeon/dj_pipeline/ephys.py.
+    from aeon.schema.ephys import social_ephys
+
     device_dir = Path(device_dir)
     clock_file = device_dir / f"{device_name}_Bno055_Clock_{chunk_index}.bin"
     if not clock_file.exists():
@@ -84,29 +86,49 @@ def load_and_merge_bno055(
     return merged[list(IMU_COLUMNS)]
 
 
-def locate_bno055_chunk_index(
+def find_overlapping_bno055_chunks(
     device_dir: Path,
     device_name: str,
     onix_ts_start: int,
-) -> int | None:
-    """Find the Bno055_Clock_N.bin file whose first sample matches ``onix_ts_start``.
+    onix_ts_end: int,
+) -> list[int]:
+    """Return sorted Bno055 chunk indices whose ONIX range overlaps the window.
 
-    Args:
-        device_dir: Path to the ONIX device directory containing the binaries.
-        device_name: ``"NeuropixelsV2Beta"`` or ``"NeuropixelsV2"``.
-        onix_ts_start: ONIX clock timestamp (uint64) expected at position 0.
+    For each ``Bno055_Clock_N.bin`` file, reads just the first and last uint64
+    sample (the binaries are monotonic, so those two values fully bound the
+    chunk's coverage — no need to scan the rest). A standard interval-overlap
+    test selects chunks where
+    ``first <= onix_ts_end and last >= onix_ts_start`` — inclusive on both ends.
 
-    Returns:
-        The integer chunk index ``N``, or ``None`` if no match.
+    Why this exists: HarpSync sync windows (one per ``EphysSyncModel`` row,
+    hourly cadence) and Bno055 binary chunks (~10 min, firmware-flushed)
+    partition the ONIX clock on independent boundaries, so each sync window
+    typically overlaps multiple Bno055 files. ``OnixImuChunk.make`` uses this
+    helper to gather all overlapping chunks before concatenating + filtering.
     """
     device_dir = Path(device_dir)
     pattern = f"{device_name}_Bno055_Clock_*.bin"
+    overlapping: list[int] = []
     for clock_file in device_dir.glob(pattern):
-        first_clock_arr = np.fromfile(clock_file, dtype=np.uint64, count=1)
-        if len(first_clock_arr) == 0:
+        size = clock_file.stat().st_size
+        # Floor to a uint64 boundary in case a trailing partial sample was
+        # left behind by an interrupted acquisition. Skip files with no
+        # whole samples.
+        whole = (size // 8) * 8
+        if whole < 8:
             continue
-        if int(first_clock_arr[0]) == int(onix_ts_start):
-            match = re.search(r"_Clock_(\d+)\.bin$", clock_file.name)
-            if match:
-                return int(match.group(1))
-    return None
+        match = re.search(r"_Clock_(\d+)\.bin$", clock_file.name)
+        if not match:
+            continue
+        n = int(match.group(1))
+        first = int(np.fromfile(clock_file, dtype=np.uint64, count=1)[0])
+        if whole >= 16:
+            with open(clock_file, "rb") as f:
+                f.seek(whole - 8)
+                last = int(np.frombuffer(f.read(8), dtype=np.uint64)[0])
+        else:
+            last = first
+        # Inclusive interval overlap test on both ends.
+        if first <= onix_ts_end and last >= onix_ts_start:
+            overlapping.append(n)
+    return sorted(overlapping)
