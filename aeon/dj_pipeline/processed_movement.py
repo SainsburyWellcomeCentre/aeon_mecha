@@ -153,13 +153,20 @@ def activate(*, create_schema: bool = True, create_tables: bool = True) -> bool:
 
     Re-callable: if new camera experiments are registered later in the same
     Python session and ``streams_maker`` regenerates the missing tables,
-    invoking this again will activate the schema.
+    invoking this again will activate the schema. The ``streams`` module
+    binding is re-resolved on every call so that FK string resolution
+    (``-> streams.CameraPosition``) picks up any reload.
 
     Returns:
         True if the schema was activated, False if upstream streams missing.
     """
-    if streams is None:
-        logger.warning("processed_movement not activated — streams module not initialized")
+    import importlib
+
+    global streams
+    try:
+        streams = importlib.import_module("aeon.dj_pipeline.streams")
+    except ImportError as e:
+        logger.warning(f"processed_movement not activated — streams import failed: {e}")
         return False
     missing = [t for t in _REQUIRED_STREAMS if not hasattr(streams, t)]
     if missing:
