@@ -274,11 +274,11 @@ class PreProcessing(dj.Computed):
             if zarr_path.exists():
                 logger.info(f"{zarr_path} already exists. Skipping zarr write.")
             else:
-                # Remove properties that zarr v2 can't serialize without an
-                # explicit object_codec (object arrays, unicode/byte strings)
+                # Keep only numeric properties — zarr v2 can't serialize
+                # strings, object arrays, or structured arrays without codecs
                 for prop in list(si_recording.get_property_keys()):
                     values = si_recording.get_property(prop)
-                    if np.asarray(values).dtype.kind in ("O", "U", "S"):
+                    if np.asarray(values).dtype.kind not in ("f", "i", "u", "b"):
                         si_recording.delete_property(prop)
                 logger.info(f"Writing zarr recording to {zarr_path}...")
                 si_recording.save(
