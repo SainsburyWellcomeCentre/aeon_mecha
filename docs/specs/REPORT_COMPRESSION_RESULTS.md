@@ -85,12 +85,12 @@ Multiply by number of shanks and experiment duration to estimate totals.
 
 | | Compression ratio | Speed impact | Lossless verified |
 |--|-------------------|-------------|-------------------|
-| Raw data (Tier 2) | 1.95x (49% savings) | N/A — offline process | Yes, all 12 chunks |
-| Intermediates (Tier 1) | 2.5x recording, 1.7x analyzer | 20% faster overall | Same sorting results |
+| Raw data | 1.95x (49% savings) | N/A — offline process | Yes, all 12 chunks |
+| Pipeline intermediates | 2.5x recording, 1.7x analyzer | 20% faster overall | Same sorting results |
 
-**Tier 1 (intermediates):** Ready to adopt. Zarr intermediates save 60% disk space with no speed penalty — in fact the pipeline runs faster overall because compressed I/O reduces Ceph bandwidth. The only code changes are in `PreProcessing` and `PostProcessing` to save in zarr format instead of binary.
+**Pipeline intermediates:** Ready to adopt. Zarr intermediates save 60% disk space with no speed penalty — in fact the pipeline runs faster overall because compressed I/O reduces Ceph bandwidth. The only code changes are in `PreProcessing` and `PostProcessing` to save in zarr format instead of binary.
 
-**Tier 2 (raw data):** The 1.95x compression ratio and verified losslessness make this viable for archival. Compression takes about 15 min per hour of recording per shank — slow but a one-time offline operation. Decompression is ~4 min per hour of recording, fast enough for on-demand access.
+**Raw data:** The 1.95x compression ratio and verified losslessness make this viable for archival. Compression takes about 15 min per hour of recording per shank — slow but a one-time offline operation. Decompression is ~4 min per hour of recording, fast enough for on-demand access.
 
 ---
 
