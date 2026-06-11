@@ -115,3 +115,14 @@ except ImportError:
         streams = dj.VirtualModule("streams", streams_maker.schema_name)
     except Exception as e:
         logger.debug(f"Could not import streams module: {e}")
+
+
+# Activate downstream analysis schemas that depend on dynamically-generated
+# stream tables. Each module's activate() is a no-op (logged warning) if its
+# upstream streams aren't present in this experiment.
+try:
+    from . import analysis_feeder  # pyright: ignore[reportUnusedImport]
+
+    analysis_feeder.activate()
+except Exception as e:
+    logger.debug(f"Could not activate analysis_feeder: {e}")
