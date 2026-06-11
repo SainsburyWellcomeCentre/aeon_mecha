@@ -1,37 +1,36 @@
 """Utility functions for the ephys pipeline.
 
-Helpers for probe discovery, subject-probe mapping, sync model processing,
-and probe type creation. Used by ephys.py table classes.
+Helpers for probe discovery, subject-probe mapping, probe type creation,
+and ONIX/HARP timestamp resolution.
+Used by ephys.py table classes.
 """
 
 import json
 import re
-import tempfile
-from pathlib import Path
 from datetime import datetime
-
-import numpy as np
-import joblib
+from pathlib import Path, PureWindowsPath
 
 import datajoint as dj
-
-from swc.aeon.io import api as io_api
-from aeon.schema.ephys import social_ephys
 
 logger = dj.logger
 
 # Mapping from device directory name to probe_type
 DEVICE_PROBE_TYPE_MAP = {
     "NeuropixelsV2Beta": "neuropixels2.0_beta",
-    "NeuropixelsV2": "neuropixels2.0",
+    "NeuropixelsV2": "neuropixels2.0-multishank",
 }
 
 
-def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> str:
+def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> str | None:
     """Extract probe identifier from metadata.
 
     For V2Beta hardware (no serial numbers): probe ID = "{device_name}_{label}"
-    For V2 hardware: probe ID = serial number from GainCalibrationFileName
+    For V2 hardware: probe ID = serial number from GainCalibrationFileName.
+        Returns None if the probe is disabled (Devices.ProbeX = "false").
+
+    Metadata structure (V2):
+        metadata["Devices"]["NeuropixelsV2e"]["ConfigurationA/B"]["GainCalibrationFileName"]
+        metadata["Devices"]["ProbeA/B"] = "true"/"false" (enable flag)
 
     Args:
         metadata: Parsed Metadata.yml dict, or None
@@ -39,38 +38,50 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
         probe_label: Probe label from filename (e.g., "ProbeA", "ProbeB")
 
     Returns:
-        Probe identifier string
+        Probe identifier string, or None for disabled probes.
     """
     default_id = f"{device_name}_{probe_label}"
 
     if metadata is None:
         return default_id
 
-    # V2 hardware: try to extract serial number
+    devices = metadata.get("Devices", {})
+
+    # V2 hardware: check enable flag, then extract serial from calibration path
     if device_name == "NeuropixelsV2":
-        v2e_config = metadata.get("NeuropixelsV2e")
-        if v2e_config:
-            config_key_map = {
-                "ProbeA": "ProbeConfigurationA",
-                "ProbeB": "ProbeConfigurationB",
-            }
-            config_key = config_key_map.get(probe_label)
-            if config_key and config_key in v2e_config:
-                gain_cal = v2e_config[config_key].get("GainCalibrationFileName")
-                if gain_cal:
-                    try:
-                        serial = Path(gain_cal).parent.name
-                        if serial and serial.isdigit():
-                            return serial
-                    except Exception:
-                        pass
+        # Check if probe is enabled (Devices.ProbeA/B = "true"/"false")
+        enabled = devices.get(probe_label, "true")
+        if isinstance(enabled, str) and enabled.lower() == "false":
+            return None
+
+        v2e_config = devices.get("NeuropixelsV2e", {})
+        config_key_map = {
+            "ProbeA": "ConfigurationA",
+            "ProbeB": "ConfigurationB",
+        }
+        config_key = config_key_map.get(probe_label)
+        if config_key and config_key in v2e_config:
+            probe_config = v2e_config[config_key]
+            gain_cal = probe_config.get("GainCalibrationFileName")
+            if gain_cal:
+                try:
+                    serial = PureWindowsPath(gain_cal).parent.name
+                    if serial and serial.isdigit():
+                        return serial
+                except Exception:  # noqa: BLE001
+                    logger.debug(f"Failed to extract serial from GainCalibrationFileName: {gain_cal}")
+
+        return default_id
 
     return default_id
 
 
 def find_or_create_probe_insertion(
-    experiment_name: str, subject: str, probe_id: str,
-    probe_insertion_table, probe_table,
+    experiment_name: str,
+    subject: str,
+    probe_id: str,
+    probe_insertion_table,
+    probe_table,
 ) -> dict:
     """Find existing or create new ProbeInsertion for this (experiment, subject, probe).
 
@@ -88,8 +99,7 @@ def find_or_create_probe_insertion(
     """
     # Check if a ProbeInsertion already exists for this probe + subject + experiment
     existing = (
-        probe_insertion_table
-        & {"experiment_name": experiment_name, "subject": subject, "probe": probe_id}
+        probe_insertion_table & {"experiment_name": experiment_name, "subject": subject, "probe": probe_id}
     ).to_dicts()
     if existing:
         row = existing[0]
@@ -101,17 +111,18 @@ def find_or_create_probe_insertion(
 
     # Create new ProbeInsertion with auto-assigned insertion_number
     existing_nums = (
-        probe_insertion_table
-        & {"experiment_name": experiment_name, "subject": subject}
+        probe_insertion_table & {"experiment_name": experiment_name, "subject": subject}
     ).to_arrays("insertion_number")
     new_num = int(existing_nums.max()) + 1 if len(existing_nums) > 0 else 1
 
-    probe_insertion_table.insert1({
-        "experiment_name": experiment_name,
-        "subject": subject,
-        "insertion_number": new_num,
-        "probe": probe_id,
-    })
+    probe_insertion_table.insert1(
+        {
+            "experiment_name": experiment_name,
+            "subject": subject,
+            "insertion_number": new_num,
+            "probe": probe_id,
+        }
+    )
     logger.info(
         f"Created ProbeInsertion: experiment={experiment_name}, "
         f"subject={subject}, insertion_number={new_num}, probe={probe_id}"
@@ -124,30 +135,131 @@ def find_or_create_probe_insertion(
 
 
 def read_probe_assignments(
-    key: dict, epoch_path: Path, probe_labels: list[str],
+    key: dict,
+    epoch_path: Path,
+    probe_labels: list[str],
     insertion_table,
+    probe_info: dict[str, str],
+    *,
+    override_dir: "Path | None" = None,
 ) -> dict:
     """Read subject-probe mapping from file or carry forward from previous epoch.
 
     Priority:
-    1. probe_assignments.json in epoch directory
-    2. Carry-forward from most recent EphysEpoch with .Insertion entries
-    3. Pre-existing ProbeInsertion matched by probe serial (error if not found)
+    1. probe_assignments.json in ``override_dir`` (if provided)
+    2. probe_assignments.json in the epoch directory on Ceph
+    3. Carry-forward from most recent EphysEpoch (same experiment) with Insertion entries
+
+    Carry-forward is scoped to the current experiment (experiment_name in key).
+    It cannot cross experiment boundaries.
 
     Args:
         key: Epoch key (experiment_name, epoch_start)
-        epoch_path: Path to epoch directory
+        epoch_path: Path to epoch directory on Ceph
         probe_labels: Sorted list of probe labels discovered in this epoch
-        insertion_table: The EphysEpoch.Insertion Part table class
+        insertion_table: The EphysEpochConfig.Insertion Part table class
+        probe_info: Dict mapping probe_label -> probe_serial (built by caller
+            from get_probe_id()). Used to translate serial-keyed JSON to
+            label-keyed dict.
+        override_dir: Optional local directory to check first. Useful when
+            the epoch directory is read-only (e.g. Ceph without write perms).
 
     Returns:
-        Dict mapping probe_label -> {"subject": str, ...}
+        Dict mapping probe_label -> {"subject": str}
     """
-    raise NotImplementedError(
-        "Probe-subject assignment resolution is not yet implemented. "
-        "The exact file format and carry-forward logic will be determined "
-        "once the experimental data conventions are finalized."
+    # Priority 1: override directory (local fallback for read-only Ceph)
+    if override_dir is not None:
+        override_path = Path(override_dir) / "probe_assignments.json"
+        if override_path.exists():
+            logger.info(f"Reading probe assignments from override: {override_path}")
+            return _parse_probe_assignments_file(override_path, probe_info)
+
+    # Priority 2: JSON file in epoch directory
+    json_path = epoch_path / "probe_assignments.json"
+    if json_path.exists():
+        return _parse_probe_assignments_file(json_path, probe_info)
+
+    # Priority 3: Carry-forward from most recent epoch in same experiment
+    previous_insertions = (
+        insertion_table
+        & {"experiment_name": key["experiment_name"]}
+        & f'epoch_start < "{key["epoch_start"]}"'
+    ).proj("probe_label", "subject").to_dicts(order_by="epoch_start DESC")
+
+    if previous_insertions:
+        # Use only entries from the most recent epoch (first row, ordered DESC)
+        latest_start = previous_insertions[0]["epoch_start"]
+        carried = {
+            row["probe_label"]: {"subject": row["subject"]}
+            for row in previous_insertions
+            if row["epoch_start"] == latest_start
+        }
+
+        if carried:
+            logger.info(
+                f"Carried forward probe assignments from epoch {latest_start} "
+                f"for {key['experiment_name']}: {carried}"
+            )
+            return carried
+
+    # Nothing found
+    raise FileNotFoundError(
+        f"No probe_assignments.json found in {epoch_path} and no previous "
+        f"EphysEpoch with probe insertions found for experiment "
+        f"'{key['experiment_name']}'. Create a probe_assignments.json file "
+        f"in the first epoch directory with format:\n"
+        f'{{\n  "version": 1,\n  "probe_assignments": {{\n'
+        f'    "<probe_serial>": {{"subject": "<subject_name>"}}\n  }}\n}}'
     )
+
+
+def _parse_probe_assignments_file(json_path: Path, probe_info: dict[str, str]) -> dict:
+    """Parse probe_assignments.json and translate serial-keyed entries to label-keyed.
+
+    Args:
+        json_path: Path to the JSON file
+        probe_info: Dict mapping probe_label -> probe_serial (from EphysEpoch.make)
+
+    Returns:
+        Dict mapping probe_label -> {"subject": str}
+    """
+    data = json.loads(json_path.read_text())
+
+    if "version" not in data:
+        raise ValueError(
+            f"probe_assignments.json at {json_path} is missing 'version' field. "
+            f'Expected format: {{"version": 1, "probe_assignments": {{...}}}}'
+        )
+    if data["version"] != 1:
+        raise ValueError(
+            f"probe_assignments.json at {json_path} has unsupported version "
+            f"{data['version']}. Only version 1 is supported."
+        )
+    if "probe_assignments" not in data:
+        raise ValueError(
+            f"probe_assignments.json at {json_path} is missing 'probe_assignments' "
+            f'field. Expected format: {{"version": 1, "probe_assignments": {{...}}}}'
+        )
+
+    assignments_by_serial = data["probe_assignments"]
+
+    # Translate serial -> label using probe_info (label -> serial)
+    result = {}
+    for label, serial in probe_info.items():
+        if serial not in assignments_by_serial:
+            raise ValueError(
+                f"Probe serial '{serial}' (label '{label}') not found in "
+                f"{json_path}. Available serials: {list(assignments_by_serial.keys())}. "
+                f"Add an entry for this serial in the probe_assignments section."
+            )
+        entry = assignments_by_serial[serial]
+        if "subject" not in entry:
+            raise ValueError(
+                f"Entry for serial '{serial}' in {json_path} is missing 'subject' field."
+            )
+        result[label] = {"subject": entry["subject"]}
+
+    return result
 
 
 def discover_epoch_probes(epoch_path: Path) -> tuple[str | None, Path | None, list[str]]:
@@ -172,7 +284,7 @@ def discover_epoch_probes(epoch_path: Path) -> tuple[str | None, Path | None, li
             device_dir = candidate
             break
 
-    if device_name is None:
+    if device_name is None or device_dir is None:
         return None, None, []
 
     amplifier_files = sorted(device_dir.glob(f"{device_name}_Probe*_AmplifierData_*.bin"))
@@ -204,125 +316,116 @@ def parse_epoch_metadata(epoch_path: Path) -> dict | None:
     try:
         with open(metadata_path) as f:
             return json.load(f)  # JSON despite .yml extension
-    except (json.JSONDecodeError, IOError) as e:
+    except (json.JSONDecodeError, OSError) as e:
         logger.warning(f"Failed to parse Metadata.yml at {metadata_path}: {e}")
         return None
 
 
-def process_ephys_file(
-    ephys_file: Path,
-    raw_dir: Path,
-    insertion_key: dict,
-    epoch_start: datetime,
-    probe_label: str,
-    probe_type: str,
-    electrode_config_name: str,
-    sync_models: dict,
-    chunk_table,
-) -> None:
-    """Process a single ephys binary file into a chunk entry with sync model.
+def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
+    """Extract per-probe config-file basenames from an epoch's Metadata.yml.
+
+    Reads ``Devices.NeuropixelsV2e.ConfigurationA/B.ProbeInterfaceFileName``
+    and converts each entry to a (probe_label, basename) pair.
 
     Args:
-        ephys_file: Path to the amplifier data binary file
-        raw_dir: Root raw data directory
-        insertion_key: ProbeInsertion key (experiment_name, subject, insertion_number)
-        epoch_start: Epoch start datetime for this file's epoch
-        probe_label: File label (e.g., "ProbeA")
-        probe_type: Probe type string
-        electrode_config_name: Electrode configuration name
-        sync_models: Mutable dict cache for sync models (shared across files)
-        chunk_table: The EphysChunk table class (for inserts)
+        epoch_path: Path to the epoch directory containing Metadata.yml.
+
+    Returns:
+        Dict mapping ``"ProbeA" | "ProbeB" | ...`` to JSON basename or None.
+        None indicates a disabled/spoofed probe (ProbeInterfaceFileName is
+        null in the metadata).
+
+    Raises:
+        FileNotFoundError: If Metadata.yml doesn't exist.
     """
-    clock_file = ephys_file.with_name(
-        ephys_file.name.replace("AmplifierData", "Clock")
-    )
-    onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
+    metadata_path = Path(epoch_path) / "Metadata.yml"
+    with open(metadata_path) as f:
+        data = json.load(f)  # JSON despite .yml extension
 
-    model_parent_dir = raw_dir / ephys_file.relative_to(raw_dir).parents[-2]
-    if model_parent_dir.as_posix() not in sync_models:
-        device_prefix = ephys_file.name.split(f"_{probe_label}_")[0]
-        device_reader = getattr(social_ephys, device_prefix, None)
-        if device_reader is None:
+    npx = data.get("Devices", {}).get("NeuropixelsV2e", {})
+    result: dict[str, str | None] = {}
+    for cfg_key, cfg_value in npx.items():
+        if not cfg_key.startswith("Configuration"):
+            continue
+        suffix = cfg_key[len("Configuration"):]  # "A", "B", ...
+        probe_label = f"Probe{suffix}"
+        if not isinstance(cfg_value, dict):
+            result[probe_label] = None
+            continue
+        pifn = cfg_value.get("ProbeInterfaceFileName")
+        if pifn is None or pifn == "":
+            result[probe_label] = None
+        else:
+            # Path may be Windows-style; extract basename robustly
+            basename = PureWindowsPath(pifn).name or Path(pifn).name
+            result[probe_label] = basename
+    return result
+
+
+def resolve_epoch_probe_json(
+    raw_ephys_dir,
+    epoch_path,
+    config_file_name: str,
+) -> Path:
+    """Resolve a probeinterface JSON path by basename.
+
+    Searches ``<raw_ephys_dir>/recording_configurations/`` (production layout)
+    first, then ``<epoch_path>/`` (local-copy fallback for test/golden data).
+    Raises FileNotFoundError if neither has the file.
+    """
+    central = Path(raw_ephys_dir) / "recording_configurations" / config_file_name
+    if central.exists():
+        return central
+    epoch_local = Path(epoch_path) / config_file_name
+    if epoch_local.exists():
+        return epoch_local
+    raise FileNotFoundError(
+        f"Probe config JSON not found at {central} or {epoch_local}"
+    )
+
+
+def load_device_channel_map(json_path: Path) -> dict[int, int]:
+    """Return {electrode_site_id: raw_channel_idx} for active contacts.
+
+    Active contacts are those with ``device_channel_indices >= 0`` in the
+    probeinterface JSON (-1 marks inactive).
+
+    Args:
+        json_path: Path to the probeinterface JSON.
+
+    Raises:
+        FileNotFoundError: If json_path doesn't exist.
+        ValueError: If the JSON has no device_channel_indices or no active contacts.
+    """
+    with open(json_path) as f:
+        pi_data = json.load(f)
+
+    channel_map: dict[int, int] = {}
+    for probe in pi_data.get("probes", []):
+        contact_ids = probe.get("contact_ids", [])
+        dci = probe.get("device_channel_indices")
+        if dci is None:
             raise ValueError(
-                f"No sync reader found for device '{device_prefix}'. "
-                f"Available devices: {list(social_ephys.keys())}"
+                f"No device_channel_indices in {json_path}. "
+                f"Cannot determine hardware channel mapping."
             )
-        sync_models[model_parent_dir.as_posix()] = io_api.load(
-            model_parent_dir,
-            device_reader.HarpSyncModel,
+        for cid, ch_idx_raw in zip(contact_ids, dci, strict=False):
+            ch_idx = int(ch_idx_raw)
+            if ch_idx >= 0:
+                channel_map[int(cid)] = ch_idx
+
+    if not channel_map:
+        raise ValueError(
+            f"No active contacts (device_channel_indices >= 0) in {json_path}."
         )
 
-    sync_model = sync_models[model_parent_dir.as_posix()]
-    matched_sync = sync_model.query(
-        f"(clock_start <= {onix_ts[0]} <= clock_end)"
-        f" | "
-        f"(clock_start <= {onix_ts[-1]} <= clock_end)"
-    )
-
-    sync_entries = []
-    with tempfile.TemporaryDirectory() as tmpdir:
-        for idx, (_, r) in enumerate(matched_sync.iterrows()):
-            if idx == 0:
-                chunk_start = r.model.predict(
-                    np.array(onix_ts[0]).reshape(-1, 1)
-                ).flatten()[0]
-                chunk_start = io_api.to_datetime(chunk_start)
-                if hasattr(chunk_start, "tz_localize"):
-                    chunk_start = chunk_start.tz_localize(None)
-            if idx == len(matched_sync) - 1:
-                chunk_end = r.model.predict(
-                    np.array(onix_ts[-1]).reshape(-1, 1)
-                ).flatten()[0]
-                chunk_end = io_api.to_datetime(chunk_end)
-                if hasattr(chunk_end, "tz_localize"):
-                    chunk_end = chunk_end.tz_localize(None)
-
-            model_path = Path(tmpdir) / (
-                ephys_file.stem + f"_{r.clock_start}.joblib"
-            )
-            joblib.dump(r.model, model_path)
-
-            harp_start = r.name
-            if hasattr(harp_start, "tz_localize"):
-                harp_start = harp_start.tz_localize(None)
-            sync_entries.append(
-                {
-                    "onix_ts_start": r.clock_start,
-                    "onix_ts_end": r.clock_end,
-                    "sync_model": model_path,
-                    "harp_start": harp_start,
-                }
-            )
-
-        chunk_entry = {
-            **insertion_key,
-            "chunk_start": chunk_start,
-            "chunk_end": chunk_end,
-            "epoch_start": epoch_start,
-            "probe_type": probe_type,
-            "electrode_config_name": electrode_config_name,
-        }
-        chunk_table.insert1(chunk_entry)
-        chunk_table.File.insert(
-            [
-                dict(
-                    **chunk_entry,
-                    directory_type="raw",
-                    file_name=f.name,
-                    file_path=f.relative_to(raw_dir).as_posix(),
-                )
-                for f in (ephys_file, clock_file)
-            ],
-            ignore_extra_fields=True,
-        )
-        chunk_table.SyncModel.insert(
-            [{**chunk_entry, **sync_entry} for sync_entry in sync_entries],
-            ignore_extra_fields=True,
-        )
+    return channel_map
 
 
 def create_probe_type(
-    probe_type: str, manufacturer: str, probe_name: str,
+    probe_type: str,
+    manufacturer: str,
+    probe_name: str,
     probe_type_table,
 ) -> None:
     """Create a new probe type with electrode geometry from probeinterface.
@@ -335,9 +438,7 @@ def create_probe_type(
     """
     import probeinterface as pi
 
-    electrode_df = pi.get_probe(
-        manufacturer=manufacturer, probe_name=probe_name
-    ).to_dataframe()
+    electrode_df = pi.get_probe(manufacturer=manufacturer, probe_name=probe_name).to_dataframe()
     electrode_df.rename(
         columns={
             "contact_ids": "electrode_name",
@@ -352,5 +453,180 @@ def create_probe_type(
     electrode_df["electrode"] = electrode_df.index
 
     with probe_type_table.connection.transaction:
-        probe_type_table.insert1(dict(probe_type=probe_type))
+        probe_type_table.insert1({"probe_type": probe_type})
         probe_type_table.Electrode.insert(electrode_df, ignore_extra_fields=True)
+
+
+def create_electrode_config(
+    json_path,
+    probe_type_table,
+    electrode_config_table,
+    *,
+    config_name: str | None = None,
+    probe_type_name: str | None = None,
+) -> tuple[str, str]:
+    """Populate ProbeType + ElectrodeConfig from a per-epoch probeinterface JSON.
+
+    ProbeType.Electrode gets the full contact geometry (e.g. 5120 contacts for
+    NP 2.0 multishank); ElectrodeConfig.Electrode gets the active subset where
+    ``device_channel_indices != -1`` (typically 384). Idempotent.
+
+    Defaults: ``probe_type`` from canonical-cased ``annotations["name"]`` (e.g.
+    "Neuropixels 2.0 - multishank" → "neuropixels2.0-multishank");
+    ``electrode_config_name`` from ``json_path.stem``.
+
+    Returns:
+        (probe_type, electrode_config_name).
+    """
+    import uuid
+
+    import probeinterface as pi
+
+    json_path = Path(json_path)
+    probe_group = pi.read_probeinterface(str(json_path))
+    if len(probe_group.probes) != 1:
+        raise ValueError(
+            f"Expected exactly one probe in {json_path}, got {len(probe_group.probes)}."
+        )
+    probe = probe_group.probes[0]
+
+    if probe_type_name is None:
+        raw_name = probe.annotations.get("name", "")
+        probe_type_name = raw_name.lower().replace(" - ", "-").replace(" ", "")
+    if not probe_type_name:
+        raise ValueError(f"Cannot derive probe_type from {json_path} annotations")
+
+    # Build electrode geometry dataframe for ProbeType.Electrode
+    electrode_df = probe.to_dataframe()
+    electrode_df.rename(
+        columns={
+            "contact_ids": "electrode_name",
+            "shank_ids": "shank",
+            "x": "x_coord",
+            "y": "y_coord",
+        },
+        inplace=True,
+    )
+    electrode_df["shank"] = electrode_df["shank"].apply(lambda x: x if x else 0)
+    electrode_df["probe_type"] = probe_type_name
+    electrode_df["electrode"] = electrode_df.index
+
+    # No explicit transaction — callers like EphysEpochConfig.make are already
+    # inside a populate() transaction, and DataJoint forbids nesting.
+    probe_type_table.insert1({"probe_type": probe_type_name}, skip_duplicates=True)
+    probe_type_table.Electrode.insert(
+        electrode_df, ignore_extra_fields=True, skip_duplicates=True
+    )
+
+    if config_name is None:
+        config_name = json_path.stem
+
+    dci = probe.device_channel_indices
+    active_electrode_ids = [i for i, ch in enumerate(dci) if ch != -1]
+
+    electrode_config_key = {
+        "probe_type": probe_type_name,
+        "electrode_config_name": config_name,
+    }
+    electrode_config_table.insert1(
+        {
+            **electrode_config_key,
+            "electrode_config_description": f"From {json_path.name}",
+            "electrode_config_hash": uuid.uuid4(),
+        },
+        skip_duplicates=True,
+    )
+    electrode_config_table.Electrode.insert(
+        ({**electrode_config_key, "electrode": int(e)} for e in active_electrode_ids),
+        skip_duplicates=True,
+    )
+
+    return probe_type_name, config_name
+
+
+# ---------------------------------------------------------------------------
+# ONIX/HARP timestamp resolution helpers
+# (shared by EphysSyncModel.ingest and EphysChunk.ingest_chunks in ephys.py)
+# ---------------------------------------------------------------------------
+
+
+def resolve_raw_dir_and_epochs(
+    experiment_name: str,
+) -> "tuple[Path, dict[str, datetime]] | None":
+    """Return (raw_ephys_dir, {epoch_dir_name: epoch_start}) or None.
+
+    Only includes EphysEpoch rows that have a populated EphysEpochConfig
+    (i.e. probe discovery succeeded — config failures raise during populate).
+    """
+    from aeon.dj_pipeline import acquisition
+    from aeon.dj_pipeline.ephys import EphysEpoch, EphysEpochConfig
+
+    exp_key = {"experiment_name": experiment_name}
+    raw_dir_result = acquisition.Experiment.get_data_directory(
+        exp_key, directory_type="raw-ephys"
+    )
+    if raw_dir_result is None:
+        logger.error(f"raw-ephys data directory not found for {experiment_name}")
+        return None
+    raw_dir = Path(raw_dir_result)
+
+    ephys_epochs = (
+        EphysEpoch & exp_key & EphysEpochConfig
+    ).proj("epoch_dir").to_dicts()
+
+    epoch_dir_to_start: dict[str, datetime] = {}
+    for ep in ephys_epochs:
+        if ep["epoch_dir"]:
+            top_dir = Path(ep["epoch_dir"]).parts[0]
+            epoch_dir_to_start[top_dir] = ep["epoch_start"]
+
+    return raw_dir, epoch_dir_to_start
+
+
+def harp_to_naive(seconds: float) -> datetime:
+    """Convert HARP seconds-since-1904 to a timezone-naive datetime (DJ-compatible)."""
+    from swc.aeon.io import api as io_api
+
+    dt = io_api.to_datetime(float(seconds))
+    return dt.replace(tzinfo=None) if getattr(dt, "tzinfo", None) else dt
+
+
+def resolve_harp(sync_row: dict, onix_ts: int, _model_cache: "dict | None" = None) -> datetime:
+    """Compute the HARP equivalent of an ONIX timestamp from a SyncModel row.
+
+    Fast path: exact match against observed onix_ts_start/onix_ts_end boundaries
+    — return the stored harp datetime directly (no model load required).
+    Slow path: download the attached model bytes and call LinearRegression.predict.
+    Caches loaded models in ``_model_cache`` if provided, keyed on
+    ``sync_row["sync_start"]``, to avoid reloading the same model across multiple
+    calls within a single ingestion iteration.
+
+    Args:
+        sync_row: A dict from EphysSyncModel.to_dicts() with all column values.
+        onix_ts: ONIX hardware timestamp to convert.
+        _model_cache: Optional dict for caching loaded joblib models within one
+            ingestion iteration. Keyed on sync_row["sync_start"].
+
+    Returns:
+        Timezone-naive datetime representing the HARP equivalent.
+    """
+    import joblib
+    import numpy as np
+
+    if onix_ts == int(sync_row["onix_ts_start"]):
+        harp_dt = sync_row["sync_start"]
+        return harp_dt.replace(tzinfo=None) if getattr(harp_dt, "tzinfo", None) else harp_dt
+    if onix_ts == int(sync_row["onix_ts_end"]):
+        harp_dt = sync_row["sync_end"]
+        return harp_dt.replace(tzinfo=None) if getattr(harp_dt, "tzinfo", None) else harp_dt
+
+    cache_key = sync_row["sync_start"]
+    if _model_cache is not None and cache_key in _model_cache:
+        model = _model_cache[cache_key]
+    else:
+        model = joblib.load(sync_row["sync_model"])
+        if _model_cache is not None:
+            _model_cache[cache_key] = model
+
+    harp_seconds = float(model.predict(np.array([[onix_ts]])).flatten()[0])
+    return harp_to_naive(harp_seconds)

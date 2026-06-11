@@ -12,7 +12,7 @@ resolution-markers = [
 
 [[package]]
 name = "aeon-mecha"
-version = "0.4.2"
+version = "0.4.4"
 source = { editable = "." }
 dependencies = [
     { name = "bottleneck" },
@@ -87,7 +87,7 @@ requires-dist = [
     { name = "cuda-python", marker = "extra == 'spike-sorting'" },
     { name = "cupy", marker = "extra == 'gpu'" },
     { name = "dask", marker = "extra == 'gpu'" },
-    { name = "datajoint", specifier = ">=2.1.0" },
+    { name = "datajoint", specifier = ">=2.2.2" },
     { name = "fastparquet" },
     { name = "graphviz" },
     { name = "ipykernel" },
@@ -136,7 +136,7 @@ test = [
 test-golden = [
     { name = "pytest", specifier = ">=7.0" },
     { name = "pytest-cov" },
-    { name = "swc-aeon-rigs-foragingabc", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main" },
+    { name = "swc-aeon-rigs-foragingabc", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=tn%2Fenv-data-readers" },
     { name = "testcontainers", extras = ["mysql"], specifier = ">=3.7" },
 ]
 
@@ -726,7 +726,7 @@ wheels = [
 
 [[package]]
 name = "datajoint"
-version = "2.1.1"
+version = "2.2.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deepdiff" },
@@ -740,9 +740,9 @@ dependencies = [
     { name = "pyparsing" },
     { name = "tqdm" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/62/52/b341a41abae666f5c9bbbdfb08fb4836681acb8cddb562e7482140820005/datajoint-2.1.1.tar.gz", hash = "sha256:db2965db3a5d82a7c01084ea5cc773867e421288a37feb227affee37b2a40702", size = 1708931, upload-time = "2026-02-17T19:56:37.894Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0c/56/e2ea41e6cdbb1589e5b2c4ad60123bf78264beeedc52f7bd8f92b694d243/datajoint-2.2.2.tar.gz", hash = "sha256:ccf32feb59902e19736f086f47c29722f43644b06dd218cab11c8269b9af20e6", size = 1737869, upload-time = "2026-05-01T18:39:04.536Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ec/26/db3b1edf7176ee55329606324cb36b861f0106f456dc94a096fc2fdf1826/datajoint-2.1.1-py3-none-any.whl", hash = "sha256:8c4c8e052958e70aba998a1b1f46fd1266ff0d2946b19966992fb3a4e40e4d94", size = 221980, upload-time = "2026-02-17T19:56:36.442Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/d0/b528499581931cbf5509f4934d7a865ed8d2cb8c43608915286ae1c7bda3/datajoint-2.2.2-py3-none-any.whl", hash = "sha256:f4a32980b2e48d3ada78e8c68c74ffb26f659ed1715480a081822284f6bda46b", size = 233436, upload-time = "2026-05-01T18:39:03.129Z" },
 ]
 
 [[package]]
@@ -3335,7 +3335,7 @@ dependencies = [
 [[package]]
 name = "swc-aeon-rigs-foragingabc"
 version = "0.0.1"
-source = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main#d75a553ad90b06f2206415760e0d9c917c51faa1" }
+source = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=tn%2Fenv-data-readers#d1e612d81766c9460127e4f3e645066349147726" }
 dependencies = [
     { name = "dotmap" },
     { name = "gitpython" },

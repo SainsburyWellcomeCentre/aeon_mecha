@@ -24,6 +24,9 @@ _ref_device_mapping = {
     "exp0.1-r0": "FrameTop",
     "social0-r1": "FrameTop",
     "exp0.2-r0": "CameraTop",
+    # abcGolden01 behavior arm: CameraTop isn't part of this rig's active set,
+    # so use CameraNest as the chunk-discovery reference.
+    "abcGolden01-aeon3": "CameraNest",
 }
 
 
@@ -95,6 +98,7 @@ class DirectoryType(dj.Lookup):
 
     contents = [
         {"directory_type": "raw"},
+        {"directory_type": "raw-ephys"},
         {"directory_type": "processed"},
         {"directory_type": "qc"},
     ]
@@ -215,9 +219,17 @@ class Epoch(dj.Manual):
 
     @classmethod
     def ingest_epochs(cls, experiment_name):
-        """Ingest epochs for the specified ``experiment_name``."""
+        """Ingest epochs for the specified ``experiment_name``.
+
+        Automatically discovers epochs from all registered directory types:
+
+        - "raw" directories: scans for CameraTop (or equivalent) CSV chunks
+        - "raw-ephys" directories: enumerates epoch directories containing an
+          ephys device subdirectory (NeuropixelsV2 / NeuropixelsV2Beta)
+        """
         device_name = _ref_device_mapping.get(experiment_name, "CameraTop")
 
+        # --- Behavior epochs (from "raw" directory) ---
         all_chunks, raw_data_dirs = _get_all_chunks(experiment_name, device_name)
         all_chunks.index = all_chunks.index.tz_localize(None)
 

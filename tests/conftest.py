@@ -15,40 +15,80 @@ import pytest
 
 logger = logging.getLogger(__name__)
 
-# Set default DataJoint connection env vars (for imports to work)
-# These will be overridden by mysql_container fixture for integration tests
-if "DJ_HOST" not in os.environ:
-    os.environ["DJ_HOST"] = "localhost"
-if "DJ_USER" not in os.environ:
-    os.environ["DJ_USER"] = "root"
-if "DJ_PASS" not in os.environ:
-    os.environ["DJ_PASS"] = "test_password"
-if "DJ_PORT" not in os.environ:
-    os.environ["DJ_PORT"] = "3306"
+# Set default DataJoint connection env vars for testcontainers mode.
+# Skipped when TEST_DB_PREFIX is set (external DB — credentials come from
+# datajoint.json + .secrets/).
+if not os.environ.get("TEST_DB_PREFIX"):
+    if "DJ_HOST" not in os.environ:
+        os.environ["DJ_HOST"] = "localhost"
+    if "DJ_USER" not in os.environ:
+        os.environ["DJ_USER"] = "root"
+    if "DJ_PASS" not in os.environ:
+        os.environ["DJ_PASS"] = "test_password"
+    if "DJ_PORT" not in os.environ:
+        os.environ["DJ_PORT"] = "3306"
 
 
-def pytest_configure(config):
-    """Called before test collection begins.
+def _make_mock_dj():
+    from unittest.mock import MagicMock
 
-    For unit tests, mock datajoint to prevent DB connection attempts
-    during import of aeon.dj_pipeline modules.
+    mock_dj = MagicMock()
+    mock_dj.logger = MagicMock()
+    mock_dj.config = MagicMock()
+    mock_dj.config.database.database_prefix = ""
+    mock_dj.VirtualModule = MagicMock()
+    mock_dj.Schema = MagicMock()
+    mock_dj.DataJointError = Exception
+    # Codec must be a real class so subclasses (AeonStreamCodec, OnixStreamCodec)
+    # can be instantiated without turning into MagicMock objects.
+    mock_dj.Codec = type("Codec", (), {})
+    return mock_dj
+
+
+@pytest.fixture(autouse=True)
+def mock_dj_for_unit(request):
+    """Auto-mock datajoint for unit tests.
+
+    This prevents DB connection attempts when importing
+    aeon.dj_pipeline modules in unit tests. Integration tests
+    will use the real DJ with testcontainers MySQL.
     """
-    # Check if we're running unit tests only
-    markers = config.getoption("-m", default="")
+    if not request.node.get_closest_marker("unit"):
+        yield
+        return
 
-    if "unit" in markers:
-        from unittest.mock import MagicMock
+    # Save and evict all datajoint + pipeline modules so the test gets a
+    # fresh import with the mock; not a cached real-DJ module from a prior
+    # integration test in the same session.
+    evict_prefixes = ("datajoint", "aeon.dj_pipeline")
+    saved = {
+        k: v for k, v in sys.modules.items() if any(k == p or k.startswith(p + ".") for p in evict_prefixes)
+    }
+    for k in saved:
+        sys.modules.pop(k)
 
-        # Create a mock datajoint module
-        mock_dj = MagicMock()
-        mock_dj.logger = MagicMock()
-        mock_dj.config = MagicMock()
-        mock_dj.config.database.database_prefix = ""
-        mock_dj.VirtualModule = MagicMock()
-        mock_dj.Schema = MagicMock()
-        mock_dj.DataJointError = Exception
+    sys.modules["datajoint"] = _make_mock_dj()
 
-        sys.modules["datajoint"] = mock_dj
+    yield
+
+    # Restore original modules (real DJ for integration tests that follow)
+    for k in list(sys.modules):
+        if any(k == p or k.startswith(p + ".") for p in evict_prefixes):
+            sys.modules.pop(k)
+    sys.modules.update(saved)
+
+    # Clear (or restore) the `dj_pipeline` attribute on the `aeon` package so that
+    # subsequent `import aeon.dj_pipeline as _pipeline` (IMPORT_FROM bytecode) reads
+    # the correct module rather than the stale mock left on the parent package object.
+    aeon_pkg = sys.modules.get("aeon")
+    if aeon_pkg is not None:
+        if "aeon.dj_pipeline" in saved:
+            aeon_pkg.dj_pipeline = saved["aeon.dj_pipeline"]  # type: ignore[attr-defined]
+        else:
+            try:
+                delattr(aeon_pkg, "dj_pipeline")
+            except AttributeError:
+                pass
 
 
 def pytest_collection_modifyitems(items):
@@ -61,20 +101,38 @@ def pytest_collection_modifyitems(items):
 
 @pytest.fixture(scope="session")
 def mysql_container():
-    """Auto-provision MySQL via testcontainers.
+    """Provide a MySQL backend for integration tests.
 
-    Session-scoped to share container across all integration tests.
-    Container is automatically cleaned up when session ends.
+    When TEST_DB_PREFIX is set in the environment, uses the pre-configured
+    external DB (connection details from datajoint.json + .secrets/).
+    Otherwise, auto-provisions a MySQL 8.0 container via testcontainers.
     """
-    from testcontainers.mysql import MySqlContainer
+    if os.environ.get("TEST_DB_PREFIX"):
+        logger.info(
+            f"Using external DB with prefix {os.environ['TEST_DB_PREFIX']}"
+        )
+        yield None
+        return
 
-    container = MySqlContainer(
-        image="mysql:8.0",
-        username="root",
-        password="test_password",
-        dbname="test_db",
-    )
-    container.start()
+    try:
+        from testcontainers.mysql import MySqlContainer
+
+        container = MySqlContainer(
+            image="mysql:8.0",
+            username="root",
+            password="test_password",
+            dbname="test_db",
+        )
+        container.start()
+    except Exception as e:
+        pytest.exit(
+            f"Could not start MySQL container: {e}\n\n"
+            "If Docker is not available (e.g. on HPC), set TEST_DB_PREFIX to\n"
+            "use an external database with your datajoint.json credentials:\n\n"
+            "    export TEST_DB_PREFIX=u_<username>_golden_tests_\n"
+            "    pytest -m integration tests/dj_pipeline/ -v\n",
+            returncode=1,
+        )
 
     # Update environment variables with container details
     host = container.get_container_host_ip()
