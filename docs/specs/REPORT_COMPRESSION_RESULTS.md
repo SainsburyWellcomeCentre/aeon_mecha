@@ -49,7 +49,7 @@ Multiply by number of shanks and experiment duration to estimate totals.
 
 Runs the full spike sorting pipeline using zarr-compressed intermediates instead of uncompressed binary, and compares execution time and storage.
 
-Both paramsets use identical sorting parameters (Kilosort 4). The only difference is the storage format for `recording.dat`/`recording.zarr` and `sorting_analyzer`/`sorting_analyzer.zarr`.
+**Test block:** 30-minute recording, 1 shank (96 channels). Both paramsets use identical sorting parameters (Kilosort 4). The only difference is the storage format for `recording.dat`/`recording.zarr` and `sorting_analyzer`/`sorting_analyzer.zarr`.
 
 ### Pipeline execution time
 
@@ -60,7 +60,7 @@ Both paramsets use identical sorting parameters (Kilosort 4). The only differenc
 | PostProcessing | 29.5 min | 25.0 min | zarr 15% faster |
 | **Total** | **46.2 min** | **36.9 min** | **zarr 20% faster overall** |
 
-SpikeSorting is slightly slower with zarr because Kilosort4 requires binary input — SpikeInterface converts zarr to a temporary binary internally. The zarr time (7.8 min) is within the range of binary runs (min 4.1 min, max 8.3 min).
+PreProcessing and PostProcessing are faster with zarr because the bottleneck is Ceph I/O, not CPU. Writing and reading 60% less data over the network outweighs the small CPU cost of blosc-zstd compression. SpikeSorting is slightly slower because Kilosort4 requires binary input — SpikeInterface converts zarr to a temporary binary internally. The zarr time (7.8 min) is within the range of binary runs (min 4.1 min, max 8.3 min).
 
 ### Storage per block (30-minute recording, 96 channels)
 
