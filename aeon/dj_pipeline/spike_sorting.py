@@ -278,7 +278,7 @@ class PreProcessing(dj.Computed):
                 # that zarr can't serialize without an explicit object_codec
                 for prop in list(si_recording.get_property_keys()):
                     values = si_recording.get_property(prop)
-                    if hasattr(values, "dtype") and values.dtype == object:
+                    if np.asarray(values).dtype == object:
                         si_recording.delete_property(prop)
                 logger.info(f"Writing zarr recording to {zarr_path}...")
                 si_recording.save(
