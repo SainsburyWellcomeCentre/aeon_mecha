@@ -126,3 +126,10 @@ try:
     processed_feeder.activate()
 except Exception as e:
     logger.debug(f"Could not activate processed_feeder: {e}")
+
+try:
+    from . import processed_movement  # pyright: ignore[reportUnusedImport]
+
+    processed_movement.activate()
+except Exception as e:
+    logger.debug(f"Could not activate processed_movement: {e}")
