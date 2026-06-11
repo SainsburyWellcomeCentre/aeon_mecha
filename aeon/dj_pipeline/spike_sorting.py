@@ -1,18 +1,18 @@
-import datajoint as dj
-import numpy as np
-from pathlib import Path
-import pandas as pd
 import json
-from datetime import datetime, UTC
-import joblib
-import tempfile
 import os
-from typing import Dict, List, Tuple, Any, Optional
+import tempfile
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+import datajoint as dj
+import joblib
+import numpy as np
+import pandas as pd
+from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import acquisition, ephys, get_schema_name
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
-
-from swc.aeon.io import api as io_api
 from aeon.schema.ephys import social_ephys
 
 schema = dj.Schema(get_schema_name("spike_sorting"))
@@ -21,15 +21,14 @@ logger = dj.logger
 
 @schema
 class ElectrodeGroup(dj.Manual):
-    """
-    A group of electrodes that are used for spike sorting.
-    All or subset of the electrodes from a particular electrode configuration 
+    """A group of electrodes that are used for spike sorting.
+    All or subset of the electrodes from a particular electrode configuration.
     """
     definition = """
     -> ephys.ElectrodeConfig
     electrode_group: varchar(16)  # e.g. 'all', 'shank1', etc.
     ---
-    electrode_group_description: varchar(1000) 
+    electrode_group_description: varchar(1000)
     electrode_count: int32
     """
 
@@ -77,7 +76,7 @@ class SortingParamSet(dj.Lookup):
     definition = """ # Parameter set for spike sorting
     paramset_id: varchar(16)
     ---
-    -> SortingMethod    
+    -> SortingMethod
     paramset_description='': varchar(1000)
     params: <blob>  # dictionary of all applicable parameters
     """
@@ -85,12 +84,11 @@ class SortingParamSet(dj.Lookup):
 
 @schema
 class SortingTask(dj.Manual):
-    """
-    A manual table for defining a sorting task ready to be run.
+    """A manual table for defining a sorting task ready to be run.
     A sorting task is defined by a unique combination of:
     - ephys block
     - electrode group
-    - sorting parameter set
+    - sorting parameter set.
     """
     definition = """
     # Manual table for defining a sorting task ready to be run
@@ -119,14 +117,14 @@ class PreProcessing(dj.Computed):
         """
 
     @classmethod
-    def infer_output_dir(cls, key: Dict[str, Any], relative: bool = False, mkdir: bool = False) -> Path:
+    def infer_output_dir(cls, key: dict[str, Any], relative: bool = False, mkdir: bool = False) -> Path:
         """Generate standardized output directory path for sorting results.
-        
+
         Args:
             key: Sorting task key with experiment, block, and parameter info
             relative: Return path relative to sorting root directory
             mkdir: Create directory if it doesn't exist
-            
+
         Returns:
             Path to the sorting output directory
         """
@@ -188,14 +186,14 @@ class PreProcessing(dj.Computed):
 
         return ephys_files, dir_types, electrodes_df, num_channels, fs_hz, gain_to_uV, offset_to_uV, output_dir, recording_file, recording_dir
 
-    def make_compute(self, key: Dict[str, Any], ephys_files: List[str], dir_types: List[str], 
-                     electrodes_df: pd.DataFrame, num_channels: int, fs_hz: float, 
-                     gain_to_uV: float, offset_to_uV: float, output_dir: Path, 
-                     recording_file: Path, recording_dir: Path) -> Tuple[Path, datetime, Path]:
+    def make_compute(self, key: dict[str, Any], ephys_files: list[str], dir_types: list[str],
+                     electrodes_df: pd.DataFrame, num_channels: int, fs_hz: float,
+                     gain_to_uV: float, offset_to_uV: float, output_dir: Path,
+                     recording_file: Path, recording_dir: Path) -> tuple[Path, datetime, Path]:
         """Preprocess ephys data for spike sorting.
-        
+
         Performs data concatenation, channel selection, filtering, and probe setup.
-        
+
         Args:
             key: Sorting task key
             ephys_files: List of ephys file paths
@@ -208,20 +206,20 @@ class PreProcessing(dj.Computed):
             output_dir: Output directory path
             recording_file: Path to save recording object
             recording_dir: Directory for recording files
-            
+
         Returns:
             Tuple of (output_dir, execution_time, recording_dir)
         """
         import probeinterface as pi
         import spikeinterface as si
         import spikeinterface.extractors as se
-        from spikeinterface import sorters, preprocessing
+        from spikeinterface import preprocessing, sorters
 
         execution_time = datetime.now(UTC)
 
         # Concatenate recordings
         si_recs = []
-        for f, d in zip(ephys_files, dir_types):
+        for f, d in zip(ephys_files, dir_types, strict=False):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
             si_rec = se.read_binary(
                 ephys_dir / f,
@@ -337,17 +335,17 @@ class SpikeSorting(dj.Computed):
 
         return recording_file, output_dir, params, sorting_method
 
-    def make_compute(self, key: Dict[str, Any], recording_file: Path, output_dir: Path, 
-                     params: Dict[str, Any], sorting_method: str) -> Tuple[Path, datetime, float]:
+    def make_compute(self, key: dict[str, Any], recording_file: Path, output_dir: Path,
+                     params: dict[str, Any], sorting_method: str) -> tuple[Path, datetime, float]:
         """Run spike sorting using specified algorithm and parameters.
-        
+
         Args:
             key: Sorting task key
             recording_file: Path to preprocessed recording
             output_dir: Base output directory
             params: Sorting parameters dictionary
             sorting_method: Name of sorting algorithm (e.g., kilosort2)
-            
+
         Returns:
             Tuple of (sorting_output_dir, execution_time, execution_duration)
         """
@@ -359,7 +357,7 @@ class SpikeSorting(dj.Computed):
         #   helping free reserved but unallocated memory (like the 7.69 GiB in the error)
         if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
             os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_threshold:0.6"
-        
+
         import spikeinterface as si
         from spikeinterface import sorters
 
@@ -387,14 +385,13 @@ class SpikeSorting(dj.Computed):
         # to avoid SpikeInterface rerunning the `write_binary_recording` step
         # https://github.com/SpikeInterface/spikeinterface/blob/705c9320c854f2a192fa200fe7866cec5a8ffca7/src/spikeinterface/sorters/external/kilosortbase.py#L124
         sorting_params["skip_kilosort_preprocessing"] = False
-        
+
         # Add Kilosort4 memory optimization parameters to reduce GPU memory usage
         # clear_cache=True forces PyTorch to clear cached CUDA memory after memory-intensive steps,
         # which helps free reserved but unallocated memory (like the 7.69 GiB in the error)
-        if sorting_method == "kilosort4":
-            if "clear_cache" not in sorting_params:
-                sorting_params["clear_cache"] = True
-                
+        if sorting_method == "kilosort4" and "clear_cache" not in sorting_params:
+            sorting_params["clear_cache"] = True
+
         if not binary_rec.binary_compatible_with(dtype="int16", time_axis=0, file_paths_length=1):
             raise ValueError(f"Incompatible binary file for spike sorting: {binary_file_path}")
 
@@ -473,19 +470,19 @@ class PostProcessing(dj.Computed):
 
         return recording_file, sorting_file, output_dir, params
 
-    def make_compute(self, key: Dict[str, Any], recording_file: Path, sorting_file: Path, 
-                     output_dir: Path, params: Dict[str, Any]) -> Tuple[Path, datetime, float]:
+    def make_compute(self, key: dict[str, Any], recording_file: Path, sorting_file: Path,
+                     output_dir: Path, params: dict[str, Any]) -> tuple[Path, datetime, float]:
         """Post-process spike sorting results with quality assessment.
-        
+
         Runs SpikeInterface sorting analyzer to compute quality metrics and extensions.
-        
+
         Args:
             key: Sorting task key
             recording_file: Path to recording object
             sorting_file: Path to sorting results
             output_dir: Base output directory
             params: Post-processing parameters
-            
+
         Returns:
             Tuple of (analyzer_output_dir, execution_time, execution_duration)
         """
@@ -657,8 +654,7 @@ class SortedSpikes(dj.Imported):
         """
 
     def make(self, key):
-        """
-        From sorted spikes output, extract units, spike times, electrode, etc.
+        """From sorted spikes output, extract units, spike times, electrode, etc.
         Also, synchronize the spike times to the HARP clock.
         """
         import spikeinterface as si
@@ -755,7 +751,7 @@ class SortedSpikes(dj.Imported):
         channel2electrode_map = {
             chn_idx: electrode_map[int(elec_id)]
             for chn_idx, elec_id in zip(sorting_analyzer.get_probe().device_channel_indices,
-                                        sorting_analyzer.get_probe().contact_ids)
+                                        sorting_analyzer.get_probe().contact_ids, strict=False)
         }
 
         # Get unit id to quality label mapping
@@ -787,7 +783,7 @@ class SortedSpikes(dj.Imported):
                 ]
             )
             unit_spikes_loc = spike_locations.get_data()[unit_spikes_df.index]
-            _, spike_depths = zip(*unit_spikes_loc)  # x-coordinates, y-coordinates
+            _, spike_depths = zip(*unit_spikes_loc, strict=False)  # x-coordinates, y-coordinates
             spike_indices = si_sorting.get_unit_spike_train(unit_id)
 
             assert len(spike_indices) == len(spike_sites) == len(spike_depths)
@@ -827,11 +823,11 @@ class Waveform(dj.Imported):
         # Spike waveforms and their mean across spikes for the given unit at the given electrode
         -> master
         -> SortedSpikes.Unit
-        -> ephys.ElectrodeConfig.Electrode  
-        --- 
+        -> ephys.ElectrodeConfig.Electrode
+        ---
         channel_waveform: <blob>   # (uV) mean waveform across spikes of the given unit at the given electrode
         """
-        
+
     def make(self, key):
         import spikeinterface as si
 
@@ -888,7 +884,7 @@ class Waveform(dj.Imported):
         channel2electrode_map = {
             chn_idx: electrode_map[int(elec_id)]
             for chn_idx, elec_id in zip(sorting_analyzer.get_probe().device_channel_indices,
-                                        sorting_analyzer.get_probe().contact_ids)
+                                        sorting_analyzer.get_probe().contact_ids, strict=False)
         }
 
         templates = sorting_analyzer.get_extension("templates")
@@ -923,7 +919,7 @@ class SortingQuality(dj.Imported):
     definition = """
     -> SortedSpikes
     """
-    
+
     class Metric(dj.Part):
         definition = """  # Quality metrics for a given unit
         -> master
@@ -970,7 +966,7 @@ class SortingQuality(dj.Imported):
         ).get_data()
         metrics_df = pd.concat([qc_metrics, template_metrics], axis=1)
 
-        for unit_key in (SortedSpikes.Unit & key).keys():
+        for unit_key in (SortedSpikes.Unit & key):
             unit_qc = metrics_df.loc[unit_key["unit"]].to_dict()
             self.Metric.insert1(
                 {**unit_key, "qc_metrics": json.dumps(unit_qc, default=str)}
@@ -993,12 +989,12 @@ class SyncedSpikes(dj.Imported):
         spike_times: <blob@dj_store>  # datetime64[ns] synchronized spike times (in HARP clock) for the respective EphysChunk
         """
 
-    def make(self, key: Dict[str, Any]) -> None:
+    def make(self, key: dict[str, Any]) -> None:
         """Synchronize spike indices to HARP timestamps and organize by ephys chunks.
-        
+
         This method performs the critical step of converting spike indices (from concatenated
         binary data) back to actual timestamps synchronized to the HARP clock system.
-        
+
         Process:
         1. Load sync models for ONIX→HARP timestamp conversion
         2. Load ONIX clock data from all ephys chunks in the block
@@ -1007,7 +1003,7 @@ class SyncedSpikes(dj.Imported):
            - Convert indices to ONIX timestamps using clock data
            - Apply sync models to convert ONIX→HARP timestamps
            - Group results by ephys chunk for downstream analysis
-        
+
         Args:
             key: Dictionary containing sorting task identifiers
         """
@@ -1018,7 +1014,7 @@ class SyncedSpikes(dj.Imported):
                 "onix_ts_start", "onix_ts_end", "sync_model",
                 order_by="onix_ts_start"
             )
-            for s, e, m in zip(*sync_):
+            for s, e, m in zip(*sync_, strict=False):
                 sync_models[(s, e)] = joblib.load(m)
 
         # Load ephys onix times
@@ -1033,21 +1029,21 @@ class SyncedSpikes(dj.Imported):
         dir_types = [r["directory_type"] for r in _clock_rows]
 
         onix_times = []
-        for f, d in zip(ephys_files, dir_types):
+        for f, d in zip(ephys_files, dir_types, strict=False):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
             onix_ts = np.memmap(ephys_dir / f, mode="r", dtype=np.uint64)
             onix_times.append(onix_ts)
         onix_lengths = np.cumsum([len(s) for s in onix_times])
 
-        def indices2syncedtimes(spike_indices: np.ndarray) -> Tuple[Dict[str, Any], np.ndarray]:
+        def indices2syncedtimes(spike_indices: np.ndarray) -> tuple[dict[str, Any], np.ndarray]:  # type: ignore[return-value]
             """Convert spike indices to HARP-synchronized timestamps by ephys chunk.
-            
+
             Maps spike indices (from concatenated binary data) back to their original
             ephys chunks and converts to HARP timestamps using sync models.
-            
+
             Args:
                 spike_indices: Array of spike indices in concatenated recording
-                
+
             Yields:
                 Tuple of (chunk_key, synced_timestamps) for each ephys chunk
             """
@@ -1064,7 +1060,7 @@ class SyncedSpikes(dj.Imported):
                 # Convert absolute indices to relative indices within this chunk
                 spk_ind -= spk_ind[0]  # make relative to chunk start
                 spk_times = onix_times[idx][spk_ind]  # get ONIX timestamps
-                
+
                 # Apply sync models to convert ONIX→HARP timestamps
                 synced_ts = []
                 for (start, end), model in sync_models.items():
@@ -1231,7 +1227,7 @@ class UnitMatching(dj.Computed):
         from spikeinterface.core import NumpySorting
 
         execution_time = datetime.now(UTC)
-        matching_method = (UnitMatchingParamSet & key).fetch1("matching_method")
+        (UnitMatchingParamSet & key).fetch1("matching_method")
 
         insertion_key = {
             k: key[k] for k in ("experiment_name", "subject", "insertion_number")
@@ -1487,13 +1483,13 @@ class UnitMatching(dj.Computed):
 
 def ephys_preproc(recording) -> Any:
     """Apply standard ephys preprocessing pipeline.
-    
+
     Performs unsigned-to-signed conversion, bandpass filtering (300-6000 Hz),
     and common average referencing using median.
-    
+
     Args:
         recording: SpikeInterface recording object
-        
+
     Returns:
         Preprocessed recording object
     """
@@ -1511,14 +1507,14 @@ def ephys_preproc(recording) -> Any:
 
 def load_and_verify_binary_file(binary_file_path: Path, se_recording_obj: Any) -> Any:
     """Load and verify binary recording file matches original recording.
-    
+
     Args:
         binary_file_path: Path to binary recording file
         se_recording_obj: Original SpikeInterface recording object
-        
+
     Returns:
         Binary recording object with probe geometry
-        
+
     Raises:
         ValueError: If sample counts don't match between files
     """

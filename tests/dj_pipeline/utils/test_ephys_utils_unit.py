@@ -9,6 +9,7 @@ so a module-level import would trigger aeon/dj_pipeline/__init__.py, which
 activates the streams schema and attempts a DB connection.
 """
 
+import importlib.util
 import json
 from datetime import datetime
 from pathlib import Path
@@ -375,6 +376,10 @@ def _mock_table_with_transaction():
     return table
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("probeinterface") is None,
+    reason="probeinterface not installed (only in spike-sorting extra)",
+)
 class TestCreateElectrodeConfig:
     """Unit tests for create_electrode_config — uses the fixture JSON, mocks tables.
 

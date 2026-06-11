@@ -549,11 +549,12 @@ class TestCodecStreamData:
 
 
 class TestStreamPopulationInventory:
-    """Inventory which stream tables actually populate from the golden dataset.
+    r"""Inventory which stream tables actually populate from the golden dataset.
 
-    Diagnostic — run with `-s` to see the printed inventory:
+    Diagnostic — run with ``-s`` to see the printed inventory:
 
-        uv run pytest -m integration tests/dj_pipeline/test_full_ingestion.py::TestStreamPopulationInventory -s
+        uv run pytest -m integration \
+            tests/dj_pipeline/test_full_ingestion.py::TestStreamPopulationInventory -s
     """
 
     POPULATE_LIMIT = 50

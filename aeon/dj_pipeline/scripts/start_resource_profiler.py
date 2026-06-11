@@ -1,4 +1,4 @@
-""" Simple periodic system resource logger: CPU, memory, network, GPU.
+"""Simple periodic system resource logger: CPU, memory, network, GPU.
 
 This script logs system resource usage at regular intervals to a CSV file.
 
@@ -11,31 +11,32 @@ Adrian 2025-09-29
 """
 
 
-import time
-import psutil
 import argparse
 import subprocess
+import time
 from datetime import datetime
+
+import psutil
 
 #!/usr/bin/env python3
 
 
 def get_usage_sample(prev_net=None):
     """Get a sample of system usage statistics.
-    
+
     Args:
         prev_net: Previous net_io_counters object or None.
         interval: Time in seconds since last sample.
+
     Returns:
         A tuple (row_str, net) where row_str is a comma-separated string of stats,
         and net is the current net_io_counters object to be used in the next call.
-     """
-    
+    """
     # CPU
     cpu_pct = psutil.cpu_percent(interval=None)
     cpu_times = psutil.cpu_times_percent(interval=None)
     vm = psutil.virtual_memory()
-    
+
     # Network
     net = psutil.net_io_counters()
     if prev_net is None:
@@ -43,7 +44,7 @@ def get_usage_sample(prev_net=None):
     else:
         delta_sent = net.bytes_sent - prev_net.bytes_sent
         delta_recv = net.bytes_recv - prev_net.bytes_recv
-    
+
     # GPU - handle gracefully if nvidia-smi not available
     try:
         gpu_stats = subprocess.check_output(
@@ -119,7 +120,7 @@ def main():
             f.write(header + "\n")
             if args.print:
                 print(header)
-                
+
             prev_net = None
             while True:
                 loop_start = time.time()
@@ -129,16 +130,15 @@ def main():
                     print(new_row)
                 if args.once:
                     break
-                    
+
                 elapsed = time.time() - loop_start
                 sleep_for = args.interval - elapsed
                 if sleep_for > 0:
                     time.sleep(sleep_for)
-                    
+
     except KeyboardInterrupt:
         print("\nScript stopped manually.")
 
 
 if __name__ == "__main__":
     main()
-    

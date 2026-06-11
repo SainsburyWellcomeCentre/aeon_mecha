@@ -5,10 +5,9 @@ import logging
 import os
 from typing import cast
 
-import pymysql.converters
-
 import datajoint as dj
 import pandas as pd
+import pymysql.converters
 
 
 # ---------------------------------------------------------------------------
@@ -39,8 +38,9 @@ pymysql.converters.escape_dict = _escape_dict_as_json
 pymysql.converters.encoders[dict] = _escape_dict_as_json
 pymysql.converters.conversions[dict] = _escape_dict_as_json
 
-# Register Aeon codecs BEFORE any schema activation
-from aeon.dj_pipeline.utils.codec import (  # pyright: ignore[reportUnusedImport]
+# Register Aeon codecs BEFORE any schema activation — must come after the
+# pymysql converter patch above, hence the E402 noqa.
+from aeon.dj_pipeline.utils.codec import (  # noqa: E402, pyright: ignore[reportUnusedImport]
     AeonStreamCodec,
     OnixStreamCodec,
 )

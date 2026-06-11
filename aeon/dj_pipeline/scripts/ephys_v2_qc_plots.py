@@ -16,14 +16,15 @@ from datetime import datetime
 from pathlib import Path
 
 import datajoint as dj
-import matplotlib
-matplotlib.use("Agg")  # non-interactive backend for HPC
-import matplotlib.pyplot as plt
+import matplotlib as mpl
+
+mpl.use("Agg")  # non-interactive backend for HPC
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from aeon.dj_pipeline import ephys, spike_sorting, get_schema_name
+from aeon.dj_pipeline import ephys, get_schema_name, spike_sorting
 
 # ---------------------------------------------------------------------------
 # Configuration (same as ephys_v2_setup.py)
@@ -80,7 +81,7 @@ def compute_unit_block_matrix(blocks, unit_entries):
     n_blocks = len(blocks)
 
     # Map block_start → block index
-    block_start_to_idx = dict(zip(blocks["block_start"], blocks["block_idx"]))
+    block_start_to_idx = dict(zip(blocks["block_start"], blocks["block_idx"], strict=False))
 
     # Presence matrix: 1 if unit present in block, 0 otherwise
     presence = np.zeros((n_units, n_blocks), dtype=int)
@@ -166,7 +167,7 @@ def plot_unit_heatmap(blocks, global_units, presence, longevity, output_dir):
     sorted_presence = presence[sort_idx]
 
     fig, ax = plt.subplots(figsize=(max(6, n_blocks * 1.5 + 2), max(6, n_units * 0.12 + 2)))
-    im = ax.imshow(sorted_presence, aspect="auto", cmap="Blues", interpolation="nearest")
+    ax.imshow(sorted_presence, aspect="auto", cmap="Blues", interpolation="nearest")
 
     ax.set_xticks(range(n_blocks))
     ax.set_xticklabels(blocks["block_label"], fontsize=10)
@@ -249,7 +250,7 @@ def plot_longevity_histogram(longevity, n_blocks, output_dir):
 
     # Color bars by longevity
     max_lon = n_blocks
-    for bar, b in zip(bars, range(1, n_blocks + 1)):
+    for bar, b in zip(bars, range(1, n_blocks + 1), strict=False):
         bar.set_facecolor(CMAP_LONGEVITY(b / max_lon))
 
     # Annotate counts
@@ -278,7 +279,7 @@ def plot_spike_count_consistency(blocks, global_units, presence, longevity,
     Only shows units tracked across 2+ blocks. Lines colored by longevity.
     """
     n_blocks = len(blocks)
-    block_start_to_idx = dict(zip(blocks["block_start"], blocks["block_idx"]))
+    block_start_to_idx = dict(zip(blocks["block_start"], blocks["block_idx"], strict=False))
     max_longevity = longevity.max()
 
     # Aggregate spike counts per (global_unit, block)

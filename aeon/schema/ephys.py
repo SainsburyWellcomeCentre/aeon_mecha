@@ -1,11 +1,10 @@
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
-from datetime import datetime
 from sklearn.linear_model import LinearRegression
-
 from swc.aeon.io import reader as _reader
 from swc.aeon.schema.streams import Stream, StreamGroup
-
 
 # -- Ephys streams for HarpSync and OnixClock data
 

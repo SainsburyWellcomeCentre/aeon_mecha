@@ -181,17 +181,21 @@ class SubjectReferenceWeight(dj.Manual):
         """Get the reference weight for the subject."""
         subj_key = {"subject": subject_name}
 
-        food_restrict_query = SubjectProcedure & subj_key & "procedure_name = 'R02 - food restriction'"
+        food_restrict_query = (
+            SubjectProcedure & subj_key & "procedure_name = 'R02 - food restriction'"
+        )
         if food_restrict_query:
-            ref_date = food_restrict_query.to_arrays("procedure_date", order_by="procedure_date DESC", limit=1)[
-                0
-            ]
+            ref_date = food_restrict_query.to_arrays(
+                "procedure_date", order_by="procedure_date DESC", limit=1
+            )[0]
         else:
             ref_date = datetime.now(UTC).date()
 
         weight_query = SubjectWeight & subj_key & f"weight_time < '{ref_date}'"
         ref_weight = (
-            weight_query.to_arrays("weight", order_by="weight_time DESC", limit=1)[0] if weight_query else -1
+            weight_query.to_arrays("weight", order_by="weight_time DESC", limit=1)[0]
+            if weight_query
+            else -1
         )
 
         entry = {
