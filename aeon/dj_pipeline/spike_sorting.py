@@ -538,12 +538,13 @@ class PostProcessing(dj.Computed):
         )
 
         analyzer_output_dir = output_dir / "sorting_analyzer"
-        # Safety check: refuse to overwrite existing data on ceph
-        if analyzer_output_dir.exists() and any(analyzer_output_dir.iterdir()):
-            raise FileExistsError(
-                f"Sorting analyzer directory already contains data: {analyzer_output_dir}. "
-                "Refusing to overwrite existing sorting data."
-            )
+        # Safety check: refuse to overwrite existing data on ceph (check both binary and zarr paths)
+        for check_dir in [analyzer_output_dir, output_dir / "sorting_analyzer.zarr"]:
+            if check_dir.exists() and any(check_dir.iterdir()):
+                raise FileExistsError(
+                    f"Sorting analyzer directory already contains data: {check_dir}. "
+                    "Refusing to overwrite existing sorting data."
+                )
 
         has_units = si_sorting.unit_ids.size > 0
 
@@ -716,6 +717,8 @@ class SortedSpikes(dj.Imported):
         # Use lazy import to avoid circular dependency
         curation_id = -1
         analyzer_output_dir = output_dir / "sorting_analyzer"
+        if not analyzer_output_dir.exists():
+            analyzer_output_dir = output_dir / "sorting_analyzer.zarr"
         try:
             # Lazy import to avoid circular dependency
             import importlib
