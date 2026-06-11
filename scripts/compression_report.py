@@ -136,20 +136,33 @@ def report_workstream2():
         for entry in entries.to_dicts():
             output_dir = sorting_root / entry["sorting_output_dir"]
             rec_dir = output_dir.parent / "recording"
-            ana_dir = output_dir / "sorting_analyzer"
-            if rec_dir.exists():
-                size = sum(f.stat().st_size for f in rec_dir.rglob("*") if f.is_file())
+
+            # Measure recording.dat or recording.zarr individually, not the shared directory
+            if label == "zarr":
+                rec_path = rec_dir / "recording.zarr"
+            else:
+                rec_path = rec_dir / "recording.dat"
+            if rec_path.exists():
+                if rec_path.is_dir():
+                    size = sum(f.stat().st_size for f in rec_path.rglob("*") if f.is_file())
+                else:
+                    size = rec_path.stat().st_size
                 recording_sizes.append(size)
-            if ana_dir.exists():
-                size = sum(f.stat().st_size for f in ana_dir.rglob("*") if f.is_file())
-                analyzer_sizes.append(size)
+
+            # Check both sorting_analyzer (binary_folder) and sorting_analyzer.zarr
+            for ana_name in ["sorting_analyzer", "sorting_analyzer.zarr"]:
+                ana_dir = output_dir / ana_name
+                if ana_dir.exists() and any(ana_dir.iterdir()):
+                    size = sum(f.stat().st_size for f in ana_dir.rglob("*") if f.is_file())
+                    analyzer_sizes.append(size)
+                    break
 
         if recording_sizes:
             avg = np.mean(recording_sizes)
-            print(f"  {label} recording dir: n={len(recording_sizes)}, avg={avg / 1e9:.2f} GB")
+            print(f"  {label} recording: n={len(recording_sizes)}, avg={avg / 1e9:.2f} GB")
         if analyzer_sizes:
             avg = np.mean(analyzer_sizes)
-            print(f"  {label} analyzer dir:  n={len(analyzer_sizes)}, avg={avg / 1e9:.2f} GB")
+            print(f"  {label} analyzer:  n={len(analyzer_sizes)}, avg={avg / 1e9:.2f} GB")
 
     print()
 
