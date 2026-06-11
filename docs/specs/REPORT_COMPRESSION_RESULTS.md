@@ -31,17 +31,17 @@ Compresses each raw ephys chunk to zarr, decompresses, and verifies the result m
 | Compression | 152.4s | 75.9s | 192.3s |
 | Decompression | 36.1s | 12.4s | 182.3s |
 
-### Extrapolation to full experiment
+### Scaling rates (per shank)
 
-For a 30-hour recording (131 hours total across all shanks):
+| Metric | Per hour of recording |
+|--------|----------------------|
+| Raw data size | ~80 GB/h |
+| Compressed size | ~41 GB/h |
+| Space saved | ~39 GB/h |
+| Compression time | ~15 min/h |
+| Decompression time | ~4 min/h |
 
-| | Per shank (30h) | Full experiment (est.) |
-|--|-----------------|----------------------|
-| Raw size | ~2.4 TB | ~9.6 TB |
-| Compressed | ~1.2 TB | ~4.9 TB |
-| Savings | ~1.2 TB | ~4.7 TB |
-| Compression time | ~8h | ~32h |
-| Decompression time | ~2h | ~7h |
+Multiply by number of shanks and experiment duration to estimate totals.
 
 ---
 
@@ -70,13 +70,14 @@ SpikeSorting is slightly slower with zarr because Kilosort4 requires binary inpu
 | Sorting analyzer | 0.50 GB | 0.30 GB | 40% |
 | **Total** | **13.17 GB** | **5.33 GB** | **60%** |
 
-### Extrapolation to full experiment
+### Scaling rates (per shank)
 
-| | Binary (est.) | Zarr (est.) | Savings |
-|--|---------------|-------------|---------|
-| All recordings | ~10.0 TB | ~4.0 TB | ~6.0 TB |
-| All analyzers | ~0.4 TB | ~0.24 TB | ~0.16 TB |
-| **Total intermediates** | **~10.4 TB** | **~4.2 TB** | **~6.2 TB** |
+| File | Binary per hour | Zarr per hour | Saved per hour |
+|------|----------------|---------------|----------------|
+| Recording | ~25 GB/h | ~10 GB/h | ~15 GB/h |
+| Analyzer | ~1 GB/h | ~0.6 GB/h | ~0.4 GB/h |
+
+Multiply by number of shanks and experiment duration to estimate totals.
 
 ---
 
@@ -89,7 +90,7 @@ SpikeSorting is slightly slower with zarr because Kilosort4 requires binary inpu
 
 **Tier 1 (intermediates):** Ready to adopt. Zarr intermediates save 60% disk space with no speed penalty — in fact the pipeline runs faster overall because compressed I/O reduces Ceph bandwidth. The only code changes are in `PreProcessing` and `PostProcessing` to save in zarr format instead of binary.
 
-**Tier 2 (raw data):** The 1.95x compression ratio and verified losslessness make this viable for archival. Compression is slow (~8h per shank for a 30h recording) but is a one-time offline operation. Decompression is fast enough (~2h per shank) for on-demand access.
+**Tier 2 (raw data):** The 1.95x compression ratio and verified losslessness make this viable for archival. Compression takes about 15 min per hour of recording per shank — slow but a one-time offline operation. Decompression is ~4 min per hour of recording, fast enough for on-demand access.
 
 ---
 
