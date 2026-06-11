@@ -257,6 +257,43 @@ class DeliveryEvents(dj.Computed):
         self.insert1(new_entry)
 
 
+@schema
+class FeederQC(dj.Computed):
+    definition = """
+    -> streams.FeederEncoder
+    ---
+    violation_count: int32    # number of temporal violations detected
+    violation_times: <blob>   # (datetime) timestamps for temporal violations
+    duplicate_count: int32    # number of duplicate timestamps detected
+    duplicate_times: <blob>   # (datetime) timestamps for duplicates
+    """
+
+    def make(self, key):
+        """Detect duplication and violation of temporal order of feeder data."""
+        encoder_df = (streams.FeederEncoder & key).fetch1("stream_df")
+        t = encoder_df.index.values
+
+        # Get violations
+        violation_frames = t.argsort() - np.arange(len(t))
+        violation_mask = violation_frames < 0
+        violation_count = int(np.sum(violation_mask))
+        violation_times = t[violation_mask]
+
+        # Get duplicates
+        duplicate_mask = np.diff(t) == np.timedelta64(0)
+        duplicate_count = int(np.sum(duplicate_mask))
+        duplicate_times = t[np.where(duplicate_mask)[0] + 1]
+
+        new_entry = {
+            **key,
+            "violation_count": violation_count,
+            "violation_times": violation_times,
+            "duplicate_count": duplicate_count,
+            "duplicate_times": duplicate_times,
+        }
+        self.insert1(new_entry)
+
+
 _REQUIRED_STREAMS = ("FeederEncoder", "FeederBeamBreak", "FeederDeliverPellet")
 
 

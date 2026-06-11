@@ -102,6 +102,44 @@ class MousePositionTracking(dj.Computed):
         self.insert1(new_entry)
 
 
+@schema
+class VideoQC(dj.Computed):
+    definition = """
+    -> streams.CameraVideo
+    ---
+    violation_count: int32    # number of temporal violations detected
+    violation_times: <blob>   # (datetime) timestamps
+    duplicate_count: int32    # number of duplicate timestamps detected
+    duplicate_times: <blob>   # (datetime) timestamps
+    """
+
+    def make(self, key):
+        """Detect duplication and violation of temporal order of video data."""
+        video_df = (streams.CameraVideo & key).fetch1("stream_df")
+        t = video_df.index.values
+
+        # Get violations
+        # Could get from duplicate detection, but this provides more clarity
+        violation_frames = t.argsort() - np.arange(len(t))
+        violation_mask = violation_frames < 0
+        violation_count = int(np.sum(violation_mask))
+        violation_times = t[violation_mask]
+
+        # Get duplicates
+        duplicate_mask = np.diff(t) == np.timedelta64(0)
+        duplicate_count = int(np.sum(duplicate_mask))
+        duplicate_times = t[np.where(duplicate_mask)[0] + 1]
+
+        new_entry = {
+            **key,
+            "violation_count": violation_count,
+            "violation_times": violation_times,
+            "duplicate_count": duplicate_count,
+            "duplicate_times": duplicate_times,
+        }
+        self.insert1(new_entry)
+
+
 _REQUIRED_STREAMS = ("CameraPosition", "CameraVideo")
 
 
