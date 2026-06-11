@@ -261,7 +261,7 @@ _REQUIRED_STREAMS = ("FeederEncoder", "FeederBeamBreak", "FeederDeliverPellet")
 
 
 def activate(*, create_schema: bool = True, create_tables: bool = True) -> bool:
-    """Bind the analysis_feeder schema to the database if upstream streams exist.
+    """Bind the processed_feeder schema to the database if upstream streams exist.
 
     Checks that ``streams.FeederEncoder``, ``streams.FeederBeamBreak``, and
     ``streams.FeederDeliverPellet`` are all present as Python attributes — i.e.
@@ -277,14 +277,14 @@ def activate(*, create_schema: bool = True, create_tables: bool = True) -> bool:
         True if the schema was activated, False if upstream streams missing.
     """
     if streams is None:
-        logger.warning("analysis_feeder not activated — streams module not initialized")
+        logger.warning("processed_feeder not activated — streams module not initialized")
         return False
     missing = [t for t in _REQUIRED_STREAMS if not hasattr(streams, t)]
     if missing:
-        logger.warning(f"analysis_feeder not activated — streams missing: {missing}")
+        logger.warning(f"processed_feeder not activated — streams missing: {missing}")
         return False
     schema.activate(
-        get_schema_name("analysis_feeder"),
+        get_schema_name("processed_feeder"),
         create_schema=create_schema,
         create_tables=create_tables,
     )

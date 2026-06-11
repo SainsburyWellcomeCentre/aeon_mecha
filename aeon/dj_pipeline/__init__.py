@@ -121,8 +121,8 @@ except ImportError:
 # stream tables. Each module's activate() is a no-op (logged warning) if its
 # upstream streams aren't present in this experiment.
 try:
-    from . import analysis_feeder  # pyright: ignore[reportUnusedImport]
+    from . import processed_feeder  # pyright: ignore[reportUnusedImport]
 
-    analysis_feeder.activate()
+    processed_feeder.activate()
 except Exception as e:
-    logger.debug(f"Could not activate analysis_feeder: {e}")
+    logger.debug(f"Could not activate processed_feeder: {e}")
