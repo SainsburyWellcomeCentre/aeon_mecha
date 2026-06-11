@@ -729,7 +729,6 @@ class CompressionTest(dj.Computed):
     num_samples            : bigint        # total samples in this chunk
     sampling_frequency     : float         # Hz
     codec_name             : varchar(64)   # e.g. "blosc-zstd-5-bitshuffle"
-    n_jobs                 : int32         # number of parallel workers used
     execution_time         : datetime      # when this test ran
     """
 
@@ -778,8 +777,7 @@ class CompressionTest(dj.Computed):
         shuffle_names = {Blosc.NOSHUFFLE: "noshuffle", Blosc.SHUFFLE: "shuffle", Blosc.BITSHUFFLE: "bitshuffle"}
         codec_name = f"blosc-{compressor.cname}-{compressor.clevel}-{shuffle_names.get(compressor.shuffle, str(compressor.shuffle))}"
 
-        n_jobs = 1
-        job_kwargs = {"n_jobs": n_jobs, "chunk_duration": "2s"}
+        job_kwargs = {"n_jobs": 1, "chunk_duration": "2s"}
 
         # Temp directory for zarr and decompressed binary
         sorting_root = get_sorting_root_dir()
@@ -852,7 +850,6 @@ class CompressionTest(dj.Computed):
             "num_samples": num_samples,
             "sampling_frequency": fs_hz,
             "codec_name": codec_name,
-            "n_jobs": n_jobs,
             "execution_time": execution_time,
         })
 
