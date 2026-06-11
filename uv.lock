@@ -12,7 +12,7 @@ resolution-markers = [
 
 [[package]]
 name = "aeon-mecha"
-version = "0.4.4"
+version = "0.4.5"
 source = { editable = "." }
 dependencies = [
     { name = "bottleneck" },
@@ -136,7 +136,7 @@ test = [
 test-golden = [
     { name = "pytest", specifier = ">=7.0" },
     { name = "pytest-cov" },
-    { name = "swc-aeon-rigs-foragingabc", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=tn%2Fenv-data-readers" },
+    { name = "swc-aeon-rigs-foragingabc", git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main" },
     { name = "testcontainers", extras = ["mysql"], specifier = ">=3.7" },
 ]
 
@@ -3335,7 +3335,7 @@ dependencies = [
 [[package]]
 name = "swc-aeon-rigs-foragingabc"
 version = "0.0.1"
-source = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=tn%2Fenv-data-readers#d1e612d81766c9460127e4f3e645066349147726" }
+source = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git?branch=main#13defe221ec42d90ff88f36c92e663350f1a6ed4" }
 dependencies = [
     { name = "dotmap" },
     { name = "gitpython" },

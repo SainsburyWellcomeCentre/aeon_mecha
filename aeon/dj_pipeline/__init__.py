@@ -5,10 +5,9 @@ import logging
 import os
 from typing import cast
 
-import pymysql.converters
-
 import datajoint as dj
 import pandas as pd
+import pymysql.converters
 
 
 # ---------------------------------------------------------------------------
@@ -39,8 +38,9 @@ pymysql.converters.escape_dict = _escape_dict_as_json
 pymysql.converters.encoders[dict] = _escape_dict_as_json
 pymysql.converters.conversions[dict] = _escape_dict_as_json
 
-# Register Aeon codecs BEFORE any schema activation
-from aeon.dj_pipeline.utils.codec import (  # pyright: ignore[reportUnusedImport]
+# Register Aeon codecs BEFORE any schema activation — must come after the
+# pymysql converter patch above, hence the E402 noqa.
+from aeon.dj_pipeline.utils.codec import (  # noqa: E402, pyright: ignore[reportUnusedImport]
     AeonStreamCodec,
     OnixStreamCodec,
 )
@@ -115,3 +115,21 @@ except ImportError:
         streams = dj.VirtualModule("streams", streams_maker.schema_name)
     except Exception as e:
         logger.debug(f"Could not import streams module: {e}")
+
+
+# Activate downstream analysis schemas that depend on dynamically-generated
+# stream tables. Each module's activate() is a no-op (logged warning) if its
+# upstream streams aren't present in this experiment.
+try:
+    from . import processed_feeder  # pyright: ignore[reportUnusedImport]
+
+    processed_feeder.activate()
+except Exception as e:
+    logger.debug(f"Could not activate processed_feeder: {e}")
+
+try:
+    from . import processed_movement  # pyright: ignore[reportUnusedImport]
+
+    processed_movement.activate()
+except Exception as e:
+    logger.debug(f"Could not activate processed_movement: {e}")

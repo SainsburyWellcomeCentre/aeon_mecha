@@ -67,6 +67,7 @@ def find_root_directory(
 
 
 def get_sorting_root_dir(repository_name="ceph_aeon") -> pathlib.Path:
+    """Return the path under ``repository_name`` where ephys sorting outputs are stored."""
     repo_path = get_repository_path(repository_name)
     sorting_dir = repo_path / "aeon" / "dj_store"
     if not sorting_dir.exists():

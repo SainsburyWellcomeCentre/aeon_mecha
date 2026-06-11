@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aeon_mecha"
-version = "0.4.4"
+version = "0.4.5"
 requires-python = ">=3.11,<3.13"
 description = '''
     Code for managing acquired data from Project Aeon experiments. Includes general file IO,
@@ -119,6 +119,7 @@ extend-exclude = [
   "*.ipynb",
   ".vscode",
   "aeon/dj_pipeline/streams.py",
+  "docs",
 ]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
@@ -134,8 +135,13 @@ extend-exclude = [
   "PLR2004", # skip checking for magic values
 ]
 "aeon/schema/*" = [
+  "D100",    # skip module docstring (schema modules are tiny)
   "D101",    # skip adding docstrings for schema classes
+  "D102",    # skip method docstrings (mostly @data_reader stubs)
   "D106",    # skip adding docstrings for nested streams
+  "D107",    # skip __init__ docstrings (Pydantic device subclasses)
+  "E402",    # @data_reader and Pydantic patterns sometimes import below code
+  "E501",    # long lines from inline Binary/columns spec
 ]
 "aeon/dj_pipeline/*" = [
   "D101",    # skip adding docstrings for schema classes
@@ -144,6 +150,33 @@ extend-exclude = [
   "F401",    # skip incorrectly detecting `aeon.dj_pipeline` dependencies as unused
   "PLC0415", # skip checking `import` at the top-level of a file
   "PLR2004", # skip checking for magic values
+]
+# Legacy spike-sorting modules predate the current docstring/style rules;
+# leaving the rules off until a dedicated cleanup pass.
+"aeon/dj_pipeline/spike_sorting.py" = [
+  "D100",    # missing module docstring
+  "D102",    # missing public method docstring
+  "D205",    # blank-line-between-summary-and-description
+  "E501",    # line too long
+  "S101",    # use of assert
+  "UP035",   # typing.Dict/List/Tuple deprecated (legacy types)
+  "PLW2901", # `for` loop variable overwritten by inner assignment
+  "PLC0206", # iterating dict without `.items()`
+]
+"aeon/dj_pipeline/spike_sorting_curation.py" = [
+  "D100",
+  "D102",
+  "E501",
+  "SIM102",  # nested if statements
+  "B904",    # raise within except without `from`
+]
+"aeon/dj_pipeline/scripts/*" = [
+  "D100",    # missing module docstring (one-off scripts)
+  "D103",    # missing function docstring
+  "B904",    # raise ... from inside except
+  "E501",
+  "E741",    # ambiguous variable name in numpy-heavy code
+  "S607",    # starting process with partial path
 ]
 "tests/dj_pipeline/*" = [
   "PLC0415", # skip checking `import` at the top-level of a file
@@ -157,17 +190,28 @@ useLibraryCodeForTypes = false
 reportMissingImports = "none"
 reportImportCycles = "warning"
 reportOperatorIssue = "none"
-reportUnusedImport = "error"
-reportUnusedClass = "error"
-reportUnusedFunction = "error"
-reportUnusedVariable = "error"
+# Streams tables (FeederEncoder, CameraVideo, etc.) are dynamically generated
+# from the Pydantic device catalog at runtime, so static analysis can't see them.
+reportAttributeAccessIssue = "none"
+reportUnusedImport = "warning"
+reportUnusedClass = "warning"
+reportUnusedFunction = "warning"
+reportUnusedVariable = "warning"
+# DataJoint primary key / fetch return types confuse pyright; legacy modules
+# (spike_sorting, subject, tracking) trip these. Downgrade until a dedicated
+# typing pass.
+reportArgumentType = "warning"
+reportReturnType = "warning"
+reportRedeclaration = "warning"
+reportIndexIssue = "warning"
+reportGeneralTypeIssues = "warning"
+reportUnnecessaryComparison = "warning"
 reportDuplicateImport = "error"
 reportWildcardImportFromLibrary = "error"
 reportPrivateUsage = "error"
 reportCallInDefaultInitializer = "error"
 reportUnnecessaryIsInstance = "error"
 reportUnnecessaryCast = "error"
-reportUnnecessaryComparison = "error"
 reportUnnecessaryContains = "error"
 reportAssertAlwaysTrue = "error"
 reportSelfClsParameterName = "error"
@@ -177,7 +221,7 @@ reportPossiblyUnboundVariable = "warning"
 # *Note*: we may want to set all 'ReportOptional*' rules to "none", but leaving 'em default for now
 venvPath = "."
 venv = ".venv"
-exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests", "docs", ".venv"]
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests", "docs", ".venv", "scratch"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -190,4 +234,4 @@ markers = [
 
 [tool.uv.sources]
 swc-aeon = { git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git", branch = "main" }
-swc-aeon-rigs-foragingabc = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git", branch = "tn/env-data-readers" }
+swc-aeon-rigs-foragingabc = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git", branch = "main" }

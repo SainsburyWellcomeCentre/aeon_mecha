@@ -363,7 +363,7 @@ def full_pipeline(dj_config_integration, streams_schema, golden_dataset_config):
     # Step 2: Create ExperimentDevice and DeviceDataStream tables
     streams_module = streams_maker.main(create_tables=True)
 
-    yield {
+    return {
         "lab": lab,
         "subject": subject,
         "acquisition": acquisition,

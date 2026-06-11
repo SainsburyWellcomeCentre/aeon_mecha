@@ -1,14 +1,15 @@
+import json
 import os
-import datajoint as dj
-from datetime import datetime, UTC
+import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Optional
-import json
-import shutil
+
+import datajoint as dj
 import numpy as np
 import pandas as pd
 
-from aeon.dj_pipeline import ephys, spike_sorting, get_schema_name
+from aeon.dj_pipeline import ephys, get_schema_name, spike_sorting
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
 
 schema = dj.Schema(get_schema_name("spike_sorting_curation"))
@@ -69,8 +70,7 @@ class ApplyOfficialCuration(dj.Imported):
     """
 
     def make(self, key):
-        """
-        Update/overwrite the SortedSpikes (and downstream) with the official curation results.
+        """Update/overwrite the SortedSpikes (and downstream) with the official curation results.
 
         This function:
         1. Loads the curation JSON from ManualCuration
@@ -124,7 +124,7 @@ class ApplyOfficialCuration(dj.Imported):
             )
 
         # Load curation dictionary
-        with open(curation_file_path, "r") as f:
+        with open(curation_file_path) as f:
             curation_dict = json.load(f)
 
         # Get sorting output directory
@@ -165,7 +165,7 @@ class ApplyOfficialCuration(dj.Imported):
         curated_analyzer_dir = output_dir / f"sorting_analyzer_curated_id{curation_id}"
         logger.info(f"Saving curated analyzer to: {curated_analyzer_dir}")
         curated_analyzer.save(folder=curated_analyzer_dir, overwrite=True)
-        
+
         # Store the applied analyzer directory path in ManualCuration.File
         analyzer_file_entry = {
             **key,
@@ -180,10 +180,7 @@ class ApplyOfficialCuration(dj.Imported):
         # Check current curation state in SortedSpikes
         # There can only be one SortedSpikes entry per primary key (curation_id is an attribute, not part of PK)
         current_sorted_spikes = spike_sorting.SortedSpikes & key
-        if current_sorted_spikes:
-            current_curation_id = current_sorted_spikes.fetch1("curation_id")
-        else:
-            current_curation_id = None
+        current_curation_id = current_sorted_spikes.fetch1("curation_id") if current_sorted_spikes else None
 
         # Handle different scenarios based on current curation state
         if current_curation_id == curation_id:
@@ -247,8 +244,7 @@ class ApplyOfficialCuration(dj.Imported):
 
 
 def _get_analyzer_dir_from_key(key: dict) -> Path:
-    """
-    Construct the path to the sorting_analyzer directory from a key using database paths.
+    """Construct the path to the sorting_analyzer directory from a key using database paths.
 
     Args:
         key: Dictionary key identifying the sorting task. Must contain:
@@ -268,10 +264,9 @@ def _get_analyzer_dir_from_key(key: dict) -> Path:
 
 
 def launch_spikeinterface_gui(
-    key: dict, parent_curation_id: Optional[int] = None
+    key: dict, parent_curation_id: int | None = None
 ) -> None:
-    """
-    Launch SpikeInterface GUI for manual spike sorting curation.
+    """Launch SpikeInterface GUI for manual spike sorting curation.
 
     Args:
         key: Dictionary key identifying the sorting task. Must contain:
@@ -284,8 +279,9 @@ def launch_spikeinterface_gui(
             the curation_data.json file will be initialized from the specified curation.
             If None, starts from the raw sorting results.
     """
-    import spikeinterface as si
     import shutil
+
+    import spikeinterface as si
 
     analyzer_dir = _get_analyzer_dir_from_key(key)
 
@@ -385,8 +381,7 @@ def launch_spikeinterface_gui(
 
 
 def save_manual_curation(key: dict, description: str = "") -> int:
-    """
-    Save manual curation results from SpikeInterface GUI to the database.
+    """Save manual curation results from SpikeInterface GUI to the database.
 
     Args:
         key: Dictionary key identifying the sorting task. Must contain:
@@ -430,7 +425,7 @@ def save_manual_curation(key: dict, description: str = "") -> int:
 
     # Verify the copied file is valid JSON
     try:
-        with open(curated_file_path, "r") as f:
+        with open(curated_file_path) as f:
             json.load(f)  # Verify it's valid JSON
     except json.JSONDecodeError as e:
         raise RuntimeError(
@@ -447,7 +442,7 @@ def save_manual_curation(key: dict, description: str = "") -> int:
     parent_curation_id = -1  # Default: based on raw sorting results
     if metadata_file.exists():
         try:
-            with open(metadata_file, "r") as f:
+            with open(metadata_file) as f:
                 metadata = json.load(f)
                 parent_curation_id = metadata.get("parent_curation_id", -1)
             logger.info(f"Using parent_curation_id={parent_curation_id} from metadata file")
@@ -493,8 +488,7 @@ def save_manual_curation(key: dict, description: str = "") -> int:
 
 
 def make_curation_official(key: dict, curation_id: int) -> None:
-    """
-    Designate an existing curation as official.
+    """Designate an existing curation as official.
 
     Args:
         key: Dictionary key identifying the sorting task. Must contain:
@@ -593,7 +587,7 @@ def restore_raw_sorting(key: dict) -> None:
     # (those with no remaining UnitMatching.Unit references from any block)
     insertion_key = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
     n_orphans = 0
-    for gu_key in (spike_sorting.GlobalUnit & insertion_key).keys():
+    for gu_key in (spike_sorting.GlobalUnit & insertion_key):
         if len(spike_sorting.UnitMatching.Unit & gu_key) == 0:
             logger.info(f"Deleting orphaned GlobalUnit {gu_key['global_unit']}...")
             (spike_sorting.GlobalUnit & gu_key).delete(safemode=False)
