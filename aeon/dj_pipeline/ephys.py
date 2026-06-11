@@ -833,9 +833,11 @@ class CompressionTest(dj.Computed):
             del orig_data, decomp_data
 
         finally:
-            # Clean up temp files
+            # Clean up temp files in background — shutil.rmtree on Ceph is
+            # extremely slow due to thousands of zarr chunk files
             if tmp_base.exists():
-                shutil.rmtree(tmp_base)
+                import subprocess
+                subprocess.Popen(["rm", "-rf", str(tmp_base)])
 
         self.insert1({
             **key,
