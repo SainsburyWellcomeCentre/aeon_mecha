@@ -162,7 +162,10 @@ def activate(*, create_schema: bool = True, create_tables: bool = True) -> bool:
     """
     import importlib
 
-    global streams
+    # Rebind the module-level `streams` so DataJoint's FK string resolution
+    # (`-> streams.CameraPosition`) picks up any reload done by streams_maker
+    # or the test fixture.
+    global streams  # noqa: PLW0603 — intentional rebind for FK resolution
     try:
         streams = importlib.import_module("aeon.dj_pipeline.streams")
     except ImportError as e:
