@@ -263,22 +263,38 @@ class PreProcessing(dj.Computed):
         si_recording = ephys_preproc(si_recording)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
-        # write binary into recording.dat
+        params = (SortingParamSet & key).fetch1("params")
+        save_format = params.get("save_format", "zarr")
+
         job_kwargs = {"n_jobs": -1, "chunk_duration": "2s"}
-        binary_file_path = recording_file.parent / "recording.dat"
-        if binary_file_path.exists():
-            load_and_verify_binary_file(
-                binary_file_path=binary_file_path,
-                se_recording_obj=si_recording)
-            logger.info(f"{binary_file_path} already exists. Skipping writing binary file.")
-        else:
-            logger.info(f"Writing binary recording to {binary_file_path}...")
-            si.core.write_binary_recording(
-                    recording=si_recording,
-                    file_paths=[binary_file_path],
-                    dtype="int16",
+
+        if save_format == "zarr":
+            zarr_path = recording_file.parent / "recording.zarr"
+            if zarr_path.exists():
+                logger.info(f"{zarr_path} already exists. Skipping zarr write.")
+            else:
+                _strip_non_numeric_properties(si_recording)
+                logger.info(f"Writing zarr recording to {zarr_path}...")
+                si_recording.save(
+                    format="zarr",
+                    folder=zarr_path,
                     **sorters.basesorter.get_job_kwargs(job_kwargs, True),
                 )
+        else:
+            binary_file_path = recording_file.parent / "recording.dat"
+            if binary_file_path.exists():
+                load_and_verify_binary_file(
+                    binary_file_path=binary_file_path,
+                    se_recording_obj=si_recording)
+                logger.info(f"{binary_file_path} already exists. Skipping writing binary file.")
+            else:
+                logger.info(f"Writing binary recording to {binary_file_path}...")
+                si.core.write_binary_recording(
+                        recording=si_recording,
+                        file_paths=[binary_file_path],
+                        dtype="int16",
+                        **sorters.basesorter.get_job_kwargs(job_kwargs, True),
+                    )
 
         return output_dir, execution_time, recording_dir
 
@@ -298,7 +314,9 @@ class PreProcessing(dj.Computed):
             [
                 {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
                 for f in recording_dir.rglob("*")
-                if f.is_file() and f.name != "recording.dat"  # exclude the large binary file (too long for hashing)
+                if f.is_file()
+                and f.name != "recording.dat"
+                and not str(f).startswith(str(recording_dir / "recording.zarr"))
             ]
         )
 
