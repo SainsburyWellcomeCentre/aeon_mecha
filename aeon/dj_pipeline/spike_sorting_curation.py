@@ -164,7 +164,14 @@ class ApplyOfficialCuration(dj.Imported):
         # Keep raw analyzer in sorting_analyzer, curated in sorting_analyzer_curated_id{curation_id}
         curated_analyzer_dir = output_dir / f"sorting_analyzer_curated_id{curation_id}"
         logger.info(f"Saving curated analyzer to: {curated_analyzer_dir}")
-        curated_analyzer.save(folder=curated_analyzer_dir, overwrite=True)
+        params = (spike_sorting.SortingParamSet & key).fetch1("params")
+        save_format = params.get("save_format", "zarr")
+        if save_format == "zarr":
+            if curated_analyzer_dir.exists():
+                shutil.rmtree(curated_analyzer_dir)
+            curated_analyzer.save_as(format="zarr", folder=curated_analyzer_dir)
+        else:
+            curated_analyzer.save(folder=curated_analyzer_dir, overwrite=True)
         
         # Store the applied analyzer directory path in ManualCuration.File
         analyzer_file_entry = {
