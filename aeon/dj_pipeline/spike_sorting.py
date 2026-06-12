@@ -614,7 +614,7 @@ class SIExport(dj.Computed):
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
-        analyzer_output_dir = output_dir / "sorting_analyzer"
+        analyzer_output_dir = _resolve_analyzer_dir(output_dir)
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
 
         execution_duration_hours = (datetime.now(UTC) - execution_time).total_seconds() / 3600
@@ -704,7 +704,7 @@ class SortedSpikes(dj.Imported):
         # If so, use the curated analyzer; otherwise use the raw analyzer
         # Use lazy import to avoid circular dependency
         curation_id = -1
-        analyzer_output_dir = output_dir / "sorting_analyzer"
+        analyzer_output_dir = _resolve_analyzer_dir(output_dir)
         try:
             # Lazy import to avoid circular dependency
             import importlib
@@ -888,7 +888,7 @@ class Waveform(dj.Imported):
                 f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
             )
         else:
-            analyzer_output_dir = output_dir / "sorting_analyzer"
+            analyzer_output_dir = _resolve_analyzer_dir(output_dir)
             logger.info("Using raw analyzer (curation_id=-1)")
 
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
@@ -979,7 +979,7 @@ class SortingQuality(dj.Imported):
                 f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
             )
         else:
-            analyzer_output_dir = output_dir / "sorting_analyzer"
+            analyzer_output_dir = _resolve_analyzer_dir(output_dir)
             logger.info("Using raw analyzer (curation_id=-1)")
 
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
