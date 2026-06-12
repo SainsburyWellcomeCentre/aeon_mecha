@@ -524,12 +524,12 @@ class PostProcessing(dj.Computed):
         )
 
         analyzer_output_dir = output_dir / "sorting_analyzer"
-        # Safety check: refuse to overwrite existing data on ceph
-        if analyzer_output_dir.exists() and any(analyzer_output_dir.iterdir()):
-            raise FileExistsError(
-                f"Sorting analyzer directory already contains data: {analyzer_output_dir}. "
-                "Refusing to overwrite existing sorting data."
-            )
+        for check_dir in [analyzer_output_dir, output_dir / "sorting_analyzer.zarr"]:
+            if check_dir.exists() and any(check_dir.iterdir()):
+                raise FileExistsError(
+                    f"Sorting analyzer directory already contains data: {check_dir}. "
+                    "Refusing to overwrite existing sorting data."
+                )
 
         has_units = si_sorting.unit_ids.size > 0
 
@@ -541,10 +541,13 @@ class PostProcessing(dj.Computed):
             return analyzer_output_dir, execution_time, execution_duration
 
         # Sorting Analyzer
+        save_format = params.get("save_format", "zarr")
+        analyzer_format = "zarr" if save_format == "zarr" else "binary_folder"
+
         sorting_analyzer = si.create_sorting_analyzer(
             sorting=si_sorting,
             recording=si_recording,
-            format="binary_folder",
+            format=analyzer_format,
             folder=analyzer_output_dir,
             sparse=True,
             overwrite=True,
@@ -560,6 +563,9 @@ class PostProcessing(dj.Computed):
         }
 
         sorting_analyzer.compute(extensions_to_compute, **job_kwargs)
+
+        if analyzer_format == "zarr":
+            analyzer_output_dir = output_dir / "sorting_analyzer.zarr"
 
         execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
 
