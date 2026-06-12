@@ -393,32 +393,30 @@ class SpikeSorting(dj.Computed):
         si_recording: si.BaseRecording = si.load(
             recording_file, base_folder=output_dir
         )
-        # load the pre-generated binary file - recording.dat
-        binary_file_path = Path(recording_file).parent / "recording.dat"
-        binary_rec = load_and_verify_binary_file(
-            binary_file_path=binary_file_path,
-            se_recording_obj=si_recording)
 
+        save_format = params.get("save_format", "zarr")
         sorting_params = params["SI_SORTING_PARAMS"].copy()
 
-        # explicitly set `skip_kilosort_preprocessing` to False
-        # to avoid SpikeInterface rerunning the `write_binary_recording` step
-        # https://github.com/SpikeInterface/spikeinterface/blob/705c9320c854f2a192fa200fe7866cec5a8ffca7/src/spikeinterface/sorters/external/kilosortbase.py#L124
-        sorting_params["skip_kilosort_preprocessing"] = False
-        
-        # Add Kilosort4 memory optimization parameters to reduce GPU memory usage
-        # clear_cache=True forces PyTorch to clear cached CUDA memory after memory-intensive steps,
-        # which helps free reserved but unallocated memory (like the 7.69 GiB in the error)
         if sorting_method == "kilosort4":
             if "clear_cache" not in sorting_params:
                 sorting_params["clear_cache"] = True
-                
-        if not binary_rec.binary_compatible_with(dtype="int16", time_axis=0, file_paths_length=1):
-            raise ValueError(f"Incompatible binary file for spike sorting: {binary_file_path}")
+
+        if save_format == "zarr":
+            zarr_path = Path(recording_file).parent / "recording.zarr"
+            recording_for_sorting = si.load(zarr_path)
+            sorting_params["skip_kilosort_preprocessing"] = False
+        else:
+            binary_file_path = Path(recording_file).parent / "recording.dat"
+            recording_for_sorting = load_and_verify_binary_file(
+                binary_file_path=binary_file_path,
+                se_recording_obj=si_recording)
+            sorting_params["skip_kilosort_preprocessing"] = False
+            if not recording_for_sorting.binary_compatible_with(dtype="int16", time_axis=0, file_paths_length=1):
+                raise ValueError(f"Incompatible binary file for spike sorting: {binary_file_path}")
 
         si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
             sorter_name=sorter_name,
-            recording=binary_rec,
+            recording=recording_for_sorting,
             folder=sorting_output_dir,
             remove_existing_folder=True,
             verbose=True,
