@@ -17,8 +17,6 @@ Pipeline cascade tested (all live except SpikeSorting):
 
 import pytest
 
-INT16_BYTES = 2  # sizeof(int16); recording.dat stores int16 per channel-sample
-
 pytestmark = pytest.mark.integration
 pytest.importorskip("probeinterface", reason="Ephys tests require probeinterface")
 pytest.importorskip("aeon.schema.ephys", reason="Ephys tests require aeon.schema.ephys (from swc-aeon)")
@@ -138,7 +136,7 @@ class TestPreProcessing:
 
     PreProcessing reads raw ephys binary, selects electrode group channels,
     applies bandpass filter + common average reference, and writes
-    recording.dat + si_recording.pkl.
+    recording.zarr + si_recording.pkl.
     """
 
     def _ensure_prerequisites(self, ctx):
@@ -166,7 +164,7 @@ class TestPreProcessing:
         file_names = [f["file_name"] for f in files]
         assert any("si_recording.pkl" in fn for fn in file_names)
 
-    def test_recording_binary_exists(
+    def test_recording_zarr_exists(
         self, ephys_sorting_setup, require_ephys_golden_data, ctx
     ):
         self._ensure_prerequisites(ctx)
@@ -174,17 +172,13 @@ class TestPreProcessing:
             ctx.spike_sorting.SortingTask & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()[0]
         output_dir = ctx.spike_sorting.PreProcessing.infer_output_dir(key)
-        recording_dat = output_dir.parent / "recording" / "recording.dat"
-        assert recording_dat.exists()
-        file_size = recording_dat.stat().st_size
-        assert file_size > 0
-        expected_size = ctx.cfg["n_channels"] * INT16_BYTES
-        assert file_size % expected_size == 0, (
-            f"File size {file_size} not divisible by frame size {expected_size}"
-        )
-        assert file_size >= 500_000_000, (
-            f"recording.dat too small ({file_size} bytes), expected ~1 GB"
-        )
+        recording_zarr = output_dir.parent / "recording" / "recording.zarr"
+        assert recording_zarr.exists(), f"Expected zarr recording at {recording_zarr}"
+        assert any(recording_zarr.iterdir()), "recording.zarr directory is empty"
+        import spikeinterface as si
+        rec = si.load(recording_zarr)
+        assert rec.get_num_channels() == ctx.cfg["n_channels"]
+        assert rec.get_num_samples() > 0
 
 
 class TestPostProcessing:
@@ -208,8 +202,8 @@ class TestPostProcessing:
     def test_sorting_analyzer_created(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
         output_dir = ephys_sorting_injected["output_dir"]
-        analyzer_dir = output_dir / "sorting_analyzer"
-        assert analyzer_dir.exists()
+        analyzer_dir = output_dir / "sorting_analyzer.zarr"
+        assert analyzer_dir.exists(), f"Expected zarr analyzer at {analyzer_dir}"
         assert any(analyzer_dir.iterdir())
 
 
