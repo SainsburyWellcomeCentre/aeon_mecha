@@ -10,6 +10,7 @@ import pandas as pd
 
 from aeon.dj_pipeline import ephys, spike_sorting, get_schema_name
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
+from aeon.dj_pipeline.utils.spike_sorting_utils import _resolve_analyzer_dir
 
 schema = dj.Schema(get_schema_name("spike_sorting_curation"))
 logger = dj.logger
@@ -134,7 +135,7 @@ class ApplyOfficialCuration(dj.Imported):
         )
 
         # Load original sorting analyzer
-        analyzer_output_dir = spike_sorting._resolve_analyzer_dir(output_dir)
+        analyzer_output_dir = _resolve_analyzer_dir(output_dir)
         if not analyzer_output_dir.exists():
             raise FileNotFoundError(
                 f"Sorting analyzer directory not found: {analyzer_output_dir}"
@@ -270,7 +271,7 @@ def _get_analyzer_dir_from_key(key: dict) -> Path:
     """
     sorting_root_dir = get_sorting_root_dir()
     output_dir = sorting_root_dir / (spike_sorting.PreProcessing & key).fetch1("sorting_output_dir")
-    return spike_sorting._resolve_analyzer_dir(output_dir)
+    return _resolve_analyzer_dir(output_dir)
 
 
 def launch_spikeinterface_gui(

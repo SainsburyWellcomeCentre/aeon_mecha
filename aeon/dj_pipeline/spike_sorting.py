@@ -11,6 +11,10 @@ from typing import Dict, List, Tuple, Any, Optional
 
 from aeon.dj_pipeline import acquisition, ephys, get_schema_name
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
+from aeon.dj_pipeline.utils.spike_sorting_utils import (
+    _resolve_analyzer_dir,
+    _strip_non_numeric_properties,
+)
 
 from swc.aeon.io import api as io_api
 from aeon.schema.ephys import social_ephys
@@ -1529,22 +1533,6 @@ def ephys_preproc(recording) -> Any:
         recording=recording, operator="median"
     )
     return recording
-
-
-def _resolve_analyzer_dir(output_dir: Path) -> Path:
-    """Find sorting analyzer directory, checking both binary and zarr paths."""
-    analyzer_dir = output_dir / "sorting_analyzer"
-    if not analyzer_dir.exists():
-        analyzer_dir = output_dir / "sorting_analyzer.zarr"
-    return analyzer_dir
-
-
-def _strip_non_numeric_properties(si_recording) -> None:
-    """Remove non-numeric recording properties that zarr v2 cannot serialize."""
-    for prop in list(si_recording.get_property_keys()):
-        values = si_recording.get_property(prop)
-        if np.asarray(values).dtype.kind not in ("f", "i", "u", "b"):
-            si_recording.delete_property(prop)
 
 
 def load_and_verify_binary_file(binary_file_path: Path, se_recording_obj: Any) -> Any:
