@@ -74,11 +74,11 @@ output.
 All changes are in `aeon/dj_pipeline/`. No changes to `aeon/schema/`,
 `aeon/io/`, or any other package.
 
-**1. Default flip (one-line change in four locations across two files)**
+**1. Default flip (four locations across two files)**
 
 In `spike_sorting.py` (`PreProcessing.make_compute`,
 `SpikeSorting.make_compute`, `PostProcessing.make_compute`) and
-`spike_sorting_curation.py` (`ApplyCuration.make_compute`):
+`spike_sorting_curation.py` (`ApplyOfficialCuration.make`):
 
 ```python
 # Before
@@ -87,6 +87,26 @@ save_format = params.get("save_format", "binary")
 # After
 save_format = params.get("save_format", "zarr")
 ```
+
+In the three `spike_sorting.py` locations this is a one-line default change.
+In `ApplyOfficialCuration.make` it is more than a flip: on main this method
+had no format handling at all (it always called
+`curated_analyzer.save(folder=..., overwrite=True)`), so a zarr branch was
+added:
+
+```python
+save_format = params.get("save_format", "zarr")
+if save_format == "zarr":
+    if curated_analyzer_dir.exists():
+        shutil.rmtree(curated_analyzer_dir)
+    curated_analyzer.save_as(format="zarr", folder=curated_analyzer_dir)
+else:
+    curated_analyzer.save(folder=curated_analyzer_dir, overwrite=True)
+```
+
+The `shutil.rmtree` is needed because `SortingAnalyzer.save_as` has no
+`overwrite` flag (unlike `save`), so a pre-existing curated directory from a
+prior apply/revert/re-apply of the same `curation_id` must be cleared first.
 
 **2. Zarr property filter**
 
@@ -107,10 +127,10 @@ This keeps `gain_to_uV` (float64), `offset_to_uV` (int64), `location`
 with string/object sub-fields). The filter runs only on the zarr path. The
 binary path is unchanged.
 
-This code already exists on `es/compression-spec` inside
-`PreProcessing.make_compute`. For the implementation PR it should be
-extracted to a small helper so it is not duplicated if other save points
-need it.
+This logic is extracted into the helper `_strip_non_numeric_properties` in
+`aeon/dj_pipeline/utils/spike_sorting_utils.py` (see change 3 for why the
+helpers live in a utils module) and called from `PreProcessing.make_compute`
+on the zarr path only.
 
 **3. Sorting analyzer path fallback (all consumers)**
 
@@ -120,22 +140,18 @@ appends `.zarr` to the folder name. So when PostProcessing passes
 Every location that loads a sorting analyzer by hardcoding
 `output_dir / "sorting_analyzer"` needs to also check the `.zarr` path.
 
-There are 7 such locations across two files:
+The consumer locations across two files are:
 
-- `spike_sorting.py`:
-  - `PostProcessing.make_compute` (safety check, line ~540) — already
-    handles both paths on `es/compression-spec`
-  - `SIExport.make` (line ~629)
-  - `SortedSpikes.make` (line ~719) — already has fallback on
-    `es/compression-spec`
-  - `Waveform.make_compute` (line ~905)
-  - `SortingQuality.make_compute` (line ~996)
-- `spike_sorting_curation.py`:
-  - `ApplyCuration.make_compute` (line ~137)
-  - `_get_analyzer_dir` helper (line ~274)
+- `spike_sorting.py`: `SIExport.make`, `SortedSpikes.make`, `Waveform.make`,
+  `SortingQuality.make`
+- `spike_sorting_curation.py`: `ApplyOfficialCuration.make` and the
+  `_get_analyzer_dir_from_key` helper
 
-The fallback logic should be extracted to a shared helper rather than
-duplicated in each location:
+(`PostProcessing.make_compute` is the creator, not a consumer; its safety
+check explicitly tests both paths — see change 4.)
+
+The fallback logic is a shared helper rather than duplicated in each
+location:
 
 ```python
 def _resolve_analyzer_dir(output_dir: Path) -> Path:
@@ -146,14 +162,18 @@ def _resolve_analyzer_dir(output_dir: Path) -> Path:
     return analyzer_dir
 ```
 
-This helper lives in `spike_sorting.py` and is imported by
-`spike_sorting_curation.py`. Each of the 7 locations replaces its
-hardcoded path with a call to `_resolve_analyzer_dir(output_dir)`.
+This helper, together with `_strip_non_numeric_properties`, lives in
+`aeon/dj_pipeline/utils/spike_sorting_utils.py`, imported by both
+`spike_sorting.py` and `spike_sorting_curation.py`. The helpers are pure
+(no table or schema dependency), so placing them in a utils module keeps
+them importable and unit-testable without activating the spike_sorting
+schema (importing `spike_sorting.py` triggers a DB connection). Each
+consumer replaces its hardcoded path with a call to
+`_resolve_analyzer_dir(output_dir)`.
 
-**4. PostProcessing safety check**
+**4. PostProcessing safety check and return path**
 
-The existing safety check for pre-existing analyzer directories also needs
-to check the `.zarr` variant:
+The safety check for pre-existing analyzer directories checks both variants:
 
 ```python
 for check_dir in [analyzer_output_dir, output_dir / "sorting_analyzer.zarr"]:
@@ -161,7 +181,16 @@ for check_dir in [analyzer_output_dir, output_dir / "sorting_analyzer.zarr"]:
         raise FileExistsError(...)
 ```
 
-This code already exists on `es/compression-spec`.
+`PostProcessing.make_compute` passes `output_dir / "sorting_analyzer"` to
+`create_sorting_analyzer`, but with `format="zarr"` SpikeInterface writes to
+`sorting_analyzer.zarr/`. So after the analyzer is built, the returned path
+must be corrected to the real directory, otherwise `make_insert` iterates a
+non-existent path and registers zero files in the File part table:
+
+```python
+if analyzer_format == "zarr":
+    analyzer_output_dir = output_dir / "sorting_analyzer.zarr"
+```
 
 **5. File registration exclusions**
 
@@ -241,23 +270,38 @@ new default.
 3. **Docstrings and comments** — Update references to `recording.dat` and
    `binary_folder` in test class docstrings.
 
+**New unit tests:**
+
+A new unit test module, `tests/dj_pipeline/utils/test_spike_sorting_utils_unit.py`,
+covers the two relocated helpers (see change 3). It tests
+`_resolve_analyzer_dir` for the binary-preferred, zarr-fallback, neither-exists,
+and both-exist cases, and `_strip_non_numeric_properties` for keeping numeric
+properties (float/int/uint/bool) while stripping string properties. These run
+under `-m unit` and need no database, since the helpers live in a pure utils
+module.
+
 ### Verification on HPC
 
-After the test changes are made, run the full test suite on the HPC against
-the golden data to confirm everything passes with zarr output. This is the
-final validation before the PR is ready for review.
+Validated on the SWC HPC against the golden dataset (fresh checkout, DB on
+`aeon-db` with a dedicated test prefix, CPU node — the golden suite
+force-injects SpikeSorting so no GPU is needed):
+
+- Unit suite: 121 passed (includes the 6 new helper tests).
+- Ephys golden integration: 29/29, including `test_recording_zarr_exists`
+  and `test_sorting_analyzer_created`.
 
 ---
 
 ## PR checklist
 
-- [ ] Create `es/zarr-intermediates` branch off current main
-- [ ] Cherry-pick or reimplement production code changes from
-      `es/compression-spec` (property filter, zarr branching, path
-      fallbacks, file registration exclusions)
-- [ ] Change default from `"binary"` to `"zarr"` in all four
+- [x] Create `es/zarr-intermediates` branch off current main
+- [x] Reimplement production code changes (property filter, zarr branching,
+      path fallbacks, file registration exclusions)
+- [x] Change default from `"binary"` to `"zarr"` in all four
       `params.get("save_format", ...)` calls
-- [ ] Add this spec document (`SPEC_ZARR_INTERMEDIATES.md`)
-- [ ] Update test assertions (recording path, analyzer path)
-- [ ] Run tests on HPC, verify all pass
-- [ ] Open PR into main
+- [x] Relocate the pure helpers to `utils/spike_sorting_utils.py` and add
+      unit tests
+- [x] Add this spec document (`SPEC_ZARR_INTERMEDIATES.md`)
+- [x] Update test assertions (recording path, analyzer path)
+- [x] Run tests on HPC, verify all pass
+- [x] Open PR into main (draft #589)
