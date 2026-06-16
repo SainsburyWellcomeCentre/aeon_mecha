@@ -258,9 +258,11 @@ new default.
    `test_recording_zarr_exists`. Check that `recording/recording.zarr/`
    exists and is a non-empty directory. The binary-specific size checks
    (frame-size divisibility, minimum 500 MB) do not apply to compressed
-   zarr. Instead, verify the recording loads correctly via `si.load()` and
-   has the expected channel count and sample count range. Remove the
-   `INT16_BYTES` constant.
+   zarr. Instead, verify the recording loads via `si.load()`, has the
+   expected channel count, sits in a plausible duration range (catches a
+   truncated write), and reads back a non-zero trace slice (confirms the
+   zarr actually decompresses to real data). Remove the `INT16_BYTES`
+   constant.
 
 2. **`test_sorting_analyzer_created`** — Update to check for
    `sorting_analyzer.zarr` (SI appends `.zarr` to the folder name when

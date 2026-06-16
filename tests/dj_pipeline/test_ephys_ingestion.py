@@ -175,10 +175,27 @@ class TestPreProcessing:
         recording_zarr = output_dir.parent / "recording" / "recording.zarr"
         assert recording_zarr.exists(), f"Expected zarr recording at {recording_zarr}"
         assert any(recording_zarr.iterdir()), "recording.zarr directory is empty"
+
+        import numpy as np
         import spikeinterface as si
+
         rec = si.load(recording_zarr)
         assert rec.get_num_channels() == ctx.cfg["n_channels"]
-        assert rec.get_num_samples() > 0
+
+        # Sample count should reflect a real multi-minute block, not a truncated
+        # write (the golden block is ~30 min at 30 kHz). A duration range catches
+        # truncation that a bare "> 0" check would miss.
+        duration_s = rec.get_num_samples() / rec.get_sampling_frequency()
+        assert 300 < duration_s < 7200, (
+            f"recording.zarr duration {duration_s:.1f}s outside expected range "
+            "(expected a multi-minute block)"
+        )
+
+        # Read a slice back to confirm the zarr actually decompresses to real
+        # data, not just that the directory and metadata exist.
+        traces = rec.get_traces(start_frame=0, end_frame=1000)
+        assert traces.shape == (1000, ctx.cfg["n_channels"])
+        assert np.any(traces != 0), "recording.zarr decompressed to all-zero traces"
 
 
 class TestPostProcessing:
