@@ -1,7 +1,7 @@
-"""Unit tests for spike_sorting_utils pure helpers: analyzer dir resolution and
-non-numeric property filtering.
+"""Unit tests for spike_sorting_utils pure helpers.
 
-Tests target pure functions with no database dependency. Imports from
+Covers analyzer dir resolution and non-numeric property filtering. Tests
+target pure functions with no database dependency. Imports from
 aeon.dj_pipeline are done inside test methods (not at module level) so pytest
 collection does not trigger aeon/dj_pipeline/__init__.py schema activation.
 """
@@ -45,8 +45,7 @@ class TestStripNonNumericProperties:
     """_strip_non_numeric_properties keeps numeric properties and removes the rest."""
 
     def _make_recording(self):
-        import spikeinterface as si
-
+        si = pytest.importorskip("spikeinterface")
         traces = np.zeros((1000, 4), dtype="int16")
         return si.NumpyRecording(traces, sampling_frequency=30000.0)
 

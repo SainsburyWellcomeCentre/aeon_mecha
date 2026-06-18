@@ -390,6 +390,10 @@ class TestCreateElectrodeConfig:
     N_TOTAL_CONTACTS = 16
     N_ACTIVE_CONTACTS = 8
 
+    @pytest.fixture(autouse=True)
+    def _require_probeinterface(self):
+        pytest.importorskip("probeinterface")
+
     def test_returns_canonical_keys(self):
         from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
 
