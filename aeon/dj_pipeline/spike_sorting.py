@@ -446,16 +446,18 @@ class SpikeSorting(dj.Computed):
         if sorting_method == "kilosort4" and "clear_cache" not in sorting_params:
             sorting_params["clear_cache"] = True
 
+        # Prevent SpikeInterface from re-running write_binary_recording internally:
+        # https://github.com/SpikeInterface/spikeinterface/blob/705c932/src/spikeinterface/sorters/external/kilosortbase.py#L124
+        sorting_params["skip_kilosort_preprocessing"] = False
+
         if save_format == "zarr":
             zarr_path = Path(recording_file).parent / "recording.zarr"
             recording_for_sorting = si.load(zarr_path)
-            sorting_params["skip_kilosort_preprocessing"] = False
         else:
             binary_file_path = Path(recording_file).parent / "recording.dat"
             recording_for_sorting = load_and_verify_binary_file(
                 binary_file_path=binary_file_path, se_recording_obj=si_recording
             )
-            sorting_params["skip_kilosort_preprocessing"] = False
             if not recording_for_sorting.binary_compatible_with(
                 dtype="int16", time_axis=0, file_paths_length=1
             ):
