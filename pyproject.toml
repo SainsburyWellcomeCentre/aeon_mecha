@@ -69,6 +69,7 @@ test = [
   "pytest>=7.0",
   "pytest-cov",
   "testcontainers[mysql]>=3.7",
+  "spikeinterface>=0.104.0",
 ]
 test-golden = [
   { include-group = "test" },
