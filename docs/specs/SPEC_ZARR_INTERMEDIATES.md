@@ -157,9 +157,12 @@ location:
 def resolve_analyzer_dir(output_dir: Path) -> Path:
     """Find sorting analyzer directory, checking both binary and zarr paths."""
     analyzer_dir = output_dir / "sorting_analyzer"
-    if not analyzer_dir.exists():
-        analyzer_dir = output_dir / "sorting_analyzer.zarr"
-    return analyzer_dir
+    if analyzer_dir.exists():
+        return analyzer_dir
+    analyzer_dir = output_dir / "sorting_analyzer.zarr"
+    if analyzer_dir.exists():
+        return analyzer_dir
+    raise FileNotFoundError(...)
 ```
 
 This helper, together with `strip_non_numeric_properties`, lives in
@@ -171,26 +174,22 @@ schema (importing `spike_sorting.py` triggers a DB connection). Each
 consumer replaces its hardcoded path with a call to
 `resolve_analyzer_dir(output_dir)`.
 
-**4. PostProcessing safety check and return path**
+**4. PostProcessing safety check**
 
-The safety check for pre-existing analyzer directories checks both variants:
-
-```python
-for check_dir in [analyzer_output_dir, output_dir / "sorting_analyzer.zarr"]:
-    if check_dir.exists() and any(check_dir.iterdir()):
-        raise FileExistsError(...)
-```
-
-`PostProcessing.make_compute` passes `output_dir / "sorting_analyzer"` to
-`create_sorting_analyzer`, but with `format="zarr"` SpikeInterface writes to
-`sorting_analyzer.zarr/`. So after the analyzer is built, the returned path
-must be corrected to the real directory, otherwise `make_insert` iterates a
-non-existent path and registers zero files in the File part table:
+The analyzer output directory is now determined upfront based on `save_format`,
+so the safety check only verifies the relevant directory:
 
 ```python
-if analyzer_format == "zarr":
-    analyzer_output_dir = output_dir / "sorting_analyzer.zarr"
+analyzer_name = "sorting_analyzer.zarr" if save_format == "zarr" else "sorting_analyzer"
+analyzer_output_dir = output_dir / analyzer_name
+
+if analyzer_output_dir.exists() and any(analyzer_output_dir.iterdir()):
+    raise FileExistsError(...)
 ```
+
+The correct path is passed directly to `create_sorting_analyzer`. SI's
+`clean_zarr_folder_name` ensures `.zarr` is not double-appended, so no
+post-hoc path correction is needed.
 
 **5. File registration exclusions**
 
@@ -276,8 +275,9 @@ new default.
 
 A new unit test module, `tests/dj_pipeline/utils/test_spike_sorting_utils_unit.py`,
 covers the two relocated helpers (see change 3). It tests
-`resolve_analyzer_dir` for the binary-preferred, zarr-fallback, neither-exists,
-and both-exist cases, and `strip_non_numeric_properties` for keeping numeric
+`resolve_analyzer_dir` for the binary-preferred, zarr-fallback, neither-exists
+(raises `FileNotFoundError`), and both-exist cases, and
+`strip_non_numeric_properties` for keeping numeric
 properties (float/int/uint/bool) while stripping string properties. These run
 under `-m unit` and need no database, since the helpers live in a pure utils
 module.
