@@ -13,36 +13,36 @@ pytestmark = pytest.mark.unit
 
 
 class TestResolveAnalyzerDir:
-    """_resolve_analyzer_dir picks the binary dir if present, else the zarr dir."""
+    """resolve_analyzer_dir picks the binary dir if present, else the zarr dir."""
 
     def test_binary_dir_when_present(self, tmp_path):
         (tmp_path / "sorting_analyzer").mkdir()
-        from aeon.dj_pipeline.utils.spike_sorting_utils import _resolve_analyzer_dir
+        from aeon.dj_pipeline.utils.spike_sorting_utils import resolve_analyzer_dir
 
-        assert _resolve_analyzer_dir(tmp_path) == tmp_path / "sorting_analyzer"
+        assert resolve_analyzer_dir(tmp_path) == tmp_path / "sorting_analyzer"
 
     def test_zarr_dir_when_only_zarr_present(self, tmp_path):
         (tmp_path / "sorting_analyzer.zarr").mkdir()
-        from aeon.dj_pipeline.utils.spike_sorting_utils import _resolve_analyzer_dir
+        from aeon.dj_pipeline.utils.spike_sorting_utils import resolve_analyzer_dir
 
-        assert _resolve_analyzer_dir(tmp_path) == tmp_path / "sorting_analyzer.zarr"
+        assert resolve_analyzer_dir(tmp_path) == tmp_path / "sorting_analyzer.zarr"
 
     def test_zarr_path_when_neither_present(self, tmp_path):
         # Falls back to the zarr path (the expected location for new runs)
-        from aeon.dj_pipeline.utils.spike_sorting_utils import _resolve_analyzer_dir
+        from aeon.dj_pipeline.utils.spike_sorting_utils import resolve_analyzer_dir
 
-        assert _resolve_analyzer_dir(tmp_path) == tmp_path / "sorting_analyzer.zarr"
+        assert resolve_analyzer_dir(tmp_path) == tmp_path / "sorting_analyzer.zarr"
 
     def test_binary_dir_preferred_when_both_present(self, tmp_path):
         (tmp_path / "sorting_analyzer").mkdir()
         (tmp_path / "sorting_analyzer.zarr").mkdir()
-        from aeon.dj_pipeline.utils.spike_sorting_utils import _resolve_analyzer_dir
+        from aeon.dj_pipeline.utils.spike_sorting_utils import resolve_analyzer_dir
 
-        assert _resolve_analyzer_dir(tmp_path) == tmp_path / "sorting_analyzer"
+        assert resolve_analyzer_dir(tmp_path) == tmp_path / "sorting_analyzer"
 
 
 class TestStripNonNumericProperties:
-    """_strip_non_numeric_properties keeps numeric properties and removes the rest."""
+    """strip_non_numeric_properties keeps numeric properties and removes the rest."""
 
     def _make_recording(self):
         si = pytest.importorskip("spikeinterface")
@@ -50,15 +50,15 @@ class TestStripNonNumericProperties:
         return si.NumpyRecording(traces, sampling_frequency=30000.0)
 
     def test_keeps_numeric_strips_string(self):
-        from aeon.dj_pipeline.utils.spike_sorting_utils import _strip_non_numeric_properties
+        from aeon.dj_pipeline.utils.spike_sorting_utils import strip_non_numeric_properties
 
         rec = self._make_recording()
-        rec.set_property("myfloat", np.array([1.0, 2.0, 3.0, 4.0]))          # kind 'f' -> keep
-        rec.set_property("myint", np.array([0, 1, 0, 1], dtype="int64"))     # kind 'i' -> keep
-        rec.set_property("mybool", np.array([True, False, True, False]))     # kind 'b' -> keep
-        rec.set_property("mystr", np.array(["a", "b", "c", "d"]))            # kind 'U' -> strip
+        rec.set_property("myfloat", np.array([1.0, 2.0, 3.0, 4.0]))  # kind 'f' -> keep
+        rec.set_property("myint", np.array([0, 1, 0, 1], dtype="int64"))  # kind 'i' -> keep
+        rec.set_property("mybool", np.array([True, False, True, False]))  # kind 'b' -> keep
+        rec.set_property("mystr", np.array(["a", "b", "c", "d"]))  # kind 'U' -> strip
 
-        _strip_non_numeric_properties(rec)
+        strip_non_numeric_properties(rec)
 
         keys = set(rec.get_property_keys())
         assert "myfloat" in keys
@@ -67,11 +67,11 @@ class TestStripNonNumericProperties:
         assert "mystr" not in keys
 
     def test_keeps_uint_property(self):
-        from aeon.dj_pipeline.utils.spike_sorting_utils import _strip_non_numeric_properties
+        from aeon.dj_pipeline.utils.spike_sorting_utils import strip_non_numeric_properties
 
         rec = self._make_recording()
-        rec.set_property("myuint", np.array([1, 2, 3, 4], dtype="uint32"))   # kind 'u' -> keep
+        rec.set_property("myuint", np.array([1, 2, 3, 4], dtype="uint32"))  # kind 'u' -> keep
 
-        _strip_non_numeric_properties(rec)
+        strip_non_numeric_properties(rec)
 
         assert "myuint" in set(rec.get_property_keys())

@@ -127,7 +127,7 @@ This keeps `gain_to_uV` (float64), `offset_to_uV` (int64), `location`
 with string/object sub-fields). The filter runs only on the zarr path. The
 binary path is unchanged.
 
-This logic is extracted into the helper `_strip_non_numeric_properties` in
+This logic is extracted into the helper `strip_non_numeric_properties` in
 `aeon/dj_pipeline/utils/spike_sorting_utils.py` (see change 3 for why the
 helpers live in a utils module) and called from `PreProcessing.make_compute`
 on the zarr path only.
@@ -154,7 +154,7 @@ The fallback logic is a shared helper rather than duplicated in each
 location:
 
 ```python
-def _resolve_analyzer_dir(output_dir: Path) -> Path:
+def resolve_analyzer_dir(output_dir: Path) -> Path:
     """Find sorting analyzer directory, checking both binary and zarr paths."""
     analyzer_dir = output_dir / "sorting_analyzer"
     if not analyzer_dir.exists():
@@ -162,14 +162,14 @@ def _resolve_analyzer_dir(output_dir: Path) -> Path:
     return analyzer_dir
 ```
 
-This helper, together with `_strip_non_numeric_properties`, lives in
+This helper, together with `strip_non_numeric_properties`, lives in
 `aeon/dj_pipeline/utils/spike_sorting_utils.py`, imported by both
 `spike_sorting.py` and `spike_sorting_curation.py`. The helpers are pure
 (no table or schema dependency), so placing them in a utils module keeps
 them importable and unit-testable without activating the spike_sorting
 schema (importing `spike_sorting.py` triggers a DB connection). Each
 consumer replaces its hardcoded path with a call to
-`_resolve_analyzer_dir(output_dir)`.
+`resolve_analyzer_dir(output_dir)`.
 
 **4. PostProcessing safety check and return path**
 
@@ -276,8 +276,8 @@ new default.
 
 A new unit test module, `tests/dj_pipeline/utils/test_spike_sorting_utils_unit.py`,
 covers the two relocated helpers (see change 3). It tests
-`_resolve_analyzer_dir` for the binary-preferred, zarr-fallback, neither-exists,
-and both-exist cases, and `_strip_non_numeric_properties` for keeping numeric
+`resolve_analyzer_dir` for the binary-preferred, zarr-fallback, neither-exists,
+and both-exist cases, and `strip_non_numeric_properties` for keeping numeric
 properties (float/int/uint/bool) while stripping string properties. These run
 under `-m unit` and need no database, since the helpers live in a pure utils
 module.
