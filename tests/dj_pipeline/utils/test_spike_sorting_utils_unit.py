@@ -45,7 +45,8 @@ class TestStripNonNumericProperties:
     """strip_non_numeric_properties keeps numeric properties and removes the rest."""
 
     def _make_recording(self):
-        si = pytest.importorskip("spikeinterface")
+        import spikeinterface as si
+
         traces = np.zeros((1000, 4), dtype="int16")
         return si.NumpyRecording(traces, sampling_frequency=30000.0)
 

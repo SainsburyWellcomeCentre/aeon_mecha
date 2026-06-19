@@ -6,8 +6,6 @@ if data unavailable.
 
 Requirements:
 1. Ephys golden dataset at ~/sciops-data/project_aeon/aeon/data/raw/AEONX1/...
-2. probeinterface package installed
-3. aeon.schema.ephys available (from swc-aeon package)
 
 Pipeline cascade tested (all live except SpikeSorting):
     EphysChunk.ingest_chunks → EphysBlockInfo.populate → PreProcessing.populate
@@ -18,8 +16,6 @@ Pipeline cascade tested (all live except SpikeSorting):
 import pytest
 
 pytestmark = pytest.mark.integration
-pytest.importorskip("probeinterface", reason="Ephys tests require probeinterface")
-pytest.importorskip("aeon.schema.ephys", reason="Ephys tests require aeon.schema.ephys (from swc-aeon)")
 
 
 class TestEphysEpochDiscovery:
