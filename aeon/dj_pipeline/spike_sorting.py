@@ -357,7 +357,7 @@ class PreProcessing(dj.Computed):
                 for f in recording_dir.rglob("*")
                 if f.is_file()
                 and f.name != "recording.dat"
-                and not str(f).startswith(str(recording_dir / "recording.zarr"))
+                and not f.is_relative_to(recording_dir / "recording.zarr")
             ]
         )
 

@@ -41,15 +41,12 @@ class TestEphysEpochDiscovery:
 
     def test_probe_insertions_created(self, ephys_test_epochs, ctx):
         insertions = (
-            ctx.ephys.EphysEpochConfig.Insertion
-            & {"experiment_name": ctx.cfg["experiment_name"]}
+            ctx.ephys.EphysEpochConfig.Insertion & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         assert len(insertions) == ctx.cfg["expected_probe_count"]
 
     def test_probe_insertion_links_correct_subject(self, ephys_test_epochs, ctx):
-        pis = (
-            ctx.ephys.ProbeInsertion & {"experiment_name": ctx.cfg["experiment_name"]}
-        ).to_dicts()
+        pis = (ctx.ephys.ProbeInsertion & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
         assert len(pis) >= 1
         assert all(pi["subject"] == ctx.cfg["subject"] for pi in pis)
 
@@ -72,17 +69,13 @@ class TestEphysChunkIngestion:
         assert count >= 1
 
     def test_chunk_timestamps_valid(self, ephys_chunks_ingested, ctx):
-        chunks = (
-            ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}
-        ).to_dicts()
+        chunks = (ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
         for chunk in chunks:
             assert chunk["chunk_start"] < chunk["chunk_end"]
 
     def test_chunk_files_registered(self, ephys_chunks_ingested, ctx):
         files = list(
-            (
-                ctx.ephys.EphysChunk.File & {"experiment_name": ctx.cfg["experiment_name"]}
-            ).fetch("file_name")
+            (ctx.ephys.EphysChunk.File & {"experiment_name": ctx.cfg["experiment_name"]}).fetch("file_name")
         )
         assert any("AmplifierData_0.bin" in fn for fn in files), (
             f"AmplifierData_0.bin not registered. Got first 5: {files[:5]}"
@@ -90,9 +83,7 @@ class TestEphysChunkIngestion:
         assert any("Clock_0.bin" in fn for fn in files), (
             f"Clock_0.bin not registered. Got first 5: {files[:5]}"
         )
-        assert len(files) % 2 == 0, (
-            f"Expected even file count (Amp+Clock pairs), got {len(files)}"
-        )
+        assert len(files) % 2 == 0, f"Expected even file count (Amp+Clock pairs), got {len(files)}"
 
 
 class TestEphysBlockInfo:
@@ -107,16 +98,12 @@ class TestEphysBlockInfo:
         # Block is set up as exactly 35 minutes (block_end - block_start in the
         # ephys_test_blocks fixture); block_duration in hours is exactly 35/60.
         # Tight tolerance to catch any conversion drift.
-        infos = (
-            ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}
-        ).to_dicts()
+        infos = (ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
         for info in infos:
             assert info["block_duration"] == pytest.approx(35 / 60, abs=1e-6)
 
     def test_block_chunks_associated(self, ephys_block_info_populated, ctx):
-        chunk_links = len(
-            ctx.ephys.EphysBlockInfo.Chunk & {"experiment_name": ctx.cfg["experiment_name"]}
-        )
+        chunk_links = len(ctx.ephys.EphysBlockInfo.Chunk & {"experiment_name": ctx.cfg["experiment_name"]})
         assert chunk_links >= 1
 
     def test_channel_mappings_created(self, ephys_block_info_populated, ctx):
@@ -144,33 +131,28 @@ class TestPreProcessing:
         ctx.ephys.EphysBlockInfo.populate()
         ctx.spike_sorting.PreProcessing.populate(display_progress=True, suppress_errors=False)
 
-    def test_preprocessing_populated(
-        self, ephys_sorting_setup, require_ephys_golden_data, ctx
-    ):
+    def test_preprocessing_populated(self, ephys_sorting_setup, require_ephys_golden_data, ctx):
         self._ensure_prerequisites(ctx)
-        count = len(
-            ctx.spike_sorting.PreProcessing & {"experiment_name": ctx.cfg["experiment_name"]}
-        )
+        count = len(ctx.spike_sorting.PreProcessing & {"experiment_name": ctx.cfg["experiment_name"]})
         assert count >= 1
 
-    def test_recording_files_registered(
-        self, ephys_sorting_setup, require_ephys_golden_data, ctx
-    ):
+    def test_recording_files_registered(self, ephys_sorting_setup, require_ephys_golden_data, ctx):
         self._ensure_prerequisites(ctx)
         files = (
-            ctx.spike_sorting.PreProcessing.File
-            & {"experiment_name": ctx.cfg["experiment_name"]}
+            ctx.spike_sorting.PreProcessing.File & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         file_names = [f["file_name"] for f in files]
         assert any("si_recording.pkl" in fn for fn in file_names)
+        assert not any("recording.dat" in fn for fn in file_names), "recording.dat should not be registered"
+        assert not any("recording.zarr" in fn for fn in file_names), (
+            "recording.zarr contents should not be registered"
+        )
 
-    def test_recording_zarr_exists(
-        self, ephys_sorting_setup, require_ephys_golden_data, ctx
-    ):
+    def test_recording_zarr_exists(self, ephys_sorting_setup, require_ephys_golden_data, ctx):
         self._ensure_prerequisites(ctx)
-        key = (
-            ctx.spike_sorting.SortingTask & {"experiment_name": ctx.cfg["experiment_name"]}
-        ).to_dicts()[0]
+        key = (ctx.spike_sorting.SortingTask & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()[
+            0
+        ]
         output_dir = ctx.spike_sorting.PreProcessing.infer_output_dir(key)
         recording_zarr = output_dir.parent / "recording" / "recording.zarr"
         assert recording_zarr.exists(), f"Expected zarr recording at {recording_zarr}"
@@ -211,9 +193,7 @@ class TestPostProcessing:
 
     def test_postprocessing_populated(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
-        count = len(
-            ctx.spike_sorting.PostProcessing & {"experiment_name": ctx.cfg["experiment_name"]}
-        )
+        count = len(ctx.spike_sorting.PostProcessing & {"experiment_name": ctx.cfg["experiment_name"]})
         assert count >= 1
 
     def test_sorting_analyzer_created(self, ephys_sorting_injected, ctx):
@@ -237,24 +217,18 @@ class TestSortedSpikes:
 
     def test_sorted_spikes_populated(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
-        count = len(
-            ctx.spike_sorting.SortedSpikes & {"experiment_name": ctx.cfg["experiment_name"]}
-        )
+        count = len(ctx.spike_sorting.SortedSpikes & {"experiment_name": ctx.cfg["experiment_name"]})
         assert count >= 1
 
     def test_unit_count(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
-        units = len(
-            ctx.spike_sorting.SortedSpikes.Unit
-            & {"experiment_name": ctx.cfg["experiment_name"]}
-        )
+        units = len(ctx.spike_sorting.SortedSpikes.Unit & {"experiment_name": ctx.cfg["experiment_name"]})
         assert units == ctx.cfg["expected_unit_count"]
 
     def test_spike_counts_reasonable(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
         units = (
-            ctx.spike_sorting.SortedSpikes.Unit
-            & {"experiment_name": ctx.cfg["experiment_name"]}
+            ctx.spike_sorting.SortedSpikes.Unit & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         for u in units:
             assert u["spike_count"] > 0
@@ -264,16 +238,14 @@ class TestSortedSpikes:
     def test_quality_labels_assigned(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
         units = (
-            ctx.spike_sorting.SortedSpikes.Unit
-            & {"experiment_name": ctx.cfg["experiment_name"]}
+            ctx.spike_sorting.SortedSpikes.Unit & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         qualities = [u["unit_quality"] for u in units]
         assert set(qualities) <= {"good", "mua", "noise"}
         expected = ctx.cfg["expected_quality_counts"]
         for label, count in expected.items():
             assert qualities.count(label) == count, (
-                f"Quality label '{label}' count mismatch: expected {count}, "
-                f"got {qualities.count(label)}"
+                f"Quality label '{label}' count mismatch: expected {count}, got {qualities.count(label)}"
             )
 
 
@@ -291,9 +263,7 @@ class TestSyncedSpikes:
 
     def test_synced_spikes_populated(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
-        count = len(
-            ctx.spike_sorting.SyncedSpikes & {"experiment_name": ctx.cfg["experiment_name"]}
-        )
+        count = len(ctx.spike_sorting.SyncedSpikes & {"experiment_name": ctx.cfg["experiment_name"]})
         assert count >= 1
 
     def test_spike_times_are_datetimes(self, ephys_sorting_injected, ctx):
@@ -301,8 +271,7 @@ class TestSyncedSpikes:
         import numpy as np
 
         units = (
-            ctx.spike_sorting.SyncedSpikes.Unit
-            & {"experiment_name": ctx.cfg["experiment_name"]}
+            ctx.spike_sorting.SyncedSpikes.Unit & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         assert len(units) >= 1
         for unit in units:
@@ -312,15 +281,12 @@ class TestSyncedSpikes:
         self._ensure_prerequisites(ctx)
         import numpy as np
 
-        sync_rows = (
-            ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}
-        ).to_dicts()
+        sync_rows = (ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
         sync_start = np.datetime64(min(r["sync_start"] for r in sync_rows))
         sync_end = np.datetime64(max(r["sync_end"] for r in sync_rows))
 
         units = (
-            ctx.spike_sorting.SyncedSpikes.Unit
-            & {"experiment_name": ctx.cfg["experiment_name"]}
+            ctx.spike_sorting.SyncedSpikes.Unit & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         for unit in units:
             assert unit["spike_times"].min() >= sync_start
@@ -337,18 +303,14 @@ class TestEphysSyncModel:
     """
 
     def test_one_sync_row_per_harpsync_csv(self, ephys_test_epochs, ctx):
-        rows = (
-            ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}
-        ).to_dicts()
+        rows = (ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
         assert len(rows) == 3, (
             f"Expected 3 EphysSyncModel rows (one per hourly HarpSync CSV in the "
             f"golden epoch); got {len(rows)}."
         )
 
     def test_sync_model_regression_quality(self, ephys_test_epochs, ctx):
-        rows = (
-            ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}
-        ).to_dicts()
+        rows = (ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
         for row in rows:
             assert row["r2"] > 0.99, (
                 f"HARP↔ONIX regression r² is suspiciously low: r²={row['r2']:.6f} "
@@ -357,9 +319,9 @@ class TestEphysSyncModel:
             )
 
     def test_sync_model_bounds_monotonic(self, ephys_test_epochs, ctx):
-        rows = (
-            ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}
-        ).to_dicts(order_by="sync_start")
+        rows = (ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
+            order_by="sync_start"
+        )
         # Per-row: start < end on both clocks.
         for row in rows:
             assert row["sync_start"] < row["sync_end"], (
@@ -391,15 +353,9 @@ class TestOnixImuChunkOnGoldenData:
             display_progress=False,
             suppress_errors=False,
         )
-        n_sync = len(
-            ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}
-        )
-        n_imu = len(
-            ctx.ephys.OnixImuChunk & {"experiment_name": ctx.cfg["experiment_name"]}
-        )
-        assert n_imu == n_sync, (
-            f"Expected one OnixImuChunk per EphysSyncModel ({n_sync}); got {n_imu}."
-        )
+        n_sync = len(ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]})
+        n_imu = len(ctx.ephys.OnixImuChunk & {"experiment_name": ctx.cfg["experiment_name"]})
+        assert n_imu == n_sync, f"Expected one OnixImuChunk per EphysSyncModel ({n_sync}); got {n_imu}."
 
     def test_all_chunks_have_imu_samples(self, ephys_test_epochs, ctx):
         ctx.ephys.OnixImuChunk.populate(
@@ -408,10 +364,9 @@ class TestOnixImuChunkOnGoldenData:
             suppress_errors=False,
         )
         sample_counts = list(
-            (
-                ctx.ephys.OnixImuChunk
-                & {"experiment_name": ctx.cfg["experiment_name"]}
-            ).to_arrays("sample_count")
+            (ctx.ephys.OnixImuChunk & {"experiment_name": ctx.cfg["experiment_name"]}).to_arrays(
+                "sample_count"
+            )
         )
         # The golden recording is fully covered by Bno055 chunks, so every
         # sync window overlaps real IMU data.
