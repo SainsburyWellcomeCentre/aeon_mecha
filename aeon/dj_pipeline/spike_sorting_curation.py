@@ -128,15 +128,9 @@ class ApplyOfficialCuration(dj.Imported):
         with open(curation_file_path) as f:
             curation_dict = json.load(f)
 
-        # Get sorting output directory
-        sorting_root_dir = get_sorting_root_dir()
-        output_dir = sorting_root_dir / (spike_sorting.PreProcessing & key).fetch1("sorting_output_dir")
-
         # Load original sorting analyzer
-        analyzer_output_dir = resolve_analyzer_dir(output_dir)
-        if not analyzer_output_dir.exists():
-            raise FileNotFoundError(f"Sorting analyzer directory not found: {analyzer_output_dir}")
-
+        analyzer_output_dir = _get_analyzer_dir_from_key(key)
+        output_dir = analyzer_output_dir.parent
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
 
         # Track original unit IDs for comparison
@@ -285,12 +279,6 @@ def launch_spikeinterface_gui(key: dict, parent_curation_id: int | None = None) 
     import spikeinterface as si
 
     analyzer_dir = _get_analyzer_dir_from_key(key)
-
-    if not analyzer_dir.exists():
-        raise FileNotFoundError(
-            f"Sorting analyzer directory not found: {analyzer_dir}\n"
-            f"Please verify the key is correct and that PreProcessing has been run for this block."
-        )
 
     # Handle parent curation if specified
     gui_dir = analyzer_dir / "spikeinterface_gui"

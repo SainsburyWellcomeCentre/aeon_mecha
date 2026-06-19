@@ -27,11 +27,11 @@ class TestResolveAnalyzerDir:
 
         assert resolve_analyzer_dir(tmp_path) == tmp_path / "sorting_analyzer.zarr"
 
-    def test_zarr_path_when_neither_present(self, tmp_path):
-        # Falls back to the zarr path (the expected location for new runs)
+    def test_raises_when_neither_present(self, tmp_path):
         from aeon.dj_pipeline.utils.spike_sorting_utils import resolve_analyzer_dir
 
-        assert resolve_analyzer_dir(tmp_path) == tmp_path / "sorting_analyzer.zarr"
+        with pytest.raises(FileNotFoundError):
+            resolve_analyzer_dir(tmp_path)
 
     def test_binary_dir_preferred_when_both_present(self, tmp_path):
         (tmp_path / "sorting_analyzer").mkdir()
