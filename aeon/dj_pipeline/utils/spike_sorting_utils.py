@@ -10,15 +10,26 @@ from pathlib import Path
 import numpy as np
 
 
-def _resolve_analyzer_dir(output_dir: Path) -> Path:
-    """Find sorting analyzer directory, checking both binary and zarr paths."""
+def resolve_analyzer_dir(output_dir: Path) -> Path:
+    """Find sorting analyzer directory, checking both binary and zarr paths.
+
+    Raises:
+        FileNotFoundError: If neither sorting_analyzer nor sorting_analyzer.zarr exists.
+    """
     analyzer_dir = output_dir / "sorting_analyzer"
-    if not analyzer_dir.exists():
-        analyzer_dir = output_dir / "sorting_analyzer.zarr"
-    return analyzer_dir
+    if analyzer_dir.exists():
+        return analyzer_dir
+    analyzer_dir = output_dir / "sorting_analyzer.zarr"
+    if analyzer_dir.exists():
+        return analyzer_dir
+    raise FileNotFoundError(
+        f"Sorting analyzer directory not found in {output_dir} "
+        f"(checked sorting_analyzer and sorting_analyzer.zarr). "
+        f"Please verify the key is correct and that PreProcessing has been run for this block."
+    )
 
 
-def _strip_non_numeric_properties(si_recording) -> None:
+def strip_non_numeric_properties(si_recording) -> None:
     """Remove non-numeric recording properties that zarr v2 cannot serialize."""
     for prop in list(si_recording.get_property_keys()):
         values = si_recording.get_property(prop)
