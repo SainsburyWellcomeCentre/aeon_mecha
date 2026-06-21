@@ -15,8 +15,8 @@ PreProcessing reading the amplifier data off Ceph).
 
 ## 1. Get a compute node
 
-Ceph is only visible from compute nodes, not the gateway, so grab a CPU node
-first with a generous walltime:
+The suite is heavy (~35 minutes, lots of Ceph I/O), so run it on a compute node
+rather than on the gateway. Grab a CPU node with a generous walltime:
 
 ```
 srun --nodes=1 --ntasks-per-node=1 --cpus-per-task=8 -p cpu --time=04:00:00 --mem=16G --pty bash -i
