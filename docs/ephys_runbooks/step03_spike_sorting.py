@@ -114,6 +114,9 @@ def setup_sorting_prerequisites(
 
     if not (spike_sorting.SortingParamSet & {"paramset_id": paramset_id_str}):
         params = {
+            # Storage format for recording, sorting output, and analyzer
+            # ("zarr" or "binary"). Defaults to "zarr" if omitted.
+            "save_format": "zarr",
             # NOTE: Preprocessing is fixed in the pipeline (bandpass 300-6000 Hz
             # + median common average referencing, via ephys_preproc() in
             # spike_sorting.py). It is not configurable through this params dict.

@@ -1,19 +1,33 @@
-import datajoint as dj
-import numpy as np
-from pathlib import Path
-import pandas as pd
+"""DataJoint spike sorting pipeline tables and compute steps.
+
+This module defines the spike sorting workflow, including preprocessing,
+sorting, postprocessing, exports, and ingestion of sorted units/waveforms.
+"""
+
+import importlib
 import json
-from datetime import datetime, UTC
-import joblib
-import tempfile
 import os
-from typing import Dict, List, Tuple, Any, Optional
+import tempfile
+from collections.abc import Iterator
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 
-from aeon.dj_pipeline import acquisition, ephys, get_schema_name
-from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
-
+import datajoint as dj
+import joblib
+import numpy as np
+import pandas as pd
 from swc.aeon.io import api as io_api
-from aeon.schema.ephys import social_ephys
+
+from aeon.dj_pipeline import get_schema_name
+from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
+from aeon.dj_pipeline.utils.spike_sorting_utils import (
+    resolve_analyzer_dir,
+    strip_non_numeric_properties,
+)
+
+acquisition = importlib.import_module("aeon.dj_pipeline.acquisition")
+ephys = importlib.import_module("aeon.dj_pipeline.ephys")
 
 schema = dj.Schema(get_schema_name("spike_sorting"))
 logger = dj.logger
@@ -21,15 +35,16 @@ logger = dj.logger
 
 @schema
 class ElectrodeGroup(dj.Manual):
+    """A group of electrodes that are used for spike sorting.
+
+    All or subset of the electrodes from a particular electrode configuration
     """
-    A group of electrodes that are used for spike sorting.
-    All or subset of the electrodes from a particular electrode configuration 
-    """
+
     definition = """
     -> ephys.ElectrodeConfig
     electrode_group: varchar(16)  # e.g. 'all', 'shank1', etc.
     ---
-    electrode_group_description: varchar(1000) 
+    electrode_group_description: varchar(1000)
     electrode_count: int32
     """
 
@@ -68,7 +83,7 @@ class SortingMethod(dj.Lookup):
         ("kilosort2", "kilosort2 sorting method"),
         ("kilosort2.5", "kilosort2.5 sorting method"),
         ("kilosort3", "kilosort3 sorting method"),
-        ("kilosort4", "kilosort4 sorting method")
+        ("kilosort4", "kilosort4 sorting method"),
     ]
 
 
@@ -77,7 +92,7 @@ class SortingParamSet(dj.Lookup):
     definition = """ # Parameter set for spike sorting
     paramset_id: varchar(16)
     ---
-    -> SortingMethod    
+    -> SortingMethod
     paramset_description='': varchar(1000)
     params: <blob>  # dictionary of all applicable parameters
     """
@@ -85,13 +100,14 @@ class SortingParamSet(dj.Lookup):
 
 @schema
 class SortingTask(dj.Manual):
-    """
-    A manual table for defining a sorting task ready to be run.
+    """A manual table for defining a sorting task ready to be run.
+
     A sorting task is defined by a unique combination of:
     - ephys block
     - electrode group
     - sorting parameter set
     """
+
     definition = """
     # Manual table for defining a sorting task ready to be run
     -> ephys.EphysBlock
@@ -107,7 +123,7 @@ class PreProcessing(dj.Computed):
     ---
     execution_time: datetime   # datetime of the start of this step
     execution_duration: float64  # execution duration in hours
-    sorting_output_dir: varchar(255)  #  sorting output directory relative to the sorting root data directory
+    sorting_output_dir: varchar(255)  # sorting output directory relative to the sorting root data directory
     """
 
     class File(dj.Part):
@@ -119,14 +135,14 @@ class PreProcessing(dj.Computed):
         """
 
     @classmethod
-    def infer_output_dir(cls, key: Dict[str, Any], relative: bool = False, mkdir: bool = False) -> Path:
+    def infer_output_dir(cls, key: dict[str, Any], relative: bool = False, mkdir: bool = False) -> Path:
         """Generate standardized output directory path for sorting results.
-        
+
         Args:
             key: Sorting task key with experiment, block, and parameter info
             relative: Return path relative to sorting root directory
             mkdir: Create directory if it doesn't exist
-            
+
         Returns:
             Path to the sorting output directory
         """
@@ -135,13 +151,16 @@ class PreProcessing(dj.Computed):
         start_str = key["block_start"].strftime("%Y-%m-%dT%H-%M-%S")
         end_str = key["block_end"].strftime("%Y-%m-%dT%H-%M-%S")
 
-        output_dir = (sorting_root_dir / key["experiment_name"]
-                      / key["subject"]
-                      / f"insertion_{key['insertion_number']}"
-                      / "ephys_blocks"
-                      / f"{start_str}_{end_str}"
-                      / key["electrode_group"]
-                      / f"{sorting_method}_{key['paramset_id']}")
+        output_dir = (
+            sorting_root_dir
+            / key["experiment_name"]
+            / key["subject"]
+            / f"insertion_{key['insertion_number']}"
+            / "ephys_blocks"
+            / f"{start_str}_{end_str}"
+            / key["electrode_group"]
+            / f"{sorting_method}_{key['paramset_id']}"
+        )
 
         if mkdir:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -150,6 +169,7 @@ class PreProcessing(dj.Computed):
         return output_dir.relative_to(sorting_root_dir) if relative else output_dir
 
     def make_fetch(self, key):
+        """Fetch ephys data and metadata, prepare output directory, and define preprocessing parameters."""
         # Safety check: refuse to overwrite existing data on ceph
         output_dir = self.infer_output_dir(key)
         if output_dir.exists() and any(output_dir.iterdir()):
@@ -165,18 +185,19 @@ class PreProcessing(dj.Computed):
 
         # Load ephys data
         ephys_files, dir_types = (
-            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key)
+            ephys.EphysChunk.File
+            & (ephys.EphysBlockInfo.Chunk & key)
             & "file_name LIKE '%AmplifierData%.bin'"
         ).to_arrays("file_path", "directory_type", order_by="chunk_start")
 
         # Channels
         electrodes_query = (
-                ephys.EphysBlockInfo.Channel
-                * ephys.ElectrodeConfig.Electrode
-                * ElectrodeGroup.Electrode
-                * ephys.ProbeType.Electrode
-                & key
-            )
+            ephys.EphysBlockInfo.Channel
+            * ephys.ElectrodeConfig.Electrode
+            * ElectrodeGroup.Electrode
+            * ephys.ProbeType.Electrode
+            & key
+        )
         electrodes_df = electrodes_query.to_pandas().reset_index()
         electrodes_df.drop(columns=list(key), inplace=True, errors="ignore")
 
@@ -186,16 +207,37 @@ class PreProcessing(dj.Computed):
         gain_to_uV = 3.05176
         offset_to_uV = -2048 * gain_to_uV
 
-        return ephys_files, dir_types, electrodes_df, num_channels, fs_hz, gain_to_uV, offset_to_uV, output_dir, recording_file, recording_dir
+        return (
+            ephys_files,
+            dir_types,
+            electrodes_df,
+            num_channels,
+            fs_hz,
+            gain_to_uV,
+            offset_to_uV,
+            output_dir,
+            recording_file,
+            recording_dir,
+        )
 
-    def make_compute(self, key: Dict[str, Any], ephys_files: List[str], dir_types: List[str], 
-                     electrodes_df: pd.DataFrame, num_channels: int, fs_hz: float, 
-                     gain_to_uV: float, offset_to_uV: float, output_dir: Path, 
-                     recording_file: Path, recording_dir: Path) -> Tuple[Path, datetime, Path]:
+    def make_compute(
+        self,
+        key: dict[str, Any],
+        ephys_files: list[str],
+        dir_types: list[str],
+        electrodes_df: pd.DataFrame,
+        num_channels: int,
+        fs_hz: float,
+        gain_to_uV: float,
+        offset_to_uV: float,
+        output_dir: Path,
+        recording_file: Path,
+        recording_dir: Path,
+    ) -> tuple[Path, datetime, Path]:
         """Preprocess ephys data for spike sorting.
-        
+
         Performs data concatenation, channel selection, filtering, and probe setup.
-        
+
         Args:
             key: Sorting task key
             ephys_files: List of ephys file paths
@@ -208,20 +250,20 @@ class PreProcessing(dj.Computed):
             output_dir: Output directory path
             recording_file: Path to save recording object
             recording_dir: Directory for recording files
-            
+
         Returns:
             Tuple of (output_dir, execution_time, recording_dir)
         """
         import probeinterface as pi
         import spikeinterface as si
         import spikeinterface.extractors as se
-        from spikeinterface import sorters, preprocessing
+        from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
 
         # Concatenate recordings
         si_recs = []
-        for f, d in zip(ephys_files, dir_types):
+        for f, d in zip(ephys_files, dir_types, strict=False):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
             si_rec = se.read_binary(
                 ephys_dir / f,
@@ -229,7 +271,8 @@ class PreProcessing(dj.Computed):
                 dtype=np.uint16,
                 num_channels=num_channels,
                 gain_to_uV=gain_to_uV,
-                offset_to_uV=offset_to_uV)
+                offset_to_uV=offset_to_uV,
+            )
             si_recs.append(si_rec)
         si_recording = si.concatenate_recordings(si_recs)
 
@@ -238,7 +281,7 @@ class PreProcessing(dj.Computed):
         chn2remove = set(si_recording.channel_ids) - set(in_use_chn_ids)
         si_recording = si_recording.remove_channels(list(chn2remove))
         in_use_chn_ind = [si_recording.channel_ids.tolist().index(chn_id) for chn_id in in_use_chn_ids]
-        electrodes_df.channel_idx = in_use_chn_ind
+        electrodes_df["channel_idx"] = in_use_chn_ind
 
         # Create SI probe object
         probe_df = electrodes_df.copy()
@@ -263,17 +306,33 @@ class PreProcessing(dj.Computed):
         si_recording = ephys_preproc(si_recording)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
-        # write binary into recording.dat
+        params = (SortingParamSet & key).fetch1("params")
+        save_format = params.get("save_format", "zarr")
+
         job_kwargs = {"n_jobs": -1, "chunk_duration": "2s"}
-        binary_file_path = recording_file.parent / "recording.dat"
-        if binary_file_path.exists():
-            load_and_verify_binary_file(
-                binary_file_path=binary_file_path,
-                se_recording_obj=si_recording)
-            logger.info(f"{binary_file_path} already exists. Skipping writing binary file.")
+
+        if save_format == "zarr":
+            zarr_path = recording_file.parent / "recording.zarr"
+            if zarr_path.exists():
+                logger.info(f"{zarr_path} already exists. Skipping zarr write.")
+            else:
+                strip_non_numeric_properties(si_recording)
+                logger.info(f"Writing zarr recording to {zarr_path}...")
+                si_recording.save(
+                    format="zarr",
+                    folder=zarr_path,
+                    **sorters.basesorter.get_job_kwargs(job_kwargs, True),
+                )
         else:
-            logger.info(f"Writing binary recording to {binary_file_path}...")
-            si.core.write_binary_recording(
+            binary_file_path = recording_file.parent / "recording.dat"
+            if binary_file_path.exists():
+                load_and_verify_binary_file(
+                    binary_file_path=binary_file_path, se_recording_obj=si_recording
+                )
+                logger.info(f"{binary_file_path} already exists. Skipping writing binary file.")
+            else:
+                logger.info(f"Writing binary recording to {binary_file_path}...")
+                si.core.write_binary_recording(
                     recording=si_recording,
                     file_paths=[binary_file_path],
                     dtype="int16",
@@ -283,22 +342,22 @@ class PreProcessing(dj.Computed):
         return output_dir, execution_time, recording_dir
 
     def make_insert(self, key, output_dir, execution_time, recording_dir):
+        """Insert preprocessing results into the database, including file references."""
         self.insert1(
             {
                 **key,
                 "sorting_output_dir": output_dir.relative_to(get_sorting_root_dir()).as_posix(),
                 "execution_time": execution_time,
-                "execution_duration": (
-                    datetime.now(UTC) - execution_time
-                ).total_seconds()
-                / 3600,
+                "execution_duration": (datetime.now(UTC) - execution_time).total_seconds() / 3600,
             }
         )
         self.File.insert(
             [
                 {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
                 for f in recording_dir.rglob("*")
-                if f.is_file() and f.name != "recording.dat"  # exclude the large binary file (too long for hashing)
+                if f.is_file()
+                and f.name != "recording.dat"
+                and not f.is_relative_to(recording_dir / "recording.zarr")
             ]
         )
 
@@ -321,47 +380,54 @@ class SpikeSorting(dj.Computed):
         """
 
     def make_fetch(self, key):
+        """Fetch recording and parameters for spike sorting."""
         sorting_root_dir = get_sorting_root_dir()
         # Load recording object.
-        sorting_method, params = (
-                SortingTask * SortingParamSet & key
-        ).fetch1("sorting_method", "params")
+        sorting_method, params = (SortingTask * SortingParamSet & key).fetch1("sorting_method", "params")
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
         try:
             recording_file = Path(
-                (PreProcessing.File
-                 & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path)
+                (PreProcessing.File & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path
+            )
         except dj.errors.DataJointError:
             recording_file = output_dir.parent / "recording" / "si_recording.pkl"
 
         return recording_file, output_dir, params, sorting_method
 
-    def make_compute(self, key: Dict[str, Any], recording_file: Path, output_dir: Path, 
-                     params: Dict[str, Any], sorting_method: str) -> Tuple[Path, datetime, float]:
+    def make_compute(
+        self,
+        key: dict[str, Any],
+        recording_file: Path,
+        output_dir: Path,
+        params: dict[str, Any],
+        sorting_method: str,
+    ) -> tuple[Path, datetime, float]:
         """Run spike sorting using specified algorithm and parameters.
-        
+
         Args:
             key: Sorting task key
             recording_file: Path to preprocessed recording
             output_dir: Base output directory
             params: Sorting parameters dictionary
             sorting_method: Name of sorting algorithm (e.g., kilosort2)
-            
+
         Returns:
             Tuple of (sorting_output_dir, execution_time, execution_duration)
         """
         # Set PyTorch CUDA memory allocator configuration BEFORE importing PyTorch
         # Note: PYTORCH_CUDA_ALLOC_CONF must be set BEFORE PyTorch is imported to take effect.
         # If not already set (e.g., from bash script), use:
-        # - expandable_segments:True allows PyTorch to dynamically expand memory segments to reduce fragmentation
+        # - expandable_segments:True allows PyTorch to dynamically expand memory segments
+        #   to reduce fragmentation
         # - garbage_collection_threshold:0.6 triggers GC when 60% of reserved memory is unused,
         #   helping free reserved but unallocated memory (like the 7.69 GiB in the error)
         if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ:
-            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True,garbage_collection_threshold:0.6"
-        
+            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = (
+                "expandable_segments:True,garbage_collection_threshold:0.6"
+            )
+
         import spikeinterface as si
-        from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
         sorter_name = sorting_method.replace(".", "_")
@@ -372,35 +438,34 @@ class SpikeSorting(dj.Computed):
                 f"Sorting output directory already contains data: {sorting_output_dir}. "
                 "Refusing to overwrite existing sorting data."
             )
-        si_recording: si.BaseRecording = si.load(
-            recording_file, base_folder=output_dir
-        )
-        # load the pre-generated binary file - recording.dat
-        binary_file_path = Path(recording_file).parent / "recording.dat"
-        binary_rec = load_and_verify_binary_file(
-            binary_file_path=binary_file_path,
-            se_recording_obj=si_recording)
+        si_recording: si.BaseRecording = si.load(recording_file, base_folder=output_dir)
 
+        save_format = params.get("save_format", "zarr")
         sorting_params = params["SI_SORTING_PARAMS"].copy()
 
-        # explicitly set `skip_kilosort_preprocessing` to False
-        # to avoid SpikeInterface rerunning the `write_binary_recording` step
-        # https://github.com/SpikeInterface/spikeinterface/blob/705c9320c854f2a192fa200fe7866cec5a8ffca7/src/spikeinterface/sorters/external/kilosortbase.py#L124
+        if sorting_method == "kilosort4" and "clear_cache" not in sorting_params:
+            sorting_params["clear_cache"] = True
+
+        # Prevent SpikeInterface from re-running write_binary_recording internally:
+        # https://github.com/SpikeInterface/spikeinterface/blob/705c932/src/spikeinterface/sorters/external/kilosortbase.py#L124
         sorting_params["skip_kilosort_preprocessing"] = False
-        
-        # Add Kilosort4 memory optimization parameters to reduce GPU memory usage
-        # clear_cache=True forces PyTorch to clear cached CUDA memory after memory-intensive steps,
-        # which helps free reserved but unallocated memory (like the 7.69 GiB in the error)
-        if sorting_method == "kilosort4":
-            if "clear_cache" not in sorting_params:
-                sorting_params["clear_cache"] = True
-                
-        if not binary_rec.binary_compatible_with(dtype="int16", time_axis=0, file_paths_length=1):
-            raise ValueError(f"Incompatible binary file for spike sorting: {binary_file_path}")
+
+        if save_format == "zarr":
+            zarr_path = Path(recording_file).parent / "recording.zarr"
+            recording_for_sorting = si.load(zarr_path)
+        else:
+            binary_file_path = Path(recording_file).parent / "recording.dat"
+            recording_for_sorting = load_and_verify_binary_file(
+                binary_file_path=binary_file_path, se_recording_obj=si_recording
+            )
+            if not recording_for_sorting.binary_compatible_with(
+                dtype="int16", time_axis=0, file_paths_length=1
+            ):
+                raise ValueError(f"Incompatible binary file for spike sorting: {binary_file_path}")
 
         si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
             sorter_name=sorter_name,
-            recording=binary_rec,
+            recording=recording_for_sorting,
             folder=sorting_output_dir,
             remove_existing_folder=True,
             verbose=True,
@@ -417,13 +482,8 @@ class SpikeSorting(dj.Computed):
         return sorting_output_dir, execution_time, execution_duration
 
     def make_insert(self, key, sorting_output_dir, execution_time, execution_duration):
-        self.insert1(
-            {
-                **key,
-                "execution_time": execution_time,
-                "execution_duration": execution_duration
-            }
-        )
+        """Insert spike sorting results into the database, including file references."""
+        self.insert1({**key, "execution_time": execution_time, "execution_duration": execution_duration})
         self.File.insert(
             [
                 {**key, "file_name": f.relative_to(sorting_output_dir).as_posix(), "file": f}
@@ -451,91 +511,89 @@ class PostProcessing(dj.Computed):
         """
 
     def make_fetch(self, key):
+        """Fetch recording and sorting results for post-processing."""
         sorting_root_dir = get_sorting_root_dir()
         # Load recording object.
-        sorting_method, params = (
-                SortingTask * SortingParamSet & key
-        ).fetch1("sorting_method", "params")
+        _sorting_method, params = (SortingTask * SortingParamSet & key).fetch1("sorting_method", "params")
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
         try:
             recording_file = Path(
-                (PreProcessing.File
-                 & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path)
+                (PreProcessing.File & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path
+            )
         except dj.errors.DataJointError:
             recording_file = output_dir.parent / "recording" / "si_recording.pkl"
         try:
             sorting_file = Path(
-                (SpikeSorting.File
-                 & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file").full_path)
+                (SpikeSorting.File & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file").full_path
+            )
         except dj.errors.DataJointError:
             sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
 
         return recording_file, sorting_file, output_dir, params
 
-    def make_compute(self, key: Dict[str, Any], recording_file: Path, sorting_file: Path, 
-                     output_dir: Path, params: Dict[str, Any]) -> Tuple[Path, datetime, float]:
+    def make_compute(
+        self,
+        key: dict[str, Any],
+        recording_file: Path,
+        sorting_file: Path,
+        output_dir: Path,
+        params: dict[str, Any],
+    ) -> tuple[Path, datetime, float]:
         """Post-process spike sorting results with quality assessment.
-        
+
         Runs SpikeInterface sorting analyzer to compute quality metrics and extensions.
-        
+
         Args:
             key: Sorting task key
             recording_file: Path to recording object
             sorting_file: Path to sorting results
             output_dir: Base output directory
             params: Post-processing parameters
-            
+
         Returns:
             Tuple of (analyzer_output_dir, execution_time, execution_duration)
         """
         import spikeinterface as si
-        from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
 
-        si_recording: si.BaseRecording = si.load(
-            recording_file, base_folder=output_dir
-        )
-        si_sorting: si.sorters.BaseSorter = si.load(
-            sorting_file, base_folder=output_dir
-        )
+        si_recording: si.BaseRecording = si.load(recording_file, base_folder=output_dir)
+        si_sorting: si.sorters.BaseSorter = si.load(sorting_file, base_folder=output_dir)
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
 
-        job_kwargs = postprocessing_params.get(
-            "job_kwargs", {"n_jobs": -1, "chunk_duration": "1s"}
-        )
+        job_kwargs = postprocessing_params.get("job_kwargs", {"n_jobs": -1, "chunk_duration": "1s"})
 
-        analyzer_output_dir = output_dir / "sorting_analyzer"
-        # Safety check: refuse to overwrite existing data on ceph
+        save_format = params.get("save_format", "zarr")
+        analyzer_format = "zarr" if save_format == "zarr" else "binary_folder"
+        analyzer_name = "sorting_analyzer.zarr" if save_format == "zarr" else "sorting_analyzer"
+        analyzer_output_dir = output_dir / analyzer_name
+
         if analyzer_output_dir.exists() and any(analyzer_output_dir.iterdir()):
             raise FileExistsError(
                 f"Sorting analyzer directory already contains data: {analyzer_output_dir}. "
                 "Refusing to overwrite existing sorting data."
             )
 
-        has_units = si_sorting.unit_ids.size > 0
-
-        # ---- run the analyzer extensions ----
-        if not has_units:
+        if si_sorting.unit_ids.size == 0:
             logger.info("No units found in sorting object. Skipping sorting analyzer.")
-            analyzer_output_dir.mkdir(parents=True, exist_ok=True)  # create empty directory anyway, for consistency
+            analyzer_output_dir.mkdir(parents=True, exist_ok=True)
             execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
             return analyzer_output_dir, execution_time, execution_duration
 
-        # Sorting Analyzer
         sorting_analyzer = si.create_sorting_analyzer(
             sorting=si_sorting,
             recording=si_recording,
-            format="binary_folder",
+            format=analyzer_format,
             folder=analyzer_output_dir,
             sparse=True,
             overwrite=True,
         )
 
         # The order of extension computation is drawn from sorting_analyzer.get_computable_extensions()
-        # each extension is parameterized by params specified in extensions_params dictionary (skip if not specified)
+        # each extension is parameterized by params specified in extensions_params dictionary
+        # (skip if not specified)
         extensions_params = postprocessing_params.get("extensions", {})
         extensions_to_compute = {
             ext_name: extensions_params[ext_name]
@@ -550,6 +608,7 @@ class PostProcessing(dj.Computed):
         return analyzer_output_dir, execution_time, execution_duration
 
     def make_insert(self, key, analyzer_output_dir, execution_time, execution_duration):
+        """Insert post-processing results into the database, including file references."""
         self.insert1(
             {
                 **key,
@@ -584,15 +643,15 @@ class SIExport(dj.Computed):
         """
 
     def make(self, key):
+        """Export spike sorting results to standardised formats for downstream analysis and sharing."""
         import spikeinterface as si
-        from spikeinterface import exporters
 
         execution_time = datetime.now(UTC)
 
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
-        analyzer_output_dir = output_dir / "sorting_analyzer"
+        analyzer_output_dir = resolve_analyzer_dir(output_dir)
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
 
         execution_duration_hours = (datetime.now(UTC) - execution_time).total_seconds() / 3600
@@ -654,15 +713,11 @@ class SortedSpikes(dj.Imported):
         spike_indices: <blob@dj_store>  # array of spike indices into the concatenated binary data (from preprocessing)
         spike_sites : <blob@dj_store>   # array of electrode associated with each spike
         spike_depths=null : <blob@dj_store>  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe
-        """
+        """  # noqa:E501
 
     def make(self, key):
-        """
-        From sorted spikes output, extract units, spike times, electrode, etc.
-        Also, synchronize the spike times to the HARP clock.
-        """
+        """Extract units, spike times, and electrodes from sorting output; sync to HARP clock."""
         import spikeinterface as si
-        from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
 
@@ -671,18 +726,18 @@ class SortedSpikes(dj.Imported):
 
         # Get channel and electrode-site mapping
         electrode_query = (
-                ephys.EphysBlockInfo.Channel.proj(..., "-channel_name")
-                * ephys.ElectrodeConfig.Electrode
-                * ElectrodeGroup.Electrode
-                * ephys.ProbeType.Electrode.proj("electrode_name")
-                & key
+            ephys.EphysBlockInfo.Channel.proj(..., "-channel_name")
+            * ephys.ElectrodeConfig.Electrode
+            * ElectrodeGroup.Electrode
+            * ephys.ProbeType.Electrode.proj("electrode_name")
+            & key
         )
 
         # Check if there's an official curation for this block
         # If so, use the curated analyzer; otherwise use the raw analyzer
         # Use lazy import to avoid circular dependency
         curation_id = -1
-        analyzer_output_dir = output_dir / "sorting_analyzer"
+        analyzer_output_dir = resolve_analyzer_dir(output_dir)
         try:
             # Lazy import to avoid circular dependency
             import importlib
@@ -699,7 +754,9 @@ class SortedSpikes(dj.Imported):
                         spike_sorting_curation_module.ManualCuration.File
                         & key
                         & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                    ).fetch1("file").full_path
+                    )
+                    .fetch1("file")
+                    .full_path
                 )
                 logger.info(
                     f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
@@ -712,18 +769,13 @@ class SortedSpikes(dj.Imported):
             logger.info(f"Using raw analyzer (curation check failed: {e})")
 
         sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
-        si_sorting_: si.sorters.BaseSorter = si.load(
-            sorting_file, base_folder=output_dir
-        )
+        si_sorting_: si.sorters.BaseSorter = si.load(sorting_file, base_folder=output_dir)
 
         self.insert1(
             {
                 **key,
                 "execution_time": execution_time,
-                "execution_duration": (
-                    datetime.now(UTC) - execution_time
-                ).total_seconds()
-                / 3600,
+                "execution_duration": (datetime.now(UTC) - execution_time).total_seconds() / 3600,
                 "curation_id": curation_id,
             }
         )
@@ -735,27 +787,24 @@ class SortedSpikes(dj.Imported):
         si_sorting = sorting_analyzer.sorting
 
         # Find representative channel for each unit
-        unit_peak_channel: dict[int, np.ndarray] = (
-            si.ChannelSparsity.from_best_channels(
-                sorting_analyzer,
-                1,
-            ).unit_id_to_channel_indices
-        )
-        unit_peak_channel: dict[int, int] = {
-            u: chn[0] for u, chn in unit_peak_channel.items()
-        }
+        unit_channel_indices: dict[int, np.ndarray] = si.ChannelSparsity.from_best_channels(
+            sorting_analyzer,
+            1,
+        ).unit_id_to_channel_indices
+        unit_peak_channel: dict[int, int] = {u: chn[0] for u, chn in unit_channel_indices.items()}
 
         spike_count_dict: dict[int, int] = si_sorting.count_num_spikes_per_unit()
         # {unit: spike_count}
 
         # create channel2electrode_map
-        electrode_map: dict[int, dict] = {
-            elec["electrode"]: elec for elec in electrode_query.to_dicts()
-        }
+        electrode_map: dict[int, dict] = {elec["electrode"]: elec for elec in electrode_query.to_dicts()}
         channel2electrode_map = {
             chn_idx: electrode_map[int(elec_id)]
-            for chn_idx, elec_id in zip(sorting_analyzer.get_probe().device_channel_indices,
-                                        sorting_analyzer.get_probe().contact_ids)
+            for chn_idx, elec_id in zip(
+                sorting_analyzer.get_probe().device_channel_indices,
+                sorting_analyzer.get_probe().contact_ids,
+                strict=False,
+            )
         }
 
         # Get unit id to quality label mapping
@@ -773,24 +822,23 @@ class SortedSpikes(dj.Imported):
             sorting_analyzer, outputs="index"
         )
         spikes_df = pd.DataFrame(
-            sorting_analyzer.sorting.to_spike_vector(
-                extremum_channel_inds=extremum_channel_inds
-            )
+            sorting_analyzer.sorting.to_spike_vector(extremum_channel_inds=extremum_channel_inds)
         )
-        for unit_idx, unit_id in enumerate(si_sorting.unit_ids):
-            unit_id = int(unit_id)
+        for unit_idx, raw_unit_id in enumerate(si_sorting.unit_ids):
+            unit_id = int(raw_unit_id)
             unit_spikes_df = spikes_df[spikes_df.unit_index == unit_idx]
             spike_sites = np.array(
-                [
-                    channel2electrode_map[chn_idx]["electrode"]
-                    for chn_idx in unit_spikes_df.channel_index
-                ]
+                [channel2electrode_map[chn_idx]["electrode"] for chn_idx in unit_spikes_df.channel_index]
             )
             unit_spikes_loc = spike_locations.get_data()[unit_spikes_df.index]
-            _, spike_depths = zip(*unit_spikes_loc)  # x-coordinates, y-coordinates
+            _, spike_depths = zip(*unit_spikes_loc, strict=True)  # x-coordinates, y-coordinates
             spike_indices = si_sorting.get_unit_spike_train(unit_id)
 
-            assert len(spike_indices) == len(spike_sites) == len(spike_depths)
+            if not (len(spike_indices) == len(spike_sites) == len(spike_depths)):
+                raise ValueError(
+                    f"Unit {unit_id}: mismatched spike data lengths "
+                    f"(indices={len(spike_indices)}, sites={len(spike_sites)}, depths={len(spike_depths)})"
+                )
 
             self.Unit.insert1(
                 {
@@ -802,7 +850,8 @@ class SortedSpikes(dj.Imported):
                     "spike_count": spike_count_dict[unit_id],
                     "spike_sites": spike_sites,
                     "spike_depths": spike_depths,
-                }, ignore_extra_fields=True
+                },
+                ignore_extra_fields=True,
             )
 
 
@@ -827,12 +876,13 @@ class Waveform(dj.Imported):
         # Spike waveforms and their mean across spikes for the given unit at the given electrode
         -> master
         -> SortedSpikes.Unit
-        -> ephys.ElectrodeConfig.Electrode  
-        --- 
-        channel_waveform: <blob>   # (uV) mean waveform across spikes of the given unit at the given electrode
+        -> ephys.ElectrodeConfig.Electrode
+        ---
+        channel_waveform: <blob>   # (uV) mean waveform across spikes of a unit at an electrode
         """
-        
+
     def make(self, key):
+        """Extract spike waveforms for each unit and electrode from sorting analyzer templates."""
         import spikeinterface as si
 
         sorting_root_dir = get_sorting_root_dir()
@@ -840,11 +890,11 @@ class Waveform(dj.Imported):
 
         # Get channel and electrode-site mapping
         electrode_query = (
-                ephys.EphysBlockInfo.Channel.proj(..., "-channel_name")
-                * ephys.ElectrodeConfig.Electrode
-                * ElectrodeGroup.Electrode
-                * ephys.ProbeType.Electrode.proj("electrode_name")
-                & key
+            ephys.EphysBlockInfo.Channel.proj(..., "-channel_name")
+            * ephys.ElectrodeConfig.Electrode
+            * ElectrodeGroup.Electrode
+            * ephys.ProbeType.Electrode.proj("electrode_name")
+            & key
         )
 
         # Get curation_id from SortedSpikes to determine which analyzer to use
@@ -852,6 +902,7 @@ class Waveform(dj.Imported):
         if curation_id != -1:
             # Fetch applied analyzer path from database
             import importlib
+
             spike_sorting_curation_module = importlib.import_module(
                 "aeon.dj_pipeline.spike_sorting_curation"
             )
@@ -860,13 +911,13 @@ class Waveform(dj.Imported):
                     spike_sorting_curation_module.ManualCuration.File
                     & key
                     & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                ).fetch1("file").full_path
+                )
+                .fetch1("file")
+                .full_path
             )
-            logger.info(
-                f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
-            )
+            logger.info(f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}")
         else:
-            analyzer_output_dir = output_dir / "sorting_analyzer"
+            analyzer_output_dir = resolve_analyzer_dir(output_dir)
             logger.info("Using raw analyzer (curation_id=-1)")
 
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
@@ -874,35 +925,30 @@ class Waveform(dj.Imported):
         self.insert1(key)
 
         # Find representative channel for each unit
-        unit_peak_channel: dict[int, np.ndarray] = (
-            si.ChannelSparsity.from_best_channels(
-                sorting_analyzer, 1
-            ).unit_id_to_channel_indices
-        )  # {unit: peak_channel_index}
+        unit_peak_channel: dict[int, np.ndarray] = si.ChannelSparsity.from_best_channels(
+            sorting_analyzer, 1
+        ).unit_id_to_channel_indices  # {unit: peak_channel_index}
         unit_peak_channel = {u: chn[0] for u, chn in unit_peak_channel.items()}
 
         # create channel2electrode_map
-        electrode_map: dict[int, dict] = {
-            elec["electrode"]: elec for elec in electrode_query.to_dicts()
-        }
+        electrode_map: dict[int, dict] = {elec["electrode"]: elec for elec in electrode_query.to_dicts()}
         channel2electrode_map = {
             chn_idx: electrode_map[int(elec_id)]
-            for chn_idx, elec_id in zip(sorting_analyzer.get_probe().device_channel_indices,
-                                        sorting_analyzer.get_probe().contact_ids)
+            for chn_idx, elec_id in zip(
+                sorting_analyzer.get_probe().device_channel_indices,
+                sorting_analyzer.get_probe().contact_ids,
+                strict=True,
+            )
         }
 
         templates = sorting_analyzer.get_extension("templates")
 
         for unit in (SortedSpikes.Unit & key).keys(order_by="unit"):
             # Get mean waveform for this unit from all channels - (sample x channel)
-            unit_waveforms = templates.get_unit_template(
-                unit_id=unit["unit"], operator="average"
-            )
+            unit_waveforms = templates.get_unit_template(unit_id=unit["unit"], operator="average")
             unit_peak_waveform = {
                 **unit,
-                "unit_waveform": unit_waveforms[
-                                           :, unit_peak_channel[unit["unit"]]
-                                           ],
+                "unit_waveform": unit_waveforms[:, unit_peak_channel[unit["unit"]]],
             }
 
             unit_electrode_waveforms = [
@@ -923,7 +969,7 @@ class SortingQuality(dj.Imported):
     definition = """
     -> SortedSpikes
     """
-    
+
     class Metric(dj.Part):
         definition = """  # Quality metrics for a given unit
         -> master
@@ -933,6 +979,7 @@ class SortingQuality(dj.Imported):
         """
 
     def make(self, key):
+        """Extract quality metrics for each unit from sorting analyzer extensions."""
         import spikeinterface as si
 
         sorting_root_dir = get_sorting_root_dir()
@@ -943,6 +990,7 @@ class SortingQuality(dj.Imported):
         if curation_id != -1:
             # Fetch applied analyzer path from database
             import importlib
+
             spike_sorting_curation_module = importlib.import_module(
                 "aeon.dj_pipeline.spike_sorting_curation"
             )
@@ -951,13 +999,13 @@ class SortingQuality(dj.Imported):
                     spike_sorting_curation_module.ManualCuration.File
                     & key
                     & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                ).fetch1("file").full_path
+                )
+                .fetch1("file")
+                .full_path
             )
-            logger.info(
-                f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
-            )
+            logger.info(f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}")
         else:
-            analyzer_output_dir = output_dir / "sorting_analyzer"
+            analyzer_output_dir = resolve_analyzer_dir(output_dir)
             logger.info("Using raw analyzer (curation_id=-1)")
 
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
@@ -965,16 +1013,12 @@ class SortingQuality(dj.Imported):
         self.insert1(key)
 
         qc_metrics = sorting_analyzer.get_extension("quality_metrics").get_data()
-        template_metrics = sorting_analyzer.get_extension(
-            "template_metrics"
-        ).get_data()
+        template_metrics = sorting_analyzer.get_extension("template_metrics").get_data()
         metrics_df = pd.concat([qc_metrics, template_metrics], axis=1)
 
-        for unit_key in (SortedSpikes.Unit & key).keys():
+        for unit_key in (SortedSpikes.Unit & key).keys():  # noqa: SIM118
             unit_qc = metrics_df.loc[unit_key["unit"]].to_dict()
-            self.Metric.insert1(
-                {**unit_key, "qc_metrics": json.dumps(unit_qc, default=str)}
-            )
+            self.Metric.insert1({**unit_key, "qc_metrics": json.dumps(unit_qc, default=str)})
 
 
 @schema
@@ -990,15 +1034,15 @@ class SyncedSpikes(dj.Imported):
         -> ephys.EphysChunk
         ---
         spike_count: int32     # how many spikes in this recording for this unit
-        spike_times: <blob@dj_store>  # datetime64[ns] synchronized spike times (in HARP clock) for the respective EphysChunk
+        spike_times: <blob@dj_store>  # datetime64[ns] synchronized spike times (in HARP) for the EphysChunk
         """
 
-    def make(self, key: Dict[str, Any]) -> None:
+    def make(self, key: dict[str, Any]) -> None:
         """Synchronize spike indices to HARP timestamps and organize by ephys chunks.
-        
+
         This method performs the critical step of converting spike indices (from concatenated
         binary data) back to actual timestamps synchronized to the HARP clock system.
-        
+
         Process:
         1. Load sync models for ONIX→HARP timestamp conversion
         2. Load ONIX clock data from all ephys chunks in the block
@@ -1007,24 +1051,22 @@ class SyncedSpikes(dj.Imported):
            - Convert indices to ONIX timestamps using clock data
            - Apply sync models to convert ONIX→HARP timestamps
            - Group results by ephys chunk for downstream analysis
-        
+
         Args:
             key: Dictionary containing sorting task identifiers
         """
         # Load ephys sync models
         sync_models = {}
         with tempfile.TemporaryDirectory() as tempdir, dj.config.override(download_path=tempdir):
-            sync_ = (ephys.EphysChunk.SyncModel * ephys.EphysSyncModel & (ephys.EphysBlockInfo.Chunk & key)).to_arrays(
-                "onix_ts_start", "onix_ts_end", "sync_model",
-                order_by="onix_ts_start"
-            )
-            for s, e, m in zip(*sync_):
+            sync_ = (
+                ephys.EphysChunk.SyncModel * ephys.EphysSyncModel & (ephys.EphysBlockInfo.Chunk & key)
+            ).to_arrays("onix_ts_start", "onix_ts_end", "sync_model", order_by="onix_ts_start")
+            for s, e, m in zip(*sync_, strict=True):
                 sync_models[(s, e)] = joblib.load(m)
 
         # Load ephys onix times
         _clock_query = (
-            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key)
-            & "file_name LIKE '%Clock%.bin'"
+            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & "file_name LIKE '%Clock%.bin'"
         )
         _clock_rows = _clock_query.to_dicts(order_by="chunk_start")
         _pk = _clock_query.primary_key
@@ -1033,21 +1075,21 @@ class SyncedSpikes(dj.Imported):
         dir_types = [r["directory_type"] for r in _clock_rows]
 
         onix_times = []
-        for f, d in zip(ephys_files, dir_types):
+        for f, d in zip(ephys_files, dir_types, strict=True):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
             onix_ts = np.memmap(ephys_dir / f, mode="r", dtype=np.uint64)
             onix_times.append(onix_ts)
         onix_lengths = np.cumsum([len(s) for s in onix_times])
 
-        def indices2syncedtimes(spike_indices: np.ndarray) -> Tuple[Dict[str, Any], np.ndarray]:
+        def indices2syncedtimes(spike_indices: np.ndarray) -> Iterator[tuple[dict[str, Any], np.ndarray]]:
             """Convert spike indices to HARP-synchronized timestamps by ephys chunk.
-            
+
             Maps spike indices (from concatenated binary data) back to their original
             ephys chunks and converts to HARP timestamps using sync models.
-            
+
             Args:
                 spike_indices: Array of spike indices in concatenated recording
-                
+
             Yields:
                 Tuple of (chunk_key, synced_timestamps) for each ephys chunk
             """
@@ -1056,7 +1098,9 @@ class SyncedSpikes(dj.Imported):
                 if idx == 0:
                     spk_ind = spike_indices[spike_indices <= onix_bound]
                 else:
-                    spk_ind = spike_indices[(spike_indices > onix_lengths[idx - 1]) & (spike_indices <= onix_bound)]
+                    spk_ind = spike_indices[
+                        (spike_indices > onix_lengths[idx - 1]) & (spike_indices <= onix_bound)
+                    ]
 
                 if not len(spk_ind):  # no spikes in this chunk
                     continue
@@ -1064,7 +1108,7 @@ class SyncedSpikes(dj.Imported):
                 # Convert absolute indices to relative indices within this chunk
                 spk_ind -= spk_ind[0]  # make relative to chunk start
                 spk_times = onix_times[idx][spk_ind]  # get ONIX timestamps
-                
+
                 # Apply sync models to convert ONIX→HARP timestamps
                 synced_ts = []
                 for (start, end), model in sync_models.items():
@@ -1106,7 +1150,10 @@ class UnitMatchingMethod(dj.Lookup):
     matching_method_description: varchar(1000)
     """
     contents = [
-        ("spike_time_overlap", "Matches units by comparing spike times during overlapping time windows between ephys blocks"),
+        (
+            "spike_time_overlap",
+            "Matches units by comparing spike times during overlapping time windows between ephys blocks",
+        ),
     ]
 
 
@@ -1188,9 +1235,7 @@ class UnitMatching(dj.Computed):
         # Case 2: seed already processed -> find frontiers
         processed = all_candidates & self  # already done
         # Bounds of the processed region
-        group_keys = (
-            "experiment_name", "subject", "insertion_number", "matching_paramset_id"
-        )
+        group_keys = ("experiment_name", "subject", "insertion_number", "matching_paramset_id")
         processed_bounds = dj.U(*group_keys).aggr(
             processed, proc_min="MIN(block_start)", proc_max="MAX(block_start)"
         )
@@ -1231,17 +1276,13 @@ class UnitMatching(dj.Computed):
         from spikeinterface.core import NumpySorting
 
         execution_time = datetime.now(UTC)
-        matching_method = (UnitMatchingParamSet & key).fetch1("matching_method")
+        _matching_method = (UnitMatchingParamSet & key).fetch1("matching_method")
 
-        insertion_key = {
-            k: key[k] for k in ("experiment_name", "subject", "insertion_number")
-        }
+        insertion_key = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
         paramset_key = {"matching_paramset_id": key["matching_paramset_id"]}
 
         # ---- Load block boundaries (used by guard and later) ----
-        block_start, block_end = (ephys.EphysBlock & key).fetch1(
-            "block_start", "block_end"
-        )
+        block_start, block_end = (ephys.EphysBlock & key).fetch1("block_start", "block_end")
 
         # ---- Seed / overlap guard ----
         previously_matched = (self & insertion_key & paramset_key).to_dicts()
@@ -1257,8 +1298,7 @@ class UnitMatching(dj.Computed):
         else:
             # Subsequent blocks: must overlap with at least one processed block
             has_overlap = any(
-                s["block_start"] < block_end and s["block_end"] > block_start
-                for s in previously_matched
+                s["block_start"] < block_end and s["block_end"] > block_start for s in previously_matched
             )
             if not has_overlap:
                 raise ValueError(
@@ -1274,7 +1314,7 @@ class UnitMatching(dj.Computed):
             this_block_units[unit_id].append(unit_entry["spike_times"])
 
         # Concatenate spike times across chunks per unit, convert to epoch seconds
-        for unit_id in this_block_units:
+        for unit_id in this_block_units:  # noqa: PLC0206
             concatenated = np.sort(np.concatenate(this_block_units[unit_id]))
             if concatenated.dtype.kind == "M":  # datetime64
                 concatenated = concatenated.astype("datetime64[ns]").astype(np.int64) / 1e9
@@ -1282,17 +1322,18 @@ class UnitMatching(dj.Computed):
 
         if not this_block_units:
             logger.warning(f"No synced spike data found for block {key}. Skipping.")
-            self.insert1({
-                **key,
-                "execution_time": execution_time,
-                "execution_duration": 0.0,
-            })
+            self.insert1(
+                {
+                    **key,
+                    "execution_time": execution_time,
+                    "execution_duration": 0.0,
+                }
+            )
             return
 
         # ---- Find overlapping previous blocks (reuse previously_matched from guard) ----
         overlapping_blocks = [
-            s for s in previously_matched
-            if s["block_start"] < block_end and s["block_end"] > block_start
+            s for s in previously_matched if s["block_start"] < block_end and s["block_end"] > block_start
         ]
 
         # Map: this block's unit_id -> global_unit (if matched)
@@ -1331,7 +1372,7 @@ class UnitMatching(dj.Computed):
                     if uid not in prev_units:
                         prev_units[uid] = []
                     prev_units[uid].append(unit_entry["spike_times"])
-                for uid in prev_units:
+                for uid in prev_units:  # noqa: PLC0206
                     concatenated = np.sort(np.concatenate(prev_units[uid]))
                     if concatenated.dtype.kind == "M":
                         concatenated = concatenated.astype("datetime64[ns]").astype(np.int64) / 1e9
@@ -1357,12 +1398,8 @@ class UnitMatching(dj.Computed):
                     continue
 
                 # Compare using SpikeInterface
-                sorting_this = NumpySorting.from_unit_dict(
-                    this_spike_trains, sampling_frequency=30000
-                )
-                sorting_prev = NumpySorting.from_unit_dict(
-                    prev_spike_trains, sampling_frequency=30000
-                )
+                sorting_this = NumpySorting.from_unit_dict(this_spike_trains, sampling_frequency=30000)
+                sorting_prev = NumpySorting.from_unit_dict(prev_spike_trains, sampling_frequency=30000)
                 comparison = compare_two_sorters(
                     sorting1=sorting_prev,
                     sorting2=sorting_this,
@@ -1407,8 +1444,7 @@ class UnitMatching(dj.Computed):
             gu_key = {**insertion_key, **paramset_key, "global_unit": gu_id}
             if unit_id not in unit_electrodes:
                 raise ValueError(
-                    f"No electrode info found for unit {unit_id} in SortedSpikes.Unit. "
-                    f"Key: {key}"
+                    f"No electrode info found for unit {unit_id} in SortedSpikes.Unit. Key: {key}"
                 )
             electrode = unit_electrodes[unit_id]
             if not (GlobalUnit & gu_key):
@@ -1420,20 +1456,25 @@ class UnitMatching(dj.Computed):
 
         # ---- Insert master entry ----
         execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
-        self.insert1({
-            **key,
-            "execution_time": execution_time,
-            "execution_duration": execution_duration,
-        })
+        self.insert1(
+            {
+                **key,
+                "execution_time": execution_time,
+                "execution_duration": execution_duration,
+            }
+        )
 
         # ---- Insert UnitMatching.Unit entries ----
         for unit_id, gu_id in unit_to_global.items():
-            self.Unit.insert1({
-                **key,
-                "unit": unit_id,
-                **insertion_key,
-                "global_unit": gu_id,
-            }, ignore_extra_fields=True)
+            self.Unit.insert1(
+                {
+                    **key,
+                    "unit": unit_id,
+                    **insertion_key,
+                    "global_unit": gu_id,
+                },
+                ignore_extra_fields=True,
+            )
 
         # ---- Insert UnitMatching.Spikes with ownership convention ----
         # For each (global_unit, chunk): skip if an earlier block already owns it
@@ -1466,14 +1507,17 @@ class UnitMatching(dj.Computed):
                     continue  # no spikes for this unit in this chunk
 
                 spike_times = synced_entry.fetch1("spike_times")
-                self.Spikes.insert1({
-                    **key,
-                    **insertion_key,
-                    "global_unit": gu_id,
-                    "chunk_start": chunk_start,
-                    "spike_times": spike_times,
-                    "spike_count": len(spike_times),
-                }, ignore_extra_fields=True)
+                self.Spikes.insert1(
+                    {
+                        **key,
+                        **insertion_key,
+                        "global_unit": gu_id,
+                        "chunk_start": chunk_start,
+                        "spike_times": spike_times,
+                        "spike_count": len(spike_times),
+                    },
+                    ignore_extra_fields=True,
+                )
 
         logger.info(
             f"Unit matching complete for block {key['block_start']}:\n"
@@ -1485,40 +1529,36 @@ class UnitMatching(dj.Computed):
 
 # ---- Ephys preprocessing with spike interface ----
 
+
 def ephys_preproc(recording) -> Any:
     """Apply standard ephys preprocessing pipeline.
-    
+
     Performs unsigned-to-signed conversion, bandpass filtering (300-6000 Hz),
     and common average referencing using median.
-    
+
     Args:
         recording: SpikeInterface recording object
-        
+
     Returns:
         Preprocessed recording object
     """
     import spikeinterface as si
-    from spikeinterface import preprocessing
 
-    recording = si.preprocessing.bandpass_filter(
-        recording=recording, freq_min=300, freq_max=6000
-    )
-    recording = si.preprocessing.common_reference(
-        recording=recording, operator="median"
-    )
+    recording = si.preprocessing.bandpass_filter(recording=recording, freq_min=300, freq_max=6000)
+    recording = si.preprocessing.common_reference(recording=recording, operator="median")
     return recording
 
 
 def load_and_verify_binary_file(binary_file_path: Path, se_recording_obj: Any) -> Any:
     """Load and verify binary recording file matches original recording.
-    
+
     Args:
         binary_file_path: Path to binary recording file
         se_recording_obj: Original SpikeInterface recording object
-        
+
     Returns:
         Binary recording object with probe geometry
-        
+
     Raises:
         ValueError: If sample counts don't match between files
     """
@@ -1529,10 +1569,13 @@ def load_and_verify_binary_file(binary_file_path: Path, se_recording_obj: Any) -
         sampling_frequency=se_recording_obj.get_sampling_frequency(),
         dtype=se_recording_obj.dtype,
         num_channels=se_recording_obj.get_num_channels(),
-        gain_to_uV=se_recording_obj.get_channel_gains()[0])
+        gain_to_uV=se_recording_obj.get_channel_gains()[0],
+    )
     if binary_rec.get_num_samples() != se_recording_obj.get_num_samples():
-        raise ValueError(f"Number of samples in binary file ({binary_rec.get_num_samples()})"
-                         f" does not match the original recording ({se_recording_obj.get_num_samples()}).")
+        raise ValueError(
+            f"Number of samples in binary file ({binary_rec.get_num_samples()})"
+            f" does not match the original recording ({se_recording_obj.get_num_samples()})."
+        )
 
     binary_rec.set_probe(probe=se_recording_obj.get_probe(), in_place=True)
     # force rename channel_ids?

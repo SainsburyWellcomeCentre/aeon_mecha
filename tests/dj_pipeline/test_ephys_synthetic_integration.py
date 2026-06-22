@@ -20,9 +20,6 @@ import pytest
 logger = logging.getLogger(__name__)
 pytestmark = pytest.mark.integration
 
-pytest.importorskip("probeinterface", reason="Ephys tests require probeinterface")
-pytest.importorskip("aeon.schema.ephys", reason="Ephys tests require aeon.schema.ephys (from swc-aeon)")
-
 
 # ---------------------------------------------------------------------------
 # Helpers (local — different scope from tests/fixtures/ephys/ephys_factories.py
@@ -30,28 +27,28 @@ pytest.importorskip("aeon.schema.ephys", reason="Ephys tests require aeon.schema
 # ---------------------------------------------------------------------------
 
 
-def _write_harpsync_csv(epoch_dir: Path, device_name: str, ts_label: str,
-                        harp_base: float, onix_base: int, n_rows: int = 60):
+def _write_harpsync_csv(
+    epoch_dir: Path, device_name: str, ts_label: str, harp_base: float, onix_base: int, n_rows: int = 60
+):
     """Write one HarpSync_*.csv with monotonically-increasing HARP + ONIX clocks."""
     device_dir = epoch_dir / device_name
     device_dir.mkdir(parents=True, exist_ok=True)
     csv_path = device_dir / f"{device_name}_HarpSync_{ts_label}.csv"
     with open(csv_path, "w", newline="") as f:
-        writer = csv.DictWriter(
-            f, fieldnames=["aeon_time", "clock", "hub_clock", "harp_time"]
-        )
+        writer = csv.DictWriter(f, fieldnames=["aeon_time", "clock", "hub_clock", "harp_time"])
         writer.writeheader()
         for s in range(n_rows):
-            writer.writerow({
-                "aeon_time": harp_base + s,
-                "clock": onix_base + 1000 * s,
-                "hub_clock": s,
-                "harp_time": harp_base + s,
-            })
+            writer.writerow(
+                {
+                    "aeon_time": harp_base + s,
+                    "clock": onix_base + 1000 * s,
+                    "hub_clock": s,
+                    "harp_time": harp_base + s,
+                }
+            )
 
 
-def _write_metadata_yml(epoch_dir: Path, device_name: str,
-                        probe_b_filename: str | None = None):
+def _write_metadata_yml(epoch_dir: Path, device_name: str, probe_b_filename: str | None = None):
     """Write a minimal Metadata.yml with one or two probe configurations."""
     metadata = {
         "Devices": {
@@ -59,7 +56,8 @@ def _write_metadata_yml(epoch_dir: Path, device_name: str,
                 "DeviceName": device_name,
                 "ConfigurationA": {"ProbeInterfaceFileName": None},  # disabled
                 "ConfigurationB": {"ProbeInterfaceFileName": probe_b_filename}
-                if probe_b_filename else {"ProbeInterfaceFileName": None},
+                if probe_b_filename
+                else {"ProbeInterfaceFileName": None},
             },
         },
     }
@@ -154,12 +152,18 @@ class TestEphysEpochEndLookback:
         (raw_dir / epoch_a_name).mkdir()
         (raw_dir / epoch_b_name).mkdir()
         _write_harpsync_csv(
-            raw_dir / epoch_a_name, device_name, "2024-06-04T10-00-00",
-            harp_base=harp_a_start, onix_base=1,
+            raw_dir / epoch_a_name,
+            device_name,
+            "2024-06-04T10-00-00",
+            harp_base=harp_a_start,
+            onix_base=1,
         )
         _write_harpsync_csv(
-            raw_dir / epoch_b_name, device_name, "2024-06-04T11-00-00",
-            harp_base=harp_b_start, onix_base=600_001,
+            raw_dir / epoch_b_name,
+            device_name,
+            "2024-06-04T11-00-00",
+            harp_base=harp_b_start,
+            onix_base=600_001,
         )
 
         _register_experiment_only(tmp_path, raw_dir, experiment_name)
@@ -167,15 +171,11 @@ class TestEphysEpochEndLookback:
         ephys.EphysEpoch.ingest_epochs(experiment_name)
 
         # Two EphysEpoch rows
-        epochs = (
-            ephys.EphysEpoch & {"experiment_name": experiment_name}
-        ).to_dicts(order_by="epoch_start")
+        epochs = (ephys.EphysEpoch & {"experiment_name": experiment_name}).to_dicts(order_by="epoch_start")
         assert len(epochs) == 2, f"Expected 2 EphysEpoch rows, got {len(epochs)}"
 
         # Exactly one EphysEpochEnd row — for the FIRST epoch
-        ends = (
-            ephys.EphysEpochEnd & {"experiment_name": experiment_name}
-        ).to_dicts()
+        ends = (ephys.EphysEpochEnd & {"experiment_name": experiment_name}).to_dicts()
         assert len(ends) == 1, (
             f"Expected 1 EphysEpochEnd row (look-back backfills only the previous "
             f"epoch when a newer one is discovered); got {len(ends)}"
@@ -194,9 +194,9 @@ class TestEphysEpochEndLookback:
         # And — positively assert the LAST epoch has NO EphysEpochEnd row
         # (it should only get one when a newer epoch arrives).
         exp_key = {"experiment_name": experiment_name}
-        assert not (
-            ephys.EphysEpochEnd & {**exp_key, "epoch_start": epochs[1]["epoch_start"]}
-        ), "Most recent epoch must have no EphysEpochEnd until a successor is discovered"
+        assert not (ephys.EphysEpochEnd & {**exp_key, "epoch_start": epochs[1]["epoch_start"]}), (
+            "Most recent epoch must have no EphysEpochEnd until a successor is discovered"
+        )
 
         # Duration is in hours
         expected_duration_hours = (
@@ -269,12 +269,15 @@ class TestEphysBlockInfoMultiConfigValidation:
 
         # Experiment + subject scaffolding (skip the directory machinery — not needed)
         from aeon.dj_pipeline import acquisition, lab
+
         lab.Arena.insert1(
             {
                 "arena_name": "synthetic-arena",
                 "arena_description": "",
                 "arena_shape": "circular",
-                "arena_x_dim": 2.0, "arena_y_dim": 2.0, "arena_z_dim": 0.2,
+                "arena_x_dim": 2.0,
+                "arena_y_dim": 2.0,
+                "arena_z_dim": 0.2,
             },
             skip_duplicates=True,
         )
@@ -301,6 +304,7 @@ class TestEphysBlockInfoMultiConfigValidation:
 
         # Two epochs, same ProbeInsertion, different ElectrodeConfigs
         from datetime import datetime
+
         epoch_a_start = datetime(2024, 6, 4, 10, 0, 0)
         epoch_b_start = datetime(2024, 6, 4, 11, 0, 0)
         for es in (epoch_a_start, epoch_b_start):

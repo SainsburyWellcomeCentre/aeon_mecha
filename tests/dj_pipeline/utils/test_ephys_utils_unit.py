@@ -384,8 +384,7 @@ class TestCreateElectrodeConfig:
     """
 
     FIXTURE_JSON = (
-        Path(__file__).parent.parent.parent
-        / "fixtures" / "ephys" / "synthetic_np2_multishank.json"
+        Path(__file__).parent.parent.parent / "fixtures" / "ephys" / "synthetic_np2_multishank.json"
     )
     N_TOTAL_CONTACTS = 16
     N_ACTIVE_CONTACTS = 8
@@ -426,10 +425,7 @@ class TestCreateElectrodeConfig:
         ec_call = electrode_config_table.Electrode.insert.call_args
         ec_rows = list(ec_call.args[0])
         assert len(ec_rows) == self.N_ACTIVE_CONTACTS
-        assert all(
-            {"probe_type", "electrode_config_name", "electrode"} <= set(r.keys())
-            for r in ec_rows
-        )
+        assert all({"probe_type", "electrode_config_name", "electrode"} <= set(r.keys()) for r in ec_rows)
 
     def test_config_name_override(self):
         from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
@@ -491,20 +487,26 @@ class TestParseMetadataProbeConfigs:
     def test_probe_a_and_b_both_active(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
 
-        ep = self._write_metadata(tmp_path, {
-            "ConfigurationA": {"ProbeInterfaceFileName": r"Z:\dir\probeA.json"},
-            "ConfigurationB": {"ProbeInterfaceFileName": r"Z:\dir\probeB.json"},
-        })
+        ep = self._write_metadata(
+            tmp_path,
+            {
+                "ConfigurationA": {"ProbeInterfaceFileName": r"Z:\dir\probeA.json"},
+                "ConfigurationB": {"ProbeInterfaceFileName": r"Z:\dir\probeB.json"},
+            },
+        )
         result = parse_metadata_probe_configs(ep)
         assert result == {"ProbeA": "probeA.json", "ProbeB": "probeB.json"}
 
     def test_probe_a_disabled(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
 
-        ep = self._write_metadata(tmp_path, {
-            "ConfigurationA": {"ProbeInterfaceFileName": None},
-            "ConfigurationB": {"ProbeInterfaceFileName": r"Z:\dir\probeB.json"},
-        })
+        ep = self._write_metadata(
+            tmp_path,
+            {
+                "ConfigurationA": {"ProbeInterfaceFileName": None},
+                "ConfigurationB": {"ProbeInterfaceFileName": r"Z:\dir\probeB.json"},
+            },
+        )
         result = parse_metadata_probe_configs(ep)
         assert result == {"ProbeA": None, "ProbeB": "probeB.json"}
 
@@ -519,8 +521,15 @@ class TestParseMetadataProbeConfigs:
         from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
 
         epoch_path = (
-            Path.home() / "sciops-data" / "project_aeon" / "aeon" / "data"
-            / "raw" / "AEONX1" / "abcGolden01" / "2026-05-11T07-50-11"
+            Path.home()
+            / "sciops-data"
+            / "project_aeon"
+            / "aeon"
+            / "data"
+            / "raw"
+            / "AEONX1"
+            / "abcGolden01"
+            / "2026-05-11T07-50-11"
         )
         if not epoch_path.exists():
             pytest.skip(f"Golden epoch not on disk: {epoch_path}")
@@ -589,8 +598,7 @@ class TestLoadDeviceChannelMap:
     """
 
     FIXTURE_JSON = (
-        Path(__file__).parent.parent.parent
-        / "fixtures" / "ephys" / "synthetic_np2_multishank.json"
+        Path(__file__).parent.parent.parent / "fixtures" / "ephys" / "synthetic_np2_multishank.json"
     )
 
     def test_returns_active_contacts_mapping(self):
