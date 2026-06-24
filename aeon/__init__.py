@@ -4,7 +4,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 try:
     # Change here if project is renamed and does not equal the package name
-    dist_name = "aeon"
+    dist_name = "aeon-mecha"
     __version__ = version(dist_name)
 except PackageNotFoundError:
     __version__ = "unknown"

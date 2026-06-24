@@ -462,8 +462,16 @@ To run a single task interactively (e.g. for debugging):
 """
 
 import argparse
+import sys
+import traceback
 
 from aeon.dj_pipeline import spike_sorting
+
+# DataJoint 2.x installs a sys.excepthook that prints only "[ERROR]: Uncaught
+# exception" with no traceback. Restore the default hook AFTER importing the
+# pipeline (DJ overwrites it at import time) so a crashed sort task logs a full
+# traceback to its SLURM .err file.
+sys.excepthook = lambda *args: traceback.print_exception(*args)
 
 # =============================================================================
 # Configuration
@@ -584,9 +592,12 @@ module load uv
 cd "$SLURM_SUBMIT_DIR"
 echo "Working directory: $(pwd)"
 
-# Ensure venv exists and deps match lockfile
+# Ensure venv exists and deps match lockfile.
+# The spike_sorting extra (spikeinterface[full], spython, cuda-python) is
+# required to actually run the sort — a bare `uv sync` would uninstall it and
+# the job would crash at `import spikeinterface`.
 echo "Syncing dependencies..."
-uv sync
+uv sync --extra spike_sorting
 
 # Set PyTorch CUDA memory allocator configuration to free reserved memory
 # This helps prevent CUDA out of memory errors during long-running Kilosort4 jobs
