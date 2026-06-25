@@ -385,9 +385,9 @@ class EphysSyncModel(dj.Manual):
 
     definition = """
     -> EphysEpoch
-    sync_start: datetime(6)            # PK — observed harp_time[0] from CSV (master clock)
+    sync_start: datetime(6)            # PK — observed HARP time[0] from CSV (Seconds column) 
     ---
-    sync_end: datetime(6)              # observed harp_time[-1] from CSV
+    sync_end: datetime(6)              # observed HARP time[-1] from CSV (Seconds column) 
     onix_ts_start: int64               # observed clock[0] from CSV
     onix_ts_end: int64                 # observed clock[-1] from CSV
     sync_model: <attach>               # joblib-serialized LinearRegression (onix→harp)

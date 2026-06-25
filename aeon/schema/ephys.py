@@ -41,7 +41,14 @@ class HarpSyncModel(Stream):
         def read(self, file):
             data = super().read(file).dropna()
             onix_clock = data.clock.values.reshape(-1, 1)
-            harp_time = data.harp_time.values.reshape(-1, 1)
+            
+            # ONIX records the raw seconds value arriving from the HARP master
+            # clock as "Value.HarpTime". In the harp world, this timestamp 
+            # corresponds to the second that is about to end in less than a
+            # millisecond, therefore it is lagging by 1 second.
+            # The index colums (Seconds) is the actual time that corresponds most
+            # closely to the actual harp time when the ONIX clock was recorded
+            harp_time = data.index.values.reshape(-1, 1)
 
             model = LinearRegression().fit(onix_clock, harp_time)
             r2 = model.score(onix_clock, harp_time)
