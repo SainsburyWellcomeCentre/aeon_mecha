@@ -248,14 +248,21 @@ def streams_schema(dj_config_integration):
     }
 
     # Teardown
-    # - drop test schema (may already be dropped by full_pipeline)
+    # - Drop test schemas ONLY when running against an external database
+    #   (TEST_DB_PREFIX set, e.g. on the HPC), so re-runs start clean instead of
+    #   silently reusing stale schemas. _drop_test_schemas() is scoped strictly
+    #   to dj.config.database.database_prefix (== TEST_DB_PREFIX, which must end
+    #   in "_"); it only removes schemas whose name starts with that prefix, so
+    #   it can never touch production ("aeon_") or another user's schemas.
+    #   When TEST_DB_PREFIX is unset, the tests use a throwaway testcontainer
+    #   that is discarded at session end, so we drop nothing and leave any
+    #   local/hand-managed database alone.
+    #   This is the single session-end cleanup: full_pipeline is parametrized
+    #   over multiple goldens, so dropping here (rather than in full_pipeline's
+    #   per-iteration teardown) avoids wiping schemas a later iteration needs.
     # - restore original streams.py file
-    import datajoint as dj
-
-    try:
-        dj.Schema(streams.schema.database).drop()
-    except Exception:
-        pass
+    if os.environ.get("TEST_DB_PREFIX"):
+        _drop_test_schemas()
 
     if original is not None:
         f.write_bytes(original)
@@ -371,9 +378,11 @@ def full_pipeline(dj_config_integration, streams_schema, golden_dataset_config):
     }
 
     # No per-iteration teardown — golden_dataset_config is parametrized, so
-    # this fixture runs once per dataset. Dropping schemas between iterations
-    # would invalidate the cached streams_schema fixture. Final cleanup
-    # happens when the MySQL testcontainer shuts down at session end.
+    # this fixture runs once per dataset, and dropping schemas between
+    # iterations would invalidate the cached streams_schema fixture. The single
+    # session-end cleanup (dropping this run's test-prefixed schemas, and only
+    # on an external DB) lives in the streams_schema teardown, which runs
+    # exactly once after all params.
 
 
 @pytest.fixture(scope="session")
@@ -513,10 +522,15 @@ def ephys_full_pipeline(dj_config_integration, tmp_path_factory):
             "sorting_root": sorting_root,
         }
     finally:
-        # Restore the original function and drop test schemas, regardless of
-        # whether the fixture body or any consumer test raised.
+        # Always restore the patched function, regardless of whether the
+        # fixture body or any consumer test raised. Then, only when running
+        # against an external DB (TEST_DB_PREFIX set), drop this run's
+        # test-prefixed schemas so re-runs start clean. The drop is scoped
+        # strictly to the configured prefix (never production or another
+        # user's schemas); the default throwaway testcontainer needs no drop.
         ss_module.get_sorting_root_dir = _original_get_sorting_root
-        _drop_test_schemas()
+        if os.environ.get("TEST_DB_PREFIX"):
+            _drop_test_schemas()
 
 
 @pytest.fixture(scope="session")
