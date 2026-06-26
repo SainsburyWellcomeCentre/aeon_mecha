@@ -332,6 +332,84 @@ class TestEphysSyncModel:
         assert harp_starts == sorted(harp_starts), "sync_start values not monotonic"
         assert onix_starts == sorted(onix_starts), "onix_ts_start values not monotonic"
 
+    def test_sync_start_aligns_with_hour_boundary(self, ephys_test_epochs, ctx):
+        """HarpSync CSVs at hour boundaries should have sync_start at the boundary.
+
+        The golden epoch starts at 07:50:11 with HarpSync CSVs at 07-00, 08-00,
+        09-00. The 08-00 and 09-00 CSVs are written on hour boundaries, so their
+        first row's Seconds-column value (and thus sync_start) lands within the
+        first second of the hour — i.e. ``sync_start.minute == 0`` and
+        ``sync_start.second == 0``.
+
+        Pre-PR 592 the reader read ``Value.HarpTime`` (which reports an integer
+        second lagging the true HARP clock by sub-second to ~1s), so these
+        values would be in the previous hour (``minute == 59, second == 59``).
+        This is an independent HARP anchor that catches a systematic offset the
+        existing r²/monotonicity checks miss.
+        """
+        rows = (ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
+            order_by="sync_start"
+        )
+        # Skip the first row — its source CSV's hour bucket begins before
+        # epoch_start (recording started mid-hour), so sync_start is the
+        # epoch_start, not the bucket hour.
+        for row in rows[1:]:
+            sync_start = row["sync_start"]
+            assert sync_start.minute == 0 and sync_start.second == 0, (
+                f"sync_start={sync_start} is not within the first second of an "
+                f"hour (got minute={sync_start.minute}, second={sync_start.second}). "
+                f"HARP CSVs at hour boundaries should give sync_start = XX:00:00.xxx. "
+                f"A value like XX:59:59 indicates the HARP time column bug from "
+                f"PR 592 has regressed (Value.HarpTime lags by ~1s)."
+            )
+
+    def test_sync_start_matches_seconds_column_not_value_harptime(
+        self, ephys_test_epochs, require_ephys_golden_data, ctx
+    ):
+        """sync_start must come from the CSV's Seconds index, not Value.HarpTime.
+
+        Each HarpSync CSV has two integer-second timestamp columns: ``Seconds``
+        (the index — correct) and ``Value.HarpTime`` (lagging by 1s — buggy).
+        We re-read one CSV from the golden epoch, derive what ``sync_start``
+        would be from each column, and assert the stored value matches the
+        Seconds-derived one. This is the most direct test of PR 592's fix and
+        is independent of the hour-boundary check above (catches non-hour-
+        aligned files too).
+        """
+        import pandas as pd
+
+        from aeon.dj_pipeline.utils.ephys_utils import harp_to_naive
+
+        csvs = sorted(require_ephys_golden_data.rglob("*_HarpSync_*.csv"))
+        if not csvs:
+            pytest.skip("No HarpSync CSVs in golden epoch")
+        csv_path = csvs[0]
+
+        df = pd.read_csv(csv_path, index_col=0).dropna()
+        expected_harp_start = harp_to_naive(int(df.index[0]))
+        buggy_harp_start = harp_to_naive(int(df["Value.HarpTime"].iloc[0]))
+
+        # Sanity: the source data really does have the 1s difference. If this
+        # ever fails, the bug premise has changed and the test below is moot.
+        assert (expected_harp_start - buggy_harp_start).total_seconds() == 1.0, (
+            f"Expected Seconds ({df.index[0]}) and Value.HarpTime "
+            f"({df['Value.HarpTime'].iloc[0]}) to differ by 1 second in {csv_path.name}; "
+            f"got delta={(expected_harp_start - buggy_harp_start).total_seconds()}s."
+        )
+
+        rows = (ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
+        stored_sync_starts = [r["sync_start"] for r in rows]
+        assert expected_harp_start in stored_sync_starts, (
+            f"sync_start={expected_harp_start} (Seconds index from {csv_path.name}) "
+            f"not found in stored values {stored_sync_starts}. If PR 592's fix "
+            f"regressed, sync_start would instead be {buggy_harp_start}."
+        )
+        assert buggy_harp_start not in stored_sync_starts, (
+            f"sync_start={buggy_harp_start} (Value.HarpTime from {csv_path.name}) "
+            f"found in stored values — the HARP time column bug from PR 592 has "
+            f"regressed."
+        )
+
 
 class TestOnixImuChunkOnGoldenData:
     """Exercise OnixImuChunk.populate against the actual golden dataset.
