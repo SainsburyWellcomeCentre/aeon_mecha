@@ -68,7 +68,7 @@ jobs:
         run: uv run pytest ${{ matrix.pytest_args }}
       - name: Upload coverage to codecov
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
