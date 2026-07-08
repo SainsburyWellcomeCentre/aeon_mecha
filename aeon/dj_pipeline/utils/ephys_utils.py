@@ -21,6 +21,59 @@ DEVICE_PROBE_TYPE_MAP = {
 }
 
 
+def resolve_ephys_file(raw_bin_path: Path) -> Path:
+    """Resolve a raw amplifier ``.bin`` path to the file that exists on disk.
+
+    Compressed raw ephys (from the companion ``aeon_raw_compression`` library) is
+    written as a ``.zarr`` archive under a *processed* data root that mirrors the
+    raw sub-path: a file at ``.../data/raw/<sub>/<name>.bin`` has its compressed
+    twin at ``.../data/processed/<sub>/<name>.zarr``. This resolver prefers that
+    ``.zarr`` twin and falls back to the raw ``.bin`` (compression is optional and
+    per-user; either or both may be present).
+
+    The raw->processed mapping is a fixed convention, not configurable: replace
+    the single ``"raw"`` path component with ``"processed"`` and swap the suffix
+    to ``.zarr``. This mirrors ``aeon_raw_compression``'s path mapping
+    (``pipeline._processed_zarr_path``) WITHOUT importing that library, since not
+    all users install it -- keep the two in sync by hand if either changes.
+
+    Args:
+        raw_bin_path: Absolute path to the raw ``.bin`` amplifier file as
+            reconstructed by the pipeline (``data_directory / file_path``).
+
+    Returns:
+        The ``.zarr`` twin if it exists, else the raw ``.bin`` if it exists.
+
+    Raises:
+        ValueError: If the path has more than one ``"raw"`` component (the
+            processed-store root would be ambiguous).
+        FileNotFoundError: If neither the ``.zarr`` twin nor the ``.bin`` exists.
+    """
+    raw_bin_path = Path(raw_bin_path)
+    parts = raw_bin_path.parts
+
+    raw_indices = [i for i, part in enumerate(parts) if part == "raw"]
+    if len(raw_indices) > 1:
+        raise ValueError(
+            f"Cannot resolve compressed twin for {raw_bin_path}: path has "
+            f"{len(raw_indices)} 'raw' components; the processed-store root is "
+            f"ambiguous."
+        )
+
+    zarr_candidate = None
+    if len(raw_indices) == 1:
+        i = raw_indices[0]
+        zarr_candidate = Path(*parts[:i], "processed", *parts[i + 1 :]).with_suffix(".zarr")
+
+    if zarr_candidate is not None and zarr_candidate.exists():
+        return zarr_candidate
+    if raw_bin_path.exists():
+        return raw_bin_path
+
+    checked = str(raw_bin_path) if zarr_candidate is None else f"{zarr_candidate} or {raw_bin_path}"
+    raise FileNotFoundError(f"No ephys file found (checked {checked}).")
+
+
 def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> str | None:
     """Extract probe identifier from metadata.
 
