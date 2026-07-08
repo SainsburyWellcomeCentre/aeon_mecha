@@ -176,6 +176,81 @@ class TestPreProcessing:
         assert np.any(traces != 0), "recording.zarr decompressed to all-zero traces"
 
 
+class TestCompressedReadEquivalence:
+    """Reading a compressed .zarr twin + re-applying gains/offsets must equal
+    reading the raw .bin, on real golden data.
+
+    This is the correctness crux of the read-compressed wiring in
+    ``PreProcessing.make_compute`` (the ``.zarr`` branch): the companion
+    ``aeon_raw_compression`` library compresses from a plain ``read_binary``
+    (no gains), so the zarr carries no gain/offset metadata and the pipeline
+    re-attaches it after ``si.load``. Here we verify, on a real golden amplifier
+    file, that the round-trip preserves the raw traces byte-for-byte and that the
+    re-applied gains/offsets match the ``.bin`` branch. The resolver's path logic
+    itself is covered by the unit tests in
+    ``tests/dj_pipeline/utils/test_ephys_utils_unit.py::TestResolveEphysFile``.
+    """
+
+    def test_zarr_roundtrip_matches_binary(
+        self, ephys_sorting_setup, require_ephys_golden_data, ctx, tmp_path
+    ):
+        import numpy as np
+        import spikeinterface as si
+        import spikeinterface.extractors as se
+
+        from aeon.dj_pipeline import acquisition
+
+        exp_key = {"experiment_name": ctx.cfg["experiment_name"]}
+        ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
+
+        amp_files = (
+            ctx.ephys.EphysChunk.File & exp_key & "file_name LIKE '%AmplifierData%.bin'"
+        ).to_dicts()
+        assert amp_files, "no golden AmplifierData .bin registered"
+
+        f0 = amp_files[0]
+        ephys_dir = acquisition.Experiment.get_data_directory(
+            exp_key, directory_type=f0["directory_type"]
+        )
+        bin_path = ephys_dir / f0["file_path"]
+        assert bin_path.exists(), f"golden .bin missing: {bin_path}"
+
+        # Must match PreProcessing.make_compute.
+        fs_hz = 30e3
+        gain_to_uV = 3.05176
+        offset_to_uV = -2048 * gain_to_uV
+        num_channels = ctx.cfg["n_recording_channels"]
+        n_frames = 30_000  # 1 s; keep the zarr write fast (reads are lazy/memmapped)
+
+        # .bin branch: read with gains (as make_compute does), take a slice.
+        rec_bin = se.read_binary(
+            bin_path,
+            sampling_frequency=fs_hz,
+            dtype=np.uint16,
+            num_channels=num_channels,
+            gain_to_uV=gain_to_uV,
+            offset_to_uV=offset_to_uV,
+        ).frame_slice(0, n_frames)
+
+        # .zarr branch: mimic the library (read WITHOUT gains, save to zarr), then
+        # load + re-apply gains/offsets exactly as make_compute's zarr branch does.
+        zarr_path = tmp_path / "amp_slice.zarr"
+        se.read_binary(
+            bin_path,
+            sampling_frequency=fs_hz,
+            dtype=np.uint16,
+            num_channels=num_channels,
+        ).frame_slice(0, n_frames).save(format="zarr", folder=zarr_path)
+        rec_zarr = si.load(zarr_path)
+        rec_zarr.set_channel_gains(gain_to_uV)
+        rec_zarr.set_channel_offsets(offset_to_uV)
+
+        # Raw traces byte-identical, and re-applied metadata matches the .bin read.
+        assert np.array_equal(rec_bin.get_traces(), rec_zarr.get_traces())
+        assert np.array_equal(rec_bin.get_channel_gains(), rec_zarr.get_channel_gains())
+        assert np.array_equal(rec_bin.get_channel_offsets(), rec_zarr.get_channel_offsets())
+
+
 class TestPostProcessing:
     """Verify PostProcessing.populate() output.
 
