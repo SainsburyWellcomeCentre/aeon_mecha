@@ -208,11 +208,13 @@ integration test covers it on real data.
 
 ## PR checklist
 
-- [ ] Add `resolve_ephys_file` to `aeon/dj_pipeline/utils/ephys_utils.py`
-- [ ] Wire it into `PreProcessing.make_compute` (resolve + suffix branch +
+- [x] Add `resolve_ephys_file` to `aeon/dj_pipeline/utils/ephys_utils.py`
+- [x] Wire it into `PreProcessing.make_compute` (resolve + suffix branch +
       gain/offset re-apply on the `.zarr` branch)
-- [ ] Unit tests in `tests/dj_pipeline/utils/test_ephys_utils_unit.py`
-- [ ] Golden integration test in `tests/dj_pipeline/test_ephys_ingestion.py`
-- [ ] Add this spec (`docs/specs/SPEC_READ_COMPRESSED.md`)
-- [ ] Run unit suite locally; run golden suite on HPC
+- [x] Unit tests in `tests/dj_pipeline/utils/test_ephys_utils_unit.py`
+- [x] Golden integration test in `tests/dj_pipeline/test_ephys_ingestion.py`
+      (`TestCompressedReadEquivalence`)
+- [x] Add this spec (`docs/specs/SPEC_READ_COMPRESSED.md`)
+- [x] Run unit suite locally (113 passed)
+- [ ] Run golden suite on HPC (`TestCompressedReadEquivalence` + regression)
 - [ ] Open PR into main (after explicit go-ahead)
