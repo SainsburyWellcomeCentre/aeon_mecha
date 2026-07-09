@@ -177,22 +177,22 @@ class TestPreProcessing:
 
 
 class TestCompressedReadEquivalence:
-    """Reading a compressed .zarr twin + re-applying gains/offsets must equal
-    reading the raw .bin, on real golden data.
+    """A compressed .zarr twin, read back and given the pipeline's gains/offsets,
+    must reproduce the raw .bin read on real golden data.
 
-    This is the correctness crux of the read-compressed wiring in
-    ``PreProcessing.make_compute`` (the ``.zarr`` branch): the companion
-    ``aeon_raw_compression`` library compresses from a plain ``read_binary``
-    (no gains), so the zarr carries no gain/offset metadata and the pipeline
-    re-attaches it after ``si.load``. Here we verify, on a real golden amplifier
-    file, that the round-trip preserves the raw traces byte-for-byte and that the
-    re-applied gains/offsets match the ``.bin`` branch. The resolver's path logic
-    itself is covered by the unit tests in
+    This does NOT execute ``PreProcessing.make_compute``; it isolates the
+    SpikeInterface round-trip that the read-compressed wiring relies on. The
+    companion ``aeon_raw_compression`` library compresses from a plain
+    ``read_binary`` (no gains), so the zarr on disk carries no gain/offset
+    metadata and ``make_compute`` re-attaches it after ``si.load``. Here we
+    confirm, on a real golden amplifier file, that the round-trip preserves the
+    raw traces byte-for-byte and that the re-applied gains/offsets match the
+    ``.bin`` read. The resolver's own path logic is covered by the unit tests in
     ``tests/dj_pipeline/utils/test_ephys_utils_unit.py::TestResolveEphysFile``.
     """
 
     def test_zarr_roundtrip_matches_binary(
-        self, ephys_sorting_setup, require_ephys_golden_data, ctx, tmp_path
+        self, ephys_chunks_ingested, require_ephys_golden_data, ctx, tmp_path
     ):
         import numpy as np
         import spikeinterface as si
@@ -201,8 +201,6 @@ class TestCompressedReadEquivalence:
         from aeon.dj_pipeline import acquisition
 
         exp_key = {"experiment_name": ctx.cfg["experiment_name"]}
-        ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
-
         amp_files = (
             ctx.ephys.EphysChunk.File & exp_key & "file_name LIKE '%AmplifierData%.bin'"
         ).to_dicts()
@@ -220,9 +218,10 @@ class TestCompressedReadEquivalence:
         gain_to_uV = 3.05176
         offset_to_uV = -2048 * gain_to_uV
         num_channels = ctx.cfg["n_recording_channels"]
-        n_frames = 30_000  # 1 s; keep the zarr write fast (reads are lazy/memmapped)
 
-        # .bin branch: read with gains (as make_compute does), take a slice.
+        # .bin branch: read with gains (as make_compute does), take a short slice.
+        # 1 s keeps the zarr write fast (reads are lazy/memmapped); min() guards a
+        # chunk shorter than that.
         rec_bin = se.read_binary(
             bin_path,
             sampling_frequency=fs_hz,
@@ -230,7 +229,9 @@ class TestCompressedReadEquivalence:
             num_channels=num_channels,
             gain_to_uV=gain_to_uV,
             offset_to_uV=offset_to_uV,
-        ).frame_slice(0, n_frames)
+        )
+        n_frames = min(30_000, rec_bin.get_num_samples())
+        rec_bin = rec_bin.frame_slice(0, n_frames)
 
         # .zarr branch: mimic the library (read WITHOUT gains, save to zarr), then
         # load + re-apply gains/offsets exactly as make_compute's zarr branch does.
@@ -240,7 +241,7 @@ class TestCompressedReadEquivalence:
             sampling_frequency=fs_hz,
             dtype=np.uint16,
             num_channels=num_channels,
-        ).frame_slice(0, n_frames).save(format="zarr", folder=zarr_path)
+        ).frame_slice(0, n_frames).save(format="zarr", folder=zarr_path, n_jobs=1)
         rec_zarr = si.load(zarr_path)
         rec_zarr.set_channel_gains(gain_to_uV)
         rec_zarr.set_channel_offsets(offset_to_uV)

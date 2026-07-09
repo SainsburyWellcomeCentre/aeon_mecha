@@ -703,3 +703,15 @@ class TestResolveEphysFile:
         bin_path.write_bytes(b"\x00")
 
         assert resolve_ephys_file(bin_path) == bin_path
+
+    def test_raw_ephys_component_not_treated_as_raw(self, tmp_path):
+        # "raw-ephys" is a DataJoint directory_type label, never a physical path
+        # component. Exact-component matching must not treat it as the "raw" store
+        # root, so no .zarr twin is inferred and we fall back to the .bin.
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_ephys_file
+
+        bin_path = tmp_path / "raw-ephys" / "AEONX1" / "f.bin"
+        bin_path.parent.mkdir(parents=True)
+        bin_path.write_bytes(b"\x00")
+
+        assert resolve_ephys_file(bin_path) == bin_path
