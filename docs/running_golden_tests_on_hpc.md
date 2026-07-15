@@ -36,13 +36,9 @@ Both flags matter. `--extra spike_sorting` pulls in spikeinterface/probeinterfac
 (without it the ephys tests skip and some unit tests hard-fail). `--group
 test-golden` pulls in `swc-aeon-rigs-foragingabc`, needed by the golden fixtures.
 
-If you connect to **aeondj** (MySQL), also install the auth dependency it needs:
-
-```
-uv pip install cryptography
-```
-
-(Not needed for `aeon-db`.)
+`cryptography` (needed for aeondj's `caching_sha2_password` auth) is a core
+dependency as of PR #591, so the `uv sync` above already installs it. No separate
+install step is needed for either server.
 
 ## 3. Point at your database
 
