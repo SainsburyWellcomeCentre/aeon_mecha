@@ -52,17 +52,15 @@ def resolve_ephys_file(raw_bin_path: Path) -> Path:
     raw_bin_path = Path(raw_bin_path)
     parts = raw_bin_path.parts
 
-    raw_indices = [i for i, part in enumerate(parts) if part == "raw"]
-    if len(raw_indices) > 1:
+    if parts.count("raw") > 1:
         raise ValueError(
             f"Cannot resolve compressed twin for {raw_bin_path}: path has "
-            f"{len(raw_indices)} 'raw' components; the processed-store root is "
-            f"ambiguous."
+            "multiple 'raw' components; the processed-store root is ambiguous."
         )
 
     zarr_candidate = None
-    if len(raw_indices) == 1:
-        i = raw_indices[0]
+    if "raw" in parts:
+        i = parts.index("raw")
         zarr_candidate = Path(*parts[:i], "processed", *parts[i + 1 :]).with_suffix(".zarr")
 
     if zarr_candidate is not None and zarr_candidate.exists():
