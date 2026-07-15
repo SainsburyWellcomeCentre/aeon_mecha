@@ -1,6 +1,7 @@
 """DataJoint schema for the ephys pipeline."""
 
 import re
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -406,8 +407,6 @@ class EphysSyncModel(dj.Manual):
         Args:
             experiment_name: Name of the experiment to process
         """
-        import tempfile
-
         import joblib
 
         from aeon.schema.ephys import social_ephys
@@ -614,33 +613,37 @@ class EphysChunk(dj.Manual):
             onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
             first_ts, last_ts = int(onix_ts[0]), int(onix_ts[-1])
 
-            # Query EphysSyncModel rows that cover the first OR last ONIX timestamp
-            matched = (
-                EphysSyncModel
-                & {"experiment_name": experiment_name, "epoch_start": epoch_start}
-                & (
-                    f"({first_ts} BETWEEN onix_ts_start AND onix_ts_end) "
-                    f"OR ({last_ts} BETWEEN onix_ts_start AND onix_ts_end)"
-                )
-            ).to_dicts(order_by="sync_start")
+            # Fetch + resolve inside a temp download dir so the <attach> sync_model
+            # files DataJoint extracts on fetch are cleaned up (issue #598). Any
+            # model load (inside resolve_harp) must happen before the block exits.
+            with tempfile.TemporaryDirectory() as tmpdir, dj.config.override(download_path=tmpdir):
+                # Query EphysSyncModel rows that cover the first OR last ONIX timestamp
+                matched = (
+                    EphysSyncModel
+                    & {"experiment_name": experiment_name, "epoch_start": epoch_start}
+                    & (
+                        f"({first_ts} BETWEEN onix_ts_start AND onix_ts_end) "
+                        f"OR ({last_ts} BETWEEN onix_ts_start AND onix_ts_end)"
+                    )
+                ).to_dicts(order_by="sync_start")
 
-            if not matched:
-                logger.warning(
-                    f"No EphysSyncModel row covers ONIX range [{first_ts}, {last_ts}] "
-                    f"for {ephys_file.name}. Run EphysSyncModel.ingest() first. Skipping."
-                )
-                continue
+                if not matched:
+                    logger.warning(
+                        f"No EphysSyncModel row covers ONIX range [{first_ts}, {last_ts}] "
+                        f"for {ephys_file.name}. Run EphysSyncModel.ingest() first. Skipping."
+                    )
+                    continue
 
-            # Resolve HARP chunk_start / chunk_end via DB-backed sync model.
-            # Use a per-file model cache so both calls share one joblib.load when
-            # matched[0] and matched[-1] are the same SyncModel row.
-            model_cache: dict = {}
-            try:
-                chunk_start = resolve_harp(matched[0], first_ts, _model_cache=model_cache)
-                chunk_end = resolve_harp(matched[-1], last_ts, _model_cache=model_cache)
-            except Exception as e:
-                logger.error(f"Failed to resolve HARP times for {ephys_file}: {e}")
-                continue
+                # Resolve HARP chunk_start / chunk_end via DB-backed sync model.
+                # Use a per-file model cache so both calls share one joblib.load when
+                # matched[0] and matched[-1] are the same SyncModel row.
+                model_cache: dict = {}
+                try:
+                    chunk_start = resolve_harp(matched[0], first_ts, _model_cache=model_cache)
+                    chunk_end = resolve_harp(matched[-1], last_ts, _model_cache=model_cache)
+                except Exception as e:
+                    logger.error(f"Failed to resolve HARP times for {ephys_file}: {e}")
+                    continue
 
             # ElectrodeConfig already resolved on the Insertion row — read it
             # directly from insertion_key (built above from EphysEpochConfig.Insertion).
@@ -871,8 +874,10 @@ class OnixImuChunk(dj.Imported):
         from swc.aeon.io import api as io_api
 
         df = (cls & key).fetch1("stream_df")
-        sync_attach = (EphysSyncModel & key).fetch1("sync_model")
-        model = joblib.load(sync_attach)
+        # Load the <attach> sync_model inside a temp download dir so the extracted
+        # .joblib file is cleaned up on exit (issue #598).
+        with tempfile.TemporaryDirectory() as tmpdir, dj.config.override(download_path=tmpdir):
+            model = joblib.load((EphysSyncModel & key).fetch1("sync_model"))
         harp_seconds = model.predict(df.index.values.reshape(-1, 1)).flatten()
         df.index = io_api.to_datetime(harp_seconds)
         return df
@@ -894,9 +899,9 @@ class OnixImuChunk(dj.Imported):
         )
         from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
 
-        onix_ts_start_raw, onix_ts_end_raw, sync_model_attach = (
+        onix_ts_start_raw, onix_ts_end_raw = (
             EphysSyncModel & key
-        ).fetch1("onix_ts_start", "onix_ts_end", "sync_model")
+        ).fetch1("onix_ts_start", "onix_ts_end")
         onix_ts_start = int(onix_ts_start_raw)
         onix_ts_end = int(onix_ts_end_raw)
         epoch_dir = (EphysEpoch & key).fetch1("epoch_dir")
@@ -957,8 +962,10 @@ class OnixImuChunk(dj.Imported):
             return
 
         # HARP timestamps for the summary stats only — stream_df stays
-        # ONIX-indexed (synced_df() applies the regression on fetch).
-        model = joblib.load(sync_model_attach)
+        # ONIX-indexed (synced_df() applies the regression on fetch). Load the
+        # <attach> sync_model in a temp download dir so it is cleaned up (#598).
+        with tempfile.TemporaryDirectory() as tmpdir, dj.config.override(download_path=tmpdir):
+            model = joblib.load((EphysSyncModel & key).fetch1("sync_model"))
         onix_clock = df.index.values
         harp_seconds = model.predict(onix_clock.reshape(-1, 1)).flatten()
         harp_index = pd.to_datetime([harp_to_naive(s) for s in harp_seconds])

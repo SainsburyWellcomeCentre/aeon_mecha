@@ -341,3 +341,61 @@ def test_synced_df_raises_on_ambiguous_key(dj_config_integration, tmp_path):
     # Ambiguous key — matches 2 rows
     with pytest.raises(dj.errors.DataJointError):
         ephys.OnixImuChunk.synced_df({"experiment_name": experiment_name})
+
+
+# ============================================================================
+# Issue #598: <attach> sync_model fetches must not leak .joblib files
+# ============================================================================
+
+
+def test_sync_model_fetches_leave_no_joblib(dj_config_integration, tmp_path):
+    """No sync_model .joblib is left in download_path after real fetches (#598).
+
+    Exercises every production sync_model fetch site end-to-end against the DB:
+    ``EphysChunk.ingest_chunks``, ``OnixImuChunk.make`` (via populate), and
+    ``OnixImuChunk.synced_df``. Each must extract its ``<attach>`` into a temp
+    download dir that is cleaned up, so nothing lands in the caller's directory.
+    """
+    import datajoint as dj
+
+    from aeon.dj_pipeline import acquisition, ephys
+    from aeon.dj_pipeline import subject as subj_mod
+
+    experiment_name = "test_sync_model_no_leak"
+    epoch_dir_name = "2024-06-11T10-24-07"
+    device_name = "NeuropixelsV2Beta"
+    probe_label = "ProbeA"
+    subject = "test-mouse-noleak"
+
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=2)
+    make_synthetic_amplifier_data(raw_dir, epoch_dir_name, device_name, probe_label, n_chunks=2)
+    make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=2)
+    epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+
+    subj_mod.Subject.insert1(
+        {"subject": subject, "sex": "U", "subject_birth_date": "2024-01-01"},
+        skip_duplicates=True,
+    )
+    acquisition.Experiment.Subject.insert1(
+        {"experiment_name": experiment_name, "subject": subject},
+        skip_duplicates=True,
+    )
+    register_synthetic_probe_insertion(experiment_name, subject, epoch_start, probe_label, device_name)
+
+    ephys.EphysSyncModel.ingest(experiment_name)
+
+    # run_dir stands in for the directory a user runs from. Each fetch site
+    # redirects its <attach> extraction to a temp download dir that is deleted
+    # on exit, so no sync_model .joblib should ever be extracted here.
+    run_dir = tmp_path / "run_dir"
+    run_dir.mkdir()
+    with dj.config.override(download_path=str(run_dir)):
+        ephys.EphysChunk.ingest_chunks(experiment_name)  # fetch site: ingest_chunks
+        ephys.OnixImuChunk.populate({"experiment_name": experiment_name})  # fetch site: OnixImuChunk.make
+        imu_keys = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).keys()
+        ephys.OnixImuChunk.synced_df(imu_keys[0])  # fetch site: synced_df
+
+    leaked = list(run_dir.rglob("*.joblib"))
+    assert leaked == [], f"sync_model fetches leaked joblib files into {run_dir}: {leaked}"
