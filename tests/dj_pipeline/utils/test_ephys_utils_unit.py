@@ -635,55 +635,51 @@ class TestLoadDeviceChannelMap:
 
 
 class TestResolveEphysFile:
-    """Pure path resolver: prefer the .zarr twin under the processed store,
-    else the raw .bin, else error. No DB. See SPEC_READ_COMPRESSED.md."""
+    """Pure path resolver: prefer the .zarr twin under the processed store, else the raw .bin, else error.
 
-    def _make_raw_bin(self, tmp_path):
+    No DB. See SPEC_READ_COMPRESSED.md.
+    """
+
+    @pytest.fixture
+    def raw_bin_path(self, tmp_path):
+        """Return a raw .bin path under tmp_path with a 'raw' component."""
         # tmp_path has no "raw" component, so the one we add is unambiguous.
         bin_path = tmp_path / "raw" / "AEONX1" / "exp" / "dev" / "Probe_AmplifierData_0.bin"
         bin_path.parent.mkdir(parents=True, exist_ok=True)
         return bin_path
 
-    def _expected_zarr(self, tmp_path):
+    @pytest.fixture
+    def zarr_path(self, tmp_path):
+        """Return a processed .zarr path under tmp_path."""
         return tmp_path / "processed" / "AEONX1" / "exp" / "dev" / "Probe_AmplifierData_0.zarr"
 
-    def test_prefers_zarr_when_both_present(self, tmp_path):
+    def test_prefers_zarr_when_both_present(self, raw_bin_path, zarr_path):
         from aeon.dj_pipeline.utils.ephys_utils import resolve_ephys_file
 
-        bin_path = self._make_raw_bin(tmp_path)
-        bin_path.write_bytes(b"\x00\x00")
-        zarr_path = self._expected_zarr(tmp_path)
+        raw_bin_path.write_bytes(b"\x00\x00")
         zarr_path.mkdir(parents=True)  # zarr is a directory on disk
-
         # Pins the raw->processed mapping AND the zarr preference.
-        assert resolve_ephys_file(bin_path) == zarr_path
+        assert resolve_ephys_file(raw_bin_path) == zarr_path
 
-    def test_falls_back_to_bin_when_only_bin(self, tmp_path):
+    def test_falls_back_to_bin_when_only_bin(self, raw_bin_path):
         from aeon.dj_pipeline.utils.ephys_utils import resolve_ephys_file
 
-        bin_path = self._make_raw_bin(tmp_path)
-        bin_path.write_bytes(b"\x00\x00")
+        raw_bin_path.write_bytes(b"\x00\x00")
+        assert resolve_ephys_file(raw_bin_path) == raw_bin_path
 
-        assert resolve_ephys_file(bin_path) == bin_path
-
-    def test_returns_zarr_when_only_zarr(self, tmp_path):
+    def test_returns_zarr_when_only_zarr(self, raw_bin_path, zarr_path):
         from aeon.dj_pipeline.utils.ephys_utils import resolve_ephys_file
 
-        bin_path = self._make_raw_bin(tmp_path)  # parent dir exists, but no .bin file
-        zarr_path = self._expected_zarr(tmp_path)
+        # raw_bin_path's parent dir exists, but no .bin file
         zarr_path.mkdir(parents=True)
+        assert resolve_ephys_file(raw_bin_path) == zarr_path
 
-        assert resolve_ephys_file(bin_path) == zarr_path
-
-    def test_raises_when_neither_exists(self, tmp_path):
+    def test_raises_when_neither_exists(self, raw_bin_path):
         from aeon.dj_pipeline.utils.ephys_utils import resolve_ephys_file
 
-        bin_path = self._make_raw_bin(tmp_path)  # nothing created
-
-        with pytest.raises(FileNotFoundError) as excinfo:
-            resolve_ephys_file(bin_path)
-        msg = str(excinfo.value)
-        assert "processed" in msg and ".zarr" in msg and ".bin" in msg
+        # nothing created beyond raw_bin_path's parent dir
+        with pytest.raises(FileNotFoundError, match=r"processed.*\.zarr.*\.bin"):
+            resolve_ephys_file(raw_bin_path)
 
     def test_raises_on_multiple_raw_components(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import resolve_ephys_file
@@ -691,8 +687,7 @@ class TestResolveEphysFile:
         bin_path = tmp_path / "raw" / "sub" / "raw" / "f.bin"
         bin_path.parent.mkdir(parents=True)
         bin_path.write_bytes(b"\x00")
-
-        with pytest.raises(ValueError, match="raw"):
+        with pytest.raises(ValueError, match="multiple 'raw' components"):
             resolve_ephys_file(bin_path)
 
     def test_no_raw_component_falls_back_to_bin(self, tmp_path):
@@ -701,7 +696,6 @@ class TestResolveEphysFile:
         bin_path = tmp_path / "data" / "f.bin"  # no "raw" component
         bin_path.parent.mkdir(parents=True)
         bin_path.write_bytes(b"\x00")
-
         assert resolve_ephys_file(bin_path) == bin_path
 
     def test_raw_ephys_component_not_treated_as_raw(self, tmp_path):
@@ -713,5 +707,4 @@ class TestResolveEphysFile:
         bin_path = tmp_path / "raw-ephys" / "AEONX1" / "f.bin"
         bin_path.parent.mkdir(parents=True)
         bin_path.write_bytes(b"\x00")
-
         assert resolve_ephys_file(bin_path) == bin_path
