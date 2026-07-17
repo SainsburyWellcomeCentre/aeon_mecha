@@ -137,3 +137,86 @@ class TestDBRoundTrip:
         assert len({f.name for f in files}) == 2  # distinct tokened files
         xr.testing.assert_equal((mock_xarray & {"rec_id": 1}).fetch1("data").load(), ds1)
         xr.testing.assert_equal((mock_xarray & {"rec_id": 2}).fetch1("data").load(), ds2)
+
+
+def collector(schema):
+    """A GarbageCollector scoped to `schema` and the temp-dir xarray_store."""
+    import datajoint as dj
+
+    return dj.gc.GarbageCollector(schema, store="xarray_store")
+
+
+class TestGarbageCollection:
+    """``dj.gc`` over ``<xarray@>`` columns.
+
+    Deleting a row leaves its ``.nc`` on disk; garbage collection is what reclaims
+    it. ``collect()`` diffs the files stored under the schema's section of the
+    store against the paths live rows reference — the latter discovered through
+    the codec's own ``SchemaCodec.referenced_paths``, which reads the stored JSON
+    metadata without opening any file.
+
+    Since a wrong answer here means deleting live data, every test that runs a
+    real collect asserts the surviving row is still *fetchable* afterwards, not
+    merely that some file is still on disk.
+    """
+
+    def test_live_rows_leave_nothing_orphaned(self, mock_xarray_table):
+        """Every file backing a live row is discovered as referenced."""
+        mock_xarray, schema, _loc = mock_xarray_table
+        mock_xarray.insert(
+            [{"rec_id": 1, "data": make_mock_dataset(n=50)}, {"rec_id": 2, "data": make_mock_dataset(n=60)}]
+        )
+
+        stats = collector(schema).collect(dry_run=True)
+
+        assert stats["schema_paths_referenced"] == 2
+        assert stats["schema_paths_orphaned"] == 0
+
+    def test_dry_run_reports_the_orphan_but_deletes_nothing(self, mock_xarray_table):
+        mock_xarray, schema, loc = mock_xarray_table
+        mock_xarray.insert(
+            [{"rec_id": 1, "data": make_mock_dataset(n=50)}, {"rec_id": 2, "data": make_mock_dataset(n=60)}]
+        )
+        (mock_xarray & {"rec_id": 2}).delete()
+        assert len(list(loc.rglob("data_*.nc"))) == 2  # row delete leaves the file on disk
+
+        stats = collector(schema).collect(dry_run=True)
+
+        assert (stats["schema_paths_referenced"], stats["schema_paths_orphaned"]) == (1, 1)
+        assert stats["dry_run"] is True
+        assert stats["schema_paths_deleted"] == 0
+        assert stats["bytes_freed"] == 0
+        assert "rec_id=2" in stats["orphaned_schema_paths"][0]  # the deleted row's file, not the live one
+        assert len(list(loc.rglob("data_*.nc"))) == 2  # nothing removed
+
+    def test_collect_reclaims_only_the_orphaned_file(self, mock_xarray_table):
+        mock_xarray, schema, loc = mock_xarray_table
+        ds1 = make_mock_dataset(n=50)
+        mock_xarray.insert([{"rec_id": 1, "data": ds1}, {"rec_id": 2, "data": make_mock_dataset(n=60)}])
+        (mock_xarray & {"rec_id": 2}).delete()
+
+        stats = collector(schema).collect(dry_run=False)
+
+        assert stats["schema_paths_deleted"] == 1
+        assert stats["errors"] == 0
+        assert stats["bytes_freed"] > 0
+        survivors = list(loc.rglob("data_*.nc"))
+        assert len(survivors) == 1
+        assert "rec_id=1" in survivors[0].as_posix()
+        # the live row must still be readable — not merely present on disk
+        xr.testing.assert_equal((mock_xarray & {"rec_id": 1}).fetch1("data").load(), ds1)
+
+    def test_collect_is_idempotent(self, mock_xarray_table):
+        """A second pass finds nothing: the first reclaimed exactly the orphans."""
+        mock_xarray, schema, _loc = mock_xarray_table
+        ds1 = make_mock_dataset(n=50)
+        mock_xarray.insert1({"rec_id": 1, "data": ds1})
+        mock_xarray.insert1({"rec_id": 2, "data": make_mock_dataset(n=60)})
+        (mock_xarray & {"rec_id": 2}).delete()
+        collector(schema).collect(dry_run=False)
+
+        stats = collector(schema).collect(dry_run=False)
+
+        assert stats["schema_paths_orphaned"] == 0
+        assert stats["schema_paths_deleted"] == 0
+        xr.testing.assert_equal((mock_xarray & {"rec_id": 1}).fetch1("data").load(), ds1)
