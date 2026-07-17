@@ -20,6 +20,7 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
+from aeon.dj_pipeline.utils.ephys_utils import resolve_ephys_file
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
     resolve_analyzer_dir,
@@ -262,18 +263,28 @@ class PreProcessing(dj.Computed):
 
         execution_time = datetime.now(UTC)
 
-        # Concatenate recordings
+        # Concatenate recordings. Each chunk file is resolved on disk: prefer the
+        # compressed .zarr twin under the processed store, else the raw .bin.
         si_recs = []
         for f, d in zip(ephys_files, dir_types, strict=False):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
-            si_rec = se.read_binary(
-                ephys_dir / f,
-                sampling_frequency=fs_hz,
-                dtype=np.uint16,
-                num_channels=num_channels,
-                gain_to_uV=gain_to_uV,
-                offset_to_uV=offset_to_uV,
-            )
+            resolved = resolve_ephys_file(ephys_dir / f)
+            if resolved.suffix == ".zarr":
+                # The compression library writes zarr from a plain read_binary
+                # (no gains), so re-attach the gain/offset metadata the .bin
+                # branch sets, to keep the two branches equivalent.
+                si_rec = si.load(resolved)
+                si_rec.set_channel_gains(gain_to_uV)
+                si_rec.set_channel_offsets(offset_to_uV)
+            else:
+                si_rec = se.read_binary(
+                    resolved,
+                    sampling_frequency=fs_hz,
+                    dtype=np.uint16,
+                    num_channels=num_channels,
+                    gain_to_uV=gain_to_uV,
+                    offset_to_uV=offset_to_uV,
+                )
             si_recs.append(si_rec)
         si_recording = si.concatenate_recordings(si_recs)
 

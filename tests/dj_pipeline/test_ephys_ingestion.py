@@ -176,6 +176,82 @@ class TestPreProcessing:
         assert np.any(traces != 0), "recording.zarr decompressed to all-zero traces"
 
 
+class TestCompressedReadEquivalence:
+    """A compressed .zarr twin, read back and given the pipeline's gains/offsets,
+    must reproduce the raw .bin read on real golden data.
+
+    This does NOT execute ``PreProcessing.make_compute``; it isolates the
+    SpikeInterface round-trip that the read-compressed wiring relies on. The
+    companion ``aeon_raw_compression`` library compresses from a plain
+    ``read_binary`` (no gains), so the zarr on disk carries no gain/offset
+    metadata and ``make_compute`` re-attaches it after ``si.load``. Here we
+    confirm, on a real golden amplifier file, that the round-trip preserves the
+    raw traces byte-for-byte and that the re-applied gains/offsets match the
+    ``.bin`` read. The resolver's own path logic is covered by the unit tests in
+    ``tests/dj_pipeline/utils/test_ephys_utils_unit.py::TestResolveEphysFile``.
+    """
+
+    def test_zarr_roundtrip_matches_binary(
+        self, ephys_chunks_ingested, require_ephys_golden_data, ctx, tmp_path
+    ):
+        import numpy as np
+        import spikeinterface as si
+        import spikeinterface.extractors as se
+
+        from aeon.dj_pipeline import acquisition
+
+        exp_key = {"experiment_name": ctx.cfg["experiment_name"]}
+        amp_files = (
+            ctx.ephys.EphysChunk.File & exp_key & "file_name LIKE '%AmplifierData%.bin'"
+        ).to_dicts()
+        assert amp_files, "no golden AmplifierData .bin registered"
+
+        f0 = amp_files[0]
+        ephys_dir = acquisition.Experiment.get_data_directory(
+            exp_key, directory_type=f0["directory_type"]
+        )
+        bin_path = ephys_dir / f0["file_path"]
+        assert bin_path.exists(), f"golden .bin missing: {bin_path}"
+
+        # Must match PreProcessing.make_compute.
+        fs_hz = 30e3
+        gain_to_uV = 3.05176
+        offset_to_uV = -2048 * gain_to_uV
+        num_channels = ctx.cfg["n_recording_channels"]
+
+        # .bin branch: read with gains (as make_compute does), take a short slice.
+        # 1 s keeps the zarr write fast (reads are lazy/memmapped); min() guards a
+        # chunk shorter than that.
+        rec_bin = se.read_binary(
+            bin_path,
+            sampling_frequency=fs_hz,
+            dtype=np.uint16,
+            num_channels=num_channels,
+            gain_to_uV=gain_to_uV,
+            offset_to_uV=offset_to_uV,
+        )
+        n_frames = min(30_000, rec_bin.get_num_samples())
+        rec_bin = rec_bin.frame_slice(0, n_frames)
+
+        # .zarr branch: mimic the library (read WITHOUT gains, save to zarr), then
+        # load + re-apply gains/offsets exactly as make_compute's zarr branch does.
+        zarr_path = tmp_path / "amp_slice.zarr"
+        se.read_binary(
+            bin_path,
+            sampling_frequency=fs_hz,
+            dtype=np.uint16,
+            num_channels=num_channels,
+        ).frame_slice(0, n_frames).save(format="zarr", folder=zarr_path, n_jobs=1)
+        rec_zarr = si.load(zarr_path)
+        rec_zarr.set_channel_gains(gain_to_uV)
+        rec_zarr.set_channel_offsets(offset_to_uV)
+
+        # Raw traces byte-identical, and re-applied metadata matches the .bin read.
+        assert np.array_equal(rec_bin.get_traces(), rec_zarr.get_traces())
+        assert np.array_equal(rec_bin.get_channel_gains(), rec_zarr.get_channel_gains())
+        assert np.array_equal(rec_bin.get_channel_offsets(), rec_zarr.get_channel_offsets())
+
+
 class TestPostProcessing:
     """Verify PostProcessing.populate() output.
 
@@ -331,6 +407,84 @@ class TestEphysSyncModel:
         onix_starts = [r["onix_ts_start"] for r in rows]
         assert harp_starts == sorted(harp_starts), "sync_start values not monotonic"
         assert onix_starts == sorted(onix_starts), "onix_ts_start values not monotonic"
+
+    def test_sync_start_aligns_with_hour_boundary(self, ephys_test_epochs, ctx):
+        """HarpSync CSVs at hour boundaries should have sync_start at the boundary.
+
+        The golden epoch starts at 07:50:11 with HarpSync CSVs at 07-00, 08-00,
+        09-00. The 08-00 and 09-00 CSVs are written on hour boundaries, so their
+        first row's Seconds-column value (and thus sync_start) lands within the
+        first second of the hour — i.e. ``sync_start.minute == 0`` and
+        ``sync_start.second == 0``.
+
+        Pre-PR 592 the reader read ``Value.HarpTime`` (which reports an integer
+        second lagging the true HARP clock by sub-second to ~1s), so these
+        values would be in the previous hour (``minute == 59, second == 59``).
+        This is an independent HARP anchor that catches a systematic offset the
+        existing r²/monotonicity checks miss.
+        """
+        rows = (ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
+            order_by="sync_start"
+        )
+        # Skip the first row — its source CSV's hour bucket begins before
+        # epoch_start (recording started mid-hour), so sync_start is the
+        # epoch_start, not the bucket hour.
+        for row in rows[1:]:
+            sync_start = row["sync_start"]
+            assert sync_start.minute == 0 and sync_start.second == 0, (
+                f"sync_start={sync_start} is not within the first second of an "
+                f"hour (got minute={sync_start.minute}, second={sync_start.second}). "
+                f"HARP CSVs at hour boundaries should give sync_start = XX:00:00.xxx. "
+                f"A value like XX:59:59 indicates the HARP time column bug from "
+                f"PR 592 has regressed (Value.HarpTime lags by ~1s)."
+            )
+
+    def test_sync_start_matches_seconds_column_not_value_harptime(
+        self, ephys_test_epochs, require_ephys_golden_data, ctx
+    ):
+        """sync_start must come from the CSV's Seconds index, not Value.HarpTime.
+
+        Each HarpSync CSV has two integer-second timestamp columns: ``Seconds``
+        (the index — correct) and ``Value.HarpTime`` (lagging by 1s — buggy).
+        We re-read one CSV from the golden epoch, derive what ``sync_start``
+        would be from each column, and assert the stored value matches the
+        Seconds-derived one. This is the most direct test of PR 592's fix and
+        is independent of the hour-boundary check above (catches non-hour-
+        aligned files too).
+        """
+        import pandas as pd
+
+        from aeon.dj_pipeline.utils.ephys_utils import harp_to_naive
+
+        csvs = sorted(require_ephys_golden_data.rglob("*_HarpSync_*.csv"))
+        if not csvs:
+            pytest.skip("No HarpSync CSVs in golden epoch")
+        csv_path = csvs[0]
+
+        df = pd.read_csv(csv_path, index_col=0).dropna()
+        expected_harp_start = harp_to_naive(int(df.index[0]))
+        buggy_harp_start = harp_to_naive(int(df["Value.HarpTime"].iloc[0]))
+
+        # Sanity: the source data really does have the 1s difference. If this
+        # ever fails, the bug premise has changed and the test below is moot.
+        assert (expected_harp_start - buggy_harp_start).total_seconds() == 1.0, (
+            f"Expected Seconds ({df.index[0]}) and Value.HarpTime "
+            f"({df['Value.HarpTime'].iloc[0]}) to differ by 1 second in {csv_path.name}; "
+            f"got delta={(expected_harp_start - buggy_harp_start).total_seconds()}s."
+        )
+
+        rows = (ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
+        stored_sync_starts = [r["sync_start"] for r in rows]
+        assert expected_harp_start in stored_sync_starts, (
+            f"sync_start={expected_harp_start} (Seconds index from {csv_path.name}) "
+            f"not found in stored values {stored_sync_starts}. If PR 592's fix "
+            f"regressed, sync_start would instead be {buggy_harp_start}."
+        )
+        assert buggy_harp_start not in stored_sync_starts, (
+            f"sync_start={buggy_harp_start} (Value.HarpTime from {csv_path.name}) "
+            f"found in stored values — the HARP time column bug from PR 592 has "
+            f"regressed."
+        )
 
 
 class TestOnixImuChunkOnGoldenData:

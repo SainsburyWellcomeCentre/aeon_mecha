@@ -50,9 +50,12 @@ module load uv
 cd "$SLURM_SUBMIT_DIR"
 echo "Working directory: $(pwd)"
 
-# Ensure venv exists and deps match lockfile
+# Ensure venv exists and deps match lockfile.
+# The spike_sorting extra (spikeinterface[full], spython, cuda-python) is
+# required to actually run the sort — a bare `uv sync` would uninstall it and
+# the job would crash at `import spikeinterface`.
 echo "Syncing dependencies..."
-uv sync
+uv sync --extra spike_sorting
 
 # Set PyTorch CUDA memory allocator configuration to free reserved memory
 # This helps prevent CUDA out of memory errors during long-running Kilosort4 jobs

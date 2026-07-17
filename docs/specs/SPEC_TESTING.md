@@ -162,7 +162,7 @@ Without it, the test module skips at import time via `pytest.importorskip`.
 
 The full ephys suite runs on the HPC against `/ceph` data. From `aeon-hpc`:
 
-1. **Get onto a compute node** (Ceph isn't visible from the gateway):
+1. **Get onto a compute node** (the suite is heavy; run it off the shared gateway):
    ```bash
    srun --cpus-per-task=2 --mem=8G --time=2:00:00 --pty bash
    ```
@@ -240,7 +240,7 @@ uv run pytest --cov=aeon --cov-report=html
 
 **"Cannot connect to Docker daemon" on local runs.** Testcontainers needs Docker. On HPC use `TEST_DB_PREFIX` against an external DB instead (see HPC setup).
 
-**"Cannot touch /ceph/..." / Ceph not visible.** You're on the gateway. `srun` onto a compute node first.
+**"Cannot touch /ceph/..." / Ceph access problems.** Ceph is now mounted on the gateway as well as the compute nodes, so this is rare; if you do hit it, `srun` onto a compute node.
 
 **Stale test schemas from a crashed run.** Manually drop:
 ```bash

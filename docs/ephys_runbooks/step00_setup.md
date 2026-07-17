@@ -10,7 +10,7 @@ walks through each one.
 
 - **SSH access to the SWC HPC.** If you don't have an account, ask your PI or
   the SWC IT team.
-- **Database credentials** for `aeon-db`. Ask the pipeline team for a username
+- **Database credentials** for `aeondj`. Ask the pipeline team for a username
   and password.
 - **Basic familiarity with DataJoint.** The guide explains each pipeline step,
   but it assumes you know what tables, schemas, and `populate()` calls are. If
@@ -112,6 +112,19 @@ run` prefix ensures you're using the project's virtual environment with the
 correct dependencies, regardless of what other Python installations exist on
 the system.
 
+### Spike-sorting dependencies
+
+The spike-sorting stack (`spikeinterface`, `spython`, `cuda-python`) lives in
+the optional `spike_sorting` extra, not the base install. If you'll run any
+ephys sorting, install it explicitly:
+
+```bash
+uv sync --extra spike_sorting
+```
+
+A bare `uv sync` does **not** include it, so the sort would crash at `import
+spikeinterface`.
+
 ---
 
 ## Database Configuration
@@ -140,7 +153,7 @@ Open the generated file and set these values:
 
 ```json
 {
-  "database.host": "aeon-db",
+  "database.host": "aeondj",
   "database.database_prefix": "u_<yourname>_aeon_ephys_v2_test_",
   "stores": {
     "dj_store": {
@@ -154,9 +167,7 @@ Open the generated file and set these values:
 
 What each field does:
 
-- `database.host` -- Use `aeon-db`. This is the primary database server. Do
-  **not** use `aeon-db2`, which only hosts old historical data from a previous
-  experiment.
+- `database.host` -- Use `aeondj`. This is the primary database server.
 - `database.database_prefix` -- Prepended to every schema name the pipeline
   creates. Using a test prefix like `u_yourname_aeon_ephys_v2_test_` keeps your
   test schemas completely separate from production schemas (which use the
@@ -186,7 +197,7 @@ After setting up the config and credentials, verify the connection:
 uv run python -c "import datajoint as dj; dj.conn()"
 ```
 
-You should see a message confirming a successful connection to `aeon-db`.
+You should see a message confirming a successful connection to `aeondj`.
 
 ---
 

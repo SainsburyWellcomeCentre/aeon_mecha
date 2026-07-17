@@ -12,8 +12,16 @@ To run a single task interactively (e.g. for debugging):
 """
 
 import argparse
+import sys
+import traceback
 
 from aeon.dj_pipeline import spike_sorting
+
+# DataJoint 2.x installs a sys.excepthook that prints only "[ERROR]: Uncaught
+# exception" with no traceback. Restore the default hook AFTER importing the
+# pipeline (DJ overwrites it at import time) so a crashed sort task logs a full
+# traceback to its SLURM .err file.
+sys.excepthook = lambda *args: traceback.print_exception(*args)
 
 # =============================================================================
 # Configuration
