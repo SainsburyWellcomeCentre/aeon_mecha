@@ -77,6 +77,9 @@ from aeon.dj_pipeline.utils.codec import (  # pyright: ignore[reportUnusedImport
     AeonStreamCodec,
     OnixStreamCodec,
 )
+from aeon.dj_pipeline.utils.xarray_codec import (  # pyright: ignore[reportUnusedImport]
+    XArrayNetCDFCodec,
+)
 
 logger = dj.logger
 
