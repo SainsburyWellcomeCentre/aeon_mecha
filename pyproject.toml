@@ -190,5 +190,6 @@ markers = [
 ]
 
 [tool.uv.sources]
+datajoint = { git = "https://github.com/datajoint/datajoint-python.git", branch = "master" }
 swc-aeon = { git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git", branch = "main" }
 swc-aeon-rigs-foragingabc = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git", branch = "main" }
