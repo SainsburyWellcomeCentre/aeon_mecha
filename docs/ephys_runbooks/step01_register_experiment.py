@@ -272,7 +272,7 @@ def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
     n_channels = len(active_electrodes)
 
     # Config name uses channel range (0-383), not site range (114-4049).
-    electrode_config_name = f"0-{n_channels - 1}"
+    electrode_config_name = channel_map_file.replace(".json", "")
 
     electrode_config_key = {
         "probe_type": probe_type,
@@ -287,7 +287,7 @@ def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
     ElectrodeConfig.insert1(
         {
             **electrode_config_key,
-            "electrode_config_description": (f"{n_channels} active channels from {channel_map_file}"),
+            "electrode_config_description": (f"From {channel_map_file}"),
             "electrode_config_hash": uuid.uuid4(),
         },
         skip_duplicates=True,
