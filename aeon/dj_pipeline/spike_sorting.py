@@ -306,8 +306,8 @@ class PreProcessing(dj.Computed):
             },
             inplace=True,
         )
-        probe_df["contact_shapes"] = "circle"
-        probe_df["radius"] = 10
+        probe_df["contact_shapes"] = "square"
+        probe_df["width"] = 12
         si_probe = pi.Probe.from_dataframe(probe_df)
 
         si_probe.set_device_channel_indices(electrodes_df["channel_idx"].values)
