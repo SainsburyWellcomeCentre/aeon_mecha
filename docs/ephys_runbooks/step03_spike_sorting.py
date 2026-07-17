@@ -64,14 +64,18 @@ CHANNEL_MAP_FILE = "M81_ProbeB_4Shanks_1000_to_1700_um.json"
 
 def setup_sorting_prerequisites(
     experiment_name,
-    subject,
     paramset_id,
     sorting_method,
+    insertion_number=1,
     sorting_groups="per_shank",
-    raw_ephys_dir=None,
-    channel_map_file=None,
 ):
     """Populate the three manual/lookup tables that must exist before sorting.
+
+    Handles experiments with one or several probe insertions. Each insertion
+    has its own ElectrodeConfig, so ElectrodeGroup and SortingTask entries are
+    created per insertion / electrode config. The electrode configuration and
+    shank assignments are read from the database (populated in steps 1-2), so
+    no raw ephys directory or channel-map file is needed here.
 
     Three tables are populated in order:
 
@@ -80,11 +84,12 @@ def setup_sorting_prerequisites(
        once globally; subsequent calls skip if the paramset_id already exists.
 
     b) ElectrodeGroup + ElectrodeGroup.Electrode (Manual) -- defines which
-       electrodes to include in sorting. The grouping strategy is set by
+       electrodes to include in sorting, one set per distinct ElectrodeConfig
+       across the selected insertions. The grouping strategy is set by
        ``sorting_groups``:
-         - "per_shank": reads the probeinterface JSON to determine shank
-           membership, creates one group per shank (e.g. shank0, shank1, ...)
-         - "all": all active channels in one group
+         - "per_shank": one group per shank (e.g. shank0, shank1, ...), read
+           from ProbeType.Electrode.shank in the database.
+         - "all": all active channels in one group.
 
     c) SortingTask (Manual) -- one entry per (block, electrode_group),
        linking each to the parameter set. This is what
@@ -92,19 +97,19 @@ def setup_sorting_prerequisites(
 
     Args:
         experiment_name: The experiment to set up sorting for.
-        subject: If given, only create SortingTask entries for this subject.
         paramset_id: Integer ID for the parameter set (converted to str for
             the varchar(16) column).
         sorting_method: Sorting algorithm name, e.g. "kilosort4".
+        insertion_number: If given, only set up sorting for this probe
+            insertion. If None (default), set up every insertion found for the
+            experiment/subject.
         sorting_groups: "per_shank" or "all".
-        raw_ephys_dir: Path to raw ephys data (needed for "per_shank").
-        channel_map_file: Probeinterface JSON filename (needed for "per_shank").
     """
-    # Deferred imports -- no DB side effects at module level.
     import json as _json
     from pathlib import Path
-
-    from aeon.dj_pipeline import ephys, spike_sorting
+    
+    # Deferred imports -- no DB side effects at module level.
+    from aeon.dj_pipeline import ephys, spike_sorting, acquisition
 
     # ------------------------------------------------------------------
     # a) SortingParamSet -- insert once globally
@@ -113,6 +118,7 @@ def setup_sorting_prerequisites(
     paramset_id_str = str(paramset_id)
 
     if not (spike_sorting.SortingParamSet & {"paramset_id": paramset_id_str}):
+
         params = {
             # Storage format for recording, sorting output, and analyzer
             # ("zarr" or "binary"). Defaults to "zarr" if omitted.
@@ -152,7 +158,7 @@ def setup_sorting_prerequisites(
                     "unit_locations": {},
                     "quality_metrics": {},
                 },
-                "job_kwargs": {"n_jobs": 1, "chunk_duration": "1s"},
+                "job_kwargs": {"n_jobs": -1, "chunk_duration": "10s"},
                 "export_to_phy": False,
                 "export_report": True,
             },
@@ -161,7 +167,7 @@ def setup_sorting_prerequisites(
             {
                 "paramset_id": paramset_id_str,
                 "sorting_method": sorting_method,
-                "paramset_description": ("Default parameter set for Kilosort4 with SpikeInterface"),
+                "paramset_description": ("Default parameter set for Kilosort4 with SpikeInterface, parallel postprocessing"),
                 "params": params,
             }
         )
@@ -175,7 +181,9 @@ def setup_sorting_prerequisites(
     # We need the (probe_type, electrode_config_name) key. Rather than
     # hard-coding it, query from EphysBlockInfo which was populated in
     # step 2 -- it already knows the electrode configuration.
-    block_info = (ephys.EphysBlockInfo & {"experiment_name": experiment_name}).fetch(
+    block_rest = {"experiment_name": experiment_name, "insertion_number": insertion_number}
+    
+    block_info = (ephys.EphysBlockInfo & block_rest).fetch(
         "probe_type", "electrode_config_name", as_dict=True, limit=1
     )
 
@@ -196,10 +204,12 @@ def setup_sorting_prerequisites(
 
     # Build groups based on the sorting strategy.
     if sorting_groups == "per_shank":
-        if not raw_ephys_dir or not channel_map_file:
-            raise ValueError(
-                "raw_ephys_dir and channel_map_file are required when sorting_groups='per_shank'."
-            )
+        
+        # get raw_ephys_dir and channel_map_file
+        raw_ephys_dir = (acquisition.Experiment.Directory() & {"experiment_name": experiment_name,
+                                                               "directory_type": "raw-ephys"}).fetch1("directory_path")
+        channel_map_file = electrode_config_name + '.json'
+
 
         # Read the probeinterface JSON for shank assignments.
         raw_path = Path(raw_ephys_dir)
@@ -275,14 +285,12 @@ def setup_sorting_prerequisites(
     # ------------------------------------------------------------------
     # c) SortingTask -- one per (block, group)
     # ------------------------------------------------------------------
-    blocks = (ephys.EphysBlock & {"experiment_name": experiment_name}).to_dicts()
-    if subject:
-        blocks = [b for b in blocks if b["subject"] == subject]
+    blocks = (ephys.EphysBlock & block_rest).to_dicts()
 
     if not blocks:
         print(
-            f"No EphysBlock entries found for experiment={experiment_name}, "
-            f"subject={subject}. Run step 2 first."
+            f"No EphysBlock entries found for experiment={experiment_name}. "
+            f"Run step 2 first."
         )
         return
 
@@ -462,16 +470,8 @@ To run a single task interactively (e.g. for debugging):
 """
 
 import argparse
-import sys
-import traceback
 
 from aeon.dj_pipeline import spike_sorting
-
-# DataJoint 2.x installs a sys.excepthook that prints only "[ERROR]: Uncaught
-# exception" with no traceback. Restore the default hook AFTER importing the
-# pipeline (DJ overwrites it at import time) so a crashed sort task logs a full
-# traceback to its SLURM .err file.
-sys.excepthook = lambda *args: traceback.print_exception(*args)
 
 # =============================================================================
 # Configuration
@@ -592,12 +592,9 @@ module load uv
 cd "$SLURM_SUBMIT_DIR"
 echo "Working directory: $(pwd)"
 
-# Ensure venv exists and deps match lockfile.
-# The spike_sorting extra (spikeinterface[full], spython, cuda-python) is
-# required to actually run the sort — a bare `uv sync` would uninstall it and
-# the job would crash at `import spikeinterface`.
+# Ensure venv exists and deps match lockfile
 echo "Syncing dependencies..."
-uv sync --extra spike_sorting
+uv sync
 
 # Set PyTorch CUDA memory allocator configuration to free reserved memory
 # This helps prevent CUDA out of memory errors during long-running Kilosort4 jobs
