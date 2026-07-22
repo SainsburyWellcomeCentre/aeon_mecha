@@ -3,6 +3,8 @@
 import json
 import logging
 import os
+import sys
+import traceback
 from typing import cast
 
 import pymysql.converters
@@ -38,6 +40,37 @@ def _escape_dict_as_json(val, charset, mapping=None):
 pymysql.converters.escape_dict = _escape_dict_as_json
 pymysql.converters.encoders[dict] = _escape_dict_as_json
 pymysql.converters.conversions[dict] = _escape_dict_as_json
+
+
+# ---------------------------------------------------------------------------
+# DataJoint traceback patch
+#
+# Importing DataJoint installs a process-wide sys.excepthook that routes every
+# uncaught exception through its logger with exc_info attached. Its formatter
+# (datajoint.logging.LevelAwareFormatter) overrides Formatter.format and
+# returns only record.getMessage(), never calling formatException, so the
+# traceback is attached to the record and then discarded. Every crash in any
+# script importing this package therefore prints only:
+#     [YYYY-MM-DD HH:MM:SS][ERROR]: Uncaught exception
+#
+# This reinstates the excepthook with the traceback rendered into the message
+# itself, which every formatter emits unconditionally. We deliberately do not
+# pass exc_info: DataJoint's excepthook is its only exc_info call site, and
+# formatting the text here keeps the patch independent of the formatter chain
+# and free of double-rendering if DataJoint later fixes LevelAwareFormatter.
+#
+# Remove when: DataJoint renders exc_info (broken as of 2.3.1).
+# ---------------------------------------------------------------------------
+def _excepthook(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+
+    formatted = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    dj.logger.error("Uncaught exception\n%s", formatted.rstrip())
+
+
+sys.excepthook = _excepthook
 
 # Register Aeon codecs BEFORE any schema activation
 from aeon.dj_pipeline.utils.codec import (  # pyright: ignore[reportUnusedImport]
