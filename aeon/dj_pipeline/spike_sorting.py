@@ -320,7 +320,9 @@ class PreProcessing(dj.Computed):
         params = (SortingParamSet & key).fetch1("params")
         save_format = params.get("save_format", "zarr")
 
-        job_kwargs = {"n_jobs": -1, "chunk_duration": "2s"}
+        # 30s chunk_duration matches the raw standalone-compression default; it sets the
+        # zarr time-axis chunk size of the preprocessed recording.zarr intermediate.
+        job_kwargs = {"n_jobs": -1, "chunk_duration": "30s"}
 
         if save_format == "zarr":
             zarr_path = recording_file.parent / "recording.zarr"
