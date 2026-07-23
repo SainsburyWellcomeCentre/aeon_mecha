@@ -76,3 +76,100 @@ class TestStripNonNumericProperties:
         strip_non_numeric_properties(rec)
 
         assert "myuint" in set(rec.get_property_keys())
+
+
+class TestDeletePreprocessedRecording:
+    """delete_preprocessed_recording removes recording.zarr / recording.dat, keeps everything else."""
+
+    def test_removes_recording_zarr(self, tmp_path):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import delete_preprocessed_recording
+
+        zarr = tmp_path / "recording.zarr"
+        zarr.mkdir()
+        (zarr / "chunk").write_bytes(b"data")
+
+        deleted = delete_preprocessed_recording(tmp_path)
+
+        assert not zarr.exists()
+        assert deleted == ["recording.zarr"]
+
+    def test_removes_recording_dat(self, tmp_path):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import delete_preprocessed_recording
+
+        dat = tmp_path / "recording.dat"
+        dat.write_bytes(b"binary")
+
+        deleted = delete_preprocessed_recording(tmp_path)
+
+        assert not dat.exists()
+        assert deleted == ["recording.dat"]
+
+    def test_keeps_pkl_and_other_files(self, tmp_path):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import delete_preprocessed_recording
+
+        (tmp_path / "recording.zarr").mkdir()
+        pkl = tmp_path / "si_recording.pkl"
+        pkl.write_bytes(b"pickle")
+
+        delete_preprocessed_recording(tmp_path)
+
+        assert pkl.exists(), "si_recording.pkl must be preserved (needed to regenerate)"
+
+    def test_noop_when_nothing_to_delete(self, tmp_path):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import delete_preprocessed_recording
+
+        assert delete_preprocessed_recording(tmp_path) == []
+
+
+class TestRequirePreprocessedRecording:
+    """require_preprocessed_recording raises an actionable error when the recording is gone."""
+
+    def test_raises_when_missing(self, tmp_path):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import require_preprocessed_recording
+
+        missing = tmp_path / "recording.zarr"
+        with pytest.raises(FileNotFoundError) as exc:
+            require_preprocessed_recording(missing)
+        # message must guide the user to the recovery path
+        assert "PreProcessing" in str(exc.value)
+
+    def test_noop_when_present(self, tmp_path):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import require_preprocessed_recording
+
+        present = tmp_path / "recording.zarr"
+        present.mkdir()
+        require_preprocessed_recording(present)  # should not raise
+
+
+class TestIsSafeToDeleteSharedRecording:
+    """A shared recording.zarr is safe to delete only if no sibling is preprocessed-but-not-sorted."""
+
+    def test_no_siblings_is_safe(self):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import is_safe_to_delete_shared_recording
+
+        assert is_safe_to_delete_shared_recording([]) is True
+
+    def test_sibling_preprocessed_and_sorted_is_safe(self):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import is_safe_to_delete_shared_recording
+
+        assert is_safe_to_delete_shared_recording([{"preprocessed": True, "sorted": True}]) is True
+
+    def test_sibling_preprocessed_not_sorted_is_unsafe(self):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import is_safe_to_delete_shared_recording
+
+        assert is_safe_to_delete_shared_recording([{"preprocessed": True, "sorted": False}]) is False
+
+    def test_sibling_not_preprocessed_is_safe(self):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import is_safe_to_delete_shared_recording
+
+        # not yet preprocessed -> its future PreProcessing will regenerate the file
+        assert is_safe_to_delete_shared_recording([{"preprocessed": False, "sorted": False}]) is True
+
+    def test_any_pending_sibling_makes_it_unsafe(self):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import is_safe_to_delete_shared_recording
+
+        siblings = [
+            {"preprocessed": True, "sorted": True},
+            {"preprocessed": True, "sorted": False},
+        ]
+        assert is_safe_to_delete_shared_recording(siblings) is False

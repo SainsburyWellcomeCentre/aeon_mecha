@@ -276,6 +276,22 @@ class TestPostProcessing:
         assert any(analyzer_dir.iterdir())
 
 
+class TestSharedRecordingCleanup:
+    """The shared-recording cleanup query runs correctly against real sorting-task rows."""
+
+    def test_single_paramset_has_no_pending_siblings(self, ephys_sorting_injected, ctx):
+        # One paramset is preprocessed and sorted for this block+electrode group, so
+        # there are no sibling tasks still needing recording.zarr and it is safe to delete.
+        from aeon.dj_pipeline.utils.spike_sorting_utils import is_safe_to_delete_shared_recording
+
+        key = list((ctx.spike_sorting.SpikeSorting & {"experiment_name": ctx.cfg["experiment_name"]}).keys())[
+            0
+        ]
+        states = ctx.spike_sorting.SpikeSorting._shared_recording_sibling_states(key)
+        assert states == []
+        assert is_safe_to_delete_shared_recording(states) is True
+
+
 class TestSortedSpikes:
     """Verify SortedSpikes.populate() output.
 

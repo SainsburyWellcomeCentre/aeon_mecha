@@ -24,6 +24,12 @@ After sorting completes, continue to Step 4 for post-processing and
 curation. See docs/ephys_runbooks/run_aeon_spike_sorting.{py,sh} for
 example output (golden dataset values).
 
+NOTE: a successful SpikeSorting run deletes the preprocessed recording
+(recording.zarr) to reclaim space -- only the sorting step reads it and it is
+regenerable. To re-sort a block afterward, delete its PreProcessing entry (which
+cascades to SpikeSorting and the downstream steps) and re-run PreProcessing to
+regenerate the recording.
+
 Run from the repo root on an HPC compute node (Ceph must be visible):
 
     uv run python docs/ephys_runbooks/step03_spike_sorting.py

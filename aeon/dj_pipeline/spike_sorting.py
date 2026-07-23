@@ -23,6 +23,9 @@ from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import resolve_ephys_file
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
+    delete_preprocessed_recording,
+    is_safe_to_delete_shared_recording,
+    require_preprocessed_recording,
     resolve_analyzer_dir,
     strip_non_numeric_properties,
 )
@@ -465,9 +468,11 @@ class SpikeSorting(dj.Computed):
 
         if save_format == "zarr":
             zarr_path = Path(recording_file).parent / "recording.zarr"
+            require_preprocessed_recording(zarr_path)
             recording_for_sorting = si.load(zarr_path)
         else:
             binary_file_path = Path(recording_file).parent / "recording.dat"
+            require_preprocessed_recording(binary_file_path)
             recording_for_sorting = load_and_verify_binary_file(
                 binary_file_path=binary_file_path, se_recording_obj=si_recording
             )
@@ -494,6 +499,20 @@ class SpikeSorting(dj.Computed):
 
         return sorting_output_dir, execution_time, execution_duration
 
+    @classmethod
+    def _shared_recording_sibling_states(cls, key):
+        """Preprocessed/sorted status of sibling tasks sharing this recording.zarr.
+
+        Siblings are the other sorting paramsets for the same block and electrode group
+        (the recording path is keyed to the electrode group, not the paramset, so they
+        share one recording.zarr). Returns a list of ``{"preprocessed": True, "sorted": bool}``
+        for each preprocessed sibling, excluding the current task, for
+        ``is_safe_to_delete_shared_recording``.
+        """
+        shared_key = {k: v for k, v in key.items() if k != "paramset_id"}
+        preprocessed_siblings = (PreProcessing & shared_key) - (SortingTask & key)
+        return [{"preprocessed": True, "sorted": bool(cls & sib)} for sib in preprocessed_siblings.keys()]
+
     def make_insert(self, key, sorting_output_dir, execution_time, execution_duration):
         """Insert spike sorting results into the database, including file references."""
         self.insert1({**key, "execution_time": execution_time, "execution_duration": execution_duration})
@@ -504,6 +523,23 @@ class SpikeSorting(dj.Computed):
                 if f.is_file()
             ]
         )
+
+        # recording.zarr is a large, regenerable intermediate shared by every sorting
+        # paramset for this block + electrode group. Now that this sort is recorded,
+        # reclaim the space -- but only if no sibling paramset still needs it (one that
+        # is preprocessed but not yet sorted). A not-yet-preprocessed sibling will
+        # regenerate it through its own PreProcessing run. The whole block is guarded so
+        # that no cleanup failure can ever roll back the recorded sort.
+        try:
+            if is_safe_to_delete_shared_recording(self._shared_recording_sibling_states(key)):
+                recording_dir = (
+                    get_sorting_root_dir() / (PreProcessing & key).fetch1("sorting_output_dir")
+                ).parent / "recording"
+                deleted = delete_preprocessed_recording(recording_dir)
+                if deleted:
+                    logger.info(f"Deleted preprocessed recording {deleted} from {recording_dir}.")
+        except Exception as e:
+            logger.warning(f"Preprocessed-recording cleanup skipped after sorting: {e}")
 
 
 @schema
@@ -576,7 +612,14 @@ class PostProcessing(dj.Computed):
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
 
-        job_kwargs = postprocessing_params.get("job_kwargs", {"n_jobs": -1, "chunk_duration": "1s"})
+        # Default to a fork-safe thread pool. The process/fork engine intermittently
+        # segfaults on the HPC because fork + NumPy/BLAS threading is not fork-safe, so
+        # bumping n_jobs with the default (process) engine crashes. pool_engine="thread"
+        # avoids forking entirely (BLAS releases the GIL, so we still get real
+        # parallelism). Overridable per paramset via SI_POSTPROCESSING_PARAMS["job_kwargs"].
+        job_kwargs = postprocessing_params.get(
+            "job_kwargs", {"n_jobs": 4, "pool_engine": "thread", "chunk_duration": "1s"}
+        )
 
         save_format = params.get("save_format", "zarr")
         analyzer_format = "zarr" if save_format == "zarr" else "binary_folder"
