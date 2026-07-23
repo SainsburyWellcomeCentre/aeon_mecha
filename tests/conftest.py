@@ -55,12 +55,39 @@ def mock_dj_for_unit(request):
         yield
         return
 
-    # Save and evict all datajoint + pipeline modules so the test gets a
-    # fresh import with the mock; not a cached real-DJ module from a prior
+    import importlib
+
+    import datajoint.codecs as _dj_codecs
+
+    # Real DJ submodules required by XArrayNetCDFCodec and its base SchemaCodec
+    _REAL_DJ_SUBMODULES = (
+        "datajoint.errors",
+        "datajoint.codecs",
+        "datajoint.settings",
+        "datajoint.storage",
+        "datajoint.hash_registry",
+        "datajoint.builtin_codecs",
+        "datajoint.builtin_codecs.schema",
+    )
+
+    for name in _REAL_DJ_SUBMODULES:
+        importlib.import_module(name)  # cache under its real dotted name before eviction
+
+    # Save the current codec registry so that we can restore it after this fixture
+    # run, then evict "xarray" so this run's forced reimport can (re-)register it
+    # cleanly. Whatever left "xarray" registered before would otherwise collide
+    # with the fresh class object.
+    codec_registry_snapshot = dict(_dj_codecs._codec_registry)
+    _dj_codecs._codec_registry.pop("xarray", None)
+
+    # Save and evict all datajoint + pipeline modules (except _REAL_DJ_SUBMODULES)
+    # so the test gets a fresh import with the mock; not a cached real-DJ module from a prior
     # integration test in the same session.
     evict_prefixes = ("datajoint", "aeon.dj_pipeline")
     saved = {
-        k: v for k, v in sys.modules.items() if any(k == p or k.startswith(p + ".") for p in evict_prefixes)
+        k: v
+        for k, v in sys.modules.items()
+        if any(k == p or k.startswith(p + ".") for p in evict_prefixes) and k not in _REAL_DJ_SUBMODULES
     }
     for k in saved:
         sys.modules.pop(k)
@@ -71,9 +98,13 @@ def mock_dj_for_unit(request):
 
     # Restore original modules (real DJ for integration tests that follow)
     for k in list(sys.modules):
-        if any(k == p or k.startswith(p + ".") for p in evict_prefixes):
+        if any(k == p or k.startswith(p + ".") for p in evict_prefixes) and k not in _REAL_DJ_SUBMODULES:
             sys.modules.pop(k)
     sys.modules.update(saved)
+
+    # Restore the codec registry to its original state
+    _dj_codecs._codec_registry.clear()
+    _dj_codecs._codec_registry.update(codec_registry_snapshot)
 
     # Clear (or restore) the `dj_pipeline` attribute on the `aeon` package so that
     # subsequent `import aeon.dj_pipeline as _pipeline` (IMPORT_FROM bytecode) reads
