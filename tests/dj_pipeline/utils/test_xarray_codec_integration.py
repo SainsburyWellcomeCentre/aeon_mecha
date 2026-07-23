@@ -16,25 +16,19 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def xarray_store(dj_config_integration, tmp_path):
+def xarray_store(dj_config_integration, tmp_path, monkeypatch):
     """Point the ``xarray_store`` file store at a temp dir (created up-front).
 
     ``_get_backend`` raises ``FileNotFoundError`` if the location doesn't already
-    exist, so the directory is made before any insert. The previous store entry
-    (if any) is restored on teardown.
+    exist, so the directory is made before any insert.
     """
     import datajoint as dj
 
     location = tmp_path / "xarray_store"
     location.mkdir()
-    stores = dj.config["stores"]
-    saved = stores.get("xarray_store")
-    stores["xarray_store"] = {"protocol": "file", "location": str(location)}
-    yield location
-    if saved is None:
-        stores.pop("xarray_store", None)
-    else:
-        stores["xarray_store"] = saved
+    entry = {"protocol": "file", "location": str(location)}
+    monkeypatch.setitem(dj.config["stores"], "xarray_store", entry)
+    return location
 
 
 @pytest.fixture
