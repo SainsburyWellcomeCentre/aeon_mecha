@@ -26,7 +26,6 @@ from __future__ import annotations
 import os
 from typing import Any
 
-import datajoint as dj
 import xarray as xr
 from datajoint.builtin_codecs import SchemaCodec
 from datajoint.errors import DataJointError
@@ -45,9 +44,7 @@ class XArrayNetCDFCodec(SchemaCodec):
         """Accept only an xarray.Dataset; a DataArray must be converted by the caller."""
         if not isinstance(value, xr.Dataset):
             hint = " — call .to_dataset() first" if isinstance(value, xr.DataArray) else ""
-            raise DataJointError(
-                f"<xarray> requires an xarray.Dataset, got {type(value).__name__}{hint}"
-            )
+            raise DataJointError(f"<xarray> requires an xarray.Dataset, got {type(value).__name__}{hint}")
 
     def _local_path(self, path: str, store_name: str | None, config) -> str:
         """Resolve a store-relative path to an absolute local filesystem path."""
@@ -71,7 +68,6 @@ class XArrayNetCDFCodec(SchemaCodec):
             "store": store_name,
             "dims": dict(value.sizes),
             "data_vars": list(value.data_vars),
-            "provenance": {"datajoint-python": dj.__version__},
         }
 
     def decode(self, stored: dict, *, key: dict | None = None) -> xr.Dataset:
