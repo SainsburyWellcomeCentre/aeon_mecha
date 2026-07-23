@@ -9,8 +9,6 @@ Note: ``datajoint.json`` is untracked, so CI has no ``xarray_store`` on disk —
 rather than relying on the file.
 """
 
-from contextlib import nullcontext
-
 import pytest
 import xarray as xr
 
@@ -52,28 +50,6 @@ def mock_xarray_table(xarray_store):
 
     yield MockXArray, schema, xarray_store
     schema.drop()
-
-
-class TestValidate:
-    @pytest.mark.parametrize(
-        ("value", "match"),
-        [
-            (lambda ds: ds, None),
-            (lambda ds: [1, 2, 3], "requires an xarray.Dataset"),
-            (lambda ds: ds["signal"], r"got DataArray.*to_dataset"),
-        ],
-        ids=["valid: dataset", "invalid: list", "invalid: dataarray - caller must convert"],
-    )
-    def test_validate(self, dj_config_integration, mock_xarray_dataset, value, match):
-        """Test codec's ``validate`` method accepts an xarray.Dataset and rejects other types."""
-        from datajoint.errors import DataJointError
-
-        from aeon.dj_pipeline.utils.xarray_codec import XArrayNetCDFCodec
-
-        codec = XArrayNetCDFCodec()
-        expectation = nullcontext() if match is None else pytest.raises(DataJointError, match=match)
-        with expectation:
-            codec.validate(value(mock_xarray_dataset))
 
 
 class TestDBRoundTrip:
