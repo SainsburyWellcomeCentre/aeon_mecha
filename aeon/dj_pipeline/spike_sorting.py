@@ -23,10 +23,12 @@ from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import resolve_ephys_file
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
+    FORK_SAFE_JOB_KWARGS,
     delete_preprocessed_recording,
     is_safe_to_delete_shared_recording,
     require_preprocessed_recording,
     resolve_analyzer_dir,
+    safe_n_jobs,
     strip_non_numeric_properties,
 )
 
@@ -325,7 +327,10 @@ class PreProcessing(dj.Computed):
 
         # 30s chunk_duration matches the raw standalone-compression default; it sets the
         # zarr time-axis chunk size of the preprocessed recording.zarr intermediate.
-        job_kwargs = {"n_jobs": -1, "chunk_duration": "30s"}
+        # n_jobs is cgroup-aware and the pool is fork-safe: n_jobs=-1 resolves to the
+        # node's full core count on SLURM (not the allocation) and the default fork
+        # engine deadlocks/thrashes on the preprocessed-recording write.
+        job_kwargs = {"n_jobs": safe_n_jobs(), **FORK_SAFE_JOB_KWARGS, "chunk_duration": "30s"}
 
         if save_format == "zarr":
             zarr_path = recording_file.parent / "recording.zarr"
@@ -612,13 +617,14 @@ class PostProcessing(dj.Computed):
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
 
-        # Default to a fork-safe thread pool. The process/fork engine intermittently
-        # segfaults on the HPC because fork + NumPy/BLAS threading is not fork-safe, so
-        # bumping n_jobs with the default (process) engine crashes. pool_engine="thread"
-        # avoids forking entirely (BLAS releases the GIL, so we still get real
-        # parallelism). Overridable per paramset via SI_POSTPROCESSING_PARAMS["job_kwargs"].
+        # Default to a fork-safe thread pool with a cgroup-aware worker count. The
+        # process/fork engine intermittently deadlocks/segfaults on the HPC because
+        # fork + NumPy/BLAS threading is not fork-safe, and n_jobs=-1 resolves to the
+        # node's full core count on SLURM (not the allocation). pool_engine="thread"
+        # avoids forking (BLAS releases the GIL, so parallelism is real). Overridable
+        # per paramset via SI_POSTPROCESSING_PARAMS["job_kwargs"].
         job_kwargs = postprocessing_params.get(
-            "job_kwargs", {"n_jobs": 4, "pool_engine": "thread", "chunk_duration": "1s"}
+            "job_kwargs", {"n_jobs": safe_n_jobs(), **FORK_SAFE_JOB_KWARGS, "chunk_duration": "1s"}
         )
 
         save_format = params.get("save_format", "zarr")
@@ -719,7 +725,9 @@ class SIExport(dj.Computed):
             )
             return
 
-        job_kwargs = {"n_jobs": -1, "chunk_duration": "1s"}
+        # Fork-safe, cgroup-aware workers (see safe_n_jobs): same n_jobs=-1 / fork trap
+        # as the other steps.
+        job_kwargs = {"n_jobs": safe_n_jobs(), **FORK_SAFE_JOB_KWARGS, "chunk_duration": "1s"}
         si.exporters.export_report(
             sorting_analyzer=sorting_analyzer,
             output_folder=analyzer_output_dir / "spikeinterface_report",

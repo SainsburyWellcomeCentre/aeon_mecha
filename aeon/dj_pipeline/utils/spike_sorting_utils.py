@@ -5,10 +5,35 @@ than in spike_sorting.py) to keep them importable and unit-testable without
 activating the spike_sorting schema.
 """
 
+import os
 import shutil
 from pathlib import Path
 
 import numpy as np
+
+# job_kwargs that avoid the fork/oversubscription hang: a cgroup-aware, capped worker
+# count on a thread pool (no fork), with one BLAS thread per worker. Callers add
+# chunk_duration. See safe_n_jobs for why n_jobs=-1 / the fork engine is unsafe on SLURM.
+FORK_SAFE_JOB_KWARGS = {"pool_engine": "thread", "max_threads_per_worker": 1}
+
+
+def safe_n_jobs(max_jobs: int = 8) -> int:
+    """Number of parallel workers that respects the SLURM/cgroup CPU allocation.
+
+    SpikeInterface resolves ``n_jobs`` (and ``n_jobs=-1``) against ``os.cpu_count()``,
+    which on SLURM returns every physical core on the node rather than the cgroup
+    allocation. That makes ``n_jobs=-1`` spawn dozens of workers on a few allocated
+    CPUs, which either thrashes the node to a standstill or fork-deadlocks on BLAS.
+
+    This uses the schedulable-CPU count (cgroup-aware on Linux via
+    ``os.sched_getaffinity``) instead, capped at ``max_jobs``. The cap is the real
+    safety net: even if the scheduler does not pin CPUs, we never exceed ``max_jobs``.
+    """
+    try:
+        available = len(os.sched_getaffinity(0))
+    except AttributeError:  # os.sched_getaffinity is Linux-only
+        available = os.cpu_count() or 1
+    return max(1, min(max_jobs, available))
 
 
 def resolve_analyzer_dir(output_dir: Path) -> Path:

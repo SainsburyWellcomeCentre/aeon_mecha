@@ -141,6 +141,45 @@ class TestRequirePreprocessedRecording:
         require_preprocessed_recording(present)  # should not raise
 
 
+class TestSafeNJobs:
+    """safe_n_jobs respects the cgroup CPU allocation and never oversubscribes."""
+
+    def test_respects_cpu_affinity(self, monkeypatch):
+        import os
+
+        from aeon.dj_pipeline.utils.spike_sorting_utils import safe_n_jobs
+
+        monkeypatch.setattr(os, "sched_getaffinity", lambda pid: {0, 1, 2, 3}, raising=False)
+        assert safe_n_jobs(max_jobs=8) == 4
+
+    def test_caps_at_max_jobs(self, monkeypatch):
+        import os
+
+        from aeon.dj_pipeline.utils.spike_sorting_utils import safe_n_jobs
+
+        # a big node (64 cores) must not spawn 64 workers -- the os.cpu_count() trap
+        monkeypatch.setattr(os, "sched_getaffinity", lambda pid: set(range(64)), raising=False)
+        assert safe_n_jobs(max_jobs=8) == 8
+
+    def test_floor_of_one(self, monkeypatch):
+        import os
+
+        from aeon.dj_pipeline.utils.spike_sorting_utils import safe_n_jobs
+
+        monkeypatch.setattr(os, "sched_getaffinity", lambda pid: set(), raising=False)
+        assert safe_n_jobs(max_jobs=8) == 1
+
+    def test_fallback_to_cpu_count_without_affinity(self, monkeypatch):
+        import os
+
+        from aeon.dj_pipeline.utils.spike_sorting_utils import safe_n_jobs
+
+        # non-Linux (no os.sched_getaffinity) falls back to os.cpu_count()
+        monkeypatch.delattr(os, "sched_getaffinity", raising=False)
+        monkeypatch.setattr(os, "cpu_count", lambda: 6)
+        assert safe_n_jobs(max_jobs=8) == 6
+
+
 class TestIsSafeToDeleteSharedRecording:
     """A shared recording.zarr is safe to delete only if no sibling is preprocessed-but-not-sorted."""
 

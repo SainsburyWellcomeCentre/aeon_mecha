@@ -766,7 +766,12 @@ def ephys_sorting_setup(ephys_test_blocks, ephys_full_pipeline, ephys_golden_dat
                         "spike_locations": {},
                         "quality_metrics": {},
                     },
-                    "job_kwargs": {"n_jobs": 4, "pool_engine": "thread", "chunk_duration": "1s"},
+                    "job_kwargs": {
+                        "n_jobs": 4,
+                        "pool_engine": "thread",
+                        "max_threads_per_worker": 1,
+                        "chunk_duration": "1s",
+                    },
                 },
             },
         },
