@@ -1,18 +1,26 @@
-"""Codecs for lazy-loading stream data.
+"""Codecs for lazy-loading data referenced from MySQL.
 
-Both codecs store JSON references in MySQL; on fetch, they reconstruct readers
-and return DataFrames built from the raw files on disk.
+The stream codecs store JSON references; on fetch, they reconstruct readers and
+return DataFrames built from the raw files on disk.
 
 - ``AeonStreamCodec`` (``<aeon_stream>``) — HARP-clocked time-indexed streams,
   loaded via ``io_api.load(start, end)``.
 - ``OnixStreamCodec`` (``<aeon_onix_stream>``) — ONIX-clocked stream groups
   (e.g., Bno055 IMU). Structural-only: loads + prefix-renames + concats. Does
   NOT apply HARP sync regression — that's exposed via ``OnixImuChunk.synced_df``.
+- ``XArrayNetCDFCodec`` (``<xarray@store>``) — an ``xarray.Dataset`` persisted as a
+  NetCDF-4 file in a ``protocol: file`` store, reopened lazily on fetch.
 """
+
+import os
+from typing import Any
 
 import datajoint as dj
 import numpy as np
 import pandas as pd
+import xarray as xr
+from datajoint.builtin_codecs import SchemaCodec
+from datajoint.errors import DataJointError
 
 
 class AeonStreamCodec(dj.Codec):
@@ -176,15 +184,67 @@ class OnixStreamCodec(dj.Codec):
             onix_ts_end = int(ts_end_raw)
         if chunk_indices is None:
             chunk_indices = find_overlapping_bno055_chunks(
-                device_dir, stored["device_name"],
-                int(onix_ts_start), int(onix_ts_end),
+                device_dir,
+                stored["device_name"],
+                int(onix_ts_start),
+                int(onix_ts_end),
             )
 
         if not chunk_indices:
             return pd.DataFrame(columns=list(IMU_COLUMNS), index=pd.Index([], dtype=np.uint64))
 
-        df = pd.concat(
-            [load_and_merge_bno055(device_dir, stored["device_name"], n)
-             for n in chunk_indices]
-        )
+        df = pd.concat([load_and_merge_bno055(device_dir, stored["device_name"], n) for n in chunk_indices])
         return df[(df.index >= int(onix_ts_start)) & (df.index <= int(onix_ts_end))]
+
+
+class XArrayNetCDFCodec(SchemaCodec):
+    """Store an xarray.Dataset as NetCDF-4 at {schema}/{table}/{pk}/{field}_<token>.nc.
+
+    Usable as ``<xarray@store>`` (the ``@`` store modifier is required); ``protocol:
+    file`` stores only, no object stores. Unlike ``NpyCodec``, a ``.nc`` is a single
+    file opened lazily from disk, so it is written/read directly by local path
+    (``backend._full_path``) rather than buffered through ``put_buffer``/``get_buffer``.
+
+    Fully generic: it knows nothing about any particular dataset schema or domain
+    format — it only round-trips an ``xarray.Dataset`` to and from NetCDF. Only
+    ``Dataset`` is accepted; a ``DataArray`` is rejected (call ``.to_dataset()``
+    first) so that insert and fetch stay symmetric.
+    """
+
+    name = "xarray"
+
+    def validate(self, value: Any) -> None:
+        """Accept only an xarray.Dataset; a DataArray must be converted by the caller."""
+        if not isinstance(value, xr.Dataset):
+            hint = " — call .to_dataset() first" if isinstance(value, xr.DataArray) else ""
+            raise DataJointError(f"<xarray> requires an xarray.Dataset, got {type(value).__name__}{hint}")
+
+    def _local_path(self, path: str, store_name: str | None, config) -> str:
+        """Resolve a store-relative path to an absolute local filesystem path."""
+        backend = self._get_backend(store_name, config=config)
+        if backend.protocol != "file":
+            raise DataJointError("<xarray> supports only `protocol: file` stores")
+        return backend._full_path(path)
+
+    def encode(self, value: xr.Dataset, *, key: dict | None = None, store_name: str | None = None) -> dict:
+        """Write the Dataset to a NetCDF-4 file and return JSON metadata."""
+        schema, table, field, primary_key = self._extract_context(key)
+        config = (key or {}).get("_config")
+        path, _token = self._build_path(
+            schema, table, field, primary_key, ext=".nc", store_name=store_name, config=config
+        )
+        local_path = self._local_path(path, store_name, config)
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        value.to_netcdf(local_path, engine="netcdf4")
+        return {
+            "path": path,
+            "store": store_name,
+            "dims": dict(value.sizes),
+            "data_vars": list(value.data_vars),
+        }
+
+    def decode(self, stored: dict, *, key: dict | None = None) -> xr.Dataset:
+        """Reopen the stored NetCDF file as a lazy xarray.Dataset (no dask)."""
+        config = (key or {}).get("_config")
+        local_path = self._local_path(stored["path"], stored.get("store"), config)
+        return xr.open_dataset(local_path, engine="netcdf4")
