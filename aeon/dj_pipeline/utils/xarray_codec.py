@@ -62,7 +62,7 @@ class XArrayNetCDFCodec(SchemaCodec):
         )
         local_path = self._local_path(path, store_name, config)
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
-        value.to_netcdf(local_path, engine="h5netcdf")
+        value.to_netcdf(local_path, engine="netcdf4")
         return {
             "path": path,
             "store": store_name,
@@ -74,4 +74,4 @@ class XArrayNetCDFCodec(SchemaCodec):
         """Reopen the stored NetCDF file as a lazy xarray.Dataset (no dask)."""
         config = (key or {}).get("_config")
         local_path = self._local_path(stored["path"], stored.get("store"), config)
-        return xr.open_dataset(local_path, engine="h5netcdf", chunks=None)
+        return xr.open_dataset(local_path, engine="netcdf4")
