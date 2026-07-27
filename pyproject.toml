@@ -22,7 +22,7 @@ license = { file = "license.md" }
 readme = "readme.md"
 dependencies = [
   "bottleneck>=1.2.1,<2",
-  "datajoint>=2.3.1",
+  "datajoint>=2.3.2",
   "swc-aeon>=0.1.0",
   "fastparquet",
   "graphviz",
@@ -190,6 +190,5 @@ markers = [
 ]
 
 [tool.uv.sources]
-datajoint = { git = "https://github.com/datajoint/datajoint-python.git", branch = "master" }
 swc-aeon = { git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git", branch = "main" }
 swc-aeon-rigs-foragingabc = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git", branch = "main" }
