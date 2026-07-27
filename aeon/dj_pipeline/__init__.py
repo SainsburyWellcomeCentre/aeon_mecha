@@ -72,12 +72,10 @@ def _excepthook(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = _excepthook
 
-# Register Aeon codecs BEFORE any schema activation
+# Register Aeon + xarray codecs BEFORE any schema activation
 from aeon.dj_pipeline.utils.codec import (  # pyright: ignore[reportUnusedImport]
     AeonStreamCodec,
     OnixStreamCodec,
-)
-from aeon.dj_pipeline.utils.xarray_codec import (  # pyright: ignore[reportUnusedImport]
     XArrayNetCDFCodec,
 )
 

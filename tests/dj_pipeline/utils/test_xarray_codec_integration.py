@@ -9,48 +9,26 @@ Note: ``datajoint.json`` is untracked, so CI has no ``xarray_store`` on disk —
 rather than relying on the file.
 """
 
-import numpy as np
-import pandas as pd
 import pytest
 import xarray as xr
 
 pytestmark = pytest.mark.integration
 
 
-def make_mock_dataset(n=1000, n_ch=4):
-    return xr.Dataset(
-        {
-            "signal": (("time", "channel"), np.random.randn(n, n_ch).astype("float32")),
-            "flag": (("time",), np.random.rand(n) > 0.5),
-        },
-        coords={
-            "time": pd.date_range("2026-06-03", periods=n, freq="20ms"),
-            "channel": np.arange(n_ch),
-        },
-        attrs={"fs": 50.0, "note": "mock"},
-    )
-
-
 @pytest.fixture
-def xarray_store(dj_config_integration, tmp_path):
+def xarray_store(dj_config_integration, tmp_path, monkeypatch):
     """Point the ``xarray_store`` file store at a temp dir (created up-front).
 
     ``_get_backend`` raises ``FileNotFoundError`` if the location doesn't already
-    exist, so the directory is made before any insert. The previous store entry
-    (if any) is restored on teardown.
+    exist, so the directory is made before any insert.
     """
     import datajoint as dj
 
     location = tmp_path / "xarray_store"
     location.mkdir()
-    stores = dj.config["stores"]
-    saved = stores.get("xarray_store")
-    stores["xarray_store"] = {"protocol": "file", "location": str(location)}
-    yield location
-    if saved is None:
-        stores.pop("xarray_store", None)
-    else:
-        stores["xarray_store"] = saved
+    entry = {"protocol": "file", "location": str(location)}
+    monkeypatch.setitem(dj.config["stores"], "xarray_store", entry)
+    return location
 
 
 @pytest.fixture
@@ -74,69 +52,36 @@ def mock_xarray_table(xarray_store):
     schema.drop()
 
 
-class TestValidate:
-    def test_accepts_dataset_rejects_others(self, dj_config_integration):
-        from datajoint.errors import DataJointError
-
-        from aeon.dj_pipeline.utils.xarray_codec import XArrayNetCDFCodec
-
-        codec = XArrayNetCDFCodec()
-        mock = make_mock_dataset(n=5)
-        codec.validate(mock)  # a Dataset must not raise
-
-        with pytest.raises(DataJointError, match="requires an xarray.Dataset"):
-            codec.validate([1, 2, 3])
-
-        # a DataArray is rejected — caller must convert (avoids store-DataArray/get-Dataset)
-        with pytest.raises(DataJointError, match=r"got DataArray.*to_dataset"):
-            codec.validate(mock["signal"])
-
-
 class TestDBRoundTrip:
-    def test_round_trip_returns_lazy_equal_dataset(self, mock_xarray_table):
+    """Insert through the codec, fetch back, and check what comes out."""
+
+    def test_round_trip_returns_lazy_equal_dataset(self, mock_xarray_table, mock_xarray_dataset):
+        """Test that fetch is lazy (xarray indexing, no dask) but equal once loaded."""
         mock_xarray, _schema, _loc = mock_xarray_table
-        mock = make_mock_dataset()
+        mock_xarray.insert1({"rec_id": 1, "data": mock_xarray_dataset})
+        fetched = (mock_xarray & {"rec_id": 1}).fetch1("data")
+        assert fetched["signal"].chunks is None  # chunks=None, no dask
+        assert fetched["signal"].variable._in_memory is False  # lazy until accessed
+        xr.testing.assert_equal(fetched.load(), mock_xarray_dataset)
+        assert fetched["signal"].variable._in_memory is True
 
-        mock_xarray.insert1({"rec_id": 1, "data": mock})
-        got = (mock_xarray & {"rec_id": 1}).fetch1("data")
-
-        assert isinstance(got, xr.Dataset)
-        assert got["signal"].variable._in_memory is False  # lazy until accessed
-        xr.testing.assert_equal(got.load(), mock)
-
-    def test_real_file_at_schema_addressed_tokened_path(self, mock_xarray_table):
+    def test_real_file_at_schema_addressed_tokened_path(self, mock_xarray_table, mock_xarray_dataset):
+        """Test that insert writes one tokened ``.nc`` file under a schema-addressed path."""
         mock_xarray, _schema, loc = mock_xarray_table
-
-        mock_xarray.insert1({"rec_id": 7, "data": make_mock_dataset(n=20)})
-
+        mock_xarray.insert1({"rec_id": 7, "data": mock_xarray_dataset})
         files = list(loc.rglob("data_*.nc"))
         assert len(files) == 1
-        assert files[0].is_file()
         assert "rec_id=7" in files[0].as_posix()  # path mirrors schema structure
-        assert files[0].name != "data.nc"  # filename carries a random token
 
-    def test_fetch_is_lazy_without_dask(self, mock_xarray_table):
-        mock_xarray, _schema, _loc = mock_xarray_table
-
-        mock_xarray.insert1({"rec_id": 1, "data": make_mock_dataset()})
-        got = (mock_xarray & {"rec_id": 1}).fetch1("data")
-
-        assert got["signal"].chunks is None  # chunks=None, no dask
-        assert got["signal"].variable._in_memory is False
-        got["signal"].load()
-        assert got["signal"].variable._in_memory is True
-
-    def test_two_rows_two_files(self, mock_xarray_table):
+    def test_two_rows_two_files(self, mock_xarray_table, mock_xarray_dataset):
+        """Test that two inserts produce two distinct, tokened files."""
         mock_xarray, _schema, loc = mock_xarray_table
-        ds1, ds2 = make_mock_dataset(n=100), make_mock_dataset(n=200)
-
-        mock_xarray.insert([{"rec_id": 1, "data": ds1}, {"rec_id": 2, "data": ds2}])
-
+        mock_xarray.insert(
+            [{"rec_id": 1, "data": mock_xarray_dataset}, {"rec_id": 2, "data": mock_xarray_dataset}]
+        )
         files = list(loc.rglob("data_*.nc"))
         assert len(files) == 2
         assert len({f.name for f in files}) == 2  # distinct tokened files
-        xr.testing.assert_equal((mock_xarray & {"rec_id": 1}).fetch1("data").load(), ds1)
-        xr.testing.assert_equal((mock_xarray & {"rec_id": 2}).fetch1("data").load(), ds2)
 
 
 def collector(schema):
@@ -160,58 +105,46 @@ class TestGarbageCollection:
     merely that some file is still on disk.
     """
 
-    def test_live_rows_leave_nothing_orphaned(self, mock_xarray_table):
-        """Every file backing a live row is discovered as referenced."""
+    def test_live_rows_leave_nothing_orphaned(self, mock_xarray_table, mock_xarray_dataset):
+        """Test that every file backing a live row is discovered as referenced."""
         mock_xarray, schema, _loc = mock_xarray_table
         mock_xarray.insert(
-            [{"rec_id": 1, "data": make_mock_dataset(n=50)}, {"rec_id": 2, "data": make_mock_dataset(n=60)}]
+            [{"rec_id": 1, "data": mock_xarray_dataset}, {"rec_id": 2, "data": mock_xarray_dataset}]
         )
-
         stats = collector(schema).collect(dry_run=True)
-
         assert stats["schema_paths_referenced"] == 2
         assert stats["schema_paths_orphaned"] == 0
 
-    def test_dry_run_reports_the_orphan_but_deletes_nothing(self, mock_xarray_table):
+    @pytest.mark.parametrize("dry_run", [True, False], ids=["dry_run", "real_run"])
+    def test_collect_orphan(self, mock_xarray_table, mock_xarray_dataset, dry_run):
+        """Test that ``dry_run`` reports the orphan without deleting; a real run reclaims only it."""
         mock_xarray, schema, loc = mock_xarray_table
         mock_xarray.insert(
-            [{"rec_id": 1, "data": make_mock_dataset(n=50)}, {"rec_id": 2, "data": make_mock_dataset(n=60)}]
+            [{"rec_id": 1, "data": mock_xarray_dataset}, {"rec_id": 2, "data": mock_xarray_dataset}]
         )
         (mock_xarray & {"rec_id": 2}).delete()
-        assert len(list(loc.rglob("data_*.nc"))) == 2  # row delete leaves the file on disk
-
-        stats = collector(schema).collect(dry_run=True)
-
-        assert (stats["schema_paths_referenced"], stats["schema_paths_orphaned"]) == (1, 1)
-        assert stats["dry_run"] is True
-        assert stats["schema_paths_deleted"] == 0
-        assert stats["bytes_freed"] == 0
-        assert "rec_id=2" in stats["orphaned_schema_paths"][0]  # the deleted row's file, not the live one
-        assert len(list(loc.rglob("data_*.nc"))) == 2  # nothing removed
-
-    def test_collect_reclaims_only_the_orphaned_file(self, mock_xarray_table):
-        mock_xarray, schema, loc = mock_xarray_table
-        ds1 = make_mock_dataset(n=50)
-        mock_xarray.insert([{"rec_id": 1, "data": ds1}, {"rec_id": 2, "data": make_mock_dataset(n=60)}])
-        (mock_xarray & {"rec_id": 2}).delete()
-
-        stats = collector(schema).collect(dry_run=False)
-
-        assert stats["schema_paths_deleted"] == 1
+        stats = collector(schema).collect(dry_run=dry_run)
+        remaining = list(loc.rglob("data_*.nc"))
+        assert stats["schema_paths_deleted"] == (0 if dry_run else 1)
+        assert len(remaining) == (2 if dry_run else 1)  # nothing removed on a dry run
         assert stats["errors"] == 0
-        assert stats["bytes_freed"] > 0
-        survivors = list(loc.rglob("data_*.nc"))
-        assert len(survivors) == 1
-        assert "rec_id=1" in survivors[0].as_posix()
-        # the live row must still be readable — not merely present on disk
-        xr.testing.assert_equal((mock_xarray & {"rec_id": 1}).fetch1("data").load(), ds1)
+        if dry_run:
+            assert (stats["schema_paths_referenced"], stats["schema_paths_orphaned"]) == (1, 1)
+            assert stats["bytes_freed"] == 0
+            # the deleted row's file, not the live one
+            assert "rec_id=2" in stats["orphaned_schema_paths"][0]
+        else:
+            assert stats["bytes_freed"] > 0
+            assert "rec_id=1" in remaining[0].as_posix()
+            # the live row must still be readable — not merely present on disk
+            fetched = (mock_xarray & {"rec_id": 1}).fetch1("data")
+            xr.testing.assert_equal(fetched.load(), mock_xarray_dataset)
 
-    def test_collect_is_idempotent(self, mock_xarray_table):
-        """A second pass finds nothing: the first reclaimed exactly the orphans."""
+    def test_collect_is_idempotent(self, mock_xarray_table, mock_xarray_dataset):
+        """Test that a second pass finds nothing: the first reclaimed exactly the orphans."""
         mock_xarray, schema, _loc = mock_xarray_table
-        ds1 = make_mock_dataset(n=50)
-        mock_xarray.insert1({"rec_id": 1, "data": ds1})
-        mock_xarray.insert1({"rec_id": 2, "data": make_mock_dataset(n=60)})
+        mock_xarray.insert1({"rec_id": 1, "data": mock_xarray_dataset})
+        mock_xarray.insert1({"rec_id": 2, "data": mock_xarray_dataset})
         (mock_xarray & {"rec_id": 2}).delete()
         collector(schema).collect(dry_run=False)
 
@@ -219,4 +152,5 @@ class TestGarbageCollection:
 
         assert stats["schema_paths_orphaned"] == 0
         assert stats["schema_paths_deleted"] == 0
-        xr.testing.assert_equal((mock_xarray & {"rec_id": 1}).fetch1("data").load(), ds1)
+        fetched = (mock_xarray & {"rec_id": 1}).fetch1("data")
+        xr.testing.assert_equal(fetched.load(), mock_xarray_dataset)

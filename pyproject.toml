@@ -23,14 +23,14 @@ readme = "readme.md"
 dependencies = [
   "bottleneck>=1.2.1,<2",
   "cryptography",
-  "datajoint>=2.3.1",
+  "datajoint>=2.3.2",
   "swc-aeon>=0.1.0",
   "fastparquet",
   "graphviz",
-  "h5netcdf[h5py]",
   "ipykernel",
   "jupyter",
   "jupyterlab",
+  "netCDF4>=1.6.0",
   "numba>=0.46.0, <1",
   "numexpr>=2.6.8, <3",
   "pillow",
@@ -192,6 +192,5 @@ markers = [
 ]
 
 [tool.uv.sources]
-datajoint = { git = "https://github.com/datajoint/datajoint-python.git", branch = "master" }
 swc-aeon = { git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git", branch = "main" }
 swc-aeon-rigs-foragingabc = { git = "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git", branch = "main" }
