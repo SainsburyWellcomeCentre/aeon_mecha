@@ -96,7 +96,7 @@ requires-dist = [
     { name = "cuda-python", marker = "extra == 'spike-sorting'" },
     { name = "cupy", marker = "extra == 'gpu'" },
     { name = "dask", marker = "extra == 'gpu'" },
-    { name = "datajoint", git = "https://github.com/datajoint/datajoint-python.git?branch=master" },
+    { name = "datajoint", specifier = ">=2.3.2" },
     { name = "fastparquet" },
     { name = "graphviz" },
     { name = "ipykernel" },
@@ -764,8 +764,8 @@ wheels = [
 
 [[package]]
 name = "datajoint"
-version = "2.3.1"
-source = { git = "https://github.com/datajoint/datajoint-python.git?branch=master#af76ab9eac9b42663d1c9351d1ec966048731811" }
+version = "2.3.2"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deepdiff" },
     { name = "fsspec" },
@@ -778,6 +778,10 @@ dependencies = [
     { name = "pymysql" },
     { name = "pyparsing" },
     { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/62/9c/f5f71f241ae31b8861f40c4fcbcc5b0f607c5f3b836dbd834e18643553d1/datajoint-2.3.2.tar.gz", hash = "sha256:47efee045b6eb346353132d4bcd41c58583b661ef880831357fc30227557f3fa", size = 678052, upload-time = "2026-07-21T21:31:40.867Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6f/09/4ffdd209ef5bbf7e086c70c633e5fece743a5a6e55e14d0d28422251943c/datajoint-2.3.2-py3-none-any.whl", hash = "sha256:734c74465faef9d1e3053bc22e5aa3a47f82117752c90af00a26009af80ec2c6", size = 252200, upload-time = "2026-07-21T21:31:39.593Z" },
 ]
 
 [[package]]
