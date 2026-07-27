@@ -13,7 +13,7 @@ pytestmark = pytest.mark.unit
 @pytest.fixture
 def codec():
     """Return an XArrayNetCDFCodec instance."""
-    from aeon.dj_pipeline.utils.xarray_codec import XArrayNetCDFCodec
+    from aeon.dj_pipeline.utils.codec import XArrayNetCDFCodec
 
     return XArrayNetCDFCodec()
 
