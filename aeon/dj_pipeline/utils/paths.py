@@ -83,13 +83,14 @@ def scratch_recording_dir(recording_dir: str | pathlib.Path) -> pathlib.Path:
     ``repository_config``, default ``/ceph/scratch``) mirrors the ceph sub-path 1:1, so
     the two line up and the DB-tracked outputs stay on ``ceph_aeon``.
 
-    Falls back to ``recording_dir`` unchanged when the scratch root is unset, absent
-    (e.g. local/CI machines without ``/ceph/scratch``), or ``recording_dir`` is not under
-    the ceph root — so the default on-ceph layout still works everywhere else.
+    Falls back to ``recording_dir`` unchanged when the scratch root is unset, not an
+    existing directory (e.g. local/CI machines without ``/ceph/scratch``), or
+    ``recording_dir`` is not under the ceph root, so the default on-ceph layout still
+    works everywhere else.
     """
     recording_dir = pathlib.Path(recording_dir)
     scratch_root = _pipeline.repository_config.get("ceph_aeon_scratch")
-    if not scratch_root or not pathlib.Path(scratch_root).exists():
+    if not scratch_root or not pathlib.Path(scratch_root).is_dir():
         return recording_dir
     ceph_root = pathlib.Path(_pipeline.repository_config["ceph_aeon"])
     try:
