@@ -72,3 +72,28 @@ def get_sorting_root_dir(repository_name="ceph_aeon") -> pathlib.Path:
     if not sorting_dir.exists():
         raise FileNotFoundError(f"Processed directory does not exist: {sorting_dir}")
     return sorting_dir / "ephys-processed"
+
+
+def scratch_recording_dir(recording_dir: str | pathlib.Path) -> pathlib.Path:
+    """Scratch location for the large, regenerable recording intermediate.
+
+    The preprocessed ``recording.zarr`` / ``recording.dat`` is only read by the sorting
+    step and is not DB-tracked, so it belongs on the non-backed-up scratch filesystem
+    rather than the backed-up ceph store. The scratch root (``ceph_aeon_scratch`` in
+    ``repository_config``, default ``/ceph/scratch``) mirrors the ceph sub-path 1:1, so
+    the two line up and the DB-tracked outputs stay on ``ceph_aeon``.
+
+    Falls back to ``recording_dir`` unchanged when the scratch root is unset, absent
+    (e.g. local/CI machines without ``/ceph/scratch``), or ``recording_dir`` is not under
+    the ceph root — so the default on-ceph layout still works everywhere else.
+    """
+    recording_dir = pathlib.Path(recording_dir)
+    scratch_root = _pipeline.repository_config.get("ceph_aeon_scratch")
+    if not scratch_root or not pathlib.Path(scratch_root).exists():
+        return recording_dir
+    ceph_root = pathlib.Path(_pipeline.repository_config["ceph_aeon"])
+    try:
+        rel = recording_dir.relative_to(ceph_root)
+    except ValueError:
+        return recording_dir
+    return pathlib.Path(scratch_root) / rel

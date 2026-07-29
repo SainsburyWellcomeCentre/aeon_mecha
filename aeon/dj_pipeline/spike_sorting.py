@@ -22,7 +22,7 @@ from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import resolve_ephys_file
-from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
+from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
     fork_safe_job_kwargs,
     resolve_analyzer_dir,
@@ -326,8 +326,13 @@ class PreProcessing(dj.Computed):
         # zarr time-axis chunk size of the preprocessed recording.zarr intermediate.
         job_kwargs = fork_safe_job_kwargs("30s")
 
+        # The large, regenerable intermediate lives on scratch (non-backed-up), mirroring
+        # the ceph sub-path; si_recording.pkl above stays on ceph with the DB-tracked outputs.
+        intermediate_dir = scratch_recording_dir(recording_file.parent)
+        intermediate_dir.mkdir(parents=True, exist_ok=True)
+
         if save_format == "zarr":
-            zarr_path = recording_file.parent / "recording.zarr"
+            zarr_path = intermediate_dir / "recording.zarr"
             if zarr_path.exists():
                 logger.info(f"{zarr_path} already exists. Skipping zarr write.")
             else:
@@ -339,7 +344,7 @@ class PreProcessing(dj.Computed):
                     **sorters.basesorter.get_job_kwargs(job_kwargs, True),
                 )
         else:
-            binary_file_path = recording_file.parent / "recording.dat"
+            binary_file_path = intermediate_dir / "recording.dat"
             if binary_file_path.exists():
                 load_and_verify_binary_file(
                     binary_file_path=binary_file_path, se_recording_obj=si_recording
@@ -465,8 +470,9 @@ class SpikeSorting(dj.Computed):
         # https://github.com/SpikeInterface/spikeinterface/blob/705c932/src/spikeinterface/sorters/external/kilosortbase.py#L124
         sorting_params["skip_kilosort_preprocessing"] = False
 
+        intermediate_dir = scratch_recording_dir(Path(recording_file).parent)
         if save_format == "zarr":
-            zarr_path = Path(recording_file).parent / "recording.zarr"
+            zarr_path = intermediate_dir / "recording.zarr"
             if not zarr_path.exists():
                 raise FileNotFoundError(
                     f"Preprocessed recording missing at {zarr_path}. It is deleted after a "
@@ -475,7 +481,7 @@ class SpikeSorting(dj.Computed):
                 )
             recording_for_sorting = si.load(zarr_path)
         else:
-            binary_file_path = Path(recording_file).parent / "recording.dat"
+            binary_file_path = intermediate_dir / "recording.dat"
             recording_for_sorting = load_and_verify_binary_file(
                 binary_file_path=binary_file_path, se_recording_obj=si_recording
             )
@@ -518,9 +524,10 @@ class SpikeSorting(dj.Computed):
         # skip the delete while a sibling paramset is preprocessed but not yet sorted.
         shared_key = {k: v for k, v in key.items() if k != "paramset_id"}
         if not ((PreProcessing & shared_key) - SpikeSorting):
-            recording_zarr = (
+            recording_dir = (
                 get_sorting_root_dir() / (PreProcessing & key).fetch1("sorting_output_dir")
-            ).parent / "recording" / "recording.zarr"
+            ).parent / "recording"
+            recording_zarr = scratch_recording_dir(recording_dir) / "recording.zarr"
             if recording_zarr.exists():
                 shutil.rmtree(recording_zarr, ignore_errors=True)
                 logger.info(f"Deleted {recording_zarr} after sorting.")
