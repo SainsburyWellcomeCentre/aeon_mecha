@@ -7,6 +7,7 @@ sorting, postprocessing, exports, and ingestion of sorted units/waveforms.
 import importlib
 import json
 import os
+import shutil
 import tempfile
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -23,6 +24,7 @@ from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import resolve_ephys_file
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
+    fork_safe_job_kwargs,
     resolve_analyzer_dir,
     strip_non_numeric_properties,
 )
@@ -322,7 +324,7 @@ class PreProcessing(dj.Computed):
 
         # 30s chunk_duration matches the raw standalone-compression default; it sets the
         # zarr time-axis chunk size of the preprocessed recording.zarr intermediate.
-        job_kwargs = {"n_jobs": -1, "chunk_duration": "30s"}
+        job_kwargs = fork_safe_job_kwargs("30s")
 
         if save_format == "zarr":
             zarr_path = recording_file.parent / "recording.zarr"
@@ -465,6 +467,12 @@ class SpikeSorting(dj.Computed):
 
         if save_format == "zarr":
             zarr_path = Path(recording_file).parent / "recording.zarr"
+            if not zarr_path.exists():
+                raise FileNotFoundError(
+                    f"Preprocessed recording missing at {zarr_path}. It is deleted after a "
+                    "successful sort; to re-sort, delete this block's PreProcessing entry "
+                    "(cascades to SpikeSorting) and re-populate it."
+                )
             recording_for_sorting = si.load(zarr_path)
         else:
             binary_file_path = Path(recording_file).parent / "recording.dat"
@@ -504,6 +512,18 @@ class SpikeSorting(dj.Computed):
                 if f.is_file()
             ]
         )
+
+        # recording.zarr is a large, regenerable intermediate that only sorting reads, so
+        # reclaim it now. It is shared by all paramsets of this block + electrode group, so
+        # skip the delete while a sibling paramset is preprocessed but not yet sorted.
+        shared_key = {k: v for k, v in key.items() if k != "paramset_id"}
+        if not ((PreProcessing & shared_key) - SpikeSorting):
+            recording_zarr = (
+                get_sorting_root_dir() / (PreProcessing & key).fetch1("sorting_output_dir")
+            ).parent / "recording" / "recording.zarr"
+            if recording_zarr.exists():
+                shutil.rmtree(recording_zarr, ignore_errors=True)
+                logger.info(f"Deleted {recording_zarr} after sorting.")
 
 
 @schema
@@ -576,7 +596,7 @@ class PostProcessing(dj.Computed):
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
 
-        job_kwargs = postprocessing_params.get("job_kwargs", {"n_jobs": -1, "chunk_duration": "1s"})
+        job_kwargs = postprocessing_params.get("job_kwargs", fork_safe_job_kwargs("1s"))
 
         save_format = params.get("save_format", "zarr")
         analyzer_format = "zarr" if save_format == "zarr" else "binary_folder"
@@ -676,7 +696,7 @@ class SIExport(dj.Computed):
             )
             return
 
-        job_kwargs = {"n_jobs": -1, "chunk_duration": "1s"}
+        job_kwargs = fork_safe_job_kwargs("1s")
         si.exporters.export_report(
             sorting_analyzer=sorting_analyzer,
             output_folder=analyzer_output_dir / "spikeinterface_report",
