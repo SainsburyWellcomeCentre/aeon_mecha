@@ -1203,7 +1203,17 @@ class GlobalUnit(dj.Manual):
 # SpikeInterface's own "chance_score" default. Candidate pairings scoring below this are
 # noise-level (essentially no coincident spikes relative to each unit's spike count) and
 # aren't worth persisting in UnitMatching.CandidateMatch.
-_MIN_CANDIDATE_SCORE = 0.1
+# Defaults for UnitMatchingParamSet.params - used for any key missing from a given paramset's
+# params blob, so existing paramsets (saved with params={}) keep behaving exactly as before.
+# Note: "min_score" here is our own name for what gets passed as compare_two_sorters'
+# "chance_score" kwarg - renamed on our side since we also reuse it as the threshold for what
+# gets persisted to CandidateMatch, which isn't quite the same concept SpikeInterface's own
+# "chance_score" name implies.
+_DEFAULT_MATCHING_PARAMS = {
+    "delta_time": 0.4,  # ms; coincidence window for compare_two_sorters
+    "match_score": 0.5,  # min agreement_score to accept a 1:1 (Hungarian) match
+    "min_score": 0.1,  # min agreement_score worth persisting to CandidateMatch at all
+}
 
 
 def _restrict_to_overlap(spike_times_s: np.ndarray, start_s: float, end_s: float) -> np.ndarray:
@@ -1234,8 +1244,14 @@ def _compare_spike_trains_in_overlap(
     prev_block_bounds: tuple,
     sampling_frequency: float = 30000,
     delta_time: float = 0.4,
+    match_score: float = 0.5,
+    min_score: float = 0.1,
 ):
     """Restrict both blocks' spike trains to their time overlap and compare with SpikeInterface.
+
+    `delta_time`, `match_score`, and `min_score` are passed straight through to
+    `compare_two_sorters` (`min_score` as its `chance_score` kwarg) - see
+    UnitMatchingParamSet.params / _DEFAULT_MATCHING_PARAMS.
 
     Returns the SymmetricSortingComparison (see spikeinterface.comparison), or None if the
     blocks don't overlap in time or neither side has any spikes in the overlap window.
@@ -1281,6 +1297,8 @@ def _compare_spike_trains_in_overlap(
         sorting1_name="previous",
         sorting2_name="current",
         delta_time=delta_time,
+        match_score=match_score,
+        chance_score=min_score,
     )
 
 
@@ -1321,7 +1339,7 @@ class UnitMatching(dj.Computed):
     class CandidateMatch(dj.Part):
         definition = """
         # Every (this-block unit, prev-block unit) candidate pairing that compare_two_sorters
-        # scored >= _MIN_CANDIDATE_SCORE against an overlapping previous block - not just the
+        # scored >= the paramset's min_score against an overlapping previous block - not just the
         # final accepted 1:1 (Hungarian) assignment. Lets QC ask how close an unmatched unit
         # came (its best candidate's agreement_score), instead of only knowing it didn't clear
         # match_score.
@@ -1396,6 +1414,16 @@ class UnitMatching(dj.Computed):
         """
         execution_time = datetime.now(UTC)
         _matching_method = (UnitMatchingParamSet & key).fetch1("matching_method")
+        raw_params = (UnitMatchingParamSet & key).fetch1("params") or {}
+        params = {**_DEFAULT_MATCHING_PARAMS, **raw_params}
+        delta_time = params["delta_time"]
+        match_score = params["match_score"]
+        min_score = params["min_score"]
+
+        logger.info(
+            f"Matching block {key['block_start']} ({key['electrode_group']}, insertion {key['insertion_number']}) "
+            f"[{_matching_method}]: delta_time={delta_time}ms  match_score={match_score}  min_score={min_score}"
+        )
 
         insertion_key = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
         paramset_key = {"matching_paramset_id": key["matching_paramset_id"]}
@@ -1448,10 +1476,16 @@ class UnitMatching(dj.Computed):
         # Map: this block's unit_id -> matched spike count from the comparison that produced
         # its match (unset for newly-created global units, which had nothing to match against)
         unit_to_match_count = {}
-        # Every candidate pairing scored >= _MIN_CANDIDATE_SCORE against any overlapping
-        # previous block, not just the accepted match - persisted to CandidateMatch below so
-        # unmatched units can be audited later (how close was their best candidate?).
+        # Every candidate pairing scored >= min_score against any overlapping previous block,
+        # not just the accepted match - persisted to CandidateMatch below so unmatched units
+        # can be audited later (how close was their best candidate?).
         all_candidate_rows = []
+        # Map: this block's unit_id -> list of accepted (Hungarian) candidates, one per
+        # overlapping previous block that produced one. A unit can overlap more than one
+        # already-processed block (fronts converging from both directions of the seed), so we
+        # can't just keep whichever previous block happens to be compared first - collect
+        # every accepted candidate here and pick the single best-scoring one afterwards.
+        accepted_candidates: dict[int, list[dict]] = {}
 
         if not previously_matched:
             logger.info("First block for this insertion — all units will be new global units.")
@@ -1472,8 +1506,15 @@ class UnitMatching(dj.Computed):
                 prev_units,
                 (block_start, block_end),
                 (prev_block["block_start"], prev_block["block_end"]),
+                delta_time=delta_time,
+                match_score=match_score,
+                min_score=min_score,
             )
             if comparison is None:
+                logger.warning(
+                    f"No spike train overlap between block {key['block_start']} and "
+                    f"previous block {prev_block['block_start']}. Skipping."
+                )
                 continue
 
             # get_matching() returns (sorting1→sorting2, sorting2→sorting1)
@@ -1482,8 +1523,10 @@ class UnitMatching(dj.Computed):
             for prev_uid in comparison.agreement_scores.index:
                 for this_uid in comparison.agreement_scores.columns:
                     score = float(comparison.agreement_scores.at[prev_uid, this_uid])
-                    if score < _MIN_CANDIDATE_SCORE:
+                    if score < min_score:
                         continue
+                    matched_spike_count = int(comparison.match_event_count.at[prev_uid, this_uid])
+                    is_hungarian_match = bool(prev_to_this.get(prev_uid) == this_uid)
                     all_candidate_rows.append(
                         {
                             **key,
@@ -1491,24 +1534,28 @@ class UnitMatching(dj.Computed):
                             "prev_block_start": prev_block["block_start"],
                             "prev_unit": prev_uid,
                             "agreement_score": score,
-                            "matched_spike_count": int(
-                                comparison.match_event_count.at[prev_uid, this_uid]
-                            ),
-                            "is_hungarian_match": bool(prev_to_this.get(prev_uid) == this_uid),
+                            "matched_spike_count": matched_spike_count,
+                            "is_hungarian_match": is_hungarian_match,
                         }
                     )
+                    if is_hungarian_match:
+                        accepted_candidates.setdefault(this_uid, []).append(
+                            {
+                                "prev_key": prev_key,
+                                "prev_uid": prev_uid,
+                                "agreement_score": score,
+                                "matched_spike_count": matched_spike_count,
+                            }
+                        )
 
-            for prev_uid, this_uid in prev_to_this.items():
-                if this_uid == -1 or this_uid in unit_to_global:
-                    continue
-
-                # Look up which global unit the previous block's unit belongs to
-                gu_match = self.Unit & {**prev_key, "unit": prev_uid}
+        # ---- Keep the best-scoring accepted candidate per unit, across all overlapping blocks ----
+        for this_uid, candidates in accepted_candidates.items():
+            for candidate in sorted(candidates, key=lambda c: c["agreement_score"], reverse=True):
+                gu_match = self.Unit & {**candidate["prev_key"], "unit": candidate["prev_uid"]}
                 if gu_match:
                     unit_to_global[this_uid] = gu_match.fetch1("global_unit")
-                    unit_to_match_count[this_uid] = int(
-                        comparison.get_matching_event_count(prev_uid, this_uid)
-                    )
+                    unit_to_match_count[this_uid] = candidate["matched_spike_count"]
+                    break
 
         # ---- Assign new global units for unmatched units ----
         # GlobalUnit's primary key is (ProbeInsertion, global_unit) - it does NOT include
