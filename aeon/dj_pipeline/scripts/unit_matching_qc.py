@@ -134,17 +134,21 @@ def get_unit_locations(block_key_: dict) -> pd.DataFrame:
 def backfill_candidate_matches(key: dict) -> int:
     """Populate UnitMatching.CandidateMatch for an already-computed UnitMatching row.
 
-    Recomputes the same overlap-window spike-time comparison `UnitMatching.make()` runs,
-    against every previously-matched block that overlaps it, and inserts candidate rows
-    (agreement_score >= spike_sorting._MIN_CANDIDATE_SCORE) - skipping any already present,
-    so this is safe to call repeatedly for the same key. Does not touch GlobalUnit,
-    UnitMatching.Unit, or UnitMatching.Spikes.
+    Recomputes the same overlap-window spike-time comparison `UnitMatching.make()` runs
+    (using that row's own UnitMatchingParamSet.params, same as make() does), against every
+    previously-matched block that overlaps it, and inserts candidate rows
+    (agreement_score >= min_score) - skipping any already present, so this is safe to call
+    repeatedly for the same key. Does not touch GlobalUnit, UnitMatching.Unit, or
+    UnitMatching.Spikes.
 
     Returns the number of new rows inserted.
     """
     insertion_key = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
     paramset_key = {"matching_paramset_id": key["matching_paramset_id"]}
     block_start, block_end = (ephys.EphysBlock & key).fetch1("block_start", "block_end")
+
+    raw_params = (spike_sorting.UnitMatchingParamSet & key).fetch1("params") or {}
+    params = {**spike_sorting._DEFAULT_MATCHING_PARAMS, **raw_params}
 
     all_matched = (spike_sorting.UnitMatching & insertion_key & paramset_key).to_dicts()
     overlapping_blocks = [
@@ -176,6 +180,9 @@ def backfill_candidate_matches(key: dict) -> int:
             prev_units,
             (block_start, block_end),
             (prev_block["block_start"], prev_block["block_end"]),
+            delta_time=params["delta_time"],
+            match_score=params["match_score"],
+            min_score=params["min_score"],
         )
         if comparison is None:
             continue
@@ -183,7 +190,7 @@ def backfill_candidate_matches(key: dict) -> int:
         for prev_uid in comparison.agreement_scores.index:
             for this_uid in comparison.agreement_scores.columns:
                 score = float(comparison.agreement_scores.at[prev_uid, this_uid])
-                if score < spike_sorting._MIN_CANDIDATE_SCORE:
+                if score < params["min_score"]:
                     continue
                 dedup_key = (this_uid, prev_block["block_start"], prev_uid)
                 if dedup_key in existing_keys:
