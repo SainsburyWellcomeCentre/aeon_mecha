@@ -724,11 +724,25 @@ class SortedSpikes(dj.Imported):
         ---
         -> ephys.ElectrodeConfig.Electrode  # electrode with highest waveform amplitude for this unit
         -> UnitQuality
+        curation_quality=null: varchar(16)  # manual curation quality label (good/mua/noise), read
+                                             # from the curated analyzer's "quality" property - null
+                                             # until manually curated. NOT the same as unit_quality
+                                             # above, which is Kilosort's own KSLabel and doesn't
+                                             # reflect manual curation at all.
         spike_count: int32       # how many spikes in this recording for this unit
         spike_indices: <blob@dj_store>  # array of spike indices into the concatenated binary data (from preprocessing)
         spike_sites : <blob@dj_store>   # array of electrode associated with each spike
         spike_depths=null : <blob@dj_store>  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe
         """  # noqa:E501
+
+    class UnitTag(dj.Part):
+        definition = """
+        # Manual curation tags (non-exclusive) - one row per tag actually applied to a unit,
+        # read from the curated analyzer's per-tag boolean properties (see
+        # spike_sorting_curation.MANUAL_TAG_OPTIONS). A unit with no tags has no rows here.
+        -> master.Unit
+        tag: varchar(64)
+        """
 
     def make(self, key):
         """Extract units, spike times, and electrodes from sorting output; sync to HARP clock."""

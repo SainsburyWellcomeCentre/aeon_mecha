@@ -126,6 +126,36 @@ def get_unit_locations(block_key_: dict) -> pd.DataFrame:
     return pd.DataFrame(locations, index=analyzer.unit_ids, columns=columns)
 
 
+# Now defined in spike_sorting_curation (where the curation-writing logic that reads these
+# properties lives) - kept as a module-level alias here since existing code/notebooks refer to
+# qc.MANUAL_TAG_OPTIONS.
+MANUAL_TAG_OPTIONS = spike_sorting_curation.MANUAL_TAG_OPTIONS
+
+
+def get_unit_manual_labels(block_key_: dict) -> pd.DataFrame:
+    """Manual curation quality label + custom tags (index=unit_id) for a block.
+
+    Read directly from the curated analyzer's `sorting` properties - these are the labels
+    actually assigned by hand in the SpikeInterface GUI (`quality`: good/MUA/noise, plus one
+    boolean property per tag in MANUAL_TAG_OPTIONS). This is NOT the same thing as
+    `SortedSpikes.Unit.unit_quality`, which is Kilosort's own KSLabel and doesn't reflect
+    manual curation at all (it reads "good" for units manually labeled MUA/noise too).
+    Curation also doesn't remove MUA/noise units - they stay in SortedSpikes.Unit.
+
+    Missing properties (e.g. a block whose curation never touched these label_definitions)
+    come back as None rather than raising.
+    """
+    analyzer = load_analyzer(block_key_)
+    sorting = analyzer.sorting
+    prop_keys = set(sorting.get_property_keys())
+
+    data = {"unit": analyzer.unit_ids}
+    data["manual_quality"] = sorting.get_property("quality") if "quality" in prop_keys else None
+    for tag in MANUAL_TAG_OPTIONS:
+        data[tag] = sorting.get_property(tag) if tag in prop_keys else None
+    return pd.DataFrame(data).set_index("unit")
+
+
 # ---------------------------------------------------------------------------
 # CandidateMatch backfill
 # ---------------------------------------------------------------------------
@@ -264,6 +294,8 @@ def _annotate_orphans(
             columns=[
                 "unit",
                 "unit_quality",
+                "manual_quality",
+                *MANUAL_TAG_OPTIONS,
                 *_QC_METRIC_COLUMNS,
                 "x",
                 "y",
@@ -280,6 +312,7 @@ def _annotate_orphans(
     )
     qc_metrics = get_unit_quality_metrics(block_key_)
     locations = get_unit_locations(block_key_)
+    manual_labels = get_unit_manual_labels(block_key_)
 
     this_trains = spike_sorting._load_block_unit_spike_trains(block_key_)
     overlap_start = max(block_key_["block_start"], other_block_key_["block_start"])
@@ -299,6 +332,13 @@ def _annotate_orphans(
             row["y"] = locations.loc[unit_id, "y"]
         else:
             row["x"] = row["y"] = None
+        if unit_id in manual_labels.index:
+            row["manual_quality"] = manual_labels.loc[unit_id, "manual_quality"]
+            for tag in MANUAL_TAG_OPTIONS:
+                row[tag] = manual_labels.loc[unit_id, tag]
+        else:
+            row["manual_quality"] = None
+            row.update(dict.fromkeys(MANUAL_TAG_OPTIONS))
         overlap_times = spike_sorting._restrict_to_overlap(
             this_trains.get(unit_id, np.array([])), overlap_start_s, overlap_end_s
         )
@@ -308,32 +348,19 @@ def _annotate_orphans(
     return pd.DataFrame(rows)
 
 
-def get_orphan_units(shank_key: dict, matching_paramset_id: int) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """A-side and B-side units that didn't get matched across a shank's two blocks.
+def _resolve_shank_blocks(shank_key: dict, matching_paramset_id: int):
+    """Common setup shared by `get_orphan_units` and `get_unit_match_summary`.
 
     Assumes exactly two matched blocks for this (shank, paramset) - the seed block ("A",
-    earlier) and the block matched against it ("B", later). Call `backfill_candidate_matches`
-    for the later block's UnitMatching key first if CandidateMatch hasn't been populated for
-    it yet, otherwise best_candidate_* columns will be empty.
+    earlier) and the block matched against it ("B", later).
 
-    Returns (a_orphans, b_orphans):
-    - a_orphans: block A units whose global_unit was never carried forward into block B.
-    - b_orphans: block B units that got a brand-new global_unit (matched_spike_count null).
-
-    Each row includes: unit_quality (Kilosort's own KSLabel - NOT your manual SI GUI curation
-    call), quality_metrics (presence_ratio, isi_violations_ratio, snr, firing_rate,
-    num_spikes), estimated probe location (x, y), spike count restricted to just the overlap
-    window (0 means it structurally couldn't have been matched), and its best candidate on
-    the other side + that candidate's agreement_score (even if below the 0.5 match
-    threshold).
+    Returns (a_rows, b_rows, block_a_key, block_b_key, matched_global_units).
     """
     paramset_key = {"matching_paramset_id": matching_paramset_id}
     unit_rows = (spike_sorting.UnitMatching.Unit & shank_key & paramset_key).to_pandas().reset_index()
     block_starts = sorted(unit_rows["block_start"].unique())
     if len(block_starts) != 2:
-        raise ValueError(
-            f"get_orphan_units assumes exactly 2 matched blocks; found {len(block_starts)}: {block_starts}"
-        )
+        raise ValueError(f"Assumes exactly 2 matched blocks; found {len(block_starts)}: {block_starts}")
     block_a_start, block_b_start = block_starts
 
     a_rows = unit_rows[unit_rows["block_start"] == block_a_start]
@@ -348,17 +375,70 @@ def get_orphan_units(shank_key: dict, matching_paramset_id: int) -> tuple[pd.Dat
 
     block_a_key = _full_block_key(a_rows, block_a_start)
     block_b_key = _full_block_key(b_rows, block_b_start)
-
     matched_global_units = set(b_rows.loc[b_rows["matched_spike_count"].notna(), "global_unit"])
+    return a_rows, b_rows, block_a_key, block_b_key, matched_global_units
+
+
+def get_orphan_units(shank_key: dict, matching_paramset_id: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """A-side and B-side units that didn't get matched across a shank's two blocks.
+
+    Call `backfill_candidate_matches` for the later block's UnitMatching key first if
+    CandidateMatch hasn't been populated for it yet, otherwise best_candidate_* columns will
+    be empty.
+
+    Returns (a_orphans, b_orphans):
+    - a_orphans: block A units whose global_unit was never carried forward into block B.
+    - b_orphans: block B units that got a brand-new global_unit (matched_spike_count null).
+
+    Each row includes: unit_quality (Kilosort's own KSLabel - NOT your manual SI GUI curation
+    call), quality_metrics (presence_ratio, isi_violations_ratio, snr, firing_rate,
+    num_spikes), estimated probe location (x, y), spike count restricted to just the overlap
+    window (0 means it structurally couldn't have been matched), and its best candidate on
+    the other side + that candidate's agreement_score (even if below the match threshold).
+    """
+    a_rows, b_rows, block_a_key, block_b_key, matched_global_units = _resolve_shank_blocks(
+        shank_key, matching_paramset_id
+    )
     a_orphan_ids = a_rows.loc[~a_rows["global_unit"].isin(matched_global_units), "unit"].tolist()
     b_orphan_ids = b_rows.loc[b_rows["matched_spike_count"].isna(), "unit"].tolist()
 
     a_orphans = _annotate_orphans(
         a_orphan_ids, block_a_key, block_b_key,
-        later_block_key=block_b_key, earlier_block_start=block_a_start, is_prev_side=True,
+        later_block_key=block_b_key, earlier_block_start=block_a_key["block_start"], is_prev_side=True,
     )
     b_orphans = _annotate_orphans(
         b_orphan_ids, block_b_key, block_a_key,
-        later_block_key=block_b_key, earlier_block_start=block_a_start, is_prev_side=False,
+        later_block_key=block_b_key, earlier_block_start=block_a_key["block_start"], is_prev_side=False,
     )
     return a_orphans, b_orphans
+
+
+def get_unit_match_summary(shank_key: dict, matching_paramset_id: int) -> pd.DataFrame:
+    """Per-unit best-candidate summary for *every* unit in a shank's two matched blocks.
+
+    Same columns as `get_orphan_units`, but covers matched units too (tagged via the
+    `is_matched` column) instead of only the unmatched ones - useful for comparing
+    best_candidate_score (or any other per-unit metric) across the whole population, not
+    just the orphans.
+    """
+    a_rows, b_rows, block_a_key, block_b_key, matched_global_units = _resolve_shank_blocks(
+        shank_key, matching_paramset_id
+    )
+    a_matched_ids = set(a_rows.loc[a_rows["global_unit"].isin(matched_global_units), "unit"])
+    b_matched_ids = set(b_rows.loc[b_rows["matched_spike_count"].notna(), "unit"])
+
+    a_summary = _annotate_orphans(
+        a_rows["unit"].tolist(), block_a_key, block_b_key,
+        later_block_key=block_b_key, earlier_block_start=block_a_key["block_start"], is_prev_side=True,
+    )
+    a_summary["side"] = "A"
+    a_summary["is_matched"] = a_summary["unit"].isin(a_matched_ids)
+
+    b_summary = _annotate_orphans(
+        b_rows["unit"].tolist(), block_b_key, block_a_key,
+        later_block_key=block_b_key, earlier_block_start=block_a_key["block_start"], is_prev_side=False,
+    )
+    b_summary["side"] = "B"
+    b_summary["is_matched"] = b_summary["unit"].isin(b_matched_ids)
+
+    return pd.concat([a_summary, b_summary], ignore_index=True)

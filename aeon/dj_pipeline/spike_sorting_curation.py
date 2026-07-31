@@ -16,6 +16,19 @@ from aeon.dj_pipeline.utils.spike_sorting_utils import resolve_analyzer_dir
 schema = dj.Schema(get_schema_name("spike_sorting_curation"))
 logger = dj.logger
 
+# Non-exclusive tag options from the SI GUI's "tags" label category (scripts/launch_si_gui.py)
+# - each becomes its own boolean property on the curated sorting after apply_curation, keyed by
+# the tag string itself. Kept here (not in scripts/unit_matching_qc.py) since this is where the
+# curation-writing logic that reads them lives.
+MANUAL_TAG_OPTIONS = (
+    "irregular waveform",
+    "amplitude drift",
+    "bimodal amplitude",
+    "intermittent",
+    "refractory violations",
+    "flag",
+)
+
 
 @schema
 class CurationMethod(dj.Lookup):
@@ -126,6 +139,22 @@ def insert_sorted_spikes_from_analyzer(
         for unit_id in si_sorting.unit_ids
     }
 
+    # Manual curation quality (good/mua/noise) and tags, if this analyzer has been through
+    # manual curation - both are properties on the sorting object (see apply_curation_labels
+    # in spikeinterface), not columns anywhere; absent entirely for a raw/uncurated analyzer.
+    prop_keys = set(si_sorting.get_property_keys())
+    manual_quality_map = {
+        int(unit_id): (si_sorting.get_unit_property(unit_id, "quality") or "").lower() or None
+        for unit_id in si_sorting.unit_ids
+    } if "quality" in prop_keys else {}
+    manual_tags_map = {
+        int(unit_id): [
+            tag for tag in MANUAL_TAG_OPTIONS
+            if tag in prop_keys and bool(si_sorting.get_unit_property(unit_id, tag))
+        ]
+        for unit_id in si_sorting.unit_ids
+    }
+
     spike_locations = sorting_analyzer.get_extension("spike_locations")
     extremum_channel_inds = si.template_tools.get_template_extremum_channel(sorting_analyzer, outputs="index")
     spikes_df = pd.DataFrame(
@@ -153,6 +182,7 @@ def insert_sorted_spikes_from_analyzer(
                 **channel2electrode_map[unit_peak_channel[unit_id]],
                 "unit": unit_id,
                 "unit_quality": cluster_quality_label_map[unit_id],
+                "curation_quality": manual_quality_map.get(unit_id),
                 "spike_indices": spike_indices,
                 "spike_count": spike_count_dict[unit_id],
                 "spike_sites": spike_sites,
@@ -161,6 +191,14 @@ def insert_sorted_spikes_from_analyzer(
             ignore_extra_fields=True,
             allow_direct_insert=True,
         )
+
+    tag_rows = [
+        {**key, "unit": unit_id, "tag": tag}
+        for unit_id, tags in manual_tags_map.items()
+        for tag in tags
+    ]
+    if tag_rows:
+        spike_sorting.SortedSpikes.UnitTag.insert(tag_rows, ignore_extra_fields=True, allow_direct_insert=True)
 
 
 @schema
@@ -222,9 +260,19 @@ class ApplyOfficialCuration(dj.Imported):
                 )
                 return
 
-        # Get the curation file path
+        # Get the curation file path. Must restrict by file_name - ManualCuration.File also
+        # holds a "curation_applied_analyzer" row (written later in this same function) for
+        # any block that has ever had ApplyOfficialCuration run on it before, so on a
+        # revert-then-reapply both rows already exist here and fetch1 without this filter
+        # raises "2 tuples found".
         curation_file_path = Path(
-            (ManualCuration.File & key & {"curation_id": curation_id}).fetch1("file").full_path
+            (
+                ManualCuration.File
+                & key
+                & {"curation_id": curation_id, "file_name": f"curation_data_id{curation_id}.json"}
+            )
+            .fetch1("file")
+            .full_path
         )
 
         if not curation_file_path.exists():
@@ -236,6 +284,22 @@ class ApplyOfficialCuration(dj.Imported):
         # Load curation dictionary
         with open(curation_file_path) as f:
             curation_dict = json.load(f)
+
+        # Units manually labeled "noise" should never survive into official data. Fold them
+        # into the same `removed` list apply_curation() already uses for explicit manual
+        # deletions, so they're excluded from the curated analyzer - and therefore from
+        # SortedSpikes and everything downstream (Waveform, SortingQuality, SyncedSpikes,
+        # UnitMatching, GlobalUnit) - the same way as any manually-deleted unit. This does NOT
+        # touch the saved curation_data.json snapshot (the full manual_labels history, incl.
+        # noise, stays intact there and on the raw analyzer) or MUA-labeled units.
+        noise_unit_ids = {
+            lbl["unit_id"]
+            for lbl in curation_dict.get("manual_labels", [])
+            if "noise" in lbl.get("labels", {}).get("quality", [])
+        }
+        if noise_unit_ids:
+            curation_dict["removed"] = sorted(set(curation_dict.get("removed", [])) | noise_unit_ids)
+            logger.info(f"Excluding {len(noise_unit_ids)} unit(s) manually labeled 'noise': {sorted(noise_unit_ids)}")
 
         # Load original sorting analyzer
         analyzer_output_dir = _get_analyzer_dir_from_key(key)
