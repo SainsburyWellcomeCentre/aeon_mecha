@@ -201,7 +201,10 @@ class PreProcessing(dj.Computed):
             * ephys.ProbeType.Electrode
             & key
         )
-        electrodes_df = electrodes_query.to_pandas().reset_index()
+        # Order explicitly: without it the row order is whatever join plan the server
+        # picks, which can flip mid-run (e.g. after an upstream write shifts the table
+        # statistics) and fail the `make_fetch` referential-integrity re-check.
+        electrodes_df = electrodes_query.to_pandas(order_by="electrode").reset_index()
         electrodes_df.drop(columns=list(key), inplace=True, errors="ignore")
 
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
