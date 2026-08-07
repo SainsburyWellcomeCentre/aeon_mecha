@@ -149,8 +149,11 @@ class TestPreProcessing:
         key = (ctx.spike_sorting.SortingTask & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()[
             0
         ]
+        from aeon.dj_pipeline.utils.paths import scratch_recording_dir
+
         output_dir = ctx.spike_sorting.PreProcessing.infer_output_dir(key)
-        recording_zarr = output_dir.parent / "recording" / "recording.zarr"
+        # recording.zarr lives on the scratch mirror when configured, else in-place on ceph.
+        recording_zarr = scratch_recording_dir(output_dir.parent / "recording") / "recording.zarr"
         assert recording_zarr.exists(), f"Expected zarr recording at {recording_zarr}"
         assert any(recording_zarr.iterdir()), "recording.zarr directory is empty"
 

@@ -82,7 +82,7 @@ from aeon.dj_pipeline.utils.codec import (  # pyright: ignore[reportUnusedImport
 logger = dj.logger
 
 _default_database_prefix = "aeon_"
-_default_repository_config = {"ceph_aeon": "/ceph/aeon"}
+_default_repository_config = {"ceph_aeon": "/ceph/aeon", "ceph_aeon_scratch": "/ceph/scratch"}
 
 os.environ["DJ_SUPPORT_FILEPATH_MANAGEMENT"] = "TRUE"
 
