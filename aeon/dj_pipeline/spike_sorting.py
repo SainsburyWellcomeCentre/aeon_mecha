@@ -1230,6 +1230,22 @@ _DEFAULT_MATCHING_PARAMS = {
 }
 
 
+def _resolve_matching_params(raw_params: dict) -> dict:
+    """Merge raw_params over _DEFAULT_MATCHING_PARAMS, missing keys fall back to the default.
+
+    Raises on any key not in _DEFAULT_MATCHING_PARAMS - a plain dict merge would otherwise
+    silently ignore a misspelled key (e.g. "match_scroe") instead of applying the override,
+    leaving the default in effect with no error and no indication the override didn't take.
+    """
+    unknown = set(raw_params) - set(_DEFAULT_MATCHING_PARAMS)
+    if unknown:
+        raise ValueError(
+            f"Unknown UnitMatchingParamSet.params key(s): {unknown}. "
+            f"Valid keys: {set(_DEFAULT_MATCHING_PARAMS)}"
+        )
+    return {**_DEFAULT_MATCHING_PARAMS, **raw_params}
+
+
 def _restrict_to_overlap(spike_times_s: np.ndarray, start_s: float, end_s: float) -> np.ndarray:
     """Restrict spike times (epoch seconds) to an overlap window, relative to its start."""
     if len(spike_times_s) == 0:
@@ -1429,7 +1445,7 @@ class UnitMatching(dj.Computed):
         execution_time = datetime.now(UTC)
         _matching_method = (UnitMatchingParamSet & key).fetch1("matching_method")
         raw_params = (UnitMatchingParamSet & key).fetch1("params") or {}
-        params = {**_DEFAULT_MATCHING_PARAMS, **raw_params}
+        params = _resolve_matching_params(raw_params)
         delta_time = params["delta_time"]
         match_score = params["match_score"]
         min_score = params["min_score"]
@@ -1494,12 +1510,6 @@ class UnitMatching(dj.Computed):
         # not just the accepted match - persisted to CandidateMatch below so unmatched units
         # can be audited later (how close was their best candidate?).
         all_candidate_rows = []
-        # Map: this block's unit_id -> list of accepted (Hungarian) candidates, one per
-        # overlapping previous block that produced one. A unit can overlap more than one
-        # already-processed block (fronts converging from both directions of the seed), so we
-        # can't just keep whichever previous block happens to be compared first - collect
-        # every accepted candidate here and pick the single best-scoring one afterwards.
-        accepted_candidates: dict[int, list[dict]] = {}
 
         if not previously_matched:
             logger.info("First block for this insertion — all units will be new global units.")
@@ -1552,24 +1562,17 @@ class UnitMatching(dj.Computed):
                             "is_hungarian_match": is_hungarian_match,
                         }
                     )
-                    if is_hungarian_match:
-                        accepted_candidates.setdefault(this_uid, []).append(
-                            {
-                                "prev_key": prev_key,
-                                "prev_uid": prev_uid,
-                                "agreement_score": score,
-                                "matched_spike_count": matched_spike_count,
-                            }
-                        )
-
-        # ---- Keep the best-scoring accepted candidate per unit, across all overlapping blocks ----
-        for this_uid, candidates in accepted_candidates.items():
-            for candidate in sorted(candidates, key=lambda c: c["agreement_score"], reverse=True):
-                gu_match = self.Unit & {**candidate["prev_key"], "unit": candidate["prev_uid"]}
-                if gu_match:
-                    unit_to_global[this_uid] = gu_match.fetch1("global_unit")
-                    unit_to_match_count[this_uid] = candidate["matched_spike_count"]
-                    break
+                    # First accepted (Hungarian) match wins - a unit is not reconsidered once
+                    # assigned, even if a later overlapping block would score higher. Blocks are
+                    # only ever compared to at most one already-processed neighbor at a time in
+                    # practice (see key_source's contiguous frontier growth + the block-overlap
+                    # geometry in step02_define_blocks.py), so this never actually competes
+                    # against a second candidate under current usage.
+                    if is_hungarian_match and this_uid not in unit_to_global:
+                        gu_match = self.Unit & {**prev_key, "unit": prev_uid}
+                        if gu_match:
+                            unit_to_global[this_uid] = gu_match.fetch1("global_unit")
+                            unit_to_match_count[this_uid] = matched_spike_count
 
         # ---- Assign new global units for unmatched units ----
         # GlobalUnit's primary key is (ProbeInsertion, global_unit) - it does NOT include
