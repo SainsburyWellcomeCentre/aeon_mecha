@@ -52,25 +52,13 @@ except Exception:
 
 # datajoint installs its own sys.excepthook on import, and its log formatter drops
 # the traceback entirely - any uncaught exception (including from GUI button clicks)
-# shows up as a bare "[ERROR]: Uncaught exception" with no detail. Restore normal
-# traceback printing so real errors are visible.
+# shows up as a bare "[ERROR]: Uncaught exception" with no detail. The import above already
+# triggered aeon/dj_pipeline/__init__.py's own excepthook patch for this (routes through
+# dj.logger.error(), which prints to stdout with a timestamp/level prefix) - deliberately
+# override that here instead: plain traceback.print_exception writes to stderr (the
+# conventionally-correct stream for uncaught exceptions) with no logger prefix, which reads
+# better for a human watching this GUI crash in real time than a timestamped log line does.
 sys.excepthook = traceback.print_exception
-
-# macOS's default per-process open-file limit (often 256, sometimes higher depending
-# on shell config) is easy to exhaust with zarr's one-file-per-chunk storage across
-# many extensions in a long curation session - blocks with more extensions (e.g. once
-# principal_components loads successfully) open more file handles and are more likely
-# to hit "Too many open files". Raise it here so the GUI doesn't depend on whatever the
-# launching shell happened to have configured. macOS often reports the hard limit as
-# "unlimited" via resource.RLIM_INFINITY but actually caps it in the kernel (commonly
-# ~10240), so setting to RLIM_INFINITY directly can raise ValueError - clamp instead.
-try:
-    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
-    target = 10240 if hard in (resource.RLIM_INFINITY, -1) else min(hard, 10240)
-    if target > soft:
-        resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
-except (ValueError, OSError):
-    pass  # best effort - fall back to whatever the shell already had
 
 
 def _set_window_title(key: dict) -> None:
@@ -164,6 +152,18 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    # zarr's one-file-per-chunk storage (analyzer extensions, and the raw recording if traces
+    # are on) can exhaust the OS's per-process open-file limit on a long curation session
+    # (macOS defaults to 256) - print current limit + mitigations instead of raising it
+    # automatically, so it stays under the user's control.
+    if not args.no_traces:
+        soft_limit, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+        print(
+            f"Open-file limit: {soft_limit}. If you hit 'Too many open files' during a long "
+            f"curation session: raise your shell's limit before launching (e.g. `ulimit -n "
+            f"4096`), and/or pass --no-traces to stop the GUI from accessing the raw recording."
+        )
+
     layout = None
     if args.layout is not None:
         with open(args.layout) as f:
@@ -193,18 +193,13 @@ if __name__ == "__main__":
     # Custom label categories for the curation panel. Only applies to blocks with no
     # curation_data.json / zarr curation attrs already saved - see launch_spikeinterface_gui().
     # "tags" is edited via the multitag plugin view registered below, not the built-in
-    # unit table editor - keep this options list in sync with multitag_view.TAG_SHORTCUTS.
+    # unit table editor. label_options is sourced from MANUAL_TAG_OPTIONS - the same list
+    # spike_sorting_curation.py reads back off the analyzer into SortedSpikes.UnitTag - so
+    # this, multitag_view.TAG_SHORTCUTS, and the DB-writing side can't drift apart.
     label_definitions = {
         "quality": {"label_options": ["good", "noise", "MUA"], "exclusive": True},
         "tags": {
-            "label_options": [
-                "irregular waveform",
-                "amplitude drift",
-                "bimodal amplitude",
-                "intermittent",
-                "refractory violations",
-                "flag",
-            ],
+            "label_options": list(spike_sorting_curation.MANUAL_TAG_OPTIONS),
             "exclusive": False,
         },
     }

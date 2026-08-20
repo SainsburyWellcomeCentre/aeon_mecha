@@ -13,9 +13,15 @@ See: https://spikeinterface-gui.readthedocs.io/en/latest/custom_views.html
 
 from spikeinterface_gui.view_base import ViewBase
 
+from aeon.dj_pipeline.spike_sorting_curation import MANUAL_TAG_OPTIONS
+
 TAGS_CATEGORY = "tags"
 
-# plain-letter shortcuts not already used elsewhere in the GUI (existing: space, c, g, m, n)
+# plain-letter shortcuts not already used elsewhere in the GUI (existing: space, c, g, m, n).
+# Keys are this view's own choice; values must match MANUAL_TAG_OPTIONS exactly - that's the
+# list spike_sorting_curation.py actually reads back off the analyzer when writing
+# SortedSpikes.UnitTag, so a mismatch here would mean a tag is selectable in the GUI but
+# silently never reaches the database. The assertion below catches that at import time.
 TAG_SHORTCUTS = {
     "w": "irregular waveform",
     "d": "amplitude drift",
@@ -24,6 +30,10 @@ TAG_SHORTCUTS = {
     "r": "refractory violations",
     "f": "flag",
 }
+assert set(TAG_SHORTCUTS.values()) == set(MANUAL_TAG_OPTIONS), (
+    f"TAG_SHORTCUTS values {set(TAG_SHORTCUTS.values())} != MANUAL_TAG_OPTIONS "
+    f"{set(MANUAL_TAG_OPTIONS)} - keep these in sync with spike_sorting_curation.MANUAL_TAG_OPTIONS."
+)
 
 
 class MultiTagView(ViewBase):
