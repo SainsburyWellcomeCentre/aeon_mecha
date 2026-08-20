@@ -52,8 +52,21 @@ class HarpSyncModel(Stream):
 
             model = LinearRegression().fit(onix_clock, harp_time)
             r2 = model.score(onix_clock, harp_time)
-            chunk_info = file.name.split("_")[-1]
-            epoch = datetime.strptime(chunk_info, "%Y-%m-%dT%H-%M-%S.csv")
+            # Chunk timestamp lives in the filename suffix. Two conventions
+            # coexist: the compact UTC form ("...T090000Z.csv", emitted by the
+            # current acquisition software) and the older dashed form
+            # ("...T09-00-00.csv", still used by the test fixtures).
+            chunk_info = file.name.split("_")[-1].removesuffix(".csv")
+            for _fmt in ("%Y-%m-%dT%H%M%SZ", "%Y-%m-%dT%H-%M-%S"):
+                try:
+                    epoch = datetime.strptime(chunk_info, _fmt)
+                    break
+                except ValueError:
+                    continue
+            else:
+                raise ValueError(
+                    f"Unrecognized HarpSync chunk timestamp: {chunk_info!r}"
+                )
             return pd.DataFrame(
                 index=[epoch],
                 data={

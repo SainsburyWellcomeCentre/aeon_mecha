@@ -258,6 +258,7 @@ class PreProcessing(dj.Computed):
             Tuple of (output_dir, execution_time, recording_dir)
         """
         import probeinterface as pi
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
         import spikeinterface.extractors as se
         from spikeinterface import sorters
@@ -307,8 +308,8 @@ class PreProcessing(dj.Computed):
             },
             inplace=True,
         )
-        probe_df["contact_shapes"] = "circle"
-        probe_df["radius"] = 10
+        probe_df["contact_shapes"] = "square"
+        probe_df["width"] = 12
         si_probe = pi.Probe.from_dataframe(probe_df)
 
         si_probe.set_device_channel_indices(electrodes_df["channel_idx"].values)
@@ -447,6 +448,7 @@ class SpikeSorting(dj.Computed):
                 "expandable_segments:True,garbage_collection_threshold:0.6"
             )
 
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
 
         execution_time = datetime.now(UTC)
@@ -594,6 +596,7 @@ class PostProcessing(dj.Computed):
         Returns:
             Tuple of (analyzer_output_dir, execution_time, execution_duration)
         """
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
 
         execution_time = datetime.now(UTC)
@@ -684,6 +687,7 @@ class SIExport(dj.Computed):
 
     def make(self, key):
         """Export spike sorting results to standardised formats for downstream analysis and sharing."""
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
 
         execution_time = datetime.now(UTC)
@@ -749,14 +753,29 @@ class SortedSpikes(dj.Imported):
         ---
         -> ephys.ElectrodeConfig.Electrode  # electrode with highest waveform amplitude for this unit
         -> UnitQuality
+        curation_quality=null: varchar(16)  # manual curation quality label (good/mua/noise), read
+                                             # from the curated analyzer's "quality" property - null
+                                             # until manually curated. NOT the same as unit_quality
+                                             # above, which is Kilosort's own KSLabel and doesn't
+                                             # reflect manual curation at all.
         spike_count: int32       # how many spikes in this recording for this unit
         spike_indices: <blob@dj_store>  # array of spike indices into the concatenated binary data (from preprocessing)
         spike_sites : <blob@dj_store>   # array of electrode associated with each spike
         spike_depths=null : <blob@dj_store>  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe
         """  # noqa:E501
 
+    class UnitTag(dj.Part):
+        definition = """
+        # Manual curation tags (non-exclusive) - one row per tag actually applied to a unit,
+        # read from the curated analyzer's per-tag boolean properties (see
+        # spike_sorting_curation.MANUAL_TAG_OPTIONS). A unit with no tags has no rows here.
+        -> master.Unit
+        tag: varchar(64)
+        """
+
     def make(self, key):
         """Extract units, spike times, and electrodes from sorting output; sync to HARP clock."""
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
 
         execution_time = datetime.now(UTC)
@@ -923,6 +942,7 @@ class Waveform(dj.Imported):
 
     def make(self, key):
         """Extract spike waveforms for each unit and electrode from sorting analyzer templates."""
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
 
         sorting_root_dir = get_sorting_root_dir()
@@ -1020,6 +1040,7 @@ class SortingQuality(dj.Imported):
 
     def make(self, key):
         """Extract quality metrics for each unit from sorting analyzer extensions."""
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
 
         sorting_root_dir = get_sorting_root_dir()
@@ -1222,6 +1243,124 @@ class GlobalUnit(dj.Manual):
     """
 
 
+# SpikeInterface's own "chance_score" default. Candidate pairings scoring below this are
+# noise-level (essentially no coincident spikes relative to each unit's spike count) and
+# aren't worth persisting in UnitMatching.CandidateMatch.
+# Defaults for UnitMatchingParamSet.params - used for any key missing from a given paramset's
+# params blob, so existing paramsets (saved with params={}) keep behaving exactly as before.
+# Note: "min_score" here is our own name for what gets passed as compare_two_sorters'
+# "chance_score" kwarg - renamed on our side since we also reuse it as the threshold for what
+# gets persisted to CandidateMatch, which isn't quite the same concept SpikeInterface's own
+# "chance_score" name implies.
+_DEFAULT_MATCHING_PARAMS = {
+    "delta_time": 0.4,  # ms; coincidence window for compare_two_sorters
+    "match_score": 0.5,  # min agreement_score to accept a 1:1 (Hungarian) match
+    "min_score": 0.1,  # min agreement_score worth persisting to CandidateMatch at all
+}
+
+
+def _resolve_matching_params(raw_params: dict) -> dict:
+    """Merge raw_params over _DEFAULT_MATCHING_PARAMS, missing keys fall back to the default.
+
+    Raises on any key not in _DEFAULT_MATCHING_PARAMS - a plain dict merge would otherwise
+    silently ignore a misspelled key (e.g. "match_scroe") instead of applying the override,
+    leaving the default in effect with no error and no indication the override didn't take.
+    """
+    unknown = set(raw_params) - set(_DEFAULT_MATCHING_PARAMS)
+    if unknown:
+        raise ValueError(
+            f"Unknown UnitMatchingParamSet.params key(s): {unknown}. "
+            f"Valid keys: {set(_DEFAULT_MATCHING_PARAMS)}"
+        )
+    return {**_DEFAULT_MATCHING_PARAMS, **raw_params}
+
+
+def _restrict_to_overlap(spike_times_s: np.ndarray, start_s: float, end_s: float) -> np.ndarray:
+    """Restrict spike times (epoch seconds) to an overlap window, relative to its start."""
+    if len(spike_times_s) == 0:
+        return np.array([])
+    mask = (spike_times_s >= start_s) & (spike_times_s <= end_s)
+    return spike_times_s[mask] - start_s
+
+
+def _load_block_unit_spike_trains(block_key: dict) -> dict[int, np.ndarray]:
+    """Return {unit_id: sorted spike times in epoch seconds} for every unit in a block."""
+    trains: dict[int, list] = {}
+    for unit_entry in (SyncedSpikes.Unit & block_key).to_dicts():
+        trains.setdefault(unit_entry["unit"], []).append(unit_entry["spike_times"])
+    for unit_id, chunks in trains.items():
+        concatenated = np.sort(np.concatenate(chunks))
+        if concatenated.dtype.kind == "M":  # datetime64
+            concatenated = concatenated.astype("datetime64[ns]").astype(np.int64) / 1e9
+        trains[unit_id] = concatenated
+    return trains
+
+
+def _compare_spike_trains_in_overlap(
+    this_block_units: dict[int, np.ndarray],
+    prev_block_units: dict[int, np.ndarray],
+    this_block_bounds: tuple,
+    prev_block_bounds: tuple,
+    sampling_frequency: float = 30000,
+    delta_time: float = 0.4,
+    match_score: float = 0.5,
+    min_score: float = 0.1,
+):
+    """Restrict both blocks' spike trains to their time overlap and compare with SpikeInterface.
+
+    `delta_time`, `match_score`, and `min_score` are passed straight through to
+    `compare_two_sorters` (`min_score` as its `chance_score` kwarg) - see
+    UnitMatchingParamSet.params / _DEFAULT_MATCHING_PARAMS.
+
+    Returns the SymmetricSortingComparison (see spikeinterface.comparison), or None if the
+    blocks don't overlap in time or neither side has any spikes in the overlap window.
+    """
+    from spikeinterface.comparison import compare_two_sorters
+    from spikeinterface.core import NumpySorting
+
+    this_start, this_end = this_block_bounds
+    prev_start, prev_end = prev_block_bounds
+    overlap_start = max(this_start, prev_start)
+    overlap_end = min(this_end, prev_end)
+    if overlap_start >= overlap_end:
+        return None
+
+    # block_start/block_end are naive datetimes (HARP/synced clock, effectively UTC).
+    # datetime.timestamp() on a naive datetime silently assumes the *system's local*
+    # timezone, not UTC - on a non-UTC machine this shifts the window enough to miss the
+    # actual overlap entirely, silently producing zero matches with no error. Attach UTC
+    # explicitly so this is correct regardless of the machine's local timezone.
+    overlap_start_s = overlap_start.replace(tzinfo=UTC).timestamp()
+    overlap_end_s = overlap_end.replace(tzinfo=UTC).timestamp()
+
+    this_spike_trains = {}
+    for uid, times in this_block_units.items():
+        restricted = _restrict_to_overlap(times, overlap_start_s, overlap_end_s)
+        if len(restricted) > 0:
+            this_spike_trains[uid] = (restricted * sampling_frequency).astype(np.int64)
+
+    prev_spike_trains = {}
+    for uid, times in prev_block_units.items():
+        restricted = _restrict_to_overlap(times, overlap_start_s, overlap_end_s)
+        if len(restricted) > 0:
+            prev_spike_trains[uid] = (restricted * sampling_frequency).astype(np.int64)
+
+    if not this_spike_trains or not prev_spike_trains:
+        return None
+
+    sorting_this = NumpySorting.from_unit_dict(this_spike_trains, sampling_frequency=sampling_frequency)
+    sorting_prev = NumpySorting.from_unit_dict(prev_spike_trains, sampling_frequency=sampling_frequency)
+    return compare_two_sorters(
+        sorting1=sorting_prev,
+        sorting2=sorting_this,
+        sorting1_name="previous",
+        sorting2_name="current",
+        delta_time=delta_time,
+        match_score=match_score,
+        chance_score=min_score,
+    )
+
+
 @schema
 class UnitMatching(dj.Computed):
     definition = """
@@ -1240,6 +1379,9 @@ class UnitMatching(dj.Computed):
         -> GlobalUnit
         match_confidence=null: float64
         match_comment='': varchar(1000)
+        matched_spike_count=null: int32  # spikes in the overlap window counted as agreeing by
+                                          # compare_two_sorters (null for newly-created global units,
+                                          # which had nothing to match against)
         """
 
     class Spikes(dj.Part):
@@ -1251,6 +1393,23 @@ class UnitMatching(dj.Computed):
         spike_times: <blob@dj_store>  # datetime64[ns] (UTC), HARP-synced
         spike_count: int32
         unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)
+        """
+
+    class CandidateMatch(dj.Part):
+        definition = """
+        # Every (this-block unit, prev-block unit) candidate pairing that compare_two_sorters
+        # scored >= the paramset's min_score against an overlapping previous block - not just the
+        # final accepted 1:1 (Hungarian) assignment. Lets QC ask how close an unmatched unit
+        # came (its best candidate's agreement_score), instead of only knowing it didn't clear
+        # match_score.
+        -> master
+        -> SortedSpikes.Unit
+        prev_block_start: datetime(6)  # block_start of the compared-against previous block
+        prev_unit: int32               # unit id in that previous block
+        ---
+        agreement_score: float64        # SpikeInterface's Jaccard-style score (0-1)
+        matched_spike_count: int32       # coincident spike count within delta_time
+        is_hungarian_match: bool         # whether this pair was the accepted 1:1 assignment
         """
 
     @property
@@ -1312,11 +1471,18 @@ class UnitMatching(dj.Computed):
         4. Unmatched units become new global units
         5. Insert GlobalUnit, UnitMatching.Unit, UnitMatching.Spikes entries
         """
-        from spikeinterface.comparison import compare_two_sorters
-        from spikeinterface.core import NumpySorting
-
         execution_time = datetime.now(UTC)
         _matching_method = (UnitMatchingParamSet & key).fetch1("matching_method")
+        raw_params = (UnitMatchingParamSet & key).fetch1("params") or {}
+        params = _resolve_matching_params(raw_params)
+        delta_time = params["delta_time"]
+        match_score = params["match_score"]
+        min_score = params["min_score"]
+
+        logger.info(
+            f"Matching block {key['block_start']} ({key['electrode_group']}, insertion {key['insertion_number']}) "
+            f"[{_matching_method}]: delta_time={delta_time}ms  match_score={match_score}  min_score={min_score}"
+        )
 
         insertion_key = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
         paramset_key = {"matching_paramset_id": key["matching_paramset_id"]}
@@ -1346,19 +1512,7 @@ class UnitMatching(dj.Computed):
                     f"There may be unprocessed intermediate blocks (check curation status)."
                 )
 
-        this_block_units = {}
-        for unit_entry in (SyncedSpikes.Unit & key).to_dicts():
-            unit_id = unit_entry["unit"]
-            if unit_id not in this_block_units:
-                this_block_units[unit_id] = []
-            this_block_units[unit_id].append(unit_entry["spike_times"])
-
-        # Concatenate spike times across chunks per unit, convert to epoch seconds
-        for unit_id in this_block_units:  # noqa: PLC0206
-            concatenated = np.sort(np.concatenate(this_block_units[unit_id]))
-            if concatenated.dtype.kind == "M":  # datetime64
-                concatenated = concatenated.astype("datetime64[ns]").astype(np.int64) / 1e9
-            this_block_units[unit_id] = concatenated
+        this_block_units = _load_block_unit_spike_trains(key)
 
         if not this_block_units:
             logger.warning(f"No synced spike data found for block {key}. Skipping.")
@@ -1378,6 +1532,13 @@ class UnitMatching(dj.Computed):
 
         # Map: this block's unit_id -> global_unit (if matched)
         unit_to_global = {}
+        # Map: this block's unit_id -> matched spike count from the comparison that produced
+        # its match (unset for newly-created global units, which had nothing to match against)
+        unit_to_match_count = {}
+        # Every candidate pairing scored >= min_score against any overlapping previous block,
+        # not just the accepted match - persisted to CandidateMatch below so unmatched units
+        # can be audited later (how close was their best candidate?).
+        all_candidate_rows = []
 
         if not previously_matched:
             logger.info("First block for this insertion — all units will be new global units.")
@@ -1387,80 +1548,67 @@ class UnitMatching(dj.Computed):
                 f"All units will be assigned new global unit IDs (no temporal overlap for matching)."
             )
 
-        def _restrict_to_overlap(spike_times_s, start_s, end_s):
-            """Restrict spike times (epoch seconds) to overlap window.
+        for prev_block in overlapping_blocks:
+            prev_key = prev_block
+            prev_units = _load_block_unit_spike_trains(prev_key)
+            if not prev_units:
+                continue
 
-            Returns times relative to start of overlap window (in seconds).
-            """
-            if len(spike_times_s) == 0:
-                return np.array([])
-            mask = (spike_times_s >= start_s) & (spike_times_s <= end_s)
-            return spike_times_s[mask] - start_s
-
-        if overlapping_blocks:
-            for prev_block in overlapping_blocks:
-                overlap_start = max(block_start, prev_block["block_start"])
-                overlap_end = min(block_end, prev_block["block_end"])
-                overlap_start_s = overlap_start.timestamp()
-                overlap_end_s = overlap_end.timestamp()
-
-                # Load previous block's spike times (prev_block has all PK fields)
-                prev_key = prev_block
-                prev_units = {}
-                for unit_entry in (SyncedSpikes.Unit & prev_key).to_dicts():
-                    uid = unit_entry["unit"]
-                    if uid not in prev_units:
-                        prev_units[uid] = []
-                    prev_units[uid].append(unit_entry["spike_times"])
-                for uid in prev_units:  # noqa: PLC0206
-                    concatenated = np.sort(np.concatenate(prev_units[uid]))
-                    if concatenated.dtype.kind == "M":
-                        concatenated = concatenated.astype("datetime64[ns]").astype(np.int64) / 1e9
-                    prev_units[uid] = concatenated
-
-                if not prev_units:
-                    continue
-
-                # Build spike train dicts for the overlap window (sample indices at 30kHz)
-                this_spike_trains = {}
-                for uid, times in this_block_units.items():
-                    restricted = _restrict_to_overlap(times, overlap_start_s, overlap_end_s)
-                    if len(restricted) > 0:
-                        this_spike_trains[uid] = (restricted * 30000).astype(np.int64)
-
-                prev_spike_trains = {}
-                for uid, times in prev_units.items():
-                    restricted = _restrict_to_overlap(times, overlap_start_s, overlap_end_s)
-                    if len(restricted) > 0:
-                        prev_spike_trains[uid] = (restricted * 30000).astype(np.int64)
-
-                if not this_spike_trains or not prev_spike_trains:
-                    continue
-
-                # Compare using SpikeInterface
-                sorting_this = NumpySorting.from_unit_dict(this_spike_trains, sampling_frequency=30000)
-                sorting_prev = NumpySorting.from_unit_dict(prev_spike_trains, sampling_frequency=30000)
-                comparison = compare_two_sorters(
-                    sorting1=sorting_prev,
-                    sorting2=sorting_this,
-                    sorting1_name="previous",
-                    sorting2_name="current",
-                    delta_time=0.4,  # ms
+            comparison = _compare_spike_trains_in_overlap(
+                this_block_units,
+                prev_units,
+                (block_start, block_end),
+                (prev_block["block_start"], prev_block["block_end"]),
+                delta_time=delta_time,
+                match_score=match_score,
+                min_score=min_score,
+            )
+            if comparison is None:
+                logger.warning(
+                    f"No spike train overlap between block {key['block_start']} and "
+                    f"previous block {prev_block['block_start']}. Skipping."
                 )
+                continue
 
-                # get_matching() returns (sorting1→sorting2, sorting2→sorting1)
-                prev_to_this, _ = comparison.get_matching()
-                for prev_uid, this_uid in prev_to_this.items():
-                    if this_uid == -1 or this_uid in unit_to_global:
+            # get_matching() returns (sorting1→sorting2, sorting2→sorting1)
+            prev_to_this, _ = comparison.get_matching()
+
+            for prev_uid in comparison.agreement_scores.index:
+                for this_uid in comparison.agreement_scores.columns:
+                    score = float(comparison.agreement_scores.at[prev_uid, this_uid])
+                    if score < min_score:
                         continue
-
-                    # Look up which global unit the previous block's unit belongs to
-                    gu_match = self.Unit & {**prev_key, "unit": prev_uid}
-                    if gu_match:
-                        unit_to_global[this_uid] = gu_match.fetch1("global_unit")
+                    matched_spike_count = int(comparison.match_event_count.at[prev_uid, this_uid])
+                    is_hungarian_match = bool(prev_to_this.get(prev_uid) == this_uid)
+                    all_candidate_rows.append(
+                        {
+                            **key,
+                            "unit": this_uid,
+                            "prev_block_start": prev_block["block_start"],
+                            "prev_unit": prev_uid,
+                            "agreement_score": score,
+                            "matched_spike_count": matched_spike_count,
+                            "is_hungarian_match": is_hungarian_match,
+                        }
+                    )
+                    # First accepted (Hungarian) match wins - a unit is not reconsidered once
+                    # assigned, even if a later overlapping block would score higher. Blocks are
+                    # only ever compared to at most one already-processed neighbor at a time in
+                    # practice (see key_source's contiguous frontier growth + the block-overlap
+                    # geometry in step02_define_blocks.py), so this never actually competes
+                    # against a second candidate under current usage.
+                    if is_hungarian_match and this_uid not in unit_to_global:
+                        gu_match = self.Unit & {**prev_key, "unit": prev_uid}
+                        if gu_match:
+                            unit_to_global[this_uid] = gu_match.fetch1("global_unit")
+                            unit_to_match_count[this_uid] = matched_spike_count
 
         # ---- Assign new global units for unmatched units ----
-        existing_ids = (GlobalUnit & insertion_key & paramset_key).to_arrays("global_unit")
+        # GlobalUnit's primary key is (ProbeInsertion, global_unit) - it does NOT include
+        # matching_paramset_id, so IDs must be unique across the whole insertion regardless of
+        # paramset (e.g. when different shanks use different matching_paramset_id values),
+        # not restarted per paramset - otherwise this collides with another paramset's IDs.
+        existing_ids = (GlobalUnit & insertion_key).to_arrays("global_unit")
         next_gu_id = int(existing_ids.max()) + 1 if len(existing_ids) > 0 else 1
         n_matched = len(unit_to_global)
 
@@ -1512,6 +1660,7 @@ class UnitMatching(dj.Computed):
                     "unit": unit_id,
                     **insertion_key,
                     "global_unit": gu_id,
+                    "matched_spike_count": unit_to_match_count.get(unit_id),
                 },
                 ignore_extra_fields=True,
             )
@@ -1559,6 +1708,10 @@ class UnitMatching(dj.Computed):
                     ignore_extra_fields=True,
                 )
 
+        # ---- Insert UnitMatching.CandidateMatch (audit trail beyond the final assignment) ----
+        if all_candidate_rows:
+            self.CandidateMatch.insert(all_candidate_rows, ignore_extra_fields=True)
+
         logger.info(
             f"Unit matching complete for block {key['block_start']}:\n"
             f"  {len(unit_to_global)} units processed\n"
@@ -1582,6 +1735,7 @@ def ephys_preproc(recording) -> Any:
     Returns:
         Preprocessed recording object
     """
+    import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
     import spikeinterface as si
 
     recording = si.preprocessing.bandpass_filter(recording=recording, freq_min=300, freq_max=6000)
