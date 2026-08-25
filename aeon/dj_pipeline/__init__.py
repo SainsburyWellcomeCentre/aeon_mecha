@@ -5,10 +5,9 @@ import logging
 import os
 from typing import cast
 
-import pymysql.converters
-
 import datajoint as dj
 import pandas as pd
+import pymysql.converters
 
 
 # ---------------------------------------------------------------------------

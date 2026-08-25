@@ -41,7 +41,6 @@ _launch_start_time = time.perf_counter()
 import argparse
 import json
 import resource
-import sys
 import traceback
 
 try:
@@ -49,16 +48,6 @@ try:
 except Exception:
     traceback.print_exc()
     raise
-
-# datajoint installs its own sys.excepthook on import, and its log formatter drops
-# the traceback entirely - any uncaught exception (including from GUI button clicks)
-# shows up as a bare "[ERROR]: Uncaught exception" with no detail. The import above already
-# triggered aeon/dj_pipeline/__init__.py's own excepthook patch for this (routes through
-# dj.logger.error(), which prints to stdout with a timestamp/level prefix) - deliberately
-# override that here instead: plain traceback.print_exception writes to stderr (the
-# conventionally-correct stream for uncaught exceptions) with no logger prefix, which reads
-# better for a human watching this GUI crash in real time than a timestamped log line does.
-sys.excepthook = traceback.print_exception
 
 
 def _set_window_title(key: dict) -> None:
