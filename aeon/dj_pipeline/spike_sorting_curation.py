@@ -235,7 +235,11 @@ class ApplyOfficialCuration(dj.Imported):
         official_curation_row = (OfficialCuration & key).fetch1()
 
         # Auto-approved curation: no manual curation file, based on raw sorting
-        has_curation_file = bool(ManualCuration.File & key & {"curation_id": curation_id})
+        has_curation_file = bool(
+            ManualCuration.File
+            & key
+            & {"curation_id": curation_id, "file_name": f"curation_data_id{curation_id}.json"}
+        )
         if not has_curation_file:
             parent_curation_id = (ManualCuration & key & {"curation_id": curation_id}).fetch1(
                 "parent_curation_id"
@@ -516,8 +520,20 @@ def launch_spikeinterface_gui(
                 f"Parent curation with curation_id={parent_curation_id} not found for this sorting task."
             )
 
-        # Get the parent curation file path
-        parent_file = Path((ManualCuration.File & parent_curation_key).fetch1("file").full_path)
+        # Get the parent curation file path. Name the file explicitly: ManualCuration.File is a
+        # list of every file for a curation - the curation JSON here, plus the
+        # "curation_applied_analyzer" pointer ApplyOfficialCuration writes under the same
+        # curation_id - so a fetch1 must say which one it wants, or it raises "2 tuples found"
+        # for any parent that has already been applied.
+        parent_file = Path(
+            (
+                ManualCuration.File
+                & parent_curation_key
+                & {"file_name": f"curation_data_id{parent_curation_id}.json"}
+            )
+            .fetch1("file")
+            .full_path
+        )
 
         if not parent_file.exists():
             raise FileNotFoundError(
