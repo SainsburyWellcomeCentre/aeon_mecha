@@ -756,6 +756,11 @@ def save_manual_curation(key: dict, description: str = "") -> int:
     # if this fails (e.g. a schema/connection issue), the live curation_data is still intact
     # and save_manual_curation() can just be retried, rather than leaving an orphaned
     # snapshot file on disk with no way to reconstruct it from the (already-cleared) source.
+    #
+    # Wrap both inserts in one transaction so the master and its File part land together or
+    # not at all. This is a standalone function, not a table make(), so it gets none of the
+    # autopopulate framework's automatic per-make() transaction - without this, a failure
+    # between the two inserts would leave a ManualCuration row with no File row behind.
     curation_datetime = datetime.now(UTC)
     curation_entry = {
         **full_key,
@@ -765,15 +770,15 @@ def save_manual_curation(key: dict, description: str = "") -> int:
         "curation_method": "SpikeInterface",
         "description": description,
     }
-    ManualCuration.insert1(curation_entry)
-
     file_entry = {
         **full_key,
         "curation_id": next_curation_id,
         "file_name": curated_file_name,
         "file": curated_file_path,
     }
-    ManualCuration.File.insert1(file_entry)
+    with ManualCuration.connection.transaction:
+        ManualCuration.insert1(curation_entry)
+        ManualCuration.File.insert1(file_entry)
 
     # Now safe to clear the original, live-editable copy
     if is_zarr:
