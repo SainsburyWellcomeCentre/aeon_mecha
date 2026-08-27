@@ -1214,19 +1214,16 @@ class GlobalUnit(dj.Manual):
     """
 
 
-# SpikeInterface's own "chance_score" default. Candidate pairings scoring below this are
-# noise-level (essentially no coincident spikes relative to each unit's spike count) and
-# aren't worth persisting in UnitMatching.CandidateMatch.
 # Defaults for UnitMatchingParamSet.params - used for any key missing from a given paramset's
 # params blob, so existing paramsets (saved with params={}) keep behaving exactly as before.
-# Note: "min_score" here is our own name for what gets passed as compare_two_sorters'
-# "chance_score" kwarg - renamed on our side since we also reuse it as the threshold for what
-# gets persisted to CandidateMatch, which isn't quite the same concept SpikeInterface's own
-# "chance_score" name implies.
+# "min_score" is our own name for compare_two_sorters' "chance_score" kwarg (pairings below it
+# are noise-level - essentially no coincident spikes relative to each unit's spike count).
+# BlockComparison stores the whole agreement-score grid regardless, so min_score no longer gates
+# what is persisted; it only feeds the comparison.
 _DEFAULT_MATCHING_PARAMS = {
     "delta_time": 0.4,  # ms; coincidence window for compare_two_sorters
     "match_score": 0.5,  # min agreement_score to accept a 1:1 (Hungarian) match
-    "min_score": 0.1,  # min agreement_score worth persisting to CandidateMatch at all
+    "min_score": 0.1,  # compare_two_sorters chance_score (below = noise-level)
 }
 
 
@@ -1366,21 +1363,18 @@ class UnitMatching(dj.Computed):
         unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)
         """
 
-    class CandidateMatch(dj.Part):
+    class BlockComparison(dj.Part):
         definition = """
-        # Every (this-block unit, prev-block unit) candidate pairing that compare_two_sorters
-        # scored >= the paramset's min_score against an overlapping previous block - not just the
-        # final accepted 1:1 (Hungarian) assignment. Lets QC ask how close an unmatched unit
-        # came (its best candidate's agreement_score), instead of only knowing it didn't clear
-        # match_score.
+        # Full agreement-score grid from compare_two_sorters between this block's units and the
+        # units of one block it was compared against - every pairing, not just those above a
+        # threshold. QC/audit only; does not affect matching or global-unit assignment. One row
+        # per block this block was compared against.
         -> master
-        -> SortedSpikes.Unit
-        prev_block_start: datetime(6)  # block_start of the compared-against previous block
-        prev_unit: int32               # unit id in that previous block
+        -> ephys.EphysBlock.proj(matched_block_start='block_start', matched_block_end='block_end')
         ---
-        agreement_score: float64        # SpikeInterface's Jaccard-style score (0-1)
-        matched_spike_count: int32       # coincident spike count within delta_time
-        is_hungarian_match: bool         # whether this pair was the accepted 1:1 assignment
+        unit_ids: <blob>                # this block's unit ids (column order of agreement_scores)
+        matched_block_unit_ids: <blob>  # compared block's unit ids (row order of agreement_scores)
+        agreement_scores: <blob>        # 2D float64 [matched_block_unit_ids x unit_ids], Jaccard 0-1
         """
 
     @property
@@ -1506,10 +1500,10 @@ class UnitMatching(dj.Computed):
         # Map: this block's unit_id -> matched spike count from the comparison that produced
         # its match (unset for newly-created global units, which had nothing to match against)
         unit_to_match_count = {}
-        # Every candidate pairing scored >= min_score against any overlapping previous block,
-        # not just the accepted match - persisted to CandidateMatch below so unmatched units
-        # can be audited later (how close was their best candidate?).
-        all_candidate_rows = []
+        # Full agreement-score grid for each overlapping previous block, persisted to
+        # BlockComparison below (the complete matrix, no threshold) so QC can see the whole
+        # spectrum of scores - how close every unit came, not just the accepted matches.
+        block_comparison_rows = []
 
         if not previously_matched:
             logger.info("First block for this insertion — all units will be new global units.")
@@ -1544,6 +1538,20 @@ class UnitMatching(dj.Computed):
             # get_matching() returns (sorting1→sorting2, sorting2→sorting1)
             prev_to_this, _ = comparison.get_matching()
 
+            # Save the full score grid for this comparison (QC/audit only - does not affect the
+            # assignment below). agreement_scores is indexed [prev/matched units x this units]
+            # and holds every pair's score regardless of min_score, so this is the whole spectrum.
+            block_comparison_rows.append(
+                {
+                    **key,
+                    "matched_block_start": prev_block["block_start"],
+                    "matched_block_end": prev_block["block_end"],
+                    "unit_ids": np.asarray(comparison.agreement_scores.columns),
+                    "matched_block_unit_ids": np.asarray(comparison.agreement_scores.index),
+                    "agreement_scores": comparison.agreement_scores.to_numpy(),
+                }
+            )
+
             for prev_uid in comparison.agreement_scores.index:
                 for this_uid in comparison.agreement_scores.columns:
                     score = float(comparison.agreement_scores.at[prev_uid, this_uid])
@@ -1551,17 +1559,6 @@ class UnitMatching(dj.Computed):
                         continue
                     matched_spike_count = int(comparison.match_event_count.at[prev_uid, this_uid])
                     is_hungarian_match = bool(prev_to_this.get(prev_uid) == this_uid)
-                    all_candidate_rows.append(
-                        {
-                            **key,
-                            "unit": this_uid,
-                            "prev_block_start": prev_block["block_start"],
-                            "prev_unit": prev_uid,
-                            "agreement_score": score,
-                            "matched_spike_count": matched_spike_count,
-                            "is_hungarian_match": is_hungarian_match,
-                        }
-                    )
                     # First accepted (Hungarian) match wins - a unit is not reconsidered once
                     # assigned, even if a later overlapping block would score higher. Blocks are
                     # only ever compared to at most one already-processed neighbor at a time in
@@ -1679,9 +1676,9 @@ class UnitMatching(dj.Computed):
                     ignore_extra_fields=True,
                 )
 
-        # ---- Insert UnitMatching.CandidateMatch (audit trail beyond the final assignment) ----
-        if all_candidate_rows:
-            self.CandidateMatch.insert(all_candidate_rows, ignore_extra_fields=True)
+        # ---- Insert UnitMatching.BlockComparison (full score grid, QC/audit) ----
+        if block_comparison_rows:
+            self.BlockComparison.insert(block_comparison_rows, ignore_extra_fields=True)
 
         logger.info(
             f"Unit matching complete for block {key['block_start']}:\n"
