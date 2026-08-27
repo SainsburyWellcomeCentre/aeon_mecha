@@ -16,18 +16,6 @@ from aeon.dj_pipeline.utils.spike_sorting_utils import resolve_analyzer_dir
 schema = dj.Schema(get_schema_name("spike_sorting_curation"))
 logger = dj.logger
 
-# Non-exclusive tag options from the SI GUI's "tags" label category (scripts/launch_si_gui.py)
-# - each becomes its own boolean property on the curated sorting after apply_curation, keyed by
-# the tag string itself. Kept here (not in scripts/unit_matching_qc.py) since this is where the
-# curation-writing logic that reads them lives.
-MANUAL_TAG_OPTIONS = (
-    "irregular waveform",
-    "amplitude drift",
-    "bimodal amplitude",
-    "intermittent",
-    "refractory violations",
-    "flag",
-)
 
 
 @schema
@@ -147,9 +135,10 @@ def insert_sorted_spikes_from_analyzer(
         int(unit_id): (si_sorting.get_unit_property(unit_id, "quality") or "").lower() or None
         for unit_id in si_sorting.unit_ids
     } if "quality" in prop_keys else {}
+    tag_options = spike_sorting.CurationTag.fetch("tag")
     manual_tags_map = {
         int(unit_id): [
-            tag for tag in MANUAL_TAG_OPTIONS
+            tag for tag in tag_options
             if tag in prop_keys and bool(si_sorting.get_unit_property(unit_id, tag))
         ]
         for unit_id in si_sorting.unit_ids

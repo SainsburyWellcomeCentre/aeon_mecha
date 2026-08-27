@@ -44,7 +44,7 @@ import resource
 import traceback
 
 try:
-    from aeon.dj_pipeline import spike_sorting_curation
+    from aeon.dj_pipeline import spike_sorting, spike_sorting_curation
 except Exception:
     traceback.print_exc()
     raise
@@ -181,14 +181,15 @@ if __name__ == "__main__":
 
     # Custom label categories for the curation panel. Only applies to blocks with no
     # curation_data.json / zarr curation attrs already saved - see launch_spikeinterface_gui().
-    # "tags" is edited via the multitag plugin view registered below, not the built-in
-    # unit table editor. label_options is sourced from MANUAL_TAG_OPTIONS - the same list
-    # spike_sorting_curation.py reads back off the analyzer into SortedSpikes.UnitTag - so
-    # this, multitag_view.TAG_SHORTCUTS, and the DB-writing side can't drift apart.
+    # "tags" is edited via the multitag plugin view registered below, not the built-in unit
+    # table editor. label_options comes from the CurationTag lookup - the single source of
+    # truth that SortedSpikes.UnitTag foreign-keys into and the read-back reads - so the GUI,
+    # multitag_view.TAG_SHORTCUTS (validated below), and the DB side can't drift apart.
+    tag_options = list(spike_sorting.CurationTag.fetch("tag"))
     label_definitions = {
         "quality": {"label_options": ["good", "noise", "MUA"], "exclusive": True},
         "tags": {
-            "label_options": list(spike_sorting_curation.MANUAL_TAG_OPTIONS),
+            "label_options": tag_options,
             "exclusive": False,
         },
     }
@@ -196,7 +197,16 @@ if __name__ == "__main__":
     # Register the custom multitag view (checkbox + keyboard-shortcut multi-tagging,
     # see multitag_view.py) so it can be referenced in the layout below.
     import spikeinterface_gui.viewlist as _viewlist
-    from multitag_view import MultiTagView
+    from multitag_view import TAG_SHORTCUTS, MultiTagView
+
+    # Guard against the GUI shortcuts drifting from the CurationTag vocabulary: a shortcut for a
+    # tag that isn't valid would be selectable but rejected on write. Checked here (not at
+    # multitag_view import) because it needs the database.
+    if set(TAG_SHORTCUTS.values()) != set(tag_options):
+        raise ValueError(
+            f"multitag_view.TAG_SHORTCUTS {set(TAG_SHORTCUTS.values())} != CurationTag "
+            f"{set(tag_options)} - keep the GUI shortcuts in sync with the CurationTag lookup."
+        )
 
     _viewlist.builtin_views.append(MultiTagView)
 

@@ -126,18 +126,12 @@ def get_unit_locations(block_key_: dict) -> pd.DataFrame:
     return pd.DataFrame(locations, index=analyzer.unit_ids, columns=columns)
 
 
-# Now defined in spike_sorting_curation (where the curation-writing logic that reads these
-# properties lives) - kept as a module-level alias here since existing code/notebooks refer to
-# qc.MANUAL_TAG_OPTIONS.
-MANUAL_TAG_OPTIONS = spike_sorting_curation.MANUAL_TAG_OPTIONS
-
-
 def get_unit_manual_labels(block_key_: dict) -> pd.DataFrame:
     """Manual curation quality label + custom tags (index=unit_id) for a block.
 
     Read directly from the curated analyzer's `sorting` properties - these are the labels
     actually assigned by hand in the SpikeInterface GUI (`quality`: good/MUA/noise, plus one
-    boolean property per tag in MANUAL_TAG_OPTIONS). This is NOT the same thing as
+    boolean property per tag in the CurationTag lookup). This is NOT the same thing as
     `SortedSpikes.Unit.unit_quality`, which is Kilosort's own KSLabel and doesn't reflect
     manual curation at all (it reads "good" for units manually labeled MUA/noise too).
     Curation also doesn't remove MUA/noise units - they stay in SortedSpikes.Unit.
@@ -151,7 +145,7 @@ def get_unit_manual_labels(block_key_: dict) -> pd.DataFrame:
 
     data = {"unit": analyzer.unit_ids}
     data["manual_quality"] = sorting.get_property("quality") if "quality" in prop_keys else None
-    for tag in MANUAL_TAG_OPTIONS:
+    for tag in spike_sorting.CurationTag.fetch("tag"):
         data[tag] = sorting.get_property(tag) if tag in prop_keys else None
     return pd.DataFrame(data).set_index("unit")
 
@@ -295,13 +289,14 @@ def _annotate_orphans(
     earlier_block_start,
     is_prev_side: bool,
 ) -> pd.DataFrame:
+    tag_options = list(spike_sorting.CurationTag.fetch("tag"))
     if not orphan_unit_ids:
         return pd.DataFrame(
             columns=[
                 "unit",
                 "unit_quality",
                 "manual_quality",
-                *MANUAL_TAG_OPTIONS,
+                *tag_options,
                 *_QC_METRIC_COLUMNS,
                 "x",
                 "y",
@@ -339,11 +334,11 @@ def _annotate_orphans(
             row["x"] = row["y"] = None
         if unit_id in manual_labels.index:
             row["manual_quality"] = manual_labels.loc[unit_id, "manual_quality"]
-            for tag in MANUAL_TAG_OPTIONS:
+            for tag in tag_options:
                 row[tag] = manual_labels.loc[unit_id, tag]
         else:
             row["manual_quality"] = None
-            row.update(dict.fromkeys(MANUAL_TAG_OPTIONS))
+            row.update(dict.fromkeys(tag_options))
         overlap_times = spike_sorting._restrict_to_overlap(
             this_trains.get(unit_id, np.array([])), overlap_start_s, overlap_end_s
         )

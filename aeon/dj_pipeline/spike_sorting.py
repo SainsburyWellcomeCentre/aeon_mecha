@@ -73,6 +73,24 @@ class UnitQuality(dj.Lookup):
 
 
 @schema
+class CurationTag(dj.Lookup):
+    definition = """
+    # Valid non-exclusive manual-curation tags a curator can apply to a unit in the SI GUI.
+    # SortedSpikes.UnitTag foreign-keys into this; the GUI and QC read the list from here (not
+    # from a hardcoded constant). Extend by inserting rows.
+    tag: varchar(64)
+    """
+    contents = [
+        ("irregular waveform",),
+        ("amplitude drift",),
+        ("bimodal amplitude",),
+        ("intermittent",),
+        ("refractory violations",),
+        ("flag",),
+    ]
+
+
+@schema
 class SortingMethod(dj.Lookup):
     definition = """ # Method for spike sorting
     sorting_method: varchar(16)
@@ -738,10 +756,10 @@ class SortedSpikes(dj.Imported):
     class UnitTag(dj.Part):
         definition = """
         # Manual curation tags (non-exclusive) - one row per tag actually applied to a unit,
-        # read from the curated analyzer's per-tag boolean properties (see
-        # spike_sorting_curation.MANUAL_TAG_OPTIONS). A unit with no tags has no rows here.
+        # read from the curated analyzer's per-tag boolean properties (one per CurationTag).
+        # A unit with no tags has no rows here.
         -> master.Unit
-        tag: varchar(64)
+        -> CurationTag
         """
 
     def make(self, key):
