@@ -1,127 +1,180 @@
-# Spike-Sorting Curation: Two Design Decisions for the Team
+# Spike-Sorting Curation — Meeting Reference (2026-08-27)
 
-**Prepared:** 2026-08-26 (for the 2026-08-27 meeting)
-**Context:** Elissa's planned PR **into Zofia's `zs/spike_sorting` branch** (PR #604), landing before
-#604 merges to `main`. Both issues below were found while reviewing #604 with Zofia.
-**Why bring it to the team:** both decisions are core/shared design (Thinh) and touch Zofia's
-in-progress curation work, so they're worth deciding together rather than patching unilaterally.
+**Purpose:** Talking-points reference for the 2026-08-27 meeting on the spike-sorting curation
+pipeline — Zofia's PR **#604** (`zs/spike_sorting`) and the follow-up PR **#608**
+(`es/curation-fixes` → `zs/spike_sorting`). Covers what already landed, the two design decisions
+that need the team, and the smaller related questions worth raising.
 
 > **How to read this**
 > - **[Verified]** — checked against the current branch code, GitHub `main`, and the original spec.
-> - **[Proposal]** — Claude's analysis of options and trade-offs, for discussion. Not decisions.
-> - **[Decided — Elissa]** — calls Elissa has already made.
+> - **[Proposal]** — Claude's analysis / options for discussion. Not decisions.
+> - **[Decided — Elissa]** — a call Elissa has already made (to confirm with the team).
+>
+> Items under "Other talking points" are candidates to raise, not settled outcomes.
 
 ---
 
-## Background — two problems in the curation pipeline
+## Quick agenda
 
-### Problem A — the manual quality label is never stored [Verified]
-
-- `SortedSpikes.Unit.unit_quality` is meant to carry each unit's quality label.
-- In every code path that builds those rows — `SortedSpikes.make()`, and on the branch also
-  `insert_sorted_spikes_from_analyzer()` — `unit_quality` is read from Kilosort's `KSLabel`
-  property, never from the curator's manual `quality` property. So it always reflects Kilosort's
-  automatic call, never the human's curation, even after a curation has been applied.
-- The original spec (`docs/specs/SPEC_SPIKE_SORTING_CURATION.md`, unchanged since 2026-04-20)
-  describes a **single** quality field that holds Kilosort's label before curation and is
-  **replaced** by the curator's label once a curation is applied. There is no second field in it.
-- This is a **pre-existing bug in `main`**, not something Zofia introduced.
-- Mechanism (verified): SpikeInterface stores the curator's call in a separate `quality` property
-  and leaves `KSLabel` untouched, so any code reading `KSLabel` never picks up the curation. Per
-  Elissa, the original code read `KSLabel` on the assumption that applying a curation overwrites it
-  in place — the separate `quality` property wasn't understood at the time.
-- On the branch, Zofia added a **second** column, `curation_quality`, to hold the manual label
-  separately, plus a `UnitTag` part table for non-exclusive tags. The spec was never updated to
-  describe either.
-
-### Problem B — applying a curation deletes its own parent (circular cascade) [Verified]
-
-- Dependency chain: `PostProcessing → SortedSpikes → OfficialCuration → ApplyOfficialCuration`
-  (each table borrows its primary key from the one above).
-- `ApplyOfficialCuration.make()` deletes the `SortedSpikes` row in order to swap raw units for
-  curated ones. That delete cascades **down the chain**: it removes the `OfficialCuration` child,
-  which in turn removes the `ApplyOfficialCuration` grandchild.
-- The next line then tries to insert the `ApplyOfficialCuration` record — but the `OfficialCuration`
-  parent it must attach to was just cascade-deleted. Foreign-key violation. The step cannot complete.
-- This is **fatal and pre-existing in `main`**. It was never caught because the apply step was a
-  draft that was never actually run until Zofia tested it.
-- The spec's "Circular Dependency Handling" section addresses only the Python **import** cycle
-  (the lazy import), not this table cascade.
-- **Zofia's workaround:** inside `make()`, stash the `OfficialCuration` row in memory before the
-  delete, rebuild `SortedSpikes` from the in-memory analyzer, then re-insert `OfficialCuration` and
-  `ApplyOfficialCuration` in the same transaction. It works, but a computed table is reaching
-  upstream to delete and rebuild its own ancestor.
+1. Status — what already landed in PR #608 (partial set)
+2. **Decision 1** — how to represent quality labels
+3. **Decision 2** — in-place modification vs. duplication (the cascade)
+4. Noise units — keep + label + exclude from matching (confirm)
+5. The `unit_quality` bug — fallback + `ks_` prefix + keep-both
+6. Data duplication (Chris's concern) — what's actually duplicated
+7. Backfilling already-curated blocks after the label fix
+8. The applied-analyzer in `ManualCuration.File` + restore cleanup
+9. Label-completeness gate — add one?
+10. Testing gap — no unit-matching coverage
+11. Schema migration + sensitivity to re-curation
+12. Ownership / who decides what
+13. DataJoint version bump riding along
 
 ---
 
-## Decision 1 — how to represent quality labels [Proposal]
+## 1. Status — what already landed in PR #608 (partial set) [Verified]
 
-Fixing Problem A forces a choice: when `unit_quality` reflects the manual curation, do we keep
-Kilosort's label too?
+PR #608 collects the safe, agreed fixes so they don't block on the bigger design questions. All go
+into `zs/spike_sorting` before it reaches `main`:
 
-### Option 1A — single field (the original spec)
-One `unit_quality` field: holds the curator's manual label once curated, with Kilosort's label
-standing in until then.
-- **Pros:** matches the spec; one source of truth; simplest; removes Zofia's extra column, moving
-  the branch back toward `main`.
-- **Cons:** Kilosort's label is gone once a unit is curated (no side-by-side comparison); a bare
-  label doesn't say whether it's a human or a machine call unless we mark it.
-- **Sub-choice:** mark Kilosort-sourced values with a `ks_` prefix (`ks_good` / `ks_mua` /
-  `ks_noise`) so provenance stays visible, or leave them bare.
+- Removed the obsolete uncaught-exception workarounds (DataJoint 2.3.2 fixes it upstream; the branch
+  already pins `datajoint>=2.3.2`).
+- Fixed "2 tuples found" — name the file in the remaining `ManualCuration.File` reads.
+- Made `save_manual_curation`'s two inserts atomic (it's a helper, not a table `make()`).
+- Replaced `UnitMatching.CandidateMatch` with `UnitMatching.BlockComparison` — the full
+  agreement-score grid per compared block, no threshold.
+- Parameterized the curation tags into a `CurationTag` lookup table.
 
-### Option 1B — two fields (the branch's current state)
-`unit_quality` = Kilosort's label always; `curation_quality` = the manual label (null until curated).
-- **Pros:** both labels visible at once; no ambiguity; nothing lost.
-- **Cons:** diverges from the spec; two fields to keep straight everywhere downstream; "fixes" the
-  bug by adding a field rather than correcting the one that was wrong.
-
-> Related, **[Decided — Elissa]**: noise-labelled units are **kept and labelled**, not deleted, and
-> are **excluded from unit matching**. That holds under either option above; only which field the
-> matching filter reads would change.
+Deferred to this meeting: the quality-label change (Decision 1) and the cascade restructure
+(Decision 2).
 
 ---
 
-## Decision 2 — in-place modification vs. duplication [Proposal]
+## 2. Decision 1 — how to represent quality labels
 
-Fixing Problem B forces a choice about how curated results are stored. Note (Elissa's framing): every
-option short of 2B still feels like a patch, because the underlying issue is that one mutable table
-holds both the raw and the curated result and swaps between them in place.
+### The bug it fixes [Verified]
+`SortedSpikes.Unit.unit_quality` is read from Kilosort's `KSLabel` in every code path that builds
+the rows, never from the curator's manual `quality` property — so it always reflects Kilosort, never
+the human's curation, even after a curation is applied. Pre-existing in `main`. The original spec
+(`SPEC_SPIKE_SORTING_CURATION.md`, unchanged since 2026-04-20) intended a **single** quality field:
+Kilosort's label before curation, replaced by the curator's label after. On the branch, Zofia added a
+**second** column, `curation_quality`, to hold the manual label separately (plus a `UnitTag` part
+table for tags); the spec was never updated to describe either.
 
-### Option 2A — keep in-place modification, patch the cascade
-One `SortedSpikes` table, swapped between raw and curated; fix only the circularity.
+### Option 1A — single field (the original spec) [Proposal]
+One `unit_quality`: the curator's manual label once curated, Kilosort's standing in until then.
+- **Pros:** matches the spec; one source of truth; simplest; drops Zofia's extra column (toward `main`).
+- **Cons:** Kilosort's label is lost once curated (no side-by-side); a bare label is ambiguous about
+  human vs. machine unless marked.
+- **Sub-choice:** mark Kilosort-sourced values `ks_good`/`ks_mua`/`ks_noise`, or leave bare.
+
+### Option 1B — two fields (the branch's current state) [Proposal]
+`unit_quality` = Kilosort always; `curation_quality` = manual (null until curated).
+- **Pros:** both labels visible; no ambiguity; nothing lost.
+- **Cons:** diverges from the spec; two fields downstream; "fixes" the bug by adding a field rather
+  than correcting the wrong one.
+
+---
+
+## 3. Decision 2 — in-place modification vs. duplication (the cascade)
+
+### The bug it fixes [Verified]
+Dependency chain: `PostProcessing → SortedSpikes → OfficialCuration → ApplyOfficialCuration` (each
+inherits its primary key from the one above). `ApplyOfficialCuration.make()` deletes the
+`SortedSpikes` row to swap raw units for curated ones — but that delete cascades down and removes the
+`OfficialCuration` child and the `ApplyOfficialCuration` grandchild, so the next line, which inserts
+the `ApplyOfficialCuration` record, has no parent to attach to. Foreign-key violation; the step can't
+complete. **Fatal and pre-existing in `main`** — never caught because the apply step was a draft never
+run until Zofia tested it. (The spec's "Circular Dependency Handling" section only covers the Python
+import cycle, not this table cascade.) Zofia's workaround stashes the `OfficialCuration` row before the
+delete, rebuilds `SortedSpikes` from the in-memory analyzer, and re-inserts both in one transaction —
+it works, but a computed table is reaching up to delete and rebuild its own ancestor.
+
+### Option 2A — patch in place [Proposal]
+Keep one `SortedSpikes` table swapped between raw and curated; fix only the circularity.
 - **Variant i — reparent:** move `OfficialCuration`'s parent from `SortedSpikes` up to
   `PostProcessing` (same primary key, since they're 1:1). Deleting `SortedSpikes` no longer destroys
   the curation records, and Zofia's in-memory recreate can be removed.
 - **Variant ii — keep Zofia's in-memory recreate** as the workaround.
-- **Pros:** minimal; downstream tables untouched; unblocks Zofia now.
-- **Cons:** treats the symptom, not the cause — a computed table still deletes and rebuilds an
-  upstream table in place. The reparent also loosens the enforced link between "which curation is
-  official" and "what's actually in `SortedSpikes` right now" (left to the `curation_id` convention).
-  Still a schema change on the live DB.
+- **Pros:** minimal; downstream untouched; unblocks now.
+- **Cons:** treats the symptom, not the cause — a computed table still deletes/rebuilds an upstream
+  table in place; the reparent also loosens the enforced link between "which curation is official" and
+  "what's in `SortedSpikes` now" (left to the `curation_id` convention); still a schema change.
 
-### Option 2B — duplication (DataJoint Elements pattern)
-Raw `SortedSpikes` becomes immutable. The curated result lives in its own downstream table computed
+### Option 2B — duplication (DataJoint Elements pattern) [Proposal]
+Raw `SortedSpikes` becomes immutable; the curated result lives in its own downstream table computed
 from `OfficialCuration`; downstream reads the curated table, falling back to raw when there's no
 curation. Nothing is ever deleted and rebuilt.
-- **Pros:** removes both the circularity and the in-place mutation entirely; matches the established
-  DataJoint Elements curation pattern (`Clustering → Curation → CuratedClustering`); clean lineage.
+- **Pros:** removes both the circularity and the in-place mutation; matches the established DataJoint
+  Elements curation pattern (`Clustering → Curation → CuratedClustering`); clean lineage.
 - **Cons:** larger restructure; repoints downstream tables (`SyncedSpikes`, `UnitMatching`, …); a
-  second units table with some duplicated extraction logic; migration on the live DB.
+  second units table with some duplicated extraction logic; migration.
+
+> Note (Elissa's framing): every option short of 2B still feels like a patch, because the root issue
+> is one mutable table holding both the raw and curated result and swapping in place.
 
 ---
 
-## Suggested framing for the discussion [Proposal]
+## Other talking points
 
-- Both problems are pre-existing in `main`, so fixing them here also improves what eventually lands
-  in `main`.
-- The two decisions interact: the cleaner Decision-2 design (2B) is also the natural moment to settle
-  Decision 1, since the curated units table would be built fresh either way.
-- **Sensitivity:** Zofia is already running the branch on real curated data. A restructure (2B) or
-  the schema changes (1A / 2A) may require her to re-apply or re-curate existing blocks — worth
-  checking what she's willing to redo before choosing.
+### 4. Noise units — keep, label, exclude from matching [Decided — Elissa; confirm with team]
+Zofia's branch currently **deletes** noise-labelled units at apply time. The decision is to **keep
+them, label them "noise," and exclude them from unit matching** instead of deleting. Confirm Zofia and
+Thinh agree. Interacts with Decision 1 (which field the matching filter reads). [Verified] `main` does
+neither — it never deletes noise and never excludes it from matching; both behaviours are new on the
+branch.
 
-## Open questions for the team
-1. **Decision 1:** single field (1A — with or without the `ks_` prefix) or two fields (1B)?
-2. **Decision 2:** patch in place now (2A-i, reparent) or restructure to duplication (2B)?
-3. If 2B: do it now, or patch with 2A to unblock and schedule 2B as the planned "full redesign"?
-4. How much of her existing curated data is Zofia willing to re-apply / re-curate afterward?
+### 5. The `unit_quality` fix — fallback, prefix, keep-both [Proposal]
+If Decision 1 goes single-field, open sub-questions: the per-unit fallback for a unit left unlabelled
+in a curated block (use Kilosort's label as a stand-in?); whether to mark Kilosort-sourced values with
+a `ks_` prefix so provenance is visible; and the standing argument for keeping both the Kilosort and
+manual labels (which is really Decision 1 itself).
+
+### 6. Data duplication — what's actually duplicated [Verified] (Chris's concern)
+Worth pinning down which of these Chris meant:
+- The curated analyzer is a **full second copy on disk** per applied curation; restore deletes neither
+  the folder nor its `File` row.
+- Spike payloads are stored **twice** — `SyncedSpikes.Unit.spike_times`, then again in
+  `UnitMatching.Spikes.spike_times` keyed by `global_unit`.
+- Apply/restore cycles **leak old external blobs** (DataJoint's row delete doesn't remove
+  external-store files).
+- `ManualCuration.File` mixes two different kinds of thing (the curation JSON and the apply-step's
+  analyzer pointer) — the root of the "2 tuples" bug. Connects to Decision 2.
+
+### 7. Backfilling already-curated blocks [Proposal]
+The `unit_quality` fix is forward-looking: blocks Zofia has already curated keep the buggy Kilosort
+label until re-applied. Manual labels are safe on disk in the curated analyzers, so nothing is lost,
+but correcting existing blocks means re-applying each curation (disruptive) or a one-off migration
+script. Decide whether and how to backfill.
+
+### 8. Applied-analyzer in `ManualCuration.File` + restore cleanup [Verified; Decided — Elissa on cleanup]
+The apply step stores the curated-analyzer path in `ManualCuration.File` — an apply-step output living
+in a manual-curation file table, which is what makes the "2 tuples" collision possible. Whether it
+should move to its own table is part of Decision 2. Separately, [Decided — Elissa] leave
+`restore_raw_sorting` as-is: with the file-name fix, the leftover applied-analyzer rows are harmless
+and are useful provenance; the only cost is on-disk folders accumulating.
+
+### 9. Label-completeness gate [Verified: none exists; Proposal]
+There is **no** gate requiring an official curation to have every unit labelled. Decide whether to add
+one, or rely on the Kilosort per-unit fallback for units the curator didn't touch.
+
+### 10. Testing gap [Verified]
+There is **no automated coverage** for unit matching — the golden dataset is a single block, and
+matching needs several overlapping curated blocks. Zofia is asked (in PR #608) to test the matching
+changes on real data. [Proposal] consider building multi-block test fixtures so this path isn't
+verified only by hand.
+
+### 11. Schema migration + sensitivity [Verified / Elissa]
+PR #608 already recreates tables on the live DB (adds `CurationTag` and `BlockComparison`, makes
+`UnitTag.tag` a foreign key, removes `CandidateMatch`). Decision 2 (restructure) would be a bigger
+migration. [Elissa] Zofia is running on real curated data and won't want to re-curate, so major
+changes should be weighed against how much of her existing work they'd force her to redo.
+
+### 12. Ownership / who decides [Proposal]
+- Cascade + core table structure (Decision 2) — **Thinh** (shared/core design).
+- Curation workflow, tags, QC — **Zofia** (her PR).
+- The removed `__init__.py` exception-handler workaround was **Adrian's** (via `ar/core`), not Zofia's.
+
+### 13. DataJoint version bump [Verified]
+The branch bumps DataJoint from `main`'s `>=2.2.2` to `>=2.3.2` (needed for the upstream traceback
+fix). Flag that this rides along with the branch into `main`.
