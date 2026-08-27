@@ -14,21 +14,38 @@ that need the team, and the smaller related questions worth raising.
 
 ---
 
-## Quick agenda
+## TL;DR — glance during the meeting
 
-1. Status — what already landed in PR #608 (partial set)
-2. **Decision 1** — how to represent quality labels
-3. **Decision 2** — in-place modification vs. duplication (the cascade)
-4. Noise units — keep + label + exclude from matching (confirm)
-5. The `unit_quality` bug — fallback + `ks_` prefix + keep-both
-6. Data duplication (Chris's concern) — what's actually duplicated
-7. Backfilling already-curated blocks after the label fix
-8. The applied-analyzer in `ManualCuration.File` + restore cleanup
-9. Label-completeness gate — add one?
-10. Testing gap — no unit-matching coverage
-11. Schema migration + sensitivity to re-curation
-12. Ownership / who decides what
-13. DataJoint version bump riding along
+1. **Status** — 5 safe fixes shipped in PR #608 into `zs/spike_sorting`; the 2 big decisions below
+   were deferred to today.
+2. **Decision 1 — quality labels** — Bug: `unit_quality` is read from Kilosort's KSLabel and never
+   reflects the manual curation. **Decide:** one field (Kilosort, replaced by the manual call) or two
+   fields (keep both). The spec says one.
+3. **Decision 2 — the cascade (fatal)** — Applying a curation deletes `SortedSpikes`, which
+   cascade-deletes its own `OfficialCuration`/`ApplyOfficialCuration`, so the apply can't finish.
+   Pre-existing in main, never actually worked. **Decide:** patch (reparent — quick) or restructure to
+   a separate curated table (clean — bigger).
+4. **Noise units** — Keep + label "noise" + exclude from matching (not delete). **Confirm** with
+   Zofia/Thinh.
+5. **`unit_quality` fix details** — If single field: use Kilosort as the per-unit fallback for
+   unlabelled units? Mark machine labels with a `ks_` prefix? (Both are sub-choices of Decision 1.)
+6. **Duplication (Chris)** — Real duplication points: a full curated-analyzer copy per curation;
+   spikes stored twice (SyncedSpikes + UnitMatching.Spikes); leaked blobs on restore; the File table
+   mixing the curation JSON with the apply output. **Ask Chris** which he meant.
+7. **Backfill** — The label fix is forward-only; blocks Zofia already curated keep the wrong label
+   until re-applied. **Decide:** re-apply, migration script, or leave.
+8. **Applied-analyzer in `ManualCuration.File`** — Root of the "2 tuples" bug; move it to its own
+   table (part of Decision 2)? Restore-cleanup already decided: leave as-is.
+9. **Label-completeness gate** — None exists today. **Decide:** add one, or rely on the fallback.
+10. **Testing** — Zero automated matching coverage (golden dataset is one block). Zofia tests by hand;
+    **build multi-block fixtures?**
+11. **Migration + sensitivity** — #608 already recreates tables; a restructure is bigger. **How much
+    re-curation of Zofia's existing data is acceptable?**
+12. **Ownership** — Cascade/core = Thinh; curation/tags/QC = Zofia; the exception-handler we removed
+    was Adrian's, not Zofia's.
+13. **DJ bump** — Branch bumps DataJoint `2.2.2 → 2.3.2`; it rides along into main.
+
+*(Full detail on each item is below if you need to drill in.)*
 
 ---
 
