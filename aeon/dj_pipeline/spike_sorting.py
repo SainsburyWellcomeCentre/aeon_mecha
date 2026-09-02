@@ -1270,9 +1270,16 @@ def _restrict_to_overlap(spike_times_s: np.ndarray, start_s: float, end_s: float
 
 
 def _load_block_unit_spike_trains(block_key: dict) -> dict[int, np.ndarray]:
-    """Return {unit_id: sorted spike times in epoch seconds} for every unit in a block."""
+    """Return {unit_id: sorted spike times in epoch seconds} for every non-noise unit in a block.
+
+    Units the curator manually labeled "noise" (SortedSpikes.Unit.curation_quality == "noise") are
+    excluded: they are kept in SortedSpikes/SyncedSpikes but should never be matched across blocks or
+    handed a global unit id. The antijoin excludes only the exact "noise" label, so uncurated units
+    (curation_quality NULL) and every other label are still loaded.
+    """
+    non_noise_units = SortedSpikes.Unit - {"curation_quality": "noise"}
     trains: dict[int, list] = {}
-    for unit_entry in (SyncedSpikes.Unit & block_key).to_dicts():
+    for unit_entry in (SyncedSpikes.Unit & block_key & non_noise_units).to_dicts():
         trains.setdefault(unit_entry["unit"], []).append(unit_entry["spike_times"])
     for unit_id, chunks in trains.items():
         concatenated = np.sort(np.concatenate(chunks))

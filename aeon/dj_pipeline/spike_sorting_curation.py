@@ -278,21 +278,11 @@ class ApplyOfficialCuration(dj.Imported):
         with open(curation_file_path) as f:
             curation_dict = json.load(f)
 
-        # Units manually labeled "noise" should never survive into official data. Fold them
-        # into the same `removed` list apply_curation() already uses for explicit manual
-        # deletions, so they're excluded from the curated analyzer - and therefore from
-        # SortedSpikes and everything downstream (Waveform, SortingQuality, SyncedSpikes,
-        # UnitMatching, GlobalUnit) - the same way as any manually-deleted unit. This does NOT
-        # touch the saved curation_data.json snapshot (the full manual_labels history, incl.
-        # noise, stays intact there and on the raw analyzer) or MUA-labeled units.
-        noise_unit_ids = {
-            lbl["unit_id"]
-            for lbl in curation_dict.get("manual_labels", [])
-            if "noise" in lbl.get("labels", {}).get("quality", [])
-        }
-        if noise_unit_ids:
-            curation_dict["removed"] = sorted(set(curation_dict.get("removed", [])) | noise_unit_ids)
-            logger.info(f"Excluding {len(noise_unit_ids)} unit(s) manually labeled 'noise': {sorted(noise_unit_ids)}")
+        # Units manually labeled "noise" are kept, not deleted: apply_curation() runs on the
+        # curation exactly as saved, so noise units survive into the curated analyzer carrying
+        # their "quality"="noise" property, which insert_sorted_spikes_from_analyzer() writes into
+        # SortedSpikes.Unit.curation_quality. They are held out of unit matching instead (see
+        # _load_block_unit_spike_trains in spike_sorting.py), not deleted here.
 
         # Load original sorting analyzer
         analyzer_output_dir = _get_analyzer_dir_from_key(key)
@@ -821,6 +811,41 @@ def make_curation_official(key: dict, curation_id: int) -> None:
         else:
             logger.info(f"Official curation with curation_id={curation_id} already exists.")
             return
+
+    # Gate: every unit the curator kept must carry a manual quality label, so noise-exclusion and
+    # downstream analysis see a complete picture. Units the curator removed, merged, or split are
+    # considered handled and don't need a standalone label. Checked here (when promoting to official)
+    # so an incomplete curation is refused before any apply work happens.
+    curation_file = Path(
+        (
+            ManualCuration.File
+            & sorted_spikes_key
+            & {"curation_id": curation_id, "file_name": f"curation_data_id{curation_id}.json"}
+        )
+        .fetch1("file")
+        .full_path
+    )
+    with open(curation_file) as f:
+        curation_dict = json.load(f)
+    labeled = {
+        lbl["unit_id"]
+        for lbl in curation_dict.get("manual_labels", [])
+        if lbl.get("labels", {}).get("quality")
+    }
+    handled = set(curation_dict.get("removed", []))
+    for merge_key in ("merges", "merge_unit_groups"):
+        for group in curation_dict.get(merge_key, []) or []:
+            handled.update(group)
+    for split_key in ("splits", "split_units"):
+        handled.update(curation_dict.get(split_key, {}) or {})
+    raw_unit_ids = {int(u) for u in (spike_sorting.SortedSpikes.Unit & sorted_spikes_key).fetch("unit")}
+    unlabeled = raw_unit_ids - labeled - handled
+    if unlabeled:
+        raise ValueError(
+            f"Curation {curation_id} can't be made official: {len(unlabeled)} unit(s) have no quality "
+            f"label: {sorted(unlabeled)}. Label every unit (good/mua/noise) in the GUI before making "
+            f"the curation official."
+        )
 
     # Create OfficialCuration entry
     # sorted_spikes_key already contains SpikeSorting fields (through inheritance)
