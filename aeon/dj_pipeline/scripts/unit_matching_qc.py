@@ -4,9 +4,9 @@ Covers three things, used interactively from notebooks (e.g.
 notebooks/zofia/spike_sorting/unit_matching.ipynb) rather than run as a CLI:
 
 1. Matched-pair retrieval + waveform template lookup, for visually spot-checking matches.
-2. Backfilling UnitMatching.CandidateMatch for UnitMatching rows computed before that table
+2. Backfilling UnitMatching.BlockComparison for UnitMatching rows computed before that table
    existed (recomputes the same overlap-window comparison spike_sorting.UnitMatching.make()
-   runs, but only inserts the candidate-pairing audit rows - it does not touch GlobalUnit,
+   runs, but only inserts the full agreement-score grid - it does not touch GlobalUnit,
    UnitMatching.Unit, or UnitMatching.Spikes, which are already correct).
 3. Orphan-unit diagnostics: for units that didn't get matched between two blocks, pull
    quality metrics, probe location, whether they even had spikes in the overlap window, and
@@ -126,18 +126,12 @@ def get_unit_locations(block_key_: dict) -> pd.DataFrame:
     return pd.DataFrame(locations, index=analyzer.unit_ids, columns=columns)
 
 
-# Now defined in spike_sorting_curation (where the curation-writing logic that reads these
-# properties lives) - kept as a module-level alias here since existing code/notebooks refer to
-# qc.MANUAL_TAG_OPTIONS.
-MANUAL_TAG_OPTIONS = spike_sorting_curation.MANUAL_TAG_OPTIONS
-
-
 def get_unit_manual_labels(block_key_: dict) -> pd.DataFrame:
     """Manual curation quality label + custom tags (index=unit_id) for a block.
 
     Read directly from the curated analyzer's `sorting` properties - these are the labels
     actually assigned by hand in the SpikeInterface GUI (`quality`: good/MUA/noise, plus one
-    boolean property per tag in MANUAL_TAG_OPTIONS). This is NOT the same thing as
+    boolean property per tag in the CurationTag lookup). This is NOT the same thing as
     `SortedSpikes.Unit.unit_quality`, which is Kilosort's own KSLabel and doesn't reflect
     manual curation at all (it reads "good" for units manually labeled MUA/noise too).
     Curation also doesn't remove MUA/noise units - they stay in SortedSpikes.Unit.
@@ -151,27 +145,26 @@ def get_unit_manual_labels(block_key_: dict) -> pd.DataFrame:
 
     data = {"unit": analyzer.unit_ids}
     data["manual_quality"] = sorting.get_property("quality") if "quality" in prop_keys else None
-    for tag in MANUAL_TAG_OPTIONS:
+    for tag in spike_sorting.CurationTag.fetch("tag"):
         data[tag] = sorting.get_property(tag) if tag in prop_keys else None
     return pd.DataFrame(data).set_index("unit")
 
 
 # ---------------------------------------------------------------------------
-# CandidateMatch backfill
+# BlockComparison backfill
 # ---------------------------------------------------------------------------
 
 
-def backfill_candidate_matches(key: dict) -> int:
-    """Populate UnitMatching.CandidateMatch for an already-computed UnitMatching row.
+def backfill_block_comparisons(key: dict) -> int:
+    """Populate UnitMatching.BlockComparison for an already-computed UnitMatching row.
 
     Recomputes the same overlap-window spike-time comparison `UnitMatching.make()` runs
     (using that row's own UnitMatchingParamSet.params, same as make() does), against every
-    previously-matched block that overlaps it, and inserts candidate rows
-    (agreement_score >= min_score) - skipping any already present, so this is safe to call
-    repeatedly for the same key. Does not touch GlobalUnit, UnitMatching.Unit, or
-    UnitMatching.Spikes.
+    previously-matched block that overlaps it, and stores the full agreement-score grid -
+    skipping any comparison already present, so this is safe to call repeatedly for the same
+    key. Does not touch GlobalUnit, UnitMatching.Unit, or UnitMatching.Spikes.
 
-    Returns the number of new rows inserted.
+    Returns the number of new BlockComparison rows inserted.
     """
     insertion_key = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
     paramset_key = {"matching_paramset_id": key["matching_paramset_id"]}
@@ -195,13 +188,15 @@ def backfill_candidate_matches(key: dict) -> int:
     if not this_block_units:
         return 0
 
-    existing_keys = {
-        (e["unit"], e["prev_block_start"], e["prev_unit"])
-        for e in (spike_sorting.UnitMatching.CandidateMatch & key).to_dicts()
+    existing_matched_starts = {
+        e["matched_block_start"]
+        for e in (spike_sorting.UnitMatching.BlockComparison & key).to_dicts()
     }
 
     new_rows = []
     for prev_block in overlapping_blocks:
+        if prev_block["block_start"] in existing_matched_starts:
+            continue
         prev_units = spike_sorting._load_block_unit_spike_trains(prev_block)
         if not prev_units:
             continue
@@ -216,29 +211,19 @@ def backfill_candidate_matches(key: dict) -> int:
         )
         if comparison is None:
             continue
-        prev_to_this, _ = comparison.get_matching()
-        for prev_uid in comparison.agreement_scores.index:
-            for this_uid in comparison.agreement_scores.columns:
-                score = float(comparison.agreement_scores.at[prev_uid, this_uid])
-                if score < params["min_score"]:
-                    continue
-                dedup_key = (this_uid, prev_block["block_start"], prev_uid)
-                if dedup_key in existing_keys:
-                    continue
-                new_rows.append(
-                    {
-                        **key,
-                        "unit": this_uid,
-                        "prev_block_start": prev_block["block_start"],
-                        "prev_unit": prev_uid,
-                        "agreement_score": score,
-                        "matched_spike_count": int(comparison.match_event_count.at[prev_uid, this_uid]),
-                        "is_hungarian_match": bool(prev_to_this.get(prev_uid) == this_uid),
-                    }
-                )
+        new_rows.append(
+            {
+                **key,
+                "matched_block_start": prev_block["block_start"],
+                "matched_block_end": prev_block["block_end"],
+                "unit_ids": np.asarray(comparison.agreement_scores.columns),
+                "matched_block_unit_ids": np.asarray(comparison.agreement_scores.index),
+                "agreement_scores": comparison.agreement_scores.to_numpy(),
+            }
+        )
 
     if new_rows:
-        spike_sorting.UnitMatching.CandidateMatch.insert(
+        spike_sorting.UnitMatching.BlockComparison.insert(
             new_rows, ignore_extra_fields=True, allow_direct_insert=True
         )
     return len(new_rows)
@@ -252,32 +237,47 @@ _QC_METRIC_COLUMNS = ("presence_ratio", "isi_violations_ratio", "snr", "firing_r
 
 
 def _best_candidate(unit_id: int, is_prev_side: bool, later_block_key: dict, earlier_block_start) -> dict:
-    """Best-scoring candidate for a unit, from UnitMatching.CandidateMatch.
+    """Best-scoring candidate for a unit, read from UnitMatching.BlockComparison's score grid.
 
-    `later_block_key` is the block whose UnitMatching row did the comparison (always the
-    later of the two blocks, since CandidateMatch rows are keyed by "this block" = the block
-    make() was processing). `is_prev_side=True` means `unit_id` belongs to the earlier
-    block, so it's looked up as `prev_unit`; `False` means it belongs to the later block, so
-    it's looked up as `unit`.
+    `later_block_key` is the block whose UnitMatching row did the comparison (always the later
+    of the two blocks, since the grid is stored under "this block" = the block make() was
+    processing). `is_prev_side=True` means `unit_id` belongs to the earlier (matched-against)
+    block, so it's a row of the grid; `False` means it belongs to the later block, so it's a
+    column. Returns the highest-scoring opposite-side unit and that score (None if no grid or
+    the unit isn't in it).
     """
-    if is_prev_side:
-        rows = (
-            spike_sorting.UnitMatching.CandidateMatch
-            & later_block_key
-            & {"prev_block_start": earlier_block_start, "prev_unit": unit_id}
-        ).to_dicts()
-        other_id_field = "unit"
-    else:
-        rows = (spike_sorting.UnitMatching.CandidateMatch & later_block_key & {"unit": unit_id}).to_dicts()
-        other_id_field = "prev_unit"
+    none_result = {"best_candidate_unit": None, "best_candidate_score": None}
+    grid = (
+        spike_sorting.UnitMatching.BlockComparison
+        & later_block_key
+        & {"matched_block_start": earlier_block_start}
+    )
+    if not grid:
+        return none_result
+    row = grid.fetch1()
+    scores = np.asarray(row["agreement_scores"])              # [matched_block_unit_ids x unit_ids]
+    this_units = np.asarray(row["unit_ids"])                  # columns (later block)
+    matched_units = np.asarray(row["matched_block_unit_ids"])  # rows (earlier block)
+    if scores.size == 0:
+        return none_result
 
-    if not rows:
-        return {"best_candidate_unit": None, "best_candidate_score": None, "best_candidate_matched_spike_count": None}
-    best = max(rows, key=lambda r: r["agreement_score"])
+    if is_prev_side:
+        idx = np.where(matched_units == unit_id)[0]
+        if len(idx) == 0:
+            return none_result
+        score_vec, other_units = scores[idx[0], :], this_units
+    else:
+        idx = np.where(this_units == unit_id)[0]
+        if len(idx) == 0:
+            return none_result
+        score_vec, other_units = scores[:, idx[0]], matched_units
+
+    if len(score_vec) == 0:
+        return none_result
+    best_i = int(np.argmax(score_vec))
     return {
-        "best_candidate_unit": best[other_id_field],
-        "best_candidate_score": best["agreement_score"],
-        "best_candidate_matched_spike_count": best["matched_spike_count"],
+        "best_candidate_unit": int(other_units[best_i]),
+        "best_candidate_score": float(score_vec[best_i]),
     }
 
 
@@ -289,20 +289,20 @@ def _annotate_orphans(
     earlier_block_start,
     is_prev_side: bool,
 ) -> pd.DataFrame:
+    tag_options = list(spike_sorting.CurationTag.fetch("tag"))
     if not orphan_unit_ids:
         return pd.DataFrame(
             columns=[
                 "unit",
                 "unit_quality",
                 "manual_quality",
-                *MANUAL_TAG_OPTIONS,
+                *tag_options,
                 *_QC_METRIC_COLUMNS,
                 "x",
                 "y",
                 "overlap_window_spike_count",
                 "best_candidate_unit",
                 "best_candidate_score",
-                "best_candidate_matched_spike_count",
             ]
         )
 
@@ -334,11 +334,11 @@ def _annotate_orphans(
             row["x"] = row["y"] = None
         if unit_id in manual_labels.index:
             row["manual_quality"] = manual_labels.loc[unit_id, "manual_quality"]
-            for tag in MANUAL_TAG_OPTIONS:
+            for tag in tag_options:
                 row[tag] = manual_labels.loc[unit_id, tag]
         else:
             row["manual_quality"] = None
-            row.update(dict.fromkeys(MANUAL_TAG_OPTIONS))
+            row.update(dict.fromkeys(tag_options))
         overlap_times = spike_sorting._restrict_to_overlap(
             this_trains.get(unit_id, np.array([])), overlap_start_s, overlap_end_s
         )
@@ -382,8 +382,8 @@ def _resolve_shank_blocks(shank_key: dict, matching_paramset_id: int):
 def get_orphan_units(shank_key: dict, matching_paramset_id: int) -> tuple[pd.DataFrame, pd.DataFrame]:
     """A-side and B-side units that didn't get matched across a shank's two blocks.
 
-    Call `backfill_candidate_matches` for the later block's UnitMatching key first if
-    CandidateMatch hasn't been populated for it yet, otherwise best_candidate_* columns will
+    Call `backfill_block_comparisons` for the later block's UnitMatching key first if
+    BlockComparison hasn't been populated for it yet, otherwise best_candidate_* columns will
     be empty.
 
     Returns (a_orphans, b_orphans):

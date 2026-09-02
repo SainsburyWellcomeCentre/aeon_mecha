@@ -41,24 +41,13 @@ _launch_start_time = time.perf_counter()
 import argparse
 import json
 import resource
-import sys
 import traceback
 
 try:
-    from aeon.dj_pipeline import spike_sorting_curation
+    from aeon.dj_pipeline import spike_sorting, spike_sorting_curation
 except Exception:
     traceback.print_exc()
     raise
-
-# datajoint installs its own sys.excepthook on import, and its log formatter drops
-# the traceback entirely - any uncaught exception (including from GUI button clicks)
-# shows up as a bare "[ERROR]: Uncaught exception" with no detail. The import above already
-# triggered aeon/dj_pipeline/__init__.py's own excepthook patch for this (routes through
-# dj.logger.error(), which prints to stdout with a timestamp/level prefix) - deliberately
-# override that here instead: plain traceback.print_exception writes to stderr (the
-# conventionally-correct stream for uncaught exceptions) with no logger prefix, which reads
-# better for a human watching this GUI crash in real time than a timestamped log line does.
-sys.excepthook = traceback.print_exception
 
 
 def _set_window_title(key: dict) -> None:
@@ -192,14 +181,15 @@ if __name__ == "__main__":
 
     # Custom label categories for the curation panel. Only applies to blocks with no
     # curation_data.json / zarr curation attrs already saved - see launch_spikeinterface_gui().
-    # "tags" is edited via the multitag plugin view registered below, not the built-in
-    # unit table editor. label_options is sourced from MANUAL_TAG_OPTIONS - the same list
-    # spike_sorting_curation.py reads back off the analyzer into SortedSpikes.UnitTag - so
-    # this, multitag_view.TAG_SHORTCUTS, and the DB-writing side can't drift apart.
+    # "tags" is edited via the multitag plugin view registered below, not the built-in unit
+    # table editor. label_options comes from the CurationTag lookup - the single source of
+    # truth that SortedSpikes.UnitTag foreign-keys into and the read-back reads - so the GUI,
+    # multitag_view.TAG_SHORTCUTS (validated below), and the DB side can't drift apart.
+    tag_options = list(spike_sorting.CurationTag.fetch("tag"))
     label_definitions = {
         "quality": {"label_options": ["good", "noise", "MUA"], "exclusive": True},
         "tags": {
-            "label_options": list(spike_sorting_curation.MANUAL_TAG_OPTIONS),
+            "label_options": tag_options,
             "exclusive": False,
         },
     }
@@ -207,7 +197,16 @@ if __name__ == "__main__":
     # Register the custom multitag view (checkbox + keyboard-shortcut multi-tagging,
     # see multitag_view.py) so it can be referenced in the layout below.
     import spikeinterface_gui.viewlist as _viewlist
-    from multitag_view import MultiTagView
+    from multitag_view import TAG_SHORTCUTS, MultiTagView
+
+    # Guard against the GUI shortcuts drifting from the CurationTag vocabulary: a shortcut for a
+    # tag that isn't valid would be selectable but rejected on write. Checked here (not at
+    # multitag_view import) because it needs the database.
+    if set(TAG_SHORTCUTS.values()) != set(tag_options):
+        raise ValueError(
+            f"multitag_view.TAG_SHORTCUTS {set(TAG_SHORTCUTS.values())} != CurationTag "
+            f"{set(tag_options)} - keep the GUI shortcuts in sync with the CurationTag lookup."
+        )
 
     _viewlist.builtin_views.append(MultiTagView)
 

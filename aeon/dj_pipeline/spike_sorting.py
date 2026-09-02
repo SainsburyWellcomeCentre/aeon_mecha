@@ -73,6 +73,24 @@ class UnitQuality(dj.Lookup):
 
 
 @schema
+class CurationTag(dj.Lookup):
+    definition = """
+    # Valid non-exclusive manual-curation tags a curator can apply to a unit in the SI GUI.
+    # SortedSpikes.UnitTag foreign-keys into this; the GUI and QC read the list from here (not
+    # from a hardcoded constant). Extend by inserting rows.
+    tag: varchar(64)
+    """
+    contents = [
+        ("irregular waveform",),
+        ("amplitude drift",),
+        ("bimodal amplitude",),
+        ("intermittent",),
+        ("refractory violations",),
+        ("flag",),
+    ]
+
+
+@schema
 class SortingMethod(dj.Lookup):
     definition = """ # Method for spike sorting
     sorting_method: varchar(16)
@@ -723,12 +741,8 @@ class SortedSpikes(dj.Imported):
         unit: int32
         ---
         -> ephys.ElectrodeConfig.Electrode  # electrode with highest waveform amplitude for this unit
-        -> UnitQuality
-        curation_quality=null: varchar(16)  # manual curation quality label (good/mua/noise), read
-                                             # from the curated analyzer's "quality" property - null
-                                             # until manually curated. NOT the same as unit_quality
-                                             # above, which is Kilosort's own KSLabel and doesn't
-                                             # reflect manual curation at all.
+        -> UnitQuality  # Kilosort's KSLabel for raw sorting; replaced by the curator's manual quality
+                        # label once an official curation is applied (single field, per the spec)
         spike_count: int32       # how many spikes in this recording for this unit
         spike_indices: <blob@dj_store>  # array of spike indices into the concatenated binary data (from preprocessing)
         spike_sites : <blob@dj_store>   # array of electrode associated with each spike
@@ -738,10 +752,10 @@ class SortedSpikes(dj.Imported):
     class UnitTag(dj.Part):
         definition = """
         # Manual curation tags (non-exclusive) - one row per tag actually applied to a unit,
-        # read from the curated analyzer's per-tag boolean properties (see
-        # spike_sorting_curation.MANUAL_TAG_OPTIONS). A unit with no tags has no rows here.
+        # read from the curated analyzer's per-tag boolean properties (one per CurationTag).
+        # A unit with no tags has no rows here.
         -> master.Unit
-        tag: varchar(64)
+        -> CurationTag
         """
 
     def make(self, key):
@@ -837,15 +851,23 @@ class SortedSpikes(dj.Imported):
             )
         }
 
-        # Get unit id to quality label mapping
-        cluster_quality_label_map = {
-            int(unit_id): (
-                si_sorting.get_unit_property(unit_id, "KSLabel")
-                if "KSLabel" in si_sorting.get_property_keys()
-                else "n.a."
+        # unit_quality is a single field: the curator's manual label once an official curation has
+        # been applied (curation_id != -1, so we've loaded the curated analyzer), otherwise Kilosort's
+        # own KSLabel. The manual call lives in the curated sorting's "quality" property; the
+        # make_curation_official gate guarantees every curated unit has one, so a curated block's units
+        # all carry the human's call, with KSLabel only as a defensive fallback.
+        prop_keys = set(si_sorting.get_property_keys())
+        use_manual_quality = curation_id != -1 and "quality" in prop_keys
+        unit_quality_map = {}
+        for unit_id in si_sorting.unit_ids:
+            quality = (
+                (si_sorting.get_unit_property(unit_id, "quality") or "").strip().lower()
+                if use_manual_quality
+                else ""
             )
-            for unit_id in si_sorting.unit_ids
-        }
+            if not quality:
+                quality = si_sorting.get_unit_property(unit_id, "KSLabel") if "KSLabel" in prop_keys else "n.a."
+            unit_quality_map[int(unit_id)] = quality
 
         spike_locations = sorting_analyzer.get_extension("spike_locations")
         extremum_channel_inds = si.template_tools.get_template_extremum_channel(
@@ -875,7 +897,7 @@ class SortedSpikes(dj.Imported):
                     **key,
                     **channel2electrode_map[unit_peak_channel[unit_id]],
                     "unit": unit_id,
-                    "unit_quality": cluster_quality_label_map[unit_id],
+                    "unit_quality": unit_quality_map[unit_id],
                     "spike_indices": spike_indices,
                     "spike_count": spike_count_dict[unit_id],
                     "spike_sites": spike_sites,
@@ -883,6 +905,18 @@ class SortedSpikes(dj.Imported):
                 },
                 ignore_extra_fields=True,
             )
+
+        # Manual curation tags (curated blocks only): one UnitTag row per (unit, tag) the curator
+        # applied, read from the curated analyzer's per-tag boolean properties (see CurationTag).
+        if curation_id != -1:
+            tag_rows = [
+                {**key, "unit": int(unit_id), "tag": tag}
+                for unit_id in si_sorting.unit_ids
+                for tag in CurationTag.fetch("tag")
+                if tag in prop_keys and bool(si_sorting.get_unit_property(unit_id, tag))
+            ]
+            if tag_rows:
+                self.UnitTag.insert(tag_rows, ignore_extra_fields=True)
 
 
 @schema
@@ -1214,19 +1248,16 @@ class GlobalUnit(dj.Manual):
     """
 
 
-# SpikeInterface's own "chance_score" default. Candidate pairings scoring below this are
-# noise-level (essentially no coincident spikes relative to each unit's spike count) and
-# aren't worth persisting in UnitMatching.CandidateMatch.
 # Defaults for UnitMatchingParamSet.params - used for any key missing from a given paramset's
 # params blob, so existing paramsets (saved with params={}) keep behaving exactly as before.
-# Note: "min_score" here is our own name for what gets passed as compare_two_sorters'
-# "chance_score" kwarg - renamed on our side since we also reuse it as the threshold for what
-# gets persisted to CandidateMatch, which isn't quite the same concept SpikeInterface's own
-# "chance_score" name implies.
+# "min_score" is our own name for compare_two_sorters' "chance_score" kwarg (pairings below it
+# are noise-level - essentially no coincident spikes relative to each unit's spike count).
+# BlockComparison stores the whole agreement-score grid regardless, so min_score no longer gates
+# what is persisted; it only feeds the comparison.
 _DEFAULT_MATCHING_PARAMS = {
     "delta_time": 0.4,  # ms; coincidence window for compare_two_sorters
     "match_score": 0.5,  # min agreement_score to accept a 1:1 (Hungarian) match
-    "min_score": 0.1,  # min agreement_score worth persisting to CandidateMatch at all
+    "min_score": 0.1,  # compare_two_sorters chance_score (below = noise-level)
 }
 
 
@@ -1255,9 +1286,17 @@ def _restrict_to_overlap(spike_times_s: np.ndarray, start_s: float, end_s: float
 
 
 def _load_block_unit_spike_trains(block_key: dict) -> dict[int, np.ndarray]:
-    """Return {unit_id: sorted spike times in epoch seconds} for every unit in a block."""
+    """Return {unit_id: sorted spike times in epoch seconds} for every non-noise unit in a block.
+
+    Units the curator manually labeled "noise" (SortedSpikes.Unit.unit_quality == "noise") are
+    excluded: they are kept in SortedSpikes/SyncedSpikes but should never be matched across blocks or
+    handed a global unit id. Matching only runs on curated blocks, so unit_quality there is the
+    curator's own call; the antijoin excludes only that exact "noise" label, leaving every other label
+    (including Kilosort's own on any raw unit) loaded.
+    """
+    non_noise_units = SortedSpikes.Unit - {"unit_quality": "noise"}
     trains: dict[int, list] = {}
-    for unit_entry in (SyncedSpikes.Unit & block_key).to_dicts():
+    for unit_entry in (SyncedSpikes.Unit & block_key & non_noise_units).to_dicts():
         trains.setdefault(unit_entry["unit"], []).append(unit_entry["spike_times"])
     for unit_id, chunks in trains.items():
         concatenated = np.sort(np.concatenate(chunks))
@@ -1366,21 +1405,18 @@ class UnitMatching(dj.Computed):
         unique index (experiment_name, subject, insertion_number, global_unit, chunk_start)
         """
 
-    class CandidateMatch(dj.Part):
+    class BlockComparison(dj.Part):
         definition = """
-        # Every (this-block unit, prev-block unit) candidate pairing that compare_two_sorters
-        # scored >= the paramset's min_score against an overlapping previous block - not just the
-        # final accepted 1:1 (Hungarian) assignment. Lets QC ask how close an unmatched unit
-        # came (its best candidate's agreement_score), instead of only knowing it didn't clear
-        # match_score.
+        # Full agreement-score grid from compare_two_sorters between this block's units and the
+        # units of one block it was compared against - every pairing, not just those above a
+        # threshold. QC/audit only; does not affect matching or global-unit assignment. One row
+        # per block this block was compared against.
         -> master
-        -> SortedSpikes.Unit
-        prev_block_start: datetime(6)  # block_start of the compared-against previous block
-        prev_unit: int32               # unit id in that previous block
+        -> ephys.EphysBlock.proj(matched_block_start='block_start', matched_block_end='block_end')
         ---
-        agreement_score: float64        # SpikeInterface's Jaccard-style score (0-1)
-        matched_spike_count: int32       # coincident spike count within delta_time
-        is_hungarian_match: bool         # whether this pair was the accepted 1:1 assignment
+        unit_ids: <blob>                # this block's unit ids (column order of agreement_scores)
+        matched_block_unit_ids: <blob>  # compared block's unit ids (row order of agreement_scores)
+        agreement_scores: <blob>        # 2D float64 [matched_block_unit_ids x unit_ids], Jaccard 0-1
         """
 
     @property
@@ -1506,10 +1542,10 @@ class UnitMatching(dj.Computed):
         # Map: this block's unit_id -> matched spike count from the comparison that produced
         # its match (unset for newly-created global units, which had nothing to match against)
         unit_to_match_count = {}
-        # Every candidate pairing scored >= min_score against any overlapping previous block,
-        # not just the accepted match - persisted to CandidateMatch below so unmatched units
-        # can be audited later (how close was their best candidate?).
-        all_candidate_rows = []
+        # Full agreement-score grid for each overlapping previous block, persisted to
+        # BlockComparison below (the complete matrix, no threshold) so QC can see the whole
+        # spectrum of scores - how close every unit came, not just the accepted matches.
+        block_comparison_rows = []
 
         if not previously_matched:
             logger.info("First block for this insertion — all units will be new global units.")
@@ -1544,6 +1580,20 @@ class UnitMatching(dj.Computed):
             # get_matching() returns (sorting1→sorting2, sorting2→sorting1)
             prev_to_this, _ = comparison.get_matching()
 
+            # Save the full score grid for this comparison (QC/audit only - does not affect the
+            # assignment below). agreement_scores is indexed [prev/matched units x this units]
+            # and holds every pair's score regardless of min_score, so this is the whole spectrum.
+            block_comparison_rows.append(
+                {
+                    **key,
+                    "matched_block_start": prev_block["block_start"],
+                    "matched_block_end": prev_block["block_end"],
+                    "unit_ids": np.asarray(comparison.agreement_scores.columns),
+                    "matched_block_unit_ids": np.asarray(comparison.agreement_scores.index),
+                    "agreement_scores": comparison.agreement_scores.to_numpy(),
+                }
+            )
+
             for prev_uid in comparison.agreement_scores.index:
                 for this_uid in comparison.agreement_scores.columns:
                     score = float(comparison.agreement_scores.at[prev_uid, this_uid])
@@ -1551,17 +1601,6 @@ class UnitMatching(dj.Computed):
                         continue
                     matched_spike_count = int(comparison.match_event_count.at[prev_uid, this_uid])
                     is_hungarian_match = bool(prev_to_this.get(prev_uid) == this_uid)
-                    all_candidate_rows.append(
-                        {
-                            **key,
-                            "unit": this_uid,
-                            "prev_block_start": prev_block["block_start"],
-                            "prev_unit": prev_uid,
-                            "agreement_score": score,
-                            "matched_spike_count": matched_spike_count,
-                            "is_hungarian_match": is_hungarian_match,
-                        }
-                    )
                     # First accepted (Hungarian) match wins - a unit is not reconsidered once
                     # assigned, even if a later overlapping block would score higher. Blocks are
                     # only ever compared to at most one already-processed neighbor at a time in
@@ -1679,9 +1718,9 @@ class UnitMatching(dj.Computed):
                     ignore_extra_fields=True,
                 )
 
-        # ---- Insert UnitMatching.CandidateMatch (audit trail beyond the final assignment) ----
-        if all_candidate_rows:
-            self.CandidateMatch.insert(all_candidate_rows, ignore_extra_fields=True)
+        # ---- Insert UnitMatching.BlockComparison (full score grid, QC/audit) ----
+        if block_comparison_rows:
+            self.BlockComparison.insert(block_comparison_rows, ignore_extra_fields=True)
 
         logger.info(
             f"Unit matching complete for block {key['block_start']}:\n"
