@@ -17,7 +17,6 @@ schema = dj.Schema(get_schema_name("spike_sorting_curation"))
 logger = dj.logger
 
 
-
 @schema
 class CurationMethod(dj.Lookup):
     definition = """
@@ -54,140 +53,14 @@ class ManualCuration(dj.Manual):
 
 @schema
 class OfficialCuration(dj.Manual):
-    definition = """  # One final/official curation for a SortedSpikes
-    -> spike_sorting.SortedSpikes
+    definition = """  # One final/official curation for a block
+    # Keyed on PostProcessing (not SortedSpikes, which is 1:1 with it and has the same primary key)
+    # so that applying a curation - which deletes and re-populates SortedSpikes - does not
+    # cascade-delete this record or the ApplyOfficialCuration that depends on it.
+    -> spike_sorting.PostProcessing
     ---
     -> ManualCuration
     """
-
-
-def insert_sorted_spikes_from_analyzer(
-    key: dict, sorting_analyzer, curation_id: int, execution_time: datetime
-) -> None:
-    """Insert SortedSpikes (+ Unit rows) from an already-loaded SortingAnalyzer.
-
-    Mirrors spike_sorting.SortedSpikes.make()'s unit-extraction logic, but takes an
-    already-loaded analyzer directly instead of resolving/loading one from disk. Used by
-    ApplyOfficialCuration.make() to recreate SortedSpikes immediately from the curated
-    analyzer already in memory, instead of deferring to a separate SortedSpikes.populate()
-    call. That deferral doesn't work here: OfficialCuration's primary key is inherited from
-    SortedSpikes (-> spike_sorting.SortedSpikes), so it's cascade-deleted along with the old
-    SortedSpikes row and needs SortedSpikes to exist again before it can be restored - within
-    the same transaction, not a later populate() run.
-    """
-    import spikeinterface as si
-
-    spike_sorting.SortedSpikes.insert1(
-        {
-            **key,
-            "execution_time": execution_time,
-            "execution_duration": (datetime.now(UTC) - execution_time).total_seconds() / 3600,
-            "curation_id": curation_id,
-        },
-        allow_direct_insert=True,
-    )
-
-    si_sorting = sorting_analyzer.sorting
-    if si_sorting.unit_ids.size == 0:
-        logger.info("No units found in sorting analyzer. Skipping Unit ingestion...")
-        return
-
-    electrode_query = (
-        ephys.EphysBlockInfo.Channel.proj(..., "-channel_name")
-        * ephys.ElectrodeConfig.Electrode
-        * spike_sorting.ElectrodeGroup.Electrode
-        * ephys.ProbeType.Electrode.proj("electrode_name")
-        & key
-    )
-
-    unit_channel_indices: dict[int, np.ndarray] = si.ChannelSparsity.from_best_channels(
-        sorting_analyzer,
-        1,
-    ).unit_id_to_channel_indices
-    unit_peak_channel: dict[int, int] = {u: chn[0] for u, chn in unit_channel_indices.items()}
-
-    spike_count_dict: dict[int, int] = si_sorting.count_num_spikes_per_unit()
-
-    electrode_map: dict[int, dict] = {elec["electrode"]: elec for elec in electrode_query.to_dicts()}
-    channel2electrode_map = {
-        chn_idx: electrode_map[int(elec_id)]
-        for chn_idx, elec_id in zip(
-            sorting_analyzer.get_probe().device_channel_indices,
-            sorting_analyzer.get_probe().contact_ids,
-            strict=False,
-        )
-    }
-
-    cluster_quality_label_map = {
-        int(unit_id): (
-            si_sorting.get_unit_property(unit_id, "KSLabel")
-            if "KSLabel" in si_sorting.get_property_keys()
-            else "n.a."
-        )
-        for unit_id in si_sorting.unit_ids
-    }
-
-    # Manual curation quality (good/mua/noise) and tags, if this analyzer has been through
-    # manual curation - both are properties on the sorting object (see apply_curation_labels
-    # in spikeinterface), not columns anywhere; absent entirely for a raw/uncurated analyzer.
-    prop_keys = set(si_sorting.get_property_keys())
-    manual_quality_map = {
-        int(unit_id): (si_sorting.get_unit_property(unit_id, "quality") or "").lower() or None
-        for unit_id in si_sorting.unit_ids
-    } if "quality" in prop_keys else {}
-    tag_options = spike_sorting.CurationTag.fetch("tag")
-    manual_tags_map = {
-        int(unit_id): [
-            tag for tag in tag_options
-            if tag in prop_keys and bool(si_sorting.get_unit_property(unit_id, tag))
-        ]
-        for unit_id in si_sorting.unit_ids
-    }
-
-    spike_locations = sorting_analyzer.get_extension("spike_locations")
-    extremum_channel_inds = si.template_tools.get_template_extremum_channel(sorting_analyzer, outputs="index")
-    spikes_df = pd.DataFrame(
-        sorting_analyzer.sorting.to_spike_vector(extremum_channel_inds=extremum_channel_inds)
-    )
-    for unit_idx, raw_unit_id in enumerate(si_sorting.unit_ids):
-        unit_id = int(raw_unit_id)
-        unit_spikes_df = spikes_df[spikes_df.unit_index == unit_idx]
-        spike_sites = np.array(
-            [channel2electrode_map[chn_idx]["electrode"] for chn_idx in unit_spikes_df.channel_index]
-        )
-        unit_spikes_loc = spike_locations.get_data()[unit_spikes_df.index]
-        _, spike_depths = zip(*unit_spikes_loc, strict=True)  # x-coordinates, y-coordinates
-        spike_indices = si_sorting.get_unit_spike_train(unit_id)
-
-        if not (len(spike_indices) == len(spike_sites) == len(spike_depths)):
-            raise ValueError(
-                f"Unit {unit_id}: mismatched spike data lengths "
-                f"(indices={len(spike_indices)}, sites={len(spike_sites)}, depths={len(spike_depths)})"
-            )
-
-        spike_sorting.SortedSpikes.Unit.insert1(
-            {
-                **key,
-                **channel2electrode_map[unit_peak_channel[unit_id]],
-                "unit": unit_id,
-                "unit_quality": cluster_quality_label_map[unit_id],
-                "curation_quality": manual_quality_map.get(unit_id),
-                "spike_indices": spike_indices,
-                "spike_count": spike_count_dict[unit_id],
-                "spike_sites": spike_sites,
-                "spike_depths": spike_depths,
-            },
-            ignore_extra_fields=True,
-            allow_direct_insert=True,
-        )
-
-    tag_rows = [
-        {**key, "unit": unit_id, "tag": tag}
-        for unit_id, tags in manual_tags_map.items()
-        for tag in tags
-    ]
-    if tag_rows:
-        spike_sorting.SortedSpikes.UnitTag.insert(tag_rows, ignore_extra_fields=True, allow_direct_insert=True)
 
 
 @schema
@@ -216,12 +89,8 @@ class ApplyOfficialCuration(dj.Imported):
         execution_time = datetime.now(UTC)
 
         # Get curation_id from OfficialCuration entry (it's in attributes, not primary key)
-        # The key only contains SortedSpikes primary key fields, not attributes
+        # The key only contains the block's primary key fields, not attributes
         curation_id = (OfficialCuration & key).fetch1("curation_id")
-        # OfficialCuration's primary key is inherited from SortedSpikes (-> spike_sorting.SortedSpikes),
-        # so it's a dependent that gets cascade-deleted along with SortedSpikes below - save its full
-        # row now so it can be restored once SortedSpikes exists again.
-        official_curation_row = (OfficialCuration & key).fetch1()
 
         # Auto-approved curation: no manual curation file, based on raw sorting
         has_curation_file = bool(
@@ -280,9 +149,9 @@ class ApplyOfficialCuration(dj.Imported):
 
         # Units manually labeled "noise" are kept, not deleted: apply_curation() runs on the
         # curation exactly as saved, so noise units survive into the curated analyzer carrying
-        # their "quality"="noise" property, which insert_sorted_spikes_from_analyzer() writes into
-        # SortedSpikes.Unit.curation_quality. They are held out of unit matching instead (see
-        # _load_block_unit_spike_trains in spike_sorting.py), not deleted here.
+        # their "quality"="noise" property, which SortedSpikes.make() writes into
+        # SortedSpikes.Unit.unit_quality on repopulation. They are held out of unit matching instead
+        # (see _load_block_unit_spike_trains in spike_sorting.py), not deleted here.
 
         # Load original sorting analyzer
         analyzer_output_dir = _get_analyzer_dir_from_key(key)
@@ -374,21 +243,15 @@ class ApplyOfficialCuration(dj.Imported):
         if current_curation_id == -1:
             logger.info("Deleting old SortedSpikes (curation_id=-1) and downstream tables...")
             (spike_sorting.SortedSpikes & key).delete(prompt=False)
-            logger.info(
-                "Deleted SortedSpikes (downstream tables auto-deleted by DataJoint, including "
-                "OfficialCuration - its primary key is inherited from SortedSpikes)"
-            )
+            # Cascade reaches only SortedSpikes' downstream (Waveform, SortingQuality, SyncedSpikes,
+            # UnitMatching). OfficialCuration and this ApplyOfficialCuration are keyed on
+            # PostProcessing, not SortedSpikes, so they survive - which is what lets us record the
+            # apply below and then rebuild SortedSpikes separately via SortedSpikes.populate().
+            logger.info("Deleted SortedSpikes and its downstream tables (curation records preserved).")
 
-        # Recreate SortedSpikes (+ Unit rows) directly from the curated analyzer already in memory,
-        # then restore OfficialCuration now that SortedSpikes exists again - both were swept away
-        # by the delete above. Doing this here (rather than a separate later SortedSpikes.populate()
-        # call) keeps it all in the same transaction as the ApplyOfficialCuration insert below, which
-        # needs OfficialCuration to exist as its FK parent.
-        sorted_spikes_execution_time = datetime.now(UTC)
-        insert_sorted_spikes_from_analyzer(key, curated_analyzer, curation_id, sorted_spikes_execution_time)
-        OfficialCuration.insert1(official_curation_row)
-
-        # Insert ApplyOfficialCuration entry
+        # Insert ApplyOfficialCuration entry. SortedSpikes is intentionally left deleted here; the
+        # curated analyzer is on disk and SortedSpikes.make() rebuilds from it (reading the manual
+        # quality labels into unit_quality) on the next SortedSpikes.populate().
         self.insert1(
             {
                 **key,
@@ -407,8 +270,8 @@ class ApplyOfficialCuration(dj.Imported):
         )
 
         logger.info(
-            "SortedSpikes has been repopulated from the curated analyzer. Run .populate() on "
-            "downstream tables (SyncedSpikes, etc.) to continue the pipeline."
+            "Run SortedSpikes.populate() to rebuild it from the curated analyzer, then .populate() "
+            "the downstream tables (SyncedSpikes, etc.) to continue the pipeline."
         )
 
 

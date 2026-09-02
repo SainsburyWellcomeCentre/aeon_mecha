@@ -741,12 +741,8 @@ class SortedSpikes(dj.Imported):
         unit: int32
         ---
         -> ephys.ElectrodeConfig.Electrode  # electrode with highest waveform amplitude for this unit
-        -> UnitQuality
-        curation_quality=null: varchar(16)  # manual curation quality label (good/mua/noise), read
-                                             # from the curated analyzer's "quality" property - null
-                                             # until manually curated. NOT the same as unit_quality
-                                             # above, which is Kilosort's own KSLabel and doesn't
-                                             # reflect manual curation at all.
+        -> UnitQuality  # Kilosort's KSLabel for raw sorting; replaced by the curator's manual quality
+                        # label once an official curation is applied (single field, per the spec)
         spike_count: int32       # how many spikes in this recording for this unit
         spike_indices: <blob@dj_store>  # array of spike indices into the concatenated binary data (from preprocessing)
         spike_sites : <blob@dj_store>   # array of electrode associated with each spike
@@ -855,15 +851,23 @@ class SortedSpikes(dj.Imported):
             )
         }
 
-        # Get unit id to quality label mapping
-        cluster_quality_label_map = {
-            int(unit_id): (
-                si_sorting.get_unit_property(unit_id, "KSLabel")
-                if "KSLabel" in si_sorting.get_property_keys()
-                else "n.a."
+        # unit_quality is a single field: the curator's manual label once an official curation has
+        # been applied (curation_id != -1, so we've loaded the curated analyzer), otherwise Kilosort's
+        # own KSLabel. The manual call lives in the curated sorting's "quality" property; the
+        # make_curation_official gate guarantees every curated unit has one, so a curated block's units
+        # all carry the human's call, with KSLabel only as a defensive fallback.
+        prop_keys = set(si_sorting.get_property_keys())
+        use_manual_quality = curation_id != -1 and "quality" in prop_keys
+        unit_quality_map = {}
+        for unit_id in si_sorting.unit_ids:
+            quality = (
+                (si_sorting.get_unit_property(unit_id, "quality") or "").strip().lower()
+                if use_manual_quality
+                else ""
             )
-            for unit_id in si_sorting.unit_ids
-        }
+            if not quality:
+                quality = si_sorting.get_unit_property(unit_id, "KSLabel") if "KSLabel" in prop_keys else "n.a."
+            unit_quality_map[int(unit_id)] = quality
 
         spike_locations = sorting_analyzer.get_extension("spike_locations")
         extremum_channel_inds = si.template_tools.get_template_extremum_channel(
@@ -893,7 +897,7 @@ class SortedSpikes(dj.Imported):
                     **key,
                     **channel2electrode_map[unit_peak_channel[unit_id]],
                     "unit": unit_id,
-                    "unit_quality": cluster_quality_label_map[unit_id],
+                    "unit_quality": unit_quality_map[unit_id],
                     "spike_indices": spike_indices,
                     "spike_count": spike_count_dict[unit_id],
                     "spike_sites": spike_sites,
@@ -901,6 +905,18 @@ class SortedSpikes(dj.Imported):
                 },
                 ignore_extra_fields=True,
             )
+
+        # Manual curation tags (curated blocks only): one UnitTag row per (unit, tag) the curator
+        # applied, read from the curated analyzer's per-tag boolean properties (see CurationTag).
+        if curation_id != -1:
+            tag_rows = [
+                {**key, "unit": int(unit_id), "tag": tag}
+                for unit_id in si_sorting.unit_ids
+                for tag in CurationTag.fetch("tag")
+                if tag in prop_keys and bool(si_sorting.get_unit_property(unit_id, tag))
+            ]
+            if tag_rows:
+                self.UnitTag.insert(tag_rows, ignore_extra_fields=True)
 
 
 @schema
@@ -1272,12 +1288,13 @@ def _restrict_to_overlap(spike_times_s: np.ndarray, start_s: float, end_s: float
 def _load_block_unit_spike_trains(block_key: dict) -> dict[int, np.ndarray]:
     """Return {unit_id: sorted spike times in epoch seconds} for every non-noise unit in a block.
 
-    Units the curator manually labeled "noise" (SortedSpikes.Unit.curation_quality == "noise") are
+    Units the curator manually labeled "noise" (SortedSpikes.Unit.unit_quality == "noise") are
     excluded: they are kept in SortedSpikes/SyncedSpikes but should never be matched across blocks or
-    handed a global unit id. The antijoin excludes only the exact "noise" label, so uncurated units
-    (curation_quality NULL) and every other label are still loaded.
+    handed a global unit id. Matching only runs on curated blocks, so unit_quality there is the
+    curator's own call; the antijoin excludes only that exact "noise" label, leaving every other label
+    (including Kilosort's own on any raw unit) loaded.
     """
-    non_noise_units = SortedSpikes.Unit - {"curation_quality": "noise"}
+    non_noise_units = SortedSpikes.Unit - {"unit_quality": "noise"}
     trains: dict[int, list] = {}
     for unit_entry in (SyncedSpikes.Unit & block_key & non_noise_units).to_dicts():
         trains.setdefault(unit_entry["unit"], []).append(unit_entry["spike_times"])
