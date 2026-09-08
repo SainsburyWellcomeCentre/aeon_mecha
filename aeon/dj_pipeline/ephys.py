@@ -305,7 +305,9 @@ class EphysEpochConfig(dj.Imported):
         probe_to_econfig: dict[str, dict[str, str]] = {}
         for label, basename in probe_configs.items():
             if basename is None:
-                continue  # disabled/spoofed probe
+                continue  # spoofed probe (null ProbeInterfaceFileName)
+            if label not in probe_info:
+                continue  # disabled probe (Enable=false); its JSON may not exist
             json_path = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, basename)
             ec_probe_type, ec_config_name = create_electrode_config(
                 json_path=json_path,

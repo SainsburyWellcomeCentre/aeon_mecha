@@ -418,8 +418,10 @@ def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
 
     Returns:
         Dict mapping ``"ProbeA" | "ProbeB" | ...`` to JSON basename or None.
-        None indicates a disabled/spoofed probe (ProbeInterfaceFileName is
-        null in the metadata).
+        None means ``ProbeInterfaceFileName`` is null in the metadata (a
+        spoofed probe). It does NOT reflect the ``Enable`` flag — a disabled
+        probe usually still carries a filename here, so callers must check
+        enablement separately via :func:`get_probe_id`.
 
     Raises:
         FileNotFoundError: If Metadata.yml doesn't exist.
