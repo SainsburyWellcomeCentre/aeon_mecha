@@ -14,7 +14,7 @@ import numpy as np
 logger = dj.logger
 
 
-def fork_safe_job_kwargs(chunk_duration: str, max_jobs: int = 8) -> dict:
+def fork_safe_job_kwargs(chunk_duration: str, max_jobs: int = 32) -> dict:
     """SpikeInterface job_kwargs that avoid the SLURM fork/oversubscription hang.
 
     Uses a thread pool (no fork) and a worker count taken from the cgroup CPU
