@@ -185,7 +185,7 @@ if __name__ == "__main__":
     # table editor. label_options comes from the CurationTag lookup - the single source of
     # truth that SortedSpikes.UnitTag foreign-keys into and the read-back reads - so the GUI,
     # multitag_view.TAG_SHORTCUTS (validated below), and the DB side can't drift apart.
-    tag_options = list(spike_sorting.CurationTag.fetch("tag"))
+    tag_options = list(spike_sorting.CurationTag.to_arrays("tag"))
     label_definitions = {
         "quality": {"label_options": ["good", "noise", "MUA"], "exclusive": True},
         "tags": {
