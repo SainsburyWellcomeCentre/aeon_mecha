@@ -145,7 +145,7 @@ def get_unit_manual_labels(block_key_: dict) -> pd.DataFrame:
 
     data = {"unit": analyzer.unit_ids}
     data["manual_quality"] = sorting.get_property("quality") if "quality" in prop_keys else None
-    for tag in spike_sorting.CurationTag.fetch("tag"):
+    for tag in spike_sorting.CurationTag.to_arrays("tag"):
         data[tag] = sorting.get_property(tag) if tag in prop_keys else None
     return pd.DataFrame(data).set_index("unit")
 
@@ -289,7 +289,7 @@ def _annotate_orphans(
     earlier_block_start,
     is_prev_side: bool,
 ) -> pd.DataFrame:
-    tag_options = list(spike_sorting.CurationTag.fetch("tag"))
+    tag_options = list(spike_sorting.CurationTag.to_arrays("tag"))
     if not orphan_unit_ids:
         return pd.DataFrame(
             columns=[

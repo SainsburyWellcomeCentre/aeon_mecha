@@ -909,10 +909,11 @@ class SortedSpikes(dj.Imported):
         # Manual curation tags (curated blocks only): one UnitTag row per (unit, tag) the curator
         # applied, read from the curated analyzer's per-tag boolean properties (see CurationTag).
         if curation_id != -1:
+            curation_tags = CurationTag.to_arrays("tag")
             tag_rows = [
                 {**key, "unit": int(unit_id), "tag": tag}
                 for unit_id in si_sorting.unit_ids
-                for tag in CurationTag.fetch("tag")
+                for tag in curation_tags
                 if tag in prop_keys and bool(si_sorting.get_unit_property(unit_id, tag))
             ]
             if tag_rows:
