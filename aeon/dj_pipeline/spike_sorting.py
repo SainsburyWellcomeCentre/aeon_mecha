@@ -522,8 +522,11 @@ class SpikeSorting(dj.Computed):
         # recording.zarr is a large, regenerable intermediate that only sorting reads, so
         # reclaim it now. It is shared by all paramsets of this block + electrode group, so
         # skip the delete while a sibling paramset is preprocessed but not yet sorted.
+        # Both sides are projected to their primary keys: PreProcessing and SpikeSorting
+        # share the secondary attributes `execution_time` / `execution_duration`, and
+        # DataJoint 2.x rejects a join on attributes that carry no common lineage.
         shared_key = {k: v for k, v in key.items() if k != "paramset_id"}
-        if not ((PreProcessing & shared_key) - SpikeSorting):
+        if not ((PreProcessing & shared_key).proj() - SpikeSorting.proj()):
             recording_dir = (
                 get_sorting_root_dir() / (PreProcessing & key).fetch1("sorting_output_dir")
             ).parent / "recording"
