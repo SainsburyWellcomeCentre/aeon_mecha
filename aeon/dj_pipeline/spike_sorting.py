@@ -210,6 +210,10 @@ class PreProcessing(dj.Computed):
         gain_to_uV = 3.05176
         offset_to_uV = -2048 * gain_to_uV
 
+        params = (SortingTask * SortingParamSet & key).fetch1("params")
+        preprocessing_params = params.get("SI_PREPROCESSING_PARAMS")
+        
+
         return (
             ephys_files,
             dir_types,
@@ -221,6 +225,7 @@ class PreProcessing(dj.Computed):
             output_dir,
             recording_file,
             recording_dir,
+            preprocessing_params,
         )
 
     def make_compute(
@@ -236,6 +241,7 @@ class PreProcessing(dj.Computed):
         output_dir: Path,
         recording_file: Path,
         recording_dir: Path,
+        preprocessing_params: dict[str, Any] | None,
     ) -> tuple[Path, datetime, Path]:
         """Preprocess ephys data for spike sorting.
 
@@ -253,6 +259,7 @@ class PreProcessing(dj.Computed):
             output_dir: Output directory path
             recording_file: Path to save recording object
             recording_dir: Directory for recording files
+            preprocessing_params: User set parameters for preprocessing
 
         Returns:
             Tuple of (output_dir, execution_time, recording_dir)
@@ -315,8 +322,7 @@ class PreProcessing(dj.Computed):
         si_recording.set_probe(probe=si_probe, in_place=True)
 
         # Run preprocessing and save results to output folder
-        si_recording = si.preprocessing.unsigned_to_signed(si_recording)
-        si_recording = ephys_preproc(si_recording)
+        si_recording = ephys_preproc(si_recording, preprocessing_params = preprocessing_params)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
         params = (SortingParamSet & key).fetch1("params")
@@ -1573,7 +1579,7 @@ class UnitMatching(dj.Computed):
 # ---- Ephys preprocessing with spike interface ----
 
 
-def ephys_preproc(recording) -> Any:
+def ephys_preproc(recording, preprocessing_params=None) -> Any:
     """Apply standard ephys preprocessing pipeline.
 
     Performs unsigned-to-signed conversion, bandpass filtering (300-6000 Hz),
@@ -1581,14 +1587,25 @@ def ephys_preproc(recording) -> Any:
 
     Args:
         recording: SpikeInterface recording object
+        preprocessing_params: the params as a dictionary, passed to `apply_preprocessing_pipeline`
 
     Returns:
         Preprocessed recording object
     """
-    import spikeinterface as si
+    from spikeinterface.preprocessing import apply_preprocessing_pipeline
 
-    recording = si.preprocessing.bandpass_filter(recording=recording, freq_min=300, freq_max=6000)
-    recording = si.preprocessing.common_reference(recording=recording, operator="median")
+    if preprocessing_params is None:
+        preprocessing_params = {
+            'unsigned_to_signed': {},
+            'bandpass_filter': {'freq_min': 300, 'freq_max': 6000},
+            'common_reference': {'operator': "median"}
+        }
+
+    recording = apply_preprocessing_pipeline(
+        recording,
+        preprocessing_params,
+    )
+
     return recording
 
 
