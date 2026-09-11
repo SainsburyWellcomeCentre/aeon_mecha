@@ -8,7 +8,10 @@ No mocking of decorator behavior - tests run against actual production patterns.
 import json
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
+import xarray as xr
 
 # Real Reader classes from swc-aeon (aeon_api)
 from swc.aeon.io.reader import Csv, Harp, Video
@@ -84,6 +87,7 @@ def test_rig():
 # Sample Metadata Fixtures (small config files checked into git)
 # -----------------------------------------------------------------------------
 
+
 @pytest.fixture
 def foraging_abc_metadata_path():
     """Path to sample ForagingABC metadata fixture file."""
@@ -94,6 +98,23 @@ def foraging_abc_metadata_path():
 def foraging_abc_metadata(foraging_abc_metadata_path):
     """Load sample ForagingABC metadata as a dict."""
     return json.loads(foraging_abc_metadata_path.read_text())
+
+
+@pytest.fixture
+def mock_xarray_dataset():
+    """Mock an xarray.Dataset for testing the ``<xarray@xarray_store>`` codec."""
+    n, n_ch = 20, 4
+    return xr.Dataset(
+        {
+            "signal": (("time", "channel"), np.random.randn(n, n_ch).astype("float32")),
+            "flag": (("time",), np.random.rand(n) > 0.5),
+        },
+        coords={
+            "time": pd.date_range("2026-06-03", periods=n, freq="20ms"),
+            "channel": np.arange(n_ch),
+        },
+        attrs={"fs": 50.0, "note": "mock"},
+    )
 
 
 @pytest.fixture
