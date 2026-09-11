@@ -184,17 +184,16 @@ class OnixStreamCodec(dj.Codec):
             onix_ts_end = int(ts_end_raw)
         if chunk_indices is None:
             chunk_indices = find_overlapping_bno055_chunks(
-                device_dir, stored["device_name"],
-                int(onix_ts_start), int(onix_ts_end),
+                device_dir,
+                stored["device_name"],
+                int(onix_ts_start),
+                int(onix_ts_end),
             )
 
         if not chunk_indices:
             return pd.DataFrame(columns=list(IMU_COLUMNS), index=pd.Index([], dtype=np.uint64))
 
-        df = pd.concat(
-            [load_and_merge_bno055(device_dir, stored["device_name"], n)
-             for n in chunk_indices]
-        )
+        df = pd.concat([load_and_merge_bno055(device_dir, stored["device_name"], n) for n in chunk_indices])
         return df[(df.index >= int(onix_ts_start)) & (df.index <= int(onix_ts_end))]
 
 

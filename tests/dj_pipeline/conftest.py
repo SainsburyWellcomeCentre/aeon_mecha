@@ -137,6 +137,15 @@ def _check_golden_data(dataset_config: dict) -> Path:
     if not Path(pipeline.repository_config["ceph_aeon"]).exists():
         pytest.skip(f"Golden data root not found: {pipeline.repository_config['ceph_aeon']}")
 
+    # Route the large recording intermediate to a scratch mirror so the scratch
+    # relocation is actually exercised (not silently left in-place). Sibling of the
+    # golden root, so it's isolated and works wherever the golden data lives. Skip if
+    # the caller pinned repository_config via DJ_REPOSITORY_CONFIG (their values win).
+    if "DJ_REPOSITORY_CONFIG" not in os.environ:
+        scratch_root = Path(pipeline.repository_config["ceph_aeon"]).parent / "scratch"
+        scratch_root.mkdir(parents=True, exist_ok=True)
+        pipeline.repository_config["ceph_aeon_scratch"] = str(scratch_root)
+
     from aeon.dj_pipeline.utils.paths import get_repository_path
 
     repo_path = get_repository_path("ceph_aeon")
@@ -766,7 +775,12 @@ def ephys_sorting_setup(ephys_test_blocks, ephys_full_pipeline, ephys_golden_dat
                         "spike_locations": {},
                         "quality_metrics": {},
                     },
-                    "job_kwargs": {"n_jobs": 1, "chunk_duration": "1s"},
+                    "job_kwargs": {
+                        "n_jobs": 4,
+                        "pool_engine": "thread",
+                        "max_threads_per_worker": 1,
+                        "chunk_duration": "1s",
+                    },
                 },
             },
         },

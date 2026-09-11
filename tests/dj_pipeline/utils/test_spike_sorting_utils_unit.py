@@ -76,3 +76,43 @@ class TestStripNonNumericProperties:
         strip_non_numeric_properties(rec)
 
         assert "myuint" in set(rec.get_property_keys())
+
+
+class TestForkSafeJobKwargs:
+    """fork_safe_job_kwargs caps the worker count to the cgroup allocation, no fork."""
+
+    def test_respects_cpu_affinity(self, monkeypatch):
+        import os
+
+        from aeon.dj_pipeline.utils.spike_sorting_utils import fork_safe_job_kwargs
+
+        monkeypatch.setattr(os, "sched_getaffinity", lambda pid: {0, 1, 2, 3}, raising=False)
+        assert fork_safe_job_kwargs("30s")["n_jobs"] == 4
+
+    def test_caps_at_max_jobs(self, monkeypatch):
+        import os
+
+        from aeon.dj_pipeline.utils.spike_sorting_utils import fork_safe_job_kwargs
+
+        monkeypatch.setattr(os, "sched_getaffinity", lambda pid: set(range(64)), raising=False)
+        assert fork_safe_job_kwargs("30s", max_jobs=8)["n_jobs"] == 8
+
+    def test_fallback_to_cpu_count_without_affinity(self, monkeypatch):
+        import os
+
+        from aeon.dj_pipeline.utils.spike_sorting_utils import fork_safe_job_kwargs
+
+        monkeypatch.delattr(os, "sched_getaffinity", raising=False)
+        monkeypatch.setattr(os, "cpu_count", lambda: 6)
+        assert fork_safe_job_kwargs("30s")["n_jobs"] == 6
+
+    def test_thread_pool_and_chunk_passthrough(self, monkeypatch):
+        import os
+
+        from aeon.dj_pipeline.utils.spike_sorting_utils import fork_safe_job_kwargs
+
+        monkeypatch.setattr(os, "sched_getaffinity", lambda pid: {0, 1}, raising=False)
+        kw = fork_safe_job_kwargs("2s")
+        assert kw["pool_engine"] == "thread"
+        assert kw["max_threads_per_worker"] == 1
+        assert kw["chunk_duration"] == "2s"
