@@ -619,19 +619,27 @@ class EphysChunk(dj.Manual):
             # files DataJoint extracts on fetch are cleaned up (issue #598). Any
             # model load (inside resolve_harp) must happen before the block exits.
             with tempfile.TemporaryDirectory() as tmpdir, dj.config.override(download_path=tmpdir):
-                # Query EphysSyncModel rows that cover the first OR last ONIX timestamp
-                matched = (
-                    EphysSyncModel
-                    & {"experiment_name": experiment_name, "epoch_start": epoch_start}
-                    & (
-                        f"({first_ts} BETWEEN onix_ts_start AND onix_ts_end) "
-                        f"OR ({last_ts} BETWEEN onix_ts_start AND onix_ts_end)"
-                    )
-                ).to_dicts(order_by="sync_start")
+                # Link every EphysSyncModel row from the last one starting at or before
+                # first_ts to the last one starting at or before last_ts. A chunk may
+                # start or end outside all rows (1 s gaps between HarpSync files, epoch
+                # start, rows lost at an unclean stop); resolve_harp extrapolates there.
+                epoch_sync_models = EphysSyncModel & {
+                    "experiment_name": experiment_name,
+                    "epoch_start": epoch_start,
+                }
+                starts_before = (epoch_sync_models & f"onix_ts_start <= {first_ts}").to_arrays(
+                    "onix_ts_start"
+                )
+                lo = int(starts_before.max()) if len(starts_before) else 0
+                matched = (epoch_sync_models & f"onix_ts_start BETWEEN {lo} AND {last_ts}").to_dicts(
+                    order_by="sync_start"
+                )
+                if not matched:  # chunk ends before the first sync row of the epoch
+                    matched = epoch_sync_models.to_dicts(order_by="sync_start", limit=1)
 
                 if not matched:
                     logger.warning(
-                        f"No EphysSyncModel row covers ONIX range [{first_ts}, {last_ts}] "
+                        f"No EphysSyncModel rows for epoch {epoch_start} "
                         f"for {ephys_file.name}. Run EphysSyncModel.ingest() first. Skipping."
                     )
                     continue
