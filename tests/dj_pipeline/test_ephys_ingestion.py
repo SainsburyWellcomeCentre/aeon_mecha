@@ -352,20 +352,22 @@ class TestSyncedSpikes:
         for unit in units:
             assert np.issubdtype(unit["spike_times"].dtype, np.datetime64)
 
-    def test_spike_times_within_sync_range(self, ephys_sorting_injected, ctx):
+    def test_spike_times_within_chunk_range(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
         import numpy as np
 
-        sync_rows = (ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
-        sync_start = np.datetime64(min(r["sync_start"] for r in sync_rows))
-        sync_end = np.datetime64(max(r["sync_end"] for r in sync_rows))
+        # Chunks, not sync rows: spikes before the first / after the last HarpSync
+        # row of an epoch are kept, with times extrapolated from the sync model.
+        chunk_rows = (ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
+        chunk_start = np.datetime64(min(r["chunk_start"] for r in chunk_rows))
+        chunk_end = np.datetime64(max(r["chunk_end"] for r in chunk_rows))
 
         units = (
             ctx.spike_sorting.SyncedSpikes.Unit & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         for unit in units:
-            assert unit["spike_times"].min() >= sync_start
-            assert unit["spike_times"].max() <= sync_end
+            assert unit["spike_times"].min() >= chunk_start
+            assert unit["spike_times"].max() <= chunk_end
 
 
 class TestEphysSyncModel:
