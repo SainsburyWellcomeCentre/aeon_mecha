@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pandas as pd
 from datetime import datetime
@@ -39,16 +41,21 @@ class HarpSyncModel(Stream):
             super().__init__(pattern)
 
         def read(self, file):
-            data = super().read(file).dropna()
+            data = super().read(file)
+            # An unclean acquisition stop can cut the last row mid-line (e.g. a
+            # truncated HarpTime value), so drop a last row without a line ending.
+            with open(file, "rb") as f:
+                f.seek(-1, os.SEEK_END)
+                if f.read(1) != b"\n":
+                    data = data.iloc[:-1]
+            data = data.dropna()
             onix_clock = data.clock.values.reshape(-1, 1)
-            
-            # ONIX records the raw seconds value arriving from the HARP master
-            # clock as "Value.HarpTime". In the harp world, this timestamp 
-            # corresponds to the second that is about to end in less than a
-            # millisecond, therefore it is lagging by 1 second.
-            # The index colums (Seconds) is the actual time that corresponds most
-            # closely to the actual harp time when the ONIX clock was recorded
-            harp_time = data.index.values.reshape(-1, 1)
+
+            # "Value.HarpTime" is the HARP time of the ONIX clock sample: since
+            # OpenEphys.Onix1 0.4.0 it already includes the one second the HARP
+            # sync protocol requires adding (open-ephys/bonsai-onix1#319). The
+            # index column (Seconds) adds that second again and is 1 s late.
+            harp_time = data.harp_time.values.reshape(-1, 1)
 
             model = LinearRegression().fit(onix_clock, harp_time)
             r2 = model.score(onix_clock, harp_time)
