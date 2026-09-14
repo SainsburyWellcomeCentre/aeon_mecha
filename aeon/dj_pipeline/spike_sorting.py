@@ -1150,17 +1150,17 @@ class SyncedSpikes(dj.Imported):
             for idx, onix_bound in enumerate(onix_lengths):
                 # Find spikes belonging to this ephys chunk
                 if idx == 0:
-                    spk_ind = spike_indices[spike_indices <= onix_bound]
+                    spk_ind = spike_indices[spike_indices < onix_bound]
                 else:
                     spk_ind = spike_indices[
-                        (spike_indices > onix_lengths[idx - 1]) & (spike_indices <= onix_bound)
+                        (spike_indices >= onix_lengths[idx - 1]) & (spike_indices < onix_bound)
                     ]
 
                 if not len(spk_ind):  # no spikes in this chunk
                     continue
 
                 # Convert absolute indices to relative indices within this chunk
-                spk_ind -= spk_ind[0]  # make relative to chunk start
+                spk_ind = spk_ind - (onix_lengths[idx - 1] if idx else 0)  # make relative to chunk start
                 spk_times = onix_times[idx][spk_ind]  # get ONIX timestamps
 
                 # Apply sync models to convert ONIX→HARP timestamps
