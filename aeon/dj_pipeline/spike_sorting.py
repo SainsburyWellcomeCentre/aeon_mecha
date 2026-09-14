@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import tempfile
+from collections import defaultdict
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1111,12 +1112,16 @@ class SyncedSpikes(dj.Imported):
         """
         # Load ephys sync models
         sync_models = {}
+        chunk_windows = defaultdict(list)  # chunk_start -> its linked (onix_ts_start, onix_ts_end)
         with tempfile.TemporaryDirectory() as tempdir, dj.config.override(download_path=tempdir):
             sync_ = (
                 ephys.EphysChunk.SyncModel * ephys.EphysSyncModel & (ephys.EphysBlockInfo.Chunk & key)
-            ).to_arrays("onix_ts_start", "onix_ts_end", "sync_model", order_by="onix_ts_start")
-            for s, e, m in zip(*sync_, strict=True):
+            ).to_arrays(
+                "chunk_start", "onix_ts_start", "onix_ts_end", "sync_model", order_by="onix_ts_start"
+            )
+            for c, s, e, m in zip(*sync_, strict=True):
                 sync_models[(s, e)] = joblib.load(m)
+                chunk_windows[c].append((s, e))
 
         # Load ephys onix times
         _clock_query = (
@@ -1163,16 +1168,18 @@ class SyncedSpikes(dj.Imported):
                 spk_ind = spk_ind - (onix_lengths[idx - 1] if idx else 0)  # make relative to chunk start
                 spk_times = onix_times[idx][spk_ind]  # get ONIX timestamps
 
-                # Apply sync models to convert ONIX→HARP timestamps
-                synced_ts = []
-                for (start, end), model in sync_models.items():
-                    # Find spikes within this sync model's time window
-                    ind = np.logical_and(spk_times >= start, spk_times <= end)
-                    if not np.any(ind):
-                        continue
-                    # Convert ONIX timestamps to HARP timestamps
-                    sync_t = model.predict(spk_times[ind].reshape(-1, 1))
-                    synced_ts.extend(sync_t.flatten())
+                # Apply sync models to convert ONIX→HARP timestamps. Each spike uses the last
+                # of this chunk's sync windows starting at or before it (the first window for
+                # earlier spikes), so spikes in the 1 s gaps between HarpSync files and outside
+                # the first/last HarpSync row are extrapolated instead of dropped.
+                windows = chunk_windows[ephys_file_keys[idx]["chunk_start"]]
+                window_starts = np.array([start for start, _ in windows], dtype=np.uint64)
+                window_idx = np.clip(np.searchsorted(window_starts, spk_times, side="right") - 1, 0, None)
+                synced_ts = np.empty(len(spk_times))
+                for w in np.unique(window_idx):
+                    in_window = window_idx == w
+                    sync_t = sync_models[windows[w]].predict(spk_times[in_window].reshape(-1, 1))
+                    synced_ts[in_window] = sync_t.flatten()
 
                 synced_ts = io_api.to_datetime(synced_ts).values
                 chunk_key = ephys_file_keys[idx]
