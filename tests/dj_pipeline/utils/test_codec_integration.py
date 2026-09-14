@@ -87,9 +87,9 @@ class TestOnixStreamCodecRoundTrip:
         assert tuple(df.columns) == IMU_COLUMNS
         assert df.index.dtype == np.uint64  # ONIX-indexed (uint64), not HARP datetimes
         # Bno055 chunks are staggered against HarpSync windows in the synthetic
-        # factory; the codec filters to the sync window's range, so we get a
-        # strict subset of the chunk's 100 samples.
-        assert 0 < len(df) < 100
+        # factory; the only sync window owns all of the chunk's 100 samples,
+        # including those outside its HarpSync rows.
+        assert len(df) == 100
 
     def test_round_trip_no_data_returns_empty_dataframe(self, dj_config_integration, tmp_path):
         """Test that fetch returns an empty IMU_COLUMNS DataFrame when no IMU data exists."""

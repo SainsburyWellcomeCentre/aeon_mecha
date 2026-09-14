@@ -912,6 +912,17 @@ class OnixImuChunk(dj.Imported):
         ).fetch1("onix_ts_start", "onix_ts_end")
         onix_ts_start = int(onix_ts_start_raw)
         onix_ts_end = int(onix_ts_end_raw)
+        # Own every IMU sample up to the next sync row's window, so samples in the
+        # 1 s gaps between HarpSync files, before the first and after the last row
+        # of the epoch are kept (synced_df extrapolates the model there).
+        epoch_sync_models = EphysSyncModel & {
+            "experiment_name": key["experiment_name"],
+            "epoch_start": key["epoch_start"],
+        }
+        if not (epoch_sync_models & f"onix_ts_start < {onix_ts_start}"):
+            onix_ts_start = 0
+        next_starts = (epoch_sync_models & f"onix_ts_start > {onix_ts_end}").to_arrays("onix_ts_start")
+        onix_ts_end = int(next_starts.min()) - 1 if len(next_starts) else 2**63 - 1
         epoch_dir = (EphysEpoch & key).fetch1("epoch_dir")
         raw_dir_result = acquisition.Experiment.get_data_directory(
             {"experiment_name": key["experiment_name"]}, "raw-ephys"
