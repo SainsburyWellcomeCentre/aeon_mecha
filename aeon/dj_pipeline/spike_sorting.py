@@ -1111,8 +1111,7 @@ class SyncedSpikes(dj.Imported):
             key: Dictionary containing sorting task identifiers
         """
         # Load ephys sync models
-        sync_models = {}
-        chunk_windows = defaultdict(list)  # chunk_start -> its linked (onix_ts_start, onix_ts_end)
+        chunk_windows = defaultdict(list)  # chunk_start -> its linked (onix_ts_start, onix_ts_end, model)
         with tempfile.TemporaryDirectory() as tempdir, dj.config.override(download_path=tempdir):
             sync_ = (
                 ephys.EphysChunk.SyncModel * ephys.EphysSyncModel & (ephys.EphysBlockInfo.Chunk & key)
@@ -1120,8 +1119,7 @@ class SyncedSpikes(dj.Imported):
                 "chunk_start", "onix_ts_start", "onix_ts_end", "sync_model", order_by="onix_ts_start"
             )
             for c, s, e, m in zip(*sync_, strict=True):
-                sync_models[(s, e)] = joblib.load(m)
-                chunk_windows[c].append((s, e))
+                chunk_windows[c].append((s, e, joblib.load(m)))
 
         # Load ephys onix times
         _clock_query = (
@@ -1173,12 +1171,12 @@ class SyncedSpikes(dj.Imported):
                 # earlier spikes), so spikes in the 1 s gaps between HarpSync files and outside
                 # the first/last HarpSync row are extrapolated instead of dropped.
                 windows = chunk_windows[ephys_file_keys[idx]["chunk_start"]]
-                window_starts = np.array([start for start, _ in windows], dtype=np.uint64)
+                window_starts = np.array([start for start, _, _ in windows], dtype=np.uint64)
                 window_idx = find_nearest_window(window_starts, spk_times)
                 synced_ts = np.empty(len(spk_times))
                 for w in np.unique(window_idx):
                     in_window = window_idx == w
-                    sync_t = sync_models[windows[w]].predict(spk_times[in_window].reshape(-1, 1))
+                    sync_t = windows[w][2].predict(spk_times[in_window].reshape(-1, 1))
                     synced_ts[in_window] = sync_t.flatten()
 
                 synced_ts = io_api.to_datetime(synced_ts).values
