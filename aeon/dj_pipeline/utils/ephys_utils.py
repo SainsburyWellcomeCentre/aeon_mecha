@@ -256,10 +256,14 @@ def read_probe_assignments(
 
     # Priority 3: Carry-forward from most recent epoch in same experiment
     previous_insertions = (
-        insertion_table
-        & {"experiment_name": key["experiment_name"]}
-        & f'epoch_start < "{key["epoch_start"]}"'
-    ).proj("probe_label", "subject").to_dicts(order_by="epoch_start DESC")
+        (
+            insertion_table
+            & {"experiment_name": key["experiment_name"]}
+            & f'epoch_start < "{key["epoch_start"]}"'
+        )
+        .proj("probe_label", "subject")
+        .to_dicts(order_by="epoch_start DESC")
+    )
 
     if previous_insertions:
         # Use only entries from the most recent epoch (first row, ordered DESC)
@@ -329,9 +333,7 @@ def _parse_probe_assignments_file(json_path: Path, probe_info: dict[str, str]) -
             )
         entry = assignments_by_serial[serial]
         if "subject" not in entry:
-            raise ValueError(
-                f"Entry for serial '{serial}' in {json_path} is missing 'subject' field."
-            )
+            raise ValueError(f"Entry for serial '{serial}' in {json_path} is missing 'subject' field.")
         result[label] = {"subject": entry["subject"]}
 
     return result
@@ -454,7 +456,7 @@ def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
     for cfg_key, cfg_value in npx.items():
         if not cfg_key.startswith("Configuration"):
             continue
-        suffix = cfg_key[len("Configuration"):]  # "A", "B", ...
+        suffix = cfg_key[len("Configuration") :]  # "A", "B", ...
         probe_label = f"Probe{suffix}"
         if not isinstance(cfg_value, dict):
             result[probe_label] = None
@@ -480,9 +482,7 @@ def resolve_epoch_probe_json(
     epoch_local = Path(epoch_path) / config_file_name
     if epoch_local.exists():
         return epoch_local
-    raise FileNotFoundError(
-        f"Probe config JSON not found at {central} or {epoch_local}"
-    )
+    raise FileNotFoundError(f"Probe config JSON not found at {central} or {epoch_local}")
 
 
 def load_device_channel_map(json_path: Path) -> dict[int, int]:
@@ -507,8 +507,7 @@ def load_device_channel_map(json_path: Path) -> dict[int, int]:
         dci = probe.get("device_channel_indices")
         if dci is None:
             raise ValueError(
-                f"No device_channel_indices in {json_path}. "
-                f"Cannot determine hardware channel mapping."
+                f"No device_channel_indices in {json_path}. Cannot determine hardware channel mapping."
             )
         for cid, ch_idx_raw in zip(contact_ids, dci, strict=False):
             ch_idx = int(ch_idx_raw)
@@ -516,9 +515,7 @@ def load_device_channel_map(json_path: Path) -> dict[int, int]:
                 channel_map[int(cid)] = ch_idx
 
     if not channel_map:
-        raise ValueError(
-            f"No active contacts (device_channel_indices >= 0) in {json_path}."
-        )
+        raise ValueError(f"No active contacts (device_channel_indices >= 0) in {json_path}.")
 
     return channel_map
 
@@ -586,9 +583,7 @@ def create_electrode_config(
     json_path = Path(json_path)
     probe_group = pi.read_probeinterface(str(json_path))
     if len(probe_group.probes) != 1:
-        raise ValueError(
-            f"Expected exactly one probe in {json_path}, got {len(probe_group.probes)}."
-        )
+        raise ValueError(f"Expected exactly one probe in {json_path}, got {len(probe_group.probes)}.")
     probe = probe_group.probes[0]
 
     if probe_type_name is None:
@@ -615,9 +610,7 @@ def create_electrode_config(
     # No explicit transaction — callers like EphysEpochConfig.make are already
     # inside a populate() transaction, and DataJoint forbids nesting.
     probe_type_table.insert1({"probe_type": probe_type_name}, skip_duplicates=True)
-    probe_type_table.Electrode.insert(
-        electrode_df, ignore_extra_fields=True, skip_duplicates=True
-    )
+    probe_type_table.Electrode.insert(electrode_df, ignore_extra_fields=True, skip_duplicates=True)
 
     if config_name is None:
         config_name = json_path.stem
@@ -663,17 +656,13 @@ def resolve_raw_dir_and_epochs(
     from aeon.dj_pipeline.ephys import EphysEpoch, EphysEpochConfig
 
     exp_key = {"experiment_name": experiment_name}
-    raw_dir_result = acquisition.Experiment.get_data_directory(
-        exp_key, directory_type="raw-ephys"
-    )
+    raw_dir_result = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw-ephys")
     if raw_dir_result is None:
         logger.error(f"raw-ephys data directory not found for {experiment_name}")
         return None
     raw_dir = Path(raw_dir_result)
 
-    ephys_epochs = (
-        EphysEpoch & exp_key & EphysEpochConfig
-    ).proj("epoch_dir").to_dicts()
+    ephys_epochs = (EphysEpoch & exp_key & EphysEpochConfig).proj("epoch_dir").to_dicts()
 
     epoch_dir_to_start: dict[str, datetime] = {}
     for ep in ephys_epochs:
@@ -690,6 +679,25 @@ def harp_to_naive(seconds: float) -> datetime:
 
     dt = io_api.to_datetime(float(seconds))
     return dt.replace(tzinfo=None) if getattr(dt, "tzinfo", None) else dt
+
+
+def find_nearest_window(window_starts, ts):
+    """Index of the last window starting at or before each ``ts``.
+
+    ``ts`` before every window resolves to index 0 (the earliest window is
+    extrapolated backward instead of leaving ``ts`` unmatched).
+
+    Args:
+        window_starts: Sorted-ascending array of window start values.
+        ts: Scalar or array of query values, same unit as ``window_starts``.
+
+    Returns:
+        Index (scalar for scalar ``ts``, array for array ``ts``) into ``window_starts``.
+    """
+    import numpy as np
+
+    idx = np.clip(np.searchsorted(window_starts, ts, side="right") - 1, 0, None)
+    return int(idx) if np.ndim(ts) == 0 else idx
 
 
 def resolve_harp(sync_row: dict, onix_ts: int, _model_cache: "dict | None" = None) -> datetime:

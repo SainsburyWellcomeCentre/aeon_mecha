@@ -22,7 +22,7 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
-from aeon.dj_pipeline.utils.ephys_utils import resolve_ephys_file
+from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, resolve_ephys_file
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
     fork_safe_job_kwargs,
@@ -1174,7 +1174,7 @@ class SyncedSpikes(dj.Imported):
                 # the first/last HarpSync row are extrapolated instead of dropped.
                 windows = chunk_windows[ephys_file_keys[idx]["chunk_start"]]
                 window_starts = np.array([start for start, _ in windows], dtype=np.uint64)
-                window_idx = np.clip(np.searchsorted(window_starts, spk_times, side="right") - 1, 0, None)
+                window_idx = find_nearest_window(window_starts, spk_times)
                 synced_ts = np.empty(len(spk_times))
                 for w in np.unique(window_idx):
                     in_window = window_idx == w
