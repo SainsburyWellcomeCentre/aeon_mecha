@@ -12,6 +12,7 @@ from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import (
     DEVICE_PROBE_TYPE_MAP,
     discover_epoch_probes,
+    find_nearest_window,
     find_or_create_probe_insertion,
     get_probe_id,
     harp_to_naive,
@@ -132,15 +133,14 @@ class EphysEpoch(dj.Manual):
             logger.warning(f"raw-ephys directory not found for {experiment_name}")
             return
 
+        raw_ephys_dir = Path(raw_ephys_dir)
         epoch_dirs = sorted(d for d in raw_ephys_dir.iterdir() if d.is_dir())
         previous_epoch_start = None
 
         for epoch_dir in epoch_dirs:
             harp_sync_csvs = sorted(epoch_dir.rglob("*_HarpSync_*.csv"))
             if not harp_sync_csvs:
-                logger.warning(
-                    f"No HarpSync CSV in {epoch_dir.name}; cannot HARP-align. Skipping."
-                )
+                logger.warning(f"No HarpSync CSV in {epoch_dir.name}; cannot HARP-align. Skipping.")
                 continue
 
             first_csv = harp_sync_csvs[0]
@@ -150,9 +150,7 @@ class EphysEpoch(dj.Manual):
                 continue
             device_streams = social_ephys[device_name]
             if "HarpSyncModel" not in device_streams:
-                logger.debug(
-                    f"Device '{device_name}' has no HarpSyncModel stream. Skipping."
-                )
+                logger.debug(f"Device '{device_name}' has no HarpSyncModel stream. Skipping.")
                 continue
             reader = device_streams["HarpSyncModel"]
             try:
@@ -170,9 +168,8 @@ class EphysEpoch(dj.Manual):
                         {
                             **previous_key,
                             "epoch_end": harp_epoch_start,
-                            "epoch_duration": (
-                                harp_epoch_start - previous_epoch_start
-                            ).total_seconds() / 3600,
+                            "epoch_duration": (harp_epoch_start - previous_epoch_start).total_seconds()
+                            / 3600,
                         }
                     )
 
@@ -249,9 +246,7 @@ class EphysEpochConfig(dj.Imported):
                 f"violation — EphysEpoch.ingest_epochs() always sets epoch_dir."
             )
 
-        raw_ephys_dir = acquisition.Experiment.get_data_directory(
-            key, directory_type="raw-ephys"
-        )
+        raw_ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type="raw-ephys")
         if raw_ephys_dir is None:
             raise FileNotFoundError(
                 f"raw-ephys directory not registered for experiment {key['experiment_name']}. "
@@ -321,9 +316,7 @@ class EphysEpochConfig(dj.Imported):
         for label, probe_id in probe_info.items():
             if not (Probe & {"probe": probe_id}):
                 if not (ProbeType & {"probe_type": probe_type}):
-                    raise ValueError(
-                        f"ProbeType '{probe_type}' not found. Create it first."
-                    )
+                    raise ValueError(f"ProbeType '{probe_type}' not found. Create it first.")
                 Probe.insert1(
                     {"probe": probe_id, "probe_type": probe_type},
                     skip_duplicates=True,
@@ -366,9 +359,7 @@ class EphysEpochConfig(dj.Imported):
                 ProbeInsertion,
                 Probe,
             )
-            insertion_entries.append(
-                {**key, **pi_key, "probe_label": label, **probe_to_econfig[label]}
-            )
+            insertion_entries.append({**key, **pi_key, "probe_label": label, **probe_to_econfig[label]})
 
         # Insert master + Part rows
         self.insert1({**key, "n_probes": len(active_labels)})
@@ -625,10 +616,8 @@ class EphysChunk(dj.Manual):
                     "experiment_name": experiment_name,
                     "epoch_start": epoch_start,
                 }
-                starts_before = (epoch_sync_models & f"onix_ts_start <= {first_ts}").to_arrays(
-                    "onix_ts_start"
-                )
-                lo = int(starts_before.max()) if len(starts_before) else 0
+                all_starts = epoch_sync_models.to_arrays("onix_ts_start", order_by="onix_ts_start")
+                lo = int(all_starts[find_nearest_window(all_starts, first_ts)]) if len(all_starts) else 0
                 matched = (epoch_sync_models & f"onix_ts_start BETWEEN {lo} AND {last_ts}").to_dicts(
                     order_by="sync_start"
                 )
@@ -793,14 +782,12 @@ class EphysBlockInfo(dj.Imported):
         # Pick the earliest chunk's epoch (deterministic; all chunks in this
         # block share the same ElectrodeConfig per the uniform-config check
         # above, so any chunk would yield the same config_file_name).
-        epoch_start, config_file_name = (
-            chunk_insertions & dj.Top(limit=1, order_by="chunk_start")
-        ).fetch1("epoch_start", "config_file_name")
+        epoch_start, config_file_name = (chunk_insertions & dj.Top(limit=1, order_by="chunk_start")).fetch1(
+            "epoch_start", "config_file_name"
+        )
         raw_dir_result = resolve_raw_dir_and_epochs(key["experiment_name"])
         if raw_dir_result is None:
-            raise ValueError(
-                f"Cannot resolve raw-ephys directory for {key['experiment_name']}"
-            )
+            raise ValueError(f"Cannot resolve raw-ephys directory for {key['experiment_name']}")
         raw_dir = raw_dir_result[0]
         epoch_dir = (EphysEpoch & key & {"epoch_start": epoch_start}).fetch1("epoch_dir")
         epoch_path = raw_dir / Path(epoch_dir).parts[0]
@@ -907,9 +894,7 @@ class OnixImuChunk(dj.Imported):
         )
         from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
 
-        onix_ts_start_raw, onix_ts_end_raw = (
-            EphysSyncModel & key
-        ).fetch1("onix_ts_start", "onix_ts_end")
+        onix_ts_start_raw, onix_ts_end_raw = (EphysSyncModel & key).fetch1("onix_ts_start", "onix_ts_end")
         onix_ts_start = int(onix_ts_start_raw)
         onix_ts_end = int(onix_ts_end_raw)
         # Own every IMU sample up to the next sync row's window, so samples in the
@@ -964,16 +949,12 @@ class OnixImuChunk(dj.Imported):
             return
 
         device_dir = epoch_path / device_name
-        chunk_indices = find_overlapping_bno055_chunks(
-            device_dir, device_name, onix_ts_start, onix_ts_end
-        )
+        chunk_indices = find_overlapping_bno055_chunks(device_dir, device_name, onix_ts_start, onix_ts_end)
         if not chunk_indices:
             self.insert1(_empty_row([]))
             return
 
-        df = pd.concat(
-            [load_and_merge_bno055(device_dir, device_name, n) for n in chunk_indices]
-        )
+        df = pd.concat([load_and_merge_bno055(device_dir, device_name, n) for n in chunk_indices])
         df = df[(df.index >= onix_ts_start) & (df.index <= onix_ts_end)]
 
         if df.empty:
