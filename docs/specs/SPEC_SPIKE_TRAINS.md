@@ -1,34 +1,31 @@
 # Chunk-level spike trains
 
-Spike times live in the database today as `datetime64[ns]` arrays, one row per
-unit per ephys chunk, and every analysis starts by fetching those rows into a
-dict of ragged numpy arrays and hand-rolling the rest.
-`docs/ephys_runbooks/step06_analysis_examples.py` is that pattern written down.
-This spec replaces it with a table that hands back one object per behavioural
-chunk — units, spike times, per-unit metadata and the interval the data actually
-covers — aligned to the same grain as every behavioural stream, ready to
-analyse.
+status: draft · 2026-09-16 · addresses #606 · depends on PR #588
 
-**Status:** Draft, 2026-09-16. Supersedes the design sketched in issue #606.
+## TL;DR
 
-**Branch:** not yet cut. Depends on PR #588 (`processed_*` schema convention) and
-lands after the spike-sorting PRs in flight (#604, #610, #611, #612).
+Spike times sit in the database one row per unit per ephys chunk, on a grain
+that does not line up with behavioural data, so every analysis re-derives the
+alignment by hand. `SpikeTrains` re-chunks curated, HARP-synced spikes to the
+1-hour `acquisition.Chunk` grain and stores each chunk as a pynapple `TsGroup`,
+backed by a new `<pynapple@dj_store>` codec. The cost is memory: pynapple cannot
+lazily load a `TsGroup`, so a week-long query pulls 2–29 GB, which the chunk
+grain bounds and `fetch_span` manages but nothing eliminates.
 
 ---
 
-## Purpose
+## Why this table
 
 A user asks: *what were these neurons doing while the animal was at patch 2?*
 
 Answering that today means joining `SyncedSpikes.Unit` across chunk rows,
 re-keying block-scoped unit ids to something stable, converting `datetime64[ns]`
-to seconds, working out which spans of the window actually had ephys coverage,
-and then writing the raster code. Every analyst does this, each slightly
-differently, and the coverage step is the one they get wrong silently.
+to seconds, working out which spans of the window had ephys coverage, and then
+writing the raster code. `docs/ephys_runbooks/step06_analysis_examples.py` is
+that pattern written down. Every analyst repeats it, each slightly differently,
+and the coverage step is the one they get wrong silently.
 
-`SpikeTrains` does it once, at ingestion, and stores the result.
-
-The design has three commitments:
+Three commitments shape the design:
 
 1. **One row per behavioural chunk per probe insertion.** The same grain as
    `streams.*`, so spikes and behaviour join on `(experiment_name, chunk_start)`
@@ -41,64 +38,34 @@ The design has three commitments:
 
 ## Background
 
-### Where spikes live now
-
-```
-SortingTask → PreProcessing → SpikeSorting → PostProcessing → SIExport
-            → SortedSpikes → {Waveform, SortingQuality, SyncedSpikes}
-            → UnitMatching → GlobalUnit
-```
-
-| Table | Holds | Grain |
-|---|---|---|
-| `SortedSpikes.Unit` | `spike_indices` into the concatenated binary | block × unit |
-| `SortingQuality.Metric` | `qc_metrics` (quality + template metrics, JSON) | block × unit |
-| `SyncedSpikes.Unit` | `spike_times`, `datetime64[ns]`, HARP | block × unit × `EphysChunk` |
-| `UnitMatching.Spikes` | `spike_times`, `datetime64[ns]`, HARP, deduplicated | `global_unit` × `EphysChunk` |
-| `GlobalUnit` | persistent identity + peak electrode | insertion × `global_unit` |
-
-All the spike columns are `<blob@dj_store>` — numpy arrays in the Ceph file
-store, pointed at by a hash.
-
-### The missing stage
-
-Read the pipeline as four operations, each with one job:
-
-| Stage | Operation | Grain | Table |
-|---|---|---|---|
-| 1. sort | detect units | block, ONIX samples | `SortedSpikes` |
-| 2. sync | ONIX clock → HARP clock | `EphysChunk` | `SyncedSpikes` |
-| 3. identify | block unit → persistent identity | `EphysChunk` × `global_unit` | `UnitMatching` |
-| **4. re-chunk** | **`EphysChunk` → `acquisition.Chunk`** | **`acquisition.Chunk`** | **this spec** |
-
-Stage 2 converts a *clock*. Stage 4 converts a *grain*. Nothing does stage 4
-today, so every consumer does it by hand.
-
-### Why the grain conversion is real work
-
 `acquisition.Chunk` belongs to the behavioural rig (AEON3, `raw`, wall-clock
 hour boundaries). `ephys.EphysChunk` belongs to the ephys rig (AEONX1,
-`raw-ephys`, ONIX file boundaries). `SPEC_EPHYS_PIPELINE.md` states that these
-are peers whose epochs start and stop independently; their chunk boundaries do
-not coincide.
+`raw-ephys`, ONIX file boundaries). `SPEC_EPHYS_PIPELINE.md` establishes these as
+peers whose epochs start and stop independently, so their chunk boundaries never
+coincide.
 
-So spikes must be split and regrouped across misaligned boundaries. An
-`EphysChunk` can straddle two behavioural chunks and a behavioural chunk can
-span several `EphysChunk`s, including gaps where the ephys rig was off.
+Spikes therefore have to be split and regrouped across misaligned boundaries. An
+`EphysChunk` can straddle two behavioural chunks, and a behavioural chunk can
+span several `EphysChunk`s with gaps where the ephys rig was off.
+
+Four operations carry spikes from probe to analysis. Sorting detects units
+(`SortedSpikes`), syncing converts the ONIX clock to HARP (`SyncedSpikes`),
+matching assigns persistent identity (`UnitMatching`, `GlobalUnit`). The fourth,
+converting the grain, has no table — so every consumer does it by hand.
 
 ---
 
 ## Design
 
-### Upstream: `UnitMatching.Spikes`, not `SyncedSpikes.Unit`
+### Upstream: `UnitMatching.Spikes`
 
-`UnitMatching.Spikes` is already deduplicated across overlapping blocks
-(`SPEC_UNIT_MATCHING.md`, "Ownership Convention for Overlapping Chunks" — the
-earlier block owns a `(global_unit, chunk)` pair, enforced by a unique index and
-a code-level check), already keyed by `global_unit`, and already HARP-synced.
+`UnitMatching.Spikes` is already deduplicated across overlapping blocks, already
+keyed by `global_unit`, and already HARP-synced. The deduplication convention is
+"earlier block owns", enforced by a unique index and a code-level check
+(`SPEC_UNIT_MATCHING.md`).
 
 Reading `SyncedSpikes.Unit` instead would re-inherit the duplicate-spike problem
-that convention exists to solve, and would leave unit identity block-scoped.
+that convention solves, and would leave unit identity block-scoped.
 
 ### The table
 
@@ -125,7 +92,6 @@ matching_paramset_id)`.
 
 `chunk_start` here is the **behavioural** chunk. `ephys.EphysChunk` uses the same
 attribute name for its own grain, so any query joining both must disambiguate.
-The comment in the definition says so; the module docstring says so again.
 
 `UnitMatchingParamSet` sits in `UnitMatching`'s primary key, because a block can
 be matched under several paramsets. Leaving it out here would re-introduce the
@@ -134,14 +100,13 @@ ambiguity that spec removed.
 ### `key_source`
 
 One entry per `(behavioural chunk, probe insertion, paramset)` where some
-`EphysChunk` for that insertion overlaps the behavioural chunk's window, and
+`EphysChunk` for that insertion overlaps the behavioural chunk's window and
 `UnitMatching` has run for the covering block. The overlap join follows the
 `streams_maker` pattern (`aeon/dj_pipeline/utils/streams_maker.py`), which
 restricts `acquisition.Chunk` against a device's install/remove window.
 
 Ephys falling outside every behavioural chunk is dropped. There is no
-behavioural data to relate it to, and the pipeline has no place to put it.
-`EphysBlockInfo` remains the route to that data.
+behavioural data to relate it to. `EphysBlockInfo` remains the route to it.
 
 ### What goes in the `TsGroup`
 
@@ -149,15 +114,13 @@ behavioural data to relate it to, and the pipeline has no place to put it.
 
 **Roster** — every `global_unit` whose owning block overlaps this chunk, with an
 empty `Ts` for units that fired no spikes. `UnitMatching.Spikes` writes no row
-for a silent unit, so a roster built only from present rows would change
-chunk to chunk and make concatenation across a span wrong by default. Empty
-units survive the npz round trip because the `keys` array is stored explicitly.
+for a silent unit, so a roster built only from present rows would change chunk to
+chunk and make concatenation across a span wrong by default. Empty units survive
+the npz round trip because the `keys` array is stored explicitly. The roster is
+stable within a block and grows across blocks as `UnitMatching` finds new units.
 
-The roster is stable within a block and grows across blocks as `UnitMatching`
-discovers new units.
-
-**Metadata** — scalar columns only, so `getby_threshold` and boolean slicing
-work and the pickled metadata blob stays small:
+**Metadata** — scalar columns only, so `getby_threshold` and boolean slicing work
+and the pickled metadata blob stays small:
 
 | Column | Source |
 |---|---|
@@ -167,14 +130,13 @@ work and the pickled metadata blob stays small:
 | `snr`, `isi_violations_ratio`, `presence_ratio`, … | `SortingQuality.Metric.qc_metrics`, flattened |
 | `block_start` | the owning `EphysBlock` |
 
-`subject` and `insertion_number` ride along because **`global_unit` is unique
-only within an insertion** (`SPEC_UNIT_MATCHING.md`). Two insertions in one
-experiment can both have `global_unit=1`, so merging two `TsGroup`s collides
-silently. The metadata makes the collision detectable; the fetch helper
-(below) re-keys on merge so it never happens.
+`subject` and `insertion_number` ride along because **`global_unit` is unique only
+within an insertion** (`SPEC_UNIT_MATCHING.md`). Two insertions in one experiment
+can both have `global_unit=1`, so merging two `TsGroup`s collides silently. The
+metadata makes the collision detectable; `fetch_span` re-keys on merge so it
+never happens.
 
-Only scalar metrics are flattened into columns. The raw `qc_metrics` dict stays
-in `SortingQuality.Metric`, where it is queryable.
+The raw `qc_metrics` dict stays in `SortingQuality.Metric`, where it is queryable.
 
 ### `time_support` is coverage, not chunk bounds
 
@@ -184,22 +146,18 @@ rate = n_samples / sum(time_support interval lengths)   # pynapple/core/base_cla
 
 Setting `time_support` to the nominal chunk window when ephys covered only part
 of it understates every unit's firing rate, with no warning, in an object that
-looks authoritative. Cover 40 minutes of an hour and every rate is 33% low.
-
-So:
+looks authoritative. Cover 40 minutes of an hour and every rate is 33% low. So:
 
 ```
 time_support = (union of overlapping EphysChunk windows) ∩ [chunk_start, chunk_end)
 ```
 
 `IntervalSet` holds several intervals natively, so gaps inside the chunk survive,
-and multi-interval supports round-trip through the npz.
+and multi-interval supports round-trip through the npz. `coverage_frac` exposes
+the same fact as a secondary attribute, so a user filters partial chunks with a
+SQL restriction instead of discovering the problem in their firing rates.
 
-`coverage_frac` exposes the same fact as a secondary attribute, so a user filters
-partial chunks with a SQL restriction instead of discovering the problem in their
-firing rates.
-
-Two boundary rules, both load-bearing:
+Two boundary rules:
 
 - The window is **half-open**, `[chunk_start, chunk_end)`. A spike at an exact
   boundary belongs to the later chunk. Twenty-four boundaries a day makes this
@@ -212,26 +170,21 @@ Two boundary rules, both load-bearing:
 
 pynapple stores `float64` seconds and has no concept of a time origin — no `t0`,
 no timezone, nothing in the npz that records one. Whatever origin we choose is a
-convention we have to record and defend.
+convention we have to record and defend. Harp-absolute wins on four counts:
 
-**Harp-absolute wins on every axis we checked:**
+- *Concatenation.* Objects with different origins combine silently and wrongly,
+  and pynapple has nowhere to store an origin to compare.
+- *Precision.* The float64 ULP at 3.87e9 s is 477 ns, 70× finer than a 30 kHz
+  sample period and matching the `datetime(6)` primary keys.
+- *Conversion.* `swc.aeon.io.api.to_seconds` already does it, and `1904` stays in
+  the one place it lives today.
+- *Compression.* Absolute magnitudes compress at 3.69× against 3.52× for
+  epoch-relative, because subtracting an epoch only shifts which byte lanes stay
+  constant.
 
-- *Concatenation.* Users will concatenate chunks. Objects carrying different
-  origins combine silently and wrongly, and pynapple cannot catch it because it
-  has nowhere to store an origin to compare.
-- *Precision.* At 3.87e9 seconds the float64 ULP is 477 ns — 70× finer than a
-  30 kHz sample period, and matching the `datetime(6)` primary keys the ephys
-  schema already uses.
-- *Conversion.* `swc.aeon.io.api.to_seconds` already does it. The literal `1904`
-  appears nowhere in `aeon_mecha`; it lives in one place in `swc-aeon`, and this
-  table keeps it that way.
-- *Compression.* Absolute magnitudes compress marginally **better** than
-  epoch-relative ones (3.69× vs 3.52×), because subtracting an epoch only shifts
-  which byte lanes stay constant.
-
-`make()` asserts `t_start > 3.0e9` before insert. That single check catches a
-whole class of silent wrong-origin bugs — including the SpikeInterface trap where
-a `SortingAnalyzer` persisted to `binary_folder` or `zarr` loses its time vector
+`make()` asserts `t_start > 3.0e9` before insert. That check catches a whole
+class of silent wrong-origin bugs, including the SpikeInterface trap where a
+`SortingAnalyzer` persisted to `binary_folder` or `zarr` loses its time vector
 and returns spike times starting at 0.0, 122 years adrift, with no exception.
 
 ### Alignment quality rides along
@@ -244,19 +197,6 @@ regressions carry `r2` and `n_samples`.
 `n_sync_models` and `min_sync_r2` put that on the row, queryable without opening
 a file, so a poorly-regressed window is a `WHERE` clause rather than a surprise.
 
-### `make()`
-
-1. Resolve the `EphysChunk`s overlapping `[chunk_start, chunk_end)` and the
-   `EphysSyncModel`s spanning them; record `n_sync_models`, `min_sync_r2`.
-2. Build the roster: every `global_unit` whose owning block overlaps the chunk.
-3. Fetch `UnitMatching.Spikes` for those units and chunks.
-4. Convert `datetime64[ns] → float64` Harp seconds with `io_api.to_seconds`.
-5. Clip to `[chunk_start, chunk_end)`; concatenate per unit; sort.
-6. Build `time_support` from coverage ∩ chunk bounds; compute `coverage_frac`.
-7. Assemble the `TsGroup` with metadata; assert the spike count survived and
-   `t_start > 3.0e9`.
-8. Insert.
-
 ---
 
 ## The codec
@@ -268,16 +208,15 @@ does that, mirroring `<xarray@store>` from PR #587.
 
 `<xarray@store>` covers dense gridded data — pose tracks, continuous traces.
 Spike trains are ragged: each unit has its own count of events at its own times.
-pynapple is built for exactly that shape and is the standard tool in the field
-for it, with epoch handling (`IntervalSet`, `restrict`), per-unit metadata, and
-the analyses that follow (`count`, `value_from`, tuning curves, PETHs) already in
-the box.
+pynapple is built for that shape and is the standard tool in the field for it,
+with epoch handling (`IntervalSet`, `restrict`), per-unit metadata, and the
+analyses that follow (`count`, `value_from`, tuning curves, PETHs) already in the
+box.
 
 It is also where SpikeInterface points. `spikeinterface.exporters.to_pynapple_tsgroup`
 ships in the version this repo already pins (0.104.2), written by the author of
-open PR #610 on this repo with advice from pynapple's maintainer. The conversion
-from sorted output to `TsGroup` is a solved problem upstream; this spec only has
-to persist the result.
+open PR #610 with advice from pynapple's maintainer. Converting sorted output to
+a `TsGroup` is solved upstream; this spec only has to persist the result.
 
 The codec knows nothing about spikes. Like `XArrayNetCDFCodec`, it round-trips a
 pynapple object and nothing more. Every AEON-specific rule above — the Harp
@@ -285,7 +224,7 @@ epoch, the roster, the coverage support — lives in `SpikeTrains.make()`.
 
 ### File format
 
-`obj.save(path)` is `np.savez` — an uncompressed zip of `.npy` members. A
+`obj.save(path)` is `np.savez`, an uncompressed zip of `.npy` members. A
 `TsGroup` writes:
 
 | Key | Contents |
@@ -325,25 +264,19 @@ class PynappleCodec(SchemaCodec):
                                               (key or {}).get("_config")))
 ```
 
-Four notes.
-
-**Store-only comes free.** `SchemaCodec.get_dtype` raises `"<pynapple> requires @
-(store only)"` when the `@` modifier is missing. Not overriding it gives exactly
-the behaviour we want, with an accurate error message. Issue #606 also proposed
-an in-database `<pynapple>` form returning `<blob>`; dropping it removes the
-temp-file buffering *and* keeps pickled payloads out of the shared database.
-
-**No temp file.** `save()` and `load_file()` are path-only, which is a problem
-for an in-database blob and a non-problem here: the store *is* a local path. The
-xarray codec made the same choice for the same reason.
-
-**File stores only.** `_local_path` asserts `protocol == "file"`, as
-`XArrayNetCDFCodec` does. The only store in the deployment is `dj_store` on Ceph,
-`protocol: file`, so this costs nothing today.
+**Store-only comes free.** `SchemaCodec.get_dtype` already raises `"<pynapple>
+requires @ (store only)"` when the `@` modifier is missing, so not overriding it
+gives the behaviour we want with an accurate error message. Issue #606 also
+proposed an in-database `<pynapple>` form; dropping it removes the temp-file
+buffering and keeps pickled payloads out of the shared database. `save()` and
+`load_file()` are path-only, which is a problem for a blob and a non-problem
+here, because the store is a local path. `_local_path` asserts
+`protocol == "file"` as `XArrayNetCDFCodec` does, and `dj_store` on Ceph is the
+only store in the deployment.
 
 **The JSON record carries a summary.** `kind`, `n_units`, `n_spikes`, `t_start`,
-`t_end` — the same idea as `<xarray>`'s `dims` and `data_vars`. A user sizes a
-query without opening a file. Garbage collection also works with no extra code,
+`t_end` — the same idea as `<xarray>`'s `dims` and `data_vars`, so a user sizes a
+query without opening a file. Garbage collection then works with no extra code,
 because `Codec.referenced_paths` reads `path` and `store` from exactly this shape.
 
 ### Two deviations from stock pynapple
@@ -351,11 +284,10 @@ because `Codec.referenced_paths` reads `path` and `store` from exactly this shap
 Both are measured, and both keep the file readable by a plain `nap.load_file()`.
 
 **A faster `decode` for `TsGroup`.** `TsGroup._from_npz_reader` masks the
-concatenated array once per unit — O(units × spikes). On 600 units and 7.9 M
-spikes an hour, with realistic lognormal firing rates, that is **4.24 s**, of
-which I/O is 4%. Replacing the mask loop with one stable argsort over a narrowed
-`index` plus offset slicing gives **0.48 s — 8.9× — with bit-identical spike
-trains.**
+concatenated array once per unit, which is O(units × spikes). On 600 units and
+7.9 M spikes an hour at realistic lognormal rates that costs 4.24 s, of which I/O
+is 4%. One stable argsort over a narrowed `index`, plus offset slicing, gives
+0.48 s — **8.9× faster, with bit-identical spike trains**.
 
 `decode` takes that path for `TsGroup` and falls back to `nap.load_file` for
 every other type. A test asserts the fast path equals the stock path, so the
@@ -366,7 +298,7 @@ than known and rejected. Worth offering upstream; until it lands, we carry it.
 
 **A narrower `index` on write.** `index` holds a unit id per spike and pynapple
 writes it as int64. Writing the narrowest signed integer type that holds
-`max(global_unit)` cuts a realistic chunk from **126.8 MB to 79.2 MB (−38%)** for
+`max(global_unit)` cuts a realistic chunk from 126.8 MB to **79.2 MB, −38%**, for
 one `.astype`. `_from_npz_reader` compares `index == key` and broadcasts across
 widths, so stock pynapple still reads the file.
 
@@ -374,15 +306,15 @@ widths, so stock pynapple still reads the file.
 
 | Option | Why not |
 |---|---|
-| `savez_compressed` | 3.7× smaller, but **55–70× slower to write** (11.7 s vs 0.21 s) — fatal across thousands of chunks. Available as a per-column knob, off by default. |
-| zarr columns (Delta + zstd) | 20× smaller on disk but **40–60× slower to open** (1.3–2.0 s vs 32 ms), not pynapple-native, and loses npz's free member-at-a-time read. |
-| memory-mapping the npz | Cannot work at all. See below. |
+| `savez_compressed` | 3.7× smaller, 55–70× slower to write (11.7 s vs 0.21 s). Available as a per-column knob, off by default. |
+| zarr columns (Delta + zstd) | 20× smaller on disk, 40–60× slower to open (1.3–2.0 s vs 32 ms), and not pynapple-native. |
+| memory-mapping the npz | Cannot work. See below. |
 
 `np.load(mmap_mode=...)` silently ignores the flag on a zip archive, and
 numpy#23823 — the enhancement pynapple's issue #327 was closed against — was
-itself closed unmerged in June 2025. Hand-rolling it does not help either: the
-zip local header leaves each member byte-unaligned, and `searchsorted` over 5 M
-float64 costs 50,536 µs unaligned against 2.0 µs aligned.
+itself closed unmerged in June 2025. Hand-rolling it does not help: the zip local
+header leaves each member byte-unaligned, and `searchsorted` over 5 M float64
+costs 50,536 µs unaligned against 2.0 µs aligned.
 
 One npz property worth keeping: `NpzFile.__getitem__` seeks to a single zip
 entry, so reading `keys` and `_metadata` costs kilobytes without touching either
@@ -397,11 +329,10 @@ entry, so reading `keys` and `_metadata` costs kilobytes without touching either
 pynapple cannot lazily load a `TsGroup`, and structurally never will: its
 `load_array=False` defers only the *values* of a `Tsd`, and a spike train is its
 time index. `nap.NWBFile(lazy_loading=True)` silently ignores the flag for
-`Units` tables. Demand is real and long-standing (issues #574, #420, #385, #379,
-all open since 2023–2026); the maintainer's position is that a virtual time index
-"would require a non-trivial refactor" and is a medium-term item.
-
-**We take pynapple as it is and document the cost.**
+`Units` tables. Demand is long-standing (issues #574, #420, #385, #379, all open
+since 2023–2026); the maintainer's position is that a virtual time index "would
+require a non-trivial refactor" and is a medium-term item. We take pynapple as it
+is and document the cost.
 
 The chunk grain is the mitigation. A user querying *D* hours fetches `ceil(D)+1`
 chunks, of which at most two are partially wasted — under 8% at a day, under 1%
@@ -409,12 +340,12 @@ at a week. The primary key already says which chunks overlap the window, so
 irrelevant ones are skipped in SQL without opening a file. That is coarse-grained
 laziness, and at a one-hour grain it is most of the benefit.
 
-**What it does not fix:** loading and concatenating a week is roughly 2–29 GB in
-memory depending on unit count and firing rate, plus 20 s to several minutes of
+**What it does not fix:** loading and concatenating a week is 2–29 GB in memory
+depending on unit count and firing rate, plus 20 s to several minutes of
 reconstruction. A user who does that naively will run out of memory. This is a
-real limitation of the design and the reason for the fetch helper below.
+real limitation and the reason `fetch_span` ships with the table.
 
-Order-of-magnitude, per chunk:
+Per chunk:
 
 | Units | Mean rate | Spikes/chunk | npz (int16 index) | 24 h | 7 d |
 |---|---|---|---|---|---|
@@ -435,7 +366,7 @@ pynapple's `_metadata` is a pickled dict, so `nap.load_file` needs
 `allow_pickle=True` and a malicious npz would execute code on read. The files sit
 inside `dj_store` on Ceph, written only by the pipeline, and nothing else in the
 deployment reads them. Keeping metadata to scalar columns keeps the pickled blob
-small. Worth knowing; not worth blocking on.
+small.
 
 ---
 
@@ -463,11 +394,11 @@ tg = processed_ephys.SpikeTrains.fetch_span(
 )
 ```
 
-`fetch_span` restricts **per chunk before concatenating**, so the peak memory is
-one chunk rather than the whole span. It also re-keys `global_unit` when the
-query covers more than one insertion, since those ids collide. Shipping this
-helper alongside the table matters more than the 8.9× decode: at week scale the
-binding constraint is memory, not CPU.
+`fetch_span` restricts **per chunk before concatenating**, so peak memory is one
+chunk rather than the whole span. It also re-keys `global_unit` when the query
+covers more than one insertion, since those ids collide. Shipping this helper
+matters more than the 8.9× decode: at week scale the binding constraint is
+memory, not CPU.
 
 ### Joint with behaviour
 
@@ -487,10 +418,9 @@ Same `(experiment_name, chunk_start)`. No time arithmetic.
 - **No migration.** `SpikeTrains` is a new `dj.Computed` table; populating it is
   the only way data arrives.
 - **No NWB.** pynapple cannot write NWB, and the NWB route (via neuroconv) is
-  archival rather than analytical. If a DANDI deposit becomes a goal it is a
-  separate spec.
+  archival rather than analytical. A DANDI deposit would be a separate spec.
 - **No in-database `<pynapple>` form.** Store-backed only.
-- **No within-file laziness.** See above.
+- **No within-file laziness.**
 
 ---
 
@@ -510,7 +440,7 @@ a `tmp_path`, codec imported inside each test body.
   primary key, and returns the expected JSON summary.
 - `decode` returns an equal object; `TsGroup` spike trains, keys, metadata and
   `time_support` all round-trip.
-- **The fast path equals `nap.load_file`** — same keys, same spike trains, same
+- The fast path equals `nap.load_file` — same keys, same spike trains, same
   metadata, including non-contiguous unit ids and units with zero spikes.
 - A narrowed `index` is still readable by stock `nap.load_file`.
 - A non-`file` protocol raises.
@@ -520,8 +450,7 @@ Add `"pynapple"` to the codec-registry pop list in `tests/conftest.py`'s
 
 ### Unit — re-chunking
 
-The grain conversion is pure arithmetic over interval lists and deserves tests
-that need no database:
+The grain conversion is arithmetic over interval lists and needs no database:
 
 - An `EphysChunk` straddling two behavioural chunks splits at the boundary.
 - A behavioural chunk spanning several `EphysChunk`s concatenates in order.
@@ -555,6 +484,7 @@ Populate `SpikeTrains` on the ephys golden dataset and assert:
 - The roster is identical across chunks within a block.
 - Firing rates from the `TsGroup` match rates computed by hand from
   `UnitMatching.Spikes` and the coverage intervals.
+- Re-running `ApplyOfficialCuration` cascades into `SpikeTrains` and repopulates.
 
 **Re-measure the decode fast path here.** The 8.9× comes from synthetic lognormal
 firing rates with no bursting, refractory structure or drift. The number goes in
@@ -571,13 +501,10 @@ the docstring only after it holds on a real Neuropixels chunk.
    because they depend on dynamically generated stream tables. `SpikeTrains`
    depends only on static schemas, so it does not need to — but consistency
    within the module may argue for it anyway.
-3. **Curation re-runs.** `ApplyOfficialCuration` deletes and repopulates
-   downstream tables. `SpikeTrains` is a new leaf on that cascade and the path
-   needs an explicit test.
-4. **Should `SpikeTrains` also carry an `IntervalSet` column** for per-chunk
-   valid periods, separate from `time_support`? SpikeInterface has a
-   `valid_unit_periods` extension we do not currently compute.
-5. **Naming.** `SpikeTrains` in a `processed_ephys` schema, against
+3. **A second `IntervalSet` column** for per-chunk valid periods, separate from
+   `time_support`? SpikeInterface has a `valid_unit_periods` extension we do not
+   currently compute.
+4. **Naming.** `SpikeTrains` in a `processed_ephys` schema, against
    `CuratedSpikes`, `UnitActivity`, `ChunkedSpikeTrains`.
 
 ---
@@ -593,7 +520,7 @@ the docstring only after it holds on a real Neuropixels chunk.
 - [ ] `SpikeTrains` in `aeon/dj_pipeline/processed_ephys.py`
 - [ ] Re-chunking unit tests
 - [ ] `fetch_span` helper with per-chunk restriction and cross-insertion re-keying
-- [ ] Golden test on the ephys dataset
+- [ ] Golden test on the ephys dataset, including the curation-cascade path
 - [ ] Re-measure decode on a real Neuropixels chunk
 - [ ] This spec
 - [ ] Open PR into `main` (after explicit go-ahead)
