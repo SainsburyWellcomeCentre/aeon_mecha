@@ -1,6 +1,6 @@
 # Chunk-level spike trains
 
-status: draft · 2026-09-16 · addresses #606 · depends on PR #588
+status: draft · 2026-09-16 · addresses #606 · prerequisites: PR #611, PR #588
 
 ## TL;DR
 
@@ -9,8 +9,9 @@ that does not line up with behavioural data, so every analysis re-derives the
 alignment by hand. `SpikeTrains` re-chunks curated, HARP-synced spikes to the
 1-hour `acquisition.Chunk` grain and stores each chunk as a pynapple `TsGroup`,
 backed by a new `<pynapple@dj_store>` codec. The cost is memory: pynapple cannot
-lazily load a `TsGroup`, so a week-long query pulls 2–29 GB, which the chunk
-grain bounds and `fetch_span` manages but nothing eliminates.
+lazily load a `TsGroup`, so a week-long query reconstructs 1.5–23 GB of spike
+times, which the chunk grain bounds and `fetch_span` manages but nothing
+eliminates.
 
 ---
 
@@ -60,6 +61,24 @@ Four operations carry spikes from probe to analysis. Sorting detects units
 matching assigns persistent identity (`UnitMatching`, `GlobalUnit`). The fourth,
 converting the grain, has no table — so every consumer does it by hand.
 
+### Prerequisite: PR #611
+
+This spec assumes PR #611 has merged and the affected data has been re-ingested.
+That PR fixes five bugs in exactly the input this table re-chunks, and its own
+body states that existing rows carry a 1 s offset and need re-ingesting. Two of
+the five make re-chunking meaningless until fixed: all ephys HARP times run 1 s
+late, so every chunk-boundary assignment is wrong; and spikes are shifted within
+each ephys chunk by the unit's first-spike offset, with a median of 1.9 s, a
+maximum of 593 s, and 28% of unit-chunk pairs off by more than 10 s.
+
+A third matters for the tests below: spikes falling outside the HarpSync rows
+were silently dropped, 0.03-0.29% per block. The golden assertion that spike
+counts match `UnitMatching.Spikes` would pass on pre-#611 data while both sides
+were short.
+
+Note that `make()`'s `t_start > 3.0e9` guard catches a wrong time *origin*, not a
+wrong *offset*. It is eight orders of magnitude too coarse for any of the above.
+
 ---
 
 ## Design
@@ -98,11 +117,14 @@ Primary key: `(experiment_name, chunk_start, subject, insertion_number,
 matching_paramset_id)`.
 
 `chunk_start` here is the **behavioural** chunk. `ephys.EphysChunk` uses the same
-attribute name for its own grain, so any query joining both must disambiguate.
+attribute name for its own grain. That collision is a defect, not a caveat — see
+open question 1.
 
 `UnitMatchingParamSet` sits in `UnitMatching`'s primary key, because a block can
-be matched under several paramsets. Leaving it out here would re-introduce the
-ambiguity that spec removed.
+be matched under several paramsets. `SPEC_UNIT_MATCHING.md` deliberately keeps it
+*out* of `GlobalUnit`'s key, on the grounds that a neuron's identity is scoped to
+the insertion rather than to the method that found it. Whether this table should
+follow `UnitMatching` or `GlobalUnit` is unresolved — see open question 4.
 
 ### `key_source`
 
@@ -204,6 +226,11 @@ regressions carry `r2` and `n_samples`.
 `n_sync_models` and `min_sync_r2` put that on the row, queryable without opening
 a file, so a poorly-regressed window is a `WHERE` clause rather than a surprise.
 
+`EphysSyncModel` is keyed by `EphysEpoch`, not by `ProbeInsertion`, so both values
+are epoch-level facts duplicated onto each insertion's row. A behavioural chunk
+spanning two ephys epochs draws from two model families, and `min_sync_r2` takes
+the worst across both.
+
 ---
 
 ## The codec
@@ -275,8 +302,13 @@ proposed an in-database `<pynapple>` form; dropping it removes the temp-file
 buffering and keeps pickled payloads out of the shared database. `save()` and
 `load_file()` are path-only, which is a problem for a blob and a non-problem
 here, because the store is a local path. `_local_path` asserts
-`protocol == "file"` as `XArrayNetCDFCodec` does, and `dj_store` on Ceph is the
-only store in the deployment.
+`protocol == "file"` as `XArrayNetCDFCodec` does.
+
+The column targets `dj_store`, which already holds `<filepath@dj_store>` entries
+pointing at externally-managed SpikeInterface output. That store is the only one
+configured in the deployment, so the choice is not really open — but a GC'd codec
+sharing a store with externally-managed files is worth verifying rather than
+assuming, and the integration tests below do that.
 
 **The JSON record carries a summary.** `kind`, `n_units`, `n_spikes`, `t_start`,
 `t_end` — the same idea as `<xarray>`'s `dims` and `data_vars`, so a user sizes a
@@ -339,23 +371,25 @@ require a non-trivial refactor" and is a medium-term item. We take pynapple as i
 is and document the cost.
 
 The chunk grain is the mitigation. A user querying *D* hours fetches `ceil(D)+1`
-chunks, of which at most two are partially wasted — under 8% at a day, under 1%
-at a week. The primary key already says which chunks overlap the window, so
+chunks, of which at most two are partially wasted — 8% at a day, 1.2% at a
+week. The primary key already says which chunks overlap the window, so
 irrelevant ones are skipped in SQL without opening a file. That is coarse-grained
 laziness, and at a one-hour grain it is most of the benefit.
 
-**What it does not fix:** loading and concatenating a week is 2–29 GB in memory
-depending on unit count and firing rate, plus 20 s to several minutes of
+**What it does not fix:** concatenating a week holds 1.5–23 GB of spike times in
+memory, depending on unit count and firing rate, plus 20 s to several minutes of
 reconstruction. A user who does that naively will run out of memory. This is a
 real limitation and the reason `fetch_span` ships with the table.
 
-Per chunk:
+On-disk figures are larger than in-memory ones: the npz stores a float64 time
+plus an int16 unit index per spike (10 B), while a reconstructed `TsGroup` holds
+only the float64 times (8 B). Decoding one chunk transiently holds both.
 
-| Units | Mean rate | Spikes/chunk | npz (int16 index) | 24 h | 7 d |
+| Units | Mean rate | Spikes/chunk | npz/chunk | 7 d on disk | 7 d in memory |
 |---|---|---|---|---|---|
-| 100 | 3 Hz | 1.1 M | 11 MB | 0.3 GB | 1.8 GB |
-| 300 | 5 Hz | 5.4 M | 54 MB | 1.3 GB | 9.1 GB |
-| 600 | 8 Hz | 17.3 M | 173 MB | 4.1 GB | 29 GB |
+| 100 | 3 Hz | 1.1 M | 11 MB | 1.8 GB | 1.5 GB |
+| 300 | 5 Hz | 5.4 M | 54 MB | 9.1 GB | 7.3 GB |
+| 600 | 8 Hz | 17.3 M | 173 MB | 29 GB | 23 GB |
 
 ### Spikes are stored twice
 
@@ -407,11 +441,17 @@ memory, not CPU.
 ### Joint with behaviour
 
 ```python
-spikes = (processed_ephys.SpikeTrains & chunk_key).fetch1("spikes")
+key = {"experiment_name": exp, "chunk_start": t, "subject": s, "insertion_number": 1}
+chunk_key = {k: key[k] for k in ("experiment_name", "chunk_start")}
+
+spikes = (processed_ephys.SpikeTrains & key).fetch1("spikes")
 pose   = (processed_movement.MousePositionTracking & chunk_key).fetch1(...)
 ```
 
-Same `(experiment_name, chunk_start)`. No time arithmetic.
+A `SpikeTrains` key carries `subject`, `insertion_number` and
+`matching_paramset_id`, which the behavioural tables do not have, so the
+behavioural side takes the chunk half of the key. The point stands: the two
+share `(experiment_name, chunk_start)` and neither side does time arithmetic.
 
 ---
 
@@ -488,7 +528,9 @@ Populate `SpikeTrains` on the ephys golden dataset and assert:
 - The roster is identical across chunks within a block.
 - Firing rates from the `TsGroup` match rates computed by hand from
   `UnitMatching.Spikes` and the coverage intervals.
-- Re-running `ApplyOfficialCuration` cascades into `SpikeTrains` and repopulates.
+- Re-running `ApplyOfficialCuration` cascades into `SpikeTrains` and
+  repopulates. **Blocked on open question 2** — this cannot pass while the
+  table has no foreign key to its data source.
 
 **Re-measure the decode fast path here.** The 8.9× comes from synthetic lognormal
 firing rates with no bursting, refractory structure or drift. The number goes in
@@ -498,17 +540,65 @@ the docstring only after it holds on a real Neuropixels chunk.
 
 ## Open questions
 
-1. **Module placement.** `processed_ephys.py` follows the convention PR #588
+A content review on 2026-09-16 found three defects in the table design that are
+not yet resolved. They are listed first because they are the residual risk; the
+rest are cosmetic by comparison.
+
+1. **The primary key collides with `EphysChunk`.** `ephys.EphysChunk` is keyed
+   `(experiment_name, subject, insertion_number, chunk_start)` — the same
+   attribute set proposed here, with `chunk_start` meaning the ONIX grain rather
+   than the behavioural one. A restriction by attribute name therefore matches a
+   behavioural hour against an ONIX boundary, which by construction never
+   coincide, and returns nothing without erroring. Joins against `EphysChunk` or
+   `UnitMatching.Spikes` fail DataJoint's join-compatibility check.
+2. **No foreign key to the data source.** Every declared parent sits upstream of
+   `UnitMatching`, so the curation cascade documented in
+   `SPEC_SPIKE_SORTING_CURATION.md` stops before `SpikeTrains` and nothing
+   invalidates a stale row. The golden assertion about `ApplyOfficialCuration`
+   below cannot pass as the table is currently specified.
+3. **"Owning block" is under-defined, and the roster rule can fabricate 0.0 Hz.**
+   `UnitMatching.make()` skips a pair if any row exists, which is
+   first-processed-owns rather than earlier-owns, and bidirectional seed
+   propagation means a later block often processes first. Ownership is also per
+   ephys-chunk, so a behavioural hour straddling a block boundary has different
+   owners for different parts of itself. Separately, a unit discovered in a later
+   block would get an empty `Ts` over full coverage in earlier chunks, reporting
+   0.0 Hz for a unit that was never sorted on that data.
+
+Resolving (1) and (2) probably means re-deriving the primary key from the data
+source rather than the join target, which would also force (3) to be answered as
+schema rather than prose. That trade — provenance and cascade against the
+behavioural-join ergonomics that motivate the table — is the open design
+question.
+
+Smaller, and independent of the above:
+
+4. **`matching_paramset_id` in the primary key** promises multi-paramset support
+   the upstream schema cannot deliver: `UnitMatching.Spikes` carries a unique
+   index on `(experiment_name, subject, insertion_number, global_unit,
+   chunk_start)` with no paramset, so a second paramset cannot write rows for an
+   already-owned triple. Either drop the attribute or treat the upstream index as
+   a prerequisite change.
+5. **Per-unit metadata is multi-valued.** `unit_quality` and `qc_metrics` are
+   keyed by block-scoped `unit`, so one `global_unit` has one value per block it
+   appears in. `GlobalUnit`'s electrode is denormalised and rewritten on every
+   match, so the value baked into a row depends on when it was populated.
+6. **Population and backfill.** Who calls `populate()`, and at what cadence? The
+   backfill cost for the existing corpus is a Ceph capacity decision and the
+   number is not yet stated.
+7. **`fetch_span` across differing rosters.** Union with empty padding,
+   intersection, or error? The answer follows from (3).
+8. **Module placement.** `processed_ephys.py` follows the convention PR #588
    establishes, but that PR is still open. Alternative: put `SpikeTrains` in
    `spike_sorting.py` and move it later.
-2. **Deferred activation.** `processed_feeder` and `processed_movement` defer
+9. **Deferred activation.** `processed_feeder` and `processed_movement` defer
    because they depend on dynamically generated stream tables. `SpikeTrains`
    depends only on static schemas, so it does not need to — but consistency
    within the module may argue for it anyway.
-3. **A second `IntervalSet` column** for per-chunk valid periods, separate from
+10. **A second `IntervalSet` column** for per-chunk valid periods, separate from
    `time_support`? SpikeInterface has a `valid_unit_periods` extension we do not
    currently compute.
-4. **Naming.** `SpikeTrains` in a `processed_ephys` schema, against
+11. **Naming.** `SpikeTrains` in a `processed_ephys` schema, against
    `CuratedSpikes`, `UnitActivity`, `ChunkedSpikeTrains`.
 
 ---
