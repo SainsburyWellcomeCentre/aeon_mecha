@@ -397,126 +397,86 @@ the worst across both.
 
 ## The codec
 
-The table needs to store a pynapple object in a column. `<pynapple@dj_store>`
-does that, mirroring `<xarray@store>` from PR #587.
+`<pynapple@dj_store>` stores a pynapple object in a column, mirroring
+`<xarray@store>` from PR #587. It knows nothing about spikes: it round-trips a
+pynapple object and nothing more, and every AEON rule above — the Harp epoch, the
+roster, the coverage support — lives in `SpikeTrains.make()`.
 
-### Why pynapple
-
-Beyond the shape fit, pynapple brings the operations that follow it: epoch
-handling (`IntervalSet`, `restrict`), per-unit metadata, and the standard
-analyses (`count`, `value_from`, tuning curves, PETHs).
-
-It is also where SpikeInterface points. `spikeinterface.exporters.to_pynapple_tsgroup`
-ships in the version this repo already pins (0.104.2), written by the author of
-open PR #610 with advice from pynapple's maintainer. Converting sorted output to
-a `TsGroup` is solved upstream; this spec only has to persist the result.
-
-The codec knows nothing about spikes. Like `XArrayNetCDFCodec`, it round-trips a
-pynapple object and nothing more. Every AEON-specific rule above — the Harp
-epoch, the roster, the coverage support — lives in `SpikeTrains.make()`.
-
-### File format
-
-`obj.save(path)` is `np.savez`, an uncompressed zip of `.npy` members. A
-`TsGroup` writes:
-
-| Key | Contents |
-|---|---|
-| `t` | float64, every unit's spikes concatenated and globally time-sorted |
-| `index` | int, the unit id for each spike |
-| `keys` | int64, the unit ids |
-| `start`, `end` | float64, the `time_support` intervals |
-| `type` | `"TsGroup"` |
-| `_metadata` | a **pickled** dict of the per-unit metadata columns |
-
-`nap.load_file(path)` dispatches on `type` and rebuilds the object.
+`spikeinterface.exporters.to_pynapple_tsgroup` already ships in the version this
+repo pins (0.104.2), written by the author of open PR #610 with advice from
+pynapple's maintainer. Building a `TsGroup` from sorted output is solved
+upstream; this spec only persists the result.
 
 ### Implementation
 
+`obj.save(path)` is `np.savez`, an uncompressed zip of `.npy` members — for a
+`TsGroup`: `t` (float64, all spikes globally time-sorted), `index` (unit id per
+spike), `keys`, `start`/`end` (the `time_support`), `type`, and `_metadata` (a
+**pickled** dict). `nap.load_file` dispatches on `type`.
+
 ```python
 class PynappleCodec(SchemaCodec):
-    """Store a pynapple object as .npz at {schema}/{table}/{pk}/{field}_<token>.npz."""
-
     name = "pynapple"
 
-    def validate(self, value): ...          # Ts, Tsd, TsdFrame, TsdTensor, IntervalSet, TsGroup
+    def validate(self, value): ...   # the six pynapple types
 
     def encode(self, value, *, key=None, store_name=None) -> dict:
-        schema, table, field, pk = self._extract_context(key)
-        config = (key or {}).get("_config")
-        path, _ = self._build_path(schema, table, field, pk, ext=".npz",
-                                   store_name=store_name, config=config)
-        local = self._local_path(path, store_name, config)
-        os.makedirs(os.path.dirname(local), exist_ok=True)
-        value.save(local)
-        return {"path": path, "store": store_name, "kind": type(value).__name__,
+        # _build_path(..., ext=".npz") -> _local_path -> makedirs -> value.save(local)
+        return {"path": ..., "store": ..., "kind": type(value).__name__,
                 "n_units": ..., "n_spikes": ..., "t_start": ..., "t_end": ...}
 
     def decode(self, stored, *, key=None):
-        return nap.load_file(self._local_path(stored["path"], stored.get("store"),
-                                              (key or {}).get("_config")))
+        return nap.load_file(self._local_path(...))    # fast path for TsGroup, below
 ```
 
 **Store-only comes free.** `SchemaCodec.get_dtype` already raises `"<pynapple>
 requires @ (store only)"` when the `@` modifier is missing, so not overriding it
-gives the behaviour we want with an accurate error message. Issue #606 also
-proposed an in-database `<pynapple>` form; dropping it removes the temp-file
-buffering and keeps pickled payloads out of the shared database. `save()` and
-`load_file()` are path-only, which is a problem for a blob and a non-problem
-here, because the store is a local path. `_local_path` asserts
-`protocol == "file"` as `XArrayNetCDFCodec` does.
+gives the behaviour we want with an accurate message. Dropping issue #606's
+in-database form also removes temp-file buffering and keeps pickled payloads out
+of the shared database. `_local_path` asserts `protocol == "file"`, as
+`XArrayNetCDFCodec` does.
 
-The column targets `dj_store`, which already holds `<filepath@dj_store>` entries
-pointing at externally-managed SpikeInterface output. That store is the only one
-configured in the deployment, so the choice is not really open — but a GC'd codec
-sharing a store with externally-managed files is worth verifying rather than
-assuming, and the integration tests below do that.
-
-**The JSON record carries a summary.** `kind`, `n_units`, `n_spikes`, `t_start`,
-`t_end` — the same idea as `<xarray>`'s `dims` and `data_vars`, so a user sizes a
-query without opening a file. Garbage collection then works with no extra code,
-because `Codec.referenced_paths` reads `path` and `store` from exactly this shape.
+**The JSON record carries a summary**, so a user sizes a query without opening a
+file, and garbage collection works with no extra code — `Codec.referenced_paths`
+reads `path` and `store` from exactly this shape. The column targets `dj_store`,
+which already holds `<filepath@dj_store>` entries pointing at externally-managed
+SpikeInterface output; a GC'd codec sharing that store is worth verifying rather
+than assuming.
 
 ### Two deviations from stock pynapple
 
-Both are measured, and both keep the file readable by a plain `nap.load_file()`.
+Both measured, both still readable by a plain `nap.load_file()`.
 
-**A faster `decode` for `TsGroup`.** `TsGroup._from_npz_reader` masks the
-concatenated array once per unit, which is O(units × spikes). On 600 units and
-7.9 M spikes an hour at realistic lognormal rates that costs 4.24 s, of which I/O
-is 4%. One stable argsort over a narrowed `index`, plus offset slicing, gives
-0.48 s — **8.9× faster, with bit-identical spike trains**.
+**A faster `decode` for `TsGroup`.** `_from_npz_reader` masks the concatenated
+array once per unit — O(units × spikes). At 600 units and 7.9 M spikes/hour on
+realistic lognormal rates that is 4.24 s, of which I/O is 4%. One stable argsort
+over a narrowed `index` plus offset slicing gives 0.48 s: **8.9× faster,
+bit-identical**. `decode` takes that path for `TsGroup` and falls back to
+`nap.load_file` otherwise, with a test pinning their equivalence. No pynapple
+issue mentions this, so it is unreported rather than rejected — worth offering
+upstream.
 
-`decode` takes that path for `TsGroup` and falls back to `nap.load_file` for
-every other type. A test asserts the fast path equals the stock path, so the
-coupling to pynapple's format is checked rather than assumed.
-
-Nothing in pynapple's issue tracker mentions this, so it is unreported rather
-than known and rejected. Worth offering upstream; until it lands, we carry it.
-
-**A narrower `index` on write.** `index` holds a unit id per spike and pynapple
-writes it as int64. Writing the narrowest signed integer type that holds
-`max(global_unit)` cuts a realistic chunk from 126.8 MB to **79.2 MB, −38%**, for
-one `.astype`. `_from_npz_reader` compares `index == key` and broadcasts across
-widths, so stock pynapple still reads the file.
+**A narrower `index` on write.** pynapple writes it as int64; the narrowest
+signed type holding `max(global_unit)` cuts a realistic chunk from 126.8 MB to
+**79.2 MB (−38%)** for one `.astype`. `_from_npz_reader` compares `index == key`
+and broadcasts across widths, so stock pynapple still reads it.
 
 ### Rejected
 
 | Option | Why not |
 |---|---|
-| `savez_compressed` | 3.7× smaller, 55–70× slower to write (11.7 s vs 0.21 s). Available as a per-column knob, off by default. |
-| zarr columns (Delta + zstd) | 20× smaller on disk, 40–60× slower to open (1.3–2.0 s vs 32 ms), and not pynapple-native. |
-| memory-mapping the npz | Cannot work. See below. |
+| `savez_compressed` | 3.7× smaller, 55–70× slower to write (11.7 s vs 0.21 s). Per-column knob, off by default. |
+| zarr columns (Delta + zstd) | 20× smaller on disk, 40–60× slower to open, not pynapple-native. |
+| memory-mapping the npz | Impossible — see below. |
 
-`np.load(mmap_mode=...)` silently ignores the flag on a zip archive, and
-numpy#23823 — the enhancement pynapple's issue #327 was closed against — was
-itself closed unmerged in June 2025. Hand-rolling it does not help: the zip local
-header leaves each member byte-unaligned, and `searchsorted` over 5 M float64
-costs 50,536 µs unaligned against 2.0 µs aligned.
+`np.load(mmap_mode=)` silently ignores the flag on a zip, and numpy#23823, the
+enhancement pynapple's #327 was closed against, was itself closed unmerged in
+June 2025. Hand-rolled it still fails: the zip header leaves members
+byte-unaligned, and `searchsorted` over 5 M float64 costs 50,536 µs against
+2.0 µs aligned.
 
-One npz property worth keeping: `NpzFile.__getitem__` seeks to a single zip
-entry, so reading `keys` and `_metadata` costs kilobytes without touching either
-40 MB array. "Which units are in this chunk?" is nearly free.
+Worth keeping: `NpzFile.__getitem__` seeks to one zip entry, so reading `keys`
+and `_metadata` costs kilobytes without touching either 40 MB array.
 
 ---
 
@@ -652,163 +612,82 @@ share `(experiment_name, chunk_start)` and neither side does time arithmetic.
 
 ---
 
-## What is NOT included
+## Out of scope
 
-- **No change to existing tables.** `SyncedSpikes`, `UnitMatching` and
-  `GlobalUnit` keep their current definitions and contents.
-- **No migration.** `SpikeTrains` is a new `dj.Computed` table; populating it is
-  the only way data arrives.
-- **No NWB.** pynapple cannot write NWB, and the NWB route (via neuroconv) is
-  archival rather than analytical. A DANDI deposit would be a separate spec.
-- **No in-database `<pynapple>` form.** Store-backed only.
-- **No within-file laziness.**
+No changes to `SyncedSpikes`, `UnitMatching` or `GlobalUnit`. No NWB export —
+pynapple cannot write it, and the neuroconv route is archival rather than
+analytical; a DANDI deposit would be its own spec.
 
 ---
 
 ## Testing
 
 Three markers, per `SPEC_TESTING.md`: `unit` (no database), `integration`
-(testcontainers MySQL), `specialized` (golden datasets).
+(testcontainers MySQL), `specialized` (golden datasets). Detailed assertions
+belong in the implementation PR; these are the four that pin design decisions
+and must not be quietly dropped.
 
-### Unit — codec
+**The codec round-trips, and the fast path is equivalent.** `TsGroup` spike
+trains, keys, metadata and `time_support` survive; the argsort decode returns
+exactly what `nap.load_file` does, including non-contiguous unit ids and units
+with zero spikes; a narrowed `index` is still readable by stock pynapple. Mirror
+`TestXArrayNetCDFCodec`, and add `"pynapple"` to the codec-registry pop list in
+`tests/conftest.py` or the unit fixture double-registers.
 
-Extend `tests/dj_pipeline/utils/test_codec_unit.py`, matching the
-`TestXArrayNetCDFCodec` shape: a real `datajoint.settings.Config()`, stores set to
-a `tmp_path`, codec imported inside each test body.
+**Garbage collection does not delete live data.** The `<xarray@store>` GC suite,
+repeated: referenced/orphaned/deleted counts, dry run against real run,
+idempotency, and a re-fetch of the survivor asserting equality.
 
-- `validate` accepts each of the six pynapple types and rejects others.
-- `encode` writes one tokened `.npz` at a schema-addressed path containing the
-  primary key, and returns the expected JSON summary.
-- `decode` returns an equal object; `TsGroup` spike trains, keys, metadata and
-  `time_support` all round-trip.
-- The fast path equals `nap.load_file` — same keys, same spike trains, same
-  metadata, including non-contiguous unit ids and units with zero spikes.
-- A narrowed `index` is still readable by stock `nap.load_file`.
-- A non-`file` protocol raises.
+**Re-chunking conserves spikes and coverage.** No spike lost or double-counted
+against `UnitMatching.Spikes` over the same window. A spike at exactly
+`chunk_end` lands in the next chunk, a gap yields a two-interval `time_support`,
+and `covered_seconds` is per-unit correct and sums across concatenation.
+`n_partial_units` is zero when covering blocks agree and non-zero when they
+do not.
 
-Add `"pynapple"` to the codec-registry pop list in `tests/conftest.py`'s
-`mock_dj_for_unit`, alongside `"xarray"`, or the fixture double-registers.
+**Staleness is detected and clears.** `stale()` is empty after a clean populate
+and non-empty after re-curation or a later block; `fetch_span` raises on stale
+and passes with `allow_stale=True`; the delete-and-repopulate recipe returns it
+to empty with the same spike counts.
 
-### Unit — re-chunking
-
-The grain conversion is arithmetic over interval lists and needs no database:
-
-- An `EphysChunk` straddling two behavioural chunks splits at the boundary.
-- A behavioural chunk spanning several `EphysChunk`s concatenates in order.
-- A gap between `EphysChunk`s produces a two-interval `time_support`.
-- Partial coverage yields the right `coverage_frac`.
-- A spike at exactly `chunk_end` lands in the next chunk, not this one.
-- A unit with no spikes appears in the roster with an empty `Ts`.
-- A unit sorted for half the chunk gets `covered_seconds` equal to half the
-  chunk's coverage, and `n_spikes / covered_seconds` recovers its true rate while
-  `TsGroup.rate` does not.
-- `n_partial_units` is 0 when every covering block found the same units, and
-  non-zero when they did not.
-- `covered_seconds` sums correctly across concatenated chunks.
-
-### Integration — codec round trip and GC
-
-Extend `tests/dj_pipeline/utils/test_codec_integration.py`: a throwaway schema
-with a `<pynapple@…>` column, store `location.mkdir()` before any insert.
-
-Garbage collection gets the same treatment `<xarray@store>` got —
-`schema_paths_referenced` / `orphaned` / `deleted`, dry run against real run,
-`bytes_freed`, `errors == 0`, idempotency of a second `collect()`, and a re-fetch
-of the surviving row asserting equality. Silent deletion of live data is the
-failure that matters.
-
-Also verify the MariaDB dict-to-JSON patch in `aeon/dj_pipeline/__init__.py`
-holds for a second JSON-dtype codec.
-
-### Specialized — golden
-
-Populate `SpikeTrains` on the ephys golden dataset and assert:
-
-- Total spikes across chunks equals total spikes in `UnitMatching.Spikes` over
-  the same window. No spike lost, none double-counted.
-- `t_start > 3.0e9` on every row.
-- `coverage_frac` matches the `EphysChunk` coverage computed independently.
-- The roster is identical across chunks within a block.
-- Firing rates from the `TsGroup` match rates computed by hand from
-  `UnitMatching.Spikes` and the coverage intervals.
-- `stale()` is empty after a clean populate, and non-empty after re-running
-  `ApplyOfficialCuration` or matching a further block over covered time.
-- `fetch_span` raises on a stale row and passes with `allow_stale=True`.
-- `fetch_span` warns, once, when a contributing chunk has `n_partial_units > 0`.
-- The delete-and-repopulate recipe returns `stale()` to empty and reproduces the
-  same spike counts.
-
-**Re-measure the decode fast path here.** The 8.9× comes from synthetic lognormal
-firing rates with no bursting, refractory structure or drift. The number goes in
-the docstring only after it holds on a real Neuropixels chunk.
+Re-measure the 8.9× decode on a real Neuropixels chunk before that number goes
+in a docstring — it comes from synthetic lognormal rates with no bursting,
+refractory structure or drift.
 
 ---
 
 ## Open questions
 
-The table-design defects raised in the 2026-09-16 content review are resolved
-above: the primary key no longer collides (`SpikeTrains` has no foreign key to
-`EphysChunk`), provenance and invalidation are handled by `source_blocks` and
-`stale()` in place of a cascade, and the roster rule now stores every unit with a
-per-unit `covered_seconds` denominator. What remains:
-
-1. **Should unit validity live upstream?** "Unit 99 was not observed by any
+1. **Should per-unit validity live upstream?** "Unit 99 was not observed by any
    sorting covering `[0, 1800)`" is a property of the `(global_unit, time)` pair,
-   not of this table. It is currently implicit in which `UnitMatching.Spikes`
-   rows exist, which is why every consumer re-derives it — including anyone
-   querying `UnitMatching.Spikes` directly today, with the same bug. Recording
-   per-`global_unit` validity intervals once, on `GlobalUnit` or as a part table
-   of `UnitMatching`, would serve everyone and let `make()` read a fact instead
-   of deriving one. Worth raising with the `UnitMatching` owners before
-   implementation.
-2. **Coverage as data rather than a scalar.** A second `<pynapple@dj_store>`
-   column holding an `IntervalSet` whose per-interval metadata names the units it
-   covers would let `fetch_span` correct rosters automatically instead of
-   documenting the correction. `IntervalSet` carries metadata and object-dtype
-   columns round-trip, so it works. Deferred from v1 as an extension.
+   currently implicit in which `UnitMatching.Spikes` rows exist — so every
+   consumer re-derives it, with the same bug. Raise with the `UnitMatching`
+   owners before implementation.
+2. **Coverage as data.** A second column holding an `IntervalSet` whose
+   per-interval metadata names the units it covers would let `fetch_span` correct
+   rosters automatically. Deferred from v1.
 3. **Per-unit metadata is multi-valued.** `unit_quality` and `qc_metrics` are
-   keyed by block-scoped `unit`, so one `global_unit` has one value per block it
-   appears in, and `GlobalUnit`'s electrode is denormalised and rewritten on
-   every match. Which block's value wins, and is populate-time dependence
-   acceptable?
-4. **Population and backfill.** Who calls `populate()`, and at what cadence?
-   Ordering is no longer enforced by the foreign-key graph, so the worker
-   configuration must sequence this after `UnitMatching`. The backfill cost for
-   the existing corpus is a Ceph capacity decision and the number is not yet
-   stated.
-5. **Block-length distribution.** The case for one-row-per-chunk rests on
-   boundary chunks being rare. Worth measuring against `EphysBlock` on the golden
-   dataset before implementation: if blocks are short, boundary chunks
-   are common and the trade deserves revisiting.
-6. **Module placement.** `processed_ephys.py` follows the convention PR #588
-   establishes, but that PR is still open. Alternative: put `SpikeTrains` in
-   `spike_sorting.py` and move it later.
-7. **Deferred activation.** `processed_feeder` and `processed_movement` defer
-   because they depend on dynamically generated stream tables. `SpikeTrains`
-   depends only on static schemas, so it does not need to — but consistency
-   within the module may argue for it anyway.
-8. **Naming.** `SpikeTrains` in a `processed_ephys` schema, against
-   `CuratedSpikes`, `UnitActivity`, `ChunkedSpikeTrains`.
+   block-scoped, and `GlobalUnit`'s electrode is rewritten on every match. Which
+   block wins, and is populate-time dependence acceptable?
+4. **Population and backfill.** Who calls `populate()`, in what order (the FK
+   graph no longer enforces it), and what does the backfill cost on Ceph?
+5. **Block-length distribution.** One-row-per-chunk assumes boundary chunks are
+   rare. Measure against `EphysBlock` on the golden dataset before implementing.
+6. **Module placement and naming.** `processed_ephys.py` depends on PR #588;
+   `SpikeTrains` against `CuratedSpikes` or `UnitActivity`.
 
 ---
 
 ## PR checklist
 
-- [ ] `PynappleCodec` in `aeon/dj_pipeline/utils/codec.py`
-- [ ] Register it in `aeon/dj_pipeline/__init__.py` before schema activation
-- [ ] `pynapple` as an optional extra in `pyproject.toml`, lazy-imported in the codec
-- [ ] Add `"pynapple"` to the registry pop list in `tests/conftest.py`
-- [ ] Codec unit tests, including fast-path equivalence
-- [ ] Codec integration tests, including the GC suite
-- [ ] `SpikeTrains` in `aeon/dj_pipeline/processed_ephys.py`
-- [ ] `SpikeTrains.stale()` and the delete-and-repopulate runbook entry
-- [ ] Re-chunking unit tests, including per-unit `covered_seconds`
-- [ ] `fetch_span`: per-chunk restriction, cross-insertion re-keying, warn on
-      partial, raise on stale with `allow_stale`
-- [ ] Measure the block-length distribution on the golden dataset (open question 5)
-- [ ] Raise the upstream unit-validity question with the `UnitMatching` owners
-      (open question 1)
-- [ ] Golden test on the ephys dataset, including the curation-cascade path
-- [ ] Re-measure decode on a real Neuropixels chunk
-- [ ] This spec
+- [ ] `PynappleCodec` in `utils/codec.py`, registered before schema activation,
+      `pynapple` as an optional extra, lazy-imported
+- [ ] Codec tests: round trip, fast-path equivalence, GC suite
+- [ ] `SpikeTrains` in `processed_ephys.py`, with `stale()`
+- [ ] `fetch_span`: per-chunk restriction, re-keying, warn on partial, raise on
+      stale
+- [ ] Re-chunking and staleness tests; golden test on the ephys dataset
+- [ ] Measure block-length distribution (open question 5)
+- [ ] Raise upstream unit-validity with the `UnitMatching` owners (open question 1)
+- [ ] Delete-and-repopulate added to the operator runbook
 - [ ] Open PR into `main` (after explicit go-ahead)
