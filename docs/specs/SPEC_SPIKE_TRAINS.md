@@ -34,6 +34,13 @@ Three commitments shape the design:
    across a week and follow the same neuron.
 3. **One clock.** Harp seconds since 1904-01-01, float64, pipeline-wide.
 
+The stored object is a pynapple `TsGroup`. pynapple is the standard Python
+library for epoch-and-event neural data, and a `TsGroup` is a dict of per-unit
+timestamp series carrying per-unit metadata and a `time_support` interval. That
+is the shape a population of sorted units already has, which is why the existing
+`<xarray@store>` codec does not fit: xarray holds dense gridded arrays, and
+spike trains are ragged. [The codec](#the-codec) covers the choice in full.
+
 ---
 
 ## Background
@@ -206,12 +213,9 @@ does that, mirroring `<xarray@store>` from PR #587.
 
 ### Why pynapple
 
-`<xarray@store>` covers dense gridded data — pose tracks, continuous traces.
-Spike trains are ragged: each unit has its own count of events at its own times.
-pynapple is built for that shape and is the standard tool in the field for it,
-with epoch handling (`IntervalSet`, `restrict`), per-unit metadata, and the
-analyses that follow (`count`, `value_from`, tuning curves, PETHs) already in the
-box.
+Beyond the shape fit, pynapple brings the operations that follow it: epoch
+handling (`IntervalSet`, `restrict`), per-unit metadata, and the standard
+analyses (`count`, `value_from`, tuning curves, PETHs).
 
 It is also where SpikeInterface points. `spikeinterface.exporters.to_pynapple_tsgroup`
 ships in the version this repo already pins (0.104.2), written by the author of
