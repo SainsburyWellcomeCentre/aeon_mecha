@@ -61,24 +61,6 @@ Four operations carry spikes from probe to analysis. Sorting detects units
 matching assigns persistent identity (`UnitMatching`, `GlobalUnit`). The fourth,
 converting the grain, has no table — so every consumer does it by hand.
 
-### Prerequisite: PR #611
-
-This spec assumes PR #611 has merged and the affected data has been re-ingested.
-That PR fixes five bugs in exactly the input this table re-chunks, and its own
-body states that existing rows carry a 1 s offset and need re-ingesting. Two of
-the five make re-chunking meaningless until fixed: all ephys HARP times run 1 s
-late, so every chunk-boundary assignment is wrong; and spikes are shifted within
-each ephys chunk by the unit's first-spike offset, with a median of 1.9 s, a
-maximum of 593 s, and 28% of unit-chunk pairs off by more than 10 s.
-
-A third matters for the tests below: spikes falling outside the HarpSync rows
-were silently dropped, 0.03-0.29% per block. The golden assertion that spike
-counts match `UnitMatching.Spikes` would pass on pre-#611 data while both sides
-were short.
-
-Note that `make()`'s `t_start > 3.0e9` guard catches a wrong time *origin*, not a
-wrong *offset*. It is eight orders of magnitude too coarse for any of the above.
-
 ---
 
 ## Design
@@ -359,24 +341,18 @@ knows what they are doing.
 
 ### Time base: Harp seconds since 1904
 
-pynapple stores `float64` seconds and has no concept of a time origin — no `t0`,
-no timezone, nothing in the npz that records one. Whatever origin we choose is a
-convention we have to record and defend. Harp-absolute wins on four counts:
+pynapple stores `float64` seconds with no concept of an origin — no `t0`, no
+timezone, nothing in the npz that records one — so the origin is a convention we
+pick and hold. Harp-absolute costs nothing to produce: `swc.aeon.io.api.to_seconds`
+already does it, keeping `1904` in the one place it lives. The ULP at 3.87e9 s is
+477 ns, 70× finer than a 30 kHz sample and matching the `datetime(6)` keys. And
+objects with different origins would combine silently and wrongly on
+concatenation, which nothing can catch. Absolute magnitudes even compress
+marginally better than rebased ones, so nothing argues the other way.
 
-- *Concatenation.* Objects with different origins combine silently and wrongly,
-  and pynapple has nowhere to store an origin to compare.
-- *Precision.* The float64 ULP at 3.87e9 s is 477 ns, 70× finer than a 30 kHz
-  sample period and matching the `datetime(6)` primary keys.
-- *Conversion.* `swc.aeon.io.api.to_seconds` already does it, and `1904` stays in
-  the one place it lives today.
-- *Compression.* Absolute magnitudes compress at 3.69× against 3.52× for
-  epoch-relative, because subtracting an epoch only shifts which byte lanes stay
-  constant.
-
-`make()` asserts `t_start > 3.0e9` before insert. That check catches a whole
-class of silent wrong-origin bugs, including the SpikeInterface trap where a
-`SortingAnalyzer` persisted to `binary_folder` or `zarr` loses its time vector
-and returns spike times starting at 0.0, 122 years adrift, with no exception.
+`make()` asserts `t_start > 3.0e9` before insert — cheap insurance against a
+wrong origin, including the SpikeInterface trap where a persisted
+`SortingAnalyzer` loses its time vector and returns spike times starting at 0.0.
 
 ### Alignment quality rides along
 
