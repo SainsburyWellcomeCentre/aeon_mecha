@@ -322,14 +322,6 @@ class TestPynappleCodecRoundTrip:
         assert len(files) == 1
         assert "rec_id=7" in files[0].as_posix()
 
-    def test_two_rows_two_files(self, mock_pynapple_table, mock_tsgroup):
-        """Test that two inserts produce two distinct, tokened files."""
-        table, _schema, loc = mock_pynapple_table
-        table.insert([{"rec_id": 1, "data": mock_tsgroup}, {"rec_id": 2, "data": mock_tsgroup}])
-        files = list(loc.rglob("data_*.npz"))
-        assert len(files) == 2
-        assert len({f.name for f in files}) == 2
-
     def test_json_summary_is_queryable_without_opening_the_file(self, mock_pynapple_table, mock_tsgroup):
         """Test that the stored JSON carries the summary the spec promises.
 

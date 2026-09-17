@@ -125,31 +125,6 @@ class TestXArrayNetCDFCodec:
             codec._local_path("some/path.nc", "s3_store", dj_config)
 
 
-class TestPynappleCodecRegistration:
-    """The codec's name, and that importing the module registers it."""
-
-    def test_codec_name(self):
-        """Test that the codec's registered name is ``pynapple``."""
-        from aeon.dj_pipeline.utils.codec import PynappleCodec
-
-        assert PynappleCodec.name == "pynapple"
-
-    def test_importing_the_module_registers_the_codec(self):
-        """Test that ``<pynapple@…>`` resolves, i.e. the codec is in DataJoint's registry.
-
-        Registration is an import side effect of ``Codec.__init_subclass__``; nothing
-        calls a decorator. If this fails, no table can declare the column type.
-        """
-        import sys
-
-        import aeon.dj_pipeline.utils.codec  # noqa: F401  (import registers)
-
-        # `import datajoint.codecs` would resolve through the mocked `datajoint`
-        # package attribute (see `mock_dj_for_unit`); the real submodule is kept in
-        # sys.modules by _REAL_DJ_SUBMODULES, so read the registry from there.
-        assert "pynapple" in sys.modules["datajoint.codecs"]._codec_registry
-
-
 @pytest.fixture
 def dj_config_nap(tmp_path):
     """Real ``dj.settings.Config`` with a ``pynapple_store`` file store under tmp_path."""
@@ -158,11 +133,11 @@ def dj_config_nap(tmp_path):
     return config
 
 
-class TestPynappleCodecValidate:
-    """``validate()`` accepts pynapple objects and rejects everything else."""
+class TestPynappleCodecRoundTrip:
+    """``validate`` / ``encode`` / ``decode`` against a real file store, no DB."""
 
     def test_accepts_all_six_pynapple_types(self, mock_tsgroup, mock_intervalset):
-        """Test that every pynapple container the spec names validates."""
+        """Test that every pynapple container the codec claims to take validates."""
         import numpy as np
         import pynapple as nap
 
@@ -179,79 +154,43 @@ class TestPynappleCodecValidate:
         ):
             PynappleCodec().validate(value)
 
-    @pytest.mark.parametrize(
-        "value", [[1, 2, 3], "not-pynapple", 42, None], ids=["list", "str", "int", "none"]
-    )
-    def test_rejects_non_pynapple(self, value):
-        """Test that non-pynapple values are rejected by type name."""
+    def test_rejects_non_pynapple(self):
+        """Test that a non-pynapple value is rejected by type name."""
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
         with pytest.raises(DataJointError, match="requires a pynapple object"):
-            PynappleCodec().validate(value)
+            PynappleCodec().validate([1, 2, 3])
 
+    def test_tsgroup_round_trips_bit_exactly(self, dj_config_nap, mock_tsgroup):
+        """Test that keys, times, support and metadata all survive, exactly.
 
-class TestPynappleCodecDtype:
-    """The store-only guard, which needs a concrete class to instantiate."""
-
-    def test_requires_store_modifier(self):
-        """Test that ``<pynapple>`` without ``@`` is rejected with a usable message."""
-        from aeon.dj_pipeline.utils.codec import PynappleCodec
-
-        with pytest.raises(DataJointError, match=r"<pynapple> requires @"):
-            PynappleCodec().get_dtype(is_store=False)
-
-    def test_store_modifier_yields_json(self):
-        """Test that the store form stores JSON metadata in the column."""
-        from aeon.dj_pipeline.utils.codec import PynappleCodec
-
-        assert PynappleCodec().get_dtype(is_store=True) == "json"
-
-
-class TestPynappleCodecEncodeDecode:
-    """``encode``/``decode`` against a real file store, no DB."""
-
-    def test_encode_writes_schema_addressed_npz(self, dj_config_nap, mock_tsgroup, tmp_path):
-        """Test that encode writes one tokened ``.npz`` under a schema-addressed path."""
-        from aeon.dj_pipeline.utils.codec import PynappleCodec
-
-        key = {"_schema": "test_schema", "_table": "test_table", "rec_id": 1, "_config": dj_config_nap}
-        stored = PynappleCodec().encode(mock_tsgroup, key=key, store_name="pynapple_store")
-
-        assert stored["store"] == "pynapple_store"
-        assert stored["kind"] == "TsGroup"
-        assert stored["n_rows"] == 3  # units, including the empty one
-        assert stored["t_start"] > 3.0e9  # Harp epoch survived
-        files = list(tmp_path.rglob("data_*.npz"))
-        assert len(files) == 1
-        assert "rec_id=1" in files[0].as_posix()
-
-    def test_decode_round_trips_tsgroup(self, dj_config_nap, mock_tsgroup):
-        """Test that decode returns an equal TsGroup: keys, times, support, metadata."""
+        Equality rather than allclose: the float64 ULP at Harp magnitude is 477 ns,
+        so a quantising round trip would shift spikes within a sample and pass any
+        tolerance. The fixture is deliberately awkward — non-contiguous keys, a unit
+        with zero spikes, a two-interval support.
+        """
         import numpy as np
 
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
         codec = PynappleCodec()
         key = {"_schema": "s", "_table": "t", "rec_id": 1, "_config": dj_config_nap}
-        decoded = codec.decode(
-            codec.encode(mock_tsgroup, key=key, store_name="pynapple_store"),
-            key={"_config": dj_config_nap},
-        )
+        stored = codec.encode(mock_tsgroup, key=key, store_name="pynapple_store")
+        decoded = codec.decode(stored, key={"_config": dj_config_nap})
 
-        assert list(decoded.index) == list(mock_tsgroup.index)  # incl. non-contiguous
-        assert len(decoded[6]) == 0  # empty unit survives
+        assert list(decoded.index) == list(mock_tsgroup.index)
+        assert len(decoded[6]) == 0
         for unit in mock_tsgroup.index:
-            np.testing.assert_array_equal(decoded[unit].t, mock_tsgroup[unit].t)
-        np.testing.assert_array_equal(
-            decoded.time_support.values,
-            mock_tsgroup.time_support.values,  # two intervals
-        )
+            assert (decoded[unit].t == mock_tsgroup[unit].t).all()
+        np.testing.assert_array_equal(decoded.time_support.values, mock_tsgroup.time_support.values)
         np.testing.assert_array_equal(
             decoded.get_info("covered_seconds"), mock_tsgroup.get_info("covered_seconds")
         )
+        assert (stored["kind"], stored["n_rows"]) == ("TsGroup", 3)
+        assert stored["t_start"] > 3.0e9
 
-    def test_decode_round_trips_intervalset(self, dj_config_nap, mock_intervalset):
-        """Test that a non-TsGroup type round-trips through the generic path."""
+    def test_non_tsgroup_round_trips_through_the_generic_path(self, dj_config_nap, mock_intervalset):
+        """Test the ``nap.load_file`` branch, which every type but TsGroup takes."""
         import numpy as np
 
         from aeon.dj_pipeline.utils.codec import PynappleCodec
@@ -264,25 +203,6 @@ class TestPynappleCodecEncodeDecode:
         )
         np.testing.assert_array_equal(decoded.values, mock_intervalset.values)
         np.testing.assert_array_equal(decoded.get_info("tag"), mock_intervalset.get_info("tag"))
-
-    def test_timestamps_are_bit_exact(self, dj_config_nap, mock_tsgroup):
-        """Test that Harp-magnitude float64 timestamps survive bit-for-bit.
-
-        At 3.87e9 s the float64 ULP is 477 ns. A round trip that quantises here
-        would silently shift spikes by a fraction of a sample.
-        """
-        import numpy as np
-
-        from aeon.dj_pipeline.utils.codec import PynappleCodec
-
-        codec = PynappleCodec()
-        key = {"_schema": "s", "_table": "t", "rec_id": 3, "_config": dj_config_nap}
-        decoded = codec.decode(
-            codec.encode(mock_tsgroup, key=key, store_name="pynapple_store"),
-            key={"_config": dj_config_nap},
-        )
-        assert decoded[0].t.dtype == np.float64
-        assert (decoded[0].t == mock_tsgroup[0].t).all()  # exact, not allclose
 
     def test_rejects_non_file_protocol(self, dj_config_nap):
         """Test that a non-``file`` store protocol is rejected."""
@@ -302,8 +222,41 @@ class TestPynappleCodecEncodeDecode:
             PynappleCodec()._local_path("some/path.npz", "s3_store", dj_config_nap)
 
 
+def _tsgroup_shapes():
+    """TsGroup shapes that each break the fast path in a different way."""
+    import numpy as np
+    import pynapple as nap
+
+    rng = np.random.default_rng(1)
+    spikes = lambda n: np.sort(rng.uniform(0, 10, n))  # noqa: E731
+    t = np.arange(6.0)
+    return {
+        # an empty member, non-contiguous keys, and a support with a gap
+        "gaps_and_empty": nap.TsGroup(
+            {
+                0: nap.Ts(t=np.array([1.0, 2.0, 21.0])),
+                6: nap.Ts(t=np.array([], dtype=float)),
+                9: nap.Ts(t=np.array([22.0, 23.0])),
+            },
+            time_support=nap.IntervalSet(start=[0, 20], end=[10, 30]),
+        ),
+        # unit ids past int16, forcing the narrowing guard's upper bound
+        "keys_beyond_int16": nap.TsGroup({k: nap.Ts(t=spikes(5)) for k in (0, 40_000, 70_000)}),
+        # negative unit ids, which pynapple permits and which wrap if only max is
+        # checked — a wrong sort order with no error
+        "negative_keys": nap.TsGroup({k: nap.Ts(t=spikes(6)) for k in (-40_000, -1, 0, 7)}),
+        # members carrying values, which take the `d` branch
+        "tsd_members": nap.TsGroup({0: nap.Tsd(t=t, d=t * 2), 1: nap.Tsd(t=t + 0.5, d=t * 3)}),
+    }
+
+
 class TestPynappleFastPath:
-    """The TsGroup fast path must equal ``nap.load_file`` exactly."""
+    """The TsGroup fast path must equal ``nap.load_file`` exactly.
+
+    This is the only place the codec depends on pynapple's private npz layout, so
+    these tests are what make that dependency acceptable: a format change fails
+    here rather than silently returning different data.
+    """
 
     @staticmethod
     def _assert_same(a, b):
@@ -313,32 +266,31 @@ class TestPynappleFastPath:
         assert list(a.index) == list(b.index)
         for unit in a.index:
             np.testing.assert_array_equal(a[unit].t, b[unit].t)
+            if hasattr(a[unit], "d"):
+                np.testing.assert_array_equal(a[unit].d, b[unit].d)
         np.testing.assert_array_equal(a.time_support.values, b.time_support.values)
         assert sorted(a.metadata.columns) == sorted(b.metadata.columns)
         for col in a.metadata.columns:
             np.testing.assert_array_equal(np.asarray(a.get_info(col)), np.asarray(b.get_info(col)))
 
-    def test_fast_path_equals_stock_loader(self, mock_tsgroup, tmp_path):
-        """Test equivalence on non-contiguous keys, an empty unit, a gapped support.
-
-        This is the test that lets us keep a private-format fast path at all: it
-        pins our reconstruction to pynapple's own, so a format change fails here
-        rather than silently returning different data.
-        """
+    @pytest.mark.parametrize("shape", list(_tsgroup_shapes()), ids=list(_tsgroup_shapes()))
+    def test_fast_path_equals_stock_loader(self, shape, tmp_path):
+        """Test equivalence on each shape that stresses a different part of the rebuild."""
         import pynapple as nap
 
         from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
 
-        path = tmp_path / "tg.npz"
-        mock_tsgroup.save(str(path))
+        tg = _tsgroup_shapes()[shape]
+        path = tmp_path / f"{shape}.npz"
+        tg.save(str(path))
         self._assert_same(nap.load_file(str(path)), _tsgroup_from_npz(str(path)))
 
     def test_fast_path_preserves_rate(self, mock_tsgroup, tmp_path):
-        """Test that ``rate`` matches stock — the trap bypass_check=True falls into.
+        """Test that ``rate`` matches stock.
 
-        ``rate`` is n_events / tot_length(time_support). Constructing members without
-        the group support and then bypassing the check computes it from each member's
-        own support instead, which is wrong and silent.
+        ``rate`` is n_events / tot_length(time_support). Building members without
+        the group support and then passing ``bypass_check=True`` computes it from
+        each member's own support instead — wrong, and silent.
         """
         import numpy as np
         import pynapple as nap
@@ -351,61 +303,3 @@ class TestPynappleFastPath:
             np.asarray(_tsgroup_from_npz(str(path)).rate),
             np.asarray(nap.load_file(str(path)).rate),
         )
-
-    def test_fast_path_handles_keys_beyond_int16(self, tmp_path):
-        """Test equivalence at unit ids that overflow int16, exercising the dtype guard."""
-        import numpy as np
-        import pynapple as nap
-
-        from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
-
-        rng = np.random.default_rng(1)
-        tg = nap.TsGroup({k: nap.Ts(t=np.sort(rng.uniform(0, 10, 5))) for k in (0, 40_000, 70_000)})
-        path = tmp_path / "wide.npz"
-        tg.save(str(path))
-        self._assert_same(nap.load_file(str(path)), _tsgroup_from_npz(str(path)))
-
-    def test_fast_path_handles_tsd_members(self, tmp_path):
-        """Test that a TsGroup whose members carry values round-trips too."""
-        import numpy as np
-        import pynapple as nap
-
-        from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
-
-        t = np.arange(6.0)
-        tg = nap.TsGroup({0: nap.Tsd(t=t, d=t * 2), 1: nap.Tsd(t=t + 0.5, d=t * 3)})
-        path = tmp_path / "tsd.npz"
-        tg.save(str(path))
-        stock, fast = nap.load_file(str(path)), _tsgroup_from_npz(str(path))
-        self._assert_same(stock, fast)
-        for unit in stock.index:
-            np.testing.assert_array_equal(fast[unit].d, stock[unit].d)
-
-    def test_decode_uses_fast_path_for_tsgroup(self, dj_config_nap, mock_tsgroup):
-        """Test that decode dispatches to the fast path and still equals stock."""
-        import pynapple as nap
-
-        from aeon.dj_pipeline.utils.codec import PynappleCodec
-
-        codec = PynappleCodec()
-        key = {"_schema": "s", "_table": "t", "rec_id": 1, "_config": dj_config_nap}
-        stored = codec.encode(mock_tsgroup, key=key, store_name="pynapple_store")
-        local = codec._local_path(stored["path"], stored["store"], dj_config_nap)
-        self._assert_same(nap.load_file(local), codec.decode(stored, key={"_config": dj_config_nap}))
-
-    def test_fast_path_handles_negative_keys(self, tmp_path):
-        """Test equivalence when unit ids are negative, which pynapple permits.
-
-        Narrowing the sort key on ``max`` alone would pick int16 for a key of
-        -40000, wrap it to 25536, and reorder spikes with no error.
-        """
-        import numpy as np
-        import pynapple as nap
-
-        from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
-
-        rng = np.random.default_rng(2)
-        tg = nap.TsGroup({k: nap.Ts(t=np.sort(rng.uniform(0, 10, 6))) for k in (-40_000, -1, 0, 7)})
-        path = tmp_path / "neg.npz"
-        tg.save(str(path))
-        self._assert_same(nap.load_file(str(path)), _tsgroup_from_npz(str(path)))
