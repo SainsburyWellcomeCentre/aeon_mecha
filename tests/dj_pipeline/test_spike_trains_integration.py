@@ -139,3 +139,51 @@ class TestMake:
 
         for row in processed_ephys.SpikeTrains().to_dicts():
             assert row["spikes"].time_support.start[0] > 3.0e9
+
+
+class TestStalenessAndFetchSpan:
+    """The manual refresh that replaces the cascade, and the documented read path.
+
+    Ordered last and sharing a module-scoped population: the staleness cases mutate
+    upstream state, so they must not run before the tests that assert on a clean one.
+    """
+
+    def test_stale_detects_a_later_block_and_the_recipe_clears_it(self, populated):
+        """Test the failure this design accepts, and its documented remedy.
+
+        A row built from one of two covering blocks is right when written and wrong
+        once the second lands. Nothing invalidates it, so it has to be findable.
+        """
+        from spike_train_factories import add_late_block
+
+        from aeon.dj_pipeline import processed_ephys
+
+        assert not processed_ephys.SpikeTrains.stale()
+
+        add_late_block(populated["experiment_name"])
+        stale = processed_ephys.SpikeTrains.stale()
+        assert stale, "a block matched after the row was written must make it stale"
+
+        (processed_ephys.SpikeTrains() & stale).delete()
+        processed_ephys.SpikeTrains.populate(suppress_errors=False)
+        assert not processed_ephys.SpikeTrains.stale()
+
+    def test_fetch_span_concatenates_and_sums_covered_seconds(self, populated):
+        """Test that a span returns one object and that the denominator composes.
+
+        covered_seconds is stored in seconds rather than as a fraction precisely so
+        this addition is correct; a fraction would need duration weighting that every
+        caller would get wrong.
+        """
+        from aeon.dj_pipeline import processed_ephys
+
+        with pytest.warns(UserWarning, match="covered_seconds"):
+            tsgroup = processed_ephys.SpikeTrains.fetch_span(
+                **populated["insertion_key"],
+                start=populated["covered_chunk_starts"][0],
+                end=populated["span_end"],
+            )
+
+        assert set(tsgroup.index) >= {1, 2, 3}
+        covered = tsgroup.get_info("covered_seconds")
+        assert covered[1] > covered[2]  # unit 2 is the one block A alone found

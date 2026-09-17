@@ -116,9 +116,101 @@ class SpikeTrains(dj.Computed):
                 "n_spikes": n_spikes,
                 "coverage_frac": covered_total / chunk_seconds,
                 "n_partial_units": int(sum(c < covered_total for c in covered)),
-                "source_blocks": sorted(str(b) for b in block_starts),
+                "source_blocks": sorted(f"{start}/{end}" for start, end in block_starts),
                 "spikes": tsgroup,
             }
+        )
+
+    @classmethod
+    def stale(cls) -> list[dict]:
+        """Rows built from a set of blocks that is no longer the current one.
+
+        This is what stands in for the cascade the table gives up by keying on the
+        join target rather than the data source. It catches both directions: a block
+        matched *after* a row was written, and upstream rows deleted by re-curation.
+
+        Computed, never stored — a stored flag would itself go stale. Returns keys,
+        so ``SpikeTrains() & SpikeTrains.stale()`` is the rows to delete.
+        """
+        stale_keys = []
+        for row in cls().to_dicts():
+            window = (acquisition.Chunk & row).fetch1("chunk_start", "chunk_end")
+            insertion = {k: row[k] for k in ("experiment_name", "subject", "insertion_number")}
+            _, block_units, _ = _covering_blocks(insertion, window)
+            if sorted(f"{s}/{e}" for s, e in block_units) != list(row["source_blocks"]):
+                stale_keys.append({k: row[k] for k in cls.primary_key})
+        return stale_keys
+
+    @classmethod
+    def fetch_span(
+        cls,
+        experiment_name: str,
+        subject: str,
+        insertion_number: int,
+        start,
+        end,
+        allow_stale: bool = False,
+    ):
+        """Spike trains over an arbitrary window, as one TsGroup.
+
+        The documented entry point. Restricts each chunk *before* concatenating, so
+        peak memory is one chunk rather than the whole span — which matters because
+        pynapple reads a TsGroup whole.
+
+        Raises on a stale contributing row and warns on partial coverage. The
+        asymmetry is deliberate: stale is out of date and cheaply fixed, while
+        partial coverage is a permanent fact about the data that a caller works
+        around.
+        """
+        import warnings
+
+        import numpy as np
+        import pynapple as nap
+        from swc.aeon.io import api as io_api
+
+        insertion = {
+            "experiment_name": experiment_name,
+            "subject": subject,
+            "insertion_number": insertion_number,
+        }
+        rows = (cls() & insertion & f'chunk_start >= "{start}"' & f'chunk_start < "{end}"').to_dicts()
+        if not rows:
+            raise ValueError(f"no SpikeTrains rows for {insertion} in [{start}, {end})")
+
+        if not allow_stale:
+            stale = {tuple(sorted(k.items())) for k in cls.stale()}
+            if any(tuple(sorted({k: r[k] for k in cls.primary_key}.items())) in stale for r in rows):
+                raise ValueError("span covers stale rows; delete and repopulate, or pass allow_stale=True")
+
+        partial = [r["chunk_start"] for r in rows if r["n_partial_units"]]
+        if partial:
+            warnings.warn(
+                f"{len(partial)} chunk(s) have units sorted for only part of the chunk; "
+                f"use covered_seconds, not TsGroup.rate — first at {partial[0]}",
+                stacklevel=2,
+            )
+
+        lo, hi = io_api.to_seconds(start), io_api.to_seconds(end)
+        times: dict[int, list] = {}
+        covered: dict[int, float] = {}
+        support = []
+        for row in sorted(rows, key=lambda r: r["chunk_start"]):
+            tsgroup = row["spikes"]
+            window = nap.IntervalSet(start=lo, end=hi)
+            restricted = tsgroup.restrict(window)
+            seconds = restricted.get_info("covered_seconds")
+            for unit in restricted.index:
+                times.setdefault(int(unit), []).append(restricted[unit].t)
+                covered[int(unit)] = covered.get(int(unit), 0.0) + float(seconds[unit])
+            support.extend(zip(restricted.time_support.start, restricted.time_support.end, strict=True))
+
+        roster = sorted(times)
+        data = {u: nap.Ts(t=np.sort(np.concatenate(times[u]))) for u in roster}
+        merged = nap.IntervalSet(start=[s for s, _ in support], end=[e for _, e in support])
+        return nap.TsGroup(
+            data,
+            time_support=merged,
+            metadata={"covered_seconds": np.array([covered[u] for u in roster])},
         )
 
 
@@ -134,13 +226,15 @@ def _covering_blocks(insertion: dict, window: tuple) -> tuple[dict, dict, dict]:
 
     block_chunks, block_units, block_starts = {}, {}, {}
     for block in blocks:
-        start = block["block_start"]
+        # EphysBlock's key is (insertion, block_start, block_end) — two blocks can
+        # share a start, so keying on block_start alone silently collapses them.
+        ident = (block["block_start"], block["block_end"])
         block_key = {k: block[k] for k in (*insertion, "block_start", "block_end")}
         chunks = (ephys.EphysBlockInfo.Chunk * ephys.EphysChunk & block_key).to_dicts()
-        block_chunks[start] = [(c["chunk_start"], c["chunk_end"]) for c in chunks]
+        block_chunks[ident] = [(c["chunk_start"], c["chunk_end"]) for c in chunks]
         units = (spike_sorting.UnitMatching.Unit & block).to_arrays("global_unit")
-        block_units[start] = {int(u) for u in np.atleast_1d(units)}
-        block_starts[start] = start
+        block_units[ident] = {int(u) for u in np.atleast_1d(units)}
+        block_starts[ident] = block["block_start"]
     return block_chunks, block_units, block_starts
 
 
@@ -154,7 +248,9 @@ def _fetch_spikes(insertion: dict, window: tuple, block_starts: dict) -> tuple[d
 
     lo, hi = np.datetime64(window[0]), np.datetime64(window[1])
     rows = (
-        spike_sorting.UnitMatching.Spikes & insertion & [{"block_start": b} for b in block_starts]
+        spike_sorting.UnitMatching.Spikes
+        & insertion
+        & [{"block_start": start, "block_end": end} for start, end in block_starts]
     ).to_dicts()
 
     by_unit: dict[int, list] = {}
@@ -167,7 +263,8 @@ def _fetch_spikes(insertion: dict, window: tuple, block_starts: dict) -> tuple[d
         unit = int(row["global_unit"])
         by_unit.setdefault(unit, []).append(kept)
         counts.setdefault(unit, {})
-        counts[unit][row["block_start"]] = counts[unit].get(row["block_start"], 0) + len(kept)
+        ident = (row["block_start"], row["block_end"])
+        counts[unit][ident] = counts[unit].get(ident, 0) + len(kept)
     return {u: np.sort(np.concatenate(v)) for u, v in by_unit.items()}, counts
 
 
@@ -203,7 +300,7 @@ def _unit_metadata(
         rows = (
             spike_sorting.UnitMatching.Unit * spike_sorting.SortedSpikes.Unit
             & insertion
-            & {"global_unit": unit, "block_start": winner}
+            & {"global_unit": unit, "block_start": winner[0], "block_end": winner[1]}
         ).to_dicts()
         quality[unit] = rows[0]["unit_quality"] if rows else "n.a."
 

@@ -10,8 +10,11 @@ All windows are half-open, ``[start, end)``.
 from collections import defaultdict
 from collections.abc import Hashable
 from datetime import datetime
+from typing import TypeVar
 
 Interval = tuple[datetime, datetime]
+Block = TypeVar("Block", bound=Hashable)
+"""Whatever identifies a block to the caller — this module never looks inside it."""
 
 
 def clip(intervals: list[Interval], window: Interval) -> list[Interval]:
@@ -78,9 +81,7 @@ def unit_coverage(
     return {unit: merged for unit, intervals in per_unit.items() if (merged := merge(intervals))}
 
 
-def owning_block(
-    spike_counts_by_block: dict[Hashable, int], block_starts: dict[Hashable, datetime]
-) -> Hashable:
+def owning_block(spike_counts_by_block: dict[Block, int], block_starts: dict[Block, datetime]) -> Block:
     """Pick whose per-unit metadata wins when a unit spans several blocks.
 
     Most spikes wins; an exact tie goes to the earliest block, so the answer never

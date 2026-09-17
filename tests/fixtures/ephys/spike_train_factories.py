@@ -343,3 +343,108 @@ def _build_sorting_chain(experiment_name, insertion):
         spike_sorting.UnitMatching.Spikes.insert(
             spikes_rows, skip_duplicates=True, allow_direct_insert=True
         )
+
+
+def add_late_block(experiment_name):
+    """Match a further block over already-covered time, making existing rows stale.
+
+    Block C covers the 08:00 behavioural chunk and finds a unit neither A nor B did,
+    so a row written before it existed is now built from an incomplete input set.
+    """
+    from datetime import datetime
+
+    from aeon.dj_pipeline import ephys, spike_sorting
+
+    insertion = {"experiment_name": experiment_name, "subject": SUBJECT, "insertion_number": 1}
+    window = (_at(8), _at(9))
+    now = datetime.now()
+
+    ephys.EphysBlock.insert1(
+        {**insertion, "block_start": window[0], "block_end": window[1]}, skip_duplicates=True
+    )
+    ephys.EphysBlockInfo.insert1(
+        {
+            **insertion,
+            "block_start": window[0],
+            "block_end": window[1],
+            "block_duration": 1.0,
+            "probe_type": PROBE_TYPE,
+            "electrode_config_name": CONFIG_NAME,
+        },
+        skip_duplicates=True,
+        allow_direct_insert=True,
+    )
+    ephys.EphysBlockInfo.Chunk.insert(
+        [
+            {**insertion, "block_start": window[0], "block_end": window[1], "chunk_start": c[0]}
+            for c in EPHYS_CHUNKS
+            if window[0] <= c[0] and c[1] <= window[1]
+        ],
+        skip_duplicates=True,
+        allow_direct_insert=True,
+    )
+
+    task = {
+        **insertion,
+        "block_start": window[0],
+        "block_end": window[1],
+        "probe_type": PROBE_TYPE,
+        "electrode_config_name": CONFIG_NAME,
+        "electrode_group": "shank0",
+        "paramset_id": PARAMSET_ID,
+    }
+    spike_sorting.SortingTask.insert1(task, skip_duplicates=True)
+    for table in (
+        spike_sorting.PreProcessing,
+        spike_sorting.SpikeSorting,
+        spike_sorting.PostProcessing,
+    ):
+        row = {**task, "execution_time": now, "execution_duration": 0.0}
+        if table is spike_sorting.PreProcessing:
+            row["sorting_output_dir"] = "synthetic/C"
+        table.insert1(row, skip_duplicates=True, allow_direct_insert=True)
+
+    spike_sorting.SortedSpikes.insert1(
+        {**task, "execution_time": now, "execution_duration": 0.0, "curation_id": -1},
+        skip_duplicates=True,
+        allow_direct_insert=True,
+    )
+    spike_sorting.SortedSpikes.Unit.insert1(
+        {
+            **task,
+            "unit": 301,
+            "probe_type": PROBE_TYPE,
+            "electrode_config_name": CONFIG_NAME,
+            "electrode": 0,
+            "unit_quality": "good",
+            "spike_count": 0,
+            "spike_indices": np.array([], dtype=np.int64),
+            "spike_sites": np.array([], dtype=np.int64),
+            "spike_depths": np.array([], dtype=np.float64),
+        },
+        skip_duplicates=True,
+        allow_direct_insert=True,
+    )
+    spike_sorting.SyncedSpikes.insert1(task, skip_duplicates=True, allow_direct_insert=True)
+    spike_sorting.GlobalUnit.insert1(
+        {
+            **insertion,
+            "global_unit": 4,
+            "matching_paramset_id": MATCHING_PARAMSET,
+            "probe_type": PROBE_TYPE,
+            "electrode": 0,
+        },
+        skip_duplicates=True,
+    )
+
+    match_key = {**task, "matching_paramset_id": MATCHING_PARAMSET}
+    spike_sorting.UnitMatching.insert1(
+        {**match_key, "execution_time": now, "execution_duration": 0.0},
+        skip_duplicates=True,
+        allow_direct_insert=True,
+    )
+    spike_sorting.UnitMatching.Unit.insert1(
+        {**match_key, "unit": 301, "global_unit": 4},
+        skip_duplicates=True,
+        allow_direct_insert=True,
+    )
