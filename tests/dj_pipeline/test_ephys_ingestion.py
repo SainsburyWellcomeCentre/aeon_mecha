@@ -528,3 +528,101 @@ class TestOnixImuChunkOnGoldenData:
             f"Per-row counts: {sample_counts}. Expected all > 0 for the golden "
             f"recording whose Bno055 chunks cover the entire ONIX range."
         )
+
+
+class TestPynappleCodecOnGoldenSpikes:
+    """The pynapple codec against real Neuropixels spike trains.
+
+    Synthetic fixtures use uniform draws with no bursting, refractory structure or
+    drift. This is the only place the codec meets real spike-time distributions,
+    real unit counts, and real Harp-clock magnitudes — which is where the
+    bit-exactness and speed claims have to hold.
+    """
+
+    @staticmethod
+    def _tsgroup_from_synced_spikes(ctx):
+        """Build a TsGroup from golden SyncedSpikes, on the Harp seconds timebase."""
+        import numpy as np
+        import pandas as pd
+        import pynapple as nap
+        from swc.aeon.io import api as io_api
+
+        entries = (
+            ctx.spike_sorting.SyncedSpikes.Unit & {"experiment_name": ctx.cfg["experiment_name"]}
+        ).to_dicts()
+        if not entries:
+            pytest.skip("golden dataset has no SyncedSpikes rows")
+
+        by_unit: dict[int, list] = {}
+        for entry in entries:
+            seconds = io_api.to_seconds(pd.DatetimeIndex(entry["spike_times"])).to_numpy()
+            by_unit.setdefault(int(entry["unit"]), []).append(seconds)
+
+        data = {u: nap.Ts(t=np.sort(np.concatenate(v))) for u, v in by_unit.items()}
+        all_t = np.concatenate([ts.t for ts in data.values()])
+        support = nap.IntervalSet(start=float(all_t.min()), end=float(all_t.max()))
+        return nap.TsGroup(data, time_support=support)
+
+    def test_round_trip_is_bit_exact_on_real_spikes(self, ephys_sorting_injected, ctx, tmp_path):
+        """Test that real spike times survive a round trip exactly, not approximately."""
+        import numpy as np
+        from datajoint.settings import Config
+
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        ctx.spike_sorting.SyncedSpikes.populate(display_progress=True, suppress_errors=False)
+        tg = self._tsgroup_from_synced_spikes(ctx)
+
+        config = Config()
+        config.stores = {"pynapple_store": {"protocol": "file", "location": str(tmp_path)}}
+        codec = PynappleCodec()
+        key = {"_schema": "golden", "_table": "spikes", "rec_id": 1, "_config": config}
+        decoded = codec.decode(
+            codec.encode(tg, key=key, store_name="pynapple_store"), key={"_config": config}
+        )
+
+        assert list(decoded.index) == list(tg.index)
+        for unit in tg.index:
+            # exact, not allclose: the float64 ULP at Harp magnitude is 477 ns, and a
+            # quantising round trip would shift spikes within a sample undetected
+            assert (decoded[unit].t == tg[unit].t).all()
+        assert decoded.time_support.start[0] > 3.0e9  # still on the 1904 epoch
+        assert decoded[tg.index[0]].t.dtype == np.float64
+
+    def test_fast_path_matches_stock_on_real_spikes(self, ephys_sorting_injected, ctx, tmp_path):
+        """Test fast-path equivalence and report the real speed-up.
+
+        The spec's figure comes from synthetic lognormal rates. This prints the
+        measured value on real data; update the spec if it diverges.
+        """
+        import time
+
+        import numpy as np
+        import pynapple as nap
+
+        from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
+
+        ctx.spike_sorting.SyncedSpikes.populate(display_progress=True, suppress_errors=False)
+        tg = self._tsgroup_from_synced_spikes(ctx)
+        path = tmp_path / "golden.npz"
+        tg.save(str(path))
+
+        start = time.perf_counter()
+        stock = nap.load_file(str(path))
+        stock_s = time.perf_counter() - start
+
+        start = time.perf_counter()
+        fast = _tsgroup_from_npz(str(path))
+        fast_s = time.perf_counter() - start
+
+        assert list(fast.index) == list(stock.index)
+        for unit in stock.index:
+            np.testing.assert_array_equal(fast[unit].t, stock[unit].t)
+        np.testing.assert_allclose(np.asarray(fast.rate), np.asarray(stock.rate))
+
+        n_spikes = sum(len(stock[u]) for u in stock.index)
+        print(
+            f"\ngolden: {len(stock.index)} units, {n_spikes:,} spikes, "
+            f"{path.stat().st_size / 1e6:.1f} MB — "
+            f"stock {stock_s:.3f}s, fast {fast_s:.3f}s ({stock_s / fast_s:.1f}x)"
+        )
