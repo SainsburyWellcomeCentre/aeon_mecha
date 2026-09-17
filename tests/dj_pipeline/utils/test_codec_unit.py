@@ -142,9 +142,18 @@ def _sample_objects():
     return {
         "Ts": nap.Ts(t=t),
         "Tsd": nap.Tsd(t=t, d=np.arange(6, dtype="int64")),
-        "TsdFrame": nap.TsdFrame(t=t, d=np.zeros((6, 3)), columns=["a", "b", "c"]),
+        # TsdFrame and IntervalSet carry metadata, like TsGroup — and metadata is the
+        # pickled half of the npz, the part whose encoding broke at pynapple 0.9.
+        "TsdFrame": nap.TsdFrame(
+            t=t,
+            d=np.zeros((6, 3)),
+            columns=["a", "b", "c"],
+            metadata={"region": np.array(["ca1", "ca3", "dg"])},
+        ),
         "TsdTensor": nap.TsdTensor(t=t, d=np.zeros((6, 2, 2))),
-        "IntervalSet": nap.IntervalSet(start=[0.0, 20.0], end=[10.0, 30.0]),
+        "IntervalSet": nap.IntervalSet(
+            start=[0.0, 20.0], end=[10.0, 30.0], metadata={"tag": np.array(["wake", "sleep"])}
+        ),
     }
 
 
@@ -232,6 +241,14 @@ class TestPynappleCodecRoundTrip:
             np.testing.assert_array_equal(decoded.t, obj.t)
         if hasattr(obj, "values"):
             np.testing.assert_array_equal(decoded.values, obj.values)
+
+        # metadata is pickled inside the npz, so it round-trips on its own path
+        if hasattr(obj, "metadata"):
+            assert sorted(decoded.metadata.columns) == sorted(obj.metadata.columns)
+            for col in obj.metadata.columns:
+                np.testing.assert_array_equal(
+                    np.asarray(decoded.get_info(col)), np.asarray(obj.get_info(col))
+                )
 
         expected_extras = {
             "Ts": set(),
