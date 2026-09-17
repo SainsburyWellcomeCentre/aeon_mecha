@@ -340,6 +340,15 @@ class PynappleCodec(SchemaCodec):
     Domain-agnostic: it round-trips a pynapple object and knows nothing about what
     the object means. ``pynapple`` is an optional extra, imported lazily inside the
     methods, so a schema that declares no ``<pynapple@…>`` column never needs it.
+
+    The stored JSON summary is queryable without decoding anything — ``proj`` on a
+    JSON path returns a scalar and never opens the ``.npz``::
+
+        Table.proj(kind='data->>"$.kind"', n='data->>"$.n_events"')
+        Table & {"data.kind": "TsGroup"}
+
+    ``describe()`` shows only ``<pynapple@store>``, so the concrete pynapple class
+    is discoverable this way rather than from the schema.
     """
 
     name = "pynapple"
