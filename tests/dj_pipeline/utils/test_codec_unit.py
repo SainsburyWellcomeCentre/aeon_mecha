@@ -360,9 +360,7 @@ class TestPynappleFastPath:
         from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
 
         rng = np.random.default_rng(1)
-        tg = nap.TsGroup(
-            {k: nap.Ts(t=np.sort(rng.uniform(0, 10, 5))) for k in (0, 40_000, 70_000)}
-        )
+        tg = nap.TsGroup({k: nap.Ts(t=np.sort(rng.uniform(0, 10, 5))) for k in (0, 40_000, 70_000)})
         path = tmp_path / "wide.npz"
         tg.save(str(path))
         self._assert_same(nap.load_file(str(path)), _tsgroup_from_npz(str(path)))

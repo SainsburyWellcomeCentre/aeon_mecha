@@ -1,6 +1,6 @@
 # A `<pynapple>` codec for DataJoint
 
-status: draft · 2026-09-16 · addresses #606
+status: implemented · 2026-09-16 · addresses #606
 
 `<xarray@store>` (PR #587) covers dense gridded data — pose tracks, continuous
 traces. Nothing covers the other half of the model: ragged event and interval
@@ -59,7 +59,7 @@ class PynappleCodec(SchemaCodec):
     def encode(self, value, *, key=None, store_name=None) -> dict:
         # _build_path(..., ext=".npz") -> _local_path -> makedirs -> value.save(local)
         return {"path": ..., "store": ..., "kind": type(value).__name__,
-                "n_units": ..., "n_spikes": ..., "t_start": ..., "t_end": ...}
+                "n_rows": ..., "t_start": ..., "t_end": ...}
 
     def decode(self, stored, *, key=None):
         return nap.load_file(self._local_path(...))   # fast path for TsGroup, below
@@ -71,34 +71,43 @@ lazy-imported inside `encode`/`decode`, so nobody who avoids the column takes th
 dependency — which matters, because pynapple hard-requires `pynwb`, `h5py`, `neo`
 and `numba` even when unused.
 
-The returned JSON carries a summary, so a caller sizes a query without opening a
-file. Garbage collection then works with no extra code: `Codec.referenced_paths`
-reads `path` and `store` from exactly this shape.
+The returned JSON carries a summary — `kind`, `n_rows`, `t_start`, `t_end` — so a
+caller sizes a query without opening a file. The keys are deliberately generic:
+this codec stores pynapple objects, not spikes, and carries no domain vocabulary.
+Garbage collection then works with no extra code, because
+`Codec.referenced_paths` reads `path` and `store` from exactly this shape.
 
-### Two deviations from stock pynapple
-
-Both measured, both still readable by a plain `nap.load_file()`.
+### One deviation from stock pynapple
 
 **A faster `decode` for `TsGroup`.** `_from_npz_reader` masks the concatenated
 array once per entity — O(entities × events). At 600 units and 7.9 M spikes an
-hour on realistic lognormal rates that is 4.24 s, of which I/O is 4%. One stable
-argsort over a narrowed `index` plus offset slicing gives 0.48 s: **8.9× faster,
+hour that is 4.22 s, of which I/O is 4%. One stable argsort over a **narrow-dtype
+view** of `index`, plus offset slicing, gives 0.56 s: **7.5× faster,
 bit-identical**. `decode` takes that path for `TsGroup` and falls back to
 `nap.load_file` for every other type, with a test pinning their equivalence.
 
-Nothing in pynapple's issue tracker mentions this, so it is unreported rather
-than known and rejected. Worth offering upstream; until it lands, we carry it.
+The narrowing happens **in memory, for the sort only**. Nothing about the stored
+file changes, so stock `nap.load_file` reads everything we write. Two traps, both
+covered by tests: the argsort must be `kind="stable"` or per-entity times come
+back out of order, and `bypass_check=True` alone computes `rate` from each
+member's pre-unification support, so members must be built with the group support
+first. Measured: `bypass_check=False` 2.8×, member-support-then-bypass 3.1×, and
+7.5× once the argsort runs on a narrow dtype.
 
-**A narrower `index` on write.** pynapple writes it as int64. The narrowest
-signed type holding the largest key cuts a realistic chunk from 126.8 MB to
-**79.2 MB (−38%)** for one `.astype`. `_from_npz_reader` compares `index == key`
-and broadcasts across widths, so stock pynapple still reads the file.
+Nothing in pynapple's issue tracker mentions the mask loop, so it is unreported
+rather than known and rejected. Worth offering upstream; until it lands, we carry
+it.
+
+Narrowing `index` **on disk** was considered and dropped. It buys ~38% file size
+and nothing else, and would mean re-packing every `.npz` after `save()` — which
+asserts knowledge of pynapple's private key layout against a `0.x` library, for
+no correctness benefit.
 
 ### Rejected
 
 | Option | Why not |
 |---|---|
-| `savez_compressed` | 3.7× smaller, 55–70× slower to write (11.7 s vs 0.21 s). Per-column knob, off by default. |
+| `savez_compressed` | 3.7× smaller, 55–70× slower to write (11.7 s vs 0.21 s) — fatal across thousands of chunks. |
 | zarr columns (Delta + zstd) | 20× smaller on disk, 40–60× slower to open, not pynapple-native. |
 | memory-mapping the npz | Impossible — see below. |
 
@@ -134,7 +143,6 @@ inside each test body. Add `"pynapple"` to the codec-registry pop list in
   `time_support` all round-trip, including multi-interval supports,
   non-contiguous keys and entities with zero events.
 - The fast path equals `nap.load_file` on all of the above.
-- A narrowed `index` is still readable by stock `nap.load_file`.
 - A non-`file` protocol raises.
 
 Integration, in `test_codec_integration.py`: a throwaway schema with a
@@ -145,18 +153,22 @@ silent deletion of live data is the failure that matters. Also verify the MariaD
 dict-to-JSON patch in `aeon/dj_pipeline/__init__.py` holds for a second
 JSON-dtype codec.
 
-Re-measure the 8.9× on real data before that number goes in a docstring. It comes
-from synthetic lognormal rates with no bursting, refractory structure or drift.
+`TestPynappleCodecOnGoldenSpikes` in `tests/dj_pipeline/test_ephys_ingestion.py`
+runs the round trip and the fast path against real Neuropixels spike trains off
+Ceph, asserting bit-exactness and printing the measured speed-up. It skips
+cleanly without the golden dataset. The 7.5× above comes from synthetic rates
+with no bursting, refractory structure or drift — replace it with the golden
+figure.
 
 ---
 
 ## PR checklist
 
-- [ ] `PynappleCodec` in `aeon/dj_pipeline/utils/codec.py`
-- [ ] Register in `aeon/dj_pipeline/__init__.py` before schema activation
-- [ ] `pynapple` as an optional extra in `pyproject.toml`, lazy-imported
-- [ ] Add `"pynapple"` to the registry pop list in `tests/conftest.py`
-- [ ] Unit tests, including fast-path equivalence
-- [ ] Integration tests, including the GC suite
-- [ ] Re-measure decode on real data
+- [x] `PynappleCodec` in `aeon/dj_pipeline/utils/codec.py`
+- [x] Register in `aeon/dj_pipeline/__init__.py` before schema activation
+- [x] `pynapple` as an optional extra in `pyproject.toml`, lazy-imported
+- [x] Add `"pynapple"` to the registry pop list in `tests/conftest.py`
+- [x] Unit tests, including fast-path equivalence
+- [x] Integration tests, including the GC suite
+- [ ] Re-measure decode on real data (HPC — the golden test skips locally)
 - [ ] Open PR into `main` (after explicit go-ahead)

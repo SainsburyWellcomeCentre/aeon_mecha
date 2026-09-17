@@ -10,6 +10,10 @@ return DataFrames built from the raw files on disk.
   NOT apply HARP sync regression — that's exposed via ``OnixImuChunk.synced_df``.
 - ``XArrayNetCDFCodec`` (``<xarray@store>``) — an ``xarray.Dataset`` persisted as a
   NetCDF-4 file in a ``protocol: file`` store, reopened lazily on fetch.
+- ``PynappleCodec`` (``<pynapple@store>``) — a pynapple object persisted as a
+  ``.npz`` in a ``protocol: file`` store. ``TsGroup`` decodes through a fast path
+  equivalent to ``nap.load_file`` but several times quicker; every other type goes
+  through ``nap.load_file`` directly. ``pynapple`` is an optional extra.
 """
 
 import os
