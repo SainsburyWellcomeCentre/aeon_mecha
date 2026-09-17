@@ -80,11 +80,25 @@ Garbage collection then works with no extra code, because
 ### One deviation from stock pynapple
 
 **A faster `decode` for `TsGroup`.** `_from_npz_reader` masks the concatenated
-array once per entity — O(entities × events). At 600 units and 7.9 M spikes an
-hour that is 4.22 s, of which I/O is 4%. One stable argsort over a **narrow-dtype
-view** of `index`, plus offset slicing, gives 0.56 s: **7.5× faster,
-bit-identical**. `decode` takes that path for `TsGroup` and falls back to
-`nap.load_file` for every other type, with a test pinning their equivalence.
+array once per entity — O(entities × events). One stable argsort over a
+**narrow-dtype view** of `index`, plus offset slicing, replaces that loop.
+`decode` takes that path for `TsGroup` and falls back to `nap.load_file` for every
+other type, with a test pinning their equivalence.
+
+Measured on the eight golden Kilosort4 sortings (real spike trains, 64-101 units
+and 0.9-2.7 M spikes each, 30 kHz), every result bit-identical:
+
+| units | spikes | npz | stock | fast | speed-up |
+|---|---|---|---|---|---|
+| 64 | 2.0 M | 32 MB | 0.246 s | 0.104 s | 2.4× |
+| 94 | 1.3 M | 20 MB | 0.168 s | 0.054 s | 3.1× |
+| 101 | 2.7 M | 43 MB | 0.460 s | 0.132 s | 3.5× |
+
+**The gain scales with unit count**, because the loop it replaces is
+O(units × spikes) while the argsort is O(n log n). A synthetic 600-unit /
+7.9 M-spike object gives 7.5× (4.22 s → 0.56 s). A real `SpikeTrains` row
+aggregates four shanks into one object, so expect the upper half of that range
+rather than the per-shank figures above.
 
 The narrowing happens **in memory, for the sort only**. Nothing about the stored
 file changes, so stock `nap.load_file` reads everything we write. Two traps, both
@@ -154,11 +168,12 @@ dict-to-JSON patch in `aeon/dj_pipeline/__init__.py` holds for a second
 JSON-dtype codec.
 
 `TestPynappleCodecOnGoldenSpikes` in `tests/dj_pipeline/test_ephys_ingestion.py`
-runs the round trip and the fast path against real Neuropixels spike trains off
-Ceph, asserting bit-exactness and printing the measured speed-up. It skips
-cleanly without the golden dataset. The 7.5× above comes from synthetic rates
-with no bursting, refractory structure or drift — replace it with the golden
-figure.
+loads real Kilosort4 sortings off disk, wraps them as a `TsGroup` on Harp
+seconds, and asserts bit-exactness and fast-path equivalence. It reads the
+sortings directly rather than through the pipeline: the codec stores pynapple
+objects and does not care where the spike times came from, so routing through
+`SyncedSpikes` would couple it to a fixture rework and to PR #611 for no gain.
+It skips cleanly when the golden artifacts are absent.
 
 ---
 
@@ -170,5 +185,5 @@ figure.
 - [x] Add `"pynapple"` to the registry pop list in `tests/conftest.py`
 - [x] Unit tests, including fast-path equivalence
 - [x] Integration tests, including the GC suite
-- [ ] Re-measure decode on real data (HPC — the golden test skips locally)
+- [x] Re-measure decode on real data — 2.4-3.5× on the golden sortings
 - [ ] Open PR into `main` (after explicit go-ahead)
