@@ -190,16 +190,22 @@ def make_synthetic_amplifier_data(
     device_name: str,
     probe_label: str,
     n_chunks: int,
+    ts_ranges: "list[tuple[int, int]] | None" = None,
 ):
     """Write synthetic AmplifierData_N.bin + Clock_N.bin files for each chunk.
 
-    ONIX timestamps in each Clock file fall WITHIN the matching HarpSync CSV's
-    clock range so the BETWEEN query in ingest_chunks finds the right SyncModel.
+    By default, ONIX timestamps in each Clock file fall WITHIN the matching
+    HarpSync CSV's clock range so the BETWEEN query in ingest_chunks finds the
+    right SyncModel:
 
-    The synthetic HarpSync CSV for chunk n has:
       clock_start = 1000 * (n * 60) + 1
       clock_end   = 1000 * (n * 60 + 59) + 1  = 60000*n + 59001
+
     We write Clock timestamps inside those bounds: clock_start+500 to clock_end-500.
+
+    Pass ``ts_ranges`` (one ``(ts_start, ts_end)`` pair per chunk) to place a
+    chunk's ONIX timestamps outside every sync window instead, e.g. to
+    exercise the "chunk falls entirely outside all HarpSync rows" case.
     """
     device_dir = raw_dir / epoch_dir_name / device_name
     device_dir.mkdir(parents=True, exist_ok=True)
@@ -209,12 +215,15 @@ def make_synthetic_amplifier_data(
     n_channels = 4  # minimal channel count (uint16 per sample)
 
     for n in range(n_chunks):
-        # ONIX clock range for this chunk (matches make_synthetic_ephys_epoch)
-        clock_start = 60000 * n + 1
-        clock_end = 60000 * n + 59001
-        # Keep timestamps strictly inside the SyncModel's ONIX range
-        ts_start = clock_start + 500
-        ts_end = clock_end - 500
+        if ts_ranges is not None:
+            ts_start, ts_end = ts_ranges[n]
+        else:
+            # ONIX clock range for this chunk (matches make_synthetic_ephys_epoch)
+            clock_start = 60000 * n + 1
+            clock_end = 60000 * n + 59001
+            # Keep timestamps strictly inside the SyncModel's ONIX range
+            ts_start = clock_start + 500
+            ts_end = clock_end - 500
         onix_ts = np.linspace(ts_start, ts_end, n_samples, dtype=np.uint64)
 
         # Write Clock binary (uint64 ONIX timestamps)
@@ -352,9 +361,9 @@ def make_synthetic_bno055_data(
     for n in range(n_chunks):
         chunk_ts_start = bno_chunk_offset + bno_chunk_span * n
         chunk_ts_end = bno_chunk_offset + bno_chunk_span * (n + 1) - 1
-        clocks = np.linspace(
-            chunk_ts_start, chunk_ts_end, samples_per_chunk, dtype=np.float64
-        ).astype(np.uint64)
+        clocks = np.linspace(chunk_ts_start, chunk_ts_end, samples_per_chunk, dtype=np.float64).astype(
+            np.uint64
+        )
         (device_dir / f"{device_name}_Bno055_Clock_{n}.bin").write_bytes(clocks.tobytes())
 
         for stream, n_cols in [

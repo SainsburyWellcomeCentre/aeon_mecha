@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import tempfile
+from collections import defaultdict
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,7 +22,7 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
-from aeon.dj_pipeline.utils.ephys_utils import resolve_ephys_file
+from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, resolve_ephys_file
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
     fork_safe_job_kwargs,
@@ -1099,13 +1100,15 @@ class SyncedSpikes(dj.Imported):
             key: Dictionary containing sorting task identifiers
         """
         # Load ephys sync models
-        sync_models = {}
+        chunk_windows = defaultdict(list)  # chunk_start -> its linked (onix_ts_start, onix_ts_end, model)
         with tempfile.TemporaryDirectory() as tempdir, dj.config.override(download_path=tempdir):
             sync_ = (
                 ephys.EphysChunk.SyncModel * ephys.EphysSyncModel & (ephys.EphysBlockInfo.Chunk & key)
-            ).to_arrays("onix_ts_start", "onix_ts_end", "sync_model", order_by="onix_ts_start")
-            for s, e, m in zip(*sync_, strict=True):
-                sync_models[(s, e)] = joblib.load(m)
+            ).to_arrays(
+                "chunk_start", "onix_ts_start", "onix_ts_end", "sync_model", order_by="onix_ts_start"
+            )
+            for c, s, e, m in zip(*sync_, strict=True):
+                chunk_windows[c].append((s, e, joblib.load(m)))
 
         # Load ephys onix times
         _clock_query = (
@@ -1139,29 +1142,31 @@ class SyncedSpikes(dj.Imported):
             for idx, onix_bound in enumerate(onix_lengths):
                 # Find spikes belonging to this ephys chunk
                 if idx == 0:
-                    spk_ind = spike_indices[spike_indices <= onix_bound]
+                    spk_ind = spike_indices[spike_indices < onix_bound]
                 else:
                     spk_ind = spike_indices[
-                        (spike_indices > onix_lengths[idx - 1]) & (spike_indices <= onix_bound)
+                        (spike_indices >= onix_lengths[idx - 1]) & (spike_indices < onix_bound)
                     ]
 
                 if not len(spk_ind):  # no spikes in this chunk
                     continue
 
                 # Convert absolute indices to relative indices within this chunk
-                spk_ind -= spk_ind[0]  # make relative to chunk start
+                spk_ind = spk_ind - (onix_lengths[idx - 1] if idx else 0)  # make relative to chunk start
                 spk_times = onix_times[idx][spk_ind]  # get ONIX timestamps
 
-                # Apply sync models to convert ONIX→HARP timestamps
-                synced_ts = []
-                for (start, end), model in sync_models.items():
-                    # Find spikes within this sync model's time window
-                    ind = np.logical_and(spk_times >= start, spk_times <= end)
-                    if not np.any(ind):
-                        continue
-                    # Convert ONIX timestamps to HARP timestamps
-                    sync_t = model.predict(spk_times[ind].reshape(-1, 1))
-                    synced_ts.extend(sync_t.flatten())
+                # Apply sync models to convert ONIX→HARP timestamps. Each spike uses the last
+                # of this chunk's sync windows starting at or before it (the first window for
+                # earlier spikes), so spikes in the 1 s gaps between HarpSync files and outside
+                # the first/last HarpSync row are extrapolated instead of dropped.
+                windows = chunk_windows[ephys_file_keys[idx]["chunk_start"]]
+                window_starts = np.array([start for start, _, _ in windows], dtype=np.uint64)
+                window_idx = find_nearest_window(window_starts, spk_times)
+                synced_ts = np.empty(len(spk_times))
+                for w in np.unique(window_idx):
+                    in_window = window_idx == w
+                    sync_t = windows[w][2].predict(spk_times[in_window].reshape(-1, 1))
+                    synced_ts[in_window] = sync_t.flatten()
 
                 synced_ts = io_api.to_datetime(synced_ts).values
                 chunk_key = ephys_file_keys[idx]

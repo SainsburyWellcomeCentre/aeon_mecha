@@ -182,6 +182,38 @@ class TestResolveHarp:
         assert load_calls["count"] == expected_loads
 
 
+class TestFindNearestWindow:
+    """Test find_nearest_window index selection, including out-of-range ts."""
+
+    _STARTS = np.array([100, 200, 300], dtype=np.int64)
+
+    @pytest.mark.parametrize(
+        ("ts", "expected"),
+        [
+            (50, 0),  # before every window -> clipped to first
+            (100, 0),  # exact match on first window's start
+            (150, 0),  # inside first window's span
+            (250, 1),  # inside second window's span
+            (300, 2),  # exact match on last window's start
+            (999, 2),  # after every window -> last window (extrapolated forward)
+        ],
+    )
+    def test_scalar(self, ts, expected):
+        """Test scalar behaviour: used in EphysChunk.ingest_chunks."""
+        from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window
+
+        assert find_nearest_window(self._STARTS, ts) == expected
+
+    def test_array(self):
+        """Test vectorised behaviour: used in SyncedSpikes.indices2syncedtimes."""
+        from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window
+
+        ts = np.array([50, 150, 250, 999])
+        result = find_nearest_window(self._STARTS, ts)
+
+        np.testing.assert_array_equal(result, [0, 0, 1, 2])
+
+
 class TestGetProbeId:
     """Regression tests for get_probe_id — covers bugs 1, 2, 3 from bugs_found.md."""
 
