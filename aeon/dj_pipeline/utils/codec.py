@@ -248,3 +248,19 @@ class XArrayNetCDFCodec(SchemaCodec):
         config = (key or {}).get("_config")
         local_path = self._local_path(stored["path"], stored.get("store"), config)
         return xr.open_dataset(local_path, engine="netcdf4")
+
+
+class PynappleCodec(SchemaCodec):
+    """Store a pynapple object as .npz at {schema}/{table}/{pk}/{field}_<token>.npz.
+
+    Usable as ``<pynapple@store>``; the ``@`` store modifier is required, and only
+    ``protocol: file`` stores are supported. ``obj.save()`` and ``nap.load_file()``
+    are path-only, so the file is written and read directly by local path rather
+    than buffered through ``put_buffer``/``get_buffer``.
+
+    Domain-agnostic: it round-trips a pynapple object and knows nothing about what
+    the object means. ``pynapple`` is an optional extra, imported lazily inside the
+    methods, so a schema that declares no ``<pynapple@…>`` column never needs it.
+    """
+
+    name = "pynapple"

@@ -5,10 +5,9 @@ import logging
 import os
 from typing import cast
 
-import pymysql.converters
-
 import datajoint as dj
 import pandas as pd
+import pymysql.converters
 
 
 # ---------------------------------------------------------------------------
@@ -40,10 +39,11 @@ pymysql.converters.encoders[dict] = _escape_dict_as_json
 pymysql.converters.conversions[dict] = _escape_dict_as_json
 
 # Register Aeon + xarray codecs BEFORE any schema activation
-from aeon.dj_pipeline.utils.codec import (  # pyright: ignore[reportUnusedImport]
-    AeonStreamCodec,
-    OnixStreamCodec,
-    XArrayNetCDFCodec,
+from aeon.dj_pipeline.utils.codec import (
+    AeonStreamCodec,  # pyright: ignore[reportUnusedImport]
+    OnixStreamCodec,  # pyright: ignore[reportUnusedImport]
+    PynappleCodec,  # pyright: ignore[reportUnusedImport]
+    XArrayNetCDFCodec,  # pyright: ignore[reportUnusedImport]
 )
 
 logger = dj.logger

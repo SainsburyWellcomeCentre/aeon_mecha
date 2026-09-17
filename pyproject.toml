@@ -47,6 +47,7 @@ dependencies = [
 
 [project.optional-dependencies]
 gpu = ["cupy", "dask"]
+pynapple = ["pynapple>=0.11.4,<0.12"]
 spike_sorting = [
   "spikeinterface[full]>=0.104.0",
   "spython", 
@@ -72,6 +73,7 @@ test = [
   "pytest-cov",
   "testcontainers[mysql]>=3.7",
   "spikeinterface>=0.104.0",
+  "pynapple>=0.11.4,<0.12",
 ]
 test-golden = [
   { include-group = "test" },

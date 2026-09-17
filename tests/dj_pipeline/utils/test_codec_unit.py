@@ -123,3 +123,28 @@ class TestXArrayNetCDFCodec:
         }
         with pytest.raises(DataJointError, match="protocol: file"):
             codec._local_path("some/path.nc", "s3_store", dj_config)
+
+
+class TestPynappleCodecRegistration:
+    """The codec's name, and that importing the module registers it."""
+
+    def test_codec_name(self):
+        """Test that the codec's registered name is ``pynapple``."""
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        assert PynappleCodec.name == "pynapple"
+
+    def test_importing_the_module_registers_the_codec(self):
+        """Test that ``<pynapple@…>`` resolves, i.e. the codec is in DataJoint's registry.
+
+        Registration is an import side effect of ``Codec.__init_subclass__``; nothing
+        calls a decorator. If this fails, no table can declare the column type.
+        """
+        import sys
+
+        import aeon.dj_pipeline.utils.codec  # noqa: F401  (import registers)
+
+        # `import datajoint.codecs` would resolve through the mocked `datajoint`
+        # package attribute (see `mock_dj_for_unit`); the real submodule is kept in
+        # sys.modules by _REAL_DJ_SUBMODULES, so read the registry from there.
+        assert "pynapple" in sys.modules["datajoint.codecs"]._codec_registry
