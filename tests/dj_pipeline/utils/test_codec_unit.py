@@ -300,3 +300,97 @@ class TestPynappleCodecEncodeDecode:
         }
         with pytest.raises(DataJointError, match="protocol: file"):
             PynappleCodec()._local_path("some/path.npz", "s3_store", dj_config_nap)
+
+
+class TestPynappleFastPath:
+    """The TsGroup fast path must equal ``nap.load_file`` exactly."""
+
+    @staticmethod
+    def _assert_same(a, b):
+        """Assert two TsGroups are indistinguishable."""
+        import numpy as np
+
+        assert list(a.index) == list(b.index)
+        for unit in a.index:
+            np.testing.assert_array_equal(a[unit].t, b[unit].t)
+        np.testing.assert_array_equal(a.time_support.values, b.time_support.values)
+        assert sorted(a.metadata.columns) == sorted(b.metadata.columns)
+        for col in a.metadata.columns:
+            np.testing.assert_array_equal(np.asarray(a.get_info(col)), np.asarray(b.get_info(col)))
+
+    def test_fast_path_equals_stock_loader(self, mock_tsgroup, tmp_path):
+        """Test equivalence on non-contiguous keys, an empty unit, a gapped support.
+
+        This is the test that lets us keep a private-format fast path at all: it
+        pins our reconstruction to pynapple's own, so a format change fails here
+        rather than silently returning different data.
+        """
+        import pynapple as nap
+
+        from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
+
+        path = tmp_path / "tg.npz"
+        mock_tsgroup.save(str(path))
+        self._assert_same(nap.load_file(str(path)), _tsgroup_from_npz(str(path)))
+
+    def test_fast_path_preserves_rate(self, mock_tsgroup, tmp_path):
+        """Test that ``rate`` matches stock — the trap bypass_check=True falls into.
+
+        ``rate`` is n_events / tot_length(time_support). Constructing members without
+        the group support and then bypassing the check computes it from each member's
+        own support instead, which is wrong and silent.
+        """
+        import numpy as np
+        import pynapple as nap
+
+        from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
+
+        path = tmp_path / "tg.npz"
+        mock_tsgroup.save(str(path))
+        np.testing.assert_allclose(
+            np.asarray(_tsgroup_from_npz(str(path)).rate),
+            np.asarray(nap.load_file(str(path)).rate),
+        )
+
+    def test_fast_path_handles_keys_beyond_int16(self, tmp_path):
+        """Test equivalence at unit ids that overflow int16, exercising the dtype guard."""
+        import numpy as np
+        import pynapple as nap
+
+        from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
+
+        rng = np.random.default_rng(1)
+        tg = nap.TsGroup(
+            {k: nap.Ts(t=np.sort(rng.uniform(0, 10, 5))) for k in (0, 40_000, 70_000)}
+        )
+        path = tmp_path / "wide.npz"
+        tg.save(str(path))
+        self._assert_same(nap.load_file(str(path)), _tsgroup_from_npz(str(path)))
+
+    def test_fast_path_handles_tsd_members(self, tmp_path):
+        """Test that a TsGroup whose members carry values round-trips too."""
+        import numpy as np
+        import pynapple as nap
+
+        from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
+
+        t = np.arange(6.0)
+        tg = nap.TsGroup({0: nap.Tsd(t=t, d=t * 2), 1: nap.Tsd(t=t + 0.5, d=t * 3)})
+        path = tmp_path / "tsd.npz"
+        tg.save(str(path))
+        stock, fast = nap.load_file(str(path)), _tsgroup_from_npz(str(path))
+        self._assert_same(stock, fast)
+        for unit in stock.index:
+            np.testing.assert_array_equal(fast[unit].d, stock[unit].d)
+
+    def test_decode_uses_fast_path_for_tsgroup(self, dj_config_nap, mock_tsgroup):
+        """Test that decode dispatches to the fast path and still equals stock."""
+        import pynapple as nap
+
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        codec = PynappleCodec()
+        key = {"_schema": "s", "_table": "t", "rec_id": 1, "_config": dj_config_nap}
+        stored = codec.encode(mock_tsgroup, key=key, store_name="pynapple_store")
+        local = codec._local_path(stored["path"], stored["store"], dj_config_nap)
+        self._assert_same(nap.load_file(local), codec.decode(stored, key={"_config": dj_config_nap}))
