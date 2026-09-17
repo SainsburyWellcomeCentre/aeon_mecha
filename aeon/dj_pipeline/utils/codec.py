@@ -264,3 +264,57 @@ class PynappleCodec(SchemaCodec):
     """
 
     name = "pynapple"
+
+    def validate(self, value: Any) -> None:
+        """Accept any of the six pynapple container types."""
+        import pynapple as nap
+
+        accepted = (nap.Ts, nap.Tsd, nap.TsdFrame, nap.TsdTensor, nap.IntervalSet, nap.TsGroup)
+        if not isinstance(value, accepted):
+            raise DataJointError(
+                f"<pynapple> requires a pynapple object "
+                f"({', '.join(c.__name__ for c in accepted)}), got {type(value).__name__}"
+            )
+
+    def _local_path(self, path: str, store_name: str | None, config) -> str:
+        """Resolve a store-relative path to an absolute local filesystem path."""
+        backend = self._get_backend(store_name, config=config)
+        if backend.protocol != "file":
+            raise DataJointError("<pynapple> supports only `protocol: file` stores")
+        return backend._full_path(path)
+
+    @staticmethod
+    def _summary(value: Any) -> dict:
+        """Queryable summary for the JSON column: kind, size and time bounds.
+
+        Deliberately generic — this codec stores pynapple objects, not spikes, so
+        the summary says ``n_rows`` rather than naming any domain entity.
+        """
+        support = getattr(value, "time_support", value)
+        n_rows = len(value) if hasattr(value, "index") else len(support)
+        return {
+            "kind": type(value).__name__,
+            "n_rows": int(n_rows),
+            "t_start": float(support.start[0]) if len(support) else None,
+            "t_end": float(support.end[-1]) if len(support) else None,
+        }
+
+    def encode(self, value: Any, *, key: dict | None = None, store_name: str | None = None) -> dict:
+        """Write the pynapple object to a .npz file and return JSON metadata."""
+        schema, table, field, primary_key = self._extract_context(key)
+        config = (key or {}).get("_config")
+        path, _token = self._build_path(
+            schema, table, field, primary_key, ext=".npz", store_name=store_name, config=config
+        )
+        local_path = self._local_path(path, store_name, config)
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        value.save(local_path)
+        return {"path": path, "store": store_name, **self._summary(value)}
+
+    def decode(self, stored: dict, *, key: dict | None = None) -> Any:
+        """Reopen the stored .npz as a pynapple object."""
+        import pynapple as nap
+
+        config = (key or {}).get("_config")
+        local_path = self._local_path(stored["path"], stored.get("store"), config)
+        return nap.load_file(local_path)
