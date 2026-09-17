@@ -15,20 +15,10 @@ return DataFrames built from the raw files on disk.
   equivalent to ``nap.load_file`` but several times quicker; every other type goes
   through ``nap.load_file`` directly. ``pynapple`` is an optional extra.
 
-Why the pynapple payload is an uncompressed ``.npz``, rather than the alternatives
-that look better on paper:
-
-- ``savez_compressed`` is 3.7x smaller but 55-70x slower to write (11.7 s against
-  0.21 s), which is fatal across thousands of rows.
-- zarr columns (Delta + zstd) are 20x smaller on disk but 40-60x slower to *open*,
-  and are not what ``nap.load_file`` reads.
-- Memory-mapping the ``.npz`` cannot work at all: ``np.load(mmap_mode=...)``
-  silently ignores the flag on a zip archive, and even hand-rolled the zip header
-  leaves members byte-unaligned — ``searchsorted`` over 5 M float64 costs 50,536 us
-  unaligned against 2.0 us aligned.
-
-One property worth keeping: ``NpzFile.__getitem__`` seeks to a single zip entry, so
-reading ``keys`` and ``_metadata`` costs kilobytes without touching the large arrays.
+The pynapple payload is an uncompressed ``.npz`` by design: ``savez_compressed`` is
+55-70x slower to write, zarr is 40-60x slower to *open* and is not what
+``nap.load_file`` reads, and ``np.load(mmap_mode=...)`` silently does nothing on a
+zip archive. Reading one member (``keys``, ``_metadata``) still costs only kilobytes.
 """
 
 import os
@@ -270,20 +260,19 @@ class XArrayNetCDFCodec(SchemaCodec):
 
 
 def _narrow_int(values: np.ndarray) -> np.ndarray:
-    """Return the smallest signed-int view of ``values`` that holds its range.
+    """Return the narrowest signed-int view of ``values`` that holds its full range.
 
-    ``np.argsort(kind="stable")`` on integers is a radix sort, and radix sort makes
-    one pass per byte of the dtype: eight for int64, two for int16. Narrowing the
-    sort key before sorting is therefore ~4x less work, and the cast costs one
-    cheap pass (measured 1.9 ms against a 210 ms saving on 2.7 M spikes).
-
-    This is what makes the fast path in ``_tsgroup_from_npz`` worth having. On a
-    real golden sorting (101 units, 2.7 M spikes) against ``nap.load_file``:
-    sorting the raw int64 index gives only 1.4x, narrowing first gives 2.9x.
+    ``argsort(kind="stable")`` radix-sorts one pass per byte, so an int16 key is
+    ~4x less work than int64. Only the sort key is narrowed; the values reaching
+    the output stay int64. Both bounds are checked — pynapple permits negative
+    unit keys, and a cast that wrapped would reorder spikes silently.
     """
-    hi = int(values.max()) if values.size else 0
+    if not values.size:
+        return values
+    lo, hi = int(values.min()), int(values.max())
     for dtype in (np.int16, np.int32):
-        if hi <= np.iinfo(dtype).max:
+        info = np.iinfo(dtype)
+        if info.min <= lo and hi <= info.max:
             return values.astype(dtype, copy=False)
     return values
 
@@ -291,12 +280,10 @@ def _narrow_int(values: np.ndarray) -> np.ndarray:
 def _tsgroup_from_npz(local_path: str):
     """Rebuild a TsGroup from a pynapple .npz without the per-unit mask loop.
 
-    ``TsGroup._from_npz_reader`` runs ``index == key`` once per unit, which is
-    O(units x events). One stable argsort over a narrow-dtype view of ``index``
-    plus offset slicing is O(n log n) — 7.5x faster on 600 units / 7.9 M spikes,
-    and bit-identical. Nothing about the stored file changes, so stock
-    ``nap.load_file`` still reads it; ``TestPynappleFastPath`` pins the two
-    together.
+    ``TsGroup._from_npz_reader`` runs ``index == key`` once per unit, O(units x
+    events); one stable argsort plus offset slicing is O(n log n). Bit-identical,
+    and the stored file is unchanged, so stock ``nap.load_file`` still reads it.
+    ``TestPynappleFastPath`` pins the two together.
     """
     import pynapple as nap
 

@@ -392,3 +392,20 @@ class TestPynappleFastPath:
         stored = codec.encode(mock_tsgroup, key=key, store_name="pynapple_store")
         local = codec._local_path(stored["path"], stored["store"], dj_config_nap)
         self._assert_same(nap.load_file(local), codec.decode(stored, key={"_config": dj_config_nap}))
+
+    def test_fast_path_handles_negative_keys(self, tmp_path):
+        """Test equivalence when unit ids are negative, which pynapple permits.
+
+        Narrowing the sort key on ``max`` alone would pick int16 for a key of
+        -40000, wrap it to 25536, and reorder spikes with no error.
+        """
+        import numpy as np
+        import pynapple as nap
+
+        from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
+
+        rng = np.random.default_rng(2)
+        tg = nap.TsGroup({k: nap.Ts(t=np.sort(rng.uniform(0, 10, 6))) for k in (-40_000, -1, 0, 7)})
+        path = tmp_path / "neg.npz"
+        tg.save(str(path))
+        self._assert_same(nap.load_file(str(path)), _tsgroup_from_npz(str(path)))
