@@ -314,6 +314,21 @@ def _tsgroup_from_npz(local_path: str):
     return nap.TsGroup(data, time_support=support, bypass_check=True, metadata=metadata)
 
 
+_SUMMARY_EXTRAS = {
+    "Tsd": lambda v: {"dtype": str(v.values.dtype)},
+    "TsdFrame": lambda v: {
+        "dtype": str(v.values.dtype),
+        "n_columns": int(v.shape[1]),
+        "columns": [str(c) for c in v.columns],
+    },
+    "TsdTensor": lambda v: {"dtype": str(v.values.dtype), "shape": [int(n) for n in v.shape]},
+    "IntervalSet": lambda v: {"total_seconds": float(v.tot_length())},
+    "TsGroup": lambda v: {"n_events": int(sum(len(v[u]) for u in v.index))},
+}
+"""Per-type additions to the stored JSON summary. Additive and optional: a type
+absent from this table still gets ``kind``/``n_rows``/``t_start``/``t_end``."""
+
+
 class PynappleCodec(SchemaCodec):
     """Store a pynapple object as .npz at {schema}/{table}/{pk}/{field}_<token>.npz.
 
@@ -330,14 +345,18 @@ class PynappleCodec(SchemaCodec):
     name = "pynapple"
 
     def validate(self, value: Any) -> None:
-        """Accept any of the six pynapple container types."""
-        import pynapple as nap
+        """Accept anything pynapple can round-trip through its own ``.npz``.
 
-        accepted = (nap.Ts, nap.Tsd, nap.TsdFrame, nap.TsdTensor, nap.IntervalSet, nap.TsGroup)
-        if not isinstance(value, accepted):
+        Tests the capability rather than an enumerated list of the six current
+        containers, so a type pynapple adds later works without touching this codec.
+        ``Folder`` is excluded by the reader check — it has ``save`` but takes
+        ``(name, obj)`` and has no ``_from_npz_reader``. The six names stay in the
+        message because a type error should say what was expected.
+        """
+        if not (hasattr(value, "save") and hasattr(type(value), "_from_npz_reader")):
             raise DataJointError(
-                f"<pynapple> requires a pynapple object "
-                f"({', '.join(c.__name__ for c in accepted)}), got {type(value).__name__}"
+                "<pynapple> requires a pynapple object (Ts, Tsd, TsdFrame, TsdTensor, "
+                f"IntervalSet, TsGroup), got {type(value).__name__}"
             )
 
     def _local_path(self, path: str, store_name: str | None, config) -> str:
@@ -349,19 +368,25 @@ class PynappleCodec(SchemaCodec):
 
     @staticmethod
     def _summary(value: Any) -> dict:
-        """Queryable summary for the JSON column: kind, size and time bounds.
+        """Queryable summary, so a caller can size a query without opening the file.
 
-        Deliberately generic — this codec stores pynapple objects, not spikes, so
-        the summary says ``n_rows`` rather than naming any domain entity.
+        ``kind``/``n_rows``/``t_start``/``t_end`` are always present, so one query
+        works across every column of this type; ``n_rows`` counts the primary entity
+        (samples, intervals, or units). ``_SUMMARY_EXTRAS`` adds per-type detail, and
+        a type absent from it still gets the four core keys.
         """
+        kind = type(value).__name__
+        # An IntervalSet *is* its own support; everything else carries one.
         support = getattr(value, "time_support", value)
-        n_rows = len(value) if hasattr(value, "index") else len(support)
-        return {
-            "kind": type(value).__name__,
-            "n_rows": int(n_rows),
+        summary = {
+            "kind": kind,
+            "n_rows": int(len(value)),
             "t_start": float(support.start[0]) if len(support) else None,
             "t_end": float(support.end[-1]) if len(support) else None,
         }
+        if extras := _SUMMARY_EXTRAS.get(kind):
+            summary.update(extras(value))
+        return summary
 
     def encode(self, value: Any, *, key: dict | None = None, store_name: str | None = None) -> dict:
         """Write the pynapple object to a .npz file and return JSON metadata."""

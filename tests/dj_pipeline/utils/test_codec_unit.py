@@ -133,6 +133,21 @@ def dj_config_nap(tmp_path):
     return config
 
 
+def _sample_objects():
+    """One small instance of each pynapple container, for round-trip coverage."""
+    import numpy as np
+    import pynapple as nap
+
+    t = np.arange(6.0) + 3.87e9  # Harp magnitude, where the float64 gap is 477 ns
+    return {
+        "Ts": nap.Ts(t=t),
+        "Tsd": nap.Tsd(t=t, d=np.arange(6, dtype="int64")),
+        "TsdFrame": nap.TsdFrame(t=t, d=np.zeros((6, 3)), columns=["a", "b", "c"]),
+        "TsdTensor": nap.TsdTensor(t=t, d=np.zeros((6, 2, 2))),
+        "IntervalSet": nap.IntervalSet(start=[0.0, 20.0], end=[10.0, 30.0]),
+    }
+
+
 class TestPynappleCodecRoundTrip:
     """``validate`` / ``encode`` / ``decode`` against a real file store, no DB."""
 
@@ -189,20 +204,65 @@ class TestPynappleCodecRoundTrip:
         assert (stored["kind"], stored["n_rows"]) == ("TsGroup", 3)
         assert stored["t_start"] > 3.0e9
 
-    def test_non_tsgroup_round_trips_through_the_generic_path(self, dj_config_nap, mock_intervalset):
-        """Test the ``nap.load_file`` branch, which every type but TsGroup takes."""
+    @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet"])
+    def test_every_other_type_round_trips_with_its_summary(self, dj_config_nap, kind):
+        """Test the ``nap.load_file`` branch for each type that takes it.
+
+        The codec is domain-agnostic and claims all six pynapple containers, so all
+        six need round-tripping — not just the two this pipeline happens to use.
+        Each case also checks the type-specific summary, which is what makes the
+        stored JSON worth querying without opening the file.
+        """
         import numpy as np
 
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
+        obj = _sample_objects()[kind]
         codec = PynappleCodec()
         key = {"_schema": "s", "_table": "t", "rec_id": 2, "_config": dj_config_nap}
-        decoded = codec.decode(
-            codec.encode(mock_intervalset, key=key, store_name="pynapple_store"),
-            key={"_config": dj_config_nap},
-        )
-        np.testing.assert_array_equal(decoded.values, mock_intervalset.values)
-        np.testing.assert_array_equal(decoded.get_info("tag"), mock_intervalset.get_info("tag"))
+        stored = codec.encode(obj, key=key, store_name="pynapple_store")
+        decoded = codec.decode(stored, key={"_config": dj_config_nap})
+
+        assert type(decoded).__name__ == kind
+        assert stored["kind"] == kind
+        assert stored["n_rows"] == len(obj)
+
+        # Ts carries times and no values; IntervalSet carries values and no times.
+        if hasattr(obj, "t"):
+            np.testing.assert_array_equal(decoded.t, obj.t)
+        if hasattr(obj, "values"):
+            np.testing.assert_array_equal(decoded.values, obj.values)
+
+        expected_extras = {
+            "Ts": set(),
+            "Tsd": {"dtype"},
+            "TsdFrame": {"dtype", "n_columns", "columns"},
+            "TsdTensor": {"dtype", "shape"},
+            "IntervalSet": {"total_seconds"},
+        }[kind]
+        assert expected_extras <= set(stored)
+
+    def test_tsdframe_summary_names_its_columns(self, dj_config_nap):
+        """Test that a TsdFrame's shape is legible from the stored JSON alone.
+
+        ``n_rows`` counts samples, which says nothing about width — the same gap
+        ``<xarray@store>`` fills with ``dims`` and ``data_vars``.
+        """
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        key = {"_schema": "s", "_table": "t", "rec_id": 3, "_config": dj_config_nap}
+        stored = PynappleCodec().encode(_sample_objects()["TsdFrame"], key=key, store_name="pynapple_store")
+        assert stored["n_columns"] == 3
+        assert stored["columns"] == ["a", "b", "c"]
+
+    def test_tsgroup_summary_counts_events_not_just_units(self, dj_config_nap, mock_tsgroup):
+        """Test that a TsGroup reports total events, so a caller can size a query."""
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        key = {"_schema": "s", "_table": "t", "rec_id": 4, "_config": dj_config_nap}
+        stored = PynappleCodec().encode(mock_tsgroup, key=key, store_name="pynapple_store")
+        assert stored["n_rows"] == 3  # units
+        assert stored["n_events"] == sum(len(mock_tsgroup[u]) for u in mock_tsgroup.index)
 
     def test_rejects_non_file_protocol(self, dj_config_nap):
         """Test that a non-``file`` store protocol is rejected."""
