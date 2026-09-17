@@ -14,6 +14,21 @@ return DataFrames built from the raw files on disk.
   ``.npz`` in a ``protocol: file`` store. ``TsGroup`` decodes through a fast path
   equivalent to ``nap.load_file`` but several times quicker; every other type goes
   through ``nap.load_file`` directly. ``pynapple`` is an optional extra.
+
+Why the pynapple payload is an uncompressed ``.npz``, rather than the alternatives
+that look better on paper:
+
+- ``savez_compressed`` is 3.7x smaller but 55-70x slower to write (11.7 s against
+  0.21 s), which is fatal across thousands of rows.
+- zarr columns (Delta + zstd) are 20x smaller on disk but 40-60x slower to *open*,
+  and are not what ``nap.load_file`` reads.
+- Memory-mapping the ``.npz`` cannot work at all: ``np.load(mmap_mode=...)``
+  silently ignores the flag on a zip archive, and even hand-rolled the zip header
+  leaves members byte-unaligned — ``searchsorted`` over 5 M float64 costs 50,536 us
+  unaligned against 2.0 us aligned.
+
+One property worth keeping: ``NpzFile.__getitem__`` seeks to a single zip entry, so
+reading ``keys`` and ``_metadata`` costs kilobytes without touching the large arrays.
 """
 
 import os
@@ -257,8 +272,14 @@ class XArrayNetCDFCodec(SchemaCodec):
 def _narrow_int(values: np.ndarray) -> np.ndarray:
     """Return the smallest signed-int view of ``values`` that holds its range.
 
-    Sorting an int16 key array is several times faster than sorting int64, and the
-    unit index is the only thing being sorted.
+    ``np.argsort(kind="stable")`` on integers is a radix sort, and radix sort makes
+    one pass per byte of the dtype: eight for int64, two for int16. Narrowing the
+    sort key before sorting is therefore ~4x less work, and the cast costs one
+    cheap pass (measured 1.9 ms against a 210 ms saving on 2.7 M spikes).
+
+    This is what makes the fast path in ``_tsgroup_from_npz`` worth having. On a
+    real golden sorting (101 units, 2.7 M spikes) against ``nap.load_file``:
+    sorting the raw int64 index gives only 1.4x, narrowing first gives 2.9x.
     """
     hi = int(values.max()) if values.size else 0
     for dtype in (np.int16, np.int32):
