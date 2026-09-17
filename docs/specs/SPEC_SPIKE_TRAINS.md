@@ -1,6 +1,6 @@
 # Chunk-level spike trains
 
-status: draft · 2026-09-16 · addresses #606 · prerequisites: SPEC_PYNAPPLE_CODEC, PR #611, PR #588
+status: draft · 2026-09-16 · addresses #606 · prerequisites: PR #613, PR #611, PR #588
 
 ## TL;DR
 
@@ -40,7 +40,8 @@ library for epoch-and-event neural data, and a `TsGroup` is a dict of per-unit
 timestamp series carrying per-unit metadata and a `time_support` interval. That
 is the shape a population of sorted units already has, which is why the existing
 `<xarray@store>` codec does not fit: xarray holds dense gridded arrays, and
-spike trains are ragged. `SPEC_PYNAPPLE_CODEC.md` covers the storage side.
+spike trains are ragged. The `<pynapple@dj_store>` column type that stores it
+ships separately in PR #613.
 
 ---
 
@@ -373,10 +374,10 @@ the worst across both.
 
 ## Storage
 
-The `spikes` column uses `<pynapple@dj_store>`, specified separately in
-`SPEC_PYNAPPLE_CODEC.md`. That codec is domain-agnostic — it round-trips a
-pynapple object and knows nothing about spikes — and has no dependency on this
-table, so it can ship first.
+The `spikes` column uses `<pynapple@dj_store>`, which ships separately in
+PR #613. That codec is domain-agnostic — it round-trips a pynapple object and
+knows nothing about spikes — and has no dependency on this table, so it lands
+first.
 
 Two of its properties shape what follows: a stored object is one uncompressed
 `.npz` per row, reopened eagerly, and the decode carries a `TsGroup` fast path
@@ -405,8 +406,9 @@ rather than a convenience.
 
 ### No lazy loading. Accepted.
 
-pynapple cannot lazily load a `TsGroup` and structurally never will, so every
-chunk is read whole. `SPEC_PYNAPPLE_CODEC.md` covers why.
+pynapple cannot lazily load a `TsGroup` and structurally never will — its
+`load_array=False` defers only the *values* of a `Tsd`, and a spike train is its
+time index — so every chunk is read whole.
 
 The chunk grain is the mitigation. A user querying *D* hours fetches `ceil(D)+1`
 chunks, of which at most two are partially wasted — 8% at a day, 1.2% at a
@@ -518,7 +520,7 @@ Three markers, per `SPEC_TESTING.md`: `unit` (no database), `integration`
 belong in the implementation PR; these are the three that pin design decisions
 and must not be quietly dropped.
 
-Codec tests live with the codec (`SPEC_PYNAPPLE_CODEC.md`).
+Codec tests live with the codec, in PR #613.
 
 **Re-chunking conserves spikes and coverage.** No spike lost or double-counted
 against `UnitMatching.Spikes` over the same window. A spike at exactly
@@ -562,7 +564,7 @@ refractory structure or drift.
 
 ## PR checklist
 
-- [ ] `<pynapple@dj_store>` shipped (`SPEC_PYNAPPLE_CODEC.md`) — prerequisite
+- [ ] `<pynapple@dj_store>` merged (PR #613) — prerequisite
 - [ ] `SpikeTrains` in `processed_ephys.py`, with `stale()`
 - [ ] `fetch_span`: per-chunk restriction, re-keying, warn on partial, raise on
       stale
