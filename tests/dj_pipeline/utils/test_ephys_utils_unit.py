@@ -556,20 +556,27 @@ class TestParseMetadataProbeConfigs:
         with pytest.raises(FileNotFoundError):
             parse_metadata_probe_configs(tmp_path)
 
-    def test_real_golden_metadata(self):
+    def test_real_golden_metadata(self, ephys_golden_dataset_config, default_golden_data_root):
         """Verify against the actual golden epoch's Metadata.yml if available."""
+        import os
+
+        import aeon.dj_pipeline as pipeline
         from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+        from aeon.dj_pipeline.utils.paths import get_repository_path
+
+        if "DJ_REPOSITORY_CONFIG" not in os.environ:
+            pipeline.repository_config = {"ceph_aeon": str(default_golden_data_root)}
+
+        try:
+            repo_path = get_repository_path("ceph_aeon")
+        except FileNotFoundError as e:
+            pytest.skip(str(e))
 
         epoch_path = (
-            Path.home()
-            / "sciops-data"
-            / "project_aeon"
-            / "aeon"
-            / "data"
+            repo_path
             / "raw"
-            / "AEONX1"
-            / "abcGolden01"
-            / "2026-05-11T07-50-11"
+            / ephys_golden_dataset_config["experiment_path"]
+            / ephys_golden_dataset_config["epoch_dir"]
         )
         if not epoch_path.exists():
             pytest.skip(f"Golden epoch not on disk: {epoch_path}")

@@ -535,6 +535,12 @@ def ephys_golden_dataset_config():
 
 
 @pytest.fixture(scope="session")
+def default_golden_data_root():
+    """Get the default golden data root. No DB needed."""
+    return DEFAULT_GOLDEN_DATA_ROOT
+
+
+@pytest.fixture(scope="session")
 def require_ephys_golden_data(dj_config_integration, ephys_golden_dataset_config):
     """Skip tests if ephys golden dataset is unavailable. Returns epoch path."""
     return _check_golden_data(ephys_golden_dataset_config)
