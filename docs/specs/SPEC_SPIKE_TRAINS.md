@@ -1,6 +1,6 @@
 # Chunk-level spike trains
 
-status: draft · 2026-09-16 · addresses #606 · prerequisites: PR #613, PR #611, PR #588
+status: draft · 2026-09-17 · addresses #606 · prerequisites: PR #613, PR #588 (PR #611 merged)
 
 ## TL;DR
 
