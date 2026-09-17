@@ -992,6 +992,12 @@ def ephys_sorting_injected(
     epoch_path = require_ephys_golden_data
     golden_root = epoch_path.parent / cfg["golden_sorting_dir"]
     if not golden_root.exists():
+        # Fallback for ceph_repo_path/golden_tests/<experiment_path>/<epoch_dir>
+        # epoch_path = repo_path/raw/<experiment_path>/<epoch_dir>
+        parts = list(epoch_path.parent.parts)
+        parts[parts.index("raw")] = "golden_tests"
+        golden_root = Path(*parts) / cfg["golden_sorting_dir"]
+    if not golden_root.exists():
         pytest.skip(f"Golden sorting output not found: {golden_root}")
 
     electrode_config_key = {
