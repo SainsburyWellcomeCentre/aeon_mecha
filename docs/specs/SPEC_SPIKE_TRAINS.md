@@ -406,9 +406,14 @@ rather than a convenience.
 
 ### No lazy loading. Accepted.
 
-pynapple cannot lazily load a `TsGroup` and structurally never will — its
-`load_array=False` defers only the *values* of a `Tsd`, and a spike train is its
-time index — so every chunk is read whole.
+pynapple cannot lazily load a `TsGroup`, and the reason is structural rather than
+unfinished work: `load_array=False` defers the *values* of a `Tsd`, and a spike
+train has no values — it *is* its time index. There is no large half to leave on
+disk, so every chunk is read whole.
+
+A mmappable format (a directory of `.npy` instead of the `.npz` zip) would allow
+range-restricted reads, but the ceiling measures at ~6x on a 227 ms fetch: ~1 ms of
+that is I/O and ~30 ms is pynapple object construction, which no backend removes.
 
 The chunk grain is the mitigation. A user querying *D* hours fetches `ceil(D)+1`
 chunks, of which at most two are partially wasted — 8% at a day, 1.2% at a
@@ -422,14 +427,14 @@ reconstruction. A user who does that naively will run out of memory. This is a
 real limitation and the reason `fetch_span` ships with the table.
 
 On-disk figures are larger than in-memory ones: the npz stores a float64 time
-plus an int16 unit index per spike (10 B), while a reconstructed `TsGroup` holds
+plus an int64 unit index per spike (16 B), while a reconstructed `TsGroup` holds
 only the float64 times (8 B). Decoding one chunk transiently holds both.
 
 | Units | Mean rate | Spikes/chunk | npz/chunk | 7 d on disk | 7 d in memory |
 |---|---|---|---|---|---|
-| 100 | 3 Hz | 1.1 M | 11 MB | 1.8 GB | 1.5 GB |
-| 300 | 5 Hz | 5.4 M | 54 MB | 9.1 GB | 7.3 GB |
-| 600 | 8 Hz | 17.3 M | 173 MB | 29 GB | 23 GB |
+| 100 | 3 Hz | 1.1 M | 17 MB | 2.9 GB | 1.5 GB |
+| 300 | 5 Hz | 5.4 M | 86 MB | 14.5 GB | 7.3 GB |
+| 600 | 8 Hz | 17.3 M | 276 MB | 46.4 GB | 23.2 GB |
 
 ### Spikes are stored twice
 

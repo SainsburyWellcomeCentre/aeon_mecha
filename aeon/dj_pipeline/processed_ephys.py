@@ -157,6 +157,11 @@ class SpikeTrains(dj.Computed):
         peak memory is one chunk rather than the whole span — which matters because
         pynapple reads a TsGroup whole.
 
+        The result is still the whole span in memory; pynapple has no lazy TsGroup.
+        Size the window first — roughly 115 MB per probe-hour at Neuropixels rates,
+        so a day is ~2.7 GB and a week ~19 GB. Nothing here refuses a window that
+        will not fit.
+
         Raises on a stale contributing row and warns on partial coverage. The
         asymmetry is deliberate: stale is out of date and cheaply fixed, while
         partial coverage is a permanent fact about the data that a caller works
