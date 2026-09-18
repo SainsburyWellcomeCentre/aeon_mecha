@@ -380,3 +380,69 @@ class TestPynappleFastPath:
             np.asarray(_tsgroup_from_npz(str(path)).rate),
             np.asarray(nap.load_file(str(path)).rate),
         )
+
+
+class TestPynappleMemberParity:
+    """``_to_members`` must match what pynapple's own ``save()`` writes.
+
+    It reads ``_metadata``, a private attribute, and mirrors save-path logic that
+    upstream is free to change. This test is the tripwire: it writes a real .npz
+    and compares, so the day pynapple alters its layout, this fails rather than
+    the rows silently becoming unreadable by ``nap.load_file``.
+    """
+
+    @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet", "TsGroup"])
+    def test_members_match_pynapple_savez_output(self, kind, tmp_path, mock_tsgroup):
+        """Test that member keys and values equal what ``obj.save()`` produces."""
+        import numpy as np
+
+        from aeon.dj_pipeline.utils.codec import _to_members
+
+        obj = mock_tsgroup if kind == "TsGroup" else _sample_objects()[kind]
+        path = tmp_path / "ref.npz"
+        obj.save(path.as_posix())
+
+        with np.load(path, allow_pickle=True) as npz:
+            reference = {name: npz[name] for name in npz.files}
+        produced = _to_members(obj)
+
+        assert set(produced) == set(reference), f"member keys differ for {kind}"
+        for name, expected in reference.items():
+            actual = produced[name]
+            if expected.dtype == object and expected.shape == ():
+                # `_metadata` is a dict of numpy arrays, so compare it entry by entry.
+                produced_meta, expected_meta = actual.item(), expected.item()
+                assert set(produced_meta) == set(expected_meta), f"{kind}.{name} keys"
+                for col, values in expected_meta.items():
+                    np.testing.assert_array_equal(
+                        np.asarray(produced_meta[col]), np.asarray(values), err_msg=f"{kind}.{name}.{col}"
+                    )
+            elif expected.dtype == object:
+                assert list(actual) == list(expected), f"{kind}.{name}"
+            elif expected.dtype.kind == "U":
+                assert list(np.asarray(actual).ravel()) == list(expected.ravel()), f"{kind}.{name}"
+            else:
+                np.testing.assert_array_equal(actual, expected, err_msg=f"{kind}.{name}")
+
+    def test_float_members_are_bitwise_identical(self, mock_tsgroup, tmp_path):
+        """Test that float64 members match bit-for-bit, not merely within tolerance.
+
+        The float64 gap at Harp magnitude is 477 ns, so a quantising path would
+        shift spikes within a sample and still pass allclose.
+        """
+        import numpy as np
+
+        from aeon.dj_pipeline.utils.codec import _to_members
+
+        path = tmp_path / "ref.npz"
+        mock_tsgroup.save(path.as_posix())
+        with np.load(path, allow_pickle=True) as npz:
+            reference = {name: npz[name] for name in npz.files}
+        produced = _to_members(mock_tsgroup)
+
+        for name, expected in reference.items():
+            if expected.dtype.kind == "f":
+                assert np.array_equal(
+                    np.ascontiguousarray(produced[name]).view("u8"),
+                    np.ascontiguousarray(expected).view("u8"),
+                ), f"{name} is not bitwise identical"

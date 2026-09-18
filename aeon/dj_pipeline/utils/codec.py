@@ -283,6 +283,46 @@ def _narrow_int(values: np.ndarray) -> np.ndarray:
     return values
 
 
+def _to_members(value: Any) -> dict[str, np.ndarray]:
+    """Build the mapping pynapple's ``save()`` hands to ``np.savez``, without a file.
+
+    Every ``save()`` ends in ``np.savez(filename, **members)``, so assembling the
+    same mapping lets the in-DB form skip the npz container entirely - 2-10x
+    smaller, and no filesystem round trip. ``TestPynappleMemberParity`` pins this
+    to pynapple's own output, because it reads ``_metadata`` directly.
+    """
+    kind = type(value).__name__
+    members: dict[str, np.ndarray] = {"type": np.array([kind])}
+
+    if kind == "IntervalSet":
+        members["start"] = np.asarray(value.start)
+        members["end"] = np.asarray(value.end)
+        members["_metadata"] = np.array(dict(value._metadata), dtype=object)
+        return members
+
+    support = value.time_support
+    members["start"] = np.asarray(support.start)
+    members["end"] = np.asarray(support.end)
+
+    if kind == "TsGroup":
+        times = [value[unit].t for unit in value.index]
+        index = [np.full(len(value[unit]), unit, dtype=np.int64) for unit in value.index]
+        members["t"] = np.concatenate(times) if times else np.empty(0, dtype=np.float64)
+        members["index"] = np.concatenate(index) if index else np.empty(0, dtype=np.int64)
+        members["keys"] = np.asarray(value.index, dtype=np.int64)
+        # `rate` is derived from the support, so pynapple drops it before writing.
+        members["_metadata"] = np.array(dict(value._metadata.drop("rate")), dtype=object)
+        return members
+
+    members["t"] = np.asarray(value.t)
+    if kind != "Ts":
+        members["d"] = np.asarray(value.values)
+    if kind == "TsdFrame":
+        members["columns"] = np.asarray(value.columns, dtype=object)
+        members["_metadata"] = np.array(dict(value._metadata), dtype=object)
+    return members
+
+
 def _tsgroup_from_npz(local_path: str):
     """Rebuild a TsGroup from a pynapple .npz without the per-unit mask loop.
 
