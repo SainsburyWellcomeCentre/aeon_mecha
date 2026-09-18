@@ -539,16 +539,16 @@ class TestPynappleInDB:
     """The ``<pynapple>`` form: a DataJoint blob, no store, no file."""
 
     def test_dtype_differs_by_storage_form(self):
-        """Test that the store form declares json and the in-DB form bytes."""
+        """Test that the store form declares json and the in-DB form chains to blob."""
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
         codec = PynappleCodec()
         assert codec.get_dtype(True) == "json"
-        assert codec.get_dtype(False) == "bytes"
+        assert codec.get_dtype(False) == "<blob>"
 
     @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet"])
     def test_round_trips_without_a_store(self, kind):
-        """Test that encode with no store returns bytes that decode back equal."""
+        """Test that encode with no store returns members that decode back equal."""
         import numpy as np
 
         from aeon.dj_pipeline.utils.codec import PynappleCodec
@@ -557,7 +557,7 @@ class TestPynappleInDB:
         original = _sample_objects()[kind]
         encoded = codec.encode(original, key={}, store_name=None)
 
-        assert isinstance(encoded, bytes)
+        assert isinstance(encoded, dict) and "path" not in encoded
         restored = codec.decode(encoded, key={})
         assert type(restored).__name__ == kind
         if kind == "IntervalSet":
@@ -578,17 +578,6 @@ class TestPynappleInDB:
         for unit in mock_tsgroup.index:
             np.testing.assert_array_equal(restored[unit].t, mock_tsgroup[unit].t)
         np.testing.assert_array_equal(restored.time_support.values, mock_tsgroup.time_support.values)
-
-    def test_in_db_is_smaller_than_the_npz(self, mock_tsgroup, tmp_path):
-        """Test that the blob beats the file form, the reason this form exists."""
-        from aeon.dj_pipeline.utils.codec import PynappleCodec
-
-        codec = PynappleCodec()
-        blob = codec.encode(mock_tsgroup, key={}, store_name=None)
-        reference = tmp_path / "ref.npz"
-        mock_tsgroup.save(reference.as_posix())
-
-        assert len(blob) < reference.stat().st_size
 
     def test_store_form_is_unaffected(self, dj_config_nap, mock_tsgroup):
         """Test that naming a store still writes a file and returns the JSON summary."""

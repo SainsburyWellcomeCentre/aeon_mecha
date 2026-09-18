@@ -411,8 +411,8 @@ class PynappleCodec(SchemaCodec):
     ``<pynapple@store>`` writes .npz at {schema}/{table}/{pk}/{field}_<token>.npz;
     only ``protocol: file`` stores work, and since ``obj.save()`` and
     ``nap.load_file()`` are path-only the file is read and written by local path
-    rather than through ``put_buffer``/``get_buffer``. Bare ``<pynapple>`` packs the
-    same members into the row instead, atomic with it.
+    rather than through ``put_buffer``/``get_buffer``. Bare ``<pynapple>`` chains to
+    ``<blob>``, putting the same members in the row instead, atomic with it.
 
     The store form's JSON summary is queryable without decoding — ``proj`` on a JSON
     path returns a scalar and never opens the file, which is also how you learn which
@@ -425,12 +425,14 @@ class PynappleCodec(SchemaCodec):
     name = "pynapple"
 
     def get_dtype(self, is_store: bool) -> str:
-        """Return ``json`` for ``<pynapple@store>``, ``bytes`` for ``<pynapple>``.
+        """Return ``json`` for ``<pynapple@store>``, ``<blob>`` for ``<pynapple>``.
 
         ``SchemaCodec`` refuses the non-store form; a small object costs more in
-        store bookkeeping than in bytes, so this codec allows it.
+        store bookkeeping than in bytes, so this codec allows it. Chaining to
+        ``<blob>`` hands the member mapping to the codec that already serialises
+        dicts of arrays, rather than packing it here.
         """
-        return "json" if is_store else "bytes"
+        return "json" if is_store else "<blob>"
 
     def validate(self, value: Any) -> None:
         """Accept anything pynapple can round-trip through its own ``.npz``.
@@ -482,9 +484,7 @@ class PynappleCodec(SchemaCodec):
         ``<pynapple@>`` passes ``""`` for the default store, so the test is ``is None``.
         """
         if store_name is None:
-            from datajoint.blob import pack
-
-            return pack(_to_members(value), compress=True)
+            return _to_members(value)
         schema, table, field, primary_key = self._extract_context(key)
         config = (key or {}).get("_config")
         path, _token = self._build_path(
@@ -503,10 +503,10 @@ class PynappleCodec(SchemaCodec):
         """
         import pynapple as nap
 
-        if isinstance(stored, bytes | bytearray):
-            from datajoint.blob import unpack
-
-            return _from_members(unpack(bytes(stored), squeeze=False))
+        # The in-DB form arrives as the member mapping, already unpacked by <blob>;
+        # the store form as the JSON summary, which is the one carrying a path.
+        if "path" not in stored:
+            return _from_members(stored)
 
         config = (key or {}).get("_config")
         local_path = self._local_path(stored["path"], stored.get("store"), config)

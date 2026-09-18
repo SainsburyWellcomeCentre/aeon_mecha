@@ -445,17 +445,20 @@ def mock_pynapple_indb_table(dj_config_integration):
 class TestPynappleInDBIntegration:
     """Declare, insert and fetch a ``<pynapple>`` column against real MySQL."""
 
-    def test_column_declares_as_a_blob_with_no_store(self, mock_pynapple_indb_table):
-        """Test that the column is a real blob column bound to no external store.
+    def test_column_is_a_longblob_with_no_store(self, mock_pynapple_indb_table):
+        """Test that the column really is a longblob bound to no external store.
 
-        Asserted off the heading, not ``describe()`` text, which could change shape.
+        Asserted against MySQL rather than the heading: chaining to ``<blob>`` changes
+        how DataJoint labels the attribute, but must not change where bytes land.
         """
         table, _schema = mock_pynapple_indb_table
-        attr = table.heading.attributes["data"]
+        column = table.connection.query(
+            f"SHOW COLUMNS FROM `{table.database}`.`{table.table_name}` LIKE 'data'"  # noqa: S608
+        ).fetchone()
 
-        assert attr.codec.name == "pynapple"
-        assert attr.store is None
-        assert attr.is_blob
+        assert column[1] == "longblob"
+        assert table.heading.attributes["data"].codec.name == "pynapple"
+        assert table.heading.attributes["data"].store is None
 
     def test_round_trip_returns_equal_tsgroup(self, mock_pynapple_indb_table, mock_tsgroup):
         """Test that a DB round trip preserves keys, times, support and metadata."""
