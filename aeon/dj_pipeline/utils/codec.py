@@ -207,7 +207,23 @@ class OnixStreamCodec(dj.Codec):
         return df[(df.index >= int(onix_ts_start)) & (df.index <= int(onix_ts_end))]
 
 
-class XArrayNetCDFCodec(SchemaCodec):
+class _LocalFileCodec(SchemaCodec):
+    """Base for codecs whose library reads and writes by local path only.
+
+    Both ``xarray`` and ``pynapple`` expose path-based readers with no buffer API,
+    so neither can go through ``put_buffer``/``get_buffer`` and neither works on a
+    remote store.
+    """
+
+    def _local_path(self, path: str, store_name: str | None, config) -> str:
+        """Resolve a store-relative path to an absolute local filesystem path."""
+        backend = self._get_backend(store_name, config=config)
+        if backend.protocol != "file":
+            raise DataJointError(f"<{self.name}> supports only `protocol: file` stores")
+        return backend._full_path(path)
+
+
+class XArrayNetCDFCodec(_LocalFileCodec):
     """Store an xarray.Dataset as NetCDF-4 at {schema}/{table}/{pk}/{field}_<token>.nc.
 
     Usable as ``<xarray@store>`` (the ``@`` store modifier is required); ``protocol:
@@ -228,13 +244,6 @@ class XArrayNetCDFCodec(SchemaCodec):
         if not isinstance(value, xr.Dataset):
             hint = " — call .to_dataset() first" if isinstance(value, xr.DataArray) else ""
             raise DataJointError(f"<xarray> requires an xarray.Dataset, got {type(value).__name__}{hint}")
-
-    def _local_path(self, path: str, store_name: str | None, config) -> str:
-        """Resolve a store-relative path to an absolute local filesystem path."""
-        backend = self._get_backend(store_name, config=config)
-        if backend.protocol != "file":
-            raise DataJointError("<xarray> supports only `protocol: file` stores")
-        return backend._full_path(path)
 
     def encode(self, value: xr.Dataset, *, key: dict | None = None, store_name: str | None = None) -> dict:
         """Write the Dataset to a NetCDF-4 file and return JSON metadata."""
@@ -405,7 +414,7 @@ _SUMMARY_EXTRAS = {
 absent from this table still gets ``kind``/``n_rows``/``t_start``/``t_end``."""
 
 
-class PynappleCodec(SchemaCodec):
+class PynappleCodec(_LocalFileCodec):
     """Store a pynapple object, in a store as .npz or in the row as a blob.
 
     ``<pynapple@store>`` writes .npz at {schema}/{table}/{pk}/{field}_<token>.npz;
@@ -448,13 +457,6 @@ class PynappleCodec(SchemaCodec):
                 "<pynapple> requires a pynapple object (Ts, Tsd, TsdFrame, TsdTensor, "
                 f"IntervalSet, TsGroup), got {type(value).__name__}"
             )
-
-    def _local_path(self, path: str, store_name: str | None, config) -> str:
-        """Resolve a store-relative path to an absolute local filesystem path."""
-        backend = self._get_backend(store_name, config=config)
-        if backend.protocol != "file":
-            raise DataJointError("<pynapple> supports only `protocol: file` stores")
-        return backend._full_path(path)
 
     @staticmethod
     def _summary(value: Any) -> dict:
