@@ -15,10 +15,16 @@ return DataFrames built from the raw files on disk.
   equivalent to ``nap.load_file`` but several times quicker; every other type goes
   through ``nap.load_file`` directly. ``pynapple`` is an optional extra.
 
-The pynapple payload is an uncompressed ``.npz`` by design: ``savez_compressed`` is
-55-70x slower to write, zarr is 40-60x slower to *open* and is not what
-``nap.load_file`` reads, and ``np.load(mmap_mode=...)`` silently does nothing on a
-zip archive. Reading one member (``keys``, ``_metadata``) still costs only kilobytes.
+The pynapple payload is an uncompressed ``.npz`` by design: one file per value, which
+is what DataJoint's external store tracks. ``savez_compressed`` is 55-70x slower to
+write; zarr is 40-60x slower to *open*, isn't what ``nap.load_file`` reads, and is a
+directory the codec would have to manage itself. Reading one member (``keys``,
+``_metadata``) still costs only kilobytes.
+
+A zip leaves its members byte-unaligned, so nothing here is lazy: ``np.load(mmap_mode=...)``
+silently does nothing on one, and a value passed in lazily (a zarr-backed ``TsdFrame``
+built with ``load_array=False``) comes back as a plain ndarray. Laziness would need a
+non-npz backend.
 """
 
 import os
