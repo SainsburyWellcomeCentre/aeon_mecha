@@ -281,8 +281,8 @@ def _narrow_int(values: np.ndarray) -> np.ndarray:
 def _to_members(value: Any) -> dict[str, np.ndarray]:
     """Build the mapping pynapple's ``save()`` hands to ``np.savez``, without a file.
 
-    Lets the in-DB form skip the npz container, 2-10x smaller. Reads ``_metadata``
-    directly, so ``TestPynappleMemberParity`` pins it to pynapple's own output.
+    Lets the in-DB form skip the npz container, 2-10x smaller. Mirrors save-path
+    logic and reads the private ``_metadata``, so it must track pynapple's layout.
     """
     kind = type(value).__name__
     members: dict[str, np.ndarray] = {"type": np.array([kind])}
@@ -324,7 +324,6 @@ def _tsgroup_from_members(members, support, metadata):
     ``TsGroup._from_npz_reader`` runs ``index == key`` once per unit, O(units x
     events); one stable argsort plus offset slicing is O(n log n). Bit-identical,
     and the stored file is unchanged, so stock ``nap.load_file`` still reads it.
-    ``TestPynappleFastPath`` pins the two together.
     """
     import pynapple as nap
 
