@@ -210,9 +210,7 @@ class TestCompressedReadEquivalence:
         assert amp_files, "no golden AmplifierData .bin registered"
 
         f0 = amp_files[0]
-        ephys_dir = acquisition.Experiment.get_data_directory(
-            exp_key, directory_type=f0["directory_type"]
-        )
+        ephys_dir = acquisition.Experiment.get_data_directory(exp_key, directory_type=f0["directory_type"])
         bin_path = ephys_dir / f0["file_path"]
         assert bin_path.exists(), f"golden .bin missing: {bin_path}"
 
@@ -527,4 +525,125 @@ class TestOnixImuChunkOnGoldenData:
             f"At least one OnixImuChunk row has sample_count=0. "
             f"Per-row counts: {sample_counts}. Expected all > 0 for the golden "
             f"recording whose Bno055 chunks cover the entire ONIX range."
+        )
+
+
+class TestPynappleCodecOnGoldenSpikes:
+    """The pynapple codec against real Kilosort4 output.
+
+    Every other codec test uses synthetic spikes: uniform or lognormal draws with
+    no bursting, no refractory structure, no drift. These load real sortings —
+    64-101 units and 0.9-2.7 M spikes each, 30 kHz — straight off disk.
+
+    Deliberately independent of the DataJoint pipeline. The codec stores pynapple
+    objects; it does not care where the spike times came from, and routing through
+    SyncedSpikes would couple this to a fixture rework and to PR #611 for no gain.
+
+    Spike *times* and their inter-spike structure are real. The absolute offset is
+    derived from the block start, which is what SpikeTrains will do, so the round
+    trip is exercised at true Harp magnitude where the float64 ULP is 477 ns.
+    """
+
+    @staticmethod
+    def _tsgroup_from_sorting(sorting_path):
+        """Load a Kilosort4 sorting and wrap it as a TsGroup on Harp seconds."""
+        import numpy as np
+        import pynapple as nap
+        import spikeinterface as si
+        from swc.aeon.io import api as io_api
+
+        from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
+
+        sorting = si.load(sorting_path)
+        block_dir = sorting_path.parents[3].name  # <block>/<shank>/<paramset>/spike_sorting/…
+        t0 = io_api.to_seconds(parse_epoch_timestamp(block_dir.split("_")[0]))
+
+        data = {
+            int(u): nap.Ts(t=t0 + sorting.get_unit_spike_train(u) / sorting.sampling_frequency)
+            for u in sorting.unit_ids
+        }
+        all_t = np.concatenate([ts.t for ts in data.values() if len(ts)])
+        support = nap.IntervalSet(start=float(all_t.min()), end=float(all_t.max()))
+        return nap.TsGroup(data, time_support=support)
+
+    @pytest.fixture(scope="class")
+    def golden_tsgroup(self, require_ephys_golden_data, ephys_golden_dataset_config):
+        """The largest golden sorting, as a TsGroup. Skips if the artifacts are absent.
+
+        ``require_ephys_golden_data`` resolves ``repository_config["ceph_aeon"]`` —
+        honouring ``DJ_REPOSITORY_CONFIG`` — and brings the DB config along, which
+        the codec import needs because it pulls in ``aeon.dj_pipeline``. Nothing here
+        reads or writes a table.
+
+        The sorter/paramset directory is globbed rather than named, and so are the
+        block and shank: per the artifacts' own PROVENANCE.md the block names encode
+        a pre-PR-#611 clock and will change when ephys is re-ingested.
+        """
+        from aeon.dj_pipeline.utils.paths import get_repository_path
+
+        cfg = ephys_golden_dataset_config
+        root = get_repository_path("ceph_aeon") / "raw" / cfg["experiment_path"] / cfg["golden_sorting_dir"]
+        sortings = sorted(root.glob("*/*/*/spike_sorting/in_container_sorting"))
+        if not sortings:
+            pytest.skip(f"no golden spike-sorting artifacts under {root}")
+        largest = max(sortings, key=lambda p: sum(f.stat().st_size for f in p.rglob("*")))
+        return self._tsgroup_from_sorting(largest)
+
+    def test_round_trip_is_bit_exact_on_real_spikes(self, golden_tsgroup, tmp_path):
+        """Test that real spike times survive a round trip exactly, not approximately."""
+        import numpy as np
+        from datajoint.settings import Config
+
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        config = Config()
+        config.stores = {"pynapple_store": {"protocol": "file", "location": str(tmp_path)}}
+        codec = PynappleCodec()
+        key = {"_schema": "golden", "_table": "spikes", "rec_id": 1, "_config": config}
+        stored = codec.encode(golden_tsgroup, key=key, store_name="pynapple_store")
+        decoded = codec.decode(stored, key={"_config": config})
+
+        assert list(decoded.index) == list(golden_tsgroup.index)
+        for unit in golden_tsgroup.index:
+            # exact, not allclose: the float64 ULP at Harp magnitude is 477 ns, and a
+            # quantising round trip would shift spikes within a sample undetected
+            assert (decoded[unit].t == golden_tsgroup[unit].t).all()
+        np.testing.assert_array_equal(decoded.time_support.values, golden_tsgroup.time_support.values)
+        assert stored["t_start"] > 3.0e9  # still on the 1904 epoch
+        assert stored["n_rows"] == len(golden_tsgroup.index)
+
+    def test_fast_path_matches_stock_on_real_spikes(self, golden_tsgroup, tmp_path):
+        """Test fast-path equivalence and report the speed-up on real data.
+
+        The figure in SPEC_PYNAPPLE_CODEC.md comes from synthetic rates. This prints
+        the measured value on real Kilosort4 output; update the spec from it.
+        """
+        import time
+
+        import numpy as np
+        import pynapple as nap
+
+        from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
+
+        path = tmp_path / "golden.npz"
+        golden_tsgroup.save(str(path))
+
+        start = time.perf_counter()
+        stock = nap.load_file(str(path))
+        stock_s = time.perf_counter() - start
+
+        start = time.perf_counter()
+        fast = _tsgroup_from_npz(str(path))
+        fast_s = time.perf_counter() - start
+
+        assert list(fast.index) == list(stock.index)
+        for unit in stock.index:
+            np.testing.assert_array_equal(fast[unit].t, stock[unit].t)
+        np.testing.assert_allclose(np.asarray(fast.rate), np.asarray(stock.rate))
+
+        n_spikes = sum(len(stock[u]) for u in stock.index)
+        print(
+            f"\ngolden: {len(stock.index)} units, {n_spikes:,} spikes, "
+            f"{path.stat().st_size / 1e6:.1f} MB — "
+            f"stock {stock_s:.3f}s, fast {fast_s:.3f}s ({stock_s / fast_s:.1f}x)"
         )
