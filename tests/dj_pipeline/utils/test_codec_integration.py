@@ -416,3 +416,100 @@ class TestPynappleCodecGarbageCollection:
         assert stats["schema_paths_orphaned"] == 0
         assert stats["schema_paths_deleted"] == 0
         assert_tsgroup_equal((table & {"rec_id": 1}).fetch1("data"), mock_tsgroup)
+
+
+@pytest.fixture
+def mock_pynapple_indb_table(dj_config_integration):
+    """Throwaway schema + table with one in-database ``<pynapple>`` column.
+
+    Deliberately takes no store fixture: the point of this form is that no store
+    need be configured at all.
+    """
+    import datajoint as dj
+
+    from aeon.dj_pipeline import get_schema_name  # importing also registers the codec
+
+    schema = dj.Schema(get_schema_name("test_pynapple_indb"))
+
+    @schema
+    class MockPynappleInDB(dj.Manual):
+        definition = """
+        rec_id : int
+        ---
+        data : <pynapple>
+        """
+
+    yield MockPynappleInDB, schema
+    schema.drop()
+
+
+class TestPynappleInDBIntegration:
+    """Declare, insert and fetch a ``<pynapple>`` column against real MySQL."""
+
+    def test_column_declares_as_a_blob_with_no_store(self, mock_pynapple_indb_table):
+        """Test that the column is a real blob column bound to no external store.
+
+        Asserted off the heading rather than ``describe()`` text, so a change in
+        how DataJoint renders declarations cannot silently pass this.
+        """
+        table, _schema = mock_pynapple_indb_table
+        attr = table.heading.attributes["data"]
+
+        assert attr.codec.name == "pynapple"
+        assert attr.store is None
+        assert attr.is_blob
+
+    def test_round_trip_returns_equal_tsgroup(self, mock_pynapple_indb_table, mock_tsgroup):
+        """Test that a DB round trip preserves keys, times, support and metadata."""
+        table, _schema = mock_pynapple_indb_table
+        table.insert1({"rec_id": 1, "data": mock_tsgroup})
+        assert_tsgroup_equal((table & {"rec_id": 1}).fetch1("data"), mock_tsgroup)
+
+    def test_round_trip_returns_equal_intervalset(self, mock_pynapple_indb_table, mock_intervalset):
+        """Test that a non-TsGroup type round trips too, metadata included."""
+        table, _schema = mock_pynapple_indb_table
+        table.insert1({"rec_id": 2, "data": mock_intervalset})
+        fetched = (table & {"rec_id": 2}).fetch1("data")
+
+        np.testing.assert_array_equal(fetched.start, mock_intervalset.start)
+        np.testing.assert_array_equal(fetched.end, mock_intervalset.end)
+        np.testing.assert_array_equal(
+            np.asarray(fetched.get_info("tag")), np.asarray(mock_intervalset.get_info("tag"))
+        )
+
+    def test_writes_no_files(self, mock_pynapple_indb_table, mock_tsgroup, tmp_path):
+        """Test that nothing lands on disk — the whole point of this form."""
+        table, _schema = mock_pynapple_indb_table
+        before = set(tmp_path.rglob("*"))
+        table.insert1({"rec_id": 3, "data": mock_tsgroup})
+        assert set(tmp_path.rglob("*")) == before
+
+    def test_insert_rejects_non_pynapple(self, mock_pynapple_indb_table):
+        """Test that validate still guards the in-DB form."""
+        import datajoint as dj
+
+        table, _schema = mock_pynapple_indb_table
+        with pytest.raises(dj.DataJointError, match="requires a pynapple object"):
+            table.insert1({"rec_id": 4, "data": [1, 2, 3]})
+
+    def test_insert_rejects_oversized_value(self, mock_pynapple_indb_table):
+        """Test that the ceiling fires through a real insert, not only a direct encode."""
+        import datajoint as dj
+        import pynapple as nap
+
+        table, _schema = mock_pynapple_indb_table
+        rng = np.random.default_rng(0)
+        big = nap.Ts(t=np.sort(rng.uniform(3.87e9, 3.87e9 + 1e4, 400_000)))
+        with pytest.raises(dj.DataJointError, match="over the 1 MB limit"):
+            table.insert1({"rec_id": 5, "data": big})
+
+    def test_delete_leaves_nothing_to_collect(self, mock_pynapple_indb_table, mock_tsgroup):
+        """Test that deleting the row is the whole cleanup — no external GC needed.
+
+        This is the correctness argument for the in-DB form: the value lives in the
+        row's transaction, so a delete cannot orphan a file.
+        """
+        table, _schema = mock_pynapple_indb_table
+        table.insert1({"rec_id": 6, "data": mock_tsgroup})
+        (table & {"rec_id": 6}).delete_quick()
+        assert len(table & {"rec_id": 6}) == 0
