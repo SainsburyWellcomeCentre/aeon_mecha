@@ -593,20 +593,31 @@ class TestPynappleInDB:
 
         assert len(blob) < reference.stat().st_size
 
-    def test_rejects_a_value_over_the_ceiling(self):
+    def test_ceiling_is_ten_megabytes(self):
+        """Test the shipped limit, so raising it is a deliberate edit and not a drift."""
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        assert PynappleCodec.MAX_IN_DB_BYTES == 10 * 1024 * 1024
+
+    def test_rejects_a_value_over_the_ceiling(self, monkeypatch):
         """Test that an oversized value is refused with a pointer to the store form.
 
         Without this, a user can put a multi-hundred-MB TsGroup in a longblob and
         only find out when replication lags or a dump balloons.
+
+        The ceiling is lowered for the test rather than built up to: a sample that
+        packs past 10 MB takes ~2 s to generate, and what matters here is that the
+        check fires and says something useful, not the specific number.
         """
         import numpy as np
         import pynapple as nap
 
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
+        monkeypatch.setattr(PynappleCodec, "MAX_IN_DB_BYTES", 1024 * 1024)
         codec = PynappleCodec()
-        # The ceiling is on packed bytes, and `pack` compresses, so the sample must be
-        # incompressible: `np.arange` of the same length squashes to under 300 KB.
+        # `pack` compresses, so the sample must be incompressible: `np.arange` of the
+        # same length squashes to under 300 KB.
         rng = np.random.default_rng(0)
         big = nap.Ts(t=np.sort(rng.uniform(3.87e9, 3.87e9 + 1e4, 400_000)))
         with pytest.raises(DataJointError, match=r"over the 1 MB limit.*<pynapple@"):

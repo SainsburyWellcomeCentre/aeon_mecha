@@ -14,7 +14,7 @@ return DataFrames built from the raw files on disk.
   either of two forms. With a store, a ``.npz`` in a ``protocol: file`` store, with
   a queryable JSON summary. Without one, the same member mapping packed as a
   DataJoint blob in the row — smaller than the file, and atomic with the row, so a
-  rolled-back insert cannot orphan anything. Capped at 1 MB; past that, name a
+  rolled-back insert cannot orphan anything. Capped at 10 MB; past that, name a
   store. ``TsGroup`` decodes through a fast path equivalent to ``nap.load_file``
   but several times quicker; every other stored type goes through ``nap.load_file``
   directly. ``pynapple`` is an optional extra.
@@ -449,10 +449,10 @@ class PynappleCodec(SchemaCodec):
 
     name = "pynapple"
 
-    #: Ceiling for the in-DB form. A longblob holds 4 GB, but large rows bloat the
-    #: InnoDB buffer pool, slow replication and balloon dumps - so the form that
-    #: exists for small values enforces small.
-    MAX_IN_DB_BYTES = 1_048_576
+    #: Ceiling for the in-DB form, on packed bytes. A longblob holds 4 GB, but large
+    #: rows bloat the InnoDB buffer pool, slow replication and balloon dumps - so the
+    #: form that exists for modest values enforces modest.
+    MAX_IN_DB_BYTES = 10_485_760
 
     def get_dtype(self, is_store: bool) -> str:
         """Return ``json`` for ``<pynapple@store>``, ``bytes`` for ``<pynapple>``.

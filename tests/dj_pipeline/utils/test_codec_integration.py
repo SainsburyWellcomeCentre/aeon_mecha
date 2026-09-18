@@ -492,11 +492,18 @@ class TestPynappleInDBIntegration:
         with pytest.raises(dj.DataJointError, match="requires a pynapple object"):
             table.insert1({"rec_id": 4, "data": [1, 2, 3]})
 
-    def test_insert_rejects_oversized_value(self, mock_pynapple_indb_table):
-        """Test that the ceiling fires through a real insert, not only a direct encode."""
+    def test_insert_rejects_oversized_value(self, mock_pynapple_indb_table, monkeypatch):
+        """Test that the ceiling fires through a real insert, not only a direct encode.
+
+        The limit is lowered for the test; generating a sample past the real 10 MB
+        would cost ~2 s for no extra coverage.
+        """
         import datajoint as dj
         import pynapple as nap
 
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        monkeypatch.setattr(PynappleCodec, "MAX_IN_DB_BYTES", 1024 * 1024)
         table, _schema = mock_pynapple_indb_table
         rng = np.random.default_rng(0)
         big = nap.Ts(t=np.sort(rng.uniform(3.87e9, 3.87e9 + 1e4, 400_000)))
