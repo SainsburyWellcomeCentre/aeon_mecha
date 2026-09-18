@@ -91,16 +91,21 @@ class MultiTagView(ViewBase):
     def _get_unit_features(self, unit_id):
         for lbl in self.controller.curation_data["manual_labels"]:
             if lbl["unit_id"] == unit_id:
-                return list(lbl.get("labels", {}).get(TAGS_CATEGORY, []))
+                return list(lbl.get(TAGS_CATEGORY, []))
         return []
 
     def _set_unit_features(self, unit_id, features):
+        # Write the tags flat on the manual_labels entry ({"unit_id": ..., "tags": [...]}),
+        # the same shape Controller.set_label_to_unit uses for "quality". A nested
+        # {"labels": {...}} shape makes CurationModel rebuild the entry from the nested dict
+        # alone and silently drop the flat "quality" key, so a unit carrying both a quality
+        # label and a tag would lose its quality label on save.
         manual_labels = self.controller.curation_data["manual_labels"]
         for lbl in manual_labels:
             if lbl["unit_id"] == unit_id:
-                lbl.setdefault("labels", {})[TAGS_CATEGORY] = features
+                lbl[TAGS_CATEGORY] = features
                 return
-        manual_labels.append({"unit_id": unit_id, "labels": {TAGS_CATEGORY: features}})
+        manual_labels.append({"unit_id": unit_id, TAGS_CATEGORY: features})
 
     def _toggle_tag(self, unit_id, tag, add):
         features = self._get_unit_features(unit_id)
