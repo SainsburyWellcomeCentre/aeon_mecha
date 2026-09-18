@@ -590,45 +590,6 @@ class TestPynappleInDB:
 
         assert len(blob) < reference.stat().st_size
 
-    def test_warn_threshold_is_ten_megabytes(self):
-        """Test the shipped threshold, so changing it is a deliberate edit, not drift."""
-        from aeon.dj_pipeline.utils.codec import PynappleCodec
-
-        assert PynappleCodec.WARN_IN_DB_BYTES == 10 * 1024 * 1024
-
-    def test_warns_but_still_stores_an_oversized_value(self, monkeypatch):
-        """Test that a large value warns loudly and is stored anyway.
-
-        Refusing would kill a working table over one outlier row, fixable only by a
-        schema change plus a migration. The threshold is lowered rather than built up
-        to: a sample past 10 MB costs ~2 s to generate for no extra coverage.
-        """
-        import numpy as np
-        import pynapple as nap
-
-        from aeon.dj_pipeline.utils.codec import PynappleCodec
-
-        monkeypatch.setattr(PynappleCodec, "WARN_IN_DB_BYTES", 1024 * 1024)
-        codec = PynappleCodec()
-        # `pack` compresses, so the sample must be incompressible: `np.arange` of the
-        # same length squashes to under 300 KB.
-        rng = np.random.default_rng(0)
-        big = nap.Ts(t=np.sort(rng.uniform(3.87e9, 3.87e9 + 1e4, 400_000)))
-
-        with pytest.warns(UserWarning, match=r"over the 1 MB advisory threshold.*<pynapple@"):
-            encoded = codec.encode(big, key={}, store_name=None)
-
-        restored = codec.decode(encoded, key={})
-        np.testing.assert_array_equal(restored.t, big.t)
-
-    def test_does_not_warn_under_the_threshold(self, mock_tsgroup, recwarn):
-        """Test that ordinary values stay quiet, so the warning keeps its signal."""
-        from aeon.dj_pipeline.utils.codec import PynappleCodec
-
-        PynappleCodec().encode(mock_tsgroup, key={}, store_name=None)
-
-        assert [w for w in recwarn if "advisory threshold" in str(w.message)] == []
-
     def test_store_form_is_unaffected(self, dj_config_nap, mock_tsgroup):
         """Test that naming a store still writes a file and returns the JSON summary."""
         from aeon.dj_pipeline.utils.codec import PynappleCodec

@@ -490,26 +490,6 @@ class TestPynappleInDBIntegration:
         with pytest.raises(dj.DataJointError, match="requires a pynapple object"):
             table.insert1({"rec_id": 4, "data": [1, 2, 3]})
 
-    def test_insert_warns_but_still_succeeds_when_oversized(self, mock_pynapple_indb_table, monkeypatch):
-        """Test that an oversized insert warns and lands, rather than failing the row.
-
-        The point of warning over capping: the table keeps working. The fetch proves
-        the row is usable, not merely present.
-        """
-        import pynapple as nap
-
-        from aeon.dj_pipeline.utils.codec import PynappleCodec
-
-        monkeypatch.setattr(PynappleCodec, "WARN_IN_DB_BYTES", 1024 * 1024)
-        table, _schema = mock_pynapple_indb_table
-        rng = np.random.default_rng(0)
-        big = nap.Ts(t=np.sort(rng.uniform(3.87e9, 3.87e9 + 1e4, 400_000)))
-
-        with pytest.warns(UserWarning, match="advisory threshold"):
-            table.insert1({"rec_id": 5, "data": big})
-
-        np.testing.assert_array_equal((table & {"rec_id": 5}).fetch1("data").t, big.t)
-
     def test_delete_leaves_nothing_to_collect(self, mock_pynapple_indb_table, mock_tsgroup):
         """Test that deleting the row is the whole cleanup — no external GC needed.
 
