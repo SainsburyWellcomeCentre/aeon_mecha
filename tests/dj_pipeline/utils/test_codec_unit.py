@@ -536,3 +536,90 @@ class TestPynappleMemberRoundTrip:
             np.testing.assert_array_equal(restored[unit].t, mock_tsgroup[unit].t)
         np.testing.assert_array_equal(restored.time_support.values, mock_tsgroup.time_support.values)
         np.testing.assert_allclose(np.asarray(restored.rate), np.asarray(mock_tsgroup.rate))
+
+
+class TestPynappleInDB:
+    """The ``<pynapple>`` form: a DataJoint blob, no store, no file."""
+
+    def test_dtype_differs_by_storage_form(self):
+        """Test that the store form declares json and the in-DB form bytes."""
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        codec = PynappleCodec()
+        assert codec.get_dtype(True) == "json"
+        assert codec.get_dtype(False) == "bytes"
+
+    @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet"])
+    def test_round_trips_without_a_store(self, kind):
+        """Test that encode with no store returns bytes that decode back equal."""
+        import numpy as np
+
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        codec = PynappleCodec()
+        original = _sample_objects()[kind]
+        encoded = codec.encode(original, key={}, store_name=None)
+
+        assert isinstance(encoded, bytes)
+        restored = codec.decode(encoded, key={})
+        assert type(restored).__name__ == kind
+        if kind == "IntervalSet":
+            np.testing.assert_array_equal(restored.start, original.start)
+        else:
+            np.testing.assert_array_equal(restored.t, original.t)
+
+    def test_tsgroup_round_trips_without_a_store(self, mock_tsgroup):
+        """Test that a TsGroup survives the in-DB form exactly, metadata included."""
+        import numpy as np
+
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        codec = PynappleCodec()
+        restored = codec.decode(codec.encode(mock_tsgroup, key={}, store_name=None), key={})
+
+        assert list(restored.index) == list(mock_tsgroup.index)
+        for unit in mock_tsgroup.index:
+            np.testing.assert_array_equal(restored[unit].t, mock_tsgroup[unit].t)
+        np.testing.assert_array_equal(restored.time_support.values, mock_tsgroup.time_support.values)
+
+    def test_in_db_is_smaller_than_the_npz(self, mock_tsgroup, tmp_path):
+        """Test that the blob beats the file form, the reason this form exists."""
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        codec = PynappleCodec()
+        blob = codec.encode(mock_tsgroup, key={}, store_name=None)
+        reference = tmp_path / "ref.npz"
+        mock_tsgroup.save(reference.as_posix())
+
+        assert len(blob) < reference.stat().st_size
+
+    def test_rejects_a_value_over_the_ceiling(self):
+        """Test that an oversized value is refused with a pointer to the store form.
+
+        Without this, a user can put a multi-hundred-MB TsGroup in a longblob and
+        only find out when replication lags or a dump balloons.
+        """
+        import numpy as np
+        import pynapple as nap
+
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        codec = PynappleCodec()
+        # The ceiling is on packed bytes, and `pack` compresses, so the sample must be
+        # incompressible: `np.arange` of the same length squashes to under 300 KB.
+        rng = np.random.default_rng(0)
+        big = nap.Ts(t=np.sort(rng.uniform(3.87e9, 3.87e9 + 1e4, 400_000)))
+        with pytest.raises(DataJointError, match=r"over the 1 MB limit.*<pynapple@"):
+            codec.encode(big, key={}, store_name=None)
+
+    def test_store_form_is_unaffected(self, dj_config_nap, mock_tsgroup):
+        """Test that naming a store still writes a file and returns the JSON summary."""
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        codec = PynappleCodec()
+        key = {"_schema": "s", "_table": "t", "rec_id": 1, "_config": dj_config_nap}
+        stored = codec.encode(mock_tsgroup, key=key, store_name="pynapple_store")
+
+        assert isinstance(stored, dict)
+        assert stored["kind"] == "TsGroup"
+        assert stored["path"].endswith(".npz")

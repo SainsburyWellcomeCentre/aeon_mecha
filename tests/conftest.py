@@ -65,6 +65,7 @@ def mock_dj_for_unit(request):
     _REAL_DJ_SUBMODULES = (
         "datajoint.errors",
         "datajoint.codecs",
+        "datajoint.blob",
         "datajoint.settings",
         "datajoint.storage",
         "datajoint.hash_registry",
