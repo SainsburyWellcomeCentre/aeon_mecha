@@ -10,10 +10,14 @@ return DataFrames built from the raw files on disk.
   NOT apply HARP sync regression — that's exposed via ``OnixImuChunk.synced_df``.
 - ``XArrayNetCDFCodec`` (``<xarray@store>``) — an ``xarray.Dataset`` persisted as a
   NetCDF-4 file in a ``protocol: file`` store, reopened lazily on fetch.
-- ``PynappleCodec`` (``<pynapple@store>``) — a pynapple object persisted as a
-  ``.npz`` in a ``protocol: file`` store. ``TsGroup`` decodes through a fast path
-  equivalent to ``nap.load_file`` but several times quicker; every other type goes
-  through ``nap.load_file`` directly. ``pynapple`` is an optional extra.
+- ``PynappleCodec`` (``<pynapple>``, ``<pynapple@store>``) — a pynapple object in
+  either of two forms. With a store, a ``.npz`` in a ``protocol: file`` store, with
+  a queryable JSON summary. Without one, the same member mapping packed as a
+  DataJoint blob in the row — smaller than the file, and atomic with the row, so a
+  rolled-back insert cannot orphan anything. Capped at 1 MB; past that, name a
+  store. ``TsGroup`` decodes through a fast path equivalent to ``nap.load_file``
+  but several times quicker; every other stored type goes through ``nap.load_file``
+  directly. ``pynapple`` is an optional extra.
 
 The pynapple payload is an uncompressed ``.npz`` by design: one file per value, which
 is what DataJoint's external store tracks. ``savez_compressed`` is 55-70x slower to
@@ -25,6 +29,10 @@ A zip leaves its members byte-unaligned, so nothing here is lazy: ``np.load(mmap
 silently does nothing on one, and a value passed in lazily (a zarr-backed ``TsdFrame``
 built with ``load_array=False``) comes back as a plain ndarray. Laziness would need a
 non-npz backend.
+
+The in-DB form skips the container altogether and stores the members themselves,
+which is why it is the smaller of the two: the npz overhead is a flat ~1.2 KB, and
+a 2-row ``IntervalSet`` is 32 bytes of payload inside it.
 """
 
 import os
