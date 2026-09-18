@@ -422,8 +422,7 @@ class TestPynappleCodecGarbageCollection:
 def mock_pynapple_indb_table(dj_config_integration):
     """Throwaway schema + table with one in-database ``<pynapple>`` column.
 
-    Deliberately takes no store fixture: the point of this form is that no store
-    need be configured at all.
+    Takes no store fixture: the point of this form is that none need be configured.
     """
     import datajoint as dj
 
@@ -449,8 +448,7 @@ class TestPynappleInDBIntegration:
     def test_column_declares_as_a_blob_with_no_store(self, mock_pynapple_indb_table):
         """Test that the column is a real blob column bound to no external store.
 
-        Asserted off the heading rather than ``describe()`` text, so a change in
-        how DataJoint renders declarations cannot silently pass this.
+        Asserted off the heading, not ``describe()`` text, which could change shape.
         """
         table, _schema = mock_pynapple_indb_table
         attr = table.heading.attributes["data"]
@@ -492,29 +490,30 @@ class TestPynappleInDBIntegration:
         with pytest.raises(dj.DataJointError, match="requires a pynapple object"):
             table.insert1({"rec_id": 4, "data": [1, 2, 3]})
 
-    def test_insert_rejects_oversized_value(self, mock_pynapple_indb_table, monkeypatch):
-        """Test that the ceiling fires through a real insert, not only a direct encode.
+    def test_insert_warns_but_still_succeeds_when_oversized(self, mock_pynapple_indb_table, monkeypatch):
+        """Test that an oversized insert warns and lands, rather than failing the row.
 
-        The limit is lowered for the test; generating a sample past the real 10 MB
-        would cost ~2 s for no extra coverage.
+        The point of warning over capping: the table keeps working. The fetch proves
+        the row is usable, not merely present.
         """
-        import datajoint as dj
         import pynapple as nap
 
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
-        monkeypatch.setattr(PynappleCodec, "MAX_IN_DB_BYTES", 1024 * 1024)
+        monkeypatch.setattr(PynappleCodec, "WARN_IN_DB_BYTES", 1024 * 1024)
         table, _schema = mock_pynapple_indb_table
         rng = np.random.default_rng(0)
         big = nap.Ts(t=np.sort(rng.uniform(3.87e9, 3.87e9 + 1e4, 400_000)))
-        with pytest.raises(dj.DataJointError, match="over the 1 MB limit"):
+
+        with pytest.warns(UserWarning, match="advisory threshold"):
             table.insert1({"rec_id": 5, "data": big})
+
+        np.testing.assert_array_equal((table & {"rec_id": 5}).fetch1("data").t, big.t)
 
     def test_delete_leaves_nothing_to_collect(self, mock_pynapple_indb_table, mock_tsgroup):
         """Test that deleting the row is the whole cleanup — no external GC needed.
 
-        This is the correctness argument for the in-DB form: the value lives in the
-        row's transaction, so a delete cannot orphan a file.
+        The value lives in the row's transaction, so a delete cannot orphan a file.
         """
         table, _schema = mock_pynapple_indb_table
         table.insert1({"rec_id": 6, "data": mock_tsgroup})

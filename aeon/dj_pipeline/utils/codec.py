@@ -12,12 +12,11 @@ return DataFrames built from the raw files on disk.
   NetCDF-4 file in a ``protocol: file`` store, reopened lazily on fetch.
 - ``PynappleCodec`` (``<pynapple>``, ``<pynapple@store>``) — a pynapple object in
   either of two forms. With a store, a ``.npz`` in a ``protocol: file`` store, with
-  a queryable JSON summary. Without one, the same member mapping packed as a
-  DataJoint blob in the row — smaller than the file, and atomic with the row, so a
-  rolled-back insert cannot orphan anything. Capped at 10 MB; past that, name a
-  store. ``TsGroup`` decodes through a fast path equivalent to ``nap.load_file``
-  but several times quicker; every other stored type goes through ``nap.load_file``
-  directly. ``pynapple`` is an optional extra.
+  a queryable JSON summary. Without one, the same member mapping packed as a blob
+  in the row — smaller than the file, atomic with it, and warned rather than
+  refused past 10 MB. ``TsGroup`` decodes through a fast path equivalent to
+  ``nap.load_file`` but several times quicker; every other stored type goes through
+  it directly. ``pynapple`` is an optional extra.
 
 The pynapple payload is an uncompressed ``.npz`` by design: one file per value, which
 is what DataJoint's external store tracks. ``savez_compressed`` is 55-70x slower to
@@ -36,6 +35,7 @@ a 2-row ``IntervalSet`` is 32 bytes of payload inside it.
 """
 
 import os
+import warnings
 from typing import Any
 
 import datajoint as dj
@@ -294,10 +294,8 @@ def _narrow_int(values: np.ndarray) -> np.ndarray:
 def _to_members(value: Any) -> dict[str, np.ndarray]:
     """Build the mapping pynapple's ``save()`` hands to ``np.savez``, without a file.
 
-    Every ``save()`` ends in ``np.savez(filename, **members)``, so assembling the
-    same mapping lets the in-DB form skip the npz container entirely - 2-10x
-    smaller, and no filesystem round trip. ``TestPynappleMemberParity`` pins this
-    to pynapple's own output, because it reads ``_metadata`` directly.
+    Lets the in-DB form skip the npz container, 2-10x smaller. Reads ``_metadata``
+    directly, so ``TestPynappleMemberParity`` pins it to pynapple's own output.
     """
     kind = type(value).__name__
     members: dict[str, np.ndarray] = {"type": np.array([kind])}
@@ -368,8 +366,8 @@ def _tsgroup_from_members(members, support, metadata):
 def _from_members(members) -> Any:
     """Rebuild a pynapple object from its npz member mapping.
 
-    Shared by both storage forms: the store codec reads the mapping out of the
-    ``.npz``, the in-DB codec out of the blob.
+    Shared by both forms: the store codec reads it from the ``.npz``, the in-DB
+    codec from the blob.
     """
     import pynapple as nap
 
@@ -431,7 +429,7 @@ class PynappleCodec(SchemaCodec):
     ``put_buffer``/``get_buffer``. Bare ``<pynapple>`` packs the same member
     mapping into the row as a DataJoint blob — smaller than the file it replaces,
     and atomic with the row, so a rolled-back insert cannot orphan anything.
-    Capped at ``MAX_IN_DB_BYTES``; past that, name a store.
+    Warns above ``WARN_IN_DB_BYTES`` but still stores the value.
 
     Domain-agnostic: it round-trips a pynapple object and knows nothing about what
     the object means. ``pynapple`` is an optional extra, imported lazily inside the
@@ -449,17 +447,16 @@ class PynappleCodec(SchemaCodec):
 
     name = "pynapple"
 
-    #: Ceiling for the in-DB form, on packed bytes. A longblob holds 4 GB, but large
-    #: rows bloat the InnoDB buffer pool, slow replication and balloon dumps - so the
-    #: form that exists for modest values enforces modest.
-    MAX_IN_DB_BYTES = 10_485_760
+    #: Warn, never refuse, above this many packed bytes in-DB. Refusing would turn
+    #: one outlier row into a dead table needing a schema change and a migration.
+    #: `max_allowed_packet` is the real hard limit.
+    WARN_IN_DB_BYTES = 10_485_760
 
     def get_dtype(self, is_store: bool) -> str:
         """Return ``json`` for ``<pynapple@store>``, ``bytes`` for ``<pynapple>``.
 
-        ``SchemaCodec`` refuses the non-store form; this codec allows it, because a
-        small object costs more in filesystem and store bookkeeping than it does in
-        bytes. A 2-row IntervalSet is 32 bytes of payload in a 1.2 KB npz.
+        ``SchemaCodec`` refuses the non-store form; a small object costs more in
+        store bookkeeping than in bytes, so this codec allows it.
         """
         return "json" if is_store else "bytes"
 
@@ -510,8 +507,7 @@ class PynappleCodec(SchemaCodec):
     def encode(self, value: Any, *, key: dict | None = None, store_name: str | None = None) -> Any:
         """Write .npz to the store, or pack the members in-row when no store is named.
 
-        ``store_name`` is ``None`` only for a bare ``<pynapple>``; ``<pynapple@>``
-        passes ``""`` for the default store, so the test is against ``None``.
+        ``<pynapple@>`` passes ``""`` for the default store, so the test is ``is None``.
         """
         if store_name is None:
             return self._encode_in_db(value)
@@ -526,22 +522,25 @@ class PynappleCodec(SchemaCodec):
         return {"path": path, "store": store_name, **self._summary(value)}
 
     def _encode_in_db(self, value: Any) -> bytes:
-        """Pack the npz member mapping as a DataJoint blob, refusing oversized values."""
+        """Pack the npz member mapping as a DataJoint blob, warning if it is large."""
         from datajoint.blob import pack
 
         packed = pack(_to_members(value), compress=True)
-        if len(packed) > self.MAX_IN_DB_BYTES:
-            raise DataJointError(
+        if len(packed) > self.WARN_IN_DB_BYTES:
+            warnings.warn(
                 f"<pynapple> in-database value is {len(packed) / 1e6:.1f} MB, over the "
-                f"{self.MAX_IN_DB_BYTES // 1024 // 1024} MB limit; use <pynapple@store> instead"
+                f"{self.WARN_IN_DB_BYTES // 1024 // 1024} MB advisory threshold. It will be "
+                "stored, but a row this large slows replication and inflates dumps; "
+                "<pynapple@store> is the better fit for values this size.",
+                stacklevel=3,
             )
         return packed
 
     def decode(self, stored: Any, *, key: dict | None = None) -> Any:
         """Rebuild from the in-row blob, or reopen the stored .npz.
 
-        ``TsGroup`` takes a faster reconstruction that is equivalent to
-        ``nap.load_file``; every other stored type goes through it directly.
+        ``TsGroup`` takes a faster path equivalent to ``nap.load_file``; every other
+        stored type goes through it directly.
         """
         import pynapple as nap
 

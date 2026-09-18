@@ -385,10 +385,9 @@ class TestPynappleFastPath:
 class TestPynappleMemberParity:
     """``_to_members`` must match what pynapple's own ``save()`` writes.
 
-    It reads ``_metadata``, a private attribute, and mirrors save-path logic that
-    upstream is free to change. This test is the tripwire: it writes a real .npz
-    and compares, so the day pynapple alters its layout, this fails rather than
-    the rows silently becoming unreadable by ``nap.load_file``.
+    It reads the private ``_metadata`` and mirrors save-path logic upstream can
+    change. The tripwire: if pynapple alters its layout, this fails loudly instead
+    of rows quietly becoming unreadable by ``nap.load_file``.
     """
 
     @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet", "TsGroup"])
@@ -427,9 +426,8 @@ class TestPynappleMemberParity:
     def test_does_not_mutate_its_input(self, mock_tsgroup):
         """Test that encoding leaves the caller's object untouched.
 
-        pynapple's ``_metadata.drop`` mutates, so building the TsGroup mapping
-        without a ``.copy()`` first strips ``rate`` from the live object the
-        caller passed in — silently, and only visible on the second use.
+        ``_metadata.drop`` mutates, so skipping ``.copy()`` strips ``rate`` from the
+        caller's live object — silently, and only visible on the second use.
         """
         import numpy as np
 
@@ -445,10 +443,10 @@ class TestPynappleMemberParity:
         np.testing.assert_array_equal(np.asarray(mock_tsgroup.rate), rate_before)
 
     def test_float_members_are_bitwise_identical(self, mock_tsgroup, tmp_path):
-        """Test that float64 members match bit-for-bit, not merely within tolerance.
+        """Test that float64 members match bit-for-bit, not within tolerance.
 
-        The float64 gap at Harp magnitude is 477 ns, so a quantising path would
-        shift spikes within a sample and still pass allclose.
+        The float64 gap at Harp magnitude is 477 ns, so a quantising path would shift
+        spikes within a sample and still pass allclose.
         """
         import numpy as np
 
@@ -521,9 +519,8 @@ class TestPynappleMemberRoundTrip:
     def test_tsgroup_round_trips_with_rate_preserved(self, mock_tsgroup):
         """Test that the rebuilt TsGroup keys, times, support and rate all match.
 
-        ``rate`` is the trap: it is ``n_samples / tot_length(time_support)``, so a
-        member built against its own support rather than the group's gets a
-        plausible but wrong rate, with no error.
+        ``rate`` is ``n_samples / tot_length(time_support)``, so a member built
+        against its own support gets a plausible but wrong rate, with no error.
         """
         import numpy as np
 
@@ -593,35 +590,44 @@ class TestPynappleInDB:
 
         assert len(blob) < reference.stat().st_size
 
-    def test_ceiling_is_ten_megabytes(self):
-        """Test the shipped limit, so raising it is a deliberate edit and not a drift."""
+    def test_warn_threshold_is_ten_megabytes(self):
+        """Test the shipped threshold, so changing it is a deliberate edit, not drift."""
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
-        assert PynappleCodec.MAX_IN_DB_BYTES == 10 * 1024 * 1024
+        assert PynappleCodec.WARN_IN_DB_BYTES == 10 * 1024 * 1024
 
-    def test_rejects_a_value_over_the_ceiling(self, monkeypatch):
-        """Test that an oversized value is refused with a pointer to the store form.
+    def test_warns_but_still_stores_an_oversized_value(self, monkeypatch):
+        """Test that a large value warns loudly and is stored anyway.
 
-        Without this, a user can put a multi-hundred-MB TsGroup in a longblob and
-        only find out when replication lags or a dump balloons.
-
-        The ceiling is lowered for the test rather than built up to: a sample that
-        packs past 10 MB takes ~2 s to generate, and what matters here is that the
-        check fires and says something useful, not the specific number.
+        Refusing would kill a working table over one outlier row, fixable only by a
+        schema change plus a migration. The threshold is lowered rather than built up
+        to: a sample past 10 MB costs ~2 s to generate for no extra coverage.
         """
         import numpy as np
         import pynapple as nap
 
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
-        monkeypatch.setattr(PynappleCodec, "MAX_IN_DB_BYTES", 1024 * 1024)
+        monkeypatch.setattr(PynappleCodec, "WARN_IN_DB_BYTES", 1024 * 1024)
         codec = PynappleCodec()
         # `pack` compresses, so the sample must be incompressible: `np.arange` of the
         # same length squashes to under 300 KB.
         rng = np.random.default_rng(0)
         big = nap.Ts(t=np.sort(rng.uniform(3.87e9, 3.87e9 + 1e4, 400_000)))
-        with pytest.raises(DataJointError, match=r"over the 1 MB limit.*<pynapple@"):
-            codec.encode(big, key={}, store_name=None)
+
+        with pytest.warns(UserWarning, match=r"over the 1 MB advisory threshold.*<pynapple@"):
+            encoded = codec.encode(big, key={}, store_name=None)
+
+        restored = codec.decode(encoded, key={})
+        np.testing.assert_array_equal(restored.t, big.t)
+
+    def test_does_not_warn_under_the_threshold(self, mock_tsgroup, recwarn):
+        """Test that ordinary values stay quiet, so the warning keeps its signal."""
+        from aeon.dj_pipeline.utils.codec import PynappleCodec
+
+        PynappleCodec().encode(mock_tsgroup, key={}, store_name=None)
+
+        assert [w for w in recwarn if "advisory threshold" in str(w.message)] == []
 
     def test_store_form_is_unaffected(self, dj_config_nap, mock_tsgroup):
         """Test that naming a store still writes a file and returns the JSON summary."""
