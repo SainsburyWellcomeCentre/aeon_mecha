@@ -424,6 +424,26 @@ class TestPynappleMemberParity:
             else:
                 np.testing.assert_array_equal(actual, expected, err_msg=f"{kind}.{name}")
 
+    def test_does_not_mutate_its_input(self, mock_tsgroup):
+        """Test that encoding leaves the caller's object untouched.
+
+        pynapple's ``_metadata.drop`` mutates, so building the TsGroup mapping
+        without a ``.copy()`` first strips ``rate`` from the live object the
+        caller passed in — silently, and only visible on the second use.
+        """
+        import numpy as np
+
+        from aeon.dj_pipeline.utils.codec import _to_members
+
+        before = list(mock_tsgroup.metadata_columns)
+        rate_before = np.asarray(mock_tsgroup.rate)
+
+        _to_members(mock_tsgroup)
+        _to_members(mock_tsgroup)  # a second call must work too
+
+        assert list(mock_tsgroup.metadata_columns) == before
+        np.testing.assert_array_equal(np.asarray(mock_tsgroup.rate), rate_before)
+
     def test_float_members_are_bitwise_identical(self, mock_tsgroup, tmp_path):
         """Test that float64 members match bit-for-bit, not merely within tolerance.
 
@@ -446,3 +466,73 @@ class TestPynappleMemberParity:
                     np.ascontiguousarray(produced[name]).view("u8"),
                     np.ascontiguousarray(expected).view("u8"),
                 ), f"{name} is not bitwise identical"
+
+
+class TestPynappleMemberRoundTrip:
+    """``_to_members`` then ``_from_members`` must return an equal object."""
+
+    @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet"])
+    def test_round_trips_each_type(self, kind):
+        """Test that type, times, support and values all survive the mapping."""
+        import numpy as np
+
+        from aeon.dj_pipeline.utils.codec import _from_members, _to_members
+
+        original = _sample_objects()[kind]
+        restored = _from_members(_to_members(original))
+
+        assert type(restored).__name__ == kind
+        if kind == "IntervalSet":
+            np.testing.assert_array_equal(restored.start, original.start)
+            np.testing.assert_array_equal(restored.end, original.end)
+        else:
+            np.testing.assert_array_equal(restored.t, original.t)
+            np.testing.assert_array_equal(restored.time_support.values, original.time_support.values)
+        if hasattr(original, "values"):
+            np.testing.assert_array_equal(restored.values, original.values)
+
+    def test_tsdframe_keeps_columns_and_metadata(self):
+        """Test that column labels and the pickled metadata both survive."""
+        import numpy as np
+
+        from aeon.dj_pipeline.utils.codec import _from_members, _to_members
+
+        original = _sample_objects()["TsdFrame"]
+        restored = _from_members(_to_members(original))
+
+        assert list(restored.columns) == list(original.columns)
+        np.testing.assert_array_equal(
+            np.asarray(restored.get_info("region")), np.asarray(original.get_info("region"))
+        )
+
+    def test_intervalset_keeps_metadata(self):
+        """Test that IntervalSet metadata survives, the pickled half of the mapping."""
+        import numpy as np
+
+        from aeon.dj_pipeline.utils.codec import _from_members, _to_members
+
+        original = _sample_objects()["IntervalSet"]
+        restored = _from_members(_to_members(original))
+
+        np.testing.assert_array_equal(
+            np.asarray(restored.get_info("tag")), np.asarray(original.get_info("tag"))
+        )
+
+    def test_tsgroup_round_trips_with_rate_preserved(self, mock_tsgroup):
+        """Test that the rebuilt TsGroup keys, times, support and rate all match.
+
+        ``rate`` is the trap: it is ``n_samples / tot_length(time_support)``, so a
+        member built against its own support rather than the group's gets a
+        plausible but wrong rate, with no error.
+        """
+        import numpy as np
+
+        from aeon.dj_pipeline.utils.codec import _from_members, _to_members
+
+        restored = _from_members(_to_members(mock_tsgroup))
+
+        assert list(restored.index) == list(mock_tsgroup.index)
+        for unit in mock_tsgroup.index:
+            np.testing.assert_array_equal(restored[unit].t, mock_tsgroup[unit].t)
+        np.testing.assert_array_equal(restored.time_support.values, mock_tsgroup.time_support.values)
+        np.testing.assert_allclose(np.asarray(restored.rate), np.asarray(mock_tsgroup.rate))

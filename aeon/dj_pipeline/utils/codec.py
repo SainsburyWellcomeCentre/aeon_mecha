@@ -311,7 +311,9 @@ def _to_members(value: Any) -> dict[str, np.ndarray]:
         members["index"] = np.concatenate(index) if index else np.empty(0, dtype=np.int64)
         members["keys"] = np.asarray(value.index, dtype=np.int64)
         # `rate` is derived from the support, so pynapple drops it before writing.
-        members["_metadata"] = np.array(dict(value._metadata.drop("rate")), dtype=object)
+        # `.copy()` is load-bearing: `drop` mutates, and without it encoding would
+        # strip `rate` from the caller's live object.
+        members["_metadata"] = np.array(dict(value._metadata.copy().drop("rate")), dtype=object)
         return members
 
     members["t"] = np.asarray(value.t)
@@ -323,8 +325,8 @@ def _to_members(value: Any) -> dict[str, np.ndarray]:
     return members
 
 
-def _tsgroup_from_npz(local_path: str):
-    """Rebuild a TsGroup from a pynapple .npz without the per-unit mask loop.
+def _tsgroup_from_members(members, support, metadata):
+    """Rebuild a TsGroup from its npz members without the per-unit mask loop.
 
     ``TsGroup._from_npz_reader`` runs ``index == key`` once per unit, O(units x
     events); one stable argsort plus offset slicing is O(n log n). Bit-identical,
@@ -333,14 +335,9 @@ def _tsgroup_from_npz(local_path: str):
     """
     import pynapple as nap
 
-    with np.load(local_path, allow_pickle=True) as npz:
-        names = set(npz.files)
-        times, index, keys = npz["t"], npz["index"], npz["keys"]
-        start, end = npz["start"], npz["end"]
-        values = npz["d"] if "d" in names else None
-        metadata = npz["_metadata"].item() if "_metadata" in names else {}
+    times, index, keys = members["t"], members["index"], members["keys"]
+    values = members.get("d")
 
-    support = nap.IntervalSet(start=start, end=end)
     order = np.argsort(_narrow_int(index), kind="stable")  # stable keeps per-unit time order
     times = times[order]
     index = index[order]
@@ -358,6 +355,47 @@ def _tsgroup_from_npz(local_path: str):
     # Members already carry the group support, so bypass_check is safe. Passing it
     # without that would compute `rate` from each member's own support instead.
     return nap.TsGroup(data, time_support=support, bypass_check=True, metadata=metadata)
+
+
+def _from_members(members) -> Any:
+    """Rebuild a pynapple object from its npz member mapping.
+
+    Shared by both storage forms: the store codec reads the mapping out of the
+    ``.npz``, the in-DB codec out of the blob.
+    """
+    import pynapple as nap
+
+    kind = str(np.asarray(members["type"]).ravel()[0])
+    metadata = members["_metadata"].item() if "_metadata" in members else {}
+    start, end = members["start"], members["end"]
+
+    if kind == "IntervalSet":
+        return nap.IntervalSet(start=start, end=end, metadata=metadata)
+
+    support = nap.IntervalSet(start=start, end=end)
+    if kind == "TsGroup":
+        return _tsgroup_from_members(members, support, metadata)
+    if kind == "Ts":
+        return nap.Ts(t=members["t"], time_support=support)
+    if kind == "TsdFrame":
+        return nap.TsdFrame(
+            t=members["t"],
+            d=members["d"],
+            time_support=support,
+            columns=list(members["columns"]),
+            metadata=metadata,
+        )
+    if kind in ("Tsd", "TsdTensor"):
+        cls = nap.Tsd if kind == "Tsd" else nap.TsdTensor
+        return cls(t=members["t"], d=members["d"], time_support=support)
+    raise DataJointError(f"<pynapple> cannot rebuild unknown type {kind!r}")
+
+
+def _tsgroup_from_npz(local_path: str):
+    """Rebuild a TsGroup from a pynapple ``.npz``, via the shared member path."""
+    with np.load(local_path, allow_pickle=True) as npz:
+        members = {name: npz[name] for name in npz.files}
+    return _from_members(members)
 
 
 _SUMMARY_EXTRAS = {
