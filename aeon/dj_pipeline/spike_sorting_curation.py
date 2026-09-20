@@ -6,8 +6,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import datajoint as dj
+import numpy as np
+import pandas as pd
 
-from aeon.dj_pipeline import get_schema_name, spike_sorting
+from aeon.dj_pipeline import ephys, get_schema_name, spike_sorting
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import resolve_analyzer_dir
 
@@ -51,8 +53,11 @@ class ManualCuration(dj.Manual):
 
 @schema
 class OfficialCuration(dj.Manual):
-    definition = """  # One final/official curation for a SortedSpikes
-    -> spike_sorting.SortedSpikes
+    definition = """  # One final/official curation for a block
+    # Keyed on PostProcessing (not SortedSpikes, which is 1:1 with it and has the same primary key)
+    # so that applying a curation - which deletes and re-populates SortedSpikes - does not
+    # cascade-delete this record or the ApplyOfficialCuration that depends on it.
+    -> spike_sorting.PostProcessing
     ---
     -> ManualCuration
     """
@@ -84,11 +89,15 @@ class ApplyOfficialCuration(dj.Imported):
         execution_time = datetime.now(UTC)
 
         # Get curation_id from OfficialCuration entry (it's in attributes, not primary key)
-        # The key only contains SortedSpikes primary key fields, not attributes
+        # The key only contains the block's primary key fields, not attributes
         curation_id = (OfficialCuration & key).fetch1("curation_id")
 
         # Auto-approved curation: no manual curation file, based on raw sorting
-        has_curation_file = bool(ManualCuration.File & key & {"curation_id": curation_id})
+        has_curation_file = bool(
+            ManualCuration.File
+            & key
+            & {"curation_id": curation_id, "file_name": f"curation_data_id{curation_id}.json"}
+        )
         if not has_curation_file:
             parent_curation_id = (ManualCuration & key & {"curation_id": curation_id}).fetch1(
                 "parent_curation_id"
@@ -113,9 +122,19 @@ class ApplyOfficialCuration(dj.Imported):
                 )
                 return
 
-        # Get the curation file path
+        # Get the curation file path. Must restrict by file_name - ManualCuration.File also
+        # holds a "curation_applied_analyzer" row (written later in this same function) for
+        # any block that has ever had ApplyOfficialCuration run on it before, so on a
+        # revert-then-reapply both rows already exist here and fetch1 without this filter
+        # raises "2 tuples found".
         curation_file_path = Path(
-            (ManualCuration.File & key & {"curation_id": curation_id}).fetch1("file").full_path
+            (
+                ManualCuration.File
+                & key
+                & {"curation_id": curation_id, "file_name": f"curation_data_id{curation_id}.json"}
+            )
+            .fetch1("file")
+            .full_path
         )
 
         if not curation_file_path.exists():
@@ -127,6 +146,12 @@ class ApplyOfficialCuration(dj.Imported):
         # Load curation dictionary
         with open(curation_file_path) as f:
             curation_dict = json.load(f)
+
+        # Units manually labeled "noise" are kept, not deleted: apply_curation() runs on the
+        # curation exactly as saved, so noise units survive into the curated analyzer carrying
+        # their "quality"="noise" property, which SortedSpikes.make() writes into
+        # SortedSpikes.Unit.unit_quality on repopulation. They are held out of unit matching instead
+        # (see _load_block_unit_spike_trains in spike_sorting.py), not deleted here.
 
         # Load original sorting analyzer
         analyzer_output_dir = _get_analyzer_dir_from_key(key)
@@ -154,14 +179,20 @@ class ApplyOfficialCuration(dj.Imported):
         # Save curated analyzer to dedicated folder
         # Keep raw analyzer in sorting_analyzer, curated in sorting_analyzer_curated_id{curation_id}
         curated_analyzer_dir = output_dir / f"sorting_analyzer_curated_id{curation_id}"
-        logger.info(f"Saving curated analyzer to: {curated_analyzer_dir}")
         params = (spike_sorting.SortingParamSet & key).fetch1("params")
         save_format = params.get("save_format", "zarr")
         if save_format == "zarr":
+            # save_as(format="zarr") appends .zarr internally (clean_zarr_folder_name) -
+            # resolve it here too so the exists-check/insert below match what's really on disk.
+            from spikeinterface.core.core_tools import clean_zarr_folder_name
+
+            curated_analyzer_dir = clean_zarr_folder_name(curated_analyzer_dir)
+            logger.info(f"Saving curated analyzer to: {curated_analyzer_dir}")
             if curated_analyzer_dir.exists():
                 shutil.rmtree(curated_analyzer_dir)
             curated_analyzer.save_as(format="zarr", folder=curated_analyzer_dir)
         else:
+            logger.info(f"Saving curated analyzer to: {curated_analyzer_dir}")
             curated_analyzer.save(folder=curated_analyzer_dir, overwrite=True)
 
         # Store the applied analyzer directory path in ManualCuration.File
@@ -211,10 +242,16 @@ class ApplyOfficialCuration(dj.Imported):
         # handles the unit matching cleanup before we get here.
         if current_curation_id == -1:
             logger.info("Deleting old SortedSpikes (curation_id=-1) and downstream tables...")
-            (spike_sorting.SortedSpikes & key).delete(safemode=False)
-            logger.info("Deleted SortedSpikes (downstream tables auto-deleted by DataJoint)")
+            (spike_sorting.SortedSpikes & key).delete(prompt=False)
+            # Cascade reaches only SortedSpikes' downstream (Waveform, SortingQuality, SyncedSpikes,
+            # UnitMatching). OfficialCuration and this ApplyOfficialCuration are keyed on
+            # PostProcessing, not SortedSpikes, so they survive - which is what lets us record the
+            # apply below and then rebuild SortedSpikes separately via SortedSpikes.populate().
+            logger.info("Deleted SortedSpikes and its downstream tables (curation records preserved).")
 
-        # Insert ApplyOfficialCuration entry
+        # Insert ApplyOfficialCuration entry. SortedSpikes is intentionally left deleted here; the
+        # curated analyzer is on disk and SortedSpikes.make() rebuilds from it (reading the manual
+        # quality labels into unit_quality) on the next SortedSpikes.populate().
         self.insert1(
             {
                 **key,
@@ -233,9 +270,11 @@ class ApplyOfficialCuration(dj.Imported):
         )
 
         logger.info(
-            "Run .populate() on spike_sorting.SortedSpikes and downstream tables to load the curated "
-            "sorting results into the pipeline."
+            "Run SortedSpikes.populate() to rebuild it from the curated analyzer, then .populate() "
+            "the downstream tables (SyncedSpikes, etc.) to continue the pipeline."
         )
+
+
 
 
 # Helper functions for curation workflows
@@ -260,7 +299,13 @@ def _get_analyzer_dir_from_key(key: dict) -> Path:
     return resolve_analyzer_dir(output_dir)
 
 
-def launch_spikeinterface_gui(key: dict, parent_curation_id: int | None = None) -> None:
+def launch_spikeinterface_gui(
+    key: dict,
+    parent_curation_id: int | None = None,
+    layout: dict | None = None,
+    label_definitions: dict | None = None,
+    with_traces: bool = True,
+) -> None:
     """Launch SpikeInterface GUI for manual spike sorting curation.
 
     Args:
@@ -273,7 +318,19 @@ def launch_spikeinterface_gui(key: dict, parent_curation_id: int | None = None) 
         parent_curation_id: Optional curation_id to base this curation on. If provided,
             the curation_data.json file will be initialized from the specified curation.
             If None, starts from the raw sorting results.
-    """
+        layout: Optional custom view layout dict to pass to spikeinterface_gui's
+            run_mainwindow(). If None, the GUI's default layout is used.
+        label_definitions: Optional custom label categories to pass to spikeinterface_gui's
+            run_mainwindow(). This replaces the built-in defaults entirely (it does not
+            merge with them), and only takes effect for blocks with no curation_data.json /
+            zarr curation attrs already saved - existing saved curations keep whatever
+            label_definitions they were saved with. If None, the GUI's defaults are used.
+        with_traces: If False, drops the "trace"/"tracemap" views (regardless of whether
+            they're in layout) and stops the waveform view from overlaying live traces, so
+            the raw recording is never accessed. Useful for very long blocks, where the
+            recording's binary chunk files can otherwise be a major contributor to hitting
+            the OS's open-file limit. Default True (matches spikeinterface_gui's default).
+        """
     import shutil
 
     import spikeinterface as si
@@ -282,7 +339,18 @@ def launch_spikeinterface_gui(key: dict, parent_curation_id: int | None = None) 
 
     # Handle parent curation if specified
     gui_dir = analyzer_dir / "spikeinterface_gui"
-    gui_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        gui_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError as e:
+        raise PermissionError(
+            f"No permission to create directory: {gui_dir}"
+        ) from e
+    except OSError as e:
+        raise OSError(
+            f"Failed to create directory {gui_dir}: {e}"
+        ) from e
+
     curation_data_file = gui_dir / "curation_data.json"
     metadata_file = gui_dir / "curation_metadata.json"
 
@@ -294,8 +362,20 @@ def launch_spikeinterface_gui(key: dict, parent_curation_id: int | None = None) 
                 f"Parent curation with curation_id={parent_curation_id} not found for this sorting task."
             )
 
-        # Get the parent curation file path
-        parent_file = Path((ManualCuration.File & parent_curation_key).fetch1("file").full_path)
+        # Get the parent curation file path. Name the file explicitly: ManualCuration.File is a
+        # list of every file for a curation - the curation JSON here, plus the
+        # "curation_applied_analyzer" pointer ApplyOfficialCuration writes under the same
+        # curation_id - so a fetch1 must say which one it wants, or it raises "2 tuples found"
+        # for any parent that has already been applied.
+        parent_file = Path(
+            (
+                ManualCuration.File
+                & parent_curation_key
+                & {"file_name": f"curation_data_id{parent_curation_id}.json"}
+            )
+            .fetch1("file")
+            .full_path
+        )
 
         if not parent_file.exists():
             raise FileNotFoundError(
@@ -345,15 +425,74 @@ def launch_spikeinterface_gui(key: dict, parent_curation_id: int | None = None) 
             "GUI will OVERWRITE the existing curation_data.json file with your new additions."
         )
 
-    # Load sorting analyzer
-    sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_dir)
+    # Load sorting analyzer. Load extensions one at a time (rather than
+    # load_sorting_analyzer()'s default all-or-nothing load_extensions=True) and track
+    # any that fail or come back empty, since a single bad extension (e.g. a numpy
+    # version mismatch baked into a pickled object, or data that silently failed to
+    # save - both seen in practice) would otherwise abort the entire GUI launch, or
+    # crash a specific view later. A failed/empty extension is passed to
+    # run_mainwindow's skip_extensions (so Controller doesn't retry loading it - it
+    # calls analyzer.get_extension() itself on startup) AND used to drop any view whose
+    # _depend_on needs it from the layout, since skip_extensions alone only gates the
+    # two extensions Controller special-cases (waveforms, principal_components) - every
+    # other view is still constructed as long as the extension is merely *declared* on
+    # disk, regardless of whether its data actually loaded.
+    sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_dir, load_extensions=False)
+    failed_extensions = []
+    for extension_name in sorting_analyzer.get_saved_extension_names():
+        try:
+            sorting_analyzer.load_extension(extension_name)
+            if len(sorting_analyzer.extensions[extension_name].data) == 0:
+                raise ValueError("extension loaded with no data - should be re-computed")
+        except Exception as e:
+            failed_extensions.append(extension_name)
+            logger.warning(
+                f"Skipping extension '{extension_name}' - failed to load "
+                f"(likely computed in an incompatible environment, or incompletely "
+                f"saved): {type(e).__name__}: {e}"
+            )
+
+    if failed_extensions:
+        from spikeinterface_gui.layout_presets import get_layout_description
+        from spikeinterface_gui.viewlist import get_all_possible_views
+
+        # resolve the effective layout dict now (layout may be None, a dict, or a
+        # path - same resolution run_mainwindow does internally) so it can be filtered
+        # regardless of which form was passed in.
+        layout_dict = get_layout_description(None, layout=layout)
+        possible_class_views = get_all_possible_views()
+        dropped_views = []
+        filtered_layout = {}
+        for zone, view_names in layout_dict.items():
+            kept = []
+            for view_name in view_names:
+                depend_on = possible_class_views[view_name]._depend_on
+                if depend_on is not None and any(ext in failed_extensions for ext in depend_on):
+                    dropped_views.append(view_name)
+                else:
+                    kept.append(view_name)
+            filtered_layout[zone] = kept
+        layout = filtered_layout
+        if dropped_views:
+            logger.warning(
+                f"Dropping view(s) {dropped_views} from the layout - they depend on "
+                f"extension(s) that failed to load: {failed_extensions}"
+            )
 
     # Launch GUI
     # Try spikeinterface_gui first, fall back to built-in viewer if available
     try:
         from spikeinterface_gui import run_mainwindow
 
-        run_mainwindow(sorting_analyzer, mode="desktop", curation=True)
+        run_mainwindow(
+            sorting_analyzer,
+            mode="desktop",
+            curation=True,
+            layout=layout,
+            label_definitions=label_definitions,
+            skip_extensions=failed_extensions or None,
+            with_traces=with_traces,
+        )
     except ImportError:
         # Fallback to built-in viewer if spikeinterface_gui is not available
         si.view_sorting_analyzer(sorting_analyzer)
@@ -381,48 +520,66 @@ def save_manual_curation(key: dict, description: str = "") -> int:
         The curation_id assigned to the saved curation.
     """
     analyzer_dir = _get_analyzer_dir_from_key(key)
+    gui_dir = analyzer_dir / "spikeinterface_gui"
+    is_zarr = analyzer_dir.name.endswith(".zarr")
 
-    # Path to curation_data.json file
-    curation_data_file = analyzer_dir / "spikeinterface_gui" / "curation_data.json"
+    # ManualCuration's insert needs the *complete* primary key (adds subject, probe_type,
+    # electrode_config_name, etc. via -> SpikeSorting), not just the sorting-task fields
+    # documented as the `key` argument above - resolve it here rather than assuming the
+    # caller already has it (a partial key works fine for restrictions/filters below, just
+    # not for insert1).
+    full_key = (spike_sorting.SpikeSorting & key).fetch1("KEY")
 
-    if not curation_data_file.exists():
-        raise FileNotFoundError(
-            f"Curation data file not found: {curation_data_file}\n"
-            f"Please ensure you have saved your curation in the SI GUI using the 'Save in analyzer' button."
-        )
+    # Load the curation_data dict saved by the SI GUI's "Save in analyzer" button. For
+    # binary_folder analyzers this is a plain curation_data.json file; for zarr analyzers
+    # (Controller.save_curation_in_analyzer's zarr branch) it's stored in the zarr group's
+    # .zattrs under a "curation_data" key instead - there is no curation_data.json at all.
+    if is_zarr:
+        import zarr
+
+        curation_data = None
+        if gui_dir.exists():
+            zarr_root = zarr.open(str(analyzer_dir), mode="r")
+            if "spikeinterface_gui" in zarr_root.keys():
+                curation_data = zarr_root["spikeinterface_gui"].attrs.get("curation_data")
+        if curation_data is None:
+            raise FileNotFoundError(
+                f"No curation_data found in zarr attrs at {gui_dir}/.zattrs\n"
+                f"Please ensure you have saved your curation in the SI GUI using the 'Save in analyzer' button."
+            )
+    else:
+        curation_data_file = gui_dir / "curation_data.json"
+        if not curation_data_file.exists():
+            raise FileNotFoundError(
+                f"Curation data file not found: {curation_data_file}\n"
+                f"Please ensure you have saved your curation in the SI GUI using the 'Save in analyzer' button."
+            )
+        with open(curation_data_file) as f:
+            curation_data = json.load(f)
 
     # Find the next available curation_id
     existing_ids = (ManualCuration & key).to_arrays("curation_id")
     next_curation_id = max(existing_ids) + 1 if len(existing_ids) > 0 else 1
 
-    # Copy curation_data.json with curation_id suffix
+    # Write a versioned snapshot as its own JSON file - needed regardless of source format,
+    # since ManualCuration.File tracks an actual file on disk (filepath@dj_store).
     curated_file_name = f"curation_data_id{next_curation_id}.json"
-    curated_file_path = curation_data_file.parent / curated_file_name
+    curated_file_path = gui_dir / curated_file_name
+    with open(curated_file_path, "w") as f:
+        json.dump(curation_data, f, indent=4)
 
-    # Copy the file first (as a safety measure)
-    shutil.copy2(curation_data_file, curated_file_path)
-
-    # Verify the copy was successful before deleting the original
+    # Verify the write was successful and valid before clearing the original
     if not curated_file_path.exists():
-        raise RuntimeError(
-            f"Failed to copy curation file. Original file preserved at: {curation_data_file}"
-        )
-
-    # Verify the copied file is valid JSON
+        raise RuntimeError(f"Failed to write curation snapshot to {curated_file_path}")
     try:
         with open(curated_file_path) as f:
             json.load(f)  # Verify it's valid JSON
     except json.JSONDecodeError as e:
-        raise RuntimeError(
-            f"Copied curation file is not valid JSON.\nOriginal file preserved at: {curation_data_file}"
-        ) from e
+        raise RuntimeError(f"Written curation snapshot is not valid JSON: {curated_file_path}") from e
 
-    # Now safe to delete the original file
-    curation_data_file.unlink()
-    logger.info(f"Deleted original curation_data.json (saved as {curated_file_name})")
-
-    # Read parent_curation_id from metadata file if it exists
-    metadata_file = curation_data_file.parent / "curation_metadata.json"
+    # Read parent_curation_id from metadata file if it exists (plain file, same location
+    # for both formats - it lives in the spikeinterface_gui directory either way)
+    metadata_file = gui_dir / "curation_metadata.json"
     parent_curation_id = -1  # Default: based on raw sorting results
     if metadata_file.exists():
         try:
@@ -437,28 +594,42 @@ def save_manual_curation(key: dict, description: str = "") -> int:
             )
             parent_curation_id = -1
 
-    # Prepare ManualCuration entry
+    # Insert into ManualCuration/ManualCuration.File *before* clearing the live copy below:
+    # if this fails (e.g. a schema/connection issue), the live curation_data is still intact
+    # and save_manual_curation() can just be retried, rather than leaving an orphaned
+    # snapshot file on disk with no way to reconstruct it from the (already-cleared) source.
+    #
+    # Wrap both inserts in one transaction so the master and its File part land together or
+    # not at all. This is a standalone function, not a table make(), so it gets none of the
+    # autopopulate framework's automatic per-make() transaction - without this, a failure
+    # between the two inserts would leave a ManualCuration row with no File row behind.
     curation_datetime = datetime.now(UTC)
     curation_entry = {
-        **key,
+        **full_key,
         "curation_id": next_curation_id,
         "curation_datetime": curation_datetime,
         "parent_curation_id": parent_curation_id,
         "curation_method": "SpikeInterface",
         "description": description,
     }
-
-    # Insert into ManualCuration table
-    ManualCuration.insert1(curation_entry)
-
-    # Insert the curated file into ManualCuration.File
     file_entry = {
-        **key,
+        **full_key,
         "curation_id": next_curation_id,
         "file_name": curated_file_name,
         "file": curated_file_path,
     }
-    ManualCuration.File.insert1(file_entry)
+    with ManualCuration.connection.transaction:
+        ManualCuration.insert1(curation_entry)
+        ManualCuration.File.insert1(file_entry)
+
+    # Now safe to clear the original, live-editable copy
+    if is_zarr:
+        zarr_root_rw = zarr.open(str(analyzer_dir), mode="r+")
+        del zarr_root_rw["spikeinterface_gui"].attrs["curation_data"]
+        logger.info(f"Cleared curation_data from zarr attrs (saved as {curated_file_name})")
+    else:
+        curation_data_file.unlink()
+        logger.info(f"Deleted original curation_data.json (saved as {curated_file_name})")
 
     # Clean up metadata file after successful save (metadata is now in database)
     if metadata_file.exists():
@@ -503,6 +674,41 @@ def make_curation_official(key: dict, curation_id: int) -> None:
         else:
             logger.info(f"Official curation with curation_id={curation_id} already exists.")
             return
+
+    # Gate: every unit the curator kept must carry a manual quality label, so noise-exclusion and
+    # downstream analysis see a complete picture. Units the curator removed, merged, or split are
+    # considered handled and don't need a standalone label. Checked here (when promoting to official)
+    # so an incomplete curation is refused before any apply work happens.
+    curation_file = Path(
+        (
+            ManualCuration.File
+            & sorted_spikes_key
+            & {"curation_id": curation_id, "file_name": f"curation_data_id{curation_id}.json"}
+        )
+        .fetch1("file")
+        .full_path
+    )
+    with open(curation_file) as f:
+        curation_dict = json.load(f)
+    labeled = {
+        lbl["unit_id"]
+        for lbl in curation_dict.get("manual_labels", [])
+        if lbl.get("labels", {}).get("quality")
+    }
+    handled = set(curation_dict.get("removed", []))
+    for merge_key in ("merges", "merge_unit_groups"):
+        for group in curation_dict.get(merge_key, []) or []:
+            handled.update(group)
+    for split_key in ("splits", "split_units"):
+        handled.update(curation_dict.get(split_key, {}) or {})
+    raw_unit_ids = {int(u) for u in (spike_sorting.SortedSpikes.Unit & sorted_spikes_key).fetch("unit")}
+    unlabeled = raw_unit_ids - labeled - handled
+    if unlabeled:
+        raise ValueError(
+            f"Curation {curation_id} can't be made official: {len(unlabeled)} unit(s) have no quality "
+            f"label: {sorted(unlabeled)}. Label every unit (good/mua/noise) in the GUI before making "
+            f"the curation official."
+        )
 
     # Create OfficialCuration entry
     # sorted_spikes_key already contains SpikeSorting fields (through inheritance)
@@ -551,7 +757,7 @@ def restore_raw_sorting(key: dict) -> None:
 
     # Step 1: Delete OfficialCuration entry (cascades to ApplyOfficialCuration)
     logger.info("Deleting OfficialCuration entry...")
-    official_curation.delete(safemode=False)
+    official_curation.delete(prompt=False)
     logger.info("OfficialCuration and ApplyOfficialCuration entries deleted.")
 
     # Step 2: Delete UnitMatching for this block
@@ -560,7 +766,7 @@ def restore_raw_sorting(key: dict) -> None:
     if unit_matching_entries:
         n_um = len(unit_matching_entries)
         logger.info(f"Deleting {n_um} UnitMatching entries for this block...")
-        unit_matching_entries.delete(safemode=False)
+        unit_matching_entries.delete(prompt=False)
         logger.info("UnitMatching entries deleted (cascaded to Unit and Spikes parts).")
 
     # Step 3: Delete orphaned GlobalUnit entries
@@ -570,7 +776,7 @@ def restore_raw_sorting(key: dict) -> None:
     for gu_key in (spike_sorting.GlobalUnit & insertion_key).keys():  # noqa: SIM118
         if len(spike_sorting.UnitMatching.Unit & gu_key) == 0:
             logger.info(f"Deleting orphaned GlobalUnit {gu_key['global_unit']}...")
-            (spike_sorting.GlobalUnit & gu_key).delete(safemode=False)
+            (spike_sorting.GlobalUnit & gu_key).delete(prompt=False)
             n_orphans += 1
     if n_orphans:
         logger.info(f"Deleted {n_orphans} orphaned GlobalUnit entries.")
@@ -579,7 +785,7 @@ def restore_raw_sorting(key: dict) -> None:
     sorted_spikes_entry = spike_sorting.SortedSpikes & key
     if sorted_spikes_entry:
         logger.info("Deleting SortedSpikes entry and downstream tables...")
-        sorted_spikes_entry.delete(safemode=False)
+        sorted_spikes_entry.delete(prompt=False)
         logger.info(
             "SortedSpikes and downstream tables deleted.\n"
             "Next steps:\n"
