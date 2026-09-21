@@ -1100,7 +1100,8 @@ class SyncedSpikes(dj.Imported):
 
         Process:
         1. Load sync models for ONIX→HARP timestamp conversion
-        2. Load ONIX clock data from all ephys chunks in the block
+        2. Load ONIX clock data from all ephys chunks in the block, with chunk boundaries
+           taken from the AmplifierData sample counts the sorter saw
         3. For each unit's spike indices:
            - Map indices to corresponding ephys chunks
            - Convert indices to ONIX timestamps using clock data
@@ -1109,7 +1110,14 @@ class SyncedSpikes(dj.Imported):
 
         Args:
             key: Dictionary containing sorting task identifiers
+
+        Raises:
+            ValueError: If a Clock file is more than 1 s shorter than its AmplifierData file,
+                or if the AmplifierData files no longer add up to the recording that was sorted.
         """
+        import spikeinterface as si
+        import spikeinterface.extractors as se
+
         # Load ephys sync models
         chunk_windows = defaultdict(list)  # chunk_start -> its linked (onix_ts_start, onix_ts_end, model)
         with tempfile.TemporaryDirectory() as tempdir, dj.config.override(download_path=tempdir):
@@ -1131,12 +1139,60 @@ class SyncedSpikes(dj.Imported):
         ephys_files = [r["file_path"] for r in _clock_rows]
         dir_types = [r["directory_type"] for r in _clock_rows]
 
-        onix_times = []
+        # Spike indices count samples of the AmplifierData files concatenated in PreProcessing, so
+        # the chunk boundaries come from those files, not from the Clock files. They differ when an
+        # amplifier file lost its tail e.g. due to a copying error.
+        # Its samples still start at Clock[0], so sample k of a chunk sits at Clock[k]. A Clock file
+        # that lost its tail instead is extrapolated at its own tick rate, by at most 1 s.
+        fs_hz = 30e3  # Neuropixels 2.0, as in PreProcessing
+        max_clock_extrapolation = int(1.0 * fs_hz)  # samples
+        num_channels = len(ephys.ElectrodeConfig.Electrode & key)  # as in PreProcessing
+        onix_times, amp_lengths = [], []
         for f, d in zip(ephys_files, dir_types, strict=True):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
             onix_ts = np.memmap(ephys_dir / f, mode="r", dtype=np.uint64)
+            amp_file = ephys_dir / f.replace("Clock", "AmplifierData")
+            amp_len = se.read_binary(
+                amp_file, sampling_frequency=fs_hz, dtype=np.uint16, num_channels=num_channels
+            ).get_num_samples()
+            n_missing = amp_len - len(onix_ts)  # > 0: Clock file short, < 0: AmplifierData file short
+            if n_missing < 0:
+                logger.warning(
+                    f"{amp_file.name} has {-n_missing} fewer samples ({-n_missing / fs_hz:.3f} s) than "
+                    f"its Clock file: amplifier data were lost at the end of the file."
+                )
+            elif n_missing > 0:
+                if n_missing > max_clock_extrapolation:
+                    raise ValueError(
+                        f"Clock file {f} has {n_missing} fewer samples ({n_missing / fs_hz:.3f} s) "
+                        f"than its AmplifierData file, more than the {max_clock_extrapolation / fs_hz:g} s "
+                        f"the clock may be extrapolated over."
+                    )
+                logger.warning(
+                    f"Clock file {f} is too short: it has {n_missing} fewer samples "
+                    f"({n_missing / fs_hz:.3f} s) than its AmplifierData file (clock data lost at the "
+                    f"end of the file). Extrapolating the clock linearly over the missing samples."
+                )
+                tail = onix_ts[-max_clock_extrapolation:]  # the last second sets the tick rate
+                ticks_per_sample = (float(tail[-1]) - float(tail[0])) / (len(tail) - 1)
+                extra = np.round(ticks_per_sample * np.arange(1, n_missing + 1)).astype(np.uint64)
+                onix_ts = np.concatenate([onix_ts, tail[-1] + extra])
             onix_times.append(onix_ts)
-        onix_lengths = np.cumsum([len(s) for s in onix_times])
+            amp_lengths.append(amp_len)
+        chunk_bounds = np.cumsum(amp_lengths)  # end of each chunk in the concatenated recording
+
+        # Guard against raw files that changed since sorting (e.g. a truncated file re-copied in
+        # full): the chunk boundaries must add up to the recording the sorter saw.
+        units = (SortedSpikes.Unit.proj("spike_indices") & key).to_dicts()
+        if units:
+            output_dir = get_sorting_root_dir() / (PreProcessing & key).fetch1("sorting_output_dir")
+            analyzer = si.load_sorting_analyzer(resolve_analyzer_dir(output_dir), load_extensions=False)
+            if chunk_bounds[-1] != analyzer.get_num_samples():
+                raise ValueError(
+                    f"The AmplifierData files of this block add up to {chunk_bounds[-1]} samples, but "
+                    f"the sorted recording has {analyzer.get_num_samples()}; the raw files changed "
+                    f"since sorting, so spike indices cannot be mapped to chunks."
+                )
 
         def indices2syncedtimes(spike_indices: np.ndarray) -> Iterator[tuple[dict[str, Any], np.ndarray]]:
             """Convert spike indices to HARP-synchronized timestamps by ephys chunk.
@@ -1150,20 +1206,20 @@ class SyncedSpikes(dj.Imported):
             Yields:
                 Tuple of (chunk_key, synced_timestamps) for each ephys chunk
             """
-            for idx, onix_bound in enumerate(onix_lengths):
+            for idx, chunk_bound in enumerate(chunk_bounds):
                 # Find spikes belonging to this ephys chunk
                 if idx == 0:
-                    spk_ind = spike_indices[spike_indices < onix_bound]
+                    spk_ind = spike_indices[spike_indices < chunk_bound]
                 else:
                     spk_ind = spike_indices[
-                        (spike_indices >= onix_lengths[idx - 1]) & (spike_indices < onix_bound)
+                        (spike_indices >= chunk_bounds[idx - 1]) & (spike_indices < chunk_bound)
                     ]
 
                 if not len(spk_ind):  # no spikes in this chunk
                     continue
 
                 # Convert absolute indices to relative indices within this chunk
-                spk_ind = spk_ind - (onix_lengths[idx - 1] if idx else 0)  # make relative to chunk start
+                spk_ind = spk_ind - (chunk_bounds[idx - 1] if idx else 0)  # make relative to chunk start
                 spk_times = onix_times[idx][spk_ind]  # get ONIX timestamps
 
                 # Apply sync models to convert ONIX→HARP timestamps. Each spike uses the last
@@ -1185,7 +1241,7 @@ class SyncedSpikes(dj.Imported):
                 yield chunk_key, synced_ts
 
         self.insert1(key)
-        for unit_data in (SortedSpikes.Unit.proj("spike_indices") & key).to_dicts():
+        for unit_data in units:
             spike_indices = unit_data.pop("spike_indices")
             for ephys_chunk_key, synced_times in indices2syncedtimes(spike_indices):
                 self.Unit.insert1(
