@@ -312,8 +312,10 @@ def launch_spikeinterface_gui(
             - electrode_group
             - paramset_id
         parent_curation_id: Optional curation_id to base this curation on. If provided,
-            the GUI opens with the specified curation loaded.
-            If None, starts from the raw sorting results.
+            the GUI opens with the specified curation loaded; refused if there is pending
+            curation (saved in the GUI but not yet recorded with save_manual_curation).
+            If None, resumes the pending curation if there is one (keeping its parent),
+            otherwise starts from the raw sorting results.
         layout: Optional custom view layout dict to pass to spikeinterface_gui's
             run_mainwindow(). If None, the GUI's default layout is used.
         label_definitions: Optional custom label categories to pass to spikeinterface_gui's
@@ -407,9 +409,9 @@ def launch_spikeinterface_gui(
             json.dump({"parent_curation_id": parent_curation_id}, f)
         logger.info(f"Saved parent curation metadata to: {metadata_file}")
 
-    # Handle metadata file when parent_curation_id is None
-    if parent_curation_id is None and metadata_file.exists():
-        # Delete metadata file if it exists (clearing any previous parent)
+    # Starting from raw (no parent, nothing pending): clear any stale parent. With pending work the
+    # GUI resumes it, so keep the metadata - it's the only record of that work's parent.
+    if parent_curation_id is None and not has_pending_curation and metadata_file.exists():
         metadata_file.unlink()
         logger.info("Cleared previous parent curation metadata (starting from raw)")
 
