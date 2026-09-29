@@ -55,11 +55,8 @@ SORTING_METHOD = "kilosort4"
 # For fully manual grouping, see "Advanced Configuration" at the bottom.
 SORTING_GROUPS = "per_shank"
 
-# Path to raw ephys data and channel map file (same values as step01).
-# Needed when SORTING_GROUPS = "per_shank" to read shank assignments
-# from the probeinterface JSON.
-RAW_EPHYS_DIR = "/ceph/aeon/aeon/data/raw/AEONX1/abcGolden01/"
-CHANNEL_MAP_FILE = "M81_ProbeB_4Shanks_1000_to_1700_um.json"
+# Probe insertion to set up sorting for, or None for every insertion.
+INSERTION_NUMBER = None
 
 
 # --------------------------------------------------------------------------
@@ -71,16 +68,15 @@ def setup_sorting_prerequisites(
     experiment_name,
     paramset_id,
     sorting_method,
-    insertion_number=1,
+    insertion_number=None,
     sorting_groups="per_shank",
 ):
     """Populate the three manual/lookup tables that must exist before sorting.
 
-    Handles experiments with one or several probe insertions. Each insertion
-    has its own ElectrodeConfig, so ElectrodeGroup and SortingTask entries are
-    created per insertion / electrode config. The electrode configuration and
-    shank assignments are read from the database (populated in steps 1-2), so
-    no raw ephys directory or channel-map file is needed here.
+    Sets up one probe insertion, or every insertion if ``insertion_number`` is
+    None (each has its own ElectrodeConfig). The electrode configuration is read
+    from EphysBlockInfo (populated in step 2), and for "per_shank" the raw-ephys
+    directory is read from Experiment.Directory, so neither needs to be passed in.
 
     Three tables are populated in order:
 
@@ -89,11 +85,11 @@ def setup_sorting_prerequisites(
        once globally; subsequent calls skip if the paramset_id already exists.
 
     b) ElectrodeGroup + ElectrodeGroup.Electrode (Manual) -- defines which
-       electrodes to include in sorting, one set per distinct ElectrodeConfig
-       across the selected insertions. The grouping strategy is set by
-       ``sorting_groups``:
+       electrodes to include in sorting, for the insertion's ElectrodeConfig.
+       The grouping strategy is set by ``sorting_groups``:
          - "per_shank": one group per shank (e.g. shank0, shank1, ...), read
-           from ProbeType.Electrode.shank in the database.
+           from the probeinterface JSON ({electrode_config_name}.json) in the
+           raw-ephys epoch directories.
          - "all": all active channels in one group.
 
     c) SortingTask (Manual) -- one entry per (block, electrode_group),
@@ -107,14 +103,24 @@ def setup_sorting_prerequisites(
         sorting_method: Sorting algorithm name, e.g. "kilosort4".
         insertion_number: If given, only set up sorting for this probe
             insertion. If None (default), set up every insertion found for the
-            experiment/subject.
+            experiment.
         sorting_groups: "per_shank" or "all".
     """
     import json as _json
     from pathlib import Path
-    
+
     # Deferred imports -- no DB side effects at module level.
-    from aeon.dj_pipeline import ephys, spike_sorting, acquisition
+    from aeon.dj_pipeline import acquisition, ephys, spike_sorting
+
+    if insertion_number is None:
+        # Every step below is idempotent (skip_duplicates / exists checks), so run once per insertion.
+        exp_blocks = ephys.EphysBlockInfo & {"experiment_name": experiment_name}
+        for n in sorted(set(exp_blocks.to_arrays("insertion_number"))):
+            print(f"\n=== Insertion {n} ===")
+            setup_sorting_prerequisites(
+                experiment_name, paramset_id, sorting_method, int(n), sorting_groups
+            )
+        return
 
     # ------------------------------------------------------------------
     # a) SortingParamSet -- insert once globally
@@ -187,7 +193,7 @@ def setup_sorting_prerequisites(
     # hard-coding it, query from EphysBlockInfo which was populated in
     # step 2 -- it already knows the electrode configuration.
     block_rest = {"experiment_name": experiment_name, "insertion_number": insertion_number}
-    
+
     block_info = (ephys.EphysBlockInfo & block_rest).fetch(
         "probe_type", "electrode_config_name", as_dict=True, limit=1
     )
@@ -209,12 +215,12 @@ def setup_sorting_prerequisites(
 
     # Build groups based on the sorting strategy.
     if sorting_groups == "per_shank":
-        
-        # get raw_ephys_dir and channel_map_file
-        raw_ephys_dir = (acquisition.Experiment.Directory() & {"experiment_name": experiment_name,
-                                                               "directory_type": "raw-ephys"}).fetch1("directory_path")
-        channel_map_file = electrode_config_name + '.json'
-
+        # Raw-ephys directory from the DB; the channel map is named after the electrode config.
+        raw_ephys_dir = (
+            acquisition.Experiment.Directory
+            & {"experiment_name": experiment_name, "directory_type": "raw-ephys"}
+        ).fetch1("directory_path")
+        channel_map_file = electrode_config_name + ".json"
 
         # Read the probeinterface JSON for shank assignments.
         raw_path = Path(raw_ephys_dir)
@@ -597,9 +603,12 @@ module load uv
 cd "$SLURM_SUBMIT_DIR"
 echo "Working directory: $(pwd)"
 
-# Ensure venv exists and deps match lockfile
+# Ensure venv exists and deps match lockfile.
+# The spike_sorting extra (spikeinterface[full], spython, cuda-python) is
+# required to actually run the sort — a bare `uv sync` would uninstall it and
+# the job would crash at `import spikeinterface`.
 echo "Syncing dependencies..."
-uv sync
+uv sync --extra spike_sorting
 
 # Set PyTorch CUDA memory allocator configuration to free reserved memory
 # This helps prevent CUDA out of memory errors during long-running Kilosort4 jobs
@@ -760,12 +769,10 @@ if __name__ == "__main__":
     print("\n--- 1/3: Setup sorting prerequisites ---")
     setup_sorting_prerequisites(
         EXPERIMENT_NAME,
-        SUBJECT,
         PARAMSET_ID,
         SORTING_METHOD,
+        insertion_number=INSERTION_NUMBER,
         sorting_groups=SORTING_GROUPS,
-        raw_ephys_dir=RAW_EPHYS_DIR,
-        channel_map_file=CHANNEL_MAP_FILE,
     )
 
     print("\n--- 2/3: Run preprocessing ---")
