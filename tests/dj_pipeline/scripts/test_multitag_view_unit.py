@@ -1,10 +1,7 @@
-"""Unit test for multitag_view's manual-label writing (regression).
+"""Unit test for multitag_view's manual-label writing.
 
-A unit carrying both a quality label and a tag used to lose its quality label on
-save: the tag was written under a nested ``labels`` key while the quality label was
-written flat, and ``CurationModel`` rebuilds each entry from the nested dict alone,
-silently dropping the flat quality (``SortedSpikes`` then falls back to KSLabel).
-multitag_view now writes tags flat, so both survive a save.
+A unit carrying both a quality label and a tag must keep both on save. Tags are written nested
+under ``labels``, matching how spikeinterface-gui>=0.13 writes quality.
 
 multitag_view subclasses spikeinterface_gui's ``ViewBase`` (only installed in the
 curation GUI environment) and lives in the dj_pipeline package (whose import
@@ -21,9 +18,7 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-_MODULE_PATH = (
-    Path(__file__).resolve().parents[3] / "aeon" / "dj_pipeline" / "scripts" / "multitag_view.py"
-)
+_MODULE_PATH = Path(__file__).resolve().parents[3] / "aeon" / "dj_pipeline" / "scripts" / "multitag_view.py"
 
 _LABEL_DEFINITIONS = {
     "quality": {"label_options": ["good", "MUA", "noise"], "exclusive": True},
@@ -49,10 +44,10 @@ def _load_multitag_view():
 
 
 def _normalize(manual_labels):
-    """Return {unit_id: labels-dict} after CurationModel's manual-label normalization."""
-    from spikeinterface.curation.curation_model import CurationModel
+    """Return {unit_id: labels-dict} after Curation's manual-label normalization."""
+    from spikeinterface.curation.curation_model import Curation
 
-    model = CurationModel(
+    model = Curation(
         format_version="2",
         unit_ids=[5, 7],
         label_definitions=_LABEL_DEFINITIONS,
@@ -70,44 +65,33 @@ class _FakeView:
 
 def test_tagging_a_labeled_unit_keeps_its_quality_label():
     mtv = _load_multitag_view()
-    # a unit the curator already labeled "good" (written flat, as the controller does)
-    view = _FakeView([{"unit_id": 5, "quality": ["good"]}])
+    # a unit the curator already labeled "good" (nested, as the >=0.13 controller does)
+    view = _FakeView([{"unit_id": 5, "labels": {"quality": ["good"]}}])
 
     mtv.MultiTagView._set_unit_features(view, 5, ["flag"])
     entry = view.controller.curation_data["manual_labels"][0]
 
-    # tags are written flat, the same shape the controller uses for quality (no nested "labels")
-    assert "labels" not in entry
-    assert entry["quality"] == ["good"]
-    assert entry[mtv.TAGS_CATEGORY] == ["flag"]
+    assert entry == {"unit_id": 5, "labels": {"quality": ["good"], "tags": ["flag"]}}
     assert mtv.MultiTagView._get_unit_features(view, 5) == ["flag"]
 
-    # and the quality label survives CurationModel normalization alongside the tag
     labels = _normalize([dict(entry)])[5]
     assert labels["quality"] == ["good"]
     assert labels["tags"] == ["flag"]
 
 
 def test_tagging_then_labeling_also_keeps_quality():
-    # the other ordering Thinh flagged: tag a unit first (creating a brand-new, flat entry
-    # via the append path), then apply a quality label the way the controller does (also flat).
+    # the other ordering: tag a unit first (new entry via the append path), then apply a quality
+    # label the way the >=0.13 controller does (into the existing entry's "labels" dict).
     mtv = _load_multitag_view()
     view = _FakeView([])
 
     mtv.MultiTagView._set_unit_features(view, 5, ["flag"])
     entry = view.controller.curation_data["manual_labels"][0]
-    assert entry == {"unit_id": 5, "tags": ["flag"]}  # new entry written flat, no nested "labels"
+    assert entry == {"unit_id": 5, "labels": {"tags": ["flag"]}}
 
-    # controller.set_label_to_unit then adds the quality label flat on the same entry
-    entry["quality"] = ["good"]
+    # Controller.set_label_to_unit: `if "labels" in lbl: lbl["labels"][category] = [label]`
+    entry["labels"]["quality"] = ["good"]
 
     labels = _normalize([dict(entry)])[5]
     assert labels["quality"] == ["good"]
-    assert labels["tags"] == ["flag"]
-
-
-def test_nested_labels_shape_drops_quality():
-    """Documents why tags must be written flat: a nested "labels" entry loses the flat quality."""
-    labels = _normalize([{"unit_id": 5, "quality": ["good"], "labels": {"tags": ["flag"]}}])[5]
-    assert "quality" not in labels
     assert labels["tags"] == ["flag"]
