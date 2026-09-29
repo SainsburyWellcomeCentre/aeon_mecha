@@ -147,9 +147,9 @@ def auto_approve_curation(experiment_name):
     when you plan to curate later.
 
     Uses curation_id=0 with parent_curation_id=-1 and no curation file.
-    ApplyOfficialCuration detects this and simply updates the curation_id
-    on existing SortedSpikes entries -- no spike data is deleted or
-    re-computed.
+    ApplyOfficialCuration detects this and records the approval without
+    touching SortedSpikes -- it keeps curation_id=-1 (the raw sorting), and
+    no spike data is deleted or re-computed.
     """
     from datetime import datetime
 

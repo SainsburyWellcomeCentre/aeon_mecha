@@ -21,6 +21,8 @@ import spikeinterface as si
 from spikeinterface.core.template_tools import get_template_extremum_channel
 
 from aeon.dj_pipeline import ephys, spike_sorting, spike_sorting_curation
+from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
+from aeon.dj_pipeline.utils.spike_sorting_utils import resolve_analyzer_dir
 
 # Fields (besides block_start/block_end) needed to resolve a curated analyzer / SortedSpikes
 # row for a block.
@@ -86,12 +88,22 @@ def select_pairs_for_review(pairs_df: pd.DataFrame, n: int = 8) -> pd.DataFrame:
 
 
 def load_analyzer(block_key_: dict):
-    """Load (and cache) the curated SortingAnalyzer for a block."""
+    """Load (and cache) the SortingAnalyzer for a block: curated, or raw for an auto-approved block.
+
+    An auto-approved block (raw sorting accepted as official) has no curated analyzer.
+    """
     cache_key = tuple(sorted((k, str(v)) for k, v in block_key_.items()))
     if cache_key not in _analyzer_cache:
         curation_id = (spike_sorting_curation.OfficialCuration & block_key_).fetch1("curation_id")
         file_key = {**block_key_, "curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-        path = str((spike_sorting_curation.ManualCuration.File & file_key).fetch1("file"))
+        applied_analyzer = spike_sorting_curation.ManualCuration.File & file_key
+        if applied_analyzer:
+            path = applied_analyzer.fetch1("file").full_path
+        else:
+            output_dir = get_sorting_root_dir() / (spike_sorting.PreProcessing & block_key_).fetch1(
+                "sorting_output_dir"
+            )
+            path = resolve_analyzer_dir(output_dir)
         analyzer = si.load_sorting_analyzer(folder=path, load_extensions=False)
         _analyzer_cache[cache_key] = analyzer
     return _analyzer_cache[cache_key]

@@ -101,11 +101,10 @@ class ApplyOfficialCuration(dj.Imported):
                 "parent_curation_id"
             )
             if parent_curation_id == -1:
-                # Raw sorting approved as official — no curation to apply
-                # Update SortedSpikes.curation_id from -1 to the official curation_id
-                sorted_key = (spike_sorting.SortedSpikes & key).fetch1("KEY")
-                spike_sorting.SortedSpikes.update1({**sorted_key, "curation_id": curation_id})
-
+                # Raw sorting approved as official — no curation to apply. SortedSpikes stays at
+                # curation_id=-1: it still holds the raw sorting and there is no curated analyzer, which
+                # Waveform/SortingQuality would otherwise try to load. The approval itself is recorded
+                # by OfficialCuration and this ApplyOfficialCuration row.
                 self.insert1(
                     {
                         **key,

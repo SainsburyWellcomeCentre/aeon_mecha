@@ -824,20 +824,27 @@ class SortedSpikes(dj.Imported):
             )
             official_curation = spike_sorting_curation_module.OfficialCuration & key
             if official_curation:
-                curation_id = official_curation.fetch1("curation_id")
-                # Fetch applied analyzer path from database
-                analyzer_output_dir = Path(
-                    (
-                        spike_sorting_curation_module.ManualCuration.File
-                        & key
-                        & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
+                official_curation_id = official_curation.fetch1("curation_id")
+                applied_analyzer = (
+                    spike_sorting_curation_module.ManualCuration.File
+                    & key
+                    & {"curation_id": official_curation_id, "file_name": "curation_applied_analyzer"}
+                )
+                # Only record the curation_id once its curated analyzer exists. An official curation that
+                # hasn't been applied yet (or an auto-approved one, which has no curated analyzer) stays
+                # at -1 with the raw analyzer; ApplyOfficialCuration reads curation_id to tell whether
+                # the curation has already been applied.
+                if applied_analyzer:
+                    curation_id = official_curation_id
+                    analyzer_output_dir = Path(applied_analyzer.fetch1("file").full_path)
+                    logger.info(
+                        f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
                     )
-                    .fetch1("file")
-                    .full_path
-                )
-                logger.info(
-                    f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
-                )
+                else:
+                    logger.info(
+                        f"Using raw analyzer (official curation_id={official_curation_id} has no "
+                        "curated analyzer)"
+                    )
             else:
                 logger.info("Using raw analyzer (no official curation found)")
         except (dj.errors.DataJointError, ImportError, AttributeError) as e:
