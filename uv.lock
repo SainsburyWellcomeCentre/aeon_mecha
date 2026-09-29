@@ -117,7 +117,7 @@ requires-dist = [
     { name = "scipy" },
     { name = "seaborn" },
     { name = "spikeinterface", extras = ["full"], marker = "extra == 'spike-sorting'", specifier = ">=0.104.0" },
-    { name = "spikeinterface-gui", marker = "extra == 'spike-sorting'", specifier = ">=0.13" },
+    { name = "spikeinterface-gui", marker = "extra == 'spike-sorting'", specifier = ">=0.13.1" },
     { name = "spython", marker = "extra == 'spike-sorting'" },
     { name = "swc-aeon", git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git?branch=main" },
     { name = "xarray", specifier = ">=0.12.3" },

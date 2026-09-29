@@ -200,12 +200,14 @@ if __name__ == "__main__":
 
     # multitag_view writes tags nested under "labels", matching spikeinterface-gui>=0.13; older
     # versions write quality flat, and a unit with both would lose its quality label on save.
+    # 0.13.0 also silently drops a label for a category the unit doesn't have yet (e.g. marking
+    # an already-tagged unit "good"), fixed in 0.13.1.
     from importlib.metadata import version
 
     gui_version = version("spikeinterface-gui")
-    if tuple(int(part) for part in gui_version.split(".")[:2]) < (0, 13):
+    if tuple(int(part) for part in gui_version.split(".")[:3]) < (0, 13, 1):
         raise RuntimeError(
-            f"spikeinterface-gui>=0.13 is required (found {gui_version}). "
+            f"spikeinterface-gui>=0.13.1 is required (found {gui_version}). "
             "Run `uv sync --extra spike_sorting` to update."
         )
 
