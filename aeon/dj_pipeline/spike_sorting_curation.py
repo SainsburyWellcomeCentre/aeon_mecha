@@ -673,12 +673,10 @@ def make_curation_official(key: dict, curation_id: int) -> None:
     if not (ManualCuration & curation_key):
         raise ValueError(f"Curation with curation_id={curation_id} not found for this sorting task.")
 
-    # Get the SortedSpikes key (need to find the one with curation_id=-1, the raw sorting)
-    sorted_spikes_key = (spike_sorting.SortedSpikes & key & {"curation_id": -1}).fetch1("KEY")
-
-    # Check if OfficialCuration already exists for this SortedSpikes
-    if OfficialCuration & sorted_spikes_key:
-        existing_curation = (OfficialCuration & sorted_spikes_key).fetch1()
+    # Check for an existing OfficialCuration (manual or auto-approved)
+    # If it has been applied, the raw SortedSpikes (curation_id=-1) no longer exists
+    if OfficialCuration & key:
+        existing_curation = (OfficialCuration & key).fetch1()
         if existing_curation["curation_id"] != curation_id:
             raise ValueError(
                 f"An official curation already exists for this block "
@@ -688,6 +686,15 @@ def make_curation_official(key: dict, curation_id: int) -> None:
         else:
             logger.info(f"Official curation with curation_id={curation_id} already exists.")
             return
+
+    # The raw sorting (curation_id=-1) is what the curation was made against
+    raw_sorted_spikes = spike_sorting.SortedSpikes & key & {"curation_id": -1}
+    if not raw_sorted_spikes:
+        raise ValueError(
+            "No raw SortedSpikes (curation_id=-1) found for this block. "
+            "Run SortedSpikes.populate() first (after restore_raw_sorting() if a curation was applied)."
+        )
+    sorted_spikes_key = raw_sorted_spikes.fetch1("KEY")
 
     # Gate: every unit the curator kept must carry a manual quality label, so noise-exclusion and
     # downstream analysis see a complete picture. Units the curator removed, merged, or split are
