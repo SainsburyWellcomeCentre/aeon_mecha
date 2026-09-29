@@ -194,8 +194,8 @@ def setup_sorting_prerequisites(
     # step 2 -- it already knows the electrode configuration.
     block_rest = {"experiment_name": experiment_name, "insertion_number": insertion_number}
 
-    block_info = (ephys.EphysBlockInfo & block_rest).fetch(
-        "probe_type", "electrode_config_name", as_dict=True, limit=1
+    block_info = (
+        (ephys.EphysBlockInfo & block_rest).proj("probe_type", "electrode_config_name").to_dicts(limit=1)
     )
 
     if not block_info:
@@ -211,7 +211,7 @@ def setup_sorting_prerequisites(
     print(f"Using electrode config: probe_type={probe_type}, electrode_config_name={electrode_config_name}")
 
     # Get all electrodes in this config.
-    all_electrodes = (ephys.ElectrodeConfig.Electrode & electrode_config_key).fetch("electrode")
+    all_electrodes = (ephys.ElectrodeConfig.Electrode & electrode_config_key).to_arrays("electrode")
 
     # Build groups based on the sorting strategy.
     if sorting_groups == "per_shank":
@@ -709,10 +709,10 @@ fi
 #   # 1. Look up the electrode config from existing block info.
 #   econfig_key = (
 #       ephys.EphysBlockInfo & {"experiment_name": "your-experiment"}
-#   ).fetch("probe_type", "electrode_config_name", as_dict=True, limit=1)[0]
+#   ).proj("probe_type", "electrode_config_name").to_dicts(limit=1)[0]
 #
 #   # 2. See what electrodes are available.
-#   all_sites = (ephys.ElectrodeConfig.Electrode & econfig_key).fetch("electrode")
+#   all_sites = (ephys.ElectrodeConfig.Electrode & econfig_key).to_arrays("electrode")
 #   print(f"Available electrode sites: {sorted(all_sites)}")
 #
 #   # 3. Create a group with your chosen subset.
