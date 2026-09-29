@@ -6,10 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import datajoint as dj
-import numpy as np
-import pandas as pd
 
-from aeon.dj_pipeline import ephys, get_schema_name, spike_sorting
+from aeon.dj_pipeline import get_schema_name, spike_sorting
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import resolve_analyzer_dir
 
@@ -275,8 +273,6 @@ class ApplyOfficialCuration(dj.Imported):
         )
 
 
-
-
 # Helper functions for curation workflows
 
 
@@ -330,7 +326,7 @@ def launch_spikeinterface_gui(
             the raw recording is never accessed. Useful for very long blocks, where the
             recording's binary chunk files can otherwise be a major contributor to hitting
             the OS's open-file limit. Default True (matches spikeinterface_gui's default).
-        """
+    """
     import shutil
 
     import spikeinterface as si
@@ -343,13 +339,9 @@ def launch_spikeinterface_gui(
     try:
         gui_dir.mkdir(parents=True, exist_ok=True)
     except PermissionError as e:
-        raise PermissionError(
-            f"No permission to create directory: {gui_dir}"
-        ) from e
+        raise PermissionError(f"No permission to create directory: {gui_dir}") from e
     except OSError as e:
-        raise OSError(
-            f"Failed to create directory {gui_dir}: {e}"
-        ) from e
+        raise OSError(f"Failed to create directory {gui_dir}: {e}") from e
 
     curation_data_file = gui_dir / "curation_data.json"
     metadata_file = gui_dir / "curation_metadata.json"
@@ -540,19 +532,21 @@ def save_manual_curation(key: dict, description: str = "") -> int:
         curation_data = None
         if gui_dir.exists():
             zarr_root = zarr.open(str(analyzer_dir), mode="r")
-            if "spikeinterface_gui" in zarr_root.keys():
+            if "spikeinterface_gui" in zarr_root:
                 curation_data = zarr_root["spikeinterface_gui"].attrs.get("curation_data")
         if curation_data is None:
             raise FileNotFoundError(
                 f"No curation_data found in zarr attrs at {gui_dir}/.zattrs\n"
-                f"Please ensure you have saved your curation in the SI GUI using the 'Save in analyzer' button."
+                "Please ensure you have saved your curation in the SI GUI using the "
+                "'Save in analyzer' button."
             )
     else:
         curation_data_file = gui_dir / "curation_data.json"
         if not curation_data_file.exists():
             raise FileNotFoundError(
                 f"Curation data file not found: {curation_data_file}\n"
-                f"Please ensure you have saved your curation in the SI GUI using the 'Save in analyzer' button."
+                "Please ensure you have saved your curation in the SI GUI using the "
+                "'Save in analyzer' button."
             )
         with open(curation_data_file) as f:
             curation_data = json.load(f)
@@ -688,19 +682,17 @@ def make_curation_official(key: dict, curation_id: int) -> None:
         .fetch1("file")
         .full_path
     )
-    with open(curation_file) as f:
-        curation_dict = json.load(f)
-    labeled = {
-        lbl["unit_id"]
-        for lbl in curation_dict.get("manual_labels", [])
-        if lbl.get("labels", {}).get("quality")
-    }
-    handled = set(curation_dict.get("removed", []))
-    for merge_key in ("merges", "merge_unit_groups"):
-        for group in curation_dict.get(merge_key, []) or []:
-            handled.update(group)
-    for split_key in ("splits", "split_units"):
-        handled.update(curation_dict.get(split_key, {}) or {})
+    # load_curation normalises both manual-label shapes:
+    # - nested {"labels": {"quality": [...]}} from spikeinterface-gui>=0.13
+    # - flat {"quality": [...]} from 0.12
+    # and the v1 merge/removed keys
+    from spikeinterface.curation import load_curation
+
+    curation = load_curation(curation_file)
+    labeled = {int(ml.unit_id) for ml in curation.manual_labels or [] if ml.labels.get("quality")}
+    handled = {int(u) for u in curation.removed or []}
+    handled |= {int(u) for merge in curation.merges or [] for u in merge.unit_ids}
+    handled |= {int(split.unit_id) for split in curation.splits or []}
     raw_unit_ids = {int(u) for u in (spike_sorting.SortedSpikes.Unit & sorted_spikes_key).fetch("unit")}
     unlabeled = raw_unit_ids - labeled - handled
     if unlabeled:
