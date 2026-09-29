@@ -51,7 +51,7 @@ spike_sorting = [
   "spikeinterface[full]>=0.104.0",
   "spython", 
   "cuda-python", 
-  "spikeinterface-gui", 
+  "spikeinterface-gui>=0.13",
   "PySide6<6.8", 
   "pyqtgraph"
 ]
