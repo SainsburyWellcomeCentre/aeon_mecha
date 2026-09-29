@@ -1,5 +1,4 @@
-"""
-Script to launch SpikeInterface GUI for manual spike sorting curation.
+"""Script to launch SpikeInterface GUI for manual spike sorting curation.
 
 ================================================================================
 IMPORTANT: THIS SCRIPT IS DESIGNED TO BE MODIFIED BEFORE RUNNING
@@ -34,14 +33,13 @@ Example usage:
         python launch_si_gui.py --layout spikeinterface_gui_layout.json
 """
 
-import time
-
-_launch_start_time = time.perf_counter()
-
 import argparse
 import json
-import resource
+import sys
+import time
 import traceback
+
+_launch_start_time = time.perf_counter()
 
 try:
     from aeon.dj_pipeline import spike_sorting, spike_sorting_curation
@@ -51,9 +49,11 @@ except Exception:
 
 
 def _set_window_title(key: dict) -> None:
-    """Set the GUI window title to the session key, so multiple open GUI windows
-    (e.g. different shanks/blocks) can be told apart in the title bar, Cmd+Tab, and
-    Mission Control - the default title is just the generic "SpikeInterface GUI".
+    """Set the GUI window title to the session key.
+
+    This lets multiple open GUI windows (e.g. different shanks/blocks) be told apart in
+    the title bar, Cmd+Tab, and Mission Control - the default title is just the generic
+    "SpikeInterface GUI".
 
     Patches setWindowTitle() itself (not __init__) because run_mainwindow() calls
     win.setWindowTitle('SpikeInterface GUI') unconditionally right after constructing
@@ -75,10 +75,11 @@ def _set_window_title(key: dict) -> None:
 
 
 def _print_launch_time() -> None:
-    """Print how long the GUI took to launch (from script start to the window actually
-    appearing), since there's no feedback otherwise while DataJoint connects and the
-    analyzer + its extensions load - which can take anywhere from seconds to over a
-    minute depending on the block.
+    """Print how long the GUI took to launch.
+
+    Measured from script start to the window actually appearing, since there's no
+    feedback otherwise while DataJoint connects and the analyzer + its extensions load -
+    which can take anywhere from seconds to over a minute depending on the block.
 
     Patches show() rather than __init__: __init__ finishes before the window is
     actually visible, and show() is called exactly once, right before run_mainwindow()
@@ -98,8 +99,9 @@ def _print_launch_time() -> None:
 
 
 def _analyzer_saved_confirmation() -> None:
-    """Print a one-line confirmation when "Save in analyzer" succeeds, since the
-    underlying method gives no feedback at all on success :). On failure, print a
+    """Print a one-line confirmation when "Save in analyzer" succeeds.
+
+    The underlying method gives no feedback at all on success :). On failure, print a
     clear explanation for the common case (the /Volumes/aeon network mount dropping
     mid-session, which raises some OSError subclass) instead of a bare traceback.
     """
@@ -145,7 +147,9 @@ if __name__ == "__main__":
     # are on) can exhaust the OS's per-process open-file limit on a long curation session
     # (macOS defaults to 256) - print current limit + mitigations instead of raising it
     # automatically, so it stays under the user's control.
-    if not args.no_traces:
+    if not args.no_traces and sys.platform != "win32":  # resource is Unix-only
+        import resource
+
         soft_limit, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
         print(
             f"Open-file limit: {soft_limit}. If you hit 'Too many open files' during a long "
@@ -193,6 +197,17 @@ if __name__ == "__main__":
             "exclusive": False,
         },
     }
+
+    # multitag_view writes tags nested under "labels", matching spikeinterface-gui>=0.13; older
+    # versions write quality flat, and a unit with both would lose its quality label on save.
+    from importlib.metadata import version
+
+    gui_version = version("spikeinterface-gui")
+    if tuple(int(part) for part in gui_version.split(".")[:2]) < (0, 13):
+        raise RuntimeError(
+            f"spikeinterface-gui>=0.13 is required (found {gui_version}). "
+            "Run `uv sync --extra spike_sorting` to update."
+        )
 
     # Register the custom multitag view (checkbox + keyboard-shortcut multi-tagging,
     # see multitag_view.py) so it can be referenced in the layout below.
