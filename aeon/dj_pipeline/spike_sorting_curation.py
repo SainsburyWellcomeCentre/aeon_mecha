@@ -312,23 +312,22 @@ def launch_spikeinterface_gui(
             - electrode_group
             - paramset_id
         parent_curation_id: Optional curation_id to base this curation on. If provided,
-            the curation_data.json file will be initialized from the specified curation.
+            the GUI opens with the specified curation loaded.
             If None, starts from the raw sorting results.
         layout: Optional custom view layout dict to pass to spikeinterface_gui's
             run_mainwindow(). If None, the GUI's default layout is used.
         label_definitions: Optional custom label categories to pass to spikeinterface_gui's
             run_mainwindow(). This replaces the built-in defaults entirely (it does not
             merge with them), and only takes effect for blocks with no curation_data.json /
-            zarr curation attrs already saved - existing saved curations keep whatever
-            label_definitions they were saved with. If None, the GUI's defaults are used.
+            zarr curation attrs already saved and no parent curation - existing saved curations
+            keep whatever label_definitions they were saved with. If None, the GUI's defaults
+            are used.
         with_traces: If False, drops the "trace"/"tracemap" views (regardless of whether
             they're in layout) and stops the waveform view from overlaying live traces, so
             the raw recording is never accessed. Useful for very long blocks, where the
             recording's binary chunk files can otherwise be a major contributor to hitting
             the OS's open-file limit. Default True (matches spikeinterface_gui's default).
     """
-    import shutil
-
     import spikeinterface as si
 
     analyzer_dir = _get_analyzer_dir_from_key(key)
@@ -346,6 +345,19 @@ def launch_spikeinterface_gui(
     curation_data_file = gui_dir / "curation_data.json"
     metadata_file = gui_dir / "curation_metadata.json"
 
+    # Pending curation: GUI work saved to the analyzer ("Save in analyzer") but not yet recorded via
+    # save_manual_curation, which clears it. Stored in curation_data.json (binary) or zarr attrs (zarr).
+    if analyzer_dir.name.endswith(".zarr"):
+        import zarr
+
+        zarr_root = zarr.open(str(analyzer_dir), mode="r")
+        has_pending_curation = (
+            "spikeinterface_gui" in zarr_root and "curation_data" in zarr_root["spikeinterface_gui"].attrs
+        )
+    else:
+        has_pending_curation = curation_data_file.exists()
+
+    parent_curation_dict = None
     if parent_curation_id is not None:
         # Get the parent curation file
         parent_curation_key = {**key, "curation_id": parent_curation_id}
@@ -375,20 +387,20 @@ def launch_spikeinterface_gui(
                 f"Please verify the file exists and is accessible from your local mount."
             )
 
-        # Check if curation_data.json already exists
-        if curation_data_file.exists():
+        if has_pending_curation:
             logger.warning(
-                f"WARNING: curation_data.json already exists at {curation_data_file}. "
-                "This file will be OVERWRITTEN if you proceed with loading the parent curation. "
+                f"WARNING: curation data not yet saved with save_curation.py exists in {gui_dir}. "
+                "It will be OVERWRITTEN if you proceed with loading the parent curation. "
                 "Please either finish and save the current curation using save_curation.py, "
-                "or delete the curation_data.json file manually."
+                "or clear it manually."
             )
             return
 
-        # Copy parent curation file to curation_data.json
+        # Hand the parent to the GUI directly (run_mainwindow's curation_dict takes precedence over
+        # anything saved in the analyzer), so it loads for both binary and zarr analyzers.
         logger.info(f"Loading parent curation (curation_id={parent_curation_id})...")
-        shutil.copy2(parent_file, curation_data_file)
-        logger.info(f"Copied parent curation to: {curation_data_file}")
+        with open(parent_file) as f:
+            parent_curation_dict = json.load(f)
 
         # Save parent_curation_id to metadata file for later use in save_manual_curation()
         with open(metadata_file, "w") as f:
@@ -401,20 +413,27 @@ def launch_spikeinterface_gui(
         metadata_file.unlink()
         logger.info("Cleared previous parent curation metadata (starting from raw)")
 
-    # Check for existing curation_data.json file (if not loading from parent)
-    if curation_data_file.exists() and parent_curation_id is None:
-        file_mtime = datetime.fromtimestamp(curation_data_file.stat().st_mtime, tz=UTC)
-        time_since_modification = (datetime.now(UTC) - file_mtime).total_seconds()
-        days_ago = time_since_modification / 86400
+    # Warn about existing pending curation data (if not loading from parent)
+    if has_pending_curation and parent_curation_id is None:
+        # "Save in analyzer" rewrites curation_data.json (binary), .zattrs (zarr v2) or zarr.json
+        # (zarr v3), so the newest of these is the last save.
+        pending_files = [gui_dir / name for name in ("curation_data.json", ".zattrs", "zarr.json")]
+        mtimes = [f.stat().st_mtime for f in pending_files if f.exists()]
+        last_modified = ""
+        if mtimes:
+            file_mtime = datetime.fromtimestamp(max(mtimes), tz=UTC)
+            days_ago = (datetime.now(UTC) - file_mtime).total_seconds() / 86400
+            last_modified = (
+                f"Last modified: {file_mtime.strftime('%Y-%m-%d %H:%M:%S UTC')} ({days_ago:.1f} days ago). "
+            )
 
         logger.warning(
-            f"Existing curation data found at {curation_data_file}. "
-            f"Last modified: {file_mtime.strftime('%Y-%m-%d %H:%M:%S UTC')} "
-            f"({days_ago:.1f} days ago). "
+            f"Existing curation data found in {gui_dir}. "
+            f"{last_modified}"
             "This curation has NOT been saved to a curation_id in the ManualCuration table yet. "
             "This is fine if you are picking up where you left off, but be wary of saving over "
             "the curation if it is from another user. NOTE: Clicking 'Save in analyzer' in the "
-            "GUI will OVERWRITE the existing curation_data.json file with your new additions."
+            "GUI will OVERWRITE the existing curation data with your new additions."
         )
 
     # Load sorting analyzer. Load extensions one at a time (rather than
@@ -480,6 +499,7 @@ def launch_spikeinterface_gui(
             sorting_analyzer,
             mode="desktop",
             curation=True,
+            curation_dict=parent_curation_dict,
             layout=layout,
             label_definitions=label_definitions,
             skip_extensions=failed_extensions or None,
