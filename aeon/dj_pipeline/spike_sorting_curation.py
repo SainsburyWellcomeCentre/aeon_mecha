@@ -693,7 +693,7 @@ def make_curation_official(key: dict, curation_id: int) -> None:
     handled = {int(u) for u in curation.removed or []}
     handled |= {int(u) for merge in curation.merges or [] for u in merge.unit_ids}
     handled |= {int(split.unit_id) for split in curation.splits or []}
-    raw_unit_ids = {int(u) for u in (spike_sorting.SortedSpikes.Unit & sorted_spikes_key).fetch("unit")}
+    raw_unit_ids = {int(u) for u in (spike_sorting.SortedSpikes.Unit & sorted_spikes_key).to_arrays("unit")}
     unlabeled = raw_unit_ids - labeled - handled
     if unlabeled:
         raise ValueError(
