@@ -39,6 +39,7 @@ pymysql.converters.escape_dict = _escape_dict_as_json
 pymysql.converters.encoders[dict] = _escape_dict_as_json
 pymysql.converters.conversions[dict] = _escape_dict_as_json
 
+
 # Register Aeon + xarray codecs BEFORE any schema activation
 from aeon.dj_pipeline.utils.codec import (  # pyright: ignore[reportUnusedImport]
     AeonStreamCodec,
