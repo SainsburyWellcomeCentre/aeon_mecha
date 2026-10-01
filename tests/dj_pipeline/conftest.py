@@ -16,6 +16,44 @@ import pytest
 logger = logging.getLogger(__name__)
 
 
+@pytest.fixture
+def assert_nap_equal():
+    """Return a checker that two pynapple objects are indistinguishable.
+
+    pynapple has no structural equality — ``==`` is identity on Ts, elementwise on
+    Tsd and IntervalSet, and a metadata filter on TsGroup — so this compares field
+    by field. Exact, never a tolerance: the float64 ULP at Harp magnitude is 477 ns,
+    so a quantising round trip would shift spikes within a sample and pass any
+    tolerance.
+    """
+    import numpy as np
+
+    def check(a, b):
+        assert type(a) is type(b)
+        kind = type(a).__name__
+        if kind == "IntervalSet":
+            np.testing.assert_array_equal(a.start, b.start)
+            np.testing.assert_array_equal(a.end, b.end)
+        else:
+            np.testing.assert_array_equal(a.time_support.values, b.time_support.values)
+        if kind == "TsGroup":
+            assert list(a.index) == list(b.index)
+            for unit in a.index:
+                check(a[unit], b[unit])
+        elif kind != "IntervalSet":
+            np.testing.assert_array_equal(a.t, b.t)
+            if kind != "Ts":
+                np.testing.assert_array_equal(a.values, b.values)
+        if kind == "TsdFrame":
+            assert list(a.columns) == list(b.columns)
+        if (meta := getattr(a, "metadata", None)) is not None:
+            assert sorted(meta.columns) == sorted(b.metadata.columns)
+            for col in meta.columns:
+                np.testing.assert_array_equal(np.asarray(a.get_info(col)), np.asarray(b.get_info(col)))
+
+    return check
+
+
 @pytest.fixture(autouse=True)
 def dj_download_to_tmp(request):
     """Redirect DataJoint attach downloads to a per-test tmpdir.

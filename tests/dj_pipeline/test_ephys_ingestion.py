@@ -586,9 +586,8 @@ class TestPynappleCodecOnGoldenSpikes:
         largest = max(sortings, key=lambda p: sum(f.stat().st_size for f in p.rglob("*")))
         return self._tsgroup_from_sorting(largest)
 
-    def test_round_trip_is_bit_exact_on_real_spikes(self, golden_tsgroup, tmp_path):
+    def test_round_trip_is_bit_exact_on_real_spikes(self, golden_tsgroup, tmp_path, assert_nap_equal):
         """Test that real spike times survive a round trip exactly, not approximately."""
-        import numpy as np
         from datajoint.settings import Config
 
         from aeon.dj_pipeline.utils.codec import PynappleCodec
@@ -600,16 +599,11 @@ class TestPynappleCodecOnGoldenSpikes:
         stored = codec.encode(golden_tsgroup, key=key, store_name="pynapple_store")
         decoded = codec.decode(stored, key={"_config": config})
 
-        assert list(decoded.index) == list(golden_tsgroup.index)
-        for unit in golden_tsgroup.index:
-            # exact, not allclose: the float64 ULP at Harp magnitude is 477 ns, and a
-            # quantising round trip would shift spikes within a sample undetected
-            assert (decoded[unit].t == golden_tsgroup[unit].t).all()
-        np.testing.assert_array_equal(decoded.time_support.values, golden_tsgroup.time_support.values)
+        assert_nap_equal(decoded, golden_tsgroup)
         assert stored["t_start"] > 3.0e9  # still on the 1904 epoch
         assert stored["n_rows"] == len(golden_tsgroup.index)
 
-    def test_fast_path_matches_stock_on_real_spikes(self, golden_tsgroup, tmp_path):
+    def test_fast_path_matches_stock_on_real_spikes(self, golden_tsgroup, tmp_path, assert_nap_equal):
         """Test fast-path equivalence and report the speed-up on real data.
 
         The figure in SPEC_PYNAPPLE_CODEC.md comes from synthetic rates. This prints
@@ -617,7 +611,6 @@ class TestPynappleCodecOnGoldenSpikes:
         """
         import time
 
-        import numpy as np
         import pynapple as nap
 
         from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
@@ -633,10 +626,7 @@ class TestPynappleCodecOnGoldenSpikes:
         fast = _tsgroup_from_npz(str(path))
         fast_s = time.perf_counter() - start
 
-        assert list(fast.index) == list(stock.index)
-        for unit in stock.index:
-            np.testing.assert_array_equal(fast[unit].t, stock[unit].t)
-        np.testing.assert_allclose(np.asarray(fast.rate), np.asarray(stock.rate))
+        assert_nap_equal(fast, stock)
 
         n_spikes = sum(len(stock[u]) for u in stock.index)
         print(

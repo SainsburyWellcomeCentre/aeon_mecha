@@ -181,13 +181,11 @@ class TestPynappleCodecRoundTrip:
         with pytest.raises(DataJointError, match="requires a pynapple object"):
             PynappleCodec().validate([1, 2, 3])
 
-    def test_tsgroup_round_trips_bit_exactly(self, dj_config_nap, mock_tsgroup):
+    def test_tsgroup_round_trips_bit_exactly(self, dj_config_nap, mock_tsgroup, assert_nap_equal):
         """Test that keys, times, support and metadata all survive, exactly.
 
-        Equality rather than allclose: the float64 ULP at Harp magnitude is 477 ns,
-        so a quantising round trip would shift spikes within a sample and pass any
-        tolerance. The fixture is deliberately awkward — non-contiguous keys, a unit
-        with zero spikes, a two-interval support.
+        The fixture is deliberately awkward — non-contiguous keys, a unit with zero
+        spikes, a two-interval support.
         """
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
@@ -196,19 +194,12 @@ class TestPynappleCodecRoundTrip:
         stored = codec.encode(mock_tsgroup, key=key, store_name="pynapple_store")
         decoded = codec.decode(stored, key={"_config": dj_config_nap})
 
-        assert list(decoded.index) == list(mock_tsgroup.index)
-        assert len(decoded[6]) == 0
-        for unit in mock_tsgroup.index:
-            assert (decoded[unit].t == mock_tsgroup[unit].t).all()
-        np.testing.assert_array_equal(decoded.time_support.values, mock_tsgroup.time_support.values)
-        np.testing.assert_array_equal(
-            decoded.get_info("covered_seconds"), mock_tsgroup.get_info("covered_seconds")
-        )
+        assert_nap_equal(decoded, mock_tsgroup)
         assert (stored["kind"], stored["n_rows"]) == ("TsGroup", 3)
         assert stored["t_start"] > 3.0e9
 
     @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet"])
-    def test_every_other_type_round_trips_with_its_summary(self, dj_config_nap, kind):
+    def test_every_other_type_round_trips_with_its_summary(self, dj_config_nap, kind, assert_nap_equal):
         """Test the ``nap.load_file`` branch for each type that takes it.
 
         The codec is domain-agnostic and claims all six pynapple containers, so all
@@ -224,23 +215,9 @@ class TestPynappleCodecRoundTrip:
         stored = codec.encode(obj, key=key, store_name="pynapple_store")
         decoded = codec.decode(stored, key={"_config": dj_config_nap})
 
-        assert type(decoded).__name__ == kind
+        assert_nap_equal(decoded, obj)
         assert stored["kind"] == kind
         assert stored["n_rows"] == len(obj)
-
-        # Ts carries times and no values; IntervalSet carries values and no times.
-        if hasattr(obj, "t"):
-            np.testing.assert_array_equal(decoded.t, obj.t)
-        if hasattr(obj, "values"):
-            np.testing.assert_array_equal(decoded.values, obj.values)
-
-        # metadata is pickled inside the npz, so it round-trips on its own path
-        if hasattr(obj, "metadata"):
-            assert sorted(decoded.metadata.columns) == sorted(obj.metadata.columns)
-            for col in obj.metadata.columns:
-                np.testing.assert_array_equal(
-                    np.asarray(decoded.get_info(col)), np.asarray(obj.get_info(col))
-                )
 
         expected_extras = {
             "Ts": set(),
@@ -324,31 +301,18 @@ class TestPynappleFastPath:
     here rather than silently returning different data.
     """
 
-    @staticmethod
-    def _assert_same(a, b):
-        """Assert two TsGroups are indistinguishable."""
-        assert list(a.index) == list(b.index)
-        for unit in a.index:
-            np.testing.assert_array_equal(a[unit].t, b[unit].t)
-            if hasattr(a[unit], "d"):
-                np.testing.assert_array_equal(a[unit].d, b[unit].d)
-        np.testing.assert_array_equal(a.time_support.values, b.time_support.values)
-        assert sorted(a.metadata.columns) == sorted(b.metadata.columns)
-        for col in a.metadata.columns:
-            np.testing.assert_array_equal(np.asarray(a.get_info(col)), np.asarray(b.get_info(col)))
-
     @pytest.mark.parametrize("shape", list(_tsgroup_shapes()), ids=list(_tsgroup_shapes()))
-    def test_fast_path_equals_stock_loader(self, shape, tmp_path):
+    def test_fast_path_equals_stock_loader(self, shape, tmp_path, assert_nap_equal):
         """Test equivalence on each shape that stresses a different part of the rebuild."""
         from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
 
         tg = _tsgroup_shapes()[shape]
         path = tmp_path / f"{shape}.npz"
         tg.save(str(path))
-        self._assert_same(nap.load_file(str(path)), _tsgroup_from_npz(str(path)))
+        assert_nap_equal(_tsgroup_from_npz(str(path)), nap.load_file(str(path)))
 
-    def test_fast_path_preserves_rate(self, mock_tsgroup, tmp_path):
-        """Test that ``rate`` matches stock.
+    def test_fast_path_preserves_rate(self, mock_tsgroup, tmp_path, assert_nap_equal):
+        """Test that ``rate``, compared as metadata, matches stock.
 
         ``rate`` is n_events / tot_length(time_support). Building members without
         the group support and then passing ``bypass_check=True`` computes it from
@@ -358,10 +322,7 @@ class TestPynappleFastPath:
 
         path = tmp_path / "tg.npz"
         mock_tsgroup.save(str(path))
-        np.testing.assert_allclose(
-            np.asarray(_tsgroup_from_npz(str(path)).rate),
-            np.asarray(nap.load_file(str(path)).rate),
-        )
+        assert_nap_equal(_tsgroup_from_npz(str(path)), nap.load_file(str(path)))
 
 
 class TestPynappleMemberParity:
@@ -446,47 +407,14 @@ class TestPynappleMemberRoundTrip:
     """``_to_members`` then ``_from_members`` must return an equal object."""
 
     @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet"])
-    def test_round_trips_each_type(self, kind):
-        """Test that type, times, support and values all survive the mapping."""
+    def test_round_trips_each_type(self, kind, assert_nap_equal):
+        """Test that each type survives the mapping, columns and metadata included."""
         from aeon.dj_pipeline.utils.codec import _from_members, _to_members
 
         original = _sample_objects()[kind]
-        restored = _from_members(_to_members(original))
+        assert_nap_equal(_from_members(_to_members(original)), original)
 
-        assert type(restored).__name__ == kind
-        if kind == "IntervalSet":
-            np.testing.assert_array_equal(restored.start, original.start)
-            np.testing.assert_array_equal(restored.end, original.end)
-        else:
-            np.testing.assert_array_equal(restored.t, original.t)
-            np.testing.assert_array_equal(restored.time_support.values, original.time_support.values)
-        if hasattr(original, "values"):
-            np.testing.assert_array_equal(restored.values, original.values)
-
-    def test_tsdframe_keeps_columns_and_metadata(self):
-        """Test that column labels and the pickled metadata both survive."""
-        from aeon.dj_pipeline.utils.codec import _from_members, _to_members
-
-        original = _sample_objects()["TsdFrame"]
-        restored = _from_members(_to_members(original))
-
-        assert list(restored.columns) == list(original.columns)
-        np.testing.assert_array_equal(
-            np.asarray(restored.get_info("region")), np.asarray(original.get_info("region"))
-        )
-
-    def test_intervalset_keeps_metadata(self):
-        """Test that IntervalSet metadata survives, the pickled half of the mapping."""
-        from aeon.dj_pipeline.utils.codec import _from_members, _to_members
-
-        original = _sample_objects()["IntervalSet"]
-        restored = _from_members(_to_members(original))
-
-        np.testing.assert_array_equal(
-            np.asarray(restored.get_info("tag")), np.asarray(original.get_info("tag"))
-        )
-
-    def test_tsgroup_round_trips_with_rate_preserved(self, mock_tsgroup):
+    def test_tsgroup_round_trips_with_rate_preserved(self, mock_tsgroup, assert_nap_equal):
         """Test that the rebuilt TsGroup keys, times, support and rate all match.
 
         ``rate`` is ``n_samples / tot_length(time_support)``, so a member built
@@ -494,13 +422,7 @@ class TestPynappleMemberRoundTrip:
         """
         from aeon.dj_pipeline.utils.codec import _from_members, _to_members
 
-        restored = _from_members(_to_members(mock_tsgroup))
-
-        assert list(restored.index) == list(mock_tsgroup.index)
-        for unit in mock_tsgroup.index:
-            np.testing.assert_array_equal(restored[unit].t, mock_tsgroup[unit].t)
-        np.testing.assert_array_equal(restored.time_support.values, mock_tsgroup.time_support.values)
-        np.testing.assert_allclose(np.asarray(restored.rate), np.asarray(mock_tsgroup.rate))
+        assert_nap_equal(_from_members(_to_members(mock_tsgroup)), mock_tsgroup)
 
 
 class TestPynappleInDB:
@@ -515,7 +437,7 @@ class TestPynappleInDB:
         assert codec.get_dtype(False) == "<blob>"
 
     @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet"])
-    def test_round_trips_without_a_store(self, kind):
+    def test_round_trips_without_a_store(self, kind, assert_nap_equal):
         """Test that encode with no store returns members that decode back equal."""
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
@@ -525,24 +447,15 @@ class TestPynappleInDB:
 
         assert isinstance(encoded, dict)
         assert "path" not in encoded  # the member mapping, not the store summary
-        restored = codec.decode(encoded, key={})
-        assert type(restored).__name__ == kind
-        if kind == "IntervalSet":
-            np.testing.assert_array_equal(restored.start, original.start)
-        else:
-            np.testing.assert_array_equal(restored.t, original.t)
+        assert_nap_equal(codec.decode(encoded, key={}), original)
 
-    def test_tsgroup_round_trips_without_a_store(self, mock_tsgroup):
+    def test_tsgroup_round_trips_without_a_store(self, mock_tsgroup, assert_nap_equal):
         """Test that a TsGroup survives the in-DB form exactly, metadata included."""
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
         codec = PynappleCodec()
         restored = codec.decode(codec.encode(mock_tsgroup, key={}, store_name=None), key={})
-
-        assert list(restored.index) == list(mock_tsgroup.index)
-        for unit in mock_tsgroup.index:
-            np.testing.assert_array_equal(restored[unit].t, mock_tsgroup[unit].t)
-        np.testing.assert_array_equal(restored.time_support.values, mock_tsgroup.time_support.values)
+        assert_nap_equal(restored, mock_tsgroup)
 
     def test_store_form_is_unaffected(self, dj_config_nap, mock_tsgroup):
         """Test that naming a store still writes a file and returns the JSON summary."""
