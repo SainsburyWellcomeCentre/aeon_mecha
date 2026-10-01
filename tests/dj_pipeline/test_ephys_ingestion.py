@@ -91,27 +91,36 @@ class TestEphysBlockInfo:
         assert infos == blocks
 
     def test_block_duration_correct(self, ephys_block_info_populated, ctx):
-        # Block is set up as exactly 35 minutes (block_end - block_start in the
-        # ephys_test_blocks fixture); block_duration in hours is exactly 35/60.
-        # Tight tolerance to catch any conversion drift.
-        infos = (ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
+        """block_duration is block_end - block_start expressed in hours."""
+        infos = (
+            ctx.ephys.EphysBlockInfo * ctx.ephys.EphysBlock
+            & {"experiment_name": ctx.cfg["experiment_name"]}
+        ).to_dicts()
+        assert len(infos) == 2
         for info in infos:
-            assert info["block_duration"] == pytest.approx(35 / 60, abs=1e-6)
+            expected_hours = (info["block_end"] - info["block_start"]).total_seconds() / 3600
+            # block_duration is a float32 column, so the stored value carries ~7 significant
+            # digits. A relative tolerance tests the hours conversion without pinning storage
+            # precision; an absolute 1e-6 is tighter than the column can represent.
+            assert info["block_duration"] == pytest.approx(expected_hours, rel=1e-5)
 
     def test_block_chunks_associated(self, ephys_block_info_populated, ctx):
         chunk_links = len(ctx.ephys.EphysBlockInfo.Chunk & {"experiment_name": ctx.cfg["experiment_name"]})
         assert chunk_links >= 1
 
     def test_channel_mappings_created(self, ephys_block_info_populated, ctx):
-        # EphysBlockInfo.Channel records the recording's channels (full active set,
-        # not the sorting subset), so we check n_recording_channels (384), not
-        # n_channels (8 — the sorting subset in ElectrodeGroup.Electrode).
-        channel_rows = (
-            ctx.ephys.EphysBlockInfo.Channel & {"experiment_name": ctx.cfg["experiment_name"]}
-        ).to_dicts()
-        assert len(channel_rows) == ctx.cfg["n_recording_channels"]
-        channel_indices = sorted(r["channel_idx"] for r in channel_rows)
-        assert channel_indices == list(range(ctx.cfg["n_recording_channels"]))
+        # EphysBlockInfo.Channel records the recording's channels (full active set, not the
+        # sorting subset), so we check n_recording_channels (384) PER BLOCK - the golden
+        # fixture builds two blocks, so an experiment-wide count would be 768.
+        blocks = (ctx.ephys.EphysBlock & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
+            order_by="block_start"
+        )
+        assert len(blocks) == 2
+        for block in blocks:
+            channel_rows = (ctx.ephys.EphysBlockInfo.Channel & block).to_dicts()
+            assert len(channel_rows) == ctx.cfg["n_recording_channels"]
+            channel_indices = sorted(r["channel_idx"] for r in channel_rows)
+            assert channel_indices == list(range(ctx.cfg["n_recording_channels"]))
 
 
 class TestPreProcessing:

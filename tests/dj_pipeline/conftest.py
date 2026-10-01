@@ -668,34 +668,54 @@ def ephys_test_epochs(
 
 
 @pytest.fixture(scope="session")
-def ephys_test_blocks(ephys_test_epochs, ephys_full_pipeline, ephys_golden_dataset_config):
-    """Create EphysBlock entry for the golden dataset — single 35-minute block.
+def ephys_test_blocks(ephys_chunks_ingested, ephys_full_pipeline, ephys_golden_dataset_config):
+    """Create the two EphysBlock entries the golden sortings were produced from.
 
-    Uses the HARP-native ``epoch_start`` from the EphysEpoch row (not the dir
-    name, which is ONIX-wall-clock).
+    The golden sortings index a concatenation of WHOLE EphysChunks, so the blocks must
+    select exactly the chunk sets they were sorted on:
+
+        block 1 -> chunks 0..6   (126,000,000 samples)
+        block 2 -> chunks 4..11  (138,900,600 samples)
+        overlap -> chunks 4, 5, 6
+
+    create_ephys_chunk_restriction selects whole chunks from the one containing
+    block_start through the one containing block_end, and its BETWEEN is inclusive on
+    both ends - a bound sitting exactly on a chunk boundary matches two chunks and
+    silently widens the selection. Bounds are therefore placed at chunk MIDPOINTS.
     """
-    from datetime import timedelta
-
     ephys = ephys_full_pipeline["ephys"]
     cfg = ephys_golden_dataset_config
     exp_name = cfg["experiment_name"]
 
+    chunks = (ephys.EphysChunk & {"experiment_name": exp_name}).to_dicts(order_by="chunk_start")
+    assert len(chunks) >= 12, (
+        f"Expected at least 12 ingested EphysChunks for the golden epoch, got {len(chunks)}. "
+        "The block bounds below assume the full 12-chunk epoch."
+    )
+
+    def midpoint(chunk):
+        return chunk["chunk_start"] + (chunk["chunk_end"] - chunk["chunk_start"]) / 2
+
+    block_bounds = [
+        (chunks[0]["chunk_start"], midpoint(chunks[6])),  # chunks 0..6
+        (midpoint(chunks[4]), midpoint(chunks[11])),  # chunks 4..11
+    ]
+
     probe_insertions = (ephys.ProbeInsertion & {"experiment_name": exp_name}).to_dicts()
-    epoch_start = ephys_test_epochs[0]["epoch_start"]  # HARP-native
-
     for pi in probe_insertions:
-        ephys.EphysBlock.insert1(
-            {
-                "experiment_name": exp_name,
-                "subject": pi["subject"],
-                "insertion_number": pi["insertion_number"],
-                "block_start": epoch_start,
-                "block_end": epoch_start + timedelta(minutes=35),
-            },
-            skip_duplicates=True,
-        )
+        for block_start, block_end in block_bounds:
+            ephys.EphysBlock.insert1(
+                {
+                    "experiment_name": exp_name,
+                    "subject": pi["subject"],
+                    "insertion_number": pi["insertion_number"],
+                    "block_start": block_start,
+                    "block_end": block_end,
+                },
+                skip_duplicates=True,
+            )
 
-    return (ephys.EphysBlock & {"experiment_name": exp_name}).to_dicts()
+    return (ephys.EphysBlock & {"experiment_name": exp_name}).to_dicts(order_by="block_start")
 
 
 @pytest.fixture(scope="session")
@@ -715,6 +735,21 @@ def ephys_block_info_populated(ephys_chunks_ingested, ephys_test_blocks, ctx):
         display_progress=False,
         suppress_errors=False,
     )
+
+    # Fail at setup, not deep inside SyncedSpikes: each block must link exactly the chunk
+    # set its golden sorting was produced from. If this drifts, spike indices overrun the
+    # recording and the failure surfaces as an opaque IndexError much later.
+    expected_chunk_counts = [7, 8]  # block 1 -> chunks 0..6, block 2 -> chunks 4..11
+    blocks = (ctx.ephys.EphysBlock & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
+        order_by="block_start"
+    )
+    for block, expected in zip(blocks, expected_chunk_counts, strict=True):
+        linked = len(ctx.ephys.EphysBlockInfo.Chunk & block)
+        assert linked == expected, (
+            f"Block {block['block_start']} links {linked} chunks, expected {expected}. "
+            "Block bounds and the golden sorting's chunk set have diverged."
+        )
+
     return (
         ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}
     ).to_dicts()
