@@ -570,19 +570,16 @@ class TestPynappleCodecOnGoldenSpikes:
     def golden_tsgroup(self, require_ephys_golden_data, ephys_golden_dataset_config):
         """The largest golden sorting, as a TsGroup. Skips if the artifacts are absent.
 
-        ``require_ephys_golden_data`` resolves ``repository_config["ceph_aeon"]`` —
-        honouring ``DJ_REPOSITORY_CONFIG`` — and brings the DB config along, which
-        the codec import needs because it pulls in ``aeon.dj_pipeline``. Nothing here
-        reads or writes a table.
+        ``require_ephys_golden_data`` returns the epoch path and, via
+        ``dj_config_integration``, sets the test prefix before the codec import pulls
+        in ``aeon.dj_pipeline``, which captures ``db_prefix`` once at import time.
+        Nothing here reads or writes a table.
 
         The sorter/paramset directory is globbed rather than named, and so are the
         block and shank: per the artifacts' own PROVENANCE.md the block names encode
         a pre-PR-#611 clock and will change when ephys is re-ingested.
         """
-        from aeon.dj_pipeline.utils.paths import get_repository_path
-
-        cfg = ephys_golden_dataset_config
-        root = get_repository_path("ceph_aeon") / "raw" / cfg["experiment_path"] / cfg["golden_sorting_dir"]
+        root = require_ephys_golden_data.parent / ephys_golden_dataset_config["golden_sorting_dir"]
         sortings = sorted(root.glob("*/*/*/spike_sorting/in_container_sorting"))
         if not sortings:
             pytest.skip(f"no golden spike-sorting artifacts under {root}")
