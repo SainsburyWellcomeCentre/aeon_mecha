@@ -1007,3 +1007,78 @@ def ephys_sorting_injected(
         "sorting_dirs": sorting_dirs,
         "output_dirs": output_dirs,
     }
+
+@pytest.fixture(scope="session")
+def ephys_curation_applied(ephys_sorting_injected, ephys_full_pipeline):
+    """Auto-approve the raw sorting as official, so UnitMatching.key_source is satisfied.
+
+    No ManualCuration.File is registered, so ApplyOfficialCuration takes its auto-approve
+    branch: it records the approval and returns without re-deriving SortedSpikes. This
+    deliberately does NOT exercise the real curation chain - SortedSpikes stays at
+    curation_id = -1 and unit_quality stays Kilosort's KSLabel.
+    """
+    from datetime import UTC, datetime
+
+    spike_sorting = ephys_full_pipeline["spike_sorting"]
+    curation = ephys_full_pipeline["spike_sorting_curation"]
+
+    # SortedSpikes/SyncedSpikes must exist before a curation can be made official.
+    spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
+    spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
+    spike_sorting.SyncedSpikes.populate(display_progress=True, suppress_errors=False)
+
+    for block in ephys_sorting_injected["blocks"]:
+        key = {
+            **{
+                k: block[k]
+                for k in ("experiment_name", "subject", "insertion_number", "block_start", "block_end")
+            },
+            "electrode_group": ephys_sorting_injected["electrode_group"],
+            "paramset_id": ephys_sorting_injected["paramset_id"],
+        }
+        # ManualCuration is keyed on SpikeSorting; OfficialCuration on PostProcessing.
+        # Both chains are bare `-> parent`, so the key columns are identical.
+        sorting_key = (spike_sorting.SpikeSorting & key).fetch1("KEY")
+        post_key = (spike_sorting.PostProcessing & key).fetch1("KEY")
+        curation.ManualCuration.insert1(
+            {
+                **sorting_key,
+                "curation_id": 1,
+                "curation_datetime": datetime.now(UTC),
+                "parent_curation_id": -1,  # based on the raw sorting
+                "curation_method": "SpikeInterface",
+                "description": "golden-dataset fixture: raw sorting auto-approved, no changes",
+            },
+            skip_duplicates=True,
+        )
+        # No ManualCuration.File row is registered - that absence is what makes
+        # ApplyOfficialCuration take its auto-approve branch.
+        curation.OfficialCuration.insert1({**post_key, "curation_id": 1}, skip_duplicates=True)
+
+    curation.ApplyOfficialCuration.populate(display_progress=True, suppress_errors=False)
+    return ephys_sorting_injected
+
+
+@pytest.fixture(scope="session")
+def ephys_noise_units_marked(ephys_curation_applied, ephys_full_pipeline):
+    """Mark the two lowest-numbered units in each block as noise.
+
+    Auto-approved curation leaves unit_quality at Kilosort's KSLabel, so nothing is ever
+    labelled "noise" and _load_block_unit_spike_trains' exclusion branch stays inert.
+    This marks units directly so the branch is exercised. Deterministic (lowest unit ids)
+    so the assertion in the matching tests is stable.
+    """
+    spike_sorting = ephys_full_pipeline["spike_sorting"]
+    marked = {}
+    for block in ephys_curation_applied["blocks"]:
+        block_key = {
+            k: block[k]
+            for k in ("experiment_name", "subject", "insertion_number", "block_start", "block_end")
+        }
+        units = sorted(int(u) for u in (spike_sorting.SortedSpikes.Unit & block_key).to_arrays("unit"))
+        noise_units = units[:2]
+        for unit in noise_units:
+            row = (spike_sorting.SortedSpikes.Unit & block_key & {"unit": unit}).fetch1()
+            spike_sorting.SortedSpikes.Unit.update1({**row, "unit_quality": "noise"})
+        marked[block["block_start"]] = noise_units
+    return marked
