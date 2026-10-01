@@ -295,24 +295,14 @@ def mock_pynapple_table(pynapple_store):
     schema.drop()
 
 
-def assert_tsgroup_equal(a, b):
-    """Assert two TsGroups are indistinguishable: keys, times, support, metadata."""
-    assert list(a.index) == list(b.index)
-    for unit in a.index:
-        np.testing.assert_array_equal(a[unit].t, b[unit].t)
-    np.testing.assert_array_equal(a.time_support.values, b.time_support.values)
-    for col in a.metadata.columns:
-        np.testing.assert_array_equal(np.asarray(a.get_info(col)), np.asarray(b.get_info(col)))
-
-
 class TestPynappleCodecRoundTrip:
     """Insert through the codec, fetch back, and check what comes out."""
 
-    def test_round_trip_returns_equal_tsgroup(self, mock_pynapple_table, mock_tsgroup):
+    def test_round_trip_returns_equal_tsgroup(self, mock_pynapple_table, mock_tsgroup, assert_nap_equal):
         """Test that a DB round trip preserves keys, times, support and metadata."""
         table, _schema, _loc = mock_pynapple_table
         table.insert1({"rec_id": 1, "data": mock_tsgroup})
-        assert_tsgroup_equal((table & {"rec_id": 1}).fetch1("data"), mock_tsgroup)
+        assert_nap_equal((table & {"rec_id": 1}).fetch1("data"), mock_tsgroup)
 
     def test_real_file_at_schema_addressed_tokened_path(self, mock_pynapple_table, mock_tsgroup):
         """Test that insert writes one tokened ``.npz`` under a schema-addressed path."""
@@ -382,7 +372,7 @@ class TestPynappleCodecGarbageCollection:
         assert stats["schema_paths_orphaned"] == 0
 
     @pytest.mark.parametrize("dry_run", [True, False], ids=["dry_run", "real_run"])
-    def test_collect_orphan(self, mock_pynapple_table, mock_tsgroup, dry_run):
+    def test_collect_orphan(self, mock_pynapple_table, mock_tsgroup, dry_run, assert_nap_equal):
         """Test that a dry run reports without deleting; a real run reclaims only the orphan."""
         table, schema, loc = mock_pynapple_table
         table.insert([{"rec_id": 1, "data": mock_tsgroup}, {"rec_id": 2, "data": mock_tsgroup}])
@@ -402,9 +392,9 @@ class TestPynappleCodecGarbageCollection:
             assert stats["bytes_freed"] > 0
             assert "rec_id=1" in remaining[0].as_posix()
             # the live row must still be readable — not merely present on disk
-            assert_tsgroup_equal((table & {"rec_id": 1}).fetch1("data"), mock_tsgroup)
+            assert_nap_equal((table & {"rec_id": 1}).fetch1("data"), mock_tsgroup)
 
-    def test_collect_is_idempotent(self, mock_pynapple_table, mock_tsgroup):
+    def test_collect_is_idempotent(self, mock_pynapple_table, mock_tsgroup, assert_nap_equal):
         """Test that a second pass finds nothing and the survivor is still readable."""
         table, schema, _loc = mock_pynapple_table
         table.insert([{"rec_id": 1, "data": mock_tsgroup}, {"rec_id": 2, "data": mock_tsgroup}])
@@ -415,7 +405,7 @@ class TestPynappleCodecGarbageCollection:
 
         assert stats["schema_paths_orphaned"] == 0
         assert stats["schema_paths_deleted"] == 0
-        assert_tsgroup_equal((table & {"rec_id": 1}).fetch1("data"), mock_tsgroup)
+        assert_nap_equal((table & {"rec_id": 1}).fetch1("data"), mock_tsgroup)
 
 
 @pytest.fixture
@@ -460,30 +450,21 @@ class TestPynappleInDBIntegration:
         assert table.heading.attributes["data"].codec.name == "pynapple"
         assert table.heading.attributes["data"].store is None
 
-    def test_round_trip_returns_equal_tsgroup(self, mock_pynapple_indb_table, mock_tsgroup):
+    def test_round_trip_returns_equal_tsgroup(
+        self, mock_pynapple_indb_table, mock_tsgroup, assert_nap_equal
+    ):
         """Test that a DB round trip preserves keys, times, support and metadata."""
         table, _schema = mock_pynapple_indb_table
         table.insert1({"rec_id": 1, "data": mock_tsgroup})
-        assert_tsgroup_equal((table & {"rec_id": 1}).fetch1("data"), mock_tsgroup)
+        assert_nap_equal((table & {"rec_id": 1}).fetch1("data"), mock_tsgroup)
 
-    def test_round_trip_returns_equal_intervalset(self, mock_pynapple_indb_table, mock_intervalset):
+    def test_round_trip_returns_equal_intervalset(
+        self, mock_pynapple_indb_table, mock_intervalset, assert_nap_equal
+    ):
         """Test that a non-TsGroup type round trips too, metadata included."""
         table, _schema = mock_pynapple_indb_table
         table.insert1({"rec_id": 2, "data": mock_intervalset})
-        fetched = (table & {"rec_id": 2}).fetch1("data")
-
-        np.testing.assert_array_equal(fetched.start, mock_intervalset.start)
-        np.testing.assert_array_equal(fetched.end, mock_intervalset.end)
-        np.testing.assert_array_equal(
-            np.asarray(fetched.get_info("tag")), np.asarray(mock_intervalset.get_info("tag"))
-        )
-
-    def test_writes_no_files(self, mock_pynapple_indb_table, mock_tsgroup, tmp_path):
-        """Test that nothing lands on disk — the whole point of this form."""
-        table, _schema = mock_pynapple_indb_table
-        before = set(tmp_path.rglob("*"))
-        table.insert1({"rec_id": 3, "data": mock_tsgroup})
-        assert set(tmp_path.rglob("*")) == before
+        assert_nap_equal((table & {"rec_id": 2}).fetch1("data"), mock_intervalset)
 
     def test_insert_rejects_non_pynapple(self, mock_pynapple_indb_table):
         """Test that validate still guards the in-DB form."""

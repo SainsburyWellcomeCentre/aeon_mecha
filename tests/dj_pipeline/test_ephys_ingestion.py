@@ -180,9 +180,9 @@ class TestPreProcessing:
 
 
 class TestCompressedReadEquivalence:
-    """A compressed .zarr twin, read back and given the pipeline's gains/offsets,
-    must reproduce the raw .bin read on real golden data.
+    """A compressed .zarr twin must reproduce the raw .bin read on real golden data.
 
+    The twin is read back and given the pipeline's gains/offsets first.
     This does NOT execute ``PreProcessing.make_compute``; it isolates the
     SpikeInterface round-trip that the read-compressed wiring relies on. The
     companion ``aeon_raw_compression`` library compresses from a plain
@@ -433,7 +433,7 @@ class TestEphysSyncModel:
         # epoch_start, not the bucket hour.
         for row in rows[1:]:
             sync_start = row["sync_start"]
-            assert sync_start.minute == 59 and sync_start.second == 59, (
+            assert (sync_start.minute, sync_start.second) == (59, 59), (
                 f"sync_start={sync_start} is not within the last second of an "
                 f"hour (got minute={sync_start.minute}, second={sync_start.second}). "
                 f"HARP CSVs at hour boundaries should give sync_start = XX:59:59.xxx. "
@@ -570,28 +570,24 @@ class TestPynappleCodecOnGoldenSpikes:
     def golden_tsgroup(self, require_ephys_golden_data, ephys_golden_dataset_config):
         """The largest golden sorting, as a TsGroup. Skips if the artifacts are absent.
 
-        ``require_ephys_golden_data`` resolves ``repository_config["ceph_aeon"]`` —
-        honouring ``DJ_REPOSITORY_CONFIG`` — and brings the DB config along, which
-        the codec import needs because it pulls in ``aeon.dj_pipeline``. Nothing here
-        reads or writes a table.
+        ``require_ephys_golden_data`` returns the epoch path and, via
+        ``dj_config_integration``, configures the test DB. The codec import needs it:
+        importing ``aeon.dj_pipeline`` activates schemas, which connects, under the
+        ``db_prefix`` captured at that moment. Nothing here reads or writes a table.
 
         The sorter/paramset directory is globbed rather than named, and so are the
         block and shank: per the artifacts' own PROVENANCE.md the block names encode
         a pre-PR-#611 clock and will change when ephys is re-ingested.
         """
-        from aeon.dj_pipeline.utils.paths import get_repository_path
-
-        cfg = ephys_golden_dataset_config
-        root = get_repository_path("ceph_aeon") / "raw" / cfg["experiment_path"] / cfg["golden_sorting_dir"]
+        root = require_ephys_golden_data.parent / ephys_golden_dataset_config["golden_sorting_dir"]
         sortings = sorted(root.glob("*/*/*/spike_sorting/in_container_sorting"))
         if not sortings:
             pytest.skip(f"no golden spike-sorting artifacts under {root}")
         largest = max(sortings, key=lambda p: sum(f.stat().st_size for f in p.rglob("*")))
         return self._tsgroup_from_sorting(largest)
 
-    def test_round_trip_is_bit_exact_on_real_spikes(self, golden_tsgroup, tmp_path):
+    def test_round_trip_is_bit_exact_on_real_spikes(self, golden_tsgroup, tmp_path, assert_nap_equal):
         """Test that real spike times survive a round trip exactly, not approximately."""
-        import numpy as np
         from datajoint.settings import Config
 
         from aeon.dj_pipeline.utils.codec import PynappleCodec
@@ -603,24 +599,14 @@ class TestPynappleCodecOnGoldenSpikes:
         stored = codec.encode(golden_tsgroup, key=key, store_name="pynapple_store")
         decoded = codec.decode(stored, key={"_config": config})
 
-        assert list(decoded.index) == list(golden_tsgroup.index)
-        for unit in golden_tsgroup.index:
-            # exact, not allclose: the float64 ULP at Harp magnitude is 477 ns, and a
-            # quantising round trip would shift spikes within a sample undetected
-            assert (decoded[unit].t == golden_tsgroup[unit].t).all()
-        np.testing.assert_array_equal(decoded.time_support.values, golden_tsgroup.time_support.values)
+        assert_nap_equal(decoded, golden_tsgroup)
         assert stored["t_start"] > 3.0e9  # still on the 1904 epoch
         assert stored["n_rows"] == len(golden_tsgroup.index)
 
-    def test_fast_path_matches_stock_on_real_spikes(self, golden_tsgroup, tmp_path):
-        """Test fast-path equivalence and report the speed-up on real data.
-
-        The figure in SPEC_PYNAPPLE_CODEC.md comes from synthetic rates. This prints
-        the measured value on real Kilosort4 output; update the spec from it.
-        """
+    def test_fast_path_matches_stock_on_real_spikes(self, golden_tsgroup, tmp_path, assert_nap_equal):
+        """Test fast-path equivalence and report the speed-up on real data."""
         import time
 
-        import numpy as np
         import pynapple as nap
 
         from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
@@ -636,10 +622,7 @@ class TestPynappleCodecOnGoldenSpikes:
         fast = _tsgroup_from_npz(str(path))
         fast_s = time.perf_counter() - start
 
-        assert list(fast.index) == list(stock.index)
-        for unit in stock.index:
-            np.testing.assert_array_equal(fast[unit].t, stock[unit].t)
-        np.testing.assert_allclose(np.asarray(fast.rate), np.asarray(stock.rate))
+        assert_nap_equal(fast, stock)
 
         n_spikes = sum(len(stock[u]) for u in stock.index)
         print(
