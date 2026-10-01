@@ -2,6 +2,8 @@
 
 from contextlib import nullcontext
 
+import numpy as np
+import pynapple as nap
 import pytest
 import xarray as xr
 from datajoint.errors import DataJointError
@@ -135,9 +137,6 @@ def dj_config_nap(tmp_path):
 
 def _sample_objects():
     """One small instance of each pynapple container, for round-trip coverage."""
-    import numpy as np
-    import pynapple as nap
-
     t = np.arange(6.0) + 3.87e9  # Harp magnitude, where the float64 gap is 477 ns
     return {
         "Ts": nap.Ts(t=t),
@@ -162,9 +161,6 @@ class TestPynappleCodecRoundTrip:
 
     def test_accepts_all_six_pynapple_types(self, mock_tsgroup, mock_intervalset):
         """Test that every pynapple container the codec claims to take validates."""
-        import numpy as np
-        import pynapple as nap
-
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
         t = np.arange(5.0)
@@ -193,8 +189,6 @@ class TestPynappleCodecRoundTrip:
         tolerance. The fixture is deliberately awkward — non-contiguous keys, a unit
         with zero spikes, a two-interval support.
         """
-        import numpy as np
-
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
         codec = PynappleCodec()
@@ -222,8 +216,6 @@ class TestPynappleCodecRoundTrip:
         Each case also checks the type-specific summary, which is what makes the
         stored JSON worth querying without opening the file.
         """
-        import numpy as np
-
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
         obj = _sample_objects()[kind]
@@ -301,9 +293,6 @@ class TestPynappleCodecRoundTrip:
 
 def _tsgroup_shapes():
     """TsGroup shapes that each break the fast path in a different way."""
-    import numpy as np
-    import pynapple as nap
-
     rng = np.random.default_rng(1)
     spikes = lambda n: np.sort(rng.uniform(0, 10, n))  # noqa: E731
     t = np.arange(6.0)
@@ -338,8 +327,6 @@ class TestPynappleFastPath:
     @staticmethod
     def _assert_same(a, b):
         """Assert two TsGroups are indistinguishable."""
-        import numpy as np
-
         assert list(a.index) == list(b.index)
         for unit in a.index:
             np.testing.assert_array_equal(a[unit].t, b[unit].t)
@@ -353,8 +340,6 @@ class TestPynappleFastPath:
     @pytest.mark.parametrize("shape", list(_tsgroup_shapes()), ids=list(_tsgroup_shapes()))
     def test_fast_path_equals_stock_loader(self, shape, tmp_path):
         """Test equivalence on each shape that stresses a different part of the rebuild."""
-        import pynapple as nap
-
         from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
 
         tg = _tsgroup_shapes()[shape]
@@ -369,9 +354,6 @@ class TestPynappleFastPath:
         the group support and then passing ``bypass_check=True`` computes it from
         each member's own support instead — wrong, and silent.
         """
-        import numpy as np
-        import pynapple as nap
-
         from aeon.dj_pipeline.utils.codec import _tsgroup_from_npz
 
         path = tmp_path / "tg.npz"
@@ -393,8 +375,6 @@ class TestPynappleMemberParity:
     @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet", "TsGroup"])
     def test_members_match_pynapple_savez_output(self, kind, tmp_path, mock_tsgroup):
         """Test that member keys and values equal what ``obj.save()`` produces."""
-        import numpy as np
-
         from aeon.dj_pipeline.utils.codec import _to_members
 
         obj = mock_tsgroup if kind == "TsGroup" else _sample_objects()[kind]
@@ -429,8 +409,6 @@ class TestPynappleMemberParity:
         ``_metadata.drop`` mutates, so skipping ``.copy()`` strips ``rate`` from the
         caller's live object — silently, and only visible on the second use.
         """
-        import numpy as np
-
         from aeon.dj_pipeline.utils.codec import _to_members
 
         before = list(mock_tsgroup.metadata_columns)
@@ -448,8 +426,6 @@ class TestPynappleMemberParity:
         The float64 gap at Harp magnitude is 477 ns, so a quantising path would shift
         spikes within a sample and still pass allclose.
         """
-        import numpy as np
-
         from aeon.dj_pipeline.utils.codec import _to_members
 
         path = tmp_path / "ref.npz"
@@ -472,8 +448,6 @@ class TestPynappleMemberRoundTrip:
     @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet"])
     def test_round_trips_each_type(self, kind):
         """Test that type, times, support and values all survive the mapping."""
-        import numpy as np
-
         from aeon.dj_pipeline.utils.codec import _from_members, _to_members
 
         original = _sample_objects()[kind]
@@ -491,8 +465,6 @@ class TestPynappleMemberRoundTrip:
 
     def test_tsdframe_keeps_columns_and_metadata(self):
         """Test that column labels and the pickled metadata both survive."""
-        import numpy as np
-
         from aeon.dj_pipeline.utils.codec import _from_members, _to_members
 
         original = _sample_objects()["TsdFrame"]
@@ -505,8 +477,6 @@ class TestPynappleMemberRoundTrip:
 
     def test_intervalset_keeps_metadata(self):
         """Test that IntervalSet metadata survives, the pickled half of the mapping."""
-        import numpy as np
-
         from aeon.dj_pipeline.utils.codec import _from_members, _to_members
 
         original = _sample_objects()["IntervalSet"]
@@ -522,8 +492,6 @@ class TestPynappleMemberRoundTrip:
         ``rate`` is ``n_samples / tot_length(time_support)``, so a member built
         against its own support gets a plausible but wrong rate, with no error.
         """
-        import numpy as np
-
         from aeon.dj_pipeline.utils.codec import _from_members, _to_members
 
         restored = _from_members(_to_members(mock_tsgroup))
@@ -549,8 +517,6 @@ class TestPynappleInDB:
     @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet"])
     def test_round_trips_without_a_store(self, kind):
         """Test that encode with no store returns members that decode back equal."""
-        import numpy as np
-
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
         codec = PynappleCodec()
@@ -568,8 +534,6 @@ class TestPynappleInDB:
 
     def test_tsgroup_round_trips_without_a_store(self, mock_tsgroup):
         """Test that a TsGroup survives the in-DB form exactly, metadata included."""
-        import numpy as np
-
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
         codec = PynappleCodec()
