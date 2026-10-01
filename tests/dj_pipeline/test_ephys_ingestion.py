@@ -571,9 +571,9 @@ class TestPynappleCodecOnGoldenSpikes:
         """The largest golden sorting, as a TsGroup. Skips if the artifacts are absent.
 
         ``require_ephys_golden_data`` returns the epoch path and, via
-        ``dj_config_integration``, sets the test prefix before the codec import pulls
-        in ``aeon.dj_pipeline``, which captures ``db_prefix`` once at import time.
-        Nothing here reads or writes a table.
+        ``dj_config_integration``, configures the test DB. The codec import needs it:
+        importing ``aeon.dj_pipeline`` activates schemas, which connects, under the
+        ``db_prefix`` captured at that moment. Nothing here reads or writes a table.
 
         The sorter/paramset directory is globbed rather than named, and so are the
         block and shank: per the artifacts' own PROVENANCE.md the block names encode
@@ -604,11 +604,7 @@ class TestPynappleCodecOnGoldenSpikes:
         assert stored["n_rows"] == len(golden_tsgroup.index)
 
     def test_fast_path_matches_stock_on_real_spikes(self, golden_tsgroup, tmp_path, assert_nap_equal):
-        """Test fast-path equivalence and report the speed-up on real data.
-
-        The figure in SPEC_PYNAPPLE_CODEC.md comes from synthetic rates. This prints
-        the measured value on real Kilosort4 output; update the spec from it.
-        """
+        """Test fast-path equivalence and report the speed-up on real data."""
         import time
 
         import pynapple as nap
