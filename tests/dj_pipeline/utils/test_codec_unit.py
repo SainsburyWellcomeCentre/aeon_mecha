@@ -135,7 +135,12 @@ def dj_config_nap(tmp_path):
     return config
 
 
-def _sample_objects():
+# Keys of ``sample_objects``; parametrize needs them at collection, before fixtures run.
+PYNAPPLE_TYPES = ("Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet", "TsGroup")
+
+
+@pytest.fixture
+def sample_objects(mock_tsgroup, mock_intervalset):
     """One small instance of each pynapple container, for round-trip coverage."""
     t = np.arange(6.0) + 3.87e9  # Harp magnitude, where the float64 gap is 477 ns
     return {
@@ -150,28 +155,19 @@ def _sample_objects():
             metadata={"region": np.array(["ca1", "ca3", "dg"])},
         ),
         "TsdTensor": nap.TsdTensor(t=t, d=np.zeros((6, 2, 2))),
-        "IntervalSet": nap.IntervalSet(
-            start=[0.0, 20.0], end=[10.0, 30.0], metadata={"tag": np.array(["wake", "sleep"])}
-        ),
+        "IntervalSet": mock_intervalset,
+        "TsGroup": mock_tsgroup,
     }
 
 
 class TestPynappleCodecRoundTrip:
     """``validate`` / ``encode`` / ``decode`` against a real file store, no DB."""
 
-    def test_accepts_all_six_pynapple_types(self, mock_tsgroup, mock_intervalset):
+    def test_accepts_every_pynapple_type(self, sample_objects):
         """Test that every pynapple container the codec claims to take validates."""
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
-        t = np.arange(5.0)
-        for value in (
-            nap.Ts(t=t),
-            nap.Tsd(t=t, d=np.arange(5)),
-            nap.TsdFrame(t=t, d=np.zeros((5, 2))),
-            nap.TsdTensor(t=t, d=np.zeros((5, 2, 2))),
-            mock_intervalset,
-            mock_tsgroup,
-        ):
+        for value in sample_objects.values():
             PynappleCodec().validate(value)
 
     def test_rejects_non_pynapple(self):
@@ -181,35 +177,17 @@ class TestPynappleCodecRoundTrip:
         with pytest.raises(DataJointError, match="requires a pynapple object"):
             PynappleCodec().validate([1, 2, 3])
 
-    def test_tsgroup_round_trips_bit_exactly(self, dj_config_nap, mock_tsgroup, assert_nap_equal):
-        """Test that keys, times, support and metadata all survive, exactly.
+    @pytest.mark.parametrize("kind", PYNAPPLE_TYPES)
+    def test_round_trips_with_its_summary(self, dj_config_nap, kind, assert_nap_equal, sample_objects):
+        """Test that each type round trips exactly through the store, with its summary.
 
-        The fixture is deliberately awkward — non-contiguous keys, a unit with zero
-        spikes, a two-interval support.
-        """
-        from aeon.dj_pipeline.utils.codec import PynappleCodec
-
-        codec = PynappleCodec()
-        key = {"_schema": "s", "_table": "t", "rec_id": 1, "_config": dj_config_nap}
-        stored = codec.encode(mock_tsgroup, key=key, store_name="pynapple_store")
-        decoded = codec.decode(stored, key={"_config": dj_config_nap})
-
-        assert_nap_equal(decoded, mock_tsgroup)
-        assert (stored["kind"], stored["n_rows"]) == ("TsGroup", 3)
-        assert stored["t_start"] > 3.0e9
-
-    @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet"])
-    def test_every_other_type_round_trips_with_its_summary(self, dj_config_nap, kind, assert_nap_equal):
-        """Test the ``nap.load_file`` branch for each type that takes it.
-
-        The codec is domain-agnostic and claims all six pynapple containers, so all
-        six need round-tripping — not just the two this pipeline happens to use.
+        The codec claims every pynapple container, so each needs round-tripping.
         Each case also checks the type-specific summary, which is what makes the
         stored JSON worth querying without opening the file.
         """
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
-        obj = _sample_objects()[kind]
+        obj = sample_objects[kind]
         codec = PynappleCodec()
         key = {"_schema": "s", "_table": "t", "rec_id": 2, "_config": dj_config_nap}
         stored = codec.encode(obj, key=key, store_name="pynapple_store")
@@ -225,10 +203,11 @@ class TestPynappleCodecRoundTrip:
             "TsdFrame": {"dtype", "n_columns", "columns"},
             "TsdTensor": {"dtype", "shape"},
             "IntervalSet": {"total_seconds"},
+            "TsGroup": {"n_events"},
         }[kind]
         assert expected_extras <= set(stored)
 
-    def test_tsdframe_summary_names_its_columns(self, dj_config_nap):
+    def test_tsdframe_summary_names_its_columns(self, dj_config_nap, sample_objects):
         """Test that a TsdFrame's shape is legible from the stored JSON alone.
 
         ``n_rows`` counts samples, which says nothing about width — the same gap
@@ -237,7 +216,7 @@ class TestPynappleCodecRoundTrip:
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
         key = {"_schema": "s", "_table": "t", "rec_id": 3, "_config": dj_config_nap}
-        stored = PynappleCodec().encode(_sample_objects()["TsdFrame"], key=key, store_name="pynapple_store")
+        stored = PynappleCodec().encode(sample_objects["TsdFrame"], key=key, store_name="pynapple_store")
         assert stored["n_columns"] == 3
         assert stored["columns"] == ["a", "b", "c"]
 
@@ -333,12 +312,12 @@ class TestPynappleMemberParity:
     of rows quietly becoming unreadable by ``nap.load_file``.
     """
 
-    @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet", "TsGroup"])
-    def test_members_match_pynapple_savez_output(self, kind, tmp_path, mock_tsgroup):
+    @pytest.mark.parametrize("kind", PYNAPPLE_TYPES)
+    def test_members_match_pynapple_savez_output(self, kind, tmp_path, sample_objects):
         """Test that member keys and values equal what ``obj.save()`` produces."""
         from aeon.dj_pipeline.utils.codec import _to_members
 
-        obj = mock_tsgroup if kind == "TsGroup" else _sample_objects()[kind]
+        obj = sample_objects[kind]
         path = tmp_path / "ref.npz"
         obj.save(path.as_posix())
 
@@ -406,23 +385,13 @@ class TestPynappleMemberParity:
 class TestPynappleMemberRoundTrip:
     """``_to_members`` then ``_from_members`` must return an equal object."""
 
-    @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet"])
-    def test_round_trips_each_type(self, kind, assert_nap_equal):
+    @pytest.mark.parametrize("kind", PYNAPPLE_TYPES)
+    def test_round_trips_each_type(self, kind, assert_nap_equal, sample_objects):
         """Test that each type survives the mapping, columns and metadata included."""
         from aeon.dj_pipeline.utils.codec import _from_members, _to_members
 
-        original = _sample_objects()[kind]
+        original = sample_objects[kind]
         assert_nap_equal(_from_members(_to_members(original)), original)
-
-    def test_tsgroup_round_trips_with_rate_preserved(self, mock_tsgroup, assert_nap_equal):
-        """Test that the rebuilt TsGroup keys, times, support and rate all match.
-
-        ``rate`` is ``n_samples / tot_length(time_support)``, so a member built
-        against its own support gets a plausible but wrong rate, with no error.
-        """
-        from aeon.dj_pipeline.utils.codec import _from_members, _to_members
-
-        assert_nap_equal(_from_members(_to_members(mock_tsgroup)), mock_tsgroup)
 
 
 class TestPynappleInDB:
@@ -436,26 +405,18 @@ class TestPynappleInDB:
         assert codec.get_dtype(True) == "json"
         assert codec.get_dtype(False) == "<blob>"
 
-    @pytest.mark.parametrize("kind", ["Ts", "Tsd", "TsdFrame", "TsdTensor", "IntervalSet"])
-    def test_round_trips_without_a_store(self, kind, assert_nap_equal):
+    @pytest.mark.parametrize("kind", PYNAPPLE_TYPES)
+    def test_round_trips_without_a_store(self, kind, assert_nap_equal, sample_objects):
         """Test that encode with no store returns members that decode back equal."""
         from aeon.dj_pipeline.utils.codec import PynappleCodec
 
         codec = PynappleCodec()
-        original = _sample_objects()[kind]
+        original = sample_objects[kind]
         encoded = codec.encode(original, key={}, store_name=None)
 
         assert isinstance(encoded, dict)
         assert "path" not in encoded  # the member mapping, not the store summary
         assert_nap_equal(codec.decode(encoded, key={}), original)
-
-    def test_tsgroup_round_trips_without_a_store(self, mock_tsgroup, assert_nap_equal):
-        """Test that a TsGroup survives the in-DB form exactly, metadata included."""
-        from aeon.dj_pipeline.utils.codec import PynappleCodec
-
-        codec = PynappleCodec()
-        restored = codec.decode(codec.encode(mock_tsgroup, key={}, store_name=None), key={})
-        assert_nap_equal(restored, mock_tsgroup)
 
     def test_store_form_is_unaffected(self, dj_config_nap, mock_tsgroup):
         """Test that naming a store still writes a file and returns the JSON summary."""

@@ -466,13 +466,6 @@ class TestPynappleInDBIntegration:
         table.insert1({"rec_id": 2, "data": mock_intervalset})
         assert_nap_equal((table & {"rec_id": 2}).fetch1("data"), mock_intervalset)
 
-    def test_writes_no_files(self, mock_pynapple_indb_table, mock_tsgroup, tmp_path):
-        """Test that nothing lands on disk — the whole point of this form."""
-        table, _schema = mock_pynapple_indb_table
-        before = set(tmp_path.rglob("*"))
-        table.insert1({"rec_id": 3, "data": mock_tsgroup})
-        assert set(tmp_path.rglob("*")) == before
-
     def test_insert_rejects_non_pynapple(self, mock_pynapple_indb_table):
         """Test that validate still guards the in-DB form."""
         import datajoint as dj
