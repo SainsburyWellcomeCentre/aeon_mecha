@@ -393,6 +393,14 @@ class TestPynappleMemberRoundTrip:
         original = sample_objects[kind]
         assert_nap_equal(_from_members(_to_members(original)), original)
 
+    @pytest.mark.parametrize("shape", list(_tsgroup_shapes()))
+    def test_round_trips_each_tsgroup_shape(self, shape, assert_nap_equal):
+        """Test that each awkward TsGroup survives the mapping, Tsd members included."""
+        from aeon.dj_pipeline.utils.codec import _from_members, _to_members
+
+        original = _tsgroup_shapes()[shape]
+        assert_nap_equal(_from_members(_to_members(original)), original)
+
 
 class TestPynappleInDB:
     """The ``<pynapple>`` form: a DataJoint blob, no store, no file."""
