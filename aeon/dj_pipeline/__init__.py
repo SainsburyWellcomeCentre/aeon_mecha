@@ -38,6 +38,7 @@ pymysql.converters.escape_dict = _escape_dict_as_json
 pymysql.converters.encoders[dict] = _escape_dict_as_json
 pymysql.converters.conversions[dict] = _escape_dict_as_json
 
+
 # Register Aeon codecs BEFORE any schema activation. The placement below the
 # MariaDB patch is deliberate, hence the E402 suppression.
 from aeon.dj_pipeline.utils.codec import (  # noqa: E402
