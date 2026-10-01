@@ -153,39 +153,43 @@ class TestPreProcessing:
             "recording.zarr contents should not be registered"
         )
 
-    def test_recording_zarr_exists(self, ephys_sorting_setup, require_ephys_golden_data, ctx):
+    def test_preprocessed_recording_is_usable(self, ephys_sorting_setup, require_ephys_golden_data, ctx):
+        """PreProcessing's DB-tracked deliverable is si_recording.pkl, and it must load.
+
+        This used to assert that recording.zarr had been materialised. The golden fixture
+        deliberately does not materialise it: it is a ~24 GB regenerable intermediate whose
+        only consumer is SpikeSorting, which the fixture injects, and PreProcessing.make_insert
+        explicitly excludes it from PreProcessing.File. si_recording.pkl - the lazy chain over
+        the raw .bin that PostProcessing actually loads - is the real deliverable, so assert
+        that instead. Zarr materialisation is therefore not covered by the golden fixture.
+        """
         self._ensure_prerequisites(ctx)
         key = (ctx.spike_sorting.SortingTask & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()[
             0
         ]
-        from aeon.dj_pipeline.utils.paths import scratch_recording_dir
-
         output_dir = ctx.spike_sorting.PreProcessing.infer_output_dir(key)
-        # recording.zarr lives on the scratch mirror when configured, else in-place on ceph.
-        recording_zarr = scratch_recording_dir(output_dir.parent / "recording") / "recording.zarr"
-        assert recording_zarr.exists(), f"Expected zarr recording at {recording_zarr}"
-        assert any(recording_zarr.iterdir()), "recording.zarr directory is empty"
+        recording_file = output_dir.parent / "recording" / "si_recording.pkl"
+        assert recording_file.exists(), f"Expected si_recording.pkl at {recording_file}"
 
         import numpy as np
         import spikeinterface as si
 
-        rec = si.load(recording_zarr)
+        rec = si.load(recording_file, base_folder=output_dir)
         assert rec.get_num_channels() == ctx.cfg["n_channels"]
 
-        # Sample count should reflect a real multi-minute block, not a truncated
-        # write (the golden block is ~30 min at 30 kHz). A duration range catches
-        # truncation that a bare "> 0" check would miss.
+        # Sample count should reflect a real multi-chunk block, not a truncated write.
+        # Each EphysChunk is 600 s, and the golden blocks span 7 and 8 whole chunks.
         duration_s = rec.get_num_samples() / rec.get_sampling_frequency()
         assert 300 < duration_s < 7200, (
-            f"recording.zarr duration {duration_s:.1f}s outside expected range "
+            f"preprocessed recording duration {duration_s:.1f}s outside expected range "
             "(expected a multi-minute block)"
         )
 
-        # Read a slice back to confirm the zarr actually decompresses to real
-        # data, not just that the directory and metadata exist.
+        # Read a slice back to confirm the lazy chain actually resolves to real data
+        # from the raw .bin, not just that the pickle loads.
         traces = rec.get_traces(start_frame=0, end_frame=1000)
         assert traces.shape == (1000, ctx.cfg["n_channels"])
-        assert np.any(traces != 0), "recording.zarr decompressed to all-zero traces"
+        assert np.any(traces != 0), "preprocessed recording returned all-zero traces"
 
 
 class TestCompressedReadEquivalence:
@@ -282,10 +286,10 @@ class TestPostProcessing:
 
     def test_sorting_analyzer_created(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
-        output_dir = ephys_sorting_injected["output_dir"]
-        analyzer_dir = output_dir / "sorting_analyzer.zarr"
-        assert analyzer_dir.exists(), f"Expected zarr analyzer at {analyzer_dir}"
-        assert any(analyzer_dir.iterdir())
+        for output_dir in ephys_sorting_injected["output_dirs"].values():
+            analyzer_dir = output_dir / "sorting_analyzer.zarr"
+            assert analyzer_dir.exists(), f"Expected zarr analyzer at {analyzer_dir}"
+            assert any(analyzer_dir.iterdir())
 
 
 class TestSortedSpikes:
@@ -306,8 +310,14 @@ class TestSortedSpikes:
 
     def test_unit_count(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
+        import spikeinterface as si
+
+        expected = sum(
+            len(si.load(d / "in_container_sorting").unit_ids)
+            for d in ephys_sorting_injected["sorting_dirs"].values()
+        )
         units = len(ctx.spike_sorting.SortedSpikes.Unit & {"experiment_name": ctx.cfg["experiment_name"]})
-        assert units == ctx.cfg["expected_unit_count"]
+        assert units == expected
 
     def test_spike_counts_reasonable(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
@@ -317,7 +327,14 @@ class TestSortedSpikes:
         for u in units:
             assert u["spike_count"] > 0
         total = sum(u["spike_count"] for u in units)
-        assert total == ctx.cfg["expected_total_spikes"]
+
+        import spikeinterface as si
+
+        expected_total = 0
+        for d in ephys_sorting_injected["sorting_dirs"].values():
+            sorting = si.load(d / "in_container_sorting")
+            expected_total += sum(len(sorting.get_unit_spike_train(u)) for u in sorting.unit_ids)
+        assert total == expected_total
 
     def test_quality_labels_assigned(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
@@ -325,12 +342,12 @@ class TestSortedSpikes:
             ctx.spike_sorting.SortedSpikes.Unit & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         qualities = [u["unit_quality"] for u in units]
+        # Curation is auto-approved, so unit_quality is Kilosort's KSLabel. Assert the
+        # vocabulary, not a fixed distribution: the counts are a property of the artifact, and
+        # session-scoped fixtures mean "noise" may or may not have been applied yet depending
+        # on which tests ran first.
         assert set(qualities) <= {"good", "mua", "noise"}
-        expected = ctx.cfg["expected_quality_counts"]
-        for label, count in expected.items():
-            assert qualities.count(label) == count, (
-                f"Quality label '{label}' count mismatch: expected {count}, got {qualities.count(label)}"
-            )
+        assert all(qualities), "every unit must carry a quality label"
 
 
 class TestSyncedSpikes:
