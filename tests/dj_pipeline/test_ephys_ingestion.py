@@ -180,9 +180,9 @@ class TestPreProcessing:
 
 
 class TestCompressedReadEquivalence:
-    """A compressed .zarr twin, read back and given the pipeline's gains/offsets,
-    must reproduce the raw .bin read on real golden data.
+    """A compressed .zarr twin must reproduce the raw .bin read on real golden data.
 
+    The twin is read back and given the pipeline's gains/offsets first.
     This does NOT execute ``PreProcessing.make_compute``; it isolates the
     SpikeInterface round-trip that the read-compressed wiring relies on. The
     companion ``aeon_raw_compression`` library compresses from a plain
@@ -433,7 +433,7 @@ class TestEphysSyncModel:
         # epoch_start, not the bucket hour.
         for row in rows[1:]:
             sync_start = row["sync_start"]
-            assert sync_start.minute == 59 and sync_start.second == 59, (
+            assert (sync_start.minute, sync_start.second) == (59, 59), (
                 f"sync_start={sync_start} is not within the last second of an "
                 f"hour (got minute={sync_start.minute}, second={sync_start.second}). "
                 f"HARP CSVs at hour boundaries should give sync_start = XX:59:59.xxx. "

@@ -100,16 +100,16 @@ GOLDEN_DATASETS = {
         "probe_type": "neuropixels2.0-multishank",
         "electrode_config_name": "M81_ProbeB_4Shanks_1000_to_1700_um",
         "probe_serial": "23299108854",
-        "n_channels": 8,                       # sorting subset (ElectrodeGroup)
-        "n_recording_channels": 384,           # full recording width (active subset of probe)
+        "n_channels": 8,  # sorting subset (ElectrodeGroup)
+        "n_recording_channels": 384,  # full recording width (active subset of probe)
         "electrodes": list(range(3982, 3990)),
         "required_files": [
             "Metadata.yml",
             "NeuropixelsV2/NeuropixelsV2_ProbeB_AmplifierData_0.bin",
             "NeuropixelsV2/NeuropixelsV2_ProbeB_Clock_0.bin",
         ],
-        "expected_probe_count": 1,            # registered ProbeInsertion: ProbeB only (A disabled)
-        "expected_discovered_probes": 2,      # raw discovery from epoch dir: ProbeA + ProbeB
+        "expected_probe_count": 1,  # registered ProbeInsertion: ProbeB only (A disabled)
+        "expected_discovered_probes": 2,  # raw discovery from epoch dir: ProbeA + ProbeB
         "golden_sorting_dir": "golden_test_sorting",
         "expected_unit_count": 14,
         "expected_total_spikes": 357_480,
@@ -379,19 +379,18 @@ def full_pipeline(dj_config_integration, streams_schema, golden_dataset_config):
     # Step 2: Create ExperimentDevice and DeviceDataStream tables
     streams_module = streams_maker.main(create_tables=True)
 
-    yield {
-        "lab": lab,
-        "subject": subject,
-        "acquisition": acquisition,
-        "streams": streams_module,
-    }
-
     # No per-iteration teardown — golden_dataset_config is parametrized, so
     # this fixture runs once per dataset, and dropping schemas between
     # iterations would invalidate the cached streams_schema fixture. The single
     # session-end cleanup (dropping this run's test-prefixed schemas, and only
     # on an external DB) lives in the streams_schema teardown, which runs
     # exactly once after all params.
+    return {
+        "lab": lab,
+        "subject": subject,
+        "acquisition": acquisition,
+        "streams": streams_module,
+    }
 
 
 @pytest.fixture(scope="session")
@@ -702,9 +701,7 @@ def ephys_test_blocks(ephys_test_epochs, ephys_full_pipeline, ephys_golden_datas
 def ephys_chunks_ingested(ephys_test_epochs, ctx):
     """Run EphysChunk.ingest_chunks once for the golden dataset."""
     ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
-    return (
-        ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}
-    ).to_dicts()
+    return (ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
 
 
 @pytest.fixture(scope="session")
@@ -715,9 +712,7 @@ def ephys_block_info_populated(ephys_chunks_ingested, ephys_test_blocks, ctx):
         display_progress=False,
         suppress_errors=False,
     )
-    return (
-        ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}
-    ).to_dicts()
+    return (ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
 
 
 @pytest.fixture(scope="session")
@@ -744,10 +739,7 @@ def ephys_sorting_setup(ephys_test_blocks, ephys_full_pipeline, ephys_golden_dat
     )
     # 8-electrode subset from cfg (3982-3989), not the full 384 in ElectrodeConfig.
     spike_sorting.ElectrodeGroup.Electrode.insert(
-        (
-            {**electrode_config_key, "electrode_group": "shank3", "electrode": e}
-            for e in cfg["electrodes"]
-        ),
+        ({**electrode_config_key, "electrode_group": "shank3", "electrode": e} for e in cfg["electrodes"]),
         skip_duplicates=True,
     )
 
