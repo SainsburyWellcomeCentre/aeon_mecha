@@ -557,7 +557,8 @@ class TestPynappleInDB:
         original = _sample_objects()[kind]
         encoded = codec.encode(original, key={}, store_name=None)
 
-        assert isinstance(encoded, dict) and "path" not in encoded
+        assert isinstance(encoded, dict)
+        assert "path" not in encoded  # the member mapping, not the store summary
         restored = codec.decode(encoded, key={})
         assert type(restored).__name__ == kind
         if kind == "IntervalSet":
