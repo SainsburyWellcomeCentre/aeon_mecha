@@ -381,14 +381,14 @@ class EphysSyncModel(dj.Manual):
     sync_model: <attach>               # joblib-serialized LinearRegression (onix→harp)
     r2: float32                        # regression fit quality
     n_samples: int32                   # rows in CSV after dropna()
-    unique index (experiment_name, epoch_start, onix_ts_start)
+    unique index (experiment_name, epoch_onix_start, onix_ts_start)
     """
 
     @classmethod
     def ingest(cls, experiment_name: str) -> None:
         """Discover new HarpSync CSVs across all epochs of the experiment and insert sync model rows.
 
-        Idempotent: skips CSVs whose ``(experiment_name, epoch_start, sync_start)``
+        Idempotent: skips CSVs whose ``(experiment_name, epoch_onix_start, sync_start)``
         is already present.
 
         Args:
@@ -435,7 +435,7 @@ class EphysSyncModel(dj.Manual):
 
             existing = cls & {
                 "experiment_name": experiment_name,
-                "epoch_start": epoch_start,
+                "epoch_onix_start": epoch_start,
                 "sync_start": sync_start_dt,
             }
             if existing:
@@ -449,7 +449,7 @@ class EphysSyncModel(dj.Manual):
                 cls.insert1(
                     {
                         "experiment_name": experiment_name,
-                        "epoch_start": epoch_start,
+                        "epoch_onix_start": epoch_onix_start,
                         "sync_start": sync_start_dt,
                         "sync_end": sync_end_dt,
                         "onix_ts_start": int(df_row["clock_start"]),
@@ -461,7 +461,7 @@ class EphysSyncModel(dj.Manual):
                 )
                 logger.info(
                     f"Inserted EphysSyncModel: {experiment_name} "
-                    f"epoch={epoch_start} sync_start={sync_start_dt}"
+                    f"epoch={epoch_onix_start} sync_start={sync_start_dt}"
                 )
 
 
