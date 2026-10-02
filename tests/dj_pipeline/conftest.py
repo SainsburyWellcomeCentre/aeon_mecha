@@ -85,8 +85,8 @@ GOLDEN_DATASETS = {
         "expected_camera_count": 13,
         "expected_feeder_count": 6,
     },
-    # Ephys golden dataset — 8-channel subset of abcGolden01 (NeuropixelsV2 ProbeB)
-    # Electrodes 3982-3989 on shank3, 35 min continuous recording
+    # Ephys golden dataset — NeuropixelsV2 ProbeB shank3 of abcGolden01
+    # All 96 active contacts on shank3; two overlapping blocks (chunks 0-6 and 4-11)
     "foraging_abc_ephys_2026_05_11": {
         "experiment_name": "abcGolden01-aeonx1",
         "experiment_path": "AEONX1/abcGolden01",
@@ -691,8 +691,8 @@ def ephys_test_blocks(ephys_chunks_ingested, ephys_full_pipeline, ephys_golden_d
     exp_name = cfg["experiment_name"]
 
     chunks = (ephys.EphysChunk & {"experiment_name": exp_name}).to_dicts(order_by="chunk_start")
-    assert len(chunks) >= 12, (
-        f"Expected at least 12 ingested EphysChunks for the golden epoch, got {len(chunks)}. "
+    assert len(chunks) == 12, (
+        f"Expected exactly 12 ingested EphysChunks for the golden epoch, got {len(chunks)}. "
         "The block bounds below assume the full 12-chunk epoch."
     )
 
@@ -742,15 +742,26 @@ def ephys_block_info_populated(ephys_chunks_ingested, ephys_test_blocks, ctx):
     # Fail at setup, not deep inside SyncedSpikes: each block must link exactly the chunk
     # set its golden sorting was produced from. If this drifts, spike indices overrun the
     # recording and the failure surfaces as an opaque IndexError much later.
-    expected_chunk_counts = [7, 8]  # block 1 -> chunks 0..6, block 2 -> chunks 4..11
+    # Chunk COUNT alone does not identify WHICH chunks - bounds shifted by one chunk would
+    # still give 7 and 8. Assert the exact chunk identities against the epoch's ordered chunk
+    # list, which is what proves the selection matches the artifact the sorting indexes.
+    epoch_chunks = (ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
+        order_by="chunk_start"
+    )
+    epoch_starts = [c["chunk_start"] for c in epoch_chunks]
+    expected_slices = [slice(0, 7), slice(4, 12)]  # block 1 -> chunks 0..6, block 2 -> chunks 4..11
     blocks = (ctx.ephys.EphysBlock & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
         order_by="block_start"
     )
-    for block, expected in zip(blocks, expected_chunk_counts, strict=True):
-        linked = len(ctx.ephys.EphysBlockInfo.Chunk & block)
+    for block, expected_slice in zip(blocks, expected_slices, strict=True):
+        linked = sorted(
+            c["chunk_start"] for c in (ctx.ephys.EphysBlockInfo.Chunk & block).to_dicts()
+        )
+        expected = epoch_starts[expected_slice]
         assert linked == expected, (
-            f"Block {block['block_start']} links {linked} chunks, expected {expected}. "
-            "Block bounds and the golden sorting's chunk set have diverged."
+            f"Block {block['block_start']} links {len(linked)} chunks starting at {linked[:2]}..., "
+            f"expected {len(expected)} starting at {expected[:2]}.... Block bounds and the golden "
+            "sorting's chunk set have diverged; spike indices would overrun the recording."
         )
 
     return (
@@ -758,16 +769,17 @@ def ephys_block_info_populated(ephys_chunks_ingested, ephys_test_blocks, ctx):
     ).to_dicts()
 
 
-def _shank_electrodes(epoch_path, shank_id):
+def _shank_electrodes(probe_json, shank_id):
     """Active contact ids on one shank, read from the epoch's ProbeInterface JSON.
 
     Reading the geometry rather than hardcoding a range keeps the ElectrodeGroup in step
-    with whatever probe configuration the golden epoch actually used.
+    with whatever probe configuration the golden epoch actually used. The caller resolves
+    the JSON through the production resolver so the named config is used, not whichever
+    file a glob happens to yield first (ProbeA is also a 4-shank JSON).
     """
     import json
 
-    probe_json = next(iter(Path(epoch_path).glob("*_4Shanks_*.json")))
-    probe = json.loads(probe_json.read_text())["probes"][0]
+    probe = json.loads(Path(probe_json).read_text())["probes"][0]
     return sorted(
         int(cid)
         for cid, sid, dci in zip(
@@ -779,14 +791,30 @@ def _shank_electrodes(epoch_path, shank_id):
 
 @pytest.fixture(scope="session")
 def ephys_sorting_setup(
-    ephys_test_blocks, ephys_full_pipeline, ephys_golden_dataset_config, require_ephys_golden_data
+    ephys_block_info_populated,
+    ephys_test_blocks,
+    ephys_full_pipeline,
+    ephys_golden_dataset_config,
+    require_ephys_golden_data,
 ):
     """Set up sorting prerequisites: ElectrodeGroup, SortingParamSet, SortingTask."""
     spike_sorting = ephys_full_pipeline["spike_sorting"]
     ephys = ephys_full_pipeline["ephys"]
     cfg = ephys_golden_dataset_config
     exp_name = cfg["experiment_name"]
-    electrodes = _shank_electrodes(require_ephys_golden_data, cfg["shank_id"])
+    from aeon.dj_pipeline import acquisition
+    from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
+
+    raw_dir = Path(
+        acquisition.Experiment.get_data_directory({"experiment_name": exp_name}, "raw-ephys")
+    )
+    try:
+        probe_json = resolve_epoch_probe_json(
+            raw_dir, require_ephys_golden_data, f"{cfg['electrode_config_name']}.json"
+        )
+    except FileNotFoundError as e:
+        pytest.skip(f"Probe config JSON not found for the golden epoch: {e}")
+    electrodes = _shank_electrodes(probe_json, cfg["shank_id"])
     assert len(electrodes) == cfg["n_channels"], (
         f"Expected {cfg['n_channels']} active contacts on shank{cfg['shank_id']}, got {len(electrodes)}."
     )
@@ -805,7 +833,7 @@ def ephys_sorting_setup(
         },
         skip_duplicates=True,
     )
-    # 8-electrode subset from cfg (3982-3989), not the full 384 in ElectrodeConfig.
+    # All active contacts on one shank (96 of the probe's 384), read from the probe JSON.
     spike_sorting.ElectrodeGroup.Electrode.insert(
         (
             {**electrode_config_key, "electrode_group": "shank3", "electrode": e}
@@ -818,7 +846,7 @@ def ephys_sorting_setup(
         {
             "paramset_id": "400",
             "sorting_method": "kilosort4",
-            "paramset_description": "KS4 golden dataset (8-ch, no drift correction)",
+            "paramset_description": "KS4 golden dataset (96-ch shank3, no drift correction)",
             "params": {
                 "SI_SORTING_PARAMS": {
                     "nblocks": 0,
@@ -889,11 +917,26 @@ def ephys_sorting_setup(
         zarr_path.mkdir(parents=True, exist_ok=True)
         zarr_placeholders[block["block_start"]] = zarr_path
 
+    def assert_zarr_untouched():
+        """Catch a removed skip-if-exists branch wherever PreProcessing was driven from.
+
+        TestPreProcessing drives PreProcessing.populate() directly off this fixture, so the
+        check cannot live only in ephys_sorting_injected - that fixture skips entirely when
+        the sorting artifacts are absent, which is a realistic configuration.
+        """
+        for block_start, path in zarr_placeholders.items():
+            assert not any(path.iterdir()), (
+                f"{path} is not empty - PreProcessing materialised the recording for block "
+                f"{block_start}. The skip-if-exists branch in PreProcessing.make_compute may "
+                "have been removed; without it this writes ~24 GB per block."
+            )
+
     return {
         "electrode_config_key": electrode_config_key,
         "electrode_group": "shank3",
         "paramset_id": "400",
         "zarr_placeholders": zarr_placeholders,
+        "assert_zarr_untouched": assert_zarr_untouched,
     }
 
 
@@ -921,10 +964,8 @@ def ephys_sorting_injected(
     # Run prerequisite populates. PreProcessing is NOT populated here: it runs per block
     # inside the loop below, after that block's recording.zarr placeholder exists. A blanket
     # populate would materialise the ~24 GB intermediate for every block before the guard.
-    ephys.EphysChunk.ingest_chunks(cfg["experiment_name"])
-    ephys.EphysBlockInfo.populate(display_progress=True, suppress_errors=False)
-
-    from aeon.dj_pipeline.utils.paths import scratch_recording_dir
+    # EphysChunk/EphysBlockInfo are already populated (and the chunk set verified) by
+    # ephys_block_info_populated, which ephys_sorting_setup now depends on.
 
     epoch_path = require_ephys_golden_data
     golden_root = epoch_path.parent / cfg["golden_sorting_dir"]
@@ -963,17 +1004,9 @@ def ephys_sorting_injected(
         }
         output_dir = spike_sorting.PreProcessing.infer_output_dir(task_key, mkdir=True)
 
-        # Placeholder was created in ephys_sorting_setup, before anything could populate
-        # PreProcessing; this only re-derives the path to assert it stayed empty.
-        zarr_path = scratch_recording_dir(output_dir.parent / "recording") / "recording.zarr"
-
         spike_sorting.PreProcessing.populate(task_key, display_progress=True, suppress_errors=False)
 
-        assert not any(zarr_path.iterdir()), (
-            f"{zarr_path} is not empty - PreProcessing materialised the recording. The "
-            "skip-if-exists branch in PreProcessing.make_compute may have been removed; without "
-            "it this fixture writes ~24 GB per block."
-        )
+        ephys_sorting_setup["assert_zarr_untouched"]()
 
         test_sorting_dir = output_dir / "spike_sorting"
         if not test_sorting_dir.exists():
@@ -1078,8 +1111,10 @@ def ephys_noise_units_marked(ephys_curation_applied, ephys_full_pipeline):
         units = sorted(int(u) for u in (spike_sorting.SortedSpikes.Unit & block_key).to_arrays("unit"))
         noise_units = units[:2]
         for unit in noise_units:
-            row = (spike_sorting.SortedSpikes.Unit & block_key & {"unit": unit}).fetch1()
-            spike_sorting.SortedSpikes.Unit.update1({**row, "unit_quality": "noise"})
+            # update1 only needs the primary key plus the changed attribute. Fetching the whole
+            # row would pull three <blob@dj_store> arrays and re-upload them to the store.
+            pk = (spike_sorting.SortedSpikes.Unit & block_key & {"unit": unit}).fetch1("KEY")
+            spike_sorting.SortedSpikes.Unit.update1({**pk, "unit_quality": "noise"})
         marked[block["block_start"]] = noise_units
     return marked
 

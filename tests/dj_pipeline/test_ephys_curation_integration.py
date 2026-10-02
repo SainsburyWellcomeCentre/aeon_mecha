@@ -8,7 +8,10 @@ chain (an actual curation file, apply_curation, re-derived SortedSpikes) is out 
 
 import pytest
 
-pytestmark = pytest.mark.integration
+# Specialized, not integration: ephys_curation_applied drives the same ~18-minute chain
+# (PostProcessing + SortedSpikes + SyncedSpikes over 2 blocks x 96 channels) as the matching
+# tests. Keeping the two files in the same tier means one fixture build, not two.
+pytestmark = pytest.mark.specialized
 
 
 class TestAutoApprovedCuration:
@@ -30,13 +33,25 @@ class TestAutoApprovedCuration:
         assert {int(c) for c in curation_ids} == {-1}
 
     def test_unit_set_unchanged_by_apply(self, ephys_curation_applied, ctx):
-        """Every injected unit survives the apply."""
+        """Every injected unit survives the apply - count matched against the artifact.
+
+        A bare `> 0` would pass if the apply deleted all but one unit, which is exactly the
+        failure mode worth catching here.
+        """
+        import spikeinterface as si
+
         for block in ephys_curation_applied["blocks"]:
             block_key = {
                 k: block[k]
                 for k in ("experiment_name", "subject", "insertion_number", "block_start", "block_end")
             }
-            assert len(ctx.spike_sorting.SortedSpikes.Unit & block_key) > 0
+            sorting_dir = ephys_curation_applied["sorting_dirs"][block["block_start"]]
+            expected = len(si.load(sorting_dir / "in_container_sorting").unit_ids)
+            actual = len(ctx.spike_sorting.SortedSpikes.Unit & block_key)
+            assert actual == expected, (
+                f"Block {block['block_start']}: {actual} units in SortedSpikes, "
+                f"{expected} in the injected artifact"
+            )
 
     def test_noise_units_are_marked(self, ephys_noise_units_marked, ctx):
         """Two units per block, four in total, carry unit_quality='noise'."""

@@ -164,9 +164,9 @@ class TestPreProcessing:
         that instead. Zarr materialisation is therefore not covered by the golden fixture.
         """
         self._ensure_prerequisites(ctx)
-        key = (ctx.spike_sorting.SortingTask & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()[
-            0
-        ]
+        key = (ctx.spike_sorting.SortingTask & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
+            order_by="block_start"
+        )[0]
         output_dir = ctx.spike_sorting.PreProcessing.infer_output_dir(key)
         recording_file = output_dir.parent / "recording" / "si_recording.pkl"
         assert recording_file.exists(), f"Expected si_recording.pkl at {recording_file}"
@@ -177,12 +177,18 @@ class TestPreProcessing:
         rec = si.load(recording_file, base_folder=output_dir)
         assert rec.get_num_channels() == ctx.cfg["n_channels"]
 
-        # Sample count should reflect a real multi-chunk block, not a truncated write.
-        # Each EphysChunk is 600 s, and the golden blocks span 7 and 8 whole chunks.
+        # Duration must equal the summed span of the chunks this block actually links - a
+        # loose range would accept anything from 1 to 11 chunks and so could not detect the
+        # wrong chunk set being selected.
+        chunks = (ctx.ephys.EphysBlockInfo.Chunk * ctx.ephys.EphysChunk & key).to_dicts()
+        assert chunks, "block links no chunks"
+        expected_s = sum(
+            (c["chunk_end"] - c["chunk_start"]).total_seconds() for c in chunks
+        )
         duration_s = rec.get_num_samples() / rec.get_sampling_frequency()
-        assert 300 < duration_s < 7200, (
-            f"preprocessed recording duration {duration_s:.1f}s outside expected range "
-            "(expected a multi-minute block)"
+        assert duration_s == pytest.approx(expected_s, abs=2.0), (
+            f"preprocessed recording is {duration_s:.1f}s but its {len(chunks)} linked chunks "
+            f"span {expected_s:.1f}s"
         )
 
         # Read a slice back to confirm the lazy chain actually resolves to real data
@@ -342,12 +348,25 @@ class TestSortedSpikes:
             ctx.spike_sorting.SortedSpikes.Unit & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         qualities = [u["unit_quality"] for u in units]
-        # Curation is auto-approved, so unit_quality is Kilosort's KSLabel. Assert the
-        # vocabulary, not a fixed distribution: the counts are a property of the artifact, and
-        # session-scoped fixtures mean "noise" may or may not have been applied yet depending
-        # on which tests ran first.
-        assert set(qualities) <= {"good", "mua", "noise"}
-        assert all(qualities), "every unit must carry a quality label"
+        # Curation is auto-approved, so unit_quality is Kilosort's KSLabel - except for units
+        # the noise fixture may have re-marked (session-scoped fixtures in another file can run
+        # first). Assert each unit carries EITHER its own KSLabel or "noise", which catches
+        # labels being scrambled between units while staying order-independent.
+        import spikeinterface as si
+
+        expected_kslabel = {}
+        for d in ephys_sorting_injected["sorting_dirs"].values():
+            sorting = si.load(d / "in_container_sorting")
+            labels = sorting.get_property("KSLabel")
+            for unit_id, label in zip(sorting.unit_ids, labels, strict=True):
+                expected_kslabel[int(unit_id)] = str(label).strip().lower()
+
+        assert qualities, "no units found"
+        for u in units:
+            allowed = {expected_kslabel[u["unit"]], "noise"}
+            assert u["unit_quality"] in allowed, (
+                f"unit {u['unit']} has quality {u['unit_quality']!r}, expected one of {allowed}"
+            )
 
 
 class TestSyncedSpikes:
