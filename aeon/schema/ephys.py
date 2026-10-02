@@ -2,10 +2,10 @@ import os
 
 import numpy as np
 import pandas as pd
-from datetime import datetime
 from sklearn.linear_model import LinearRegression
 
 from swc.aeon.io import reader as _reader
+from swc.aeon.io.api import chunk_key
 from swc.aeon.schema.streams import Stream, StreamGroup
 
 
@@ -59,21 +59,9 @@ class HarpSyncModel(Stream):
 
             model = LinearRegression().fit(onix_clock, harp_time)
             r2 = model.score(onix_clock, harp_time)
-            # Chunk timestamp lives in the filename suffix. Two conventions
-            # coexist: the compact UTC form ("...T090000Z.csv", emitted by the
-            # current acquisition software) and the older dashed form
-            # ("...T09-00-00.csv", still used by the test fixtures).
-            chunk_info = file.name.split("_")[-1].removesuffix(".csv")
-            for _fmt in ("%Y-%m-%dT%H%M%SZ", "%Y-%m-%dT%H-%M-%S"):
-                try:
-                    epoch = datetime.strptime(chunk_info, _fmt)
-                    break
-                except ValueError:
-                    continue
-            else:
-                raise ValueError(
-                    f"Unrecognized HarpSync chunk timestamp: {chunk_info!r}"
-                )
+            # chunk_key parses both the compact UTC ("...T090000Z.csv") and the
+            # dashed ("...T09-00-00.csv") filename timestamp conventions.
+            epoch = chunk_key(file)[1].tz_localize(None)
             return pd.DataFrame(
                 index=[epoch],
                 data={

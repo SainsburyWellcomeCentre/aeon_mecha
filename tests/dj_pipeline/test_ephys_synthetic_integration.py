@@ -123,11 +123,6 @@ def _register_experiment_only(tmp_path: Path, raw_dir: Path, experiment_name: st
         )
 
 
-# ===========================================================================
-# TestEphysEpochEndLookback
-# ===========================================================================
-
-
 class TestEphysEpochEndLookback:
     """EphysEpoch.ingest_epochs backfills EphysEpochEnd via look-back.
 
@@ -203,11 +198,6 @@ class TestEphysEpochEndLookback:
             epochs[1]["epoch_start"] - epochs[0]["epoch_start"]
         ).total_seconds() / 3600.0
         assert abs(ends[0]["epoch_duration"] - expected_duration_hours) < 1e-6
-
-
-# ===========================================================================
-# TestEphysBlockInfoMultiConfigValidation
-# ===========================================================================
 
 
 class TestEphysBlockInfoMultiConfigValidation:
@@ -393,3 +383,309 @@ class TestEphysBlockInfoMultiConfigValidation:
                 display_progress=False,
                 suppress_errors=False,
             )
+
+
+class TestEphysChunkOutsideAllWindows:
+    """A chunk entirely before or after an epoch's HarpSync rows must still be ingested.
+
+    It must link to the nearest window: the first for a chunk that ends too early, the
+    last for one that starts too late - extrapolated.
+    """
+
+    @pytest.mark.parametrize(
+        ("case", "ts_range"),
+        [
+            ("before", (0, 0)),
+            ("after", (59500, 59600)),
+        ],
+    )
+    def test_ephys_chunk_outside_window_is_still_ingested(
+        self, dj_config_integration, tmp_path, case, ts_range
+    ):
+        from ephys_factories import (
+            make_synthetic_amplifier_data,
+            make_synthetic_ephys_epoch,
+            register_synthetic_experiment,
+            register_synthetic_probe_insertion,
+        )
+
+        from aeon.dj_pipeline import acquisition, ephys
+        from aeon.dj_pipeline import subject as subj_mod
+
+        # experiment_name is varchar(32) — keep the case suffix short.
+        experiment_name = f"test_chunk_outside_win_{case}"
+        epoch_dir_name = "2024-06-12T10-24-07"
+        device_name = "NeuropixelsV2Beta"
+        probe_label = "ProbeA"
+        subject_name = "test-mouse-outside"
+
+        raw_dir = tmp_path / "raw"
+        raw_dir.mkdir()
+
+        # Single HarpSync window: ONIX clock range [1, 59001].
+        make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=1)
+        # Entire amplifier chunk's ONIX range falls outside that window (before or after it).
+        make_synthetic_amplifier_data(
+            raw_dir, epoch_dir_name, device_name, probe_label, n_chunks=1, ts_ranges=[ts_range]
+        )
+
+        epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+
+        subj_mod.Subject.insert1(
+            {"subject": subject_name, "sex": "U", "subject_birth_date": "2024-01-01"},
+            skip_duplicates=True,
+        )
+        acquisition.Experiment.Subject.insert1(
+            {"experiment_name": experiment_name, "subject": subject_name},
+            skip_duplicates=True,
+        )
+        register_synthetic_probe_insertion(
+            experiment_name, subject_name, epoch_start, probe_label, device_name
+        )
+
+        ephys.EphysSyncModel.ingest(experiment_name)
+        sync_rows = (ephys.EphysSyncModel & {"experiment_name": experiment_name}).to_dicts()
+        assert len(sync_rows) == 1
+        the_only_window_sync_start = sync_rows[0]["sync_start"]
+
+        ephys.EphysChunk.ingest_chunks(experiment_name)
+
+        chunk_rows = (ephys.EphysChunk & {"experiment_name": experiment_name}).to_dicts()
+        assert len(chunk_rows) == 1, (
+            f"Chunk entirely outside every HarpSync row ({case}) was not ingested; got {len(chunk_rows)}."
+        )
+
+        link_rows = (ephys.EphysChunk.SyncModel & {"experiment_name": experiment_name}).to_dicts()
+        assert len(link_rows) == 1, (
+            f"Expected the chunk linked to the epoch's one window, got {len(link_rows)}"
+        )
+        assert link_rows[0]["sync_start"] == the_only_window_sync_start, (
+            f"Chunk linked to sync_start={link_rows[0]['sync_start']}, "
+            f"but the epoch's only window has sync_start={the_only_window_sync_start}"
+        )
+
+
+class TestSyncedSpikesIndexingAndExtrapolation:
+    """Build the minimal DB state for SyncedSpikes.make() without the full spike-sorting pipeline.
+
+    Ephys chunks (each backed by a real 10-sample Clock.bin), SortedSpikes, and everything
+    upstream of it are inserted directly.
+    """
+
+    def _build_and_populate(
+        self, tmp_path, experiment_name, n_chunks, spike_indices, chunk_indices, ts_ranges=None
+    ):
+        """Set up minimal DB state for SyncedSpikes.make(), run it, and return spike_counts.
+
+        - ``n_chunks``: number of ephys chunks (and matching HarpSync windows) to create.
+        - ``ts_ranges``: optional list of (chunk_start, chunk_end) ONIX-clock overrides,
+          one per chunk. Omit to use the factory's default of placing each chunk n's
+          samples inside its own matching window n (use this to push a chunk's samples
+          outside its window instead, e.g. the extrapolation test below).
+        - ``spike_indices``: list of absolute indices into the concatenated recording.
+        - ``chunk_indices``: which ephys chunks' spike_counts to return (0-based, ordered
+          by chunk_start). Returns a list in the same order; 0 for a chunk that got no
+          SyncedSpikes.Unit row at all.
+        """
+        from datetime import UTC, datetime
+
+        import numpy as np
+        from ephys_factories import (
+            make_synthetic_amplifier_data,
+            make_synthetic_ephys_epoch,
+            register_synthetic_experiment,
+            register_synthetic_probe_insertion,
+        )
+
+        from aeon.dj_pipeline import acquisition, ephys, spike_sorting
+        from aeon.dj_pipeline import subject as subj_mod
+
+        epoch_dir_name = "2024-06-13T10-24-07"
+        device_name = "NeuropixelsV2Beta"
+        probe_label = "ProbeA"
+        subject_name = "test-mouse-synced"
+
+        raw_dir = tmp_path / "raw"
+        raw_dir.mkdir()
+
+        # n_chunks HarpSync windows; amplifier chunk n matches window n by default.
+        make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=n_chunks)
+        make_synthetic_amplifier_data(
+            raw_dir,
+            epoch_dir_name,
+            device_name,
+            probe_label,
+            n_chunks=n_chunks,
+            ts_ranges=ts_ranges,
+        )
+
+        epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+
+        subj_mod.Subject.insert1(
+            {"subject": subject_name, "sex": "U", "subject_birth_date": "2024-01-01"},
+            skip_duplicates=True,
+        )
+        acquisition.Experiment.Subject.insert1(
+            {"experiment_name": experiment_name, "subject": subject_name},
+            skip_duplicates=True,
+        )
+        register_synthetic_probe_insertion(
+            experiment_name, subject_name, epoch_start, probe_label, device_name
+        )
+
+        ephys.EphysSyncModel.ingest(experiment_name)
+        ephys.EphysChunk.ingest_chunks(experiment_name)
+
+        chunk_rows = (ephys.EphysChunk & {"experiment_name": experiment_name}).to_dicts(
+            order_by="chunk_start"
+        )
+        assert len(chunk_rows) == n_chunks, f"Expected {n_chunks} ephys chunk(s), got {len(chunk_rows)}"
+        block_start = chunk_rows[0]["chunk_start"]
+        block_end = chunk_rows[-1]["chunk_end"]
+
+        block_key = {
+            "experiment_name": experiment_name,
+            "subject": subject_name,
+            "insertion_number": 1,
+            "block_start": block_start,
+            "block_end": block_end,
+        }
+        ephys.EphysBlock.insert1(block_key)
+
+        probe_type, electrode_config_name = (
+            ephys.EphysEpochConfig.Insertion & {"experiment_name": experiment_name, "subject": subject_name}
+        ).fetch1("probe_type", "electrode_config_name")
+
+        ephys.EphysBlockInfo.insert1(
+            {
+                **block_key,
+                "block_duration": (block_end - block_start).total_seconds() / 3600.0,
+                "probe_type": probe_type,
+                "electrode_config_name": electrode_config_name,
+            },
+            allow_direct_insert=True,
+        )
+        ephys.EphysBlockInfo.Chunk.insert(
+            [{**block_key, "chunk_start": c["chunk_start"]} for c in chunk_rows],
+            allow_direct_insert=True,
+        )
+
+        # ElectrodeGroup/SortingParamSet are global lookups, not experiment-scoped —
+        # skip_duplicates since both tests in this class share the same probe_type/
+        # electrode_config_name (from register_synthetic_probe_insertion's fixed values).
+        econfig_key = {"probe_type": probe_type, "electrode_config_name": electrode_config_name}
+        spike_sorting.ElectrodeGroup.insert1(
+            {
+                **econfig_key,
+                "electrode_group": "all",
+                "electrode_group_description": "synthetic",
+                "electrode_count": 1,
+            },
+            skip_duplicates=True,
+        )
+        spike_sorting.ElectrodeGroup.Electrode.insert1(
+            {**econfig_key, "electrode_group": "all", "electrode": 0}, skip_duplicates=True
+        )
+
+        spike_sorting.SortingParamSet.insert1(
+            {
+                "paramset_id": "test-paramset",
+                "sorting_method": "kilosort4",
+                "paramset_description": "synthetic",
+                "params": {},
+            },
+            skip_duplicates=True,
+        )
+
+        sorting_task_key = {
+            **block_key,
+            **econfig_key,
+            "electrode_group": "all",
+            "paramset_id": "test-paramset",
+        }
+        spike_sorting.SortingTask.insert1(sorting_task_key)
+
+        now = datetime.now(UTC)
+        spike_sorting.PreProcessing.insert1(
+            {
+                **sorting_task_key,
+                "execution_time": now,
+                "execution_duration": 0.0,
+                "sorting_output_dir": "x",
+            },
+            allow_direct_insert=True,
+        )
+        spike_sorting.SpikeSorting.insert1(
+            {**sorting_task_key, "execution_time": now, "execution_duration": 0.0},
+            allow_direct_insert=True,
+        )
+        spike_sorting.PostProcessing.insert1(
+            {**sorting_task_key, "execution_time": now, "execution_duration": 0.0},
+            allow_direct_insert=True,
+        )
+        spike_sorting.SortedSpikes.insert1(
+            {**sorting_task_key, "execution_time": now, "execution_duration": 0.0},
+            allow_direct_insert=True,
+        )
+
+        spike_indices = np.asarray(spike_indices)
+        spike_sorting.SortedSpikes.Unit.insert1(
+            {
+                **sorting_task_key,
+                "unit": 1,
+                "electrode": 0,
+                "unit_quality": "good",
+                "spike_count": len(spike_indices),
+                "spike_indices": spike_indices,
+                "spike_sites": np.zeros(len(spike_indices), dtype=int),
+            },
+            allow_direct_insert=True,
+        )
+
+        spike_sorting.SyncedSpikes.populate(
+            {"experiment_name": experiment_name}, display_progress=False, suppress_errors=False
+        )
+
+        unit_rows = (spike_sorting.SyncedSpikes.Unit & {"experiment_name": experiment_name}).to_dicts(
+            order_by="chunk_start"
+        )
+
+        counts_by_chunk = {r["chunk_start"]: r["spike_count"] for r in unit_rows}
+        return [counts_by_chunk.get(chunk_rows[i]["chunk_start"], 0) for i in chunk_indices]
+
+    def test_offset_counted_from_chunk_start(self, ephys_full_pipeline, tmp_path):
+        """Neither chunk's spike count may cross the other chunk's boundary.
+
+        Two chunks, each with its own HarpSync window and its 10 ONIX samples inside
+        it; spike_indices = [5, 9, 10, 14, 19] into the concatenated [chunk A | chunk B]
+        recording, so chunk A must get only [5, 9] (2 spikes), chunk B only
+        [10, 14, 19] (3 spikes).
+        """
+        chunk_a_count, chunk_b_count = self._build_and_populate(
+            tmp_path,
+            "test_synced_spikes_offset",
+            n_chunks=2,
+            spike_indices=[5, 9, 10, 14, 19],
+            chunk_indices=[0, 1],
+        )
+
+        assert (chunk_a_count, chunk_b_count) == (2, 3), (
+            f"Expected chunk A=2, chunk B=3 spikes; got chunk A={chunk_a_count}, chunk B={chunk_b_count}."
+        )
+
+    def test_spikes_outside_window_bounds(self, ephys_full_pipeline, tmp_path):
+        """Spikes outside a matched sync window's own bounds must be extrapolated, not dropped."""
+        (chunk_count,) = self._build_and_populate(
+            tmp_path,
+            "test_synced_spikes_extrap",
+            n_chunks=1,
+            spike_indices=[0, 3, 7],  # start at 0 so the chunk-start offset is 0
+            chunk_indices=[0],
+            ts_ranges=[(59500, 59600)],  # push it outside the window's [1, 59001] bounds
+        )
+
+        assert chunk_count == 3, (
+            "The chunk's 3 spikes fall outside its matched sync window's own "
+            "[onix_ts_start, onix_ts_end] bounds; they must be extrapolated via the window's "
+            f"model, not dropped. Got spike_count={chunk_count}."
+        )
