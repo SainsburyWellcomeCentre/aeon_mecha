@@ -18,6 +18,46 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
+class TestExperimentTopology:
+    """abcGolden01 is ONE experiment with a behaviour arm and an ephys arm.
+
+    Production registers a single experiment_name carrying both a "raw" and a "raw-ephys"
+    Experiment.Directory, then ingests behaviour epochs and ephys epochs under that one name
+    (docs/ephys_runbooks/step01_register_experiment.py). Modelling it as two experiments would
+    leave that topology - the one production actually runs - untested.
+    """
+
+    def test_one_experiment_carries_both_arms(self, ephys_test_epochs, ctx):
+        exp_key = {"experiment_name": ctx.cfg["experiment_name"]}
+        assert len(ctx.ephys.acquisition.Experiment & exp_key) == 1
+
+        dir_types = {
+            r["directory_type"]
+            for r in (ctx.ephys.acquisition.Experiment.Directory & exp_key).to_dicts()
+        }
+        assert {"raw", "raw-ephys"} <= dir_types, (
+            f"expected both arms registered under {ctx.cfg['experiment_name']}, got {dir_types}"
+        )
+
+    def test_each_arm_resolves_its_own_directory(self, ephys_test_epochs, ctx):
+        """get_data_directory must return a different path per arm, not the same one twice."""
+        exp_key = {"experiment_name": ctx.cfg["experiment_name"]}
+        get_dir = ctx.ephys.acquisition.Experiment.get_data_directory
+        ephys_dir = get_dir(exp_key, directory_type="raw-ephys")
+        behavior_dir = get_dir(exp_key, directory_type="raw")
+
+        assert ephys_dir is not None
+        assert "AEONX1" in str(ephys_dir)
+        # The behaviour tree may be absent on an ephys-only machine; only assert when resolved.
+        if behavior_dir is not None:
+            assert "AEON3" in str(behavior_dir)
+            assert behavior_dir != ephys_dir
+
+    def test_ephys_epochs_ingest_under_the_shared_name(self, ephys_test_epochs, ctx):
+        """EphysEpoch rows land under the same experiment_name the behaviour arm uses."""
+        assert len(ctx.ephys.EphysEpoch & {"experiment_name": ctx.cfg["experiment_name"]}) >= 1
+
+
 class TestEphysEpochDiscovery:
     """Verify ephys epoch and probe discovery setup."""
 

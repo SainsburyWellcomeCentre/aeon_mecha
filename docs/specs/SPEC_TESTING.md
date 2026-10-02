@@ -103,7 +103,7 @@ datasets — every behavior test runs once per dataset:
 | Key | Experiment | Duration | On-disk profile | Pair |
 |---|---|---|---|---|
 | `foraging_abc_2025_11_18` | `abcBehav0-aeon3` | ~1 hour | Full 13 cameras + 6 feeders writing data; rich stream samples (`FeederEncoder` 848k, `CameraPosition` 12k) | Behavior only |
-| `foraging_abc_2026_05_11` | `abcGolden01-aeon3` | ~2 hours | 5 cameras + 4 feeders writing data; sparser samples; paired with the ephys golden | Paired with `foraging_abc_ephys_2026_05_11` |
+| `foraging_abc_2026_05_11` | `abcGolden01-aeon3` | ~2 hours | 5 cameras + 4 feeders writing data; sparser samples | **Behaviour ARM** of `abcGolden01-aeon3`; `foraging_abc_ephys_2026_05_11` is the ephys arm of the *same* experiment |
 
 **Locations** (relative to `DEFAULT_GOLDEN_DATA_ROOT`):
 - `<data-root>/raw/AEON3/abcBehav0/2025-11-18T10-13-15/`
@@ -114,7 +114,24 @@ datasets — every behavior test runs once per dataset:
 
 **Reference device:** `CameraTop` by default; `abcGolden01-aeon3` overrides
 to `CameraNest` via `_ref_device_mapping` in `acquisition.py` (that rig has
-no `CameraTop` on disk).
+no `CameraTop` on disk). Note this mapping is keyed on `experiment_name`, so
+renaming the experiment silently falls back to `CameraTop` and behaviour chunk
+discovery finds nothing.
+
+### One experiment, two arms
+
+`abcGolden01-aeon3` is a **single** DataJoint experiment carrying two
+`Experiment.Directory` rows — `raw` (behaviour, AEON3) and `raw-ephys`
+(NeuropixelsV2, AEONX1) — matching what
+`docs/ephys_runbooks/step01_register_experiment.py` registers in production.
+`acquisition.Epoch.ingest_epochs` and `EphysEpoch.ingest_epochs` both run
+against that one name; `_get_all_chunks` scopes behaviour discovery to
+`["quality-control", "raw"]`, so the arms cannot contaminate each other.
+
+The two registry entries therefore share an `experiment_name` and differ only
+in which directory tree they describe. `ephys_test_experiment` registers both
+directories, so the topology holds even when only the ephys tiers are run.
+`TestExperimentTopology` in `test_ephys_ingestion.py` pins it.
 
 **Mixed file-name formats** in abcGolden01 — CSVs use `T07-00-00`, newer
 bins use `T070000Z`. Both parse via `swc.aeon.io.api.chunk_key`.

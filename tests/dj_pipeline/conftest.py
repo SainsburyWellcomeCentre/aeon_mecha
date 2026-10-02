@@ -69,6 +69,7 @@ GOLDEN_DATASETS = {
     # mixed T07-00-00 for CSVs and T070000Z for bins (both parse cleanly via
     # swc.aeon.io.api.chunk_key).
     "foraging_abc_2026_05_11": {
+        # BEHAVIOUR ARM of abcGolden01 - same experiment as the ephys entry below.
         "experiment_name": "abcGolden01-aeon3",
         "experiment_path": "AEON3/abcGolden01",
         "epoch_dir": "2026-05-11T075134Z",
@@ -88,8 +89,15 @@ GOLDEN_DATASETS = {
     # Ephys golden dataset — NeuropixelsV2 ProbeB shank3 of abcGolden01
     # All 96 active contacts on shank3; two overlapping blocks (chunks 0-6 and 4-11)
     "foraging_abc_ephys_2026_05_11": {
-        "experiment_name": "abcGolden01-aeonx1",
+        # EPHYS ARM of abcGolden01. Shares experiment_name with the behaviour arm above: in
+        # production this is ONE experiment carrying a "raw" and a "raw-ephys" directory (see
+        # docs/ephys_runbooks/step01_register_experiment.py), not two experiments. The -aeon3
+        # suffix is the deployed name - acquisition._ref_device_mapping keys the behaviour
+        # arm's reference device on it, and the production sorting outputs live under it.
+        "experiment_name": "abcGolden01-aeon3",
         "experiment_path": "AEONX1/abcGolden01",
+        # The behaviour arm's tree, registered as this experiment's "raw" directory.
+        "behavior_experiment_path": "AEON3/abcGolden01",
         "epoch_dir": "2026-05-11T07-50-11",
         "subject": "IAA-1147881",
         "arena_name": "circle-2m",
@@ -592,7 +600,7 @@ def ephys_test_experiment(ephys_full_pipeline, require_ephys_golden_data, ephys_
         {
             "experiment_name": cfg["experiment_name"],
             "experiment_start_time": epoch_dt,
-            "experiment_description": "Ephys golden dataset test",
+            "experiment_description": "abcGolden01 golden dataset (behaviour + ephys arms)",
             "arena_name": cfg["arena_name"],
             "lab": cfg["lab"],
             "location": cfg["location"],
@@ -606,14 +614,25 @@ def ephys_test_experiment(ephys_full_pipeline, require_ephys_golden_data, ephys_
         skip_duplicates=True,
     )
 
-    # Split raw: "raw-ephys" for AEONX1 ephys data
-    acquisition.Experiment.Directory.insert1(
-        {
-            "experiment_name": cfg["experiment_name"],
-            "directory_type": "raw-ephys",
-            "repository_name": "ceph_aeon",
-            "directory_path": f"raw/{cfg['experiment_path']}",
-        },
+    # One experiment, two arms: "raw" is the behaviour acquisition on AEON3, "raw-ephys" the
+    # NeuropixelsV2 acquisition on AEONX1. Both are registered here so the production topology
+    # holds even when only the ephys tests run; the behaviour fixture inserts the same "raw"
+    # row under skip_duplicates when both arms are collected in one session.
+    acquisition.Experiment.Directory.insert(
+        [
+            {
+                "experiment_name": cfg["experiment_name"],
+                "directory_type": "raw",
+                "repository_name": "ceph_aeon",
+                "directory_path": f"raw/{cfg['behavior_experiment_path']}",
+            },
+            {
+                "experiment_name": cfg["experiment_name"],
+                "directory_type": "raw-ephys",
+                "repository_name": "ceph_aeon",
+                "directory_path": f"raw/{cfg['experiment_path']}",
+            },
+        ],
         skip_duplicates=True,
     )
 
