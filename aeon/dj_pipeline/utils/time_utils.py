@@ -24,7 +24,7 @@ def compute_chunk_time_model(clock_path, all_timestamps):
     """
     import numpy as np
 
-    clock_binary = np.memmap(clock_path, dtype=np.int64)
+    clock_binary = np.memmap(clock_path, dtype=np.int64, mode='r')
     n_samples = len(clock_binary)
 
     clock_start = clock_binary[0]
