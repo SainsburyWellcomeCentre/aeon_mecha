@@ -1,16 +1,13 @@
 """Auto-approved curation: ApplyOfficialCuration must be a no-op on the raw sorting.
 
-The golden fixture registers a ManualCuration with parent_curation_id = -1 and no curation
-file, which is the state ApplyOfficialCuration's auto-approve branch is written for. It
-records the approval and returns, leaving SortedSpikes on the raw sorting. The real curation
-chain (an actual curation file, apply_curation, re-derived SortedSpikes) is out of scope.
+ManualCuration with parent_curation_id = -1 and no curation file triggers the auto-approve
+branch. The real curation chain is out of scope.
 """
 
 import pytest
 
-# Specialized, not integration: ephys_curation_applied drives the same ~18-minute chain
-# (PostProcessing + SortedSpikes + SyncedSpikes over 2 blocks x 96 channels) as the matching
-# tests. Keeping the two files in the same tier means one fixture build, not two.
+# Specialized: drives the same ~18-minute chain as the matching tests, so one tier means
+# one fixture build.
 pytestmark = pytest.mark.specialized
 
 
@@ -33,17 +30,11 @@ class TestAutoApprovedCuration:
         assert {int(c) for c in curation_ids} == {-1}
 
     def test_unit_set_unchanged_by_apply(self, ephys_curation_applied, ctx):
-        """Every injected unit survives the apply - count matched against the artifact.
-
-        A bare `> 0` would pass if the apply deleted all but one unit, which is exactly the
-        failure mode worth catching here.
-        """
+        """Every injected unit survives the apply, matched against the artifact."""
         import spikeinterface as si
 
         for block in ephys_curation_applied["blocks"]:
-            # Restrict on the full sorting key: block alone would count units from every
-            # electrode group and paramset of that block, which stops constraining the right
-            # rows as soon as a second group is injected into the same session DB.
+            # Full sorting key: block alone counts every electrode group and paramset.
             block_key = {
                 **{
                     k: block[k]
@@ -57,18 +48,13 @@ class TestAutoApprovedCuration:
             actual = {
                 int(u) for u in (ctx.spike_sorting.SortedSpikes.Unit & block_key).to_arrays("unit")
             }
-            # Set equality, not cardinality: dropping unit 7 and adding unit 99 keeps the count.
             assert actual == expected, (
                 f"Block {block['block_start']}: SortedSpikes units differ from the artifact "
                 f"(missing {sorted(expected - actual)[:5]}, extra {sorted(actual - expected)[:5]})"
             )
 
     def test_noise_units_are_marked(self, ephys_noise_units_marked, ctx):
-        """Exactly the units the fixture marked carry unit_quality='noise'.
-
-        Comparing two counts to the literal 4 would pass even if the fixture's update1 had
-        targeted the wrong primary keys, so compare identities.
-        """
+        """Exactly the units the fixture marked carry unit_quality='noise'."""
         marked = {
             (block_start, unit)
             for block_start, units in ephys_noise_units_marked.items()

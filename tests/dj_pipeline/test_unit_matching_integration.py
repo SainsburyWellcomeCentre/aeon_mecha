@@ -1,11 +1,8 @@
 """UnitMatching / GlobalUnit on the golden dataset: two overlapping blocks, one shank.
 
-Structural invariants from docs/specs/SPEC_UNIT_MATCHING.md are asserted hard. Which units
-actually matched comes from compare_two_sorters on real data and will drift with any
-spikeinterface bump, so that is asserted as a floor rather than an exact count.
-
-Marked `specialized` rather than `integration`: the full chain behind these fixtures
-(PostProcessing over ~2M spikes x 96 channels for two blocks) measured ~18 minutes.
+Structural invariants from SPEC_UNIT_MATCHING.md are asserted hard; which units matched
+comes from compare_two_sorters on real data, so that is a floor not an exact count.
+Specialized tier - the fixture chain takes ~18 minutes.
 """
 
 import pytest
@@ -15,8 +12,6 @@ pytestmark = pytest.mark.specialized
 
 class TestUnitMatchingStructure:
     def test_both_blocks_matched(self, ephys_unit_matching_populated, ctx):
-        # Restricted to this fixture's paramset: rows under another matching_paramset_id
-        # would otherwise break an exact count for reasons unrelated to the behaviour here.
         rows = ctx.spike_sorting.UnitMatching & {
             "experiment_name": ctx.cfg["experiment_name"],
             "matching_paramset_id": 1,
@@ -26,10 +21,8 @@ class TestUnitMatchingStructure:
     def test_earlier_block_owns_the_overlap(self, ephys_unit_matching_populated, ctx):
         """For a global unit in both blocks, block 1 owns the shared chunks.
 
-        Uniqueness of (global_unit, chunk_start) is already enforced by a UNIQUE index on
-        Spikes, so asserting it here could never fail - a duplicate would raise an
-        IntegrityError during populate. What the index does NOT enforce is WHICH block wins,
-        and that an implementation writing zero Spikes rows for block 2 would be caught.
+        Uniqueness of (global_unit, chunk_start) is already enforced by a UNIQUE index, so
+        asserting it here could never fail. WHICH block wins is not enforced.
         """
         exp = {"experiment_name": ctx.cfg["experiment_name"], "matching_paramset_id": 1}
         blocks = ephys_unit_matching_populated["blocks"]
@@ -52,8 +45,7 @@ class TestUnitMatchingStructure:
         rows = (ctx.spike_sorting.UnitMatching.Spikes & exp).to_dicts()
         assert rows, "Spikes is empty"
 
-        # Every chunk of the epoch that either block covers must be owned exactly once, and
-        # the union must extend past block 1's own chunks - i.e. block 2 contributed.
+        # The union must extend past block 1's chunks, i.e. block 2 contributed.
         block1_chunks = {
             c["chunk_start"]
             for c in (ctx.ephys.EphysBlockInfo.Chunk & blocks[0]).to_dicts()
@@ -63,8 +55,6 @@ class TestUnitMatchingStructure:
             "no Spikes rows outside block 1's chunks - block 2 contributed nothing"
         )
 
-        # Every unit present in both blocks - not just an arbitrary one from set iteration
-        # order - must have its shared chunks owned by the earlier block.
         for gu in sorted(shared):
             owned_by_block = {
                 (r["chunk_start"], r["block_start"]) for r in rows if r["global_unit"] == gu
@@ -105,8 +95,7 @@ class TestUnitMatchingGuards:
     def test_non_seed_first_block_raises(self, ephys_curation_applied, ctx):
         """make() must refuse a first block that is not the seed."""
         blocks = ephys_curation_applied["blocks"]
-        # Only clean up what this test created: skip_duplicates would silently no-op on a
-        # paramset left behind by an earlier run, and deleting it would destroy foreign state.
+        # Only clean up what this test created.
         pre_existing = bool(
             ctx.spike_sorting.UnitMatchingParamSet & {"matching_paramset_id": 99}
         )
@@ -133,11 +122,8 @@ class TestUnitMatchingGuards:
             with pytest.raises(ValueError, match="seed"):
                 ctx.spike_sorting.UnitMatching().make(bad_key)
         finally:
-            # UnitMatching.key_source is `eligible * UnitMatchingParamSet`, so a leaked
-            # paramset permanently widens it for the session and makes the suite order-
-            # dependent. Remove children first: if make() unexpectedly did NOT raise it will
-            # have inserted UnitMatching rows, and deleting the parent would then fail on a
-            # foreign key - masking the real assertion failure with an unrelated error.
+            # A leaked paramset widens key_source for the session. Children first: if
+            # make() did not raise, the parent delete would hit a foreign key and mask it.
             if not pre_existing:
                 (ctx.spike_sorting.UnitMatching & {"matching_paramset_id": 99}).delete_quick()
                 (
@@ -149,11 +135,7 @@ class TestUnitMatchingBehaviour:
     def test_overlap_produces_at_least_one_match(
         self, ephys_unit_matching_populated, ctx, record_property
     ):
-        """Blocks 1 and 2 share 3 chunks, so some units should be the same neuron.
-
-        A floor, not an exact count: the number comes from compare_two_sorters on real data
-        and will move with any spikeinterface version bump.
-        """
+        """Blocks 1 and 2 share 3 chunks, so some units should be the same neuron."""
         blocks = ephys_unit_matching_populated["blocks"]
         per_block = []
         for block in blocks:

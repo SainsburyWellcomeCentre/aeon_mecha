@@ -91,7 +91,7 @@ class TestEphysBlockInfo:
         assert infos == blocks
 
     def test_block_duration_correct(self, ephys_block_info_populated, ctx):
-        """block_duration is block_end - block_start expressed in hours."""
+        """block_duration is block_end - block_start in hours."""
         infos = (
             ctx.ephys.EphysBlockInfo * ctx.ephys.EphysBlock
             & {"experiment_name": ctx.cfg["experiment_name"]}
@@ -99,9 +99,7 @@ class TestEphysBlockInfo:
         assert len(infos) == 2
         for info in infos:
             expected_hours = (info["block_end"] - info["block_start"]).total_seconds() / 3600
-            # block_duration is a float32 column, so the stored value carries ~7 significant
-            # digits. A relative tolerance tests the hours conversion without pinning storage
-            # precision; an absolute 1e-6 is tighter than the column can represent.
+            # float32 column: ~6 significant digits, tighter than an absolute 1e-6.
             assert info["block_duration"] == pytest.approx(expected_hours, rel=1e-5)
 
     def test_block_chunks_associated(self, ephys_block_info_populated, ctx):
@@ -109,9 +107,7 @@ class TestEphysBlockInfo:
         assert chunk_links >= 1
 
     def test_channel_mappings_created(self, ephys_block_info_populated, ctx):
-        # EphysBlockInfo.Channel records the recording's channels (full active set, not the
-        # sorting subset), so we check n_recording_channels (384) PER BLOCK - the golden
-        # fixture builds two blocks, so an experiment-wide count would be 768.
+        # Full active set (384) PER BLOCK - experiment-wide would be 768 across two blocks.
         blocks = (ctx.ephys.EphysBlock & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
             order_by="block_start"
         )
@@ -154,14 +150,10 @@ class TestPreProcessing:
         )
 
     def test_preprocessed_recording_is_usable(self, ephys_sorting_setup, require_ephys_golden_data, ctx):
-        """PreProcessing's DB-tracked deliverable is si_recording.pkl, and it must load.
+        """si_recording.pkl is PreProcessing's DB-tracked deliverable and must load.
 
-        This used to assert that recording.zarr had been materialised. The golden fixture
-        deliberately does not materialise it: it is a ~24 GB regenerable intermediate whose
-        only consumer is SpikeSorting, which the fixture injects, and PreProcessing.make_insert
-        explicitly excludes it from PreProcessing.File. si_recording.pkl - the lazy chain over
-        the raw .bin that PostProcessing actually loads - is the real deliverable, so assert
-        that instead. Zarr materialisation is therefore not covered by the golden fixture.
+        The golden fixture does not materialise recording.zarr (~24 GB, only read by the
+        injected SpikeSorting), so zarr writing is not covered here.
         """
         self._ensure_prerequisites(ctx)
         key = (ctx.spike_sorting.SortingTask & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
@@ -177,9 +169,7 @@ class TestPreProcessing:
         rec = si.load(recording_file, base_folder=output_dir)
         assert rec.get_num_channels() == ctx.cfg["n_channels"]
 
-        # Duration must equal the summed span of the chunks this block actually links - a
-        # loose range would accept anything from 1 to 11 chunks and so could not detect the
-        # wrong chunk set being selected.
+        # Summed span of the linked chunks: a loose range would accept 1 to 11 chunks.
         chunks = (ctx.ephys.EphysBlockInfo.Chunk * ctx.ephys.EphysChunk & key).to_dicts()
         assert chunks, "block links no chunks"
         expected_s = sum(
@@ -191,8 +181,7 @@ class TestPreProcessing:
             f"span {expected_s:.1f}s"
         )
 
-        # Read a slice back to confirm the lazy chain actually resolves to real data
-        # from the raw .bin, not just that the pickle loads.
+        # Confirm the lazy chain resolves to real data, not just that the pickle loads.
         traces = rec.get_traces(start_frame=0, end_frame=1000)
         assert traces.shape == (1000, ctx.cfg["n_channels"])
         assert np.any(traces != 0), "preprocessed recording returned all-zero traces"
@@ -348,14 +337,12 @@ class TestSortedSpikes:
             ctx.spike_sorting.SortedSpikes.Unit & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         qualities = [u["unit_quality"] for u in units]
-        # Curation is auto-approved, so unit_quality is Kilosort's KSLabel - except for units
-        # the noise fixture may have re-marked (session-scoped fixtures in another file can run
-        # first). Assert each unit carries EITHER its own KSLabel or "noise", which catches
-        # labels being scrambled between units while staying order-independent.
+        # Auto-approved curation leaves KSLabel, except where the noise fixture re-marked a
+        # unit. Either/or keeps this order-independent across session-scoped fixtures.
         import spikeinterface as si
 
-        # Keyed per BLOCK, not per unit id: SpikeInterface unit ids restart for each sorting,
-        # so the two blocks share 25 ids. A single dict would let block 2 overwrite block 1.
+        # Keyed per block: SpikeInterface unit ids restart per sorting and the two blocks
+        # share 25 ids.
         expected_kslabel = {}
         for block_start, d in ephys_sorting_injected["sorting_dirs"].items():
             sorting = si.load(d / "in_container_sorting")

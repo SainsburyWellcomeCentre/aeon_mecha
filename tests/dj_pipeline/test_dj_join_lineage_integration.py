@@ -55,14 +55,11 @@ def test_namesake_secondary_attribute_requires_projection(dj_config_integration)
         non_noise = Parent - {"unit_quality": "noise"}
         assert len(non_noise) == 1
 
-        # Match the lineage condition, not merely the attribute name: any DataJointError
-        # mentioning "spike_count" (a failed insert, a stale table from a leaked run) would
-        # otherwise satisfy this and the test could pass without exercising the rule.
+        # Match the lineage condition, not just the attribute name.
         with pytest.raises(dj.DataJointError, match=r"(?is)spike_count.*lineage|lineage.*spike_count"):
             len(Child & non_noise)
 
         assert len(Child & non_noise.proj()) == 1
     finally:
-        # Drop unconditionally: under TEST_DB_PREFIX (external DB, no fresh container) a
-        # leaked schema makes the next run fail on duplicate keys and masks the real failure.
+        # Unconditional: a leaked schema breaks the next run under TEST_DB_PREFIX.
         schema.drop()

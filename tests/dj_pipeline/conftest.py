@@ -674,17 +674,10 @@ def ephys_test_epochs(
 def ephys_test_blocks(ephys_chunks_ingested, ephys_full_pipeline, ephys_golden_dataset_config):
     """Create the two EphysBlock entries the golden sortings were produced from.
 
-    The golden sortings index a concatenation of WHOLE EphysChunks, so the blocks must
-    select exactly the chunk sets they were sorted on:
+    block 1 -> chunks 0..6, block 2 -> chunks 4..11, overlapping on 4-6.
 
-        block 1 -> chunks 0..6   (126,000,000 samples)
-        block 2 -> chunks 4..11  (138,900,600 samples)
-        overlap -> chunks 4, 5, 6
-
-    create_ephys_chunk_restriction selects whole chunks from the one containing
-    block_start through the one containing block_end, and its BETWEEN is inclusive on
-    both ends - a bound sitting exactly on a chunk boundary matches two chunks and
-    silently widens the selection. Bounds are therefore placed at chunk MIDPOINTS.
+    Bounds sit at chunk MIDPOINTS: create_ephys_chunk_restriction's BETWEEN is inclusive,
+    so a bound on a chunk boundary matches two chunks and widens the selection.
     """
     ephys = ephys_full_pipeline["ephys"]
     cfg = ephys_golden_dataset_config
@@ -739,12 +732,8 @@ def ephys_block_info_populated(ephys_chunks_ingested, ephys_test_blocks, ctx):
         suppress_errors=False,
     )
 
-    # Fail at setup, not deep inside SyncedSpikes: each block must link exactly the chunk
-    # set its golden sorting was produced from. If this drifts, spike indices overrun the
-    # recording and the failure surfaces as an opaque IndexError much later.
-    # Chunk COUNT alone does not identify WHICH chunks - bounds shifted by one chunk would
-    # still give 7 and 8. Assert the exact chunk identities against the epoch's ordered chunk
-    # list, which is what proves the selection matches the artifact the sorting indexes.
+    # Assert chunk identities, not counts: bounds shifted by one chunk still give 7 and 8.
+    # Failing here beats an opaque IndexError inside SyncedSpikes 15 minutes later.
     epoch_chunks = (ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
         order_by="chunk_start"
     )
@@ -770,13 +759,7 @@ def ephys_block_info_populated(ephys_chunks_ingested, ephys_test_blocks, ctx):
 
 
 def _shank_electrodes(probe_json, shank_id):
-    """Active contact ids on one shank, read from the epoch's ProbeInterface JSON.
-
-    Reading the geometry rather than hardcoding a range keeps the ElectrodeGroup in step
-    with whatever probe configuration the golden epoch actually used. The caller resolves
-    the JSON through the production resolver so the named config is used, not whichever
-    file a glob happens to yield first (ProbeA is also a 4-shank JSON).
-    """
+    """Active contact ids on one shank, read from the epoch's ProbeInterface JSON."""
     import json
 
     probe = json.loads(Path(probe_json).read_text())["probes"][0]
@@ -894,11 +877,9 @@ def ephys_sorting_setup(
             skip_duplicates=True,
         )
 
-    # Pre-create each block's recording.zarr so PreProcessing's skip-if-exists branch fires and
-    # the ~24 GB intermediate is never materialised. Its only consumer is SpikeSorting, which the
-    # golden fixture injects. This lives here, not in ephys_sorting_injected, because
-    # TestPreProcessing calls PreProcessing.populate() directly off this fixture - a placeholder
-    # created later would be too late and the write would already have happened.
+    # Pre-create recording.zarr so PreProcessing's skip-if-exists branch fires: the ~24 GB
+    # intermediate is only read by SpikeSorting, which the fixture injects. Must live here -
+    # TestPreProcessing populates PreProcessing directly off this fixture.
     from aeon.dj_pipeline.utils.paths import scratch_recording_dir
 
     zarr_placeholders = {}
@@ -918,11 +899,9 @@ def ephys_sorting_setup(
         zarr_placeholders[block["block_start"]] = zarr_path
 
     def assert_zarr_untouched():
-        """Catch a removed skip-if-exists branch wherever PreProcessing was driven from.
+        """Catch a removed skip-if-exists branch.
 
-        TestPreProcessing drives PreProcessing.populate() directly off this fixture, so the
-        check cannot live only in ephys_sorting_injected - that fixture skips entirely when
-        the sorting artifacts are absent, which is a realistic configuration.
+        Not in ephys_sorting_injected: that fixture skips when the artifacts are absent.
         """
         for block_start, path in zarr_placeholders.items():
             assert not any(path.iterdir()), (
@@ -964,8 +943,6 @@ def ephys_sorting_injected(
     # Run prerequisite populates. PreProcessing is NOT populated here: it runs per block
     # inside the loop below, after that block's recording.zarr placeholder exists. A blanket
     # populate would materialise the ~24 GB intermediate for every block before the guard.
-    # EphysChunk/EphysBlockInfo are already populated (and the chunk set verified) by
-    # ephys_block_info_populated, which ephys_sorting_setup now depends on.
 
     epoch_path = require_ephys_golden_data
     golden_root = epoch_path.parent / cfg["golden_sorting_dir"]
@@ -1020,8 +997,7 @@ def ephys_sorting_injected(
                 {**task_key, "execution_time": datetime.now(UTC), "execution_duration": 0.0},
                 allow_direct_insert=True,
             )
-            # rglob, so a stripped tree (no sorter_output/) registers fewer rows and everything
-            # else behaves identically. Nothing reads these rows except a lookup by file name.
+            # rglob: a stripped tree (no sorter_output/) just registers fewer rows.
             spike_sorting.SpikeSorting.File.insert(
                 [
                     {**task_key, "file_name": f.relative_to(test_sorting_dir).as_posix(), "file": f}
@@ -1043,12 +1019,11 @@ def ephys_sorting_injected(
 
 @pytest.fixture(scope="session")
 def ephys_curation_applied(ephys_sorting_injected, ephys_full_pipeline):
-    """Auto-approve the raw sorting as official, so UnitMatching.key_source is satisfied.
+    """Auto-approve the raw sorting, satisfying UnitMatching.key_source.
 
-    No ManualCuration.File is registered, so ApplyOfficialCuration takes its auto-approve
-    branch: it records the approval and returns without re-deriving SortedSpikes. This
-    deliberately does NOT exercise the real curation chain - SortedSpikes stays at
-    curation_id = -1 and unit_quality stays Kilosort's KSLabel.
+    No ManualCuration.File means ApplyOfficialCuration takes its auto-approve branch, so
+    SortedSpikes stays at curation_id = -1 with Kilosort's KSLabel. The real curation
+    chain is out of scope.
     """
     from datetime import UTC, datetime
 
@@ -1096,10 +1071,8 @@ def ephys_curation_applied(ephys_sorting_injected, ephys_full_pipeline):
 def ephys_noise_units_marked(ephys_curation_applied, ephys_full_pipeline):
     """Mark the two lowest-numbered units in each block as noise.
 
-    Auto-approved curation leaves unit_quality at Kilosort's KSLabel, so nothing is ever
-    labelled "noise" and _load_block_unit_spike_trains' exclusion branch stays inert.
-    This marks units directly so the branch is exercised. Deterministic (lowest unit ids)
-    so the assertion in the matching tests is stable.
+    Auto-approved curation leaves unit_quality at KSLabel, so nothing is ever "noise" and
+    the exclusion branch in _load_block_unit_spike_trains stays inert without this.
     """
     spike_sorting = ephys_full_pipeline["spike_sorting"]
     marked = {}
@@ -1111,8 +1084,7 @@ def ephys_noise_units_marked(ephys_curation_applied, ephys_full_pipeline):
         units = sorted(int(u) for u in (spike_sorting.SortedSpikes.Unit & block_key).to_arrays("unit"))
         noise_units = units[:2]
         for unit in noise_units:
-            # update1 only needs the primary key plus the changed attribute. Fetching the whole
-            # row would pull three <blob@dj_store> arrays and re-upload them to the store.
+            # Key + changed attribute only: a full row would re-upload three external blobs.
             pk = (spike_sorting.SortedSpikes.Unit & block_key & {"unit": unit}).fetch1("KEY")
             spike_sorting.SortedSpikes.Unit.update1({**pk, "unit_quality": "noise"})
         marked[block["block_start"]] = noise_units
