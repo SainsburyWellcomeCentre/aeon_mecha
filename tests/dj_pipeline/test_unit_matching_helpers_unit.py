@@ -85,9 +85,12 @@ class TestCompareSpikeTrainsInOverlap:
     def test_returns_none_when_one_side_has_no_spikes_in_overlap(self):
         from aeon.dj_pipeline.spike_sorting import _compare_spike_trains_in_overlap
 
+        # The first train must lie INSIDE the B1/B2 overlap (07:30-08:00), otherwise both
+        # sides come back empty and the helper returns None through the "neither side has
+        # spikes" path - never exercising the one-sided-empty branch this test is named for.
         result = _compare_spike_trains_in_overlap(
-            {1: self._train(self.B1, 10)},  # spikes only in the first 5s of B1
-            {1: np.array([])},
+            {1: self._train(self.B2, 60)},  # inside the overlap
+            {1: np.array([])},  # the empty side
             self.B1,
             self.B2,
         )
@@ -112,4 +115,6 @@ class TestCompareSpikeTrainsInOverlap:
             {7: this_train}, {3: prev_train}, self.B1, self.B2
         )
         assert comparison is not None
-        assert comparison.agreement_scores.loc[3, 7] < 0.5
+        # 5 ms apart with delta_time=0.4 ms means no coincidences at all. Asserting < 0.5
+        # (exactly match_score) would also accept 0.49, i.e. near-identical trains.
+        assert comparison.agreement_scores.loc[3, 7] == pytest.approx(0.0, abs=0.01)

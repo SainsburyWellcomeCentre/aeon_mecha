@@ -354,18 +354,23 @@ class TestSortedSpikes:
         # labels being scrambled between units while staying order-independent.
         import spikeinterface as si
 
+        # Keyed per BLOCK, not per unit id: SpikeInterface unit ids restart for each sorting,
+        # so the two blocks share 25 ids. A single dict would let block 2 overwrite block 1.
         expected_kslabel = {}
-        for d in ephys_sorting_injected["sorting_dirs"].values():
+        for block_start, d in ephys_sorting_injected["sorting_dirs"].items():
             sorting = si.load(d / "in_container_sorting")
             labels = sorting.get_property("KSLabel")
+            assert labels is not None, f"no KSLabel property in {d}"
             for unit_id, label in zip(sorting.unit_ids, labels, strict=True):
-                expected_kslabel[int(unit_id)] = str(label).strip().lower()
+                expected_kslabel[(block_start, int(unit_id))] = str(label).strip().lower()
 
         assert qualities, "no units found"
         for u in units:
-            allowed = {expected_kslabel[u["unit"]], "noise"}
+            key = (u["block_start"], u["unit"])
+            assert key in expected_kslabel, f"unit {key} not present in any injected artifact"
+            allowed = {expected_kslabel[key], "noise"}
             assert u["unit_quality"] in allowed, (
-                f"unit {u['unit']} has quality {u['unit_quality']!r}, expected one of {allowed}"
+                f"unit {key} has quality {u['unit_quality']!r}, expected one of {allowed}"
             )
 
 

@@ -1,9 +1,13 @@
 """DataJoint 2.x rejects joins on same-named attributes with no common lineage.
 
 SortedSpikes.Unit and SyncedSpikes.Unit each declare a secondary `spike_count`
-independently. Restricting one by the other without .proj() raises. This pins the
-rule so the projection in _load_block_unit_spike_trains is not removed again.
-See PR #609 for the same bug class in SpikeSorting.make_insert.
+independently, which is why _load_block_unit_spike_trains must .proj() its restricting
+operand. See PR #609 for the same bug class in SpikeSorting.make_insert.
+
+SCOPE: this pins the DataJoint LIBRARY behaviour on two throwaway tables - it would stay
+green if the production .proj() were removed. The end-to-end guard for that is
+tests/dj_pipeline/test_unit_matching_integration.py, whose fixtures cannot populate
+without it.
 """
 
 import pytest
@@ -47,12 +51,18 @@ def test_namesake_secondary_attribute_requires_projection(dj_config_integration)
         ]
     )
 
-    non_noise = Parent - {"unit_quality": "noise"}
-    assert len(non_noise) == 1
+    try:
+        non_noise = Parent - {"unit_quality": "noise"}
+        assert len(non_noise) == 1
 
-    with pytest.raises(dj.DataJointError, match="spike_count"):
-        len(Child & non_noise)
+        # Match the lineage condition, not merely the attribute name: any DataJointError
+        # mentioning "spike_count" (a failed insert, a stale table from a leaked run) would
+        # otherwise satisfy this and the test could pass without exercising the rule.
+        with pytest.raises(dj.DataJointError, match=r"(?is)spike_count.*lineage|lineage.*spike_count"):
+            len(Child & non_noise)
 
-    assert len(Child & non_noise.proj()) == 1
-
-    schema.drop()
+        assert len(Child & non_noise.proj()) == 1
+    finally:
+        # Drop unconditionally: under TEST_DB_PREFIX (external DB, no fresh container) a
+        # leaked schema makes the next run fail on duplicate keys and masks the real failure.
+        schema.drop()

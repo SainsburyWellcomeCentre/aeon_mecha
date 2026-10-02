@@ -15,8 +15,13 @@ pytestmark = pytest.mark.specialized
 
 class TestUnitMatchingStructure:
     def test_both_blocks_matched(self, ephys_unit_matching_populated, ctx):
-        rows = ctx.spike_sorting.UnitMatching & {"experiment_name": ctx.cfg["experiment_name"]}
-        assert len(rows) == 2
+        # Restricted to this fixture's paramset: rows under another matching_paramset_id
+        # would otherwise break an exact count for reasons unrelated to the behaviour here.
+        rows = ctx.spike_sorting.UnitMatching & {
+            "experiment_name": ctx.cfg["experiment_name"],
+            "matching_paramset_id": 1,
+        }
+        assert len(rows) == len(ephys_unit_matching_populated["blocks"])
 
     def test_earlier_block_owns_the_overlap(self, ephys_unit_matching_populated, ctx):
         """For a global unit in both blocks, block 1 owns the shared chunks.
@@ -26,8 +31,12 @@ class TestUnitMatchingStructure:
         IntegrityError during populate. What the index does NOT enforce is WHICH block wins,
         and that an implementation writing zero Spikes rows for block 2 would be caught.
         """
-        exp = {"experiment_name": ctx.cfg["experiment_name"]}
+        exp = {"experiment_name": ctx.cfg["experiment_name"], "matching_paramset_id": 1}
         blocks = ephys_unit_matching_populated["blocks"]
+        assert len(blocks) == 2, f"this test assumes exactly two blocks, got {len(blocks)}"
+        assert blocks[0]["block_start"] < blocks[1]["block_start"], (
+            "blocks must be ordered by block_start for 'earlier block owns' to mean anything"
+        )
         per_block = [
             {
                 int(g)
@@ -54,17 +63,18 @@ class TestUnitMatchingStructure:
             "no Spikes rows outside block 1's chunks - block 2 contributed nothing"
         )
 
-        # For a unit present in both blocks, the shared chunks are owned by block 1.
-        gu = next(iter(shared))
-        owned_by_block = {
-            (r["chunk_start"], r["block_start"]) for r in rows if r["global_unit"] == gu
-        }
-        for chunk_start, owner in owned_by_block:
-            if chunk_start in block1_chunks:
-                assert owner == blocks[0]["block_start"], (
-                    f"chunk {chunk_start} of global unit {gu} is owned by {owner}, "
-                    f"expected the earlier block {blocks[0]['block_start']}"
-                )
+        # Every unit present in both blocks - not just an arbitrary one from set iteration
+        # order - must have its shared chunks owned by the earlier block.
+        for gu in sorted(shared):
+            owned_by_block = {
+                (r["chunk_start"], r["block_start"]) for r in rows if r["global_unit"] == gu
+            }
+            for chunk_start, owner in owned_by_block:
+                if chunk_start in block1_chunks:
+                    assert owner == blocks[0]["block_start"], (
+                        f"chunk {chunk_start} of global unit {gu} is owned by {owner}, "
+                        f"expected the earlier block {blocks[0]['block_start']}"
+                    )
 
     def test_global_unit_ids_contiguous_from_one(self, ephys_unit_matching_populated, ctx):
         ids = sorted(
@@ -78,7 +88,9 @@ class TestUnitMatchingStructure:
 
     def test_noise_units_excluded(self, ephys_unit_matching_populated, ctx):
         """Units labelled noise stay in SortedSpikes but get no global identity."""
-        for block_start, noise_units in ephys_unit_matching_populated["noise_units"].items():
+        noise_map = ephys_unit_matching_populated["noise_units"]
+        assert any(noise_map.values()), "no noise units were marked - this test would be vacuous"
+        for block_start, noise_units in noise_map.items():
             matched = (
                 ctx.spike_sorting.UnitMatching.Unit
                 & {"experiment_name": ctx.cfg["experiment_name"], "block_start": block_start}
@@ -93,6 +105,11 @@ class TestUnitMatchingGuards:
     def test_non_seed_first_block_raises(self, ephys_curation_applied, ctx):
         """make() must refuse a first block that is not the seed."""
         blocks = ephys_curation_applied["blocks"]
+        # Only clean up what this test created: skip_duplicates would silently no-op on a
+        # paramset left behind by an earlier run, and deleting it would destroy foreign state.
+        pre_existing = bool(
+            ctx.spike_sorting.UnitMatchingParamSet & {"matching_paramset_id": 99}
+        )
         ctx.spike_sorting.UnitMatchingParamSet.insert1(
             {
                 "matching_paramset_id": 99,
@@ -118,10 +135,14 @@ class TestUnitMatchingGuards:
         finally:
             # UnitMatching.key_source is `eligible * UnitMatchingParamSet`, so a leaked
             # paramset permanently widens it for the session and makes the suite order-
-            # dependent (any -k selection running this first would double the populated rows).
-            (
-                ctx.spike_sorting.UnitMatchingParamSet & {"matching_paramset_id": 99}
-            ).delete_quick()
+            # dependent. Remove children first: if make() unexpectedly did NOT raise it will
+            # have inserted UnitMatching rows, and deleting the parent would then fail on a
+            # foreign key - masking the real assertion failure with an unrelated error.
+            if not pre_existing:
+                (ctx.spike_sorting.UnitMatching & {"matching_paramset_id": 99}).delete_quick()
+                (
+                    ctx.spike_sorting.UnitMatchingParamSet & {"matching_paramset_id": 99}
+                ).delete_quick()
 
 
 class TestUnitMatchingBehaviour:
