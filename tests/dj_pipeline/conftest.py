@@ -1082,3 +1082,27 @@ def ephys_noise_units_marked(ephys_curation_applied, ephys_full_pipeline):
             spike_sorting.SortedSpikes.Unit.update1({**row, "unit_quality": "noise"})
         marked[block["block_start"]] = noise_units
     return marked
+
+
+@pytest.fixture(scope="session")
+def ephys_unit_matching_populated(
+    ephys_noise_units_marked, ephys_curation_applied, ephys_full_pipeline
+):
+    """Register a matching paramset seeded on block 1 and populate UnitMatching."""
+    spike_sorting = ephys_full_pipeline["spike_sorting"]
+    blocks = ephys_curation_applied["blocks"]
+
+    spike_sorting.UnitMatchingParamSet.insert1(
+        {
+            "matching_paramset_id": 1,
+            "matching_method": "spike_time_overlap",
+            "seed_block_start": blocks[0]["block_start"],
+            "matching_paramset_description": "golden dataset, defaults",
+            "params": {},
+        },
+        skip_duplicates=True,
+    )
+    # key_source yields the seed first, then the forward frontier, so populate twice.
+    for _ in range(2):
+        spike_sorting.UnitMatching.populate(display_progress=True, suppress_errors=False)
+    return {"blocks": blocks, "noise_units": ephys_noise_units_marked}
