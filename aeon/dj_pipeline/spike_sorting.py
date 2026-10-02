@@ -490,6 +490,14 @@ class SpikeSorting(dj.Computed):
         if sorting_method == "kilosort4" and "clear_cache" not in sorting_params:
             sorting_params["clear_cache"] = True
 
+        if sorting_method == "kilosort4":
+            # Kilosort4 reads a flat binary, so SpikeInterface first exports recording.zarr
+            # to recording.dat. With its default job kwargs (1 worker, 1s chunks) every 1s
+            # written decompresses a whole 30s zarr chunk: ~42 MB/s, 3-4.5 h per 30 h block.
+            # Default to the job kwargs PreProcessing wrote the zarr with; n_jobs,
+            # chunk_duration etc. in the paramset's SI_SORTING_PARAMS take precedence.
+            sorting_params = {**fork_safe_job_kwargs("30s"), **sorting_params}
+
         # Prevent SpikeInterface from re-running write_binary_recording internally:
         # https://github.com/SpikeInterface/spikeinterface/blob/705c932/src/spikeinterface/sorters/external/kilosortbase.py#L124
         sorting_params["skip_kilosort_preprocessing"] = False
