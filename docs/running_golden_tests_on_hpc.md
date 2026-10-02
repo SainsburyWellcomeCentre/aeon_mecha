@@ -3,8 +3,9 @@
 How to run the ephys golden integration suite
 (`tests/dj_pipeline/test_ephys_ingestion.py`) against the golden dataset on the
 SWC HPC. The suite force-injects the pre-computed sorting, so it needs **no
-GPU** — a CPU node is enough, and a full run takes ~35 minutes (most of that is
-PreProcessing reading the amplifier data off Ceph).
+GPU** — a CPU node is enough. The ingestion tier takes ~20 minutes and the
+curation/matching tier another ~25 (most of it PostProcessing and PreProcessing
+reading the amplifier data off Ceph), so budget ~45 minutes for both.
 
 ## Prerequisites
 
@@ -15,7 +16,7 @@ PreProcessing reading the amplifier data off Ceph).
 
 ## 1. Get a compute node
 
-The suite is heavy (~35 minutes, lots of Ceph I/O), so run it on a compute node
+The suite is heavy (~45 minutes for both tiers, lots of Ceph I/O), so run it on a compute node
 rather than on the gateway. Grab a CPU node with a generous walltime:
 
 ```
@@ -124,6 +125,13 @@ uv run python -c "import os, datajoint as dj; dj.conn(); print('host:', dj.confi
 
 ```
 uv run pytest -m integration tests/dj_pipeline/test_ephys_ingestion.py -v --tb=short -ra 2>&1 | tee golden_test_output.txt
+```
+
+Curation and unit matching are in the `specialized` tier and are not picked up by the command
+above. They share one ~18-minute fixture build, so run them together:
+
+```
+uv run pytest -m specialized tests/dj_pipeline/test_ephys_curation_integration.py tests/dj_pipeline/test_unit_matching_integration.py -v --tb=short -ra 2>&1 | tee matching_test_output.txt
 ```
 
 ## 7. Reading the output
