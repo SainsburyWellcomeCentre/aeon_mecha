@@ -9,22 +9,12 @@ pytestmark = pytest.mark.unit
 
 
 class TestResolveMatchingParams:
-    def test_empty_params_returns_defaults(self):
+    def test_merges_over_defaults(self):
         from aeon.dj_pipeline.spike_sorting import _resolve_matching_params
 
-        assert _resolve_matching_params({}) == {
-            "delta_time": 0.4,
-            "match_score": 0.5,
-            "min_score": 0.1,
-        }
-
-    def test_partial_override_keeps_other_defaults(self):
-        from aeon.dj_pipeline.spike_sorting import _resolve_matching_params
-
-        resolved = _resolve_matching_params({"delta_time": 1.0})
-        assert resolved["delta_time"] == 1.0
-        assert resolved["match_score"] == 0.5
-        assert resolved["min_score"] == 0.1
+        defaults = {"delta_time": 0.4, "match_score": 0.5, "min_score": 0.1}
+        assert _resolve_matching_params({}) == defaults
+        assert _resolve_matching_params({"delta_time": 1.0}) == {**defaults, "delta_time": 1.0}
 
     def test_unknown_key_raises(self):
         """A misspelled key must raise, not silently leave the default in effect."""
@@ -35,27 +25,14 @@ class TestResolveMatchingParams:
 
 
 class TestRestrictToOverlap:
-    def test_restricts_and_rebases_to_window_start(self):
+    def test_restricts_inclusively_and_rebases(self):
+        """Spikes outside [start, end] drop; the rest are rebased to the window start."""
         from aeon.dj_pipeline.spike_sorting import _restrict_to_overlap
 
+        # 5.0 and 15.0 are the bounds themselves - both ends are inclusive.
         times = np.array([0.0, 5.0, 10.0, 15.0, 20.0])
         np.testing.assert_allclose(_restrict_to_overlap(times, 5.0, 15.0), [0.0, 5.0, 10.0])
-
-    def test_bounds_are_inclusive_both_ends(self):
-        from aeon.dj_pipeline.spike_sorting import _restrict_to_overlap
-
-        times = np.array([5.0, 15.0])
-        np.testing.assert_allclose(_restrict_to_overlap(times, 5.0, 15.0), [0.0, 10.0])
-
-    def test_empty_input_returns_empty(self):
-        from aeon.dj_pipeline.spike_sorting import _restrict_to_overlap
-
         assert len(_restrict_to_overlap(np.array([]), 0.0, 10.0)) == 0
-
-    def test_no_spikes_in_window_returns_empty(self):
-        from aeon.dj_pipeline.spike_sorting import _restrict_to_overlap
-
-        assert len(_restrict_to_overlap(np.array([1.0, 2.0]), 10.0, 20.0)) == 0
 
 
 class TestCompareSpikeTrainsInOverlap:

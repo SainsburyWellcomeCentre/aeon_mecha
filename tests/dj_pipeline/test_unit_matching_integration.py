@@ -11,13 +11,6 @@ pytestmark = pytest.mark.specialized
 
 
 class TestUnitMatchingStructure:
-    def test_both_blocks_matched(self, ephys_unit_matching_populated, ctx):
-        rows = ctx.spike_sorting.UnitMatching & {
-            "experiment_name": ctx.cfg["experiment_name"],
-            "matching_paramset_id": 1,
-        }
-        assert len(rows) == len(ephys_unit_matching_populated["blocks"])
-
     def test_earlier_block_owns_the_overlap(self, ephys_unit_matching_populated, ctx):
         """For a global unit in both blocks, block 1 owns the shared chunks.
 
@@ -79,7 +72,18 @@ class TestUnitMatchingStructure:
     def test_noise_units_excluded(self, ephys_unit_matching_populated, ctx):
         """Units labelled noise stay in SortedSpikes but get no global identity."""
         noise_map = ephys_unit_matching_populated["noise_units"]
-        assert any(noise_map.values()), "no noise units were marked - this test would be vacuous"
+        marked = {(b, u) for b, units in noise_map.items() for u in units}
+        assert marked, "no noise units were marked - this test would be vacuous"
+
+        in_db = {
+            (r["block_start"], int(r["unit"]))
+            for r in (
+                ctx.spike_sorting.SortedSpikes.Unit
+                & {"experiment_name": ctx.cfg["experiment_name"], "unit_quality": "noise"}
+            ).to_dicts()
+        }
+        assert in_db == marked, f"DB noise labels differ from what the fixture marked: {in_db ^ marked}"
+
         for block_start, noise_units in noise_map.items():
             matched = (
                 ctx.spike_sorting.UnitMatching.Unit

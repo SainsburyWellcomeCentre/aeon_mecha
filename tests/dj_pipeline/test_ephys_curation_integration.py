@@ -52,24 +52,3 @@ class TestAutoApprovedCuration:
                 f"Block {block['block_start']}: SortedSpikes units differ from the artifact "
                 f"(missing {sorted(expected - actual)[:5]}, extra {sorted(actual - expected)[:5]})"
             )
-
-    def test_noise_units_are_marked(self, ephys_noise_units_marked, ctx):
-        """Exactly the units the fixture marked carry unit_quality='noise'."""
-        marked = {
-            (block_start, unit)
-            for block_start, units in ephys_noise_units_marked.items()
-            for unit in units
-        }
-        assert marked, "fixture marked no noise units - assertion would be vacuous"
-
-        in_db = {
-            (r["block_start"], int(r["unit"]))
-            for r in (
-                ctx.spike_sorting.SortedSpikes.Unit
-                & {"experiment_name": ctx.cfg["experiment_name"], "unit_quality": "noise"}
-            ).to_dicts()
-        }
-        assert in_db == marked, (
-            f"noise-labelled units in the DB differ from what the fixture marked "
-            f"(missing {sorted(marked - in_db)}, unexpected {sorted(in_db - marked)})"
-        )
