@@ -1,8 +1,8 @@
 """Golden baseline and integration tests for the ephys pipeline.
 
-Tests the ephys ingestion pipeline using a known dataset (8-channel
-subset of abcGolden01 NeuropixelsV2 recording). Tests gracefully skip
-if data unavailable.
+Tests the ephys ingestion pipeline using a known dataset (96 active contacts
+on shank3 of the abcGolden01 NeuropixelsV2 recording, two overlapping blocks).
+Tests gracefully skip if data unavailable.
 
 Requirements:
 1. Ephys golden dataset at ~/sciops-data/project_aeon/aeon/data/raw/AEONX1/...

@@ -126,13 +126,15 @@ class TestUnitMatchingGuards:
             with pytest.raises(ValueError, match="seed"):
                 ctx.spike_sorting.UnitMatching().make(bad_key)
         finally:
-            # A leaked paramset widens key_source for the session. Children first: if
-            # make() did not raise, the parent delete would hit a foreign key and mask it.
+            # A leaked paramset widens key_source for the session. delete() not
+            # delete_quick(): if make() ever stopped raising it would have inserted
+            # GlobalUnit and UnitMatching part rows, and a non-cascading delete would then
+            # fail on a foreign key and mask the real failure.
             if not pre_existing:
-                (ctx.spike_sorting.UnitMatching & {"matching_paramset_id": 99}).delete_quick()
-                (
-                    ctx.spike_sorting.UnitMatchingParamSet & {"matching_paramset_id": 99}
-                ).delete_quick()
+                paramset = {"matching_paramset_id": 99}
+                (ctx.spike_sorting.UnitMatching & paramset).delete(prompt=False)
+                (ctx.spike_sorting.GlobalUnit & paramset).delete(prompt=False)
+                (ctx.spike_sorting.UnitMatchingParamSet & paramset).delete(prompt=False)
 
 
 class TestUnitMatchingBehaviour:
