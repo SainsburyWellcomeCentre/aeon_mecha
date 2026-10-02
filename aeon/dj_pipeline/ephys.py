@@ -528,26 +528,20 @@ class EphysChunkSyncModel(dj.Computed):
         epoch_info = (EphysEpoch & key).to_dicts()[0]
 
         # find all timestamps
-        ephys_data_path = acquisition.Experiment.get_data_directory({'experiment_name': epoch_info['experiment_name']}, directory_type="raw-ephys")
+        ephys_data_path = acquisition.Experiment.get_data_directory({
+            'experiment_name': epoch_info['experiment_name']}, 
+            directory_type="raw-ephys",
+        )
         absolute_epoch_dir = Path(ephys_data_path) / epoch_info['epoch_dir']
 
         timestamps_paths = sorted(absolute_epoch_dir.rglob("*_HarpSync_*.csv"))
-
-        # sort all csvs in order of their starttime
-        datetime_format = '%Y-%m-%dT%H%M%S'
-        sorted_paths = sorted(
-            timestamps_paths,
-            key=lambda p: datetime.strptime(
-                p.stem.split('_')[-1].rstrip('Z'), datetime_format
-            ),
-        )
-
-        all_timestamps = pd.concat([pd.read_csv(sorted_path) for sorted_path in sorted_paths])
+        all_timestamps = pd.concat([pd.read_csv(sorted_path) for sorted_path in timestamps_paths])
+        sorted_timestamps = all_timestamps.sort_values(by='Seconds')
 
         chunk = (EphysChunk & key).to_dicts()[0]
-
         clock_path = Path(ephys_data_path) / chunk['clock_path']
-        model_info = compute_chunk_time_model(clock_path, all_timestamps)
+
+        model_info = compute_chunk_time_model(clock_path, sorted_timestamps)
 
         self.insert1({
             **key,
