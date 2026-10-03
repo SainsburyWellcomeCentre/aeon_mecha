@@ -12,15 +12,15 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="module")
-def spike_trains_scenario(dj_config_integration, tmp_path_factory):
-    """Build the behaviour + ephys scenario and return what the tests assert against."""
-    import datajoint as dj
-    from spike_train_factories import build_scenario
+def spike_trains_scenario(ephys_full_pipeline, tmp_path_factory):
+    """Build the behaviour + ephys scenario and return what the tests assert against.
 
-    store_dir = tmp_path_factory.mktemp("dj_store")
-    dj.config.stores = {
-        "dj_store": {"protocol": "file", "location": str(store_dir), "stage": str(store_dir)}
-    }
+    Takes ``dj_store`` from ``ephys_full_pipeline`` rather than configuring its own.
+    ``dj.config.stores`` is global and assigning it replaces the whole mapping, so two
+    fixtures each pointing ``dj_store`` at their own tmpdir leaves rows written by the
+    first unreadable once the second runs.
+    """
+    from spike_train_factories import build_scenario
 
     tmp_path = tmp_path_factory.mktemp("repo")
     raw_dir = tmp_path / "raw"

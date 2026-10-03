@@ -55,7 +55,12 @@ CONFIG_NAME = "synthetic-config"
 ELECTRODES = list(range(4))
 SUBJECT = "synthetic-mouse"
 PARAMSET_ID = "synthetic"
-MATCHING_PARAMSET = 1
+# UnitMatchingParamSet is a Lookup keyed on matching_paramset_id alone, with no
+# experiment scoping, so this id is global across every test in the session. It must
+# not collide with the golden suite's (1) or its seed-guard test's (99): both insert
+# with skip_duplicates=True, so whichever runs first silently wins and the loser's
+# seed_block_start never matches any of its own blocks.
+MATCHING_PARAMSET = 101
 
 
 def _spikes_in(window, seed, n=8):
