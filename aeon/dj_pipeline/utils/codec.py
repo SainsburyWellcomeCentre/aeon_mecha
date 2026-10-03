@@ -312,6 +312,15 @@ def _to_members(value: Any) -> dict[str, np.ndarray]:
         members["t"] = np.concatenate(times) if times else np.empty(0, dtype=np.float64)
         members["index"] = np.concatenate(index) if index else np.empty(0, dtype=np.int64)
         members["keys"] = np.asarray(value.index, dtype=np.int64)
+        # As pynapple does: float64 values, NaN for Ts members, omitted if all NaN.
+        values = [
+            np.asarray(value[unit].values, dtype=np.float64)
+            if hasattr(value[unit], "values")
+            else np.full(len(value[unit]), np.nan)
+            for unit in value.index
+        ]
+        if values and not np.isnan(d := np.concatenate(values)).all():
+            members["d"] = d
         # `rate` is derived from the support, so pynapple drops it before writing.
         # `.copy()` is load-bearing: `drop` mutates, and without it encoding would
         # strip `rate` from the caller's live object.
