@@ -34,17 +34,16 @@ def compute_chunk_time_model(clock_path, all_timestamps):
     clock_start = clock_binary[0]
     clock_end = clock_binary[-1]
 
-    first_ts_index = np.searchsorted(all_timestamps['Value.Clock'].values, clock_start, side='left')
+    initial_ts_index = np.searchsorted(all_timestamps['Value.Clock'].values, clock_start, side='left')
     final_ts_index = np.searchsorted(all_timestamps['Value.Clock'].values, clock_end, side='right')
 
-    initial_ephy_second, final_ephys_second = all_timestamps['Value.HarpTime'].iloc[[first_ts_index, final_ts_index]]
-
-    initial_index_for_interpolation = np.searchsorted(all_timestamps['Value.HarpTime'].values, initial_ephy_second)
-    final_index_for_interpolation = np.searchsorted(all_timestamps['Value.HarpTime'].values, final_ephys_second) + 1
+    # If clock times lie outside the range of sync info, we need to take the boundary indices
+    initial_ts_index = max(0, initial_ts_index)
+    final_ts_index = min(final_ts_index, len(all_timestamps) - 1)
 
     slope, intercept = np.polyfit(
-        all_timestamps.iloc[initial_index_for_interpolation:final_index_for_interpolation]['Value.Clock'].values,
-        all_timestamps.iloc[initial_index_for_interpolation:final_index_for_interpolation]['Value.HarpTime'].values,
+        all_timestamps.iloc[initial_ts_index:final_ts_index]['Value.Clock'].values,
+        all_timestamps.iloc[initial_ts_index:final_ts_index]['Value.HarpTime'].values,
         deg=1,
     )
     harp_start = intercept + clock_start*slope
