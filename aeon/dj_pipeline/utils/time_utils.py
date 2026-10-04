@@ -41,6 +41,9 @@ def compute_chunk_time_model(clock_path, all_timestamps):
     initial_ts_index = max(0, initial_ts_index)
     final_ts_index = min(final_ts_index, len(all_timestamps) - 1)
 
+    if final_ts_index <= initial_ts_index:
+        return None
+
     slope, intercept = np.polyfit(
         all_timestamps.iloc[initial_ts_index:final_ts_index]['Value.Clock'].values,
         all_timestamps.iloc[initial_ts_index:final_ts_index]['Value.HarpTime'].values,

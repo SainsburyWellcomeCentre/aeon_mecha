@@ -537,9 +537,8 @@ class EphysChunkSyncModel(dj.Computed):
         ephys_data_path = acquisition.Experiment.get_data_directory({
             'experiment_name': epoch_info['experiment_name']}, 
             directory_type="raw-ephys",
-            as_posix=True
         )
-        absolute_epoch_dir = ephys_data_path / epoch_info['epoch_dir']
+        absolute_epoch_dir = Path(ephys_data_path) / epoch_info['epoch_dir']
 
         timestamps_paths = absolute_epoch_dir.rglob("*_HarpSync_*.csv")
         all_timestamps = pd.concat([pd.read_csv(sorted_path) for sorted_path in timestamps_paths])
@@ -548,9 +547,14 @@ class EphysChunkSyncModel(dj.Computed):
         sorted_timestamps = all_non_nan_timestamps.sort_values(by='Seconds')
 
         chunk = (EphysChunk & key).to_dicts()[0]
-        clock_path = ephys_data_path / chunk['clock_path']
+        clock_path = Path(ephys_data_path) / chunk['clock_path']
 
         model_info = compute_chunk_time_model(clock_path, sorted_timestamps)
+
+        if model_info is None:
+            logger.warning("Could not compute chunk sync model. Likely that entire chunk was outside " \
+            "of computed HarpSync interval.")
+            return
 
         self.insert1({
             **key,
