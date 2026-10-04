@@ -3,7 +3,7 @@
 import datetime
 
 datetime_formats = [
-    "%Y-%m-%dT%H%M%S",    # new format: 2026-05-16T102123
+    "%Y-%m-%dT%H%M%SZ",    # new format: 2026-05-16T102123
     "%Y-%m-%dT%H-%M-%S",  # old format: 2026-05-16T10-21-23
 ]
 
