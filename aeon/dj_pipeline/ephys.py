@@ -25,6 +25,8 @@ from aeon.dj_pipeline.utils.ephys_utils import (
 from aeon.dj_pipeline.utils.ephys_utils import (
     create_probe_type as _create_probe_type,
 )
+from aeon.dj_pipeline.utils.time_utils import datetime_formats
+
 
 schema = dj.Schema(get_schema_name("ephys"))
 logger = dj.logger
@@ -134,7 +136,13 @@ class EphysEpoch(dj.Manual):
         for epoch_dir in epoch_dirs:
 
             epoch_dir_name = epoch_dir.name
-            epoch_onix_start = datetime.strptime(epoch_dir_name.rstrip('Z'), '%Y-%m-%dT%H%M%S')
+            
+            for datetime_format in datetime_formats:
+                try:
+                    epoch_onix_start = datetime.strptime(epoch_dir_name.rstrip('Z'), datetime_format)
+                    break
+                except ValueError:
+                    continue
 
             cls.insert1(
                 {
