@@ -1416,7 +1416,9 @@ def _load_block_unit_spike_trains(block_key: dict) -> dict[int, np.ndarray]:
     curator's own call; the antijoin excludes only that exact "noise" label, leaving every other label
     (including Kilosort's own on any raw unit) loaded.
     """
-    non_noise_units = SortedSpikes.Unit - {"unit_quality": "noise"}
+    # .proj(): both tables declare a secondary `spike_count` with no common lineage, which
+    # DataJoint 2.x rejects (same bug class as #609).
+    non_noise_units = (SortedSpikes.Unit - {"unit_quality": "noise"}).proj()
     trains: dict[int, list] = {}
     for unit_entry in (SyncedSpikes.Unit & block_key & non_noise_units).to_dicts():
         trains.setdefault(unit_entry["unit"], []).append(unit_entry["spike_times"])
