@@ -1,6 +1,5 @@
 """DataJoint schema for the ephys pipeline."""
 
-import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -12,21 +11,18 @@ from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import (
     DEVICE_PROBE_TYPE_MAP,
     discover_epoch_probes,
-    find_nearest_window,
     find_or_create_probe_insertion,
     get_probe_id,
     harp_to_naive,
     load_device_channel_map,
     parse_epoch_metadata,
     read_probe_assignments,
-    resolve_harp,
     resolve_raw_dir_and_epochs,
 )
 from aeon.dj_pipeline.utils.ephys_utils import (
     create_probe_type as _create_probe_type,
 )
-from aeon.dj_pipeline.utils.time_utils import datetime_formats
-
+from aeon.dj_pipeline.utils.time_utils import compute_chunk_time_model, datetime_formats
 
 schema = dj.Schema(get_schema_name("ephys"))
 logger = dj.logger
@@ -121,7 +117,6 @@ class EphysEpoch(dj.Manual):
     @classmethod
     def ingest_epochs(cls, experiment_name: str) -> None:
         """Insert EphysEpoch rows by scanning raw-ephys directories."""
-        
         exp_key = {"experiment_name": experiment_name}
         raw_ephys_dir = acquisition.Experiment.get_data_directory(
             exp_key, directory_type="raw-ephys", as_posix=False
@@ -136,7 +131,7 @@ class EphysEpoch(dj.Manual):
         for epoch_dir in epoch_dirs:
 
             epoch_dir_name = epoch_dir.name
-            
+
             for datetime_format in datetime_formats:
                 try:
                     epoch_onix_start = datetime.strptime(epoch_dir_name.rstrip('Z'), datetime_format)
@@ -531,7 +526,7 @@ class EphysChunkSyncModel(dj.Computed):
 
     def make(self, key):
         import pandas as pd
-        from aeon.dj_pipeline.utils.time_utils import compute_chunk_time_model
+        
 
         epoch_info = (EphysEpoch & key).to_dicts()[0]
 
@@ -542,9 +537,11 @@ class EphysChunkSyncModel(dj.Computed):
         )
         absolute_epoch_dir = Path(ephys_data_path) / epoch_info['epoch_dir']
 
-        timestamps_paths = sorted(absolute_epoch_dir.rglob("*_HarpSync_*.csv"))
+        timestamps_paths = absolute_epoch_dir.rglob("*_HarpSync_*.csv")
         all_timestamps = pd.concat([pd.read_csv(sorted_path) for sorted_path in timestamps_paths])
-        sorted_timestamps = all_timestamps.sort_values(by='Seconds')
+        # If acquisition crashes, the full sync data might not get saved leaving nan values in some columns
+        all_non_nan_timestamps = all_timestamps[~all_timestamps.isna().any(axis=1)]
+        sorted_timestamps = all_non_nan_timestamps.sort_values(by='Seconds')
 
         chunk = (EphysChunk & key).to_dicts()[0]
         clock_path = Path(ephys_data_path) / chunk['clock_path']
