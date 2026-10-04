@@ -232,7 +232,8 @@ This code already exists on `es/compression-spec`.
 
 The ephys integration tests in `tests/dj_pipeline/test_ephys_ingestion.py`
 use the `foraging_abc_ephys_2026_05_11` golden dataset (abcGolden01 on
-AEONX1, 384 recording channels, 8-channel sorting subset). The test flow:
+AEONX1, 384 recording channels, 96-channel shank3 sorting subset across two
+overlapping blocks). The test flow:
 
 1. `EphysEpoch.ingest_epochs` + `EphysEpochConfig.populate` +
    `EphysSyncModel.ingest` (fixture: `ephys_test_epochs`)
@@ -245,7 +246,7 @@ AEONX1, 384 recording channels, 8-channel sorting subset). The test flow:
 ### What changes in tests
 
 **No golden data changes needed.** The golden sorting output
-(`golden_test_sorting/sorting_output`) contains KS4's native Kilosort
+(`golden_test_sorting/<block>/shank3/kilosort4_400/spike_sorting/`) contains KS4's native Kilosort
 output (spike times, cluster assignments). It is format-agnostic and works
 regardless of whether PreProcessing produced binary or zarr. PreProcessing
 and PostProcessing run live and will naturally produce zarr output with the
