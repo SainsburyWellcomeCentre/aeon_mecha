@@ -639,7 +639,16 @@ class PostProcessing(dj.Computed):
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
 
-        job_kwargs = postprocessing_params.get("job_kwargs", fork_safe_job_kwargs("1s"))
+        # n_jobs always follows the job's CPU allocation; the paramset's job_kwargs set the
+        # rest (chunk size, pool engine). A fixed n_jobs in the paramset either idles cores
+        # or oversubscribes them, and changing it in the paramset to match an allocation
+        # breaks every running job of that paramset: make_fetch reads the params, and
+        # DataJoint refuses the insert when they changed during the run.
+        job_kwargs = {
+            **fork_safe_job_kwargs("1s"),
+            **postprocessing_params.get("job_kwargs", {}),
+            "n_jobs": fork_safe_job_kwargs("1s")["n_jobs"],
+        }
 
         save_format = params.get("save_format", "zarr")
         analyzer_format = "zarr" if save_format == "zarr" else "binary_folder"
