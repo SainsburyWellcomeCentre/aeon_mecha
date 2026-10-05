@@ -71,18 +71,14 @@ class TrackingParamSet(dj.Lookup):
     ):
         """Insert a new set of parameters for a given tracking method."""
         if tracking_paramset_id is None:
-            tracking_paramset_id = (
-                dj.U().aggr(cls, n="max(tracking_paramset_id)").fetch1("n") or 0
-            ) + 1
+            tracking_paramset_id = (dj.U().aggr(cls, n="max(tracking_paramset_id)").fetch1("n") or 0) + 1
 
         param_dict = {
             "tracking_method": tracking_method,
             "tracking_paramset_id": tracking_paramset_id,
             "paramset_description": paramset_description,
             "params": params,
-            "param_set_hash": dict_to_uuid(
-                {**params, "tracking_method": tracking_method}
-            ),
+            "param_set_hash": dict_to_uuid({**params, "tracking_method": tracking_method}),
         }
         param_query = cls & {"param_set_hash": param_dict["param_set_hash"]}
 
@@ -160,9 +156,7 @@ class SLEAPTracking(dj.Imported):
         return (
             acquisition.Chunk
             * (
-                streams.SpinnakerVideoSource.join(
-                    streams.SpinnakerVideoSource.RemovalTime, left=True
-                )
+                streams.SpinnakerVideoSource.join(streams.SpinnakerVideoSource.RemovalTime, left=True)
                 & "spinnaker_video_source_name='CameraTop'"
             )
             * (TrackingParamSet & "tracking_paramset_id = 1")
@@ -172,15 +166,11 @@ class SLEAPTracking(dj.Imported):
 
     def make(self, key):
         """Ingest SLEAP tracking data for a given chunk."""
-        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1(
-            "chunk_start", "chunk_end"
-        )
+        chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
 
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
-        device_name = (streams.SpinnakerVideoSource & key).fetch1(
-            "spinnaker_video_source_name"
-        )
+        device_name = (streams.SpinnakerVideoSource & key).fetch1("spinnaker_video_source_name")
 
         # Get Pose stream reader via Pydantic rig (from EpochConfig.Meta)
         stream_reader = get_stream_reader_for_epoch(
@@ -196,9 +186,7 @@ class SLEAPTracking(dj.Imported):
         )
 
         if not len(pose_data):
-            raise ValueError(
-                f"No SLEAP data found for {key['experiment_name']} - {device_name}"
-            )
+            raise ValueError(f"No SLEAP data found for {key['experiment_name']} - {device_name}")
 
         # get identity names
         class_names = np.unique(pose_data.identity)
@@ -206,13 +194,9 @@ class SLEAPTracking(dj.Imported):
 
         # get anchor part
         # ie the body_part with the prefix "anchor_" (there should only be one)
-        anchor_part = {
-            part for part in pose_data.part.unique() if part.startswith("anchor_")
-        }
+        anchor_part = {part for part in pose_data.part.unique() if part.startswith("anchor_")}
         if len(anchor_part) != 1:
-            raise ValueError(
-                f"Anchor part not found or multiple anchor parts found: {anchor_part}"
-            )
+            raise ValueError(f"Anchor part not found or multiple anchor parts found: {anchor_part}")
         anchor_part = anchor_part.pop()
 
         # ingest parts and classes
@@ -227,14 +211,10 @@ class SLEAPTracking(dj.Imported):
                 if part == anchor_part:
                     identity_likelihood = part_position.identity_likelihood.values
                     if isinstance(identity_likelihood[0], dict):
-                        identity_likelihood = np.array(
-                            [v[id_name] for v in identity_likelihood]
-                        )
+                        identity_likelihood = np.array([v[id_name] for v in identity_likelihood])
 
                     # assert no duplicate timestamps
-                    if len(part_position.index.values) != len(
-                        set(part_position.index.values)
-                    ):
+                    if len(part_position.index.values) != len(set(part_position.index.values)):
                         raise ValueError(
                             f"Duplicate timestamps found for identity {id_name} and part {part}"
                             f" - this should not happen - check for chunk-duplicate .bin files"
@@ -361,9 +341,7 @@ def _get_position(
     start_query = table & obj_restriction & start_restriction
     end_query = table & obj_restriction & end_restriction
     if not (start_query and end_query):
-        raise ValueError(
-            f"No position data found for {object_name} between {start} and {end}"
-        )
+        raise ValueError(f"No position data found for {object_name} between {start} and {end}")
 
     time_restriction = (
         f'{start_attr} >= "{min(start_query.to_arrays(start_attr))}"'
@@ -371,14 +349,10 @@ def _get_position(
     )
 
     # subject's position data in the time slice
-    fetched_data = (table & obj_restriction & time_restriction).to_arrays(
-        *fetch_attrs, order_by=start_attr
-    )
+    fetched_data = (table & obj_restriction & time_restriction).to_arrays(*fetch_attrs, order_by=start_attr)
 
     if not len(fetched_data[0]):
-        raise ValueError(
-            f"No position data found for {object_name} between {start} and {end}"
-        )
+        raise ValueError(f"No position data found for {object_name} between {start} and {end}")
 
     timestamp_attr = next(attr for attr in fetch_attrs if "timestamps" in attr)
 

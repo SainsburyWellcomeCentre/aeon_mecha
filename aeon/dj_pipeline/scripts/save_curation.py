@@ -1,5 +1,4 @@
-"""
-Script to save manual curation results from SpikeInterface GUI to the database.
+"""Script to save manual curation results from SpikeInterface GUI to the database.
 
 ================================================================================
 IMPORTANT: THIS SCRIPT IS DESIGNED TO BE MODIFIED BEFORE RUNNING
