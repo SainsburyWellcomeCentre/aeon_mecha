@@ -85,8 +85,8 @@ table listing contributing `UnitMatching` rows records provenance but does not
 invalidate anything, because DataJoint cascades to children, not parents.
 
 **This spec takes the second option.** Fragmentation charges every user, forever.
-Staleness charges one maintainer, at moments we can name. The next section makes
-those moments detectable.
+Staleness charges one maintainer, at moments we can name, and the next section
+makes those moments detectable.
 
 Note what survives: `-> acquisition.Chunk` and `-> ephys.ProbeInsertion` are real
 foreign keys, so deleting an experiment, a chunk or an insertion still cascades.
@@ -98,52 +98,6 @@ the worker configuration has to run `SpikeTrains` after `UnitMatching`. And
 `dj.Diagram` no longer shows where the data came from. People learn this pipeline
 by reading the ERD, so that loss is real — which is why `source_blocks` exists,
 and why this section does.
-
-### Upstream: `UnitMatching.Spikes`
-
-`UnitMatching.Spikes` is already deduplicated across overlapping blocks, already
-keyed by `global_unit`, and already HARP-synced. A `(global_unit, ephys chunk)` pair belongs to the first block *processed*, not
-the earliest in time: `UnitMatching.make()` skips a pair once any row exists, and
-bidirectional seed propagation often runs a later block first.
-
-Reading `SyncedSpikes.Unit` instead would hand back the duplicate spikes that
-convention removes, and leave unit identity scoped to a block.
-
-### The table
-
-```python
-@schema                                  # aeon/dj_pipeline/processed_ephys.py
-class SpikeTrains(dj.Computed):
-    definition = """
-    # Curated, HARP-synced spike trains for one behavioural chunk, as a pynapple TsGroup
-    -> acquisition.Chunk                 # experiment_name, chunk_start (BEHAVIOURAL grain)
-    -> ephys.ProbeInsertion              # subject, insertion_number
-    ---
-    n_units: int32                       # units in the roster, including silent ones
-    n_spikes: int64                      # total spikes across all units
-    coverage_frac: float32               # tot_length(time_support) / (chunk_end - chunk_start)
-    n_partial_units: int32               # units sorted for less than the full chunk; 0 normally
-    min_sync_r2: float32                 # worst HARP regression r2 over this chunk
-    source_blocks: json                  # contributing EphysBlock keys + matching paramset
-    spikes: <pynapple@dj_store>          # TsGroup; HARP seconds since 1904-01-01
-    """
-```
-
-Primary key: `(experiment_name, chunk_start, subject, insertion_number)`.
-
-`chunk_start` is the **behavioural** chunk, and it stays unrenamed. Because this
-table has no foreign key to `EphysChunk`, there is no collision inside its own
-lineage, and joins against the behavioural tables — which all key off
-`acquisition.Chunk` — work directly. A user who explicitly joins `SpikeTrains`
-against `EphysChunk` will get a DataJoint join-compatibility error rather than a
-wrong answer, and must `proj`-rename. That is an unusual query failing loudly,
-which is the right trade for the common query working silently.
-
-`matching_paramset_id` is **not** in the key. `UnitMatching.Spikes` carries a
-unique index on `(experiment_name, subject, insertion_number, global_unit,
-chunk_start)` with no paramset, so a second paramset physically cannot write rows
-for an already-owned triple. Putting it in the key would promise something the
-upstream schema cannot deliver. It is recorded in `source_blocks` instead.
 
 ### Provenance without a foreign key
 
@@ -172,26 +126,50 @@ SpikeTrains.populate()
 This is the step that substitutes for the cascade. If it is not written down as a
 routine somebody runs, it will not happen.
 
-### `make()` contract
+### Upstream: `UnitMatching.Spikes`
 
-Compute whenever any covering block has been matched; record what contributed.
-Do **not** withhold a row because coverage is incomplete — a missing row reads as
-"no ephys here", which is indistinguishable from "we refused", whereas a row with
-`source_blocks` recording one of two blocks is explicit and `stale_chunks()` will find
-it once the second lands.
+`UnitMatching.Spikes` is already deduplicated across overlapping blocks, already
+keyed by `global_unit`, and already HARP-synced. A `(global_unit, ephys chunk)` pair belongs to the first block *processed*, not
+the earliest in time: `UnitMatching.make()` skips a pair once any row exists, and
+bidirectional seed propagation often runs a later block first.
 
-Refuse only on degenerate input: no matched coverage at all, or a round-tripped
-spike count that does not match what was read.
+Reading `SyncedSpikes.Unit` instead would hand back the duplicate spikes that
+convention removes, and leave unit identity scoped to a block.
 
-### `key_source`
+### The table
 
-One entry per `(behavioural chunk, probe insertion)` where some `EphysChunk` for
-that insertion overlaps the behavioural chunk's window and at least one covering
-block has been matched. The overlap restriction follows `EphysBlockInfo.make()`,
-which already resolves overlapping chunks with a SQL interval predicate.
+```python
+@schema                                  # aeon/dj_pipeline/processed_ephys.py
+class SpikeTrains(dj.Computed):
+    definition = """
+    # Curated, HARP-synced spike trains for one behavioural chunk, as a pynapple TsGroup
+    -> acquisition.Chunk                 # experiment_name, chunk_start (BEHAVIOURAL grain)
+    -> ephys.ProbeInsertion              # subject, insertion_number
+    ---
+    n_units: int32                       # units in the roster, including silent ones
+    n_spikes: int64                      # total spikes across all units
+    coverage_frac: float32               # tot_length(time_support) / (chunk_end - chunk_start)
+    n_partial_units: int32               # units sorted for less than the full chunk; 0 normally
+    source_blocks: json                  # contributing EphysBlock keys + matching paramset
+    spikes: <pynapple@dj_store>          # TsGroup; HARP seconds since 1904-01-01
+    """
+```
 
-Ephys falling outside every behavioural chunk is dropped. There is no behavioural
-data to relate it to. `EphysBlockInfo` remains the route to it.
+Primary key: `(experiment_name, chunk_start, subject, insertion_number)`.
+
+`chunk_start` is the **behavioural** chunk, and it stays unrenamed. Because this
+table has no foreign key to `EphysChunk`, there is no collision inside its own
+lineage, and joins against the behavioural tables — which all key off
+`acquisition.Chunk` — work directly. A user who explicitly joins `SpikeTrains`
+against `EphysChunk` will get a DataJoint join-compatibility error rather than a
+wrong answer, and must `proj`-rename. That is an unusual query failing loudly,
+which is the right trade for the common query working silently.
+
+`matching_paramset_id` is **not** in the key. `UnitMatching.Spikes` carries a
+unique index on `(experiment_name, subject, insertion_number, global_unit,
+chunk_start)` with no paramset, so a second paramset physically cannot write rows
+for an already-owned triple. Putting it in the key would promise something the
+upstream schema cannot deliver. It is recorded in `source_blocks` instead.
 
 ### What goes in the `TsGroup`
 
@@ -322,7 +300,7 @@ Three altitudes, because the decisions happen at three different moments:
 
 | Altitude | Carries | Answers |
 |---|---|---|
-| Row attributes | `coverage_frac`, `n_partial_units`, `min_sync_r2`, `source_blocks` | which chunks to use, without opening a file |
+| Row attributes | `coverage_frac`, `n_partial_units`, `source_blocks` | which chunks to use, without opening a file |
 | `TsGroup` metadata | `covered_seconds` per unit | what each unit's rate should be divided by |
 | `fetch_span` | warnings and errors | tell me now, while I am reading the data |
 
@@ -351,36 +329,6 @@ marginally better than rebased ones, so nothing argues the other way.
 `make()` asserts `t_start > 3.0e9` before insert — cheap insurance against a
 wrong origin, including the SpikeInterface trap where a persisted
 `SortingAnalyzer` loses its time vector and returns spike times starting at 0.0.
-
-### Alignment quality rides along
-
-A chunk-level pynapple object is, by construction, a thing that *looks* perfectly
-aligned. `SPEC_EPHYS_PIPELINE.md` warns that sub-second alignment comes from
-`EphysSyncModel`'s per-chunk regression, not from epoch timestamps. Those
-regressions carry `r2` and `n_samples`.
-
-`min_sync_r2` puts that on the row, queryable without opening a file, so a
-poorly-regressed window is a `WHERE` clause rather than a surprise.
-
-`EphysSyncModel` is keyed by `EphysEpoch`, not by `ProbeInsertion`, so this is an
-epoch-level fact duplicated onto each insertion's row. A behavioural chunk
-spanning two ephys epochs draws from two model families, and `min_sync_r2` takes
-the worst across both.
-
----
-
-## Storage
-
-The `spikes` column uses `<pynapple@dj_store>`, which ships separately in
-PR #613. That codec is domain-agnostic — it round-trips a pynapple object and
-knows nothing about spikes — and has no dependency on this table, so it lands
-first.
-
-Two of its properties shape what follows: a stored object is one uncompressed
-`.npz` per row, reopened eagerly, and the decode carries a `TsGroup` fast path
-that is 2.4–3.5× quicker than stock pynapple on real sortings.
-
----
 
 ## Known limitations
 
@@ -432,6 +380,18 @@ only the float64 times (8 B). Decoding one chunk transiently holds both.
 | 300 | 5 Hz | 5.4 M | 86 MB | 14.5 GB | 7.3 GB |
 | 600 | 8 Hz | 17.3 M | 276 MB | 46.4 GB | 23.2 GB |
 
+### Sync quality is not on the row yet
+
+Sub-second alignment comes from `EphysSyncModel`'s per-chunk regression, which
+carries `r2` and `n_samples`. A `min_sync_r2` column would make a
+poorly-regressed window a `WHERE` clause instead of a surprise, and the design is
+straightforward: `EphysSyncModel` is keyed by `EphysEpoch` rather than
+`ProbeInsertion`, so a chunk spanning two epochs draws on two model families and
+the column takes the worst across both.
+
+Not built. Until it is, a caller who cares about alignment quality queries
+`EphysSyncModel` directly.
+
 ### Spikes are stored twice
 
 `UnitMatching.Spikes` keeps its copy; this table adds another. Denormalising for read is a
@@ -440,68 +400,30 @@ table is the obvious follow-up once `SpikeTrains` has earned its place.
 
 ---
 
-## Query patterns
+## What this buys at the call site
 
-### One chunk
-
-```python
-from aeon.dj_pipeline import processed_ephys
-
-tg = (processed_ephys.SpikeTrains & key).fetch1("spikes")   # a pynapple TsGroup
-good = tg[tg.unit_quality == "good"]
-counts = good.count(0.01)                                   # TsdFrame, metadata preserved
-```
-
-`count()` carries the unit metadata through to the resulting `TsdFrame`'s
-per-column metadata, so quality metrics and electrode stay attached after binning.
-
-### A time span
+The whole argument for the table is this join, so here it is:
 
 ```python
-tg = processed_ephys.SpikeTrains.fetch_span(
-    experiment_name="...", subject="...", insertion_number=1,
-    start=t0, end=t1,          # allow_stale=True to override the staleness check
-)
-```
-
-`fetch_span` is the documented entry point, not a convenience wrapper. It owns
-five things, three of them correctness-critical:
-
-1. selecting the chunks overlapping `[start, end)` from the primary key alone
-2. **raising** if any contributing row is stale, unless `allow_stale=True`
-3. **warning** if any contributing chunk has `n_partial_units > 0`, naming them
-4. restricting per chunk *before* concatenating, so peak memory is one chunk
-5. re-keying `global_unit` when the span covers more than one insertion, and
-   summing `covered_seconds` so the span-level object stays correct
-
-Item 4 matters more than the faster decode: at week scale the binding constraint
-is memory, not CPU.
-
-### Refreshing stale rows
-
-```python
-(processed_ephys.SpikeTrains & processed_ephys.SpikeTrains.stale_chunks()).delete()
-processed_ephys.SpikeTrains.populate()
-```
-
-The manual step that stands in for the cascade. It belongs in the operator
-runbook alongside the curation workflow, and it should run after any
-re-curation or any new `UnitMatching` over already-covered time.
-
-### Joint with behaviour
-
-```python
-key = {"experiment_name": exp, "chunk_start": t, "subject": s, "insertion_number": 1}
+key       = {"experiment_name": exp, "chunk_start": t, "subject": s, "insertion_number": 1}
 chunk_key = {k: key[k] for k in ("experiment_name", "chunk_start")}
 
-spikes = (processed_ephys.SpikeTrains & key).fetch1("spikes")
+spikes = (processed_ephys.SpikeTrains & key).fetch1("spikes")      # a pynapple TsGroup
 pose   = (processed_movement.MousePositionTracking & chunk_key).fetch1(...)
+
+good = spikes[spikes.unit_quality == "good"]
+counts = good.count(0.01)        # TsdFrame; unit metadata rides along
 ```
 
-A `SpikeTrains` key carries `subject`, `insertion_number` and
-`matching_paramset_id`, which the behavioural tables do not have, so the
-behavioural side takes the chunk half of the key. The point stands: the two
-share `(experiment_name, chunk_start)` and neither side does time arithmetic.
+The two sides share `(experiment_name, chunk_start)` and neither does time
+arithmetic. A `SpikeTrains` key also carries `subject` and `insertion_number`,
+which the behavioural tables lack, so the behavioural side takes the chunk half.
+
+Spans that are not one chunk go through `fetch_span`, which is the entry point
+rather than a convenience: it raises on stale rows, warns on partial coverage,
+sums each unit's `covered_seconds` so rates stay honest across the join, and
+trims each chunk before concatenating. That last one matters more than decode
+speed — at week scale the binding constraint is memory, not CPU.
 
 ---
 
@@ -510,39 +432,6 @@ share `(experiment_name, chunk_start)` and neither side does time arithmetic.
 No changes to `SyncedSpikes`, `UnitMatching` or `GlobalUnit`. No NWB export —
 pynapple cannot write it, and the neuroconv route is archival rather than
 analytical; a DANDI deposit would be its own spec.
-
----
-
-## Testing
-
-Three markers, per `SPEC_TESTING.md`: `unit` (no database), `integration`
-(testcontainers MySQL), `specialized` (golden datasets). Detailed assertions
-belong in the implementation PR; these are the three that pin design decisions
-and must not be quietly dropped.
-
-Codec tests live with the codec, in PR #613.
-
-Three tiers, and the golden one cannot reach everything. The golden behavioural
-arm records ~07:51:34–08:00 while the two sorted blocks overlap at
-08:39:47–08:59:47, so no behavioural chunk spans both blocks. Cross-block
-ownership, partial coverage and the late-block staleness path stay with the
-synthetic suite, which exists to build the geometry the real recording lacks.
-
-**Re-chunking conserves spikes and coverage.** No spike lost or double-counted
-against `UnitMatching.Spikes` over the same window. A spike at exactly
-`chunk_end` lands in the next chunk, a gap yields a two-interval `time_support`,
-and `covered_seconds` is per-unit correct and sums across concatenation.
-`n_partial_units` is zero when covering blocks agree and non-zero when they
-do not.
-
-**Staleness is detected and clears.** `stale_chunks()` is empty after a clean populate
-and non-empty after re-curation or a later block; `fetch_span` raises on stale
-and passes with `allow_stale=True`; the delete-and-repopulate recipe returns it
-to empty with the same spike counts.
-
-The fast TsGroup decode measures 2.4–3.5× on real Kilosort4 sortings, scaling
-with unit count. The earlier 8.9× came from synthetic lognormal rates with no
-bursting, refractory structure or drift, and timed the grouping loop alone.
 
 ---
 
@@ -556,25 +445,16 @@ bursting, refractory structure or drift, and timed the grouping loop alone.
 2. **Coverage as data.** A second column holding an `IntervalSet` whose
    per-interval metadata names the units it covers would let `fetch_span` correct
    rosters automatically. Deferred from v1.
-3. **Per-unit metadata is multi-valued.** `unit_quality` and `qc_metrics` are
-   block-scoped, and `GlobalUnit`'s electrode is rewritten on every match. Which
-   block wins, and is populate-time dependence acceptable?
+3. **Per-unit metadata is multi-valued.** `unit_quality` is block-scoped and
+   `GlobalUnit`'s electrode is rewritten on every match. Which block wins is
+   settled — most spikes, ties to the earliest. Whether the answer may depend on
+   when `populate()` ran is not.
 4. **Population and backfill.** Who calls `populate()`, in what order (the FK
    graph no longer enforces it), and what does the backfill cost on Ceph?
-5. **Block-length distribution.** One-row-per-chunk assumes boundary chunks are
-   rare. Measure against `EphysBlock` on the golden dataset before implementing.
+5. **Block-length distribution.** One row per chunk assumes boundary chunks are
+   rare. Still unmeasured — it needs a production database, not the golden set.
 6. ~~**Module placement and naming.**~~ Settled: `processed_ephys.py`,
    `SpikeTrains`.
 
 ---
 
-## PR checklist
-
-- [x] `<pynapple@dj_store>` merged (PR #613)
-- [x] `SpikeTrains` in `processed_ephys.py`, with `stale_chunks()`
-- [x] `fetch_span`: per-chunk restriction, warn on partial, raise on stale
-- [x] Re-chunking and staleness tests; golden test on the ephys dataset
-- [x] PR open into `main` (#625)
-- [ ] Measure block-length distribution (open question 5) — needs a production DB
-- [ ] Raise upstream unit-validity with the `UnitMatching` owners (open question 1)
-- [ ] Delete-and-repopulate added to the operator runbook
