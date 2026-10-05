@@ -117,6 +117,7 @@ lint.ignore = [
   "D107",
   "ICN001", # enforces import matplotlib as mpl
   "S607",
+  "PLR0911", # functions must only have max 6 return statements
 ]
 extend-exclude = [
   ".git",
