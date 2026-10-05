@@ -44,26 +44,26 @@ class TestIntervalArithmetic:
         ]
         assert merge([]) == []
 
-    def test_total_seconds_sums_a_gapped_coverage(self):
+    def test_covered_seconds_sums_a_gapped_coverage(self):
         """Test the denominator every firing rate divides by."""
-        from aeon.dj_pipeline.utils.rechunk import total_seconds
+        from aeon.dj_pipeline.utils.rechunk import covered_seconds
 
-        assert total_seconds([(t(8), t(8, 20)), (t(8, 40), t(9))]) == 2400.0
-        assert total_seconds([]) == 0.0
+        assert covered_seconds([(t(8), t(8, 20)), (t(8, 40), t(9))]) == 2400.0
+        assert covered_seconds([]) == 0.0
 
 
 class TestCoverage:
     """Chunk-level and per-unit coverage, including the cross-block case."""
 
-    def test_chunk_coverage_reflects_a_gap_in_ephys(self):
+    def test_coverage_reflects_a_gap_in_ephys(self):
         """Test that a gap between ephys chunks survives into the coverage."""
-        from aeon.dj_pipeline.utils.rechunk import chunk_coverage
+        from aeon.dj_pipeline.utils.rechunk import coverage
 
         # rig recorded 08:00-08:20 and 08:40-09:00, off in between
-        coverage = chunk_coverage((t(8), t(9)), [(t(7, 50), t(8, 20)), (t(8, 40), t(9, 10))])
-        assert coverage == [(t(8), t(8, 20)), (t(8, 40), t(9))]
+        covered = coverage((t(8), t(9)), [(t(7, 50), t(8, 20)), (t(8, 40), t(9, 10))])
+        assert covered == [(t(8), t(8, 20)), (t(8, 40), t(9))]
 
-    def test_unit_coverage_differs_across_a_block_boundary(self):
+    def test_coverage_by_unit_differs_across_a_block_boundary(self):
         """Test the case the whole design turns on.
 
         Block A covers the first half of the hour and found unit 7. Block B covers
@@ -71,22 +71,22 @@ class TestCoverage:
         first half — it was not silent there, it was not looked for. Its denominator
         must be half the hour, not the whole hour.
         """
-        from aeon.dj_pipeline.utils.rechunk import unit_coverage
+        from aeon.dj_pipeline.utils.rechunk import coverage_by_unit
 
-        coverage = unit_coverage(
+        covered = coverage_by_unit(
             (t(8), t(9)),
             {"A": [(t(8), t(8, 30))], "B": [(t(8, 30), t(9))]},
             {"A": {7}, "B": {7, 99}},
         )
 
-        assert coverage[7] == [(t(8), t(9))]  # both blocks, merged
-        assert coverage[99] == [(t(8, 30), t(9))]  # second half only
+        assert covered[7] == [(t(8), t(9))]  # both blocks, merged
+        assert covered[99] == [(t(8, 30), t(9))]  # second half only
 
-    def test_unit_coverage_is_empty_for_a_unit_no_block_found(self):
+    def test_coverage_by_unit_is_empty_for_a_unit_no_block_found(self):
         """Test that a unit absent from every covering block gets no coverage."""
-        from aeon.dj_pipeline.utils.rechunk import unit_coverage
+        from aeon.dj_pipeline.utils.rechunk import coverage_by_unit
 
-        assert 99 not in unit_coverage((t(8), t(9)), {"A": [(t(8), t(9))]}, {"A": {7}})
+        assert 99 not in coverage_by_unit((t(8), t(9)), {"A": [(t(8), t(9))]}, {"A": {7}})
 
 
 class TestOwningBlock:

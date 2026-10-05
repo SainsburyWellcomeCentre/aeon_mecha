@@ -96,8 +96,8 @@ class SpikeTrains(dj.Computed):
             logger.warning(f"SpikeTrains: no matched block covers {key}, skipping")
             return
 
-        coverage = rechunk.chunk_coverage(window, [iv for chunks in block_chunks.values() for iv in chunks])
-        per_unit = rechunk.unit_coverage(window, block_chunks, block_units)
+        coverage = rechunk.coverage(window, [iv for chunks in block_chunks.values() for iv in chunks])
+        per_unit = rechunk.coverage_by_unit(window, block_chunks, block_units)
         if not per_unit:
             logger.warning(f"SpikeTrains: covering blocks found no units for {key}, skipping")
             return
@@ -110,7 +110,7 @@ class SpikeTrains(dj.Computed):
             times = spikes_by_unit.get(unit, np.array([], dtype="datetime64[ns]"))
             seconds = io_api.to_seconds(pd.DatetimeIndex(times)).to_numpy()
             data[int(unit)] = nap.Ts(t=np.sort(seconds))
-            covered.append(rechunk.total_seconds(per_unit[unit]))
+            covered.append(rechunk.covered_seconds(per_unit[unit]))
 
         support = nap.IntervalSet(
             start=[io_api.to_seconds(s) for s, _ in coverage],
@@ -127,7 +127,7 @@ class SpikeTrains(dj.Computed):
             raise ValueError(f"times are not on the HARP epoch for {key}")
 
         chunk_seconds = (window[1] - window[0]).total_seconds()
-        covered_total = rechunk.total_seconds(coverage)
+        covered_total = rechunk.covered_seconds(coverage)
         self.insert1(
             {
                 **key,
