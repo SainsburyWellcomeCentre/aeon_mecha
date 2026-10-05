@@ -106,7 +106,7 @@ class InsertionTargetArea(dj.Manual):
 class EphysEpoch(dj.Manual):
     definition = """
     # Ephys epoch — peer of acquisition.Epoch. epoch_onix_start is observed from
-    # the onix time, to the nearest second - matches the name of the epoch directory.
+    # the onix clock to the nearest second - matches the name of the epoch directory.
     -> acquisition.Experiment
     epoch_onix_start: datetime(6)
     ---
@@ -119,7 +119,7 @@ class EphysEpoch(dj.Manual):
         """Insert EphysEpoch rows by scanning raw-ephys directories."""
         exp_key = {"experiment_name": experiment_name}
         raw_ephys_dir = acquisition.Experiment.get_data_directory(
-            exp_key, directory_type="raw-ephys", as_posix=True
+            exp_key, directory_type="raw-ephys", as_posix=False
         )
         if raw_ephys_dir is None:
             logger.warning(f"raw-ephys directory not found for {experiment_name}")
@@ -410,7 +410,7 @@ class EphysSyncModel(dj.Manual):
                 cls.insert1(
                     {
                         "experiment_name": experiment_name,
-                        "epoch_onix_start": epoch_onix_start,
+                        "epoch_onix_start": epoch_start,
                         "sync_start": sync_start_dt,
                         "sync_end": sync_end_dt,
                         "onix_ts_start": int(df_row["clock_start"]),
@@ -422,7 +422,7 @@ class EphysSyncModel(dj.Manual):
                 )
                 logger.info(
                     f"Inserted EphysSyncModel: {experiment_name} "
-                    f"epoch={epoch_onix_start} sync_start={sync_start_dt}"
+                    f"epoch={epoch_start} sync_start={sync_start_dt}"
                 )
 
 
@@ -480,7 +480,8 @@ class EphysChunk(dj.Manual):
                     chunk_files = list(absolute_epoch_dir.rglob(f'*_{probe_name}_AmplifierData_*.bin'))
 
                 if len(chunk_files) == 0:
-                    raise FileNotFoundError(f'No `.arrow` or `.bin` files found in {absolute_epoch_dir}')
+                    logger.warning(f'No `.arrow` or `.bin` files found in {absolute_epoch_dir}')
+                    continue
 
                 # Files are created as `..._n.bin` where n is the order of the creation. Sort using n:
                 sorted_files = sorted(chunk_files, key=lambda x: int(x.name.split('_')[-1].split('.')[0]))
@@ -504,14 +505,14 @@ class EphysChunk(dj.Manual):
                         chunk_dict['binary_path'] = chunk_file.relative_to(raw_dir_result)
                         clock_path = Path(str(chunk_file).replace('AmplifierData', 'Clock'))
                         if clock_path.is_file():
+                            # In the arrow format, clock info is part of the arrow file.
+                            # Hence clock files only exist when binary files exist.
                             chunk_dict['clock_path'] = clock_path.relative_to(raw_dir_result)
                         else:
                             logger.warning(f"No clock path found at {clock_path}")
 
                     EphysChunk.insert1(chunk_dict)
-
                     global_chunk_index += 1
-
 
 
 @schema
@@ -535,7 +536,7 @@ class EphysChunkSyncModel(dj.Computed):
 
         # find all timestamps
         ephys_data_path = acquisition.Experiment.get_data_directory({
-            'experiment_name': epoch_info['experiment_name']}, 
+            'experiment_name': epoch_info['experiment_name']},
             directory_type="raw-ephys",
         )
         absolute_epoch_dir = Path(ephys_data_path) / epoch_info['epoch_dir']

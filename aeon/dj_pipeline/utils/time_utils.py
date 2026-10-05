@@ -22,9 +22,9 @@ def parse_epoch_timestamp(name: str) -> datetime.datetime:
 
 
 def compute_chunk_time_model(clock_path, all_timestamps):
-    """
-    Compute's the sync model for one chunk of ephys data; 
-    output matches `HarpSyncAlignment` from aeon_api.
+    """Compute the sync model for one chunk of ephys data.
+
+    Output mirrors `HarpSyncAlignment` from aeon_api.
     """
     import numpy as np
 
@@ -34,6 +34,7 @@ def compute_chunk_time_model(clock_path, all_timestamps):
     clock_start = clock_binary[0]
     clock_end = clock_binary[-1]
 
+    # Find the sync info interval which covers the ephys chunk
     initial_ts_index = np.searchsorted(all_timestamps['Value.Clock'].values, clock_start, side='left')
     final_ts_index = np.searchsorted(all_timestamps['Value.Clock'].values, clock_end, side='right')
 
