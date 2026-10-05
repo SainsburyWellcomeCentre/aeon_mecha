@@ -1,9 +1,8 @@
 """Integration tests for processed_ephys.SpikeTrains on testcontainers MySQL.
 
-Synthetic rather than golden, deliberately: the scenario in
-``tests/fixtures/ephys/spike_train_factories.py`` puts a two-block chunk, an ephys
-gap and a boundary spike where assertions can see them, which no fixed real
-recording does.
+Synthetic on purpose. The scenario in ``tests/fixtures/ephys/spike_train_factories.py``
+puts a two-block chunk, an ephys gap and a boundary spike exactly where an assertion
+can see them. No fixed real recording obliges.
 """
 
 import pytest

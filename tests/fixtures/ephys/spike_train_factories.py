@@ -1,7 +1,7 @@
-"""Builds a controlled behaviour + ephys scenario for SpikeTrains tests.
+"""Build a controlled behaviour + ephys scenario for SpikeTrains tests.
 
-Timing is chosen so the three cases that can break re-chunking all land where an
-assertion can see them::
+The timing puts all three cases that can break re-chunking where an assertion can
+see them::
 
     behavioural chunks  [08:00-09:00)   [09:00-10:00)   [10:00-11:00)
     ephys chunks         08:00-08:30     09:00-09:20     (none)

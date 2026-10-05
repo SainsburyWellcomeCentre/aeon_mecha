@@ -1,15 +1,18 @@
-"""Analysis-facing ephys products on the behavioural chunk grain.
+"""Spike trains on the same hourly grain as behaviour.
 
-``SpikeTrains`` re-chunks curated, HARP-synced spike trains from the ephys rig's
-``EphysChunk`` grain to ``acquisition.Chunk``, so spikes and behaviour join on
-``(experiment_name, chunk_start)`` with no time arithmetic at the call site.
+The ephys rig and the behaviour rig cut their data into different chunks, so
+asking "what were these neurons doing while the animal was at patch 2?" means
+re-deriving the alignment by hand every time. ``SpikeTrains`` does it once: each
+row holds one behavioural hour of curated, HARP-synced spikes as a pynapple
+``TsGroup``, so spikes and behaviour join on ``(experiment_name, chunk_start)``
+and the call site does no time arithmetic.
 
-The table has **no foreign key to the sorted data**. That is deliberate: a
-behavioural hour can be covered by several ``UnitMatching`` rows, so keying on them
-would fragment the object for every user, forever. The cost is that nothing
-invalidates a row automatically — ``source_blocks`` records what went in and
-``SpikeTrains.stale_chunks()`` finds rows whose inputs have moved on. See
-``docs/specs/SPEC_SPIKE_TRAINS.md``.
+The table has **no foreign key to the sorted data**, on purpose. Several
+``UnitMatching`` rows can cover one behavioural hour, and keying on them would
+split the object into fragments for every user, forever. The price is that
+nothing invalidates a row when its sorting changes: ``source_blocks`` records
+what went into it, and ``stale_chunks()`` finds the rows that have fallen behind.
+Full reasoning in ``docs/specs/SPEC_SPIKE_TRAINS.md``.
 """
 
 import warnings
@@ -31,10 +34,10 @@ logger = dj.logger
 
 
 def _ts(value) -> str:
-    """Render a datetime for a restriction string.
+    """Format a datetime for a restriction string.
 
-    Restrictions are SQL text, so callers' values are coerced through a known
-    format rather than interpolated as-is.
+    DataJoint restrictions are SQL text, so anything a caller hands us goes
+    through one known format instead of straight into the query.
     """
     return pd.Timestamp(value).strftime("%Y-%m-%d %H:%M:%S.%f")
 
@@ -59,27 +62,28 @@ class SpikeTrains(dj.Computed):
 
     @property
     def key_source(self):
-        """Behavioural chunks that a matched ephys chunk overlaps, per insertion.
+        """Behavioural chunks that some matched ephys chunk overlaps.
 
-        Half-open: an ephys chunk ending exactly at ``chunk_start`` belongs to the
-        previous behavioural chunk. Only blocks ``UnitMatching`` has run for count,
-        so a chunk whose ephys is sorted but unmatched stays uncomputable rather
-        than yielding a row with no units.
+        Overlap is half-open, so an ephys chunk ending exactly at ``chunk_start``
+        counts toward the previous behavioural hour. Only blocks that
+        ``UnitMatching`` has already run for count. A chunk whose ephys is sorted
+        but not yet matched stays uncomputable, which beats writing a row with no
+        units in it.
         """
-        # Renaming the ephys bounds is not cosmetic: a surviving `chunk_start` keeps
-        # its ephys lineage, and DataJoint then refuses the antijoin populate() runs
-        # against this table. The restriction is a semijoin, so it is already
-        # distinct on EphysChunk's key.
+        # Renaming the ephys bounds is load-bearing. A surviving `chunk_start`
+        # carries its ephys lineage, and DataJoint then refuses the antijoin that
+        # populate() runs against this table. The restriction below is a semijoin,
+        # so it already comes back distinct on EphysChunk's key.
         matched = ephys.EphysChunk.proj(eph_start="chunk_start", eph_end="chunk_end") & (
             spike_sorting.UnitMatching * ephys.EphysBlockInfo.Chunk
         ).proj()
         overlap = "eph_start < chunk_end AND eph_end > chunk_start"
-        # One behavioural chunk can overlap several ephys chunks, so the join yields
-        # it once per match; dj.U collapses that back to this table's own key.
+        # A behavioural chunk can overlap several ephys chunks, so the join hands it
+        # back once per match. dj.U collapses that to this table's own key.
         return dj.U(*self.primary_key) & ((acquisition.Chunk * matched) & overlap)
 
     def make(self, key: dict) -> None:
-        """Re-chunk one behavioural chunk's worth of spikes into a TsGroup."""
+        """Build one behavioural hour's TsGroup from the blocks covering it."""
         import pynapple as nap  # optional extra; kept lazy so importing this module is cheap
 
         window = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
@@ -87,8 +91,8 @@ class SpikeTrains(dj.Computed):
 
         block_chunks, block_units, block_starts = _covering_blocks(insertion, window)
         if not block_units:
-            # No matched block covers this chunk. populate() will retry the key on
-            # every run, so say so rather than failing silently forever.
+            # populate() retries this key every run, so a silent skip would hide
+            # forever. Say it once and move on.
             logger.warning(f"SpikeTrains: no matched block covers {key}, skipping")
             return
 
@@ -138,23 +142,22 @@ class SpikeTrains(dj.Computed):
 
     @classmethod
     def stale_chunks(cls, restriction=True) -> list[dict]:
-        """Find rows whose spike sorting has moved on since they were written.
+        """Find rows whose sorting has changed since they were written.
 
-        Run this after any re-curation, or after ``UnitMatching`` covers time that
-        already has rows — this table has no foreign key to the sorted data, so
-        nothing invalidates it for you. Refresh what it finds::
+        Nothing invalidates this table for you, so run this after re-curating, or
+        after ``UnitMatching`` covers time that already has rows. Then refresh what
+        it finds::
 
             stale = SpikeTrains.stale_chunks()
             (SpikeTrains & stale).delete()
             SpikeTrains.populate()
 
-        Catches both a block matched after a row was written and upstream rows
-        removed by re-curation. Computed on demand rather than stored, because a
-        stored flag would itself go stale. Pass ``restriction`` to check one
-        experiment or insertion instead of the whole table — it costs a couple of
-        queries per covering block, so narrow it when you can.
+        It catches a block matched after the row was written, and upstream rows
+        that re-curation removed. Nothing is stored — a stored flag would go stale
+        itself. Each covering block costs a couple of queries, so pass a
+        ``restriction`` and check one experiment or insertion when you can.
         """
-        # One join for the windows rather than a lookup per row.
+        # Fetch every window in one join instead of one lookup per row.
         rows = (cls() & restriction).proj("source_blocks") * acquisition.Chunk.proj(
             "chunk_end"
         )
@@ -177,27 +180,28 @@ class SpikeTrains(dj.Computed):
         end: datetime,
         allow_stale: bool = False,
     ) -> "nap.TsGroup":
-        """Get spike trains over any window as one TsGroup, not chunk by chunk.
+        """Get one TsGroup covering any window, not one per chunk.
 
-        Use this whenever the window is not exactly one behavioural chunk::
+        Reach for this whenever the window is not exactly one behavioural hour::
 
             tg = SpikeTrains.fetch_span("exp-aeon3", "mouse1", 1, start=t0, end=t1)
             good = tg[tg.unit_quality == "good"]
             rate = good.count(0.01)
 
-        Fetching the chunks yourself and concatenating looks equivalent and is not:
-        this re-keys nothing silently, sums each unit's ``covered_seconds`` so rates
-        stay honest across the join, and restricts each chunk before concatenating,
-        so peak memory is one chunk instead of the span.
+        Fetching the chunks and stitching them together yourself looks the same and
+        is not. This sums each unit's ``covered_seconds``, so firing rates stay
+        honest across the join, and it trims each chunk before concatenating, so
+        peak memory is one chunk rather than the whole span.
 
-        Raises if any contributing row is stale (pass ``allow_stale=True`` to
-        override, or refresh with ``stale_chunks``) and warns if any unit was sorted
-        for only part of its chunk — in that case divide by ``covered_seconds``
-        rather than trusting ``TsGroup.rate``.
+        It raises if any row it needs is stale — pass ``allow_stale=True`` to go
+        ahead anyway, or refresh with ``stale_chunks`` first. It warns if a unit was
+        sorted for only part of its chunk; divide by ``covered_seconds`` in that
+        case, because ``TsGroup.rate`` will use the wrong denominator.
 
-        Size the window before asking: roughly 115 MB per probe-hour at Neuropixels
-        rates, so a day is ~2.7 GB and a week ~19 GB. pynapple has no lazy TsGroup,
-        and nothing here refuses a window that will not fit.
+        Size the window before you ask for it. A probe-hour is roughly 115 MB at
+        Neuropixels rates, so a day is about 2.7 GB and a week about 19 GB. pynapple
+        has no lazy TsGroup, and nothing here will stop you asking for more than
+        fits.
         """
         import pynapple as nap
 
@@ -250,19 +254,18 @@ class SpikeTrains(dj.Computed):
 
 
 def _covering_blocks(insertion: dict, window: tuple) -> tuple[dict, dict, dict]:
-    """Blocks overlapping ``window``, the ephys chunks each covers, the units each found.
+    """Blocks overlapping ``window``: the chunks each covers, the units each found.
 
-    Keyed by ``block_start``. Restricted to blocks ``UnitMatching`` has run for —
-    an unmatched block contributes no unit identities, so including it would produce
-    coverage with nothing to attribute it to.
+    Only blocks ``UnitMatching`` has run for. An unmatched block brings no unit
+    identities, so counting its coverage would credit time to nobody.
     """
     overlap = f'block_start < "{_ts(window[1])}" AND block_end > "{_ts(window[0])}"'
     blocks = (ephys.EphysBlock * spike_sorting.UnitMatching & insertion & overlap).to_dicts()
 
     block_chunks, block_units, block_starts = {}, {}, {}
     for block in blocks:
-        # EphysBlock's key is (insertion, block_start, block_end) — two blocks can
-        # share a start, so keying on block_start alone silently collapses them.
+        # Two blocks can share a start, so block_start alone would silently merge
+        # them. EphysBlock's key is (insertion, block_start, block_end).
         ident = (block["block_start"], block["block_end"])
         block_key = {k: block[k] for k in (*insertion, "block_start", "block_end")}
         chunks = (ephys.EphysBlockInfo.Chunk * ephys.EphysChunk & block_key).to_dicts()
@@ -274,10 +277,10 @@ def _covering_blocks(insertion: dict, window: tuple) -> tuple[dict, dict, dict]:
 
 
 def _fetch_spikes(insertion: dict, window: tuple, block_starts: dict) -> tuple[dict, dict]:
-    """Spike times per global unit, clipped to ``window``, plus per (unit, block) counts.
+    """Spike times per unit inside ``window``, and how many came from each block.
 
-    The counts feed ``rechunk.owning_block``, which decides whose block-scoped
-    metadata wins for a unit spanning more than one block.
+    The counts feed ``rechunk.owning_block``, which picks whose metadata wins when
+    a unit spans two blocks and each has its own answer.
     """
     lo, hi = np.datetime64(window[0]), np.datetime64(window[1])
     rows = (
@@ -306,13 +309,13 @@ def _unit_metadata(
 ) -> dict:
     """Per-unit metadata columns for the TsGroup, in roster order.
 
-    ``covered_seconds`` is the honest denominator for each unit's firing rate —
-    seconds rather than a fraction, because fractions do not compose when
-    ``fetch_span`` concatenates chunks.
+    ``covered_seconds`` is each unit's own denominator for a firing rate. Seconds
+    rather than a fraction, because fractions stop adding up once ``fetch_span``
+    concatenates chunks.
 
-    ``unit_quality`` is block-scoped, so a unit spanning blocks has more than one
-    candidate; ``rechunk.owning_block`` picks the one holding most of its spikes.
-    Flattened ``qc_metrics`` are not carried yet — they remain queryable on
+    ``unit_quality`` belongs to a block, so a unit spanning two of them has two
+    candidates; ``rechunk.owning_block`` picks the block holding most of its
+    spikes. ``qc_metrics`` are not flattened in here yet and stay queryable on
     ``SortingQuality.Metric``.
     """
     electrodes = {
