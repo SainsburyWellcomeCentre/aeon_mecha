@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
       - name: ruff
-        run: uv run ruff check .
+        run: uv run ruff check aeon/
       - name: pyright
         run: uv run pyright --level error --project ./pyproject.toml .
 

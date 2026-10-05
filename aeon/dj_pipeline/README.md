@@ -111,3 +111,22 @@ Data ingestion/populate with DataJoint is idempotent, so it is safe to run the s
     aeon_ingest streams_worker
 
     aeon_ingest analysis_worker
+
+# Contribute Guide
+
+The project uses [ruff](https://docs.astral.sh/ruff/) to lint and format our source code. Before submitting a
+PR please check that your code conforms to our formatting by running
+
+```
+ uv run ruff check aeon/
+```
+
+from inside the local repo folder. Or you can set up autoformatting by using `pre-commit`. Use this by installing
+`pre-commit` on your system and then adding it to this project
+
+```
+uv tool install pre-commit  
+pre-commit install
+```
+
+By doing this, your code will auto-reformat whenever you commit.

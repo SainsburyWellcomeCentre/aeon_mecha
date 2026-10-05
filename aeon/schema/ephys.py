@@ -1,15 +1,17 @@
+"""Readers for ephys data."""
+
 import os
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from datetime import datetime
+from dotmap import DotMap
 from sklearn.linear_model import LinearRegression
-
 from swc.aeon.io import reader as _reader
-from swc.aeon.schema.streams import Stream, StreamGroup
-
+from swc.aeon.schema.streams import Device, Stream, StreamGroup
 
 # -- Ephys streams for HarpSync and OnixClock data
+
 
 class Binary(_reader.Reader):
     """Extracts data from raw flat binary files without timestamp information."""
@@ -35,12 +37,12 @@ class HarpSync(Stream):
 
 
 class HarpSyncModel(Stream):
-
     class Reader(HarpSync.Reader):
         def __init__(self, pattern):
             super().__init__(pattern)
 
         def read(self, file):
+            """Creates linear model which transforms clock time to harptime for an hour-long csv file."""
             data = super().read(file)
             # An unclean acquisition stop can cut the last row mid-line (e.g. a
             # truncated HarpTime value), so drop a last row without a line ending.
@@ -93,19 +95,25 @@ class Bno055(StreamGroup):
 
     class Bno055Euler(Stream):
         def __init__(self, pattern):
-            super().__init__(Binary(f"{pattern}_Bno055_Euler_*", dtype=np.float32, columns=['x', 'y', 'z']))
+            super().__init__(Binary(f"{pattern}_Bno055_Euler_*", dtype=np.float32, columns=["x", "y", "z"]))
 
     class Bno055GravityVector(Stream):
         def __init__(self, pattern):
-            super().__init__(Binary(f"{pattern}_Bno055_GravityVector_*", dtype=np.float32, columns=['x', 'y', 'z']))
+            super().__init__(
+                Binary(f"{pattern}_Bno055_GravityVector_*", dtype=np.float32, columns=["x", "y", "z"])
+            )
 
     class Bno055LinearAcceleration(Stream):
         def __init__(self, pattern):
-            super().__init__(Binary(f"{pattern}_Bno055_LinearAcceleration_*", dtype=np.float32, columns=['x', 'y', 'z']))
+            super().__init__(
+                Binary(f"{pattern}_Bno055_LinearAcceleration_*", dtype=np.float32, columns=["x", "y", "z"])
+            )
 
     class Bno055Quaternion(Stream):
         def __init__(self, pattern):
-            super().__init__(Binary(f"{pattern}_Bno055_Quaternion_*", dtype=np.float32, columns=['w', 'x', 'y', 'z']))
+            super().__init__(
+                Binary(f"{pattern}_Bno055_Quaternion_*", dtype=np.float32, columns=["w", "x", "y", "z"])
+            )
 
 
 class NeuropixelsV2Beta(StreamGroup):
@@ -117,13 +125,13 @@ class NeuropixelsV2(StreamGroup):
     def __init__(self, path):
         super().__init__(path, HarpSync, HarpSyncModel)
 
+
 # ----
 
-from dotmap import DotMap
-from swc.aeon.schema.streams import Device
 
 social_ephys = DotMap(
     [
         Device("NeuropixelsV2Beta", NeuropixelsV2Beta, Bno055),
         Device("NeuropixelsV2", NeuropixelsV2, Bno055),
-    ])
+    ]
+)

@@ -5,10 +5,16 @@ import logging
 import os
 from typing import cast
 
-import pymysql.converters
-
 import datajoint as dj
 import pandas as pd
+import pymysql.converters
+
+# Register Aeon + xarray codecs BEFORE any schema activation
+from aeon.dj_pipeline.utils.codec import (  # pyright: ignore[reportUnusedImport]
+    AeonStreamCodec,
+    OnixStreamCodec,
+    XArrayNetCDFCodec,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -38,13 +44,6 @@ def _escape_dict_as_json(val, charset, mapping=None):
 pymysql.converters.escape_dict = _escape_dict_as_json
 pymysql.converters.encoders[dict] = _escape_dict_as_json
 pymysql.converters.conversions[dict] = _escape_dict_as_json
-
-# Register Aeon + xarray codecs BEFORE any schema activation
-from aeon.dj_pipeline.utils.codec import (  # pyright: ignore[reportUnusedImport]
-    AeonStreamCodec,
-    OnixStreamCodec,
-    XArrayNetCDFCodec,
-)
 
 logger = dj.logger
 

@@ -1,5 +1,4 @@
-"""
-Script to launch SpikeInterface GUI for manual spike sorting curation.
+"""Script to launch SpikeInterface GUI for manual spike sorting curation.
 
 ================================================================================
 IMPORTANT: THIS SCRIPT IS DESIGNED TO BE MODIFIED BEFORE RUNNING
