@@ -8,6 +8,7 @@ import pandas as pd
 from dotmap import DotMap
 from sklearn.linear_model import LinearRegression
 from swc.aeon.io import reader as _reader
+from swc.aeon.io.api import chunk_key
 from swc.aeon.schema.streams import Device, Stream, StreamGroup
 
 # -- Ephys streams for HarpSync and OnixClock data
@@ -61,8 +62,9 @@ class HarpSyncModel(Stream):
 
             model = LinearRegression().fit(onix_clock, harp_time)
             r2 = model.score(onix_clock, harp_time)
-            chunk_info = file.name.split("_")[-1]
-            epoch = datetime.strptime(chunk_info, "%Y-%m-%dT%H-%M-%S.csv")
+            # chunk_key parses both the compact UTC ("...T090000Z.csv") and the
+            # dashed ("...T09-00-00.csv") filename timestamp conventions.
+            epoch = chunk_key(file)[1].tz_localize(None)
             return pd.DataFrame(
                 index=[epoch],
                 data={

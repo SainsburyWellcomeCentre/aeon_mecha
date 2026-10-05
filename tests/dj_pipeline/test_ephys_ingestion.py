@@ -1,8 +1,8 @@
 """Golden baseline and integration tests for the ephys pipeline.
 
-Tests the ephys ingestion pipeline using a known dataset (8-channel
-subset of abcGolden01 NeuropixelsV2 recording). Tests gracefully skip
-if data unavailable.
+Tests the ephys ingestion pipeline using a known dataset (96 active contacts
+on shank3 of the abcGolden01 NeuropixelsV2 recording, two overlapping blocks).
+Tests gracefully skip if data unavailable.
 
 Requirements:
 1. Ephys golden dataset at ~/sciops-data/project_aeon/aeon/data/raw/AEONX1/...
@@ -16,6 +16,46 @@ Pipeline cascade tested (all live except SpikeSorting):
 import pytest
 
 pytestmark = pytest.mark.integration
+
+
+class TestExperimentTopology:
+    """abcGolden01 is ONE experiment with a behaviour arm and an ephys arm.
+
+    Production registers a single experiment_name carrying both a "raw" and a "raw-ephys"
+    Experiment.Directory, then ingests behaviour epochs and ephys epochs under that one name
+    (docs/ephys_runbooks/step01_register_experiment.py). Modelling it as two experiments would
+    leave that topology - the one production actually runs - untested.
+    """
+
+    def test_one_experiment_carries_both_arms(self, ephys_test_epochs, ctx):
+        exp_key = {"experiment_name": ctx.cfg["experiment_name"]}
+        assert len(ctx.ephys.acquisition.Experiment & exp_key) == 1
+
+        dir_types = {
+            r["directory_type"]
+            for r in (ctx.ephys.acquisition.Experiment.Directory & exp_key).to_dicts()
+        }
+        assert {"raw", "raw-ephys"} <= dir_types, (
+            f"expected both arms registered under {ctx.cfg['experiment_name']}, got {dir_types}"
+        )
+
+    def test_each_arm_resolves_its_own_directory(self, ephys_test_epochs, ctx):
+        """get_data_directory must return a different path per arm, not the same one twice."""
+        exp_key = {"experiment_name": ctx.cfg["experiment_name"]}
+        get_dir = ctx.ephys.acquisition.Experiment.get_data_directory
+        ephys_dir = get_dir(exp_key, directory_type="raw-ephys")
+        behavior_dir = get_dir(exp_key, directory_type="raw")
+
+        assert ephys_dir is not None
+        assert "AEONX1" in str(ephys_dir)
+        # The behaviour tree may be absent on an ephys-only machine; only assert when resolved.
+        if behavior_dir is not None:
+            assert "AEON3" in str(behavior_dir)
+            assert behavior_dir != ephys_dir
+
+    def test_ephys_epochs_ingest_under_the_shared_name(self, ephys_test_epochs, ctx):
+        """EphysEpoch rows land under the same experiment_name the behaviour arm uses."""
+        assert len(ctx.ephys.EphysEpoch & {"experiment_name": ctx.cfg["experiment_name"]}) >= 1
 
 
 class TestEphysEpochDiscovery:
@@ -91,27 +131,32 @@ class TestEphysBlockInfo:
         assert infos == blocks
 
     def test_block_duration_correct(self, ephys_block_info_populated, ctx):
-        # Block is set up as exactly 35 minutes (block_end - block_start in the
-        # ephys_test_blocks fixture); block_duration in hours is exactly 35/60.
-        # Tight tolerance to catch any conversion drift.
-        infos = (ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
+        """block_duration is block_end - block_start in hours."""
+        infos = (
+            ctx.ephys.EphysBlockInfo * ctx.ephys.EphysBlock
+            & {"experiment_name": ctx.cfg["experiment_name"]}
+        ).to_dicts()
+        assert len(infos) == 2
         for info in infos:
-            assert info["block_duration"] == pytest.approx(35 / 60, abs=1e-6)
+            expected_hours = (info["block_end"] - info["block_start"]).total_seconds() / 3600
+            # float32 column: ~6 significant digits, tighter than an absolute 1e-6.
+            assert info["block_duration"] == pytest.approx(expected_hours, rel=1e-5)
 
     def test_block_chunks_associated(self, ephys_block_info_populated, ctx):
         chunk_links = len(ctx.ephys.EphysBlockInfo.Chunk & {"experiment_name": ctx.cfg["experiment_name"]})
         assert chunk_links >= 1
 
     def test_channel_mappings_created(self, ephys_block_info_populated, ctx):
-        # EphysBlockInfo.Channel records the recording's channels (full active set,
-        # not the sorting subset), so we check n_recording_channels (384), not
-        # n_channels (8 — the sorting subset in ElectrodeGroup.Electrode).
-        channel_rows = (
-            ctx.ephys.EphysBlockInfo.Channel & {"experiment_name": ctx.cfg["experiment_name"]}
-        ).to_dicts()
-        assert len(channel_rows) == ctx.cfg["n_recording_channels"]
-        channel_indices = sorted(r["channel_idx"] for r in channel_rows)
-        assert channel_indices == list(range(ctx.cfg["n_recording_channels"]))
+        # Full active set (384) PER BLOCK - experiment-wide would be 768 across two blocks.
+        blocks = (ctx.ephys.EphysBlock & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
+            order_by="block_start"
+        )
+        assert len(blocks) == 2
+        for block in blocks:
+            channel_rows = (ctx.ephys.EphysBlockInfo.Channel & block).to_dicts()
+            assert len(channel_rows) == ctx.cfg["n_recording_channels"]
+            channel_indices = sorted(r["channel_idx"] for r in channel_rows)
+            assert channel_indices == list(range(ctx.cfg["n_recording_channels"]))
 
 
 class TestPreProcessing:
@@ -144,39 +189,42 @@ class TestPreProcessing:
             "recording.zarr contents should not be registered"
         )
 
-    def test_recording_zarr_exists(self, ephys_sorting_setup, require_ephys_golden_data, ctx):
-        self._ensure_prerequisites(ctx)
-        key = (ctx.spike_sorting.SortingTask & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()[
-            0
-        ]
-        from aeon.dj_pipeline.utils.paths import scratch_recording_dir
+    def test_preprocessed_recording_is_usable(self, ephys_sorting_setup, require_ephys_golden_data, ctx):
+        """si_recording.pkl is PreProcessing's DB-tracked deliverable and must load.
 
+        The golden fixture does not materialise recording.zarr (~24 GB, only read by the
+        injected SpikeSorting), so zarr writing is not covered here.
+        """
+        self._ensure_prerequisites(ctx)
+        key = (ctx.spike_sorting.SortingTask & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
+            order_by="block_start"
+        )[0]
         output_dir = ctx.spike_sorting.PreProcessing.infer_output_dir(key)
-        # recording.zarr lives on the scratch mirror when configured, else in-place on ceph.
-        recording_zarr = scratch_recording_dir(output_dir.parent / "recording") / "recording.zarr"
-        assert recording_zarr.exists(), f"Expected zarr recording at {recording_zarr}"
-        assert any(recording_zarr.iterdir()), "recording.zarr directory is empty"
+        recording_file = output_dir.parent / "recording" / "si_recording.pkl"
+        assert recording_file.exists(), f"Expected si_recording.pkl at {recording_file}"
 
         import numpy as np
         import spikeinterface as si
 
-        rec = si.load(recording_zarr)
+        rec = si.load(recording_file, base_folder=output_dir)
         assert rec.get_num_channels() == ctx.cfg["n_channels"]
 
-        # Sample count should reflect a real multi-minute block, not a truncated
-        # write (the golden block is ~30 min at 30 kHz). A duration range catches
-        # truncation that a bare "> 0" check would miss.
+        # Summed span of the linked chunks: a loose range would accept 1 to 11 chunks.
+        chunks = (ctx.ephys.EphysBlockInfo.Chunk * ctx.ephys.EphysChunk & key).to_dicts()
+        assert chunks, "block links no chunks"
+        expected_s = sum(
+            (c["chunk_end"] - c["chunk_start"]).total_seconds() for c in chunks
+        )
         duration_s = rec.get_num_samples() / rec.get_sampling_frequency()
-        assert 300 < duration_s < 7200, (
-            f"recording.zarr duration {duration_s:.1f}s outside expected range "
-            "(expected a multi-minute block)"
+        assert duration_s == pytest.approx(expected_s, abs=2.0), (
+            f"preprocessed recording is {duration_s:.1f}s but its {len(chunks)} linked chunks "
+            f"span {expected_s:.1f}s"
         )
 
-        # Read a slice back to confirm the zarr actually decompresses to real
-        # data, not just that the directory and metadata exist.
+        # Confirm the lazy chain resolves to real data, not just that the pickle loads.
         traces = rec.get_traces(start_frame=0, end_frame=1000)
         assert traces.shape == (1000, ctx.cfg["n_channels"])
-        assert np.any(traces != 0), "recording.zarr decompressed to all-zero traces"
+        assert np.any(traces != 0), "preprocessed recording returned all-zero traces"
 
 
 class TestCompressedReadEquivalence:
@@ -273,10 +321,10 @@ class TestPostProcessing:
 
     def test_sorting_analyzer_created(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
-        output_dir = ephys_sorting_injected["output_dir"]
-        analyzer_dir = output_dir / "sorting_analyzer.zarr"
-        assert analyzer_dir.exists(), f"Expected zarr analyzer at {analyzer_dir}"
-        assert any(analyzer_dir.iterdir())
+        for output_dir in ephys_sorting_injected["output_dirs"].values():
+            analyzer_dir = output_dir / "sorting_analyzer.zarr"
+            assert analyzer_dir.exists(), f"Expected zarr analyzer at {analyzer_dir}"
+            assert any(analyzer_dir.iterdir())
 
 
 class TestSortedSpikes:
@@ -297,8 +345,14 @@ class TestSortedSpikes:
 
     def test_unit_count(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
+        import spikeinterface as si
+
+        expected = sum(
+            len(si.load(d / "in_container_sorting").unit_ids)
+            for d in ephys_sorting_injected["sorting_dirs"].values()
+        )
         units = len(ctx.spike_sorting.SortedSpikes.Unit & {"experiment_name": ctx.cfg["experiment_name"]})
-        assert units == ctx.cfg["expected_unit_count"]
+        assert units == expected
 
     def test_spike_counts_reasonable(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
@@ -308,7 +362,14 @@ class TestSortedSpikes:
         for u in units:
             assert u["spike_count"] > 0
         total = sum(u["spike_count"] for u in units)
-        assert total == ctx.cfg["expected_total_spikes"]
+
+        import spikeinterface as si
+
+        expected_total = 0
+        for d in ephys_sorting_injected["sorting_dirs"].values():
+            sorting = si.load(d / "in_container_sorting")
+            expected_total += sum(len(sorting.get_unit_spike_train(u)) for u in sorting.unit_ids)
+        assert total == expected_total
 
     def test_quality_labels_assigned(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
@@ -316,11 +377,27 @@ class TestSortedSpikes:
             ctx.spike_sorting.SortedSpikes.Unit & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
         qualities = [u["unit_quality"] for u in units]
-        assert set(qualities) <= {"good", "mua", "noise"}
-        expected = ctx.cfg["expected_quality_counts"]
-        for label, count in expected.items():
-            assert qualities.count(label) == count, (
-                f"Quality label '{label}' count mismatch: expected {count}, got {qualities.count(label)}"
+        # Auto-approved curation leaves KSLabel, except where the noise fixture re-marked a
+        # unit. Either/or keeps this order-independent across session-scoped fixtures.
+        import spikeinterface as si
+
+        # Keyed per block: SpikeInterface unit ids restart per sorting and the two blocks
+        # share 25 ids.
+        expected_kslabel = {}
+        for block_start, d in ephys_sorting_injected["sorting_dirs"].items():
+            sorting = si.load(d / "in_container_sorting")
+            labels = sorting.get_property("KSLabel")
+            assert labels is not None, f"no KSLabel property in {d}"
+            for unit_id, label in zip(sorting.unit_ids, labels, strict=True):
+                expected_kslabel[(block_start, int(unit_id))] = str(label).strip().lower()
+
+        assert qualities, "no units found"
+        for u in units:
+            key = (u["block_start"], u["unit"])
+            assert key in expected_kslabel, f"unit {key} not present in any injected artifact"
+            allowed = {expected_kslabel[key], "noise"}
+            assert u["unit_quality"] in allowed, (
+                f"unit {key} has quality {u['unit_quality']!r}, expected one of {allowed}"
             )
 
 

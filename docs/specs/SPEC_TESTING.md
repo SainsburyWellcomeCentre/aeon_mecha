@@ -103,7 +103,7 @@ datasets — every behavior test runs once per dataset:
 | Key | Experiment | Duration | On-disk profile | Pair |
 |---|---|---|---|---|
 | `foraging_abc_2025_11_18` | `abcBehav0-aeon3` | ~1 hour | Full 13 cameras + 6 feeders writing data; rich stream samples (`FeederEncoder` 848k, `CameraPosition` 12k) | Behavior only |
-| `foraging_abc_2026_05_11` | `abcGolden01-aeon3` | ~2 hours | 5 cameras + 4 feeders writing data; sparser samples; paired with the ephys golden | Paired with `foraging_abc_ephys_2026_05_11` |
+| `foraging_abc_2026_05_11` | `abcGolden01-aeon3` | ~2 hours | 5 cameras + 4 feeders writing data; sparser samples | **Behaviour ARM** of `abcGolden01-aeon3`; `foraging_abc_ephys_2026_05_11` is the ephys arm of the *same* experiment |
 
 **Locations** (relative to `DEFAULT_GOLDEN_DATA_ROOT`):
 - `<data-root>/raw/AEON3/abcBehav0/2025-11-18T10-13-15/`
@@ -114,7 +114,24 @@ datasets — every behavior test runs once per dataset:
 
 **Reference device:** `CameraTop` by default; `abcGolden01-aeon3` overrides
 to `CameraNest` via `_ref_device_mapping` in `acquisition.py` (that rig has
-no `CameraTop` on disk).
+no `CameraTop` on disk). Note this mapping is keyed on `experiment_name`, so
+renaming the experiment silently falls back to `CameraTop` and behaviour chunk
+discovery finds nothing.
+
+### One experiment, two arms
+
+`abcGolden01-aeon3` is a **single** DataJoint experiment carrying two
+`Experiment.Directory` rows — `raw` (behaviour, AEON3) and `raw-ephys`
+(NeuropixelsV2, AEONX1) — matching what
+`docs/ephys_runbooks/step01_register_experiment.py` registers in production.
+`acquisition.Epoch.ingest_epochs` and `EphysEpoch.ingest_epochs` both run
+against that one name; `_get_all_chunks` scopes behaviour discovery to
+`["quality-control", "raw"]`, so the arms cannot contaminate each other.
+
+The two registry entries therefore share an `experiment_name` and differ only
+in which directory tree they describe. `ephys_test_experiment` registers both
+directories, so the topology holds even when only the ephys tiers are run.
+`TestExperimentTopology` in `test_ephys_ingestion.py` pins it.
 
 **Mixed file-name formats** in abcGolden01 — CSVs use `T07-00-00`, newer
 bins use `T070000Z`. Both parse via `swc.aeon.io.api.chunk_key`.
@@ -139,13 +156,19 @@ Without it, the test module skips at import time via `pytest.importorskip`.
 
 ## Ephys golden dataset
 
-**Active dataset:** `foraging_abc_ephys_2026_05_11` — 35 min of `abcGolden01-aeonx1`, NeuropixelsV2 ProbeB, 8-channel sorting subset on shank 3.
+**Active dataset:** `foraging_abc_ephys_2026_05_11` — `abcGolden01-aeonx1`, NeuropixelsV2 ProbeB, all 96 active contacts on shank 3. Two overlapping ephys blocks (chunks 0-6 and 4-11, sharing 4-6), each with a real Kilosort4 sorting under `golden_test_sorting/<block>/shank3/kilosort4_400/`.
 
 **Location:** `~/sciops-data/project_aeon/aeon/data/raw/AEONX1/abcGolden01/2026-05-11T07-50-11/`
 
 **Test modules:**
-- `tests/dj_pipeline/test_ephys_ingestion.py` — golden-data tests
+- `tests/dj_pipeline/test_ephys_ingestion.py` — golden-data ingestion through `SyncedSpikes` (`integration`)
+- `tests/dj_pipeline/test_ephys_curation_integration.py` — auto-approved curation (`specialized`)
+- `tests/dj_pipeline/test_unit_matching_integration.py` — `UnitMatching` / `GlobalUnit` (`specialized`)
+- `tests/dj_pipeline/test_unit_matching_helpers_unit.py` — pure matching helpers (`unit`, no DB)
 - `tests/dj_pipeline/test_ephys_synthetic_integration.py` — schema invariants (no golden data)
+
+The curation and matching modules are `specialized` because they drive the same ~18-minute
+fixture chain; running them in one invocation builds it once.
 
 **Covers (golden):**
 - `EphysEpoch.ingest_epochs()` + `EphysEpochConfig.populate()` — probe discovery
@@ -178,24 +201,29 @@ The full ephys suite runs on the HPC against `/ceph` data. From `aeon-hpc`:
 4. **Run:**
    ```bash
    module load uv
+   # ingestion through SyncedSpikes
    uv run pytest -m integration tests/dj_pipeline/test_ephys_ingestion.py -v --tb=short
+   # curation + unit matching (shares one fixture build; ~18 min)
+   uv run pytest -m specialized \
+     tests/dj_pipeline/test_ephys_curation_integration.py \
+     tests/dj_pipeline/test_unit_matching_integration.py -v --tb=short
    ```
 
 Without `TEST_DB_PREFIX`, tests fall back to testcontainers (Docker), which isn't available on HPC.
 
 ### Refreshing golden data
 
-The exact-equality assertions (`expected_unit_count`, `expected_total_spikes`, per-quality-label counts) are tied to a specific Kilosort version + params. When upstream data changes — Kilosort upgrade, parameter change, channel subset change, regeneration of `golden_test_sorting/` — update the matching constants in `GOLDEN_DATASETS["foraging_abc_ephys_2026_05_11"]` in the **same PR** that touches the data.
+Unit and spike counts are **derived from the artifacts at fixture time**, not hardcoded, so a
+regenerated sorting needs no constants updated.
 
-To read the new counts from a regenerated sorting:
-```python
-import spikeinterface as si
-s = si.load("/ceph/aeon/aeon/data/golden_tests/AEONX1/abcGolden01/"
-            "golden_test_sorting/sorting_output/in_container_sorting")
-units = s.get_unit_ids()
-print(f"unit_count={len(units)}")
-print(f"total_spikes={sum(len(s.get_unit_spike_train(u)) for u in units)}")
-```
+What is hardcoded is geometry, in `GOLDEN_DATASETS["foraging_abc_ephys_2026_05_11"]` and
+`ephys_test_blocks`: the two `golden_blocks` directory names, `n_channels: 96`, `shank_id: "3"`,
+and the chunk slices each block must select (`0..6` and `4..11`). Re-sorting on different block
+bounds or a different channel subset means updating those in the **same PR** that touches the data.
+
+`ephys_block_info_populated` asserts the exact chunk identities each block links, so a mismatch
+between bounds and artifact fails at fixture setup rather than as an `IndexError` inside
+`SyncedSpikes` fifteen minutes later.
 
 ---
 

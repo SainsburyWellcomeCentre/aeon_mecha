@@ -14,7 +14,7 @@ resolution-markers = [
 
 [[package]]
 name = "aeon-mecha"
-version = "0.4.8"
+version = "0.4.9"
 source = { editable = "." }
 dependencies = [
     { name = "bottleneck" },
@@ -117,7 +117,7 @@ requires-dist = [
     { name = "scipy" },
     { name = "seaborn" },
     { name = "spikeinterface", extras = ["full"], marker = "extra == 'spike-sorting'", specifier = ">=0.104.0" },
-    { name = "spikeinterface-gui", marker = "extra == 'spike-sorting'" },
+    { name = "spikeinterface-gui", marker = "extra == 'spike-sorting'", specifier = ">=0.13.1" },
     { name = "spython", marker = "extra == 'spike-sorting'" },
     { name = "swc-aeon", git = "https://github.com/SainsburyWellcomeCentre/aeon_api.git?branch=main" },
     { name = "xarray", specifier = ">=0.12.3" },
@@ -3370,15 +3370,15 @@ full = [
 
 [[package]]
 name = "spikeinterface-gui"
-version = "0.12.0"
+version = "0.13.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "markdown" },
     { name = "spikeinterface", extra = ["full"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/14/44/0d58b6d9b8e403e7c3db23958d66646798d3e2c3a4142425705991fd6520/spikeinterface_gui-0.12.0.tar.gz", hash = "sha256:a4572e6e53f0f5cc0558c240765a8d1a3a474606ca118705632db705b2a7ce74", size = 134993, upload-time = "2025-11-13T15:31:11.818Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/b4/10e3247e0dd43339b1fd1d4177be307d31b4099677157a10ca8c64617477/spikeinterface_gui-0.13.1.tar.gz", hash = "sha256:8e021a89900179e2983a52685bb544ee384376a106f906d4bd5fe4e41dd6aa6d", size = 151272, upload-time = "2026-04-01T11:13:00.038Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a8/b5/bad4418ee112819851801441c443d241649152c15bea7f7af60cebc84d56/spikeinterface_gui-0.12.0-py3-none-any.whl", hash = "sha256:e0d39d2e7934b27b86cc088fc24c3eb25d60ef773ced2253ebd3c04a75396756", size = 149463, upload-time = "2025-11-13T15:31:10.815Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/47/c29cd3ccc99b98b48dc8721c27748b76346ab05cea41d844273b03a60149/spikeinterface_gui-0.13.1-py3-none-any.whl", hash = "sha256:1a0ada5849c0841322431f8382c013bc64d97805d5935301216262f4e53de487", size = 165168, upload-time = "2026-04-01T11:12:58.972Z" },
 ]
 
 [[package]]
