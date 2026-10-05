@@ -33,6 +33,17 @@ def spike_trains_scenario(ephys_full_pipeline, tmp_path_factory):
     return build_scenario(experiment_name)
 
 
+def _mine(scenario):
+    """SpikeTrains restricted to the synthetic experiment.
+
+    The golden suite populates this same table, and pytest runs it first, so an
+    unrestricted query here picks up its rows.
+    """
+    from aeon.dj_pipeline import processed_ephys
+
+    return processed_ephys.SpikeTrains & {"experiment_name": scenario["experiment_name"]}
+
+
 class TestKeySource:
     """What is computable, and what is deliberately not."""
 
@@ -45,7 +56,8 @@ class TestKeySource:
         """
         from aeon.dj_pipeline import processed_ephys
 
-        keys = processed_ephys.SpikeTrains().key_source.to_dicts()
+        scoped = {"experiment_name": spike_trains_scenario["experiment_name"]}
+        keys = (processed_ephys.SpikeTrains().key_source & scoped).to_dicts()
         starts = sorted({k["chunk_start"] for k in keys})
 
         assert starts == spike_trains_scenario["covered_chunk_starts"]
@@ -57,8 +69,9 @@ def populated(spike_trains_scenario):
     """Populate SpikeTrains once for the scenario."""
     from aeon.dj_pipeline import processed_ephys
 
-    processed_ephys.SpikeTrains.populate(suppress_errors=False)
-    assert len(processed_ephys.SpikeTrains()) == len(spike_trains_scenario["covered_chunk_starts"])
+    scoped = {"experiment_name": spike_trains_scenario["experiment_name"]}
+    processed_ephys.SpikeTrains.populate(scoped, suppress_errors=False)
+    assert len(_mine(spike_trains_scenario)) == len(spike_trains_scenario["covered_chunk_starts"])
     return spike_trains_scenario
 
 
@@ -71,22 +84,18 @@ class TestMake:
         The single assertion that catches almost any boundary bug: every spike the
         scenario inserted appears exactly once across the rows.
         """
-        from aeon.dj_pipeline import processed_ephys
-
-        total = sum(processed_ephys.SpikeTrains().to_arrays("n_spikes"))
+        total = sum(_mine(populated).to_arrays("n_spikes"))
         assert total == populated["expected_spike_counts"]["total"]
 
     def test_boundary_spike_lands_in_the_later_chunk(self, populated):
         """Test the half-open rule end to end, on a spike at exactly 09:00:00."""
         from swc.aeon.io import api as io_api
 
-        from aeon.dj_pipeline import processed_ephys
-
         boundary = populated["boundary_chunk_start"]
-        later = (processed_ephys.SpikeTrains() & {"chunk_start": boundary}).fetch1("spikes")
-        earlier = (
-            processed_ephys.SpikeTrains() & {"chunk_start": populated["covered_chunk_starts"][0]}
-        ).fetch1("spikes")
+        later = (_mine(populated) & {"chunk_start": boundary}).fetch1("spikes")
+        earlier = (_mine(populated) & {"chunk_start": populated["covered_chunk_starts"][0]}).fetch1(
+            "spikes"
+        )
 
         edge = io_api.to_seconds(boundary)
         assert edge in later[1].t
@@ -99,9 +108,7 @@ class TestMake:
         it was sorted for 1200 s against 2400 s for units 1 and 3. Reporting the
         chunk's own coverage for it would halve its apparent firing rate.
         """
-        from aeon.dj_pipeline import processed_ephys
-
-        row = (processed_ephys.SpikeTrains() & {"chunk_start": populated["boundary_chunk_start"]}).fetch1()
+        row = (_mine(populated) & {"chunk_start": populated["boundary_chunk_start"]}).fetch1()
         covered = row["spikes"].get_info("covered_seconds")
 
         assert covered[populated["partial_unit"]] == 1200.0
@@ -111,9 +118,7 @@ class TestMake:
 
     def test_ephys_gap_becomes_a_two_interval_support(self, populated):
         """Test that a gap survives into time_support rather than being papered over."""
-        from aeon.dj_pipeline import processed_ephys
-
-        row = (processed_ephys.SpikeTrains() & {"chunk_start": populated["boundary_chunk_start"]}).fetch1()
+        row = (_mine(populated) & {"chunk_start": populated["boundary_chunk_start"]}).fetch1()
 
         assert len(row["spikes"].time_support) == 2
         assert row["coverage_frac"] == pytest.approx(2400 / 3600, rel=1e-4)
@@ -124,10 +129,8 @@ class TestMake:
         An unstable roster makes concatenating a span wrong by default, which is the
         motivating use case for the whole table.
         """
-        from aeon.dj_pipeline import processed_ephys
-
         first, second = (
-            set((processed_ephys.SpikeTrains() & {"chunk_start": start}).fetch1("spikes").index)
+            set((_mine(populated) & {"chunk_start": start}).fetch1("spikes").index)
             for start in populated["covered_chunk_starts"]
         )
         assert first == {1, 2}
@@ -135,9 +138,7 @@ class TestMake:
 
     def test_times_are_on_the_harp_epoch(self, populated):
         """Test that spikes land on seconds-since-1904, not seconds-since-anything-else."""
-        from aeon.dj_pipeline import processed_ephys
-
-        for row in processed_ephys.SpikeTrains().to_dicts():
+        for row in _mine(populated).to_dicts():
             assert row["spikes"].time_support.start[0] > 3.0e9
 
 
@@ -158,15 +159,17 @@ class TestStalenessAndFetchSpan:
 
         from aeon.dj_pipeline import processed_ephys
 
-        assert not processed_ephys.SpikeTrains.stale()
+        exp = populated["experiment_name"]
+        mine = [k for k in processed_ephys.SpikeTrains.stale() if k["experiment_name"] == exp]
+        assert not mine
 
-        add_late_block(populated["experiment_name"])
-        stale = processed_ephys.SpikeTrains.stale()
-        assert stale, "a block matched after the row was written must make it stale"
+        add_late_block(exp)
+        mine = [k for k in processed_ephys.SpikeTrains.stale() if k["experiment_name"] == exp]
+        assert mine, "a block matched after the row was written must make it stale"
 
-        (processed_ephys.SpikeTrains() & stale).delete()
-        processed_ephys.SpikeTrains.populate(suppress_errors=False)
-        assert not processed_ephys.SpikeTrains.stale()
+        (processed_ephys.SpikeTrains() & mine).delete()
+        processed_ephys.SpikeTrains.populate({"experiment_name": exp}, suppress_errors=False)
+        assert not [k for k in processed_ephys.SpikeTrains.stale() if k["experiment_name"] == exp]
 
     def test_fetch_span_concatenates_and_sums_covered_seconds(self, populated):
         """Test that a span returns one object and that the denominator composes.

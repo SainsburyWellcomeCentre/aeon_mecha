@@ -41,7 +41,9 @@ def golden_spike_trains(ephys_unit_matching_populated, ephys_full_pipeline, ctx)
         "experiment row, and the behaviour tree must be registered as its 'raw' directory."
     )
 
-    processed_ephys.SpikeTrains.populate(suppress_errors=False)
+    # Scoped: the synthetic suite populates this table too, and relying on which
+    # module pytest reaches first is how they contaminate each other.
+    processed_ephys.SpikeTrains.populate({"experiment_name": exp_name}, suppress_errors=False)
     rows = (processed_ephys.SpikeTrains & {"experiment_name": exp_name}).to_dicts()
     assert rows, "SpikeTrains populated nothing - key_source found no overlap"
     return {
