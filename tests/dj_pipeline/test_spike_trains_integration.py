@@ -135,6 +135,20 @@ class TestMake:
         assert first == {1, 2}
         assert second == {1, 2, 3}
 
+    def test_cross_block_unit_takes_the_owning_block_s_quality(self, populated):
+        """Test that a cross-block unit takes its owning block's quality label.
+
+        The two blocks disagree about unit 1 on purpose. In the 09:00 chunk block A
+        owns 9 of its spikes to B's 8, so A's label wins. Wire ``owning_block`` in
+        backwards and a user filtering ``unit_quality == "good"`` silently analyses
+        the wrong neurons.
+        """
+        tsgroup = (_mine(populated) & {"chunk_start": populated["boundary_chunk_start"]}).fetch1("spikes")
+        quality = tsgroup.get_info("unit_quality")
+
+        assert quality[populated["cross_block_unit"]] == populated["owning_block_quality"]
+        assert populated["owning_block_quality"] != populated["losing_block_quality"]
+
     def test_times_are_on_the_harp_epoch(self, populated):
         """Test that spikes land on seconds-since-1904, not seconds-since-anything-else."""
         for row in _mine(populated).to_dicts():
@@ -148,7 +162,7 @@ class TestStalenessAndFetchSpan:
     upstream state, so they must not run before the tests that assert on a clean one.
     """
 
-    def test_stale_detects_a_later_block_and_the_recipe_clears_it(self, populated):
+    def test_stale_is_detected_blocks_fetch_span_and_clears_on_the_recipe(self, populated):
         """Test the failure this design accepts, and its documented remedy.
 
         A row built from one of two covering blocks is right when written and wrong
@@ -165,6 +179,18 @@ class TestStalenessAndFetchSpan:
         add_late_block(exp)
         mine = [k for k in processed_ephys.SpikeTrains.stale_chunks() if k["experiment_name"] == exp]
         assert mine, "a block matched after the row was written must make it stale"
+
+        # While a stale row exists, fetch_span must refuse — that guard is the only
+        # thing stopping someone analysing a window whose sorting has moved on.
+        span = {
+            **populated["insertion_key"],
+            "start": populated["covered_chunk_starts"][0],
+            "end": populated["span_end"],
+        }
+        with pytest.raises(ValueError, match="stale"):
+            processed_ephys.SpikeTrains.fetch_span(**span)
+        with pytest.warns(UserWarning, match="covered_seconds"):
+            processed_ephys.SpikeTrains.fetch_span(**span, allow_stale=True)
 
         (processed_ephys.SpikeTrains() & mine).delete()
         processed_ephys.SpikeTrains.populate({"experiment_name": exp}, suppress_errors=False)
