@@ -160,16 +160,16 @@ class TestStalenessAndFetchSpan:
         from aeon.dj_pipeline import processed_ephys
 
         exp = populated["experiment_name"]
-        mine = [k for k in processed_ephys.SpikeTrains.stale_keys() if k["experiment_name"] == exp]
+        mine = [k for k in processed_ephys.SpikeTrains.stale_chunks() if k["experiment_name"] == exp]
         assert not mine
 
         add_late_block(exp)
-        mine = [k for k in processed_ephys.SpikeTrains.stale_keys() if k["experiment_name"] == exp]
+        mine = [k for k in processed_ephys.SpikeTrains.stale_chunks() if k["experiment_name"] == exp]
         assert mine, "a block matched after the row was written must make it stale"
 
         (processed_ephys.SpikeTrains() & mine).delete()
         processed_ephys.SpikeTrains.populate({"experiment_name": exp}, suppress_errors=False)
-        assert not [k for k in processed_ephys.SpikeTrains.stale_keys() if k["experiment_name"] == exp]
+        assert not [k for k in processed_ephys.SpikeTrains.stale_chunks() if k["experiment_name"] == exp]
 
     def test_fetch_span_concatenates_and_sums_covered_seconds(self, populated):
         """Test that a span returns one object and that the denominator composes.

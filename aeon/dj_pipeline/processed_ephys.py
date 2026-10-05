@@ -8,7 +8,7 @@ The table has **no foreign key to the sorted data**. That is deliberate: a
 behavioural hour can be covered by several ``UnitMatching`` rows, so keying on them
 would fragment the object for every user, forever. The cost is that nothing
 invalidates a row automatically — ``source_blocks`` records what went in and
-``SpikeTrains.stale_keys()`` finds rows whose inputs have moved on. See
+``SpikeTrains.stale_chunks()`` finds rows whose inputs have moved on. See
 ``docs/specs/SPEC_SPIKE_TRAINS.md``.
 """
 
@@ -26,6 +26,18 @@ from aeon.dj_pipeline.utils import rechunk
 
 if TYPE_CHECKING:
     import pynapple as nap
+
+logger = dj.logger
+
+
+def _ts(value) -> str:
+    """Render a datetime for a restriction string.
+
+    Restrictions are SQL text, so callers' values are coerced through a known
+    format rather than interpolated as-is.
+    """
+    return pd.Timestamp(value).strftime("%Y-%m-%d %H:%M:%S.%f")
+
 
 schema = dj.Schema(get_schema_name("processed_ephys"))
 
@@ -75,11 +87,15 @@ class SpikeTrains(dj.Computed):
 
         block_chunks, block_units, block_starts = _covering_blocks(insertion, window)
         if not block_units:
+            # No matched block covers this chunk. populate() will retry the key on
+            # every run, so say so rather than failing silently forever.
+            logger.warning(f"SpikeTrains: no matched block covers {key}, skipping")
             return
 
         coverage = rechunk.chunk_coverage(window, [iv for chunks in block_chunks.values() for iv in chunks])
         per_unit = rechunk.unit_coverage(window, block_chunks, block_units)
         if not per_unit:
+            logger.warning(f"SpikeTrains: covering blocks found no units for {key}, skipping")
             return
 
         spikes_by_unit, counts_by_unit_block = _fetch_spikes(insertion, window, block_starts)
@@ -121,25 +137,31 @@ class SpikeTrains(dj.Computed):
         )
 
     @classmethod
-    def stale_keys(cls) -> list[dict]:
+    def stale_chunks(cls, restriction=True) -> list[dict]:
         """Find rows whose spike sorting has moved on since they were written.
 
         Run this after any re-curation, or after ``UnitMatching`` covers time that
         already has rows — this table has no foreign key to the sorted data, so
         nothing invalidates it for you. Refresh what it finds::
 
-            (SpikeTrains & SpikeTrains.stale_keys()).delete()
+            stale = SpikeTrains.stale_chunks()
+            (SpikeTrains & stale).delete()
             SpikeTrains.populate()
 
         Catches both a block matched after a row was written and upstream rows
         removed by re-curation. Computed on demand rather than stored, because a
-        stored flag would itself go stale; one query per row, so it is a maintenance
-        check rather than something to call in a loop.
+        stored flag would itself go stale. Pass ``restriction`` to check one
+        experiment or insertion instead of the whole table — it costs a couple of
+        queries per covering block, so narrow it when you can.
         """
+        # One join for the windows rather than a lookup per row.
+        rows = (cls() & restriction).proj("source_blocks") * acquisition.Chunk.proj(
+            "chunk_end"
+        )
         stale = []
-        for row in cls().to_dicts():
-            window = (acquisition.Chunk & row).fetch1("chunk_start", "chunk_end")
+        for row in rows.to_dicts():
             insertion = {k: row[k] for k in ("experiment_name", "subject", "insertion_number")}
+            window = (row["chunk_start"], row["chunk_end"])
             _, block_units, _ = _covering_blocks(insertion, window)
             if sorted(f"{s}/{e}" for s, e in block_units) != list(row["source_blocks"]):
                 stale.append({k: row[k] for k in cls.primary_key})
@@ -169,7 +191,7 @@ class SpikeTrains(dj.Computed):
         so peak memory is one chunk instead of the span.
 
         Raises if any contributing row is stale (pass ``allow_stale=True`` to
-        override, or refresh with ``stale_keys``) and warns if any unit was sorted
+        override, or refresh with ``stale_chunks``) and warns if any unit was sorted
         for only part of its chunk — in that case divide by ``covered_seconds``
         rather than trusting ``TsGroup.rate``.
 
@@ -184,12 +206,14 @@ class SpikeTrains(dj.Computed):
             "subject": subject,
             "insertion_number": insertion_number,
         }
-        rows = (cls() & insertion & f'chunk_start >= "{start}"' & f'chunk_start < "{end}"').to_dicts()
+        rows = (
+            cls() & insertion & f'chunk_start >= "{_ts(start)}"' & f'chunk_start < "{_ts(end)}"'
+        ).to_dicts()
         if not rows:
             raise ValueError(f"no SpikeTrains rows for {insertion} in [{start}, {end})")
 
         if not allow_stale:
-            stale = {tuple(sorted(k.items())) for k in cls.stale_keys()}
+            stale = {tuple(sorted(k.items())) for k in cls.stale_chunks()}
             if any(tuple(sorted({k: r[k] for k in cls.primary_key}.items())) in stale for r in rows):
                 raise ValueError("span covers stale rows; delete and repopulate, or pass allow_stale=True")
 
@@ -232,7 +256,7 @@ def _covering_blocks(insertion: dict, window: tuple) -> tuple[dict, dict, dict]:
     an unmatched block contributes no unit identities, so including it would produce
     coverage with nothing to attribute it to.
     """
-    overlap = f'block_start < "{window[1]}" AND block_end > "{window[0]}"'
+    overlap = f'block_start < "{_ts(window[1])}" AND block_end > "{_ts(window[0])}"'
     blocks = (ephys.EphysBlock * spike_sorting.UnitMatching & insertion & overlap).to_dicts()
 
     block_chunks, block_units, block_starts = {}, {}, {}
