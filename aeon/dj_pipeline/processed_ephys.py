@@ -8,14 +8,24 @@ The table has **no foreign key to the sorted data**. That is deliberate: a
 behavioural hour can be covered by several ``UnitMatching`` rows, so keying on them
 would fragment the object for every user, forever. The cost is that nothing
 invalidates a row automatically — ``source_blocks`` records what went in and
-``SpikeTrains.stale()`` finds rows whose inputs have moved on. See
+``SpikeTrains.stale_keys()`` finds rows whose inputs have moved on. See
 ``docs/specs/SPEC_SPIKE_TRAINS.md``.
 """
 
+import warnings
+from datetime import datetime
+from typing import TYPE_CHECKING
+
 import datajoint as dj
 import numpy as np
+import pandas as pd
+from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import acquisition, ephys, get_schema_name, spike_sorting
+from aeon.dj_pipeline.utils import rechunk
+
+if TYPE_CHECKING:
+    import pynapple as nap
 
 schema = dj.Schema(get_schema_name("processed_ephys"))
 
@@ -37,39 +47,28 @@ class SpikeTrains(dj.Computed):
 
     @property
     def key_source(self):
-        """Behavioural chunks that some matched ephys chunk overlaps, per insertion.
+        """Behavioural chunks that a matched ephys chunk overlaps, per insertion.
 
-        Half-open overlap: an ephys chunk ending exactly at ``chunk_start`` belongs
-        to the previous behavioural chunk. Restricted to blocks ``UnitMatching`` has
-        run for, so a chunk whose ephys is sorted but unmatched stays uncomputable
-        rather than producing a row with no units.
-
-        The ephys bounds are projected onto fresh names *and* the ephys
-        ``chunk_start`` is dropped, so nothing shares that attribute name with
-        ``acquisition.Chunk``. Aliasing alone is not enough — the surviving
-        ``chunk_start`` keeps its ephys lineage and DataJoint then refuses the
-        antijoin ``populate()`` runs against this table.
+        Half-open: an ephys chunk ending exactly at ``chunk_start`` belongs to the
+        previous behavioural chunk. Only blocks ``UnitMatching`` has run for count,
+        so a chunk whose ephys is sorted but unmatched stays uncomputable rather
+        than yielding a row with no units.
         """
-        matched_chunks = (
-            ephys.EphysChunk.proj(eph_start="chunk_start", eph_end="chunk_end")
-            & (spike_sorting.UnitMatching * ephys.EphysBlockInfo.Chunk).proj()
-        )
-        ephys_windows = (
-            dj.U("experiment_name", "subject", "insertion_number", "eph_start", "eph_end") & matched_chunks
-        )
+        # Renaming the ephys bounds is not cosmetic: a surviving `chunk_start` keeps
+        # its ephys lineage, and DataJoint then refuses the antijoin populate() runs
+        # against this table. The restriction is a semijoin, so it is already
+        # distinct on EphysChunk's key.
+        matched = ephys.EphysChunk.proj(eph_start="chunk_start", eph_end="chunk_end") & (
+            spike_sorting.UnitMatching * ephys.EphysBlockInfo.Chunk
+        ).proj()
         overlap = "eph_start < chunk_end AND eph_end > chunk_start"
-        return dj.U("experiment_name", "chunk_start", "subject", "insertion_number") & (
-            (acquisition.Chunk * ephys_windows) & overlap
-        )
+        # One behavioural chunk can overlap several ephys chunks, so the join yields
+        # it once per match; dj.U collapses that back to this table's own key.
+        return dj.U(*self.primary_key) & ((acquisition.Chunk * matched) & overlap)
 
     def make(self, key: dict) -> None:
         """Re-chunk one behavioural chunk's worth of spikes into a TsGroup."""
-        import numpy as np
-        import pandas as pd
-        import pynapple as nap
-        from swc.aeon.io import api as io_api
-
-        from aeon.dj_pipeline.utils import rechunk
+        import pynapple as nap  # optional extra; kept lazy so importing this module is cheap
 
         window = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
         insertion = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
@@ -122,24 +121,29 @@ class SpikeTrains(dj.Computed):
         )
 
     @classmethod
-    def stale(cls) -> list[dict]:
-        """Rows built from a set of blocks that is no longer the current one.
+    def stale_keys(cls) -> list[dict]:
+        """Find rows whose spike sorting has moved on since they were written.
 
-        This is what stands in for the cascade the table gives up by keying on the
-        join target rather than the data source. It catches both directions: a block
-        matched *after* a row was written, and upstream rows deleted by re-curation.
+        Run this after any re-curation, or after ``UnitMatching`` covers time that
+        already has rows — this table has no foreign key to the sorted data, so
+        nothing invalidates it for you. Refresh what it finds::
 
-        Computed, never stored — a stored flag would itself go stale. Returns keys,
-        so ``SpikeTrains() & SpikeTrains.stale()`` is the rows to delete.
+            (SpikeTrains & SpikeTrains.stale_keys()).delete()
+            SpikeTrains.populate()
+
+        Catches both a block matched after a row was written and upstream rows
+        removed by re-curation. Computed on demand rather than stored, because a
+        stored flag would itself go stale; one query per row, so it is a maintenance
+        check rather than something to call in a loop.
         """
-        stale_keys = []
+        stale = []
         for row in cls().to_dicts():
             window = (acquisition.Chunk & row).fetch1("chunk_start", "chunk_end")
             insertion = {k: row[k] for k in ("experiment_name", "subject", "insertion_number")}
             _, block_units, _ = _covering_blocks(insertion, window)
             if sorted(f"{s}/{e}" for s, e in block_units) != list(row["source_blocks"]):
-                stale_keys.append({k: row[k] for k in cls.primary_key})
-        return stale_keys
+                stale.append({k: row[k] for k in cls.primary_key})
+        return stale
 
     @classmethod
     def fetch_span(
@@ -147,31 +151,33 @@ class SpikeTrains(dj.Computed):
         experiment_name: str,
         subject: str,
         insertion_number: int,
-        start,
-        end,
+        start: datetime,
+        end: datetime,
         allow_stale: bool = False,
-    ):
-        """Spike trains over an arbitrary window, as one TsGroup.
+    ) -> "nap.TsGroup":
+        """Get spike trains over any window as one TsGroup, not chunk by chunk.
 
-        The documented entry point. Restricts each chunk *before* concatenating, so
-        peak memory is one chunk rather than the whole span — which matters because
-        pynapple reads a TsGroup whole.
+        Use this whenever the window is not exactly one behavioural chunk::
 
-        The result is still the whole span in memory; pynapple has no lazy TsGroup.
-        Size the window first — roughly 115 MB per probe-hour at Neuropixels rates,
-        so a day is ~2.7 GB and a week ~19 GB. Nothing here refuses a window that
-        will not fit.
+            tg = SpikeTrains.fetch_span("exp-aeon3", "mouse1", 1, start=t0, end=t1)
+            good = tg[tg.unit_quality == "good"]
+            rate = good.count(0.01)
 
-        Raises on a stale contributing row and warns on partial coverage. The
-        asymmetry is deliberate: stale is out of date and cheaply fixed, while
-        partial coverage is a permanent fact about the data that a caller works
-        around.
+        Fetching the chunks yourself and concatenating looks equivalent and is not:
+        this re-keys nothing silently, sums each unit's ``covered_seconds`` so rates
+        stay honest across the join, and restricts each chunk before concatenating,
+        so peak memory is one chunk instead of the span.
+
+        Raises if any contributing row is stale (pass ``allow_stale=True`` to
+        override, or refresh with ``stale_keys``) and warns if any unit was sorted
+        for only part of its chunk — in that case divide by ``covered_seconds``
+        rather than trusting ``TsGroup.rate``.
+
+        Size the window before asking: roughly 115 MB per probe-hour at Neuropixels
+        rates, so a day is ~2.7 GB and a week ~19 GB. pynapple has no lazy TsGroup,
+        and nothing here refuses a window that will not fit.
         """
-        import warnings
-
-        import numpy as np
         import pynapple as nap
-        from swc.aeon.io import api as io_api
 
         insertion = {
             "experiment_name": experiment_name,
@@ -183,7 +189,7 @@ class SpikeTrains(dj.Computed):
             raise ValueError(f"no SpikeTrains rows for {insertion} in [{start}, {end})")
 
         if not allow_stale:
-            stale = {tuple(sorted(k.items())) for k in cls.stale()}
+            stale = {tuple(sorted(k.items())) for k in cls.stale_keys()}
             if any(tuple(sorted({k: r[k] for k in cls.primary_key}.items())) in stale for r in rows):
                 raise ValueError("span covers stale rows; delete and repopulate, or pass allow_stale=True")
 
@@ -249,8 +255,6 @@ def _fetch_spikes(insertion: dict, window: tuple, block_starts: dict) -> tuple[d
     The counts feed ``rechunk.owning_block``, which decides whose block-scoped
     metadata wins for a unit spanning more than one block.
     """
-    import numpy as np
-
     lo, hi = np.datetime64(window[0]), np.datetime64(window[1])
     rows = (
         spike_sorting.UnitMatching.Spikes
@@ -287,10 +291,6 @@ def _unit_metadata(
     Flattened ``qc_metrics`` are not carried yet — they remain queryable on
     ``SortingQuality.Metric``.
     """
-    import numpy as np
-
-    from aeon.dj_pipeline.utils import rechunk
-
     electrodes = {
         int(r["global_unit"]): r
         for r in (spike_sorting.GlobalUnit * ephys.ProbeType.Electrode & insertion).to_dicts()

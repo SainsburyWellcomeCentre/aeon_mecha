@@ -155,7 +155,7 @@ matching paramset, as stored at populate time. It replaces the lineage the
 foreign key would have carried, and it is queryable.
 
 ```python
-SpikeTrains.stale()          # rows whose source_blocks != the currently matched covering set
+SpikeTrains.stale_keys()          # rows whose source_blocks != the currently matched covering set
 ```
 
 Staleness is **computed, never stored** — a stored boolean would itself go stale.
@@ -168,7 +168,7 @@ It covers two situations with one mechanism:
 The refresh is manual and belongs in the operator runbook:
 
 ```python
-(SpikeTrains & SpikeTrains.stale()).delete()
+(SpikeTrains & SpikeTrains.stale_keys()).delete()
 SpikeTrains.populate()
 ```
 
@@ -180,7 +180,7 @@ routine somebody runs, it will not happen.
 Compute whenever any covering block has been matched; record what contributed.
 Do **not** withhold a row because coverage is incomplete — a missing row reads as
 "no ephys here", which is indistinguishable from "we refused", whereas a row with
-`source_blocks` recording one of two blocks is explicit and `stale()` will find
+`source_blocks` recording one of two blocks is explicit and `stale_keys()` will find
 it once the second lands.
 
 Refuse only on degenerate input: no matched coverage at all, or a round-tripped
@@ -393,7 +393,7 @@ that is 8.9× quicker than stock pynapple.
 matching do not invalidate it. A row can reflect a curation that was deleted
 weeks ago, and it will look perfectly normal.
 
-The mitigations are `source_blocks` + `SpikeTrains.stale()` to make it
+The mitigations are `source_blocks` + `SpikeTrains.stale_keys()` to make it
 detectable, `fetch_span` raising rather than warning on a stale row, and an
 operator routine that runs the delete-and-repopulate recipe. Precedent:
 `GlobalUnit` is already `dj.Manual` for the same reason, and
@@ -485,7 +485,7 @@ memory, not CPU.
 ### Refreshing stale rows
 
 ```python
-(processed_ephys.SpikeTrains & processed_ephys.SpikeTrains.stale()).delete()
+(processed_ephys.SpikeTrains & processed_ephys.SpikeTrains.stale_keys()).delete()
 processed_ephys.SpikeTrains.populate()
 ```
 
@@ -534,7 +534,7 @@ and `covered_seconds` is per-unit correct and sums across concatenation.
 `n_partial_units` is zero when covering blocks agree and non-zero when they
 do not.
 
-**Staleness is detected and clears.** `stale()` is empty after a clean populate
+**Staleness is detected and clears.** `stale_keys()` is empty after a clean populate
 and non-empty after re-curation or a later block; `fetch_span` raises on stale
 and passes with `allow_stale=True`; the delete-and-repopulate recipe returns it
 to empty with the same spike counts.
@@ -570,7 +570,7 @@ refractory structure or drift.
 ## PR checklist
 
 - [ ] `<pynapple@dj_store>` merged (PR #613) — prerequisite
-- [ ] `SpikeTrains` in `processed_ephys.py`, with `stale()`
+- [ ] `SpikeTrains` in `processed_ephys.py`, with `stale_keys()`
 - [ ] `fetch_span`: per-chunk restriction, re-keying, warn on partial, raise on
       stale
 - [ ] Re-chunking and staleness tests; golden test on the ephys dataset
