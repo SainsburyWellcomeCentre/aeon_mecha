@@ -16,6 +16,44 @@ import pytest
 logger = logging.getLogger(__name__)
 
 
+@pytest.fixture
+def assert_nap_equal():
+    """Return a checker that two pynapple objects are indistinguishable.
+
+    pynapple has no structural equality — ``==`` is identity on Ts, elementwise on
+    Tsd and IntervalSet, and a metadata filter on TsGroup — so this compares field
+    by field. Exact, never a tolerance: the float64 ULP at Harp magnitude is 477 ns,
+    so a quantising round trip would shift spikes within a sample and pass any
+    tolerance.
+    """
+    import numpy as np
+
+    def check(a, b):
+        assert type(a) is type(b)
+        kind = type(a).__name__
+        if kind == "IntervalSet":
+            np.testing.assert_array_equal(a.start, b.start)
+            np.testing.assert_array_equal(a.end, b.end)
+        else:
+            np.testing.assert_array_equal(a.time_support.values, b.time_support.values)
+        if kind == "TsGroup":
+            assert list(a.index) == list(b.index)
+            for unit in a.index:
+                check(a[unit], b[unit])
+        elif kind != "IntervalSet":
+            np.testing.assert_array_equal(a.t, b.t)
+            if kind != "Ts":
+                np.testing.assert_array_equal(a.values, b.values)
+        if kind == "TsdFrame":
+            assert list(a.columns) == list(b.columns)
+        if (meta := getattr(a, "metadata", None)) is not None:
+            assert sorted(meta.columns) == sorted(b.metadata.columns)
+            for col in meta.columns:
+                np.testing.assert_array_equal(np.asarray(a.get_info(col)), np.asarray(b.get_info(col)))
+
+    return check
+
+
 @pytest.fixture(autouse=True)
 def dj_download_to_tmp(request):
     """Redirect DataJoint attach downloads to a per-test tmpdir.
@@ -116,8 +154,8 @@ GOLDEN_DATASETS = {
             "NeuropixelsV2/NeuropixelsV2_ProbeB_AmplifierData_0.bin",
             "NeuropixelsV2/NeuropixelsV2_ProbeB_Clock_0.bin",
         ],
-        "expected_probe_count": 1,            # registered ProbeInsertion: ProbeB only (A disabled)
-        "expected_discovered_probes": 2,      # raw discovery from epoch dir: ProbeA + ProbeB
+        "expected_probe_count": 1,  # registered ProbeInsertion: ProbeB only (A disabled)
+        "expected_discovered_probes": 2,  # raw discovery from epoch dir: ProbeA + ProbeB
         "golden_sorting_dir": "golden_test_sorting",
         # Unit/spike counts are derived from the artifacts at fixture time, not hardcoded:
         # they are properties of the sorting on disk and would silently rot if it is re-pulled.
@@ -390,19 +428,18 @@ def full_pipeline(dj_config_integration, streams_schema, golden_dataset_config):
     # Step 2: Create ExperimentDevice and DeviceDataStream tables
     streams_module = streams_maker.main(create_tables=True)
 
-    yield {
-        "lab": lab,
-        "subject": subject,
-        "acquisition": acquisition,
-        "streams": streams_module,
-    }
-
     # No per-iteration teardown — golden_dataset_config is parametrized, so
     # this fixture runs once per dataset, and dropping schemas between
     # iterations would invalidate the cached streams_schema fixture. The single
     # session-end cleanup (dropping this run's test-prefixed schemas, and only
     # on an external DB) lives in the streams_schema teardown, which runs
     # exactly once after all params.
+    return {
+        "lab": lab,
+        "subject": subject,
+        "acquisition": acquisition,
+        "streams": streams_module,
+    }
 
 
 @pytest.fixture(scope="session")
@@ -737,9 +774,7 @@ def ephys_test_blocks(ephys_chunks_ingested, ephys_full_pipeline, ephys_golden_d
 def ephys_chunks_ingested(ephys_test_epochs, ctx):
     """Run EphysChunk.ingest_chunks once for the golden dataset."""
     ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
-    return (
-        ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}
-    ).to_dicts()
+    return (ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
 
 
 @pytest.fixture(scope="session")
