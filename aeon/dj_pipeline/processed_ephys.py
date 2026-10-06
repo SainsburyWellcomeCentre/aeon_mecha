@@ -62,25 +62,18 @@ class SpikeTrains(dj.Computed):
 
     @property
     def key_source(self):
-        """Behavioural chunks that some matched ephys chunk overlaps.
+        """Behavioural chunks that a matched ephys chunk overlaps.
 
-        Overlap is half-open, so an ephys chunk ending exactly at ``chunk_start``
-        counts toward the previous behavioural hour. Only blocks that
-        ``UnitMatching`` has already run for count. A chunk whose ephys is sorted
-        but not yet matched stays uncomputable, which beats writing a row with no
-        units in it.
+        Overlap is half-open: an ephys chunk ending exactly at ``chunk_start``
+        belongs to the previous hour. Unmatched blocks do not count — better
+        uncomputable than a row with no units in it.
         """
-        # Renaming the ephys bounds is load-bearing. A surviving `chunk_start`
-        # carries its ephys lineage, and DataJoint then refuses the antijoin that
-        # populate() runs against this table. The restriction below is a semijoin,
-        # so it already comes back distinct on EphysChunk's key.
+        # Renaming the ephys bounds is load-bearing: a surviving `chunk_start`
+        # carries ephys lineage, and populate()'s antijoin is then refused.
         matched = ephys.EphysChunk.proj(eph_start="chunk_start", eph_end="chunk_end") & (
             spike_sorting.UnitMatching * ephys.EphysBlockInfo.Chunk
         ).proj()
         overlapping = (acquisition.Chunk * matched) & "eph_start < chunk_end AND eph_end > chunk_start"
-        # The default key_source is the join of this table's primary-key parents, so
-        # all we do is narrow it. Restriction is a semijoin, so a chunk comes back
-        # once however many ephys chunks it overlaps.
         return super().key_source & overlapping
 
     def make(self, key: dict) -> None:
