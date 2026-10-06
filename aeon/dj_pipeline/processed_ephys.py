@@ -328,9 +328,11 @@ def _owning_block(spike_counts_by_block: dict, block_starts: dict):
     row can only carry one. The block holding most of the unit's spikes wins; an
     exact tie goes to the earliest, so the answer never depends on dict ordering.
     """
-    return max(
+    # min on (-count, start): most spikes first, then earliest. Comparing the
+    # datetimes directly keeps the machine's timezone out of it entirely.
+    return min(
         spike_counts_by_block,
-        key=lambda block: (spike_counts_by_block[block], -block_starts[block].timestamp()),
+        key=lambda block: (-spike_counts_by_block[block], block_starts[block]),
     )
 
 
@@ -345,8 +347,10 @@ def _unit_metadata(
 
     ``unit_quality`` belongs to a block, so a unit spanning two of them has two
     candidates; ``_owning_block`` picks the block holding most of its
-    spikes. ``qc_metrics`` are not flattened in here yet and stay queryable on
-    ``SortingQuality.Metric``.
+    spikes. A global unit can map to several local units in that block when a
+    merge happened; the lowest local ``unit`` wins, so the answer does not depend
+    on row order. ``qc_metrics`` are not flattened in here yet and stay queryable
+    on ``SortingQuality.Metric``.
     """
     electrodes = {
         int(r["global_unit"]): r
@@ -363,7 +367,7 @@ def _unit_metadata(
             spike_sorting.UnitMatching.Unit * spike_sorting.SortedSpikes.Unit
             & insertion
             & {"global_unit": unit, "block_start": winner[0], "block_end": winner[1]}
-        ).to_dicts()
+        ).to_dicts(order_by="unit")
         quality[unit] = rows[0]["unit_quality"] if rows else "n.a."
 
     return {
