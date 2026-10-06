@@ -107,7 +107,6 @@ class SpikeTrains(dj.Computed):
         sortings = _covering_sortings(insertion, window)
         block_chunks = {i: v["chunks"] for i, v in sortings.items()}
         block_units = {i: v["units"] for i, v in sortings.items()}
-        block_starts = {i: v["bounds"][0] for i, v in sortings.items()}
         if not block_units:
             # populate() retries this key every run, so a silent skip would hide
             # forever. Say it once and move on.
@@ -135,7 +134,7 @@ class SpikeTrains(dj.Computed):
             start=[io_api.to_seconds(s) for s, _ in coverage],
             end=[io_api.to_seconds(e) for _, e in coverage],
         )
-        metadata = _unit_metadata(insertion, roster, counts_by_unit_block, block_starts, covered)
+        metadata = _unit_metadata(insertion, roster, counts_by_unit_block, covered)
         tsgroup = nap.TsGroup(data, time_support=support, metadata=metadata)
 
         n_spikes = int(sum(len(tsgroup[u]) for u in tsgroup.index))
@@ -277,7 +276,7 @@ class SpikeTrains(dj.Computed):
                 times.setdefault(u, []).append(restricted[unit].t)
                 covered[u] = covered.get(u, 0.0) + float(seconds[unit]) * frac
                 # Chunks can disagree about a unit; resolved after the loop by the
-                # same rule _covering_blocks uses for blocks.
+                # same rule make() uses across sortings.
                 candidates.setdefault(u, {})[row["chunk_start"]] = (
                     len(restricted[unit]),
                     {c: restricted.get_info(c)[unit] for c in extras},
@@ -471,25 +470,21 @@ def _assert_one_config_per_unit(configs: dict, units: dict) -> None:
     )
 
 
-def _most_spikes_wins(counts: dict, tiebreak: dict | None = None):
+def _most_spikes_wins(counts: dict):
     """Pick which of several sources speaks for a unit that appears in more than one.
 
-    A unit can show up in several blocks covering one chunk, and in several chunks
+    A unit can show up in several sortings covering one chunk, and in several chunks
     covering one span. Both ask the same question and must answer it the same way,
-    so both call this: most spikes wins, ties go to the earliest, and an exact tie
-    there falls through to the key itself — two blocks can share a start, so
-    without that last step the answer depends on dict order.
-
-    ``tiebreak`` maps each key to what orders it (a block's start). Omit it when
-    the key already is that ordering, as it is for chunks.
+    so both call this: most spikes wins, and a tie goes to the earliest key. Both
+    kinds of key start with a time — a sorting's identity with its block's start, a
+    chunk's with its own — so ordering by the key is ordering by that time, and the
+    rest of the identity settles blocks that share a start rather than leaving it to
+    dict order.
     """
-    order = tiebreak if tiebreak is not None else {k: k for k in counts}
-    return min(counts, key=lambda k: (-counts[k], order[k], k))
+    return min(counts, key=lambda k: (-counts[k], k))
 
 
-def _unit_metadata(
-    insertion: dict, roster: list, counts_by_unit_block: dict, block_starts: dict, covered: list
-) -> dict:
+def _unit_metadata(insertion: dict, roster: list, counts_by_unit_block: dict, covered: list) -> dict:
     """Per-unit metadata columns for the TsGroup, in roster order.
 
     ``covered_seconds`` is each unit's own denominator for a firing rate. Seconds
@@ -513,7 +508,7 @@ def _unit_metadata(
         if not counts:
             quality[unit] = "n.a."
             continue
-        winner = _most_spikes_wins(counts, block_starts)
+        winner = _most_spikes_wins(counts)
         rows = (
             spike_sorting.UnitMatching.Unit * spike_sorting.SortedSpikes.Unit
             & insertion

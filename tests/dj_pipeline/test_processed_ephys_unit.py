@@ -14,53 +14,61 @@ def t(hour, minute=0):
 
 
 class TestMostSpikesWins:
-    """Which block's metadata wins when a unit spans two.
+    """Which source's metadata wins when a unit appears in more than one.
 
     ``unit_quality`` and ``qc_metrics`` are block-scoped, so a unit appearing in two
-    blocks has two candidate values and the spec leaves the choice open.
+    sortings has two candidate values. One rule answers that on both axes - across
+    the sortings covering a chunk, and across the chunks covering a span - so the
+    two cannot drift apart.
     """
 
-    def test_block_with_more_spikes_wins(self):
-        """Test that metadata follows the bulk of the data."""
-        from aeon.dj_pipeline.processed_ephys import _most_spikes_wins as owning_block
+    @staticmethod
+    def _ident(hour, group="shank0"):
+        """A sorting's identity: block bounds, config, group, parameter set."""
+        return (t(hour), t(hour + 1), "cfg", group, "ks4")
 
-        assert owning_block({"A": 10, "B": 900}, {"A": t(7), "B": t(8)}) == "B"
+    def test_sorting_with_more_spikes_wins(self):
+        """Test that metadata follows the bulk of the data."""
+        from aeon.dj_pipeline.processed_ephys import _most_spikes_wins
+
+        early, late = self._ident(7), self._ident(8)
+        assert _most_spikes_wins({early: 10, late: 900}) == late
 
     def test_ties_break_to_the_earliest_block(self):
         """Test that an exact tie is resolved deterministically, not by dict order."""
-        from aeon.dj_pipeline.processed_ephys import _most_spikes_wins as owning_block
+        from aeon.dj_pipeline.processed_ephys import _most_spikes_wins
 
-        assert owning_block({"B": 50, "A": 50}, {"A": t(7), "B": t(8)}) == "A"
+        early, late = self._ident(7), self._ident(8)
+        assert _most_spikes_wins({late: 50, early: 50}) == early
 
-    def test_a_single_block_needs_no_tie_break(self):
+    def test_a_single_sorting_needs_no_tie_break(self):
         """Test the ordinary case, which is every chunk that sits inside one block."""
-        from aeon.dj_pipeline.processed_ephys import _most_spikes_wins as owning_block
+        from aeon.dj_pipeline.processed_ephys import _most_spikes_wins
 
-        assert owning_block({"A": 3}, {"A": t(7)}) == "A"
+        only = self._ident(7)
+        assert _most_spikes_wins({only: 3}) == only
 
-    def test_ties_fall_through_to_the_key_itself(self):
-        """Test that an exact tie on both count and tiebreak is still deterministic.
+    def test_two_blocks_sharing_a_start_fall_through_to_the_rest_of_the_identity(self):
+        """Test that a tie on count and start is still decided, not left to dict order.
 
-        Two blocks can share a start, so the tiebreak alone can tie. Without a
-        final fall-through the winner is whichever the dict yields first.
+        Two sortings can share a block start - the same block under two electrode
+        groups - so ordering by start alone can tie. The rest of the identity
+        carries on from there.
         """
-        from datetime import datetime
-
         from aeon.dj_pipeline.processed_ephys import _most_spikes_wins
 
-        same = datetime(2026, 5, 11, 8)
-        counts = {("b", same): 5, ("a", same): 5}
-        starts = {("b", same): same, ("a", same): same}
+        a, b = self._ident(8, "shank1"), self._ident(8, "shank2")
+        assert _most_spikes_wins({b: 5, a: 5}) == a
 
-        assert _most_spikes_wins(counts, starts) == ("a", same)
+    def test_the_same_rule_orders_chunks_in_a_span(self):
+        """Test the chunk-axis call in fetch_span, where the key is a chunk start.
 
-    def test_tiebreak_defaults_to_the_key(self):
-        """Test the no-tiebreak form fetch_span uses, where the key is the order."""
-        from datetime import datetime
-
+        Both kinds of key lead with a time, so one rule orders both without being
+        told which part to look at.
+        """
         from aeon.dj_pipeline.processed_ephys import _most_spikes_wins
 
-        early, late = datetime(2026, 5, 11, 8), datetime(2026, 5, 11, 9)
+        early, late = t(8), t(9)
         assert _most_spikes_wins({late: 5, early: 5}) == early
         assert _most_spikes_wins({late: 9, early: 5}) == late
 
