@@ -1,19 +1,18 @@
-"""Interval and roster arithmetic for re-chunking ephys data onto behavioural hours.
+"""Half-open interval arithmetic over ``(start, end)`` datetime pairs.
 
-Boundary bugs live here, so this is plain functions over ``(start, end)`` datetime
-pairs — no DataJoint, no pynapple, no I/O — and it is tested on its own.
+Re-chunking ephys data onto behavioural hours is where the boundary bugs live, so
+the arithmetic sits here on its own — no DataJoint, no pynapple, no I/O — and is
+tested directly.
 
-Every window is half-open, ``[start, end)``.
+Every interval is half-open, ``[start, end)``: an interval that merely touches
+another does not overlap it.
 """
 
 from collections import defaultdict
 from collections.abc import Hashable
 from datetime import datetime
-from typing import TypeVar
 
 Interval = tuple[datetime, datetime]
-Block = TypeVar("Block", bound=Hashable)
-"""Whatever identifies a block to the caller — this module never looks inside it."""
 
 
 def clip(intervals: list[Interval], window: Interval) -> list[Interval]:
@@ -91,16 +90,3 @@ def coverage_by_unit(
         for unit in units:
             per_unit[unit].extend(covered)
     return {unit: merged for unit, intervals in per_unit.items() if (merged := merge(intervals))}
-
-
-def owning_block(spike_counts_by_block: dict[Block, int], block_starts: dict[Block, datetime]) -> Block:
-    """Decide which block speaks for a unit that appears in several.
-
-    Each block has its own opinion about a unit's quality and electrode, and the
-    row can only carry one. The block holding most of the unit's spikes wins; an
-    exact tie goes to the earliest, so the answer never depends on dict ordering.
-    """
-    return max(
-        spike_counts_by_block,
-        key=lambda block: (spike_counts_by_block[block], -block_starts[block].timestamp()),
-    )

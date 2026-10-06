@@ -25,7 +25,7 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import acquisition, ephys, get_schema_name, spike_sorting
-from aeon.dj_pipeline.utils import rechunk
+from aeon.dj_pipeline.utils import intervals
 
 if TYPE_CHECKING:
     import pynapple as nap
@@ -96,8 +96,8 @@ class SpikeTrains(dj.Computed):
             logger.warning(f"SpikeTrains: no matched block covers {key}, skipping")
             return
 
-        coverage = rechunk.coverage(window, [iv for chunks in block_chunks.values() for iv in chunks])
-        per_unit = rechunk.coverage_by_unit(window, block_chunks, block_units)
+        coverage = intervals.coverage(window, [iv for chunks in block_chunks.values() for iv in chunks])
+        per_unit = intervals.coverage_by_unit(window, block_chunks, block_units)
         if not per_unit:
             logger.warning(f"SpikeTrains: covering blocks found no units for {key}, skipping")
             return
@@ -110,7 +110,7 @@ class SpikeTrains(dj.Computed):
             times = spikes_by_unit.get(unit, np.array([], dtype="datetime64[ns]"))
             seconds = io_api.to_seconds(pd.DatetimeIndex(times)).to_numpy()
             data[int(unit)] = nap.Ts(t=np.sort(seconds))
-            covered.append(rechunk.covered_seconds(per_unit[unit]))
+            covered.append(intervals.covered_seconds(per_unit[unit]))
 
         support = nap.IntervalSet(
             start=[io_api.to_seconds(s) for s, _ in coverage],
@@ -127,7 +127,7 @@ class SpikeTrains(dj.Computed):
             raise ValueError(f"times are not on the HARP epoch for {key}")
 
         chunk_seconds = (window[1] - window[0]).total_seconds()
-        covered_total = rechunk.covered_seconds(coverage)
+        covered_total = intervals.covered_seconds(coverage)
         self.insert1(
             {
                 **key,
@@ -279,7 +279,7 @@ def _covering_blocks(insertion: dict, window: tuple) -> tuple[dict, dict, dict]:
 def _fetch_spikes(insertion: dict, window: tuple, block_starts: dict) -> tuple[dict, dict]:
     """Spike times per unit inside ``window``, and how many came from each block.
 
-    The counts feed ``rechunk.owning_block``, which picks whose metadata wins when
+    The counts feed ``_owning_block``, which picks whose metadata wins when
     a unit spans two blocks and each has its own answer.
     """
     lo, hi = np.datetime64(window[0]), np.datetime64(window[1])
@@ -304,6 +304,19 @@ def _fetch_spikes(insertion: dict, window: tuple, block_starts: dict) -> tuple[d
     return {u: np.sort(np.concatenate(v)) for u, v in by_unit.items()}, counts
 
 
+def _owning_block(spike_counts_by_block: dict, block_starts: dict):
+    """Decide which block speaks for a unit that appears in several.
+
+    Each block has its own opinion about a unit's quality and electrode, and the
+    row can only carry one. The block holding most of the unit's spikes wins; an
+    exact tie goes to the earliest, so the answer never depends on dict ordering.
+    """
+    return max(
+        spike_counts_by_block,
+        key=lambda block: (spike_counts_by_block[block], -block_starts[block].timestamp()),
+    )
+
+
 def _unit_metadata(
     insertion: dict, roster: list, counts_by_unit_block: dict, block_starts: dict, covered: list
 ) -> dict:
@@ -314,7 +327,7 @@ def _unit_metadata(
     concatenates chunks.
 
     ``unit_quality`` belongs to a block, so a unit spanning two of them has two
-    candidates; ``rechunk.owning_block`` picks the block holding most of its
+    candidates; ``_owning_block`` picks the block holding most of its
     spikes. ``qc_metrics`` are not flattened in here yet and stay queryable on
     ``SortingQuality.Metric``.
     """
@@ -328,7 +341,7 @@ def _unit_metadata(
         if not counts:
             quality[unit] = "n.a."
             continue
-        winner = rechunk.owning_block(counts, block_starts)
+        winner = _owning_block(counts, block_starts)
         rows = (
             spike_sorting.UnitMatching.Unit * spike_sorting.SortedSpikes.Unit
             & insertion

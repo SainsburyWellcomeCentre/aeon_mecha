@@ -1,4 +1,4 @@
-"""Unit tests for rechunk.py — pure interval arithmetic, no database."""
+"""Unit tests for intervals.py — pure interval arithmetic, no database."""
 
 from datetime import datetime as dt
 
@@ -23,7 +23,7 @@ class TestIntervalArithmetic:
         chunk_end belongs to the next. Getting this wrong double-counts spikes at
         24 boundaries a day.
         """
-        from aeon.dj_pipeline.utils.rechunk import clip
+        from aeon.dj_pipeline.utils.intervals import clip
 
         window = (t(8), t(9))
         assert clip([(t(7), t(8))], window) == []  # ends at the boundary
@@ -34,7 +34,7 @@ class TestIntervalArithmetic:
 
     def test_merge_joins_touching_and_overlapping_but_keeps_gaps(self):
         """Test that a real gap survives merging — it becomes a second interval."""
-        from aeon.dj_pipeline.utils.rechunk import merge
+        from aeon.dj_pipeline.utils.intervals import merge
 
         assert merge([(t(8), t(8, 30)), (t(8, 30), t(9))]) == [(t(8), t(9))]
         assert merge([(t(8), t(8, 40)), (t(8, 20), t(9))]) == [(t(8), t(9))]
@@ -46,7 +46,7 @@ class TestIntervalArithmetic:
 
     def test_covered_seconds_sums_a_gapped_coverage(self):
         """Test the denominator every firing rate divides by."""
-        from aeon.dj_pipeline.utils.rechunk import covered_seconds
+        from aeon.dj_pipeline.utils.intervals import covered_seconds
 
         assert covered_seconds([(t(8), t(8, 20)), (t(8, 40), t(9))]) == 2400.0
         assert covered_seconds([]) == 0.0
@@ -57,7 +57,7 @@ class TestCoverage:
 
     def test_coverage_reflects_a_gap_in_ephys(self):
         """Test that a gap between ephys chunks survives into the coverage."""
-        from aeon.dj_pipeline.utils.rechunk import coverage
+        from aeon.dj_pipeline.utils.intervals import coverage
 
         # rig recorded 08:00-08:20 and 08:40-09:00, off in between
         covered = coverage((t(8), t(9)), [(t(7, 50), t(8, 20)), (t(8, 40), t(9, 10))])
@@ -71,7 +71,7 @@ class TestCoverage:
         first half — it was not silent there, it was not looked for. Its denominator
         must be half the hour, not the whole hour.
         """
-        from aeon.dj_pipeline.utils.rechunk import coverage_by_unit
+        from aeon.dj_pipeline.utils.intervals import coverage_by_unit
 
         covered = coverage_by_unit(
             (t(8), t(9)),
@@ -84,32 +84,6 @@ class TestCoverage:
 
     def test_coverage_by_unit_is_empty_for_a_unit_no_block_found(self):
         """Test that a unit absent from every covering block gets no coverage."""
-        from aeon.dj_pipeline.utils.rechunk import coverage_by_unit
+        from aeon.dj_pipeline.utils.intervals import coverage_by_unit
 
         assert 99 not in coverage_by_unit((t(8), t(9)), {"A": [(t(8), t(9))]}, {"A": {7}})
-
-
-class TestOwningBlock:
-    """Which block's metadata wins when a unit spans two.
-
-    ``unit_quality`` and ``qc_metrics`` are block-scoped, so a unit appearing in two
-    blocks has two candidate values and the spec leaves the choice open.
-    """
-
-    def test_block_with_more_spikes_wins(self):
-        """Test that metadata follows the bulk of the data."""
-        from aeon.dj_pipeline.utils.rechunk import owning_block
-
-        assert owning_block({"A": 10, "B": 900}, {"A": t(7), "B": t(8)}) == "B"
-
-    def test_ties_break_to_the_earliest_block(self):
-        """Test that an exact tie is resolved deterministically, not by dict order."""
-        from aeon.dj_pipeline.utils.rechunk import owning_block
-
-        assert owning_block({"B": 50, "A": 50}, {"A": t(7), "B": t(8)}) == "A"
-
-    def test_a_single_block_needs_no_tie_break(self):
-        """Test the ordinary case, which is every chunk that sits inside one block."""
-        from aeon.dj_pipeline.utils.rechunk import owning_block
-
-        assert owning_block({"A": 3}, {"A": t(7)}) == "A"
