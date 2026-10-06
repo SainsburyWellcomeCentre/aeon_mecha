@@ -63,6 +63,7 @@ PARAMSET_ID = "synthetic"
 # with skip_duplicates=True, so whichever runs first silently wins and the loser's
 # seed_block_start never matches any of its own blocks.
 MATCHING_PARAMSET = 101
+ALT_MATCHING_PARAMSET = 102
 
 
 def _spikes_in(window, seed, n=8):
@@ -461,12 +462,13 @@ def add_late_block(experiment_name):
 
 
 def add_duplicate_sorting(experiment_name):
-    """Sort block A a second time under a different parameter set.
+    """Match block A a second time under a different matching parameter set.
 
-    The same electrodes sorted twice finds the same neurons twice, and
-    ``UnitMatching`` cannot merge them because it compares a block against other
-    blocks and never against itself. ``SpikeTrains`` must refuse the chunk rather
-    than double-count it.
+    ``UnitMatching`` picks its comparison partners by insertion and matching
+    parameter set, so two matching sets never see each other. Global unit ids are
+    handed out per insertion across both, so every neuron on these electrodes picks
+    up an id in each family and the chunk holds both. ``SpikeTrains`` must refuse
+    that rather than count those neurons twice.
     """
     from datetime import datetime
 
@@ -474,43 +476,27 @@ def add_duplicate_sorting(experiment_name):
 
     insertion = {"experiment_name": experiment_name, "subject": SUBJECT, "insertion_number": 1}
     start, end = BLOCKS["A"]["window"]
-    now = datetime.now()
-    second = "synthetic-alt"
 
-    spike_sorting.SortingParamSet.insert1(
-        {"paramset_id": second, "sorting_method": "kilosort4", "params": {"alt": True}},
+    spike_sorting.UnitMatchingParamSet.insert1(
+        {
+            "matching_paramset_id": ALT_MATCHING_PARAMSET,
+            "matching_method": "spike_time_overlap",
+            "seed_block_start": start,
+            "params": {},
+        },
         skip_duplicates=True,
     )
-    task = {
-        **insertion,
-        "block_start": start,
-        "block_end": end,
-        "probe_type": PROBE_TYPE,
-        "electrode_config_name": CONFIG_NAME,
-        "electrode_group": "shank0",  # same electrodes as the original sorting
-        "paramset_id": second,
-    }
-    spike_sorting.SortingTask.insert1(task, skip_duplicates=True)
-    for table in (
-        spike_sorting.PreProcessing,
-        spike_sorting.SpikeSorting,
-        spike_sorting.PostProcessing,
-    ):
-        row = {**task, "execution_time": now, "execution_duration": 0.0}
-        if table is spike_sorting.PreProcessing:
-            row["sorting_output_dir"] = "synthetic/A-alt"
-        table.insert1(row, skip_duplicates=True, allow_direct_insert=True)
-    spike_sorting.SortedSpikes.insert1(
-        {**task, "execution_time": now, "execution_duration": 0.0, "curation_id": -1},
-        skip_duplicates=True,
-        allow_direct_insert=True,
-    )
-    spike_sorting.SyncedSpikes.insert1(task, skip_duplicates=True, allow_direct_insert=True)
     spike_sorting.UnitMatching.insert1(
         {
-            **task,
-            "matching_paramset_id": MATCHING_PARAMSET,
-            "execution_time": now,
+            **insertion,
+            "block_start": start,
+            "block_end": end,
+            "probe_type": PROBE_TYPE,
+            "electrode_config_name": CONFIG_NAME,
+            "electrode_group": "shank0",  # the same electrodes, matched a second time
+            "paramset_id": PARAMSET_ID,
+            "matching_paramset_id": ALT_MATCHING_PARAMSET,
+            "execution_time": datetime.now(),
             "execution_duration": 0.0,
         },
         skip_duplicates=True,

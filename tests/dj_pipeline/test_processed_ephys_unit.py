@@ -24,8 +24,8 @@ class TestMostSpikesWins:
 
     @staticmethod
     def _ident(hour, group="shank0"):
-        """A sorting's identity: block bounds, config, group, parameter set."""
-        return (t(hour), t(hour + 1), "cfg", group, "ks4")
+        """A sorting's identity: block bounds, config, group, sorting and matching sets."""
+        return (t(hour), t(hour + 1), "cfg", group, "ks4", 1)
 
     def test_sorting_with_more_spikes_wins(self):
         """Test that metadata follows the bulk of the data."""
@@ -101,64 +101,78 @@ class TestSortingGuards:
     def _s(ident, electrodes=frozenset(), units=frozenset()):
         return {"electrodes": frozenset(electrodes), "units": set(units)}
 
-    def test_one_group_sorted_twice_is_refused_from_the_identity_alone(self):
+    @staticmethod
+    def _ident(hour, group="shank0", paramset="ks4", matching=1):
+        return (t(hour), t(hour + 1), "cfg", group, paramset, matching)
+
+    def test_one_group_matched_twice_is_refused_from_the_identity_alone(self):
         """Test the case provable without any electrode data.
 
-        Same group, two parameter sets: the same electrodes by definition, so the
-        same neurons are detected twice. UnitMatching only compares sortings that
-        share a parameter set, so they arrive as two global units.
+        Global unit ids are handed out per insertion across every matching
+        parameter set, so the same electrodes matched under two of them give each
+        neuron an id in each family. The chunk then holds both.
         """
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 
-        a = (t(8), t(9), "cfg", "shank0", "ks4_a")
-        b = (t(8), t(9), "cfg", "shank0", "ks4_b")
-        with pytest.raises(ValueError, match="two parameter sets"):
+        a, b = self._ident(8, matching=1), self._ident(8, matching=2)
+        with pytest.raises(ValueError, match="matching parameter sets"):
             _assert_no_double_counting({a: self._s(a), b: self._s(b)})
 
-    def test_one_group_sorted_twice_is_refused_across_blocks_too(self):
-        """Test that the second parameter set is caught wherever it sits.
-
-        Two blocks under one parameter set are the ordinary case; the same two
-        blocks under two parameter sets sort the same electrodes twice, and the
-        block bounds have nothing to do with it.
-        """
+    def test_the_second_matching_paramset_is_caught_across_blocks_too(self):
+        """Test that it is the matching set that matters, not where the blocks sit."""
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 
-        a = (t(8), t(9), "cfg", "shank0", "ks4_a")
-        b = (t(9), t(10), "cfg", "shank0", "ks4_b")
-        with pytest.raises(ValueError, match="two parameter sets"):
+        a, b = self._ident(8, matching=1), self._ident(9, matching=2)
+        with pytest.raises(ValueError, match="matching parameter sets"):
             _assert_no_double_counting({a: self._s(a), b: self._s(b)})
 
-    def test_sequential_blocks_on_the_same_settings_are_the_ordinary_case(self):
+    def test_sequential_blocks_on_one_matching_paramset_are_the_ordinary_case(self):
         """Test that the chunk this table exists to serve passes without a murmur.
 
-        Two blocks, same config, group and parameter set, covering half the hour
-        each. They read the same electrodes - that is what makes them the same
-        recording - and UnitMatching links them into one global unit. Refusing
-        here, or even warning, would fire on almost every real chunk.
+        UnitMatching refuses a block that overlaps nothing already matched, so every
+        block under one matching parameter set is linked into a chain and global unit
+        ids propagate along it. Spikes is unique on (global_unit, chunk_start), so
+        these cannot double-count. Refusing, or even warning, would fire on almost
+        every real chunk.
         """
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 
-        a = (t(8), t(9), "cfg", "shank0", "ks4")
-        b = (t(9), t(10), "cfg", "shank0", "ks4")
+        a, b = self._ident(8), self._ident(9)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            _assert_no_double_counting({a: self._s(a), b: self._s(b)})
+
+    def test_two_sorting_paramsets_under_one_matching_set_are_allowed(self):
+        """Test that re-sorting a block is not the hazard it looks like.
+
+        UnitMatching picks partners by insertion and matching parameter set alone,
+        filtered to overlapping blocks - and a block overlaps itself. So the second
+        sorting is compared against the first and lands on the same global units.
+        """
+        from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
+
+        a, b = self._ident(8, paramset="ks4"), self._ident(8, paramset="ks4_alt")
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             _assert_no_double_counting({a: self._s(a), b: self._s(b)})
 
     def test_disjoint_electrode_groups_are_allowed(self):
-        """Test that shank1 and shank2 coexist: different electrodes, different neurons."""
+        """Test that shank1 and shank2 coexist: different electrodes, different neurons.
+
+        Separate matching parameter sets per shank is the documented pattern.
+        """
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 
-        a = (t(8), t(9), "cfg", "shank1", "ks4")
-        b = (t(8), t(9), "cfg", "shank2", "ks4")
+        a = self._ident(8, group="shank1", matching=1)
+        b = self._ident(8, group="shank2", matching=2)
         _assert_no_double_counting({a: self._s(a, {0, 1}), b: self._s(b, {2, 3})})
 
     def test_overlapping_electrode_groups_are_refused(self):
         """Test that 'all' alongside 'shank1' is caught when the sets are known."""
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 
-        a = (t(8), t(9), "cfg", "all", "ks4")
-        b = (t(8), t(9), "cfg", "shank1", "ks4")
+        a = self._ident(8, group="all", matching=1)
+        b = self._ident(8, group="shank1", matching=2)
         with pytest.raises(ValueError, match="same 2 electrodes"):
             _assert_no_double_counting({a: self._s(a, {0, 1, 2, 3}), b: self._s(b, {0, 1})})
 
@@ -171,8 +185,8 @@ class TestSortingGuards:
         """
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 
-        a = (t(8), t(9), "cfg", "shank1", "ks4")
-        b = (t(8), t(9), "cfg", "shank2", "ks4")
+        a = self._ident(8, group="shank1", matching=1)
+        b = self._ident(8, group="shank2", matching=2)
         with pytest.warns(UserWarning, match="could not be checked"):
             _assert_no_double_counting({a: self._s(a), b: self._s(b)})
 
@@ -180,7 +194,7 @@ class TestSortingGuards:
         """Test the ordinary case stays quiet."""
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 
-        a = (t(8), t(9), "cfg", "shank0", "ks4")
+        a = self._ident(8)
         _assert_no_double_counting({a: self._s(a)})
 
     def test_two_configs_without_a_shared_unit_are_allowed(self):

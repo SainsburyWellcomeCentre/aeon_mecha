@@ -41,14 +41,15 @@ _INSERTION = ("experiment_name", "subject", "insertion_number")
 def _block_tag(ident: tuple) -> str:
     """Render one contributing sorting for ``source_blocks``.
 
-    Carries the whole identity — bounds, electrode config, group, parameter set —
-    so a row says what it drew on, and re-sorting under different settings shows
-    up as stale. ``make`` writes these and ``stale_chunks`` compares against them,
-    so the two must agree exactly; written once so they cannot drift apart, since
-    a silent mismatch makes every row look fresh forever.
+    Carries the whole identity — bounds, electrode config, group, sorting parameter
+    set, matching parameter set — so a row says what it drew on, and re-sorting
+    under different settings shows up as stale. ``make`` writes these and
+    ``stale_chunks`` compares against them, so the two must agree exactly; written
+    once so they cannot drift apart, since a silent mismatch makes every row look
+    fresh forever.
     """
-    start, end, config, group, paramset = ident
-    return f"{start}/{end}/{config}/{group}/{paramset}"
+    start, end, config, group, paramset, matching = ident
+    return f"{start}/{end}/{config}/{group}/{paramset}/{matching}"
 
 
 def _ts(value) -> str:
@@ -308,10 +309,12 @@ class SpikeTrains(dj.Computed):
 def _covering_sortings(insertion: dict, window: tuple) -> dict:
     """Every matched sorting overlapping ``window``, keyed by its real identity.
 
-    A sorting is a block *and* an electrode group *and* a parameter set —
-    ``UnitMatching``'s own key. Keying on the block bounds alone silently drops
-    the second sorting of a block, and the spikes it found then have no unit to
-    belong to.
+    A sorting is a block, an electrode group, a sorting parameter set *and* a
+    matching parameter set — ``UnitMatching``'s own key. Keying on anything less
+    silently drops one of them, and the spikes it found then have no unit to
+    belong to. The matching parameter set matters most: global unit ids are handed
+    out per insertion across every matching paramset, so two of them describe the
+    same neurons with different ids.
 
     Only sortings ``UnitMatching`` has run for: an unmatched one brings no unit
     identities, so counting its coverage would credit time to nobody.
@@ -322,7 +325,13 @@ def _covering_sortings(insertion: dict, window: tuple) -> dict:
     sortings = {}
     for row in rows:
         bounds = (row["block_start"], row["block_end"])
-        ident = (*bounds, row["electrode_config_name"], row["electrode_group"], row["paramset_id"])
+        ident = (
+            *bounds,
+            row["electrode_config_name"],
+            row["electrode_group"],
+            row["paramset_id"],
+            row["matching_paramset_id"],
+        )
         block_key = {k: row[k] for k in (*insertion, "block_start", "block_end")}
         chunks = (ephys.EphysBlockInfo.Chunk * ephys.EphysChunk & block_key).to_dicts()
         group_key = {k: row[k] for k in ("probe_type", "electrode_config_name", "electrode_group")}
@@ -337,6 +346,7 @@ def _covering_sortings(insertion: dict, window: tuple) -> dict:
             },
             "config": row["electrode_config_name"],
             "group": row["electrode_group"],
+            "matching": row["matching_paramset_id"],
             "electrodes": frozenset(
                 int(e)
                 for e in np.atleast_1d(
@@ -384,6 +394,7 @@ def _fetch_spikes(insertion: dict, window: tuple, bounds: set) -> tuple[dict, di
             row["electrode_config_name"],
             row["electrode_group"],
             row["paramset_id"],
+            row["matching_paramset_id"],
         )
         counts[unit][ident] = counts[unit].get(ident, 0) + len(kept)
     return {u: np.sort(np.concatenate(v)) for u, v in by_unit.items()}, counts
@@ -392,37 +403,37 @@ def _fetch_spikes(insertion: dict, window: tuple, bounds: set) -> tuple[dict, di
 def _assert_no_double_counting(sortings: dict) -> None:
     """Refuse a chunk whose contributing sortings would find the same neuron twice.
 
-    ``UnitMatching`` compares a block against other blocks that share its electrode
-    config, group and parameter set. Two sortings that agree on all three are linked
-    into one global unit however many blocks they span, and ``Spikes`` is unique on
-    ``(global_unit, chunk_start)``, so they cannot double-count. That is the ordinary
-    multi-block chunk this table exists to serve.
+    ``UnitMatching`` picks its comparison partners with
+    ``(self & insertion & matching_paramset) `` filtered to blocks that overlap in
+    time — electrode config, group and sorting parameter set play no part. Its seed
+    guard then refuses any block that overlaps nothing already matched, so every
+    block under one matching parameter set is linked into one chain and global unit
+    ids propagate along it. ``Spikes`` is unique on ``(global_unit, chunk_start)``,
+    so whatever shares a matching parameter set cannot be counted twice. That is the
+    ordinary multi-block chunk, and most of the multi-sorting ones too.
 
-    Sortings that disagree on any of the three are never compared. If they also read
-    the same electrodes they find the same neuron twice, it arrives as two global
-    units, and the chunk counts it twice. Two cases:
-
-    - Same config and group, different parameter sets. The electrodes are identical
-      by definition, so this is provable from the identity alone.
-    - Different groups. Whether they overlap needs ``ElectrodeGroup.Electrode``,
-      which nothing in the pipeline populates today, so an unverifiable pair warns
-      rather than passing silently.
+    Two matching parameter sets are a different story: ids are handed out per
+    insertion across all of them, so one neuron picks up an id in each and the chunk
+    counts it once per id. Same electrode group under both is provable from the
+    identity — the electrodes are identical by definition. Different groups need
+    ``ElectrodeGroup.Electrode``, which nothing in the pipeline populates today, so
+    an unverifiable pair warns rather than passing silently.
     """
     by_group: dict[tuple, set] = defaultdict(set)
-    for _start, _end, config, group, paramset in sortings:
-        by_group[(config, group)].add(paramset)
-    for (config, group), paramsets in sorted(by_group.items()):
-        if len(paramsets) > 1:
+    for _start, _end, config, group, _paramset, matching in sortings:
+        by_group[(config, group)].add(matching)
+    for (config, group), matching_sets in sorted(by_group.items()):
+        if len(matching_sets) > 1:
             raise ValueError(
                 f"electrode group {group!r} of config {config!r} covers this chunk under "
-                f"two parameter sets ({sorted(paramsets)}); the same electrodes are sorted "
-                "twice and the same neurons arrive as two global units."
+                f"matching parameter sets {sorted(matching_sets)}; the same electrodes get a "
+                "global unit id under each, so every neuron on them is counted twice."
             )
 
     unverifiable = 0
     for a, b in itertools.combinations(sorted(sortings), 2):
-        if a[2:] == b[2:]:
-            continue  # same settings, so UnitMatching has already linked them
+        if a[5] == b[5]:
+            continue  # one matching paramset, so UnitMatching has already linked them
         electrodes_a, electrodes_b = sortings[a]["electrodes"], sortings[b]["electrodes"]
         if not electrodes_a or not electrodes_b:
             unverifiable += 1
@@ -430,15 +441,16 @@ def _assert_no_double_counting(sortings: dict) -> None:
         shared = electrodes_a & electrodes_b
         if shared:
             raise ValueError(
-                f"two sortings covering this chunk read the same {len(shared)} electrodes: "
-                f"{a} and {b}. The same neuron would be counted once per sorting."
+                f"two sortings covering this chunk read the same {len(shared)} electrodes "
+                f"under different matching parameter sets: {a} and {b}. Neurons on those "
+                "electrodes would be counted once per sorting."
             )
 
     if unverifiable:
         warnings.warn(
-            f"{unverifiable} pair(s) of sortings cover this chunk under different settings, "
-            "but ElectrodeGroup.Electrode is empty, so electrode overlap between them could "
-            "not be checked.",
+            f"{unverifiable} pair(s) of sortings cover this chunk under different matching "
+            "parameter sets, but ElectrodeGroup.Electrode is empty, so electrode overlap "
+            "between them could not be checked.",
             stacklevel=3,
         )
 

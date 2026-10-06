@@ -87,13 +87,14 @@ class TestKeySource:
                 "the match is being applied per insertion rather than per chunk"
             )
 
-    def test_a_block_sorted_twice_is_refused(self, spike_trains_scenario):
-        """Test that a second sorting of one block stops the chunk rather than doubling it.
+    def test_a_block_matched_under_two_paramsets_is_refused(self, spike_trains_scenario):
+        """Test that a second matching run stops the chunk rather than doubling it.
 
-        The duplicate is removed again in the same test: every later test in this
-        module asserts against a scenario with one sorting per block.
+        Two matching parameter sets never compare against each other, so the same
+        neurons get an id in each family. The duplicate is removed again in the same
+        test: every later test here assumes one matching set per block.
         """
-        from spike_train_factories import add_duplicate_sorting
+        from spike_train_factories import ALT_MATCHING_PARAMSET, add_duplicate_sorting
 
         from aeon.dj_pipeline import processed_ephys, spike_sorting
 
@@ -104,11 +105,12 @@ class TestKeySource:
             **{k: spike_trains_scenario[k] for k in ("subject", "insertion_number")},
         }
         try:
-            with pytest.raises(ValueError, match="two parameter sets"):
+            with pytest.raises(ValueError, match="matching parameter sets"):
                 processed_ephys.SpikeTrains().make(key)
         finally:
-            (spike_sorting.SortingTask & {"paramset_id": "synthetic-alt"}).delete(prompt=False)
-            (spike_sorting.SortingParamSet & {"paramset_id": "synthetic-alt"}).delete(prompt=False)
+            alt = {"matching_paramset_id": ALT_MATCHING_PARAMSET}
+            (spike_sorting.UnitMatching & alt).delete(prompt=False)
+            (spike_sorting.UnitMatchingParamSet & alt).delete(prompt=False)
 
 
 @pytest.fixture(scope="module")
