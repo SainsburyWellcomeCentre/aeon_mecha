@@ -1,5 +1,6 @@
 """Unit tests for processed_ephys helpers that need no database."""
 
+import warnings
 from datetime import datetime as dt
 
 import pytest
@@ -95,16 +96,45 @@ class TestSortingGuards:
     def test_one_group_sorted_twice_is_refused_from_the_identity_alone(self):
         """Test the case provable without any electrode data.
 
-        Same block, same group, two parameter sets: the same electrodes by
-        definition, so the same neurons are detected twice and arrive as two
-        global units. UnitMatching cannot merge them - it compares a block
-        against other blocks, never against itself.
+        Same group, two parameter sets: the same electrodes by definition, so the
+        same neurons are detected twice. UnitMatching only compares sortings that
+        share a parameter set, so they arrive as two global units.
         """
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 
         a = (t(8), t(9), "cfg", "shank0", "ks4_a")
         b = (t(8), t(9), "cfg", "shank0", "ks4_b")
         with pytest.raises(ValueError, match="two parameter sets"):
+            _assert_no_double_counting({a: self._s(a), b: self._s(b)})
+
+    def test_one_group_sorted_twice_is_refused_across_blocks_too(self):
+        """Test that the second parameter set is caught wherever it sits.
+
+        Two blocks under one parameter set are the ordinary case; the same two
+        blocks under two parameter sets sort the same electrodes twice, and the
+        block bounds have nothing to do with it.
+        """
+        from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
+
+        a = (t(8), t(9), "cfg", "shank0", "ks4_a")
+        b = (t(9), t(10), "cfg", "shank0", "ks4_b")
+        with pytest.raises(ValueError, match="two parameter sets"):
+            _assert_no_double_counting({a: self._s(a), b: self._s(b)})
+
+    def test_sequential_blocks_on_the_same_settings_are_the_ordinary_case(self):
+        """Test that the chunk this table exists to serve passes without a murmur.
+
+        Two blocks, same config, group and parameter set, covering half the hour
+        each. They read the same electrodes - that is what makes them the same
+        recording - and UnitMatching links them into one global unit. Refusing
+        here, or even warning, would fire on almost every real chunk.
+        """
+        from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
+
+        a = (t(8), t(9), "cfg", "shank0", "ks4")
+        b = (t(9), t(10), "cfg", "shank0", "ks4")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
             _assert_no_double_counting({a: self._s(a), b: self._s(b)})
 
     def test_disjoint_electrode_groups_are_allowed(self):
@@ -128,7 +158,8 @@ class TestSortingGuards:
         """Test that an unpopulated ElectrodeGroup.Electrode is reported, not ignored.
 
         Nothing in the pipeline writes that part table today, so the overlap check
-        has no data. Passing silently would look like a verified result.
+        has no data for the one pair that needs it. Passing silently would look
+        like a verified result.
         """
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 

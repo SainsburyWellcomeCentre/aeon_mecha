@@ -393,39 +393,53 @@ def _fetch_spikes(insertion: dict, window: tuple, bounds: set) -> tuple[dict, di
 def _assert_no_double_counting(sortings: dict) -> None:
     """Refuse a chunk whose contributing sortings would find the same neuron twice.
 
-    Two sortings over disjoint electrodes find different neurons and both belong
-    in the roster. Two that share electrodes find the *same* neuron twice, and
-    ``UnitMatching`` cannot merge them — it compares a block against other blocks,
-    never against itself — so they arrive as two global units and the chunk
-    double-counts.
+    ``UnitMatching`` compares a block against other blocks that share its electrode
+    config, group and parameter set. Two sortings that agree on all three are linked
+    into one global unit however many blocks they span, and ``Spikes`` is unique on
+    ``(global_unit, chunk_start)``, so they cannot double-count. That is the ordinary
+    multi-block chunk this table exists to serve.
 
-    Only the first check is provable from the identity. The second needs
-    ``ElectrodeGroup.Electrode``, which nothing in the pipeline populates today,
-    so it warns rather than passing silently when the sets are missing.
+    Sortings that disagree on any of the three are never compared. If they also read
+    the same electrodes they find the same neuron twice, it arrives as two global
+    units, and the chunk counts it twice. Two cases:
+
+    - Same config and group, different parameter sets. The electrodes are identical
+      by definition, so this is provable from the identity alone.
+    - Different groups. Whether they overlap needs ``ElectrodeGroup.Electrode``,
+      which nothing in the pipeline populates today, so an unverifiable pair warns
+      rather than passing silently.
     """
-    seen: dict[tuple, str] = {}
-    for start, end, config, group, paramset in sortings:
-        slot = (start, end, config, group)
-        if slot in seen:
+    by_group: dict[tuple, set] = defaultdict(set)
+    for _start, _end, config, group, paramset in sortings:
+        by_group[(config, group)].add(paramset)
+    for (config, group), paramsets in sorted(by_group.items()):
+        if len(paramsets) > 1:
             raise ValueError(
-                f"block {start} group {group!r} is sorted under two parameter sets "
-                f"({seen[slot]!r} and {paramset!r}); the same neurons are detected twice."
+                f"electrode group {group!r} of config {config!r} covers this chunk under "
+                f"two parameter sets ({sorted(paramsets)}); the same electrodes are sorted "
+                "twice and the same neurons arrive as two global units."
             )
-        seen[slot] = paramset
 
-    known = {i: v["electrodes"] for i, v in sortings.items() if v["electrodes"]}
-    for a, b in itertools.combinations(sorted(known), 2):
-        shared = known[a] & known[b]
+    unverifiable = 0
+    for a, b in itertools.combinations(sorted(sortings), 2):
+        if a[2:] == b[2:]:
+            continue  # same settings, so UnitMatching has already linked them
+        electrodes_a, electrodes_b = sortings[a]["electrodes"], sortings[b]["electrodes"]
+        if not electrodes_a or not electrodes_b:
+            unverifiable += 1
+            continue
+        shared = electrodes_a & electrodes_b
         if shared:
             raise ValueError(
                 f"two sortings covering this chunk read the same {len(shared)} electrodes: "
                 f"{a} and {b}. The same neuron would be counted once per sorting."
             )
 
-    if len(sortings) > 1 and len(known) < len(sortings):
+    if unverifiable:
         warnings.warn(
-            f"{len(sortings)} sortings cover this chunk but ElectrodeGroup.Electrode is "
-            "empty for some, so electrode overlap between them could not be checked.",
+            f"{unverifiable} pair(s) of sortings cover this chunk under different settings, "
+            "but ElectrodeGroup.Electrode is empty, so electrode overlap between them could "
+            "not be checked.",
             stacklevel=3,
         )
 
