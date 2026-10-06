@@ -32,6 +32,20 @@ if TYPE_CHECKING:
 logger = dj.logger
 
 
+#: The attributes that identify a probe insertion, shared by every query here.
+_INSERTION = ("experiment_name", "subject", "insertion_number")
+
+
+def _block_tag(start, end) -> str:
+    """Render one block for ``source_blocks``.
+
+    ``make`` writes these and ``stale_chunks`` compares against them, so the two
+    must agree exactly. Written once so they cannot drift apart: a silent
+    mismatch makes every row look fresh forever.
+    """
+    return f"{start}/{end}"
+
+
 def _ts(value) -> str:
     """Format a datetime for a restriction string.
 
@@ -83,7 +97,7 @@ class SpikeTrains(dj.Computed):
         import pynapple as nap  # optional extra; kept lazy so importing this module is cheap
 
         window = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
-        insertion = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
+        insertion = {k: key[k] for k in _INSERTION}
 
         block_chunks, block_units, block_starts = _covering_blocks(insertion, window)
         if not block_units:
@@ -131,7 +145,7 @@ class SpikeTrains(dj.Computed):
                 "n_spikes": n_spikes,
                 "coverage_frac": covered_total / chunk_seconds,
                 "n_partial_units": int(sum(c < covered_total for c in covered)),
-                "source_blocks": sorted(f"{start}/{end}" for start, end in block_starts),
+                "source_blocks": sorted(_block_tag(s, e) for s, e in block_starts),
                 "spikes": tsgroup,
             }
         )
@@ -157,10 +171,10 @@ class SpikeTrains(dj.Computed):
         rows = (cls() & restriction).proj("source_blocks") * acquisition.Chunk.proj("chunk_end")
         stale = []
         for row in rows.to_dicts():
-            insertion = {k: row[k] for k in ("experiment_name", "subject", "insertion_number")}
+            insertion = {k: row[k] for k in _INSERTION}
             window = (row["chunk_start"], row["chunk_end"])
             _, block_units, _ = _covering_blocks(insertion, window)
-            if sorted(f"{s}/{e}" for s, e in block_units) != list(row["source_blocks"]):
+            if sorted(_block_tag(s, e) for s, e in block_units) != list(row["source_blocks"]):
                 stale.append({k: row[k] for k in cls.primary_key})
         return stale
 
@@ -233,7 +247,7 @@ class SpikeTrains(dj.Computed):
         lo, hi = io_api.to_seconds(start), io_api.to_seconds(end)
         times: dict[int, list] = {}
         covered: dict[int, float] = {}
-        carried: dict[int, dict] = {}
+        candidates: dict[int, dict] = {}
         support = []
         window = nap.IntervalSet(start=lo, end=hi)
         for row in sorted(rows, key=lambda r: r["chunk_start"]):
@@ -253,13 +267,12 @@ class SpikeTrains(dj.Computed):
                 u = int(unit)
                 times.setdefault(u, []).append(restricted[unit].t)
                 covered[u] = covered.get(u, 0.0) + float(seconds[unit]) * frac
-                # Chunks can disagree about a unit. Most spikes wins, ties to the
-                # earliest chunk — the rule _owning_block applies to blocks below.
-                # Compare the datetime, never timestamp(): it reads a naive value
-                # in the machine's local timezone.
-                rank = (-len(restricted[unit]), row["chunk_start"])
-                if u not in carried or rank < carried[u]["rank"]:
-                    carried[u] = {"rank": rank} | {c: restricted.get_info(c)[unit] for c in extras}
+                # Chunks can disagree about a unit; resolved after the loop by the
+                # same rule _covering_blocks uses for blocks.
+                candidates.setdefault(u, {})[row["chunk_start"]] = (
+                    len(restricted[unit]),
+                    {c: restricted.get_info(c)[unit] for c in extras},
+                )
             support.extend(zip(kept.start, kept.end, strict=True))
 
         roster = sorted(times)
@@ -268,7 +281,11 @@ class SpikeTrains(dj.Computed):
         # end, which at HARP magnitude is the float64 limit and can drop a spike.
         spans = intervals.merge(sorted(support))
         merged = nap.IntervalSet(start=[s for s, _ in spans], end=[e for _, e in spans])
-        extra_cols = {c for u in roster for c in carried[u] if c != "rank"}
+        carried = {
+            u: candidates[u][_most_spikes_wins({cs: n for cs, (n, _) in candidates[u].items()})][1]
+            for u in roster
+        }
+        extra_cols = {c for u in roster for c in carried[u]}
         metadata = {"covered_seconds": np.array([covered[u] for u in roster])}
         missing = {u for u in roster for c in extra_cols if c not in carried[u]}
         if missing:
@@ -308,7 +325,7 @@ def _covering_blocks(insertion: dict, window: tuple) -> tuple[dict, dict, dict]:
 def _fetch_spikes(insertion: dict, window: tuple, block_starts: dict) -> tuple[dict, dict]:
     """Spike times per unit inside ``window``, and how many came from each block.
 
-    The counts feed ``_owning_block``, which picks whose metadata wins when
+    The counts feed ``_most_spikes_wins``, which picks whose metadata wins when
     a unit spans two blocks and each has its own answer.
     """
     lo, hi = np.datetime64(window[0]), np.datetime64(window[1])
@@ -333,21 +350,20 @@ def _fetch_spikes(insertion: dict, window: tuple, block_starts: dict) -> tuple[d
     return {u: np.sort(np.concatenate(v)) for u, v in by_unit.items()}, counts
 
 
-def _owning_block(spike_counts_by_block: dict, block_starts: dict):
-    """Decide which block speaks for a unit that appears in several.
+def _most_spikes_wins(counts: dict, tiebreak: dict | None = None):
+    """Pick which of several sources speaks for a unit that appears in more than one.
 
-    Each block has its own opinion about a unit's quality and electrode, and the
-    row can only carry one. The block holding most of the unit's spikes wins; an
-    exact tie goes to the earliest, so the answer never depends on dict ordering.
+    A unit can show up in several blocks covering one chunk, and in several chunks
+    covering one span. Both ask the same question and must answer it the same way,
+    so both call this: most spikes wins, ties go to the earliest, and an exact tie
+    there falls through to the key itself — two blocks can share a start, so
+    without that last step the answer depends on dict order.
+
+    ``tiebreak`` maps each key to what orders it (a block's start). Omit it when
+    the key already is that ordering, as it is for chunks.
     """
-    # min on (-count, start): most spikes first, then earliest. Comparing the
-    # datetimes directly keeps the machine's timezone out of it entirely.
-    return min(
-        spike_counts_by_block,
-        # block_starts alone can tie: _covering_blocks keys on (start, end), so two
-        # blocks may share a start. Fall through to the ident itself.
-        key=lambda block: (-spike_counts_by_block[block], block_starts[block], block),
-    )
+    order = tiebreak if tiebreak is not None else {k: k for k in counts}
+    return min(counts, key=lambda k: (-counts[k], order[k], k))
 
 
 def _unit_metadata(
@@ -360,7 +376,7 @@ def _unit_metadata(
     concatenates chunks.
 
     ``unit_quality`` belongs to a block, so a unit spanning two of them has two
-    candidates; ``_owning_block`` picks the block holding most of its
+    candidates; ``_most_spikes_wins`` picks the block holding most of its
     spikes. A global unit can map to several local units in that block when a
     merge happened; the lowest local ``unit`` wins, so the answer does not depend
     on row order. ``qc_metrics`` are not flattened in here yet and stay queryable
@@ -376,7 +392,7 @@ def _unit_metadata(
         if not counts:
             quality[unit] = "n.a."
             continue
-        winner = _owning_block(counts, block_starts)
+        winner = _most_spikes_wins(counts, block_starts)
         rows = (
             spike_sorting.UnitMatching.Unit * spike_sorting.SortedSpikes.Unit
             & insertion
