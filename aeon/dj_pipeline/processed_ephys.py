@@ -12,7 +12,6 @@ The table has **no foreign key to the sorted data**, on purpose. Several
 split the object into fragments for every user, forever. The price is that
 nothing invalidates a row when its sorting changes: ``source_blocks`` records
 what went into it, and ``stale_chunks()`` finds the rows that have fallen behind.
-Full reasoning in ``docs/specs/SPEC_SPIKE_TRAINS.md``.
 """
 
 import warnings
