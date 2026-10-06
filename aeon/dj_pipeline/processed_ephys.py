@@ -77,10 +77,11 @@ class SpikeTrains(dj.Computed):
         matched = ephys.EphysChunk.proj(eph_start="chunk_start", eph_end="chunk_end") & (
             spike_sorting.UnitMatching * ephys.EphysBlockInfo.Chunk
         ).proj()
-        overlap = "eph_start < chunk_end AND eph_end > chunk_start"
-        # A behavioural chunk can overlap several ephys chunks, so the join hands it
-        # back once per match. dj.U collapses that to this table's own key.
-        return dj.U(*self.primary_key) & ((acquisition.Chunk * matched) & overlap)
+        overlapping = (acquisition.Chunk * matched) & "eph_start < chunk_end AND eph_end > chunk_start"
+        # The default key_source is the join of this table's primary-key parents, so
+        # all we do is narrow it. Restriction is a semijoin, so a chunk comes back
+        # once however many ephys chunks it overlaps.
+        return super().key_source & overlapping
 
     def make(self, key: dict) -> None:
         """Build one behavioural hour's TsGroup from the blocks covering it."""
