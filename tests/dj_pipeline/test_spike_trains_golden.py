@@ -93,12 +93,15 @@ class TestGoldenSpikeTrains:
         )
 
     def test_source_blocks_are_exactly_the_matched_overlapping_blocks(self, golden_spike_trains, ctx):
-        """Test that source_blocks records every matched block covering the chunk.
+        """Test that source_blocks records every matched sorting covering the chunk.
 
-        Recomputed here from ``EphysBlock * UnitMatching`` rather than reusing
-        ``_covering_blocks``, so a block silently dropped from the provenance record
-        shows up as a set difference. This is the substitute for the foreign key the
-        table does without, so it has to be exact rather than non-empty.
+        The set of contributing sortings is recomputed here from
+        ``EphysBlock * UnitMatching`` rather than reusing ``_covering_sortings``, so
+        one silently dropped from the provenance record shows up as a set difference.
+        Only the rendering is shared, via ``_block_tag``: this test is about which
+        sortings a row drew on, not how the string is punctuated. The record is the
+        substitute for the foreign key the table does without, so it has to be exact
+        rather than non-empty.
 
         Note the golden behavioural arm runs ~07:51:34-08:00, which overlaps only the
         first sorted block; the two blocks overlap at 08:39:47-08:59:47, where there
@@ -106,6 +109,7 @@ class TestGoldenSpikeTrains:
         dataset and stays covered by the synthetic suite.
         """
         acquisition = golden_spike_trains["acquisition"]
+        block_tag = golden_spike_trains["module"]._block_tag
 
         for row in golden_spike_trains["rows"]:
             start, end = (acquisition.Chunk & row).fetch1("chunk_start", "chunk_end")
@@ -115,13 +119,26 @@ class TestGoldenSpikeTrains:
                 & insertion
                 & f'block_start < "{end}" AND block_end > "{start}"'
             ).to_dicts()
-            expected = {f"{b['block_start']}/{b['block_end']}" for b in matched}
+            # A sorting is a block *and* an electrode group *and* a parameter set,
+            # which is UnitMatching's own key; the tag carries all of it.
+            expected = {
+                block_tag(
+                    (
+                        b["block_start"],
+                        b["block_end"],
+                        b["electrode_config_name"],
+                        b["electrode_group"],
+                        b["paramset_id"],
+                    )
+                )
+                for b in matched
+            }
 
             assert set(row["source_blocks"]) == expected, (
                 f"chunk {start}: source_blocks {sorted(row['source_blocks'])} "
                 f"!= matched blocks overlapping the window {sorted(expected)}"
             )
-            assert expected, f"chunk {start} has a row but no matched covering block"
+            assert expected, f"chunk {start} has a row but no matched covering sorting"
 
     def test_times_are_harp_absolute_and_inside_the_support(self, golden_spike_trains):
         """Test that times are Harp seconds since 1904 and lie within time_support.
