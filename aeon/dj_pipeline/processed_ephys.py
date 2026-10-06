@@ -67,12 +67,14 @@ class SpikeTrains(dj.Computed):
         belongs to the previous hour. Unmatched blocks do not count — better
         uncomputable than a row with no units in it.
         """
-        # Renaming the ephys bounds is load-bearing: a surviving `chunk_start`
-        # carries ephys lineage, and populate()'s antijoin is then refused.
+        # Restrict first, rename second. `proj` drops `chunk_start` from the
+        # heading, so a semijoin after the rename shares only the insertion
+        # attributes and degenerates to "this insertion matched something, somewhere".
+        # The rename itself is still load-bearing: a surviving `chunk_start` carries
+        # ephys lineage, and populate()'s antijoin is then refused.
         matched = (
-            ephys.EphysChunk.proj(eph_start="chunk_start", eph_end="chunk_end")
-            & (spike_sorting.UnitMatching * ephys.EphysBlockInfo.Chunk).proj()
-        )
+            ephys.EphysChunk & (spike_sorting.UnitMatching * ephys.EphysBlockInfo.Chunk).proj()
+        ).proj(eph_start="chunk_start", eph_end="chunk_end")
         overlapping = (acquisition.Chunk * matched) & "eph_start < chunk_end AND eph_end > chunk_start"
         return super().key_source & overlapping
 

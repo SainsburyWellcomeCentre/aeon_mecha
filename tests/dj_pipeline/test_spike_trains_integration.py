@@ -62,6 +62,28 @@ class TestKeySource:
         assert starts == spike_trains_scenario["covered_chunk_starts"]
         assert spike_trains_scenario["uncovered_chunk_start"] not in starts
 
+    def test_matching_is_per_chunk_not_per_insertion(self, spike_trains_scenario):
+        """Test that one matched block does not make every chunk computable.
+
+        Renaming chunk_start before the semijoin drops it from the heading, so the
+        restriction degenerates to "this insertion has some match somewhere" and
+        key_source yields chunks whose own ephys was never matched.
+        """
+        from aeon.dj_pipeline import acquisition, ephys, processed_ephys, spike_sorting
+
+        scoped = {"experiment_name": spike_trains_scenario["experiment_name"]}
+        for key in (processed_ephys.SpikeTrains().key_source & scoped).to_dicts():
+            window = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+            matched = (
+                ephys.EphysBlock * spike_sorting.UnitMatching
+                & {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
+                & f'block_start < "{window[1]}" AND block_end > "{window[0]}"'
+            )
+            assert matched, (
+                f"key_source yielded {key['chunk_start']}, which no matched block covers; "
+                "the match is being applied per insertion rather than per chunk"
+            )
+
 
 @pytest.fixture(scope="module")
 def populated(spike_trains_scenario):
