@@ -216,10 +216,8 @@ class SpikeTrains(dj.Computed):
         if not rows:
             raise ValueError(f"no SpikeTrains rows for {insertion} in [{start}, {end})")
 
-        if not allow_stale:
-            stale = {tuple(sorted(k.items())) for k in cls.stale_chunks()}
-            if any(tuple(sorted({k: r[k] for k in cls.primary_key}.items())) in stale for r in rows):
-                raise ValueError("span covers stale rows; delete and repopulate, or pass allow_stale=True")
+        if not allow_stale and cls.stale_chunks([insertion, overlapping]):
+            raise ValueError("span covers stale rows; delete and repopulate, or pass allow_stale=True")
 
         partial = [r["chunk_start"] for r in rows if r["n_partial_units"]]
         if partial:

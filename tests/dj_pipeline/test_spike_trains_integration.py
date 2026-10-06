@@ -251,6 +251,31 @@ class TestStalenessAndFetchSpan:
             "(the whole span minus what precedes the cut)"
         )
 
+    def test_fetch_span_scans_only_its_own_span(self, populated, monkeypatch):
+        """Test that the staleness check is restricted to the span being read.
+
+        An unrestricted scan walks every row in the table — all experiments, all
+        insertions — at a couple of queries each, to read one hour.
+        """
+        from aeon.dj_pipeline import processed_ephys
+
+        seen = {}
+        original = processed_ephys.SpikeTrains.stale_chunks.__func__
+
+        def spy(cls, restriction=True):
+            seen["restriction"] = restriction
+            return original(cls, restriction)
+
+        monkeypatch.setattr(processed_ephys.SpikeTrains, "stale_chunks", classmethod(spy))
+        with pytest.warns(UserWarning, match="covered_seconds"):
+            processed_ephys.SpikeTrains.fetch_span(
+                **populated["insertion_key"],
+                start=populated["covered_chunk_starts"][0],
+                end=populated["span_end"],
+            )
+
+        assert seen.get("restriction") is not True, "fetch_span scanned the whole table for staleness"
+
     def test_fetch_span_carries_unit_metadata(self, populated):
         """Test that the span object supports the filtering its docstring shows.
 
