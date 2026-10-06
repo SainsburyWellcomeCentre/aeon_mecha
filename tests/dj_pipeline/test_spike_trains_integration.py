@@ -195,6 +195,40 @@ class TestStalenessAndFetchSpan:
         processed_ephys.SpikeTrains.populate(mine, suppress_errors=False)
         assert not processed_ephys.SpikeTrains.stale_chunks(mine)
 
+    def test_fetch_span_includes_the_chunk_it_starts_inside(self, populated):
+        """Test that a span starting mid-chunk still returns that chunk's spikes.
+
+        Selecting rows on chunk_start alone drops the chunk containing `start`
+        entirely, so a window beginning at 08:30 silently loses 08:30-09:00.
+        """
+        from datetime import timedelta
+
+        import numpy as np
+        from swc.aeon.io import api as io_api
+
+        from aeon.dj_pipeline import processed_ephys
+
+        first = populated["covered_chunk_starts"][0]
+        mid_chunk = first + timedelta(minutes=30)
+
+        with pytest.warns(UserWarning, match="covered_seconds"):
+            whole = processed_ephys.SpikeTrains.fetch_span(
+                **populated["insertion_key"], start=first, end=populated["span_end"]
+            )
+        with pytest.warns(UserWarning, match="covered_seconds"):
+            partial = processed_ephys.SpikeTrains.fetch_span(
+                **populated["insertion_key"], start=mid_chunk, end=populated["span_end"]
+            )
+
+        whole_n = sum(len(whole[u]) for u in whole.index)
+        partial_n = sum(len(partial[u]) for u in partial.index)
+        cut = io_api.to_seconds(mid_chunk)
+        before_cut = sum(int((np.asarray(whole[u].t) < cut).sum()) for u in whole.index)
+        assert partial_n == whole_n - before_cut, (
+            f"span from mid-chunk kept {partial_n} spikes; expected {whole_n - before_cut} "
+            "(the whole span minus what precedes the cut)"
+        )
+
     def test_fetch_span_keeps_the_ephys_gap(self, populated):
         """Test that a gap inside the span survives into the returned time_support.
 

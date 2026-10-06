@@ -190,6 +190,11 @@ class SpikeTrains(dj.Computed):
         sorted for only part of its chunk; divide by ``covered_seconds`` in that
         case, because ``TsGroup.rate`` will use the wrong denominator.
 
+        One caveat at the edges: a chunk the window only partly covers still
+        contributes its whole ``covered_seconds``. Per-unit coverage is not stored
+        per interval, so the fraction cannot be recovered. Rates over a span whose
+        ends cut chunks are therefore slightly conservative.
+
         Size the window before you ask for it. A probe-hour is roughly 115 MB at
         Neuropixels rates, so a day is about 2.7 GB and a week about 19 GB. pynapple
         has no lazy TsGroup, and nothing here will stop you asking for more than
@@ -202,9 +207,10 @@ class SpikeTrains(dj.Computed):
             "subject": subject,
             "insertion_number": insertion_number,
         }
-        rows = (
-            cls() & insertion & f'chunk_start >= "{_ts(start)}"' & f'chunk_start < "{_ts(end)}"'
-        ).to_dicts()
+        # Overlap, not chunk_start: a window beginning mid-hour still needs the
+        # chunk it starts inside. Half-open at both ends.
+        overlapping = acquisition.Chunk & (f'chunk_start < "{_ts(end)}" AND chunk_end > "{_ts(start)}"')
+        rows = (cls() & insertion & overlapping).to_dicts()
         if not rows:
             raise ValueError(f"no SpikeTrains rows for {insertion} in [{start}, {end})")
 
