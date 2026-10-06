@@ -119,8 +119,8 @@ class TestGoldenSpikeTrains:
                 & insertion
                 & f'block_start < "{end}" AND block_end > "{start}"'
             ).to_dicts()
-            # A sorting is a block *and* an electrode group *and* a parameter set,
-            # which is UnitMatching's own key; the tag carries all of it.
+            # A sorting is a block, an electrode group, a sorting parameter set and a
+            # matching parameter set - UnitMatching's own key; the tag carries all of it.
             expected = {
                 block_tag(
                     (
@@ -129,6 +129,7 @@ class TestGoldenSpikeTrains:
                         b["electrode_config_name"],
                         b["electrode_group"],
                         b["paramset_id"],
+                        b["matching_paramset_id"],
                     )
                 )
                 for b in matched
