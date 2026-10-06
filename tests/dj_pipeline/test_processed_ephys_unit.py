@@ -83,3 +83,84 @@ class TestBlockChunkClipping:
 
         assert clipped == [block]
         assert intervals.covered_seconds(clipped) == 20 * 60
+
+
+class TestSortingGuards:
+    """Two sortings can cover one chunk legitimately — or not at all."""
+
+    @staticmethod
+    def _s(ident, electrodes=frozenset(), units=frozenset()):
+        return {"electrodes": frozenset(electrodes), "units": set(units)}
+
+    def test_one_group_sorted_twice_is_refused_from_the_identity_alone(self):
+        """Test the case provable without any electrode data.
+
+        Same block, same group, two parameter sets: the same electrodes by
+        definition, so the same neurons are detected twice and arrive as two
+        global units. UnitMatching cannot merge them - it compares a block
+        against other blocks, never against itself.
+        """
+        from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
+
+        a = (t(8), t(9), "cfg", "shank0", "ks4_a")
+        b = (t(8), t(9), "cfg", "shank0", "ks4_b")
+        with pytest.raises(ValueError, match="two parameter sets"):
+            _assert_no_double_counting({a: self._s(a), b: self._s(b)})
+
+    def test_disjoint_electrode_groups_are_allowed(self):
+        """Test that shank1 and shank2 coexist: different electrodes, different neurons."""
+        from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
+
+        a = (t(8), t(9), "cfg", "shank1", "ks4")
+        b = (t(8), t(9), "cfg", "shank2", "ks4")
+        _assert_no_double_counting({a: self._s(a, {0, 1}), b: self._s(b, {2, 3})})
+
+    def test_overlapping_electrode_groups_are_refused(self):
+        """Test that 'all' alongside 'shank1' is caught when the sets are known."""
+        from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
+
+        a = (t(8), t(9), "cfg", "all", "ks4")
+        b = (t(8), t(9), "cfg", "shank1", "ks4")
+        with pytest.raises(ValueError, match="same 2 electrodes"):
+            _assert_no_double_counting({a: self._s(a, {0, 1, 2, 3}), b: self._s(b, {0, 1})})
+
+    def test_unknown_electrode_sets_warn_rather_than_pass_silently(self):
+        """Test that an unpopulated ElectrodeGroup.Electrode is reported, not ignored.
+
+        Nothing in the pipeline writes that part table today, so the overlap check
+        has no data. Passing silently would look like a verified result.
+        """
+        from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
+
+        a = (t(8), t(9), "cfg", "shank1", "ks4")
+        b = (t(8), t(9), "cfg", "shank2", "ks4")
+        with pytest.warns(UserWarning, match="could not be checked"):
+            _assert_no_double_counting({a: self._s(a), b: self._s(b)})
+
+    def test_a_single_sorting_needs_no_checks(self):
+        """Test the ordinary case stays quiet."""
+        from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
+
+        a = (t(8), t(9), "cfg", "shank0", "ks4")
+        _assert_no_double_counting({a: self._s(a)})
+
+    def test_two_configs_without_a_shared_unit_are_allowed(self):
+        """Test that a config change alone does not refuse the chunk.
+
+        Units are per-config, coverage is already per-unit, and n_partial_units
+        flags it. Refusing would discard data that is handled correctly.
+        """
+        from aeon.dj_pipeline.processed_ephys import _assert_one_config_per_unit
+
+        _assert_one_config_per_unit({"a": "cfgX", "b": "cfgY"}, {"a": {1, 2}, "b": {3, 4}})
+
+    def test_a_unit_spanning_two_configs_is_refused(self):
+        """Test the unsafe case: one global unit under two electrode configs.
+
+        GlobalUnit carries one physical peak electrode, and the other config may
+        never have recorded it.
+        """
+        from aeon.dj_pipeline.processed_ephys import _assert_one_config_per_unit
+
+        with pytest.raises(ValueError, match="more than one electrode config"):
+            _assert_one_config_per_unit({"a": "cfgX", "b": "cfgY"}, {"a": {1, 2}, "b": {2, 3}})

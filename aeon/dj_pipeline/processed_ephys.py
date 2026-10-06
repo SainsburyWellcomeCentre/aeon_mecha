@@ -14,7 +14,9 @@ nothing invalidates a row when its sorting changes: ``source_blocks`` records
 what went into it, and ``stale_chunks()`` finds the rows that have fallen behind.
 """
 
+import itertools
 import warnings
+from collections import defaultdict
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -36,14 +38,17 @@ logger = dj.logger
 _INSERTION = ("experiment_name", "subject", "insertion_number")
 
 
-def _block_tag(start, end) -> str:
-    """Render one block for ``source_blocks``.
+def _block_tag(ident: tuple) -> str:
+    """Render one contributing sorting for ``source_blocks``.
 
-    ``make`` writes these and ``stale_chunks`` compares against them, so the two
-    must agree exactly. Written once so they cannot drift apart: a silent
-    mismatch makes every row look fresh forever.
+    Carries the whole identity — bounds, electrode config, group, parameter set —
+    so a row says what it drew on, and re-sorting under different settings shows
+    up as stale. ``make`` writes these and ``stale_chunks`` compares against them,
+    so the two must agree exactly; written once so they cannot drift apart, since
+    a silent mismatch makes every row look fresh forever.
     """
-    return f"{start}/{end}"
+    start, end, config, group, paramset = ident
+    return f"{start}/{end}/{config}/{group}/{paramset}"
 
 
 def _ts(value) -> str:
@@ -99,7 +104,10 @@ class SpikeTrains(dj.Computed):
         window = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
         insertion = {k: key[k] for k in _INSERTION}
 
-        block_chunks, block_units, block_starts = _covering_blocks(insertion, window)
+        sortings = _covering_sortings(insertion, window)
+        block_chunks = {i: v["chunks"] for i, v in sortings.items()}
+        block_units = {i: v["units"] for i, v in sortings.items()}
+        block_starts = {i: v["bounds"][0] for i, v in sortings.items()}
         if not block_units:
             # populate() retries this key every run, so a silent skip would hide
             # forever. Say it once and move on.
@@ -112,7 +120,8 @@ class SpikeTrains(dj.Computed):
             logger.warning(f"SpikeTrains: covering blocks found no units for {key}, skipping")
             return
 
-        spikes_by_unit, counts_by_unit_block = _fetch_spikes(insertion, window, block_starts)
+        bounds = {v["bounds"] for v in sortings.values()}
+        spikes_by_unit, counts_by_unit_block = _fetch_spikes(insertion, window, bounds)
 
         roster = sorted(per_unit)
         data, covered = {}, []
@@ -145,7 +154,7 @@ class SpikeTrains(dj.Computed):
                 "n_spikes": n_spikes,
                 "coverage_frac": covered_total / chunk_seconds,
                 "n_partial_units": int(sum(c < covered_total for c in covered)),
-                "source_blocks": sorted(_block_tag(s, e) for s, e in block_starts),
+                "source_blocks": sorted(_block_tag(i) for i in sortings),
                 "spikes": tsgroup,
             }
         )
@@ -173,8 +182,8 @@ class SpikeTrains(dj.Computed):
         for row in rows.to_dicts():
             insertion = {k: row[k] for k in _INSERTION}
             window = (row["chunk_start"], row["chunk_end"])
-            _, block_units, _ = _covering_blocks(insertion, window)
-            if sorted(_block_tag(s, e) for s, e in block_units) != list(row["source_blocks"]):
+            sortings = _covering_sortings(insertion, window)
+            if sorted(_block_tag(i) for i in sortings) != list(row["source_blocks"]):
                 stale.append({k: row[k] for k in cls.primary_key})
         return stale
 
@@ -297,32 +306,55 @@ class SpikeTrains(dj.Computed):
         return nap.TsGroup(data, time_support=merged, metadata=metadata)
 
 
-def _covering_blocks(insertion: dict, window: tuple) -> tuple[dict, dict, dict]:
-    """Blocks overlapping ``window``: the chunks each covers, the units each found.
+def _covering_sortings(insertion: dict, window: tuple) -> dict:
+    """Every matched sorting overlapping ``window``, keyed by its real identity.
 
-    Only blocks ``UnitMatching`` has run for. An unmatched block brings no unit
+    A sorting is a block *and* an electrode group *and* a parameter set —
+    ``UnitMatching``'s own key. Keying on the block bounds alone silently drops
+    the second sorting of a block, and the spikes it found then have no unit to
+    belong to.
+
+    Only sortings ``UnitMatching`` has run for: an unmatched one brings no unit
     identities, so counting its coverage would credit time to nobody.
     """
     overlap = f'block_start < "{_ts(window[1])}" AND block_end > "{_ts(window[0])}"'
-    blocks = (ephys.EphysBlock * spike_sorting.UnitMatching & insertion & overlap).to_dicts()
+    rows = (ephys.EphysBlock * spike_sorting.UnitMatching & insertion & overlap).to_dicts()
 
-    block_chunks, block_units, block_starts = {}, {}, {}
-    for block in blocks:
-        # Two blocks can share a start, so block_start alone would silently merge
-        # them. EphysBlock's key is (insertion, block_start, block_end).
-        ident = (block["block_start"], block["block_end"])
-        block_key = {k: block[k] for k in (*insertion, "block_start", "block_end")}
+    sortings = {}
+    for row in rows:
+        bounds = (row["block_start"], row["block_end"])
+        ident = (*bounds, row["electrode_config_name"], row["electrode_group"], row["paramset_id"])
+        block_key = {k: row[k] for k in (*insertion, "block_start", "block_end")}
         chunks = (ephys.EphysBlockInfo.Chunk * ephys.EphysChunk & block_key).to_dicts()
-        # EphysBlockInfo links the chunk containing each bound whole, but the
-        # sorting only ran inside the block, so credit only the overlap.
-        block_chunks[ident] = intervals.clip([(c["chunk_start"], c["chunk_end"]) for c in chunks], ident)
-        units = (spike_sorting.UnitMatching.Unit & block).to_arrays("global_unit")
-        block_units[ident] = {int(u) for u in np.atleast_1d(units)}
-        block_starts[ident] = block["block_start"]
-    return block_chunks, block_units, block_starts
+        group_key = {k: row[k] for k in ("probe_type", "electrode_config_name", "electrode_group")}
+        sortings[ident] = {
+            "bounds": bounds,
+            # EphysBlockInfo links the chunk containing each bound whole, but the
+            # sorting only ran inside the block, so credit only the overlap.
+            "chunks": intervals.clip([(c["chunk_start"], c["chunk_end"]) for c in chunks], bounds),
+            "units": {
+                int(u)
+                for u in np.atleast_1d((spike_sorting.UnitMatching.Unit & row).to_arrays("global_unit"))
+            },
+            "config": row["electrode_config_name"],
+            "group": row["electrode_group"],
+            "electrodes": frozenset(
+                int(e)
+                for e in np.atleast_1d(
+                    (spike_sorting.ElectrodeGroup.Electrode & group_key).to_arrays("electrode")
+                )
+            ),
+        }
+
+    _assert_no_double_counting(sortings)
+    _assert_one_config_per_unit(
+        {i: s["config"] for i, s in sortings.items()},
+        {i: s["units"] for i, s in sortings.items()},
+    )
+    return sortings
 
 
-def _fetch_spikes(insertion: dict, window: tuple, block_starts: dict) -> tuple[dict, dict]:
+def _fetch_spikes(insertion: dict, window: tuple, bounds: set) -> tuple[dict, dict]:
     """Spike times per unit inside ``window``, and how many came from each block.
 
     The counts feed ``_most_spikes_wins``, which picks whose metadata wins when
@@ -332,7 +364,7 @@ def _fetch_spikes(insertion: dict, window: tuple, block_starts: dict) -> tuple[d
     rows = (
         spike_sorting.UnitMatching.Spikes
         & insertion
-        & [{"block_start": start, "block_end": end} for start, end in block_starts]
+        & [{"block_start": start, "block_end": end} for start, end in bounds]
     ).to_dicts()
 
     by_unit: dict[int, list] = {}
@@ -345,9 +377,84 @@ def _fetch_spikes(insertion: dict, window: tuple, block_starts: dict) -> tuple[d
         unit = int(row["global_unit"])
         by_unit.setdefault(unit, []).append(kept)
         counts.setdefault(unit, {})
-        ident = (row["block_start"], row["block_end"])
+        # Same identity _covering_sortings uses, so the metadata winner resolves
+        # per sorting rather than per block.
+        ident = (
+            row["block_start"],
+            row["block_end"],
+            row["electrode_config_name"],
+            row["electrode_group"],
+            row["paramset_id"],
+        )
         counts[unit][ident] = counts[unit].get(ident, 0) + len(kept)
     return {u: np.sort(np.concatenate(v)) for u, v in by_unit.items()}, counts
+
+
+def _assert_no_double_counting(sortings: dict) -> None:
+    """Refuse a chunk whose contributing sortings would find the same neuron twice.
+
+    Two sortings over disjoint electrodes find different neurons and both belong
+    in the roster. Two that share electrodes find the *same* neuron twice, and
+    ``UnitMatching`` cannot merge them — it compares a block against other blocks,
+    never against itself — so they arrive as two global units and the chunk
+    double-counts.
+
+    Only the first check is provable from the identity. The second needs
+    ``ElectrodeGroup.Electrode``, which nothing in the pipeline populates today,
+    so it warns rather than passing silently when the sets are missing.
+    """
+    seen: dict[tuple, str] = {}
+    for start, end, config, group, paramset in sortings:
+        slot = (start, end, config, group)
+        if slot in seen:
+            raise ValueError(
+                f"block {start} group {group!r} is sorted under two parameter sets "
+                f"({seen[slot]!r} and {paramset!r}); the same neurons are detected twice."
+            )
+        seen[slot] = paramset
+
+    known = {i: v["electrodes"] for i, v in sortings.items() if v["electrodes"]}
+    for a, b in itertools.combinations(sorted(known), 2):
+        shared = known[a] & known[b]
+        if shared:
+            raise ValueError(
+                f"two sortings covering this chunk read the same {len(shared)} electrodes: "
+                f"{a} and {b}. The same neuron would be counted once per sorting."
+            )
+
+    if len(sortings) > 1 and len(known) < len(sortings):
+        warnings.warn(
+            f"{len(sortings)} sortings cover this chunk but ElectrodeGroup.Electrode is "
+            "empty for some, so electrode overlap between them could not be checked.",
+            stacklevel=3,
+        )
+
+
+def _assert_one_config_per_unit(configs: dict, units: dict) -> None:
+    """Refuse a chunk where one global unit appears under two electrode configs.
+
+    A config change alone is fine: the units are different, coverage is already
+    per-unit, and ``n_partial_units`` flags it. What is not fine is the same unit
+    under both — ``GlobalUnit`` records one physical peak electrode, and the other
+    config may never have recorded it.
+    """
+    if len(set(configs.values())) < 2:
+        return
+    by_config: dict[str, set] = defaultdict(set)
+    for ident, name in configs.items():
+        by_config[name] |= units.get(ident, set())
+    shared = set.intersection(*by_config.values()) if len(by_config) > 1 else set()
+    if shared:
+        raise ValueError(
+            f"units {sorted(shared)[:5]} appear under more than one electrode config "
+            f"({sorted(by_config)}) in this chunk. Their peak electrode is recorded "
+            "once and may not have been live under both."
+        )
+    warnings.warn(
+        f"chunk spans electrode configs {sorted(by_config)}; no unit is shared, so "
+        "coverage is per-config and source_blocks records which.",
+        stacklevel=3,
+    )
 
 
 def _most_spikes_wins(counts: dict, tiebreak: dict | None = None):
