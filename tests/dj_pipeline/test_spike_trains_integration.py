@@ -87,6 +87,29 @@ class TestKeySource:
                 "the match is being applied per insertion rather than per chunk"
             )
 
+    def test_a_block_sorted_twice_is_refused(self, spike_trains_scenario):
+        """Test that a second sorting of one block stops the chunk rather than doubling it.
+
+        The duplicate is removed again in the same test: every later test in this
+        module asserts against a scenario with one sorting per block.
+        """
+        from spike_train_factories import add_duplicate_sorting
+
+        from aeon.dj_pipeline import processed_ephys, spike_sorting
+
+        add_duplicate_sorting(spike_trains_scenario["experiment_name"])
+        key = {
+            "experiment_name": spike_trains_scenario["experiment_name"],
+            "chunk_start": spike_trains_scenario["covered_chunk_starts"][0],
+            **{k: spike_trains_scenario[k] for k in ("subject", "insertion_number")},
+        }
+        try:
+            with pytest.raises(ValueError, match="two parameter sets"):
+                processed_ephys.SpikeTrains().make(key)
+        finally:
+            (spike_sorting.SortingTask & {"paramset_id": "synthetic-alt"}).delete(prompt=False)
+            (spike_sorting.SortingParamSet & {"paramset_id": "synthetic-alt"}).delete(prompt=False)
+
 
 @pytest.fixture(scope="module")
 def populated(spike_trains_scenario):

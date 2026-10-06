@@ -458,3 +458,61 @@ def add_late_block(experiment_name):
         skip_duplicates=True,
         allow_direct_insert=True,
     )
+
+
+def add_duplicate_sorting(experiment_name):
+    """Sort block A a second time under a different parameter set.
+
+    The same electrodes sorted twice finds the same neurons twice, and
+    ``UnitMatching`` cannot merge them because it compares a block against other
+    blocks and never against itself. ``SpikeTrains`` must refuse the chunk rather
+    than double-count it.
+    """
+    from datetime import datetime
+
+    from aeon.dj_pipeline import spike_sorting
+
+    insertion = {"experiment_name": experiment_name, "subject": SUBJECT, "insertion_number": 1}
+    start, end = BLOCKS["A"]["window"]
+    now = datetime.now()
+    second = "synthetic-alt"
+
+    spike_sorting.SortingParamSet.insert1(
+        {"paramset_id": second, "sorting_method": "kilosort4", "params": {"alt": True}},
+        skip_duplicates=True,
+    )
+    task = {
+        **insertion,
+        "block_start": start,
+        "block_end": end,
+        "probe_type": PROBE_TYPE,
+        "electrode_config_name": CONFIG_NAME,
+        "electrode_group": "shank0",  # same electrodes as the original sorting
+        "paramset_id": second,
+    }
+    spike_sorting.SortingTask.insert1(task, skip_duplicates=True)
+    for table in (
+        spike_sorting.PreProcessing,
+        spike_sorting.SpikeSorting,
+        spike_sorting.PostProcessing,
+    ):
+        row = {**task, "execution_time": now, "execution_duration": 0.0}
+        if table is spike_sorting.PreProcessing:
+            row["sorting_output_dir"] = "synthetic/A-alt"
+        table.insert1(row, skip_duplicates=True, allow_direct_insert=True)
+    spike_sorting.SortedSpikes.insert1(
+        {**task, "execution_time": now, "execution_duration": 0.0, "curation_id": -1},
+        skip_duplicates=True,
+        allow_direct_insert=True,
+    )
+    spike_sorting.SyncedSpikes.insert1(task, skip_duplicates=True, allow_direct_insert=True)
+    spike_sorting.UnitMatching.insert1(
+        {
+            **task,
+            "matching_paramset_id": MATCHING_PARAMSET,
+            "execution_time": now,
+            "execution_duration": 0.0,
+        },
+        skip_duplicates=True,
+        allow_direct_insert=True,
+    )

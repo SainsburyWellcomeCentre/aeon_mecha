@@ -18,7 +18,7 @@ import itertools
 import warnings
 from collections import defaultdict
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import datajoint as dj
 import numpy as np
@@ -160,7 +160,7 @@ class SpikeTrains(dj.Computed):
         )
 
     @classmethod
-    def stale_chunks(cls, restriction=True) -> list[dict]:
+    def stale_chunks(cls, restriction: Any = True) -> list[dict]:
         """Find rows whose sorting has changed since they were written.
 
         Nothing invalidates this table for you, so run this after re-curating, or
