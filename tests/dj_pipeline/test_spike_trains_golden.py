@@ -162,4 +162,5 @@ class TestGoldenSpikeTrains:
         so a false positive on untouched data would make it useless.
         """
         module = golden_spike_trains["module"]
-        assert module.SpikeTrains.stale_chunks() == []
+        scoped = {"experiment_name": golden_spike_trains["exp_name"]}
+        assert module.SpikeTrains.stale_chunks(scoped) == []
