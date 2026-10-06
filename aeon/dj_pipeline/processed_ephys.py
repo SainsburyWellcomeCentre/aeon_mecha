@@ -192,10 +192,10 @@ class SpikeTrains(dj.Computed):
         sorted for only part of its chunk; divide by ``covered_seconds`` in that
         case, because ``TsGroup.rate`` will use the wrong denominator.
 
-        One caveat at the edges: a chunk the window only partly covers still
-        contributes its whole ``covered_seconds``. Per-unit coverage is not stored
-        per interval, so the fraction cannot be recovered. Rates over a span whose
-        ends cut chunks are therefore slightly conservative.
+        At the edges, a chunk the window only partly covers contributes its
+        ``covered_seconds`` scaled by the fraction kept. Per-unit coverage is not
+        stored per interval, so that assumes a unit's coverage is spread evenly
+        through the chunk's — close, not exact.
 
         Size the window before you ask for it. A probe-hour is roughly 115 MB at
         Neuropixels rates, so a day is about 2.7 GB and a week about 19 GB. pynapple
@@ -216,7 +216,10 @@ class SpikeTrains(dj.Computed):
         if not rows:
             raise ValueError(f"no SpikeTrains rows for {insertion} in [{start}, {end})")
 
-        if not allow_stale and cls.stale_chunks([insertion, overlapping]):
+        # A list restriction is an OR in DataJoint, so pass the exact keys already
+        # in hand: "any of these rows", which is what the check means.
+        span_keys = [{k: r[k] for k in cls.primary_key} for r in rows]
+        if not allow_stale and cls.stale_chunks(span_keys):
             raise ValueError("span covers stale rows; delete and repopulate, or pass allow_stale=True")
 
         partial = [r["chunk_start"] for r in rows if r["n_partial_units"]]
@@ -240,11 +243,16 @@ class SpikeTrains(dj.Computed):
             kept = tsgroup.time_support.intersect(window)
             restricted = tsgroup.restrict(window)
             seconds = restricted.get_info("covered_seconds")
+            # A window that cuts a chunk keeps only part of its coverage. Scale by
+            # the fraction kept: per-unit coverage is not stored per interval, so
+            # this assumes a unit's coverage is spread evenly through the chunk's.
+            whole = float(tsgroup.time_support.tot_length())
+            frac = (float(kept.tot_length()) / whole) if whole else 0.0
             extras = [c for c in restricted.metadata_columns if c not in ("covered_seconds", "rate")]
             for unit in restricted.index:
                 u = int(unit)
                 times.setdefault(u, []).append(restricted[unit].t)
-                covered[u] = covered.get(u, 0.0) + float(seconds[unit])
+                covered[u] = covered.get(u, 0.0) + float(seconds[unit]) * frac
                 # Chunks can disagree about a unit. Most spikes wins, ties to the
                 # earliest chunk — the rule _owning_block applies to blocks below.
                 # Compare the datetime, never timestamp(): it reads a naive value
@@ -262,6 +270,12 @@ class SpikeTrains(dj.Computed):
         merged = nap.IntervalSet(start=[s for s, _ in spans], end=[e for _, e in spans])
         extra_cols = {c for u in roster for c in carried[u] if c != "rank"}
         metadata = {"covered_seconds": np.array([covered[u] for u in roster])}
+        missing = {u for u in roster for c in extra_cols if c not in carried[u]}
+        if missing:
+            raise ValueError(
+                f"chunks disagree on metadata columns for units {sorted(missing)}; "
+                "repopulate the span so every row carries the same set"
+            )
         metadata |= {c: np.array([carried[u][c] for u in roster]) for c in sorted(extra_cols)}
         return nap.TsGroup(data, time_support=merged, metadata=metadata)
 
@@ -330,7 +344,9 @@ def _owning_block(spike_counts_by_block: dict, block_starts: dict):
     # datetimes directly keeps the machine's timezone out of it entirely.
     return min(
         spike_counts_by_block,
-        key=lambda block: (-spike_counts_by_block[block], block_starts[block]),
+        # block_starts alone can tie: _covering_blocks keys on (start, end), so two
+        # blocks may share a start. Fall through to the ident itself.
+        key=lambda block: (-spike_counts_by_block[block], block_starts[block], block),
     )
 
 

@@ -74,10 +74,13 @@ class TestKeySource:
         scoped = {"experiment_name": spike_trains_scenario["experiment_name"]}
         for key in (processed_ephys.SpikeTrains().key_source & scoped).to_dicts():
             window = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+            # key_source guarantees a matched ephys *chunk* overlaps, not a matched
+            # block: EphysBlockInfo links the chunk containing each bound whole, so
+            # a chunk can extend past its block and still be legitimate here.
             matched = (
-                ephys.EphysBlock * spike_sorting.UnitMatching
+                (ephys.EphysChunk & (spike_sorting.UnitMatching * ephys.EphysBlockInfo.Chunk).proj())
                 & {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
-                & f'block_start < "{window[1]}" AND block_end > "{window[0]}"'
+                & (f'chunk_start < "{window[1]}" AND chunk_end > "{window[0]}"')
             )
             assert matched, (
                 f"key_source yielded {key['chunk_start']}, which no matched block covers; "
@@ -201,6 +204,13 @@ class TestStalenessAndFetchSpan:
         stale = processed_ephys.SpikeTrains.stale_chunks(mine)
         assert stale, "a block matched after the row was written must make it stale"
 
+        # A span that excludes the stale chunk must still read. Restricting the
+        # scan with a list makes it an OR in DataJoint, which would block this.
+        later = populated["covered_chunk_starts"][1]
+        processed_ephys.SpikeTrains.fetch_span(
+            **populated["insertion_key"], start=later, end=populated["span_end"]
+        )
+
         # While a stale row exists, fetch_span must refuse — that guard is the only
         # thing stopping someone analysing a window whose sorting has moved on.
         span = {
@@ -293,8 +303,33 @@ class TestStalenessAndFetchSpan:
             )
 
         assert {"covered_seconds", "unit_quality", "electrode", "shank"} <= set(tsgroup.metadata_columns)
-        good = tsgroup[tsgroup.unit_quality == populated["owning_block_quality"]]
-        assert len(good.index) >= 1
+        # Unit 1 is the only cross-block unit, so it is the only one whose label
+        # depends on the rule. Assert on it, or an inverted rule still passes.
+        assert (
+            tsgroup.get_info("unit_quality")[populated["cross_block_unit"]]
+            == (populated["owning_block_quality"])
+        )
+        assert populated["owning_block_quality"] != populated["losing_block_quality"]
+
+    def test_covered_seconds_never_exceeds_the_span(self, populated):
+        """Test that a unit is not reported as observed for longer than the window.
+
+        A chunk the window only partly covers contributes its whole stored
+        covered_seconds, so a one-minute span inside an hour reports 3600 s and
+        every rate in it comes out 60x low.
+        """
+        from datetime import timedelta
+
+        from aeon.dj_pipeline import processed_ephys
+
+        start = populated["covered_chunk_starts"][0] + timedelta(minutes=30)
+        end = start + timedelta(minutes=1)
+        tsgroup = processed_ephys.SpikeTrains.fetch_span(**populated["insertion_key"], start=start, end=end)
+
+        spanned = (end - start).total_seconds()
+        covered = tsgroup.get_info("covered_seconds")
+        worst = max(float(covered[u]) for u in tsgroup.index)
+        assert worst <= spanned, f"a unit reports {worst}s of coverage in a {spanned}s window"
 
     def test_fetch_span_keeps_the_ephys_gap(self, populated):
         """Test that a gap inside the span survives into the returned time_support.
