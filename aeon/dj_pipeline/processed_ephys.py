@@ -69,9 +69,10 @@ class SpikeTrains(dj.Computed):
         """
         # Renaming the ephys bounds is load-bearing: a surviving `chunk_start`
         # carries ephys lineage, and populate()'s antijoin is then refused.
-        matched = ephys.EphysChunk.proj(eph_start="chunk_start", eph_end="chunk_end") & (
-            spike_sorting.UnitMatching * ephys.EphysBlockInfo.Chunk
-        ).proj()
+        matched = (
+            ephys.EphysChunk.proj(eph_start="chunk_start", eph_end="chunk_end")
+            & (spike_sorting.UnitMatching * ephys.EphysBlockInfo.Chunk).proj()
+        )
         overlapping = (acquisition.Chunk * matched) & "eph_start < chunk_end AND eph_end > chunk_start"
         return super().key_source & overlapping
 
@@ -151,9 +152,7 @@ class SpikeTrains(dj.Computed):
         ``restriction`` and check one experiment or insertion when you can.
         """
         # Fetch every window in one join instead of one lookup per row.
-        rows = (cls() & restriction).proj("source_blocks") * acquisition.Chunk.proj(
-            "chunk_end"
-        )
+        rows = (cls() & restriction).proj("source_blocks") * acquisition.Chunk.proj("chunk_end")
         stale = []
         for row in rows.to_dicts():
             insertion = {k: row[k] for k in ("experiment_name", "subject", "insertion_number")}
@@ -226,19 +225,25 @@ class SpikeTrains(dj.Computed):
         times: dict[int, list] = {}
         covered: dict[int, float] = {}
         support = []
+        window = nap.IntervalSet(start=lo, end=hi)
         for row in sorted(rows, key=lambda r: r["chunk_start"]):
             tsgroup = row["spikes"]
-            window = nap.IntervalSet(start=lo, end=hi)
+            # restrict() overwrites time_support with the window instead of
+            # intersecting, so take the real coverage before it is lost.
+            kept = tsgroup.time_support.intersect(window)
             restricted = tsgroup.restrict(window)
             seconds = restricted.get_info("covered_seconds")
             for unit in restricted.index:
                 times.setdefault(int(unit), []).append(restricted[unit].t)
                 covered[int(unit)] = covered.get(int(unit), 0.0) + float(seconds[unit])
-            support.extend(zip(restricted.time_support.start, restricted.time_support.end, strict=True))
+            support.extend(zip(kept.start, kept.end, strict=True))
 
         roster = sorted(times)
         data = {u: nap.Ts(t=np.sort(np.concatenate(times[u]))) for u in roster}
-        merged = nap.IntervalSet(start=[s for s, _ in support], end=[e for _, e in support])
+        # Merge touching intervals ourselves: pynapple shaves 1e-6 s off the earlier
+        # end, which at HARP magnitude is the float64 limit and can drop a spike.
+        spans = intervals.merge(sorted(support))
+        merged = nap.IntervalSet(start=[s for s, _ in spans], end=[e for _, e in spans])
         return nap.TsGroup(
             data,
             time_support=merged,

@@ -195,6 +195,30 @@ class TestStalenessAndFetchSpan:
         processed_ephys.SpikeTrains.populate(mine, suppress_errors=False)
         assert not processed_ephys.SpikeTrains.stale_chunks(mine)
 
+    def test_fetch_span_keeps_the_ephys_gap(self, populated):
+        """Test that a gap inside the span survives into the returned time_support.
+
+        The 09:00 chunk has an ephys gap at 09:20-09:40. pynapple's restrict()
+        replaces time_support with the restriction window rather than intersecting
+        it, so rebuilding the span support from restricted.time_support reports a
+        solid hour and every firing rate in it comes out low.
+        """
+        from aeon.dj_pipeline import processed_ephys
+
+        with pytest.warns(UserWarning, match="covered_seconds"):
+            tsgroup = processed_ephys.SpikeTrains.fetch_span(
+                **populated["insertion_key"],
+                start=populated["covered_chunk_starts"][0],
+                end=populated["span_end"],
+            )
+
+        total = float(tsgroup.time_support.tot_length())
+        spanned = (populated["span_end"] - populated["covered_chunk_starts"][0]).total_seconds()
+        assert total < spanned, (
+            f"time_support covers {total}s of a {spanned}s span; the 09:20-09:40 ephys gap was erased"
+        )
+        assert len(tsgroup.time_support) >= 2, "the gap should split the support"
+
     def test_fetch_span_concatenates_and_sums_covered_seconds(self, populated):
         """Test that a span returns one object and that the denominator composes.
 
