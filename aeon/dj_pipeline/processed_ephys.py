@@ -232,6 +232,7 @@ class SpikeTrains(dj.Computed):
         lo, hi = io_api.to_seconds(start), io_api.to_seconds(end)
         times: dict[int, list] = {}
         covered: dict[int, float] = {}
+        carried: dict[int, dict] = {}
         support = []
         window = nap.IntervalSet(start=lo, end=hi)
         for row in sorted(rows, key=lambda r: r["chunk_start"]):
@@ -241,9 +242,18 @@ class SpikeTrains(dj.Computed):
             kept = tsgroup.time_support.intersect(window)
             restricted = tsgroup.restrict(window)
             seconds = restricted.get_info("covered_seconds")
+            extras = [c for c in restricted.metadata_columns if c not in ("covered_seconds", "rate")]
             for unit in restricted.index:
-                times.setdefault(int(unit), []).append(restricted[unit].t)
-                covered[int(unit)] = covered.get(int(unit), 0.0) + float(seconds[unit])
+                u = int(unit)
+                times.setdefault(u, []).append(restricted[unit].t)
+                covered[u] = covered.get(u, 0.0) + float(seconds[unit])
+                # Chunks can disagree about a unit. Most spikes wins, ties to the
+                # earliest chunk — the rule _owning_block applies to blocks below.
+                # Compare the datetime, never timestamp(): it reads a naive value
+                # in the machine's local timezone.
+                rank = (-len(restricted[unit]), row["chunk_start"])
+                if u not in carried or rank < carried[u]["rank"]:
+                    carried[u] = {"rank": rank} | {c: restricted.get_info(c)[unit] for c in extras}
             support.extend(zip(kept.start, kept.end, strict=True))
 
         roster = sorted(times)
@@ -252,11 +262,10 @@ class SpikeTrains(dj.Computed):
         # end, which at HARP magnitude is the float64 limit and can drop a spike.
         spans = intervals.merge(sorted(support))
         merged = nap.IntervalSet(start=[s for s, _ in spans], end=[e for _, e in spans])
-        return nap.TsGroup(
-            data,
-            time_support=merged,
-            metadata={"covered_seconds": np.array([covered[u] for u in roster])},
-        )
+        extra_cols = {c for u in roster for c in carried[u] if c != "rank"}
+        metadata = {"covered_seconds": np.array([covered[u] for u in roster])}
+        metadata |= {c: np.array([carried[u][c] for u in roster]) for c in sorted(extra_cols)}
+        return nap.TsGroup(data, time_support=merged, metadata=metadata)
 
 
 def _covering_blocks(insertion: dict, window: tuple) -> tuple[dict, dict, dict]:

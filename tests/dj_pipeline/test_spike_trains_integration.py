@@ -251,6 +251,26 @@ class TestStalenessAndFetchSpan:
             "(the whole span minus what precedes the cut)"
         )
 
+    def test_fetch_span_carries_unit_metadata(self, populated):
+        """Test that the span object supports the filtering its docstring shows.
+
+        fetch_span's own example is `tg[tg.unit_quality == "good"]`; dropping the
+        metadata makes that a KeyError, and quality, electrode and shank are the
+        columns an analysis actually filters on.
+        """
+        from aeon.dj_pipeline import processed_ephys
+
+        with pytest.warns(UserWarning, match="covered_seconds"):
+            tsgroup = processed_ephys.SpikeTrains.fetch_span(
+                **populated["insertion_key"],
+                start=populated["covered_chunk_starts"][0],
+                end=populated["span_end"],
+            )
+
+        assert {"covered_seconds", "unit_quality", "electrode", "shank"} <= set(tsgroup.metadata_columns)
+        good = tsgroup[tsgroup.unit_quality == populated["owning_block_quality"]]
+        assert len(good.index) >= 1
+
     def test_fetch_span_keeps_the_ephys_gap(self, populated):
         """Test that a gap inside the span survives into the returned time_support.
 
