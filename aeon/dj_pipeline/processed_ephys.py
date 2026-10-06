@@ -273,7 +273,9 @@ def _covering_blocks(insertion: dict, window: tuple) -> tuple[dict, dict, dict]:
         ident = (block["block_start"], block["block_end"])
         block_key = {k: block[k] for k in (*insertion, "block_start", "block_end")}
         chunks = (ephys.EphysBlockInfo.Chunk * ephys.EphysChunk & block_key).to_dicts()
-        block_chunks[ident] = [(c["chunk_start"], c["chunk_end"]) for c in chunks]
+        # EphysBlockInfo links the chunk containing each bound whole, but the
+        # sorting only ran inside the block, so credit only the overlap.
+        block_chunks[ident] = intervals.clip([(c["chunk_start"], c["chunk_end"]) for c in chunks], ident)
         units = (spike_sorting.UnitMatching.Unit & block).to_arrays("global_unit")
         block_units[ident] = {int(u) for u in np.atleast_1d(units)}
         block_starts[ident] = block["block_start"]
