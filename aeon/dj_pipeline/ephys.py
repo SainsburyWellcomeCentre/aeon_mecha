@@ -1,6 +1,5 @@
 """DataJoint schema for the ephys pipeline."""
 
-import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -12,19 +11,18 @@ from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import (
     DEVICE_PROBE_TYPE_MAP,
     discover_epoch_probes,
-    find_nearest_window,
     find_or_create_probe_insertion,
     get_probe_id,
     harp_to_naive,
     load_device_channel_map,
     parse_epoch_metadata,
     read_probe_assignments,
-    resolve_harp,
     resolve_raw_dir_and_epochs,
 )
 from aeon.dj_pipeline.utils.ephys_utils import (
     create_probe_type as _create_probe_type,
 )
+from aeon.dj_pipeline.utils.time_utils import compute_chunk_time_model, datetime_formats
 
 schema = dj.Schema(get_schema_name("ephys"))
 logger = dj.logger
@@ -90,6 +88,7 @@ class ProbeInsertion(dj.Manual):
     insertion_number: int32  # unique per (experiment, subject)
     ---
     -> Probe
+    probe_label: varchar(32)  # e.g. ProbeA
     implantation_date=null: datetime(6)
     """
 
@@ -106,25 +105,18 @@ class InsertionTargetArea(dj.Manual):
 @schema
 class EphysEpoch(dj.Manual):
     definition = """
-    # Ephys epoch — peer of acquisition.Epoch. epoch_start is HARP-clock,
-    # observed from harp_start of the first HarpSync CSV in the epoch dir.
+    # Ephys epoch — peer of acquisition.Epoch. epoch_onix_start is observed from
+    # the onix clock to the nearest second - matches the name of the epoch directory.
     -> acquisition.Experiment
-    epoch_start: datetime(6)            # HARP-clock at acquisition start
+    epoch_onix_start: datetime(6)
     ---
     -> [nullable] acquisition.Experiment.Directory
-    epoch_dir='': varchar(255)          # ONIX wall-clock dir name (label only)
+    epoch_dir='': varchar(255)
     """
 
     @classmethod
     def ingest_epochs(cls, experiment_name: str) -> None:
-        """Insert EphysEpoch rows by scanning raw-ephys directories.
-
-        Reads the first HarpSync CSV per epoch dir to get the HARP epoch_start,
-        and look-back-inserts EphysEpochEnd for the previous epoch. Epoch dirs
-        without a parseable HarpSync CSV are skipped (cannot HARP-align).
-        """
-        from aeon.schema.ephys import social_ephys
-
+        """Insert EphysEpoch rows by scanning raw-ephys directories."""
         exp_key = {"experiment_name": experiment_name}
         raw_ephys_dir = acquisition.Experiment.get_data_directory(
             exp_key, directory_type="raw-ephys", as_posix=False
@@ -133,68 +125,33 @@ class EphysEpoch(dj.Manual):
             logger.warning(f"raw-ephys directory not found for {experiment_name}")
             return
 
-        raw_ephys_dir = Path(raw_ephys_dir)
         epoch_dirs = sorted(d for d in raw_ephys_dir.iterdir() if d.is_dir())
-        previous_epoch_start = None
 
         for epoch_dir in epoch_dirs:
-            harp_sync_csvs = sorted(epoch_dir.rglob("*_HarpSync_*.csv"))
-            if not harp_sync_csvs:
-                logger.warning(f"No HarpSync CSV in {epoch_dir.name}; cannot HARP-align. Skipping.")
-                continue
 
-            first_csv = harp_sync_csvs[0]
-            device_name = first_csv.parent.name
-            if device_name not in social_ephys:
-                logger.debug(f"Device '{device_name}' not in social_ephys. Skipping.")
-                continue
-            device_streams = social_ephys[device_name]
-            if "HarpSyncModel" not in device_streams:
-                logger.debug(f"Device '{device_name}' has no HarpSyncModel stream. Skipping.")
-                continue
-            reader = device_streams["HarpSyncModel"]
-            try:
-                first_row = reader.read(first_csv).iloc[0]
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"Failed to read {first_csv}: {e}. Skipping.")
-                continue
-            harp_epoch_start = harp_to_naive(first_row["harp_start"])
+            epoch_dir_name = epoch_dir.name
 
-            # Backfill EphysEpochEnd for the previous epoch
-            if previous_epoch_start is not None:
-                previous_key = {**exp_key, "epoch_start": previous_epoch_start}
-                if (cls & previous_key) and not (EphysEpochEnd & previous_key):
-                    EphysEpochEnd.insert1(
-                        {
-                            **previous_key,
-                            "epoch_end": harp_epoch_start,
-                            "epoch_duration": (harp_epoch_start - previous_epoch_start).total_seconds()
-                            / 3600,
-                        }
-                    )
+            epoch_onix_start = None
+            for datetime_format in datetime_formats:
+                try:
+                    epoch_onix_start = datetime.strptime(epoch_dir_name, datetime_format)
+                    break
+                except ValueError:
+                    continue
+
+            if epoch_onix_start is None:
+                logger.warning(f"Could not extract onix start time from directory {epoch_dir_name}.")
+                continue
 
             cls.insert1(
                 {
                     **exp_key,
-                    "epoch_start": harp_epoch_start,
+                    "epoch_onix_start": epoch_onix_start,
                     "directory_type": "raw-ephys",
                     "epoch_dir": epoch_dir.relative_to(raw_ephys_dir).as_posix(),
                 },
                 skip_duplicates=True,
             )
-
-            previous_epoch_start = harp_epoch_start
-
-
-@schema
-class EphysEpochEnd(dj.Manual):
-    definition = """
-    # End time of an ephys epoch (backfilled by EphysEpoch.ingest_epochs look-back)
-    -> EphysEpoch
-    ---
-    epoch_end: datetime(6)              # HARP-clock at acquisition end
-    epoch_duration: float32             # hours; (epoch_end - epoch_start) / 3600
-    """
 
 
 @schema
@@ -385,14 +342,14 @@ class EphysSyncModel(dj.Manual):
     sync_model: <attach>               # joblib-serialized LinearRegression (onix→harp)
     r2: float32                        # regression fit quality
     n_samples: int32                   # rows in CSV after dropna()
-    unique index (experiment_name, epoch_start, onix_ts_start)
+    unique index (experiment_name, epoch_onix_start, onix_ts_start)
     """
 
     @classmethod
     def ingest(cls, experiment_name: str) -> None:
         """Discover new HarpSync CSVs across all epochs of the experiment and insert sync model rows.
 
-        Idempotent: skips CSVs whose ``(experiment_name, epoch_start, sync_start)``
+        Idempotent: skips CSVs whose ``(experiment_name, epoch_onix_start, sync_start)``
         is already present.
 
         Args:
@@ -439,7 +396,7 @@ class EphysSyncModel(dj.Manual):
 
             existing = cls & {
                 "experiment_name": experiment_name,
-                "epoch_start": epoch_start,
+                "epoch_onix_start": epoch_start,
                 "sync_start": sync_start_dt,
             }
             if existing:
@@ -453,7 +410,7 @@ class EphysSyncModel(dj.Manual):
                 cls.insert1(
                     {
                         "experiment_name": experiment_name,
-                        "epoch_start": epoch_start,
+                        "epoch_onix_start": epoch_start,
                         "sync_start": sync_start_dt,
                         "sync_end": sync_end_dt,
                         "onix_ts_start": int(df_row["clock_start"]),
@@ -471,37 +428,17 @@ class EphysSyncModel(dj.Manual):
 
 @schema
 class EphysChunk(dj.Manual):
-    definition = """  # One ~hour-long ephys recording period
+    definition = """  # Each chunk corresponds to a file containing ephys data
+    # created by the acquisition machine. Usually each chunk is 10 minutes long.
     -> ProbeInsertion
-    chunk_start: datetime(6)               # HARP clock
-    ---
     -> EphysEpoch
-    chunk_end: datetime(6)                 # HARP clock
+    chunk_index: int32
+    ---
+    global_chunk_index: int32
+    arrow_path='': varchar(255)     # the arrow file will be prioritized over binary and clock.
+    binary_path='': varchar(255)
+    clock_path='': varchar(255)
     """
-    # ElectrodeConfig is derivable via EphysEpochConfig.Insertion (joined on
-    # experiment_name + epoch_start + subject + insertion_number).
-
-    class File(dj.Part):
-        definition = """
-        -> master
-        file_name: varchar(128)
-        ---
-        -> acquisition.Experiment.Directory
-        file_path: varchar(255)  # path of the file, relative to the data repository
-        """
-
-    class SyncModel(dj.Part):
-        """Link-only: each EphysChunk references 1+ EphysSyncModel rows.
-
-        The actual model bytes and ONIX bounds live on EphysSyncModel.
-        Multiple link rows are inserted when an AmplifierData_N.bin straddles a
-        HarpSync chunk boundary.
-        """
-
-        definition = """
-        -> master
-        -> EphysSyncModel
-        """
 
     @classmethod
     def ingest_chunks(cls, experiment_name: str) -> None:
@@ -509,7 +446,7 @@ class EphysChunk(dj.Manual):
 
         Discovers ephys binary files across all epochs, resolves each file's
         ProbeInsertion (with subject) via EphysEpochConfig.Insertion, and creates
-        chunk entries with sync models.
+        chunk entries.
 
         Files without a subject-probe mapping (no EphysEpochConfig.Insertion) are
         skipped with a warning.
@@ -517,166 +454,113 @@ class EphysChunk(dj.Manual):
         Args:
             experiment_name: Name of the experiment to process
         """
-        import numpy as np
+        exp_key = {'experiment_name': experiment_name}
 
-        resolved = resolve_raw_dir_and_epochs(experiment_name)
-        if resolved is None:
-            return
-        raw_dir, epoch_dir_to_start = resolved
+        raw_dir_result = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw-ephys", as_posix=True)
 
-        exp_key = {"experiment_name": experiment_name}
+        global_chunk_index = 0
+        for probe_insertion in (ProbeInsertion() & exp_key):
 
-        # {(epoch_start, probe_label): ProbeInsertion key}
-        insertion_lookup: dict[tuple[datetime, str], dict] = {}
-        for entry in (EphysEpochConfig.Insertion & exp_key).to_dicts():
-            insertion_lookup[(entry["epoch_start"], entry["probe_label"])] = {
-                "experiment_name": entry["experiment_name"],
-                "subject": entry["subject"],
-                "insertion_number": entry["insertion_number"],
-            }
+            insertion_number = probe_insertion['insertion_number']
+            probe_name = probe_insertion['probe_label']
+            subject = probe_insertion['subject']
 
-        if not insertion_lookup:
-            logger.warning(
-                f"No EphysEpochConfig.Insertion entries found for {experiment_name}. "
-                "Run EphysEpochConfig.populate() first."
-            )
-            return
+            for epoch in (EphysEpoch & exp_key):
 
-        all_ephys_files = sorted(
-            raw_dir.rglob("*_AmplifierData*.bin"),
-            key=lambda x: x.as_posix(),
+                epoch_onix_start = epoch.get('epoch_onix_start')
+                epoch_dir = epoch.get('epoch_dir')
+
+                absolute_epoch_dir = raw_dir_result / Path(epoch_dir)
+
+                arrow_files_exist=True
+                chunk_files = list(absolute_epoch_dir.rglob(f'*_{probe_name}_AmplifierData_*.arrow'))
+
+                if len(chunk_files) == 0:
+                    arrow_files_exist = False
+                    chunk_files = list(absolute_epoch_dir.rglob(f'*_{probe_name}_AmplifierData_*.bin'))
+
+                if len(chunk_files) == 0:
+                    logger.warning(f'No `.arrow` or `.bin` files found in {absolute_epoch_dir}')
+                    continue
+
+                # Files are created as `..._n.bin` where n is the order of the creation. Sort using n:
+                sorted_files = sorted(chunk_files, key=lambda x: int(x.name.split('_')[-1].split('.')[0]))
+
+                for chunk_file in sorted_files:
+
+                    chunk_index = chunk_file.name.split('_')[-1].split('.')[0]
+
+                    chunk_dict = {
+                        'experiment_name': experiment_name,
+                        'subject': subject,
+                        'insertion_number': insertion_number,
+                        'epoch_onix_start': epoch_onix_start,
+                        'chunk_index': chunk_index,
+                        'global_chunk_index': global_chunk_index,
+                    }
+
+                    if arrow_files_exist:
+                        chunk_dict['arrow_path'] = chunk_file
+                    else:
+                        chunk_dict['binary_path'] = chunk_file.relative_to(raw_dir_result)
+                        clock_path = Path(str(chunk_file).replace('AmplifierData', 'Clock'))
+                        if clock_path.is_file():
+                            # In the arrow format, clock info is part of the arrow file.
+                            # Hence clock files only exist when binary files exist.
+                            chunk_dict['clock_path'] = clock_path.relative_to(raw_dir_result)
+                        else:
+                            logger.warning(f"No clock path found at {clock_path}")
+
+                    EphysChunk.insert1(chunk_dict)
+                    global_chunk_index += 1
+
+
+@schema
+class EphysChunkSyncModel(dj.Computed):
+    definition = """
+    -> EphysChunk
+    ---
+    clock_start: int64
+    clock_end: int64
+    harp_start: int64
+    harp_end: int64
+    n_samples: int64
+    slope: float64
+    intercept: float64
+    """
+
+    def make(self, key):
+        import pandas as pd
+
+        epoch_info = (EphysEpoch & key).to_dicts()[0]
+
+        # find all timestamps
+        ephys_data_path = acquisition.Experiment.get_data_directory({
+            'experiment_name': epoch_info['experiment_name']},
+            directory_type="raw-ephys",
         )
+        absolute_epoch_dir = Path(ephys_data_path) / epoch_info['epoch_dir']
 
-        if not all_ephys_files:
-            logger.info(f"No ephys amplifier files found in {raw_dir}")
+        timestamps_paths = absolute_epoch_dir.rglob("*_HarpSync_*.csv")
+        all_timestamps = pd.concat([pd.read_csv(sorted_path) for sorted_path in timestamps_paths])
+        # If acquisition crashes, the full sync data might not get saved leaving nan values in some columns
+        all_non_nan_timestamps = all_timestamps[~all_timestamps.isna().any(axis=1)]
+        sorted_timestamps = all_non_nan_timestamps.sort_values(by='Seconds')
+
+        chunk = (EphysChunk & key).to_dicts()[0]
+        clock_path = Path(ephys_data_path) / chunk['clock_path']
+
+        model_info = compute_chunk_time_model(clock_path, sorted_timestamps)
+
+        if model_info is None:
+            logger.warning("Could not compute chunk sync model. Likely that entire chunk was outside " \
+            "of computed HarpSync interval.")
             return
 
-        for ephys_file in all_ephys_files:
-            rel_path = ephys_file.relative_to(raw_dir).as_posix()
-
-            if cls.File & exp_key & {"file_path": rel_path}:
-                continue  # already ingested
-
-            # Parse probe_label from filename
-            name_match = re.search(r"_(Probe[A-Z])_AmplifierData", ephys_file.name)
-            if not name_match:
-                logger.warning(f"Cannot parse probe label from {ephys_file.name}. Skipping.")
-                continue
-            probe_label = name_match.group(1)
-
-            # Determine epoch from directory path
-            # File path structure: raw_dir / epoch_dir / device_name / files
-            rel_parts = ephys_file.relative_to(raw_dir).parts
-            # Expect: epoch_dir / device_name / file → 3 parts minimum
-            if len(rel_parts) < 3:
-                logger.warning(f"Unexpected file path structure: {ephys_file}. Skipping.")
-                continue
-            epoch_dir_name = rel_parts[0]
-
-            epoch_start = epoch_dir_to_start.get(epoch_dir_name)
-            if epoch_start is None:
-                logger.warning(
-                    f"Cannot resolve epoch for {ephys_file} "
-                    f"(epoch_dir={epoch_dir_name} not in EphysEpoch or "
-                    f"EphysEpochConfig not yet populated). Skipping."
-                )
-                continue
-
-            # Look up ProbeInsertion via EphysEpochConfig.Insertion
-            insertion_key = insertion_lookup.get((epoch_start, probe_label))
-            if insertion_key is None:
-                logger.warning(
-                    f"Skipping {rel_path}: no subject-probe mapping for {probe_label} "
-                    f"in epoch {epoch_start}. Register via probe_assignments.json or "
-                    f"manual ProbeInsertion insert, then run EphysEpochConfig.populate()."
-                )
-                continue
-
-            # Read ONIX timestamps from the companion Clock binary
-            clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
-            if not clock_file.exists():
-                logger.warning(f"Clock file not found for {ephys_file.name}. Skipping.")
-                continue
-            # Guard before memmap — np.memmap raises ValueError on 0-byte files.
-            if clock_file.stat().st_size < 8:
-                logger.warning(f"Empty/short Clock file for {ephys_file.name}. Skipping.")
-                continue
-            onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
-            first_ts, last_ts = int(onix_ts[0]), int(onix_ts[-1])
-
-            # Fetch + resolve inside a temp download dir so the <attach> sync_model
-            # files DataJoint extracts on fetch are cleaned up (issue #598). Any
-            # model load (inside resolve_harp) must happen before the block exits.
-            with tempfile.TemporaryDirectory() as tmpdir, dj.config.override(download_path=tmpdir):
-                # Link every EphysSyncModel row from the last one starting at or before
-                # first_ts to the last one starting at or before last_ts. A chunk may
-                # start or end outside all rows (1 s gaps between HarpSync files, epoch
-                # start, rows lost at an unclean stop); resolve_harp extrapolates there.
-                epoch_sync_models = EphysSyncModel & {
-                    "experiment_name": experiment_name,
-                    "epoch_start": epoch_start,
-                }
-                all_starts = epoch_sync_models.to_arrays("onix_ts_start", order_by="onix_ts_start")
-                lo = int(all_starts[find_nearest_window(all_starts, first_ts)]) if len(all_starts) else 0
-                matched = (epoch_sync_models & f"onix_ts_start BETWEEN {lo} AND {last_ts}").to_dicts(
-                    order_by="sync_start"
-                )
-                if not matched:  # chunk ends before the first sync row of the epoch
-                    matched = epoch_sync_models.to_dicts(order_by="sync_start", limit=1)
-
-                if not matched:
-                    logger.warning(
-                        f"No EphysSyncModel rows for epoch {epoch_start} "
-                        f"for {ephys_file.name}. Run EphysSyncModel.ingest() first. Skipping."
-                    )
-                    continue
-
-                # Resolve HARP chunk_start / chunk_end via DB-backed sync model.
-                # Use a per-file model cache so both calls share one joblib.load when
-                # matched[0] and matched[-1] are the same SyncModel row.
-                model_cache: dict = {}
-                try:
-                    chunk_start = resolve_harp(matched[0], first_ts, _model_cache=model_cache)
-                    chunk_end = resolve_harp(matched[-1], last_ts, _model_cache=model_cache)
-                except Exception as e:
-                    logger.error(f"Failed to resolve HARP times for {ephys_file}: {e}")
-                    continue
-
-            # ElectrodeConfig already resolved on the Insertion row — read it
-            # directly from insertion_key (built above from EphysEpochConfig.Insertion).
-            chunk_entry = {
-                **insertion_key,
-                "chunk_start": chunk_start,
-                "chunk_end": chunk_end,
-                "epoch_start": epoch_start,
-            }
-            try:
-                with cls.connection.transaction:
-                    cls.insert1(chunk_entry)
-                    cls.File.insert(
-                        [
-                            {
-                                **chunk_entry,
-                                "directory_type": "raw-ephys",
-                                "file_name": f.name,
-                                "file_path": f.relative_to(raw_dir).as_posix(),
-                            }
-                            for f in (ephys_file, clock_file)
-                        ],
-                        ignore_extra_fields=True,
-                    )
-                    cls.SyncModel.insert(
-                        [{**chunk_entry, "sync_start": m["sync_start"]} for m in matched],
-                        ignore_extra_fields=True,
-                    )
-                logger.info(
-                    f"Inserted EphysChunk: {experiment_name} "
-                    f"subject={insertion_key['subject']} "
-                    f"chunk_start={chunk_start}"
-                )
-            except Exception as e:
-                logger.error(f"Failed to insert EphysChunk for {ephys_file}: {e}")
-                continue
+        self.insert1({
+            **key,
+            **model_info
+        })
 
 
 @schema
