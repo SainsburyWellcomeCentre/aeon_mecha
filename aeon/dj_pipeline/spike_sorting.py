@@ -49,14 +49,7 @@ class ElectrodeGroup(dj.Manual):
     electrode_group: varchar(16)  # e.g. 'all', 'shank1', etc.
     ---
     electrode_group_description: varchar(1000)
-    electrode_count: int32
     """
-
-    class Electrode(dj.Part):
-        definition = """  # Individual electrode in the group
-        -> master
-        -> ephys.ElectrodeConfig.Electrode
-        """
 
 
 @schema
@@ -206,37 +199,18 @@ class PreProcessing(dj.Computed):
         recording_file = recording_dir / "si_recording.pkl"
 
         # Load ephys data
-        ephys_files, dir_types = (
-            ephys.EphysChunk.File
-            & (ephys.EphysBlockInfo.Chunk & key)
-            & "file_name LIKE '%AmplifierData%.bin'"
-        ).to_arrays("file_path", "directory_type", order_by="chunk_start")
+        ephys_files = (ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key)).to_arrays(
+            "arrow_path", "binary_path"
+        )
 
         # Channels
-        electrodes_query = (
-            ephys.EphysBlockInfo.Channel
-            * ephys.ElectrodeConfig.Electrode
-            * ElectrodeGroup.Electrode
-            * ephys.ProbeType.Electrode
-            & key
+        electrode_config_path = (ephys.EphysBlockInfo & key).ElectrodeConfig.to_arrays(
+            "electrode_config_path"
         )
-        electrodes_df = electrodes_query.to_pandas().reset_index()
-        electrodes_df.drop(columns=list(key), inplace=True, errors="ignore")
-
-        num_channels = len(ephys.ElectrodeConfig.Electrode & key)
-        # Neuropixels 2.0 constants - TODO: read this from the metadata
-        fs_hz = 30e3
-        gain_to_uV = 3.05176
-        offset_to_uV = -2048 * gain_to_uV
 
         return (
             ephys_files,
-            dir_types,
-            electrodes_df,
-            num_channels,
-            fs_hz,
-            gain_to_uV,
-            offset_to_uV,
+            electrode_config_path,
             output_dir,
             recording_file,
             recording_dir,
@@ -246,12 +220,7 @@ class PreProcessing(dj.Computed):
         self,
         key: dict[str, Any],
         ephys_files: list[str],
-        dir_types: list[str],
-        electrodes_df: pd.DataFrame,
-        num_channels: int,
-        fs_hz: float,
-        gain_to_uV: float,
-        offset_to_uV: float,
+        electrode_config_path: str,
         output_dir: Path,
         recording_file: Path,
         recording_dir: Path,
@@ -264,11 +233,6 @@ class PreProcessing(dj.Computed):
             key: Sorting task key
             ephys_files: List of ephys file paths
             dir_types: Directory types for each file
-            electrodes_df: Electrode configuration dataframe
-            num_channels: Total number of channels
-            fs_hz: Sampling frequency
-            gain_to_uV: Gain conversion factor
-            offset_to_uV: Offset conversion factor
             output_dir: Output directory path
             recording_file: Path to save recording object
             recording_dir: Directory for recording files
@@ -276,66 +240,25 @@ class PreProcessing(dj.Computed):
         Returns:
             Tuple of (output_dir, execution_time, recording_dir)
         """
-        import probeinterface as pi
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
-        import spikeinterface.extractors as se
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
 
-        # Concatenate recordings. Each chunk file is resolved on disk: prefer the
-        # compressed .zarr twin under the processed store, else the raw .bin.
-        si_recs = []
-        for f, d in zip(ephys_files, dir_types, strict=False):
-            ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
-            resolved = resolve_ephys_file(ephys_dir / f)
-            if resolved.suffix == ".zarr":
-                # The compression library writes zarr from a plain read_binary
-                # (no gains), so re-attach the gain/offset metadata the .bin
-                # branch sets, to keep the two branches equivalent.
-                si_rec = si.load(resolved)
-                si_rec.set_channel_gains(gain_to_uV)
-                si_rec.set_channel_offsets(offset_to_uV)
-            else:
-                si_rec = se.read_binary(
-                    resolved,
-                    sampling_frequency=fs_hz,
-                    dtype=np.uint16,
-                    num_channels=num_channels,
-                    gain_to_uV=gain_to_uV,
-                    offset_to_uV=offset_to_uV,
-                )
-            si_recs.append(si_rec)
-        si_recording = si.concatenate_recordings(si_recs)
+        from .utils.spike_sorting_utils import load_recording
 
-        # Select channels based on the electrode group
-        in_use_chn_ids = si_recording.channel_ids[electrodes_df.channel_idx.values]
-        chn2remove = set(si_recording.channel_ids) - set(in_use_chn_ids)
-        si_recording = si_recording.remove_channels(list(chn2remove))
-        in_use_chn_ind = [si_recording.channel_ids.tolist().index(chn_id) for chn_id in in_use_chn_ids]
-        electrodes_df["channel_idx"] = in_use_chn_ind
-
-        # Create SI probe object
-        probe_df = electrodes_df.copy()
-        probe_df.rename(
-            columns={
-                "electrode": "contact_ids",
-                "shank": "shank_ids",
-                "x_coord": "x",
-                "y_coord": "y",
-            },
-            inplace=True,
+        root_directory = acquisition.Experiment.get_data_directory(key, directory_type=d)
+        si_recording = load_recording(
+            root_directory,
+            ephys_files[1, :],
+            electrode_config_path,
+            file_type="arrow",
+            group_key="",
+            group_value="",
         )
-        probe_df["contact_shapes"] = "square"
-        probe_df["width"] = 12
-        si_probe = pi.Probe.from_dataframe(probe_df)
-
-        si_probe.set_device_channel_indices(electrodes_df["channel_idx"].values)
-        si_recording.set_probe(probe=si_probe, in_place=True)
 
         # Run preprocessing and save results to output folder
-        si_recording = si.preprocessing.unsigned_to_signed(si_recording)
         si_recording = ephys_preproc(si_recording)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
@@ -467,8 +390,8 @@ class SpikeSorting(dj.Computed):
                 "expandable_segments:True,garbage_collection_threshold:0.6"
             )
 
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
 
         execution_time = datetime.now(UTC)
         sorter_name = sorting_method.replace(".", "_")
@@ -618,8 +541,8 @@ class PostProcessing(dj.Computed):
         Returns:
             Tuple of (analyzer_output_dir, execution_time, execution_duration)
         """
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
 
         execution_time = datetime.now(UTC)
 
@@ -709,8 +632,8 @@ class SIExport(dj.Computed):
 
     def make(self, key):
         """Export spike sorting results to standardised formats for downstream analysis and sharing."""
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
 
         execution_time = datetime.now(UTC)
 
@@ -773,7 +696,6 @@ class SortedSpikes(dj.Imported):
         -> master
         unit: int32
         ---
-        -> ephys.ElectrodeConfig.Electrode  # electrode with highest waveform amplitude for this unit
         -> UnitQuality  # Kilosort's KSLabel for raw sorting; replaced by the curator's manual quality
                         # label once an official curation is applied (single field, per the spec)
         spike_count: int32       # how many spikes in this recording for this unit
@@ -793,22 +715,13 @@ class SortedSpikes(dj.Imported):
 
     def make(self, key):
         """Extract units, spike times, and electrodes from sorting output; sync to HARP clock."""
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
 
         execution_time = datetime.now(UTC)
 
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
-
-        # Get channel and electrode-site mapping
-        electrode_query = (
-            ephys.EphysBlockInfo.Channel.proj(..., "-channel_name")
-            * ephys.ElectrodeConfig.Electrode
-            * ElectrodeGroup.Electrode
-            * ephys.ProbeType.Electrode.proj("electrode_name")
-            & key
-        )
 
         # Check if there's an official curation for this block
         # If so, use the curated analyzer; otherwise use the raw analyzer
@@ -868,80 +781,32 @@ class SortedSpikes(dj.Imported):
             return
 
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
-        si_sorting = sorting_analyzer.sorting
 
-        # Find representative channel for each unit
-        unit_channel_indices: dict[int, np.ndarray] = si.ChannelSparsity.from_best_channels(
-            sorting_analyzer,
-            1,
-        ).unit_id_to_channel_indices
-        unit_peak_channel: dict[int, int] = {u: chn[0] for u, chn in unit_channel_indices.items()}
-
-        spike_count_dict: dict[int, int] = si_sorting.count_num_spikes_per_unit()
-        # {unit: spike_count}
-
-        # create channel2electrode_map
-        electrode_map: dict[int, dict] = {elec["electrode"]: elec for elec in electrode_query.to_dicts()}
-        channel2electrode_map = {
-            chn_idx: electrode_map[int(elec_id)]
-            for chn_idx, elec_id in zip(
-                sorting_analyzer.get_probe().device_channel_indices,
-                sorting_analyzer.get_probe().contact_ids,
-                strict=False,
-            )
-        }
-
-        # unit_quality is a single field: the curator's manual label once an official curation has
-        # been applied (curation_id != -1, so we've loaded the curated analyzer), otherwise Kilosort's
-        # own KSLabel. The manual call lives in the curated sorting's "quality" property; the
-        # make_curation_official gate guarantees every curated unit has one, so a curated block's units
-        # all carry the human's call, with KSLabel only as a defensive fallback.
-        prop_keys = set(si_sorting.get_property_keys())
+        prop_keys = set(sorting_analyzer.get_sorting_property_keys())
         use_manual_quality = curation_id != -1 and "quality" in prop_keys
-        unit_quality_map = {}
-        for unit_id in si_sorting.unit_ids:
-            quality = (
-                (si_sorting.get_unit_property(unit_id, "quality") or "").strip().lower()
-                if use_manual_quality
-                else ""
-            )
-            if not quality:
-                quality = si_sorting.get_unit_property(unit_id, "KSLabel") if "KSLabel" in prop_keys else "n.a."
-            unit_quality_map[int(unit_id)] = quality
 
-        spike_locations = sorting_analyzer.get_extension("spike_locations")
-        extremum_channel_inds = si.template_tools.get_template_extremum_channel(
-            sorting_analyzer, outputs="index"
-        )
-        spikes_df = pd.DataFrame(
-            sorting_analyzer.sorting.to_spike_vector(extremum_channel_inds=extremum_channel_inds)
-        )
-        for unit_idx, raw_unit_id in enumerate(si_sorting.unit_ids):
-            unit_id = int(raw_unit_id)
-            unit_spikes_df = spikes_df[spikes_df.unit_index == unit_idx]
-            spike_sites = np.array(
-                [channel2electrode_map[chn_idx]["electrode"] for chn_idx in unit_spikes_df.channel_index]
-            )
-            unit_spikes_loc = spike_locations.get_data()[unit_spikes_df.index]
-            _, spike_depths = zip(*unit_spikes_loc, strict=True)  # x-coordinates, y-coordinates
-            spike_indices = si_sorting.get_unit_spike_train(unit_id)
-
-            if not (len(spike_indices) == len(spike_sites) == len(spike_depths)):
-                raise ValueError(
-                    f"Unit {unit_id}: mismatched spike data lengths "
-                    f"(indices={len(spike_indices)}, sites={len(spike_sites)}, depths={len(spike_depths)})"
-                )
+        main_channel_ids = sorting_analyzer.main_channel_ids
+        num_spikes_per_unit = sorting_analyzer.sorting.count_num_spikes_per_unit()
+        if use_manual_quality:
+            unit_qualities = sorting_analyzer.get_sorting_property("quality")
+        else:
+            unit_qualities = sorting_analyzer.get_sorting_property("KSLabel")
+        unit_locations = sorting_analyzer.get_extension("unit_locations").get_data()
+        unit_ids = sorting_analyzer.unit_ids
+        for unit_id, main_channel_id, num_spikes, unit_quality, unit_location in zip(
+            unit_ids, main_channel_ids, num_spikes_per_unit, unit_qualities, unit_locations
+        ):
+            spike_indices = sorting_analyzer.get_unit_spike_train(unit_id=unit_id, return_times=False)
 
             self.Unit.insert1(
                 {
                     **key,
-                    **channel2electrode_map[unit_peak_channel[unit_id]],
                     "unit": unit_id,
-                    "unit_quality": unit_quality_map[unit_id],
+                    "unit_quality": unit_quality,
                     "spike_indices": spike_indices,
-                    "spike_count": spike_count_dict[unit_id],
-                    "spike_sites": spike_sites,
-                    "spike_depths": spike_depths,
+                    "spike_count": num_spikes,
+                    "spike_sites": main_channel_id,
+                    "unit_depth": unit_location,
                 },
                 ignore_extra_fields=True,
             )
@@ -952,122 +817,12 @@ class SortedSpikes(dj.Imported):
             curation_tags = CurationTag.to_arrays("tag")
             tag_rows = [
                 {**key, "unit": int(unit_id), "tag": tag}
-                for unit_id in si_sorting.unit_ids
+                for unit_id in sorting_analyzer.unit_ids
                 for tag in curation_tags
-                if tag in prop_keys and bool(si_sorting.get_unit_property(unit_id, tag))
+                if tag in prop_keys and bool(sorting_analyzer.sorting.get_unit_property(unit_id, tag))
             ]
             if tag_rows:
                 self.UnitTag.insert(tag_rows, ignore_extra_fields=True)
-
-
-@schema
-class Waveform(dj.Imported):
-    definition = """
-    # A set of spike waveforms for units out of a given SortedSpikes
-    -> SortedSpikes
-    """
-
-    class UnitWaveform(dj.Part):
-        definition = """
-        # Representative waveform for a given unit
-        -> master
-        -> SortedSpikes.Unit
-        ---
-        unit_waveform: <blob>  # (uV) mean waveform for a given unit at its representative electrode
-        """
-
-    class ChannelWaveform(dj.Part):
-        definition = """
-        # Spike waveforms and their mean across spikes for the given unit at the given electrode
-        -> master
-        -> SortedSpikes.Unit
-        -> ephys.ElectrodeConfig.Electrode
-        ---
-        channel_waveform: <blob>   # (uV) mean waveform across spikes of a unit at an electrode
-        """
-
-    def make(self, key):
-        """Extract spike waveforms for each unit and electrode from sorting analyzer templates."""
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
-        import spikeinterface as si
-
-        sorting_root_dir = get_sorting_root_dir()
-        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
-
-        # Get channel and electrode-site mapping
-        electrode_query = (
-            ephys.EphysBlockInfo.Channel.proj(..., "-channel_name")
-            * ephys.ElectrodeConfig.Electrode
-            * ElectrodeGroup.Electrode
-            * ephys.ProbeType.Electrode.proj("electrode_name")
-            & key
-        )
-
-        # Get curation_id from SortedSpikes to determine which analyzer to use
-        curation_id = (SortedSpikes & key).fetch1("curation_id")
-        if curation_id != -1:
-            # Fetch applied analyzer path from database
-            import importlib
-
-            spike_sorting_curation_module = importlib.import_module(
-                "aeon.dj_pipeline.spike_sorting_curation"
-            )
-            analyzer_output_dir = Path(
-                (
-                    spike_sorting_curation_module.ManualCuration.File
-                    & key
-                    & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                )
-                .fetch1("file")
-                .full_path
-            )
-            logger.info(f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}")
-        else:
-            analyzer_output_dir = resolve_analyzer_dir(output_dir)
-            logger.info("Using raw analyzer (curation_id=-1)")
-
-        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
-
-        self.insert1(key)
-
-        # Find representative channel for each unit
-        unit_peak_channel: dict[int, np.ndarray] = si.ChannelSparsity.from_best_channels(
-            sorting_analyzer, 1
-        ).unit_id_to_channel_indices  # {unit: peak_channel_index}
-        unit_peak_channel = {u: chn[0] for u, chn in unit_peak_channel.items()}
-
-        # create channel2electrode_map
-        electrode_map: dict[int, dict] = {elec["electrode"]: elec for elec in electrode_query.to_dicts()}
-        channel2electrode_map = {
-            chn_idx: electrode_map[int(elec_id)]
-            for chn_idx, elec_id in zip(
-                sorting_analyzer.get_probe().device_channel_indices,
-                sorting_analyzer.get_probe().contact_ids,
-                strict=True,
-            )
-        }
-
-        templates = sorting_analyzer.get_extension("templates")
-
-        for unit in (SortedSpikes.Unit & key).keys(order_by="unit"):
-            # Get mean waveform for this unit from all channels - (sample x channel)
-            unit_waveforms = templates.get_unit_template(unit_id=unit["unit"], operator="average")
-            unit_peak_waveform = {
-                **unit,
-                "unit_waveform": unit_waveforms[:, unit_peak_channel[unit["unit"]]],
-            }
-
-            unit_electrode_waveforms = [
-                {
-                    **unit,
-                    **channel2electrode_map[chn_idx],
-                    "channel_waveform": unit_waveforms[:, chn_idx],
-                }
-                for chn_idx in channel2electrode_map
-            ]
-
-            self.UnitWaveform.insert1(unit_peak_waveform, ignore_extra_fields=True)
-            self.ChannelWaveform.insert(unit_electrode_waveforms, ignore_extra_fields=True)
 
 
 @schema
@@ -1086,8 +841,8 @@ class SortingQuality(dj.Imported):
 
     def make(self, key):
         """Extract quality metrics for each unit from sorting analyzer extensions."""
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
 
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
@@ -1790,8 +1545,8 @@ def ephys_preproc(recording) -> Any:
     Returns:
         Preprocessed recording object
     """
-    import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
     import spikeinterface as si
+    import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
 
     recording = si.preprocessing.bandpass_filter(recording=recording, freq_min=300, freq_max=6000)
     recording = si.preprocessing.common_reference(recording=recording, operator="median")

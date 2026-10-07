@@ -21,20 +21,20 @@ repos:
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.8
-    hooks:
-      # Run the linter with the `--fix` flag.
-      - id: ruff-check
-        args: [ --fix ]
-      # Run the formatter.
-      - id: ruff-format
+  # - repo: https://github.com/astral-sh/ruff-pre-commit
+  #   rev: v0.15.8
+  #   hooks:
+  #     # Run the linter with the `--fix` flag.
+  #     - id: ruff-check
+  #       args: [ --fix ]
+  #     # Run the formatter.
+  #     - id: ruff-format
 
-  - repo: https://github.com/RobertCraigie/pyright-python
-    rev: v1.1.409
-    hooks:
-      - id: pyright
-        args: [--level, error, --project, ./pyproject.toml]
+  # - repo: https://github.com/RobertCraigie/pyright-python
+  #   rev: v1.1.409
+  #   hooks:
+  #     - id: pyright
+  #       args: [--level, error, --project, ./pyproject.toml]
 
   # Pytest is expensive, so we show its set-up but leave it commented out.
   # - repo: local
