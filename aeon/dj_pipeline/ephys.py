@@ -59,11 +59,18 @@ class Probe(dj.Lookup):
 @schema
 class ElectrodeConfig(dj.Lookup):
     definition = """  # The electrode configuration on a given probe used for recording
-    -> ProbeInsertion
-    -> EphysEpoch
+    -> ProbeType
+    electrode_config_name: varchar(128)  # typically the stem of the ProbeInterface JSON
     ---
-    config_file_path: varchar(255)
+    electrode_config_description='': varchar(4000)
+    electrode_config_hash=null: uuid
     """
+
+    class Electrode(dj.Part):
+        definition = """  # Electrodes used for recording
+        -> master
+        -> ProbeType.Electrode
+        """
 
 
 @schema
@@ -121,6 +128,7 @@ class EphysEpoch(dj.Manual):
         epoch_dirs = sorted(d for d in raw_ephys_dir.iterdir() if d.is_dir())
 
         for epoch_dir in epoch_dirs:
+
             epoch_dir_name = epoch_dir.name
 
             epoch_onix_start = None
@@ -446,59 +454,60 @@ class EphysChunk(dj.Manual):
         Args:
             experiment_name: Name of the experiment to process
         """
-        exp_key = {"experiment_name": experiment_name}
+        exp_key = {'experiment_name': experiment_name}
 
-        raw_dir_result = acquisition.Experiment.get_data_directory(
-            exp_key, directory_type="raw-ephys", as_posix=True
-        )
+        raw_dir_result = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw-ephys", as_posix=True)
 
         global_chunk_index = 0
-        for probe_insertion in ProbeInsertion() & exp_key:
-            insertion_number = probe_insertion["insertion_number"]
-            probe_name = probe_insertion["probe_label"]
-            subject = probe_insertion["subject"]
+        for probe_insertion in (ProbeInsertion() & exp_key):
 
-            for epoch in EphysEpoch & exp_key:
-                epoch_onix_start = epoch.get("epoch_onix_start")
-                epoch_dir = epoch.get("epoch_dir")
+            insertion_number = probe_insertion['insertion_number']
+            probe_name = probe_insertion['probe_label']
+            subject = probe_insertion['subject']
+
+            for epoch in (EphysEpoch & exp_key):
+
+                epoch_onix_start = epoch.get('epoch_onix_start')
+                epoch_dir = epoch.get('epoch_dir')
 
                 absolute_epoch_dir = raw_dir_result / Path(epoch_dir)
 
-                arrow_files_exist = True
-                chunk_files = list(absolute_epoch_dir.rglob(f"*_{probe_name}_AmplifierData_*.arrow"))
+                arrow_files_exist=True
+                chunk_files = list(absolute_epoch_dir.rglob(f'*_{probe_name}_AmplifierData_*.arrow'))
 
                 if len(chunk_files) == 0:
                     arrow_files_exist = False
-                    chunk_files = list(absolute_epoch_dir.rglob(f"*_{probe_name}_AmplifierData_*.bin"))
+                    chunk_files = list(absolute_epoch_dir.rglob(f'*_{probe_name}_AmplifierData_*.bin'))
 
                 if len(chunk_files) == 0:
-                    logger.warning(f"No `.arrow` or `.bin` files found in {absolute_epoch_dir}")
+                    logger.warning(f'No `.arrow` or `.bin` files found in {absolute_epoch_dir}')
                     continue
 
                 # Files are created as `..._n.bin` where n is the order of the creation. Sort using n:
-                sorted_files = sorted(chunk_files, key=lambda x: int(x.name.split("_")[-1].split(".")[0]))
+                sorted_files = sorted(chunk_files, key=lambda x: int(x.name.split('_')[-1].split('.')[0]))
 
                 for chunk_file in sorted_files:
-                    chunk_index = chunk_file.name.split("_")[-1].split(".")[0]
+
+                    chunk_index = chunk_file.name.split('_')[-1].split('.')[0]
 
                     chunk_dict = {
-                        "experiment_name": experiment_name,
-                        "subject": subject,
-                        "insertion_number": insertion_number,
-                        "epoch_onix_start": epoch_onix_start,
-                        "chunk_index": chunk_index,
-                        "global_chunk_index": global_chunk_index,
+                        'experiment_name': experiment_name,
+                        'subject': subject,
+                        'insertion_number': insertion_number,
+                        'epoch_onix_start': epoch_onix_start,
+                        'chunk_index': chunk_index,
+                        'global_chunk_index': global_chunk_index,
                     }
 
                     if arrow_files_exist:
-                        chunk_dict["arrow_path"] = chunk_file
+                        chunk_dict['arrow_path'] = chunk_file
                     else:
-                        chunk_dict["binary_path"] = chunk_file.relative_to(raw_dir_result)
-                        clock_path = Path(str(chunk_file).replace("AmplifierData", "Clock"))
+                        chunk_dict['binary_path'] = chunk_file.relative_to(raw_dir_result)
+                        clock_path = Path(str(chunk_file).replace('AmplifierData', 'Clock'))
                         if clock_path.is_file():
                             # In the arrow format, clock info is part of the arrow file.
                             # Hence clock files only exist when binary files exist.
-                            chunk_dict["clock_path"] = clock_path.relative_to(raw_dir_result)
+                            chunk_dict['clock_path'] = clock_path.relative_to(raw_dir_result)
                         else:
                             logger.warning(f"No clock path found at {clock_path}")
 
@@ -526,31 +535,32 @@ class EphysChunkSyncModel(dj.Computed):
         epoch_info = (EphysEpoch & key).to_dicts()[0]
 
         # find all timestamps
-        ephys_data_path = acquisition.Experiment.get_data_directory(
-            {"experiment_name": epoch_info["experiment_name"]},
+        ephys_data_path = acquisition.Experiment.get_data_directory({
+            'experiment_name': epoch_info['experiment_name']},
             directory_type="raw-ephys",
         )
-        absolute_epoch_dir = Path(ephys_data_path) / epoch_info["epoch_dir"]
+        absolute_epoch_dir = Path(ephys_data_path) / epoch_info['epoch_dir']
 
         timestamps_paths = absolute_epoch_dir.rglob("*_HarpSync_*.csv")
         all_timestamps = pd.concat([pd.read_csv(sorted_path) for sorted_path in timestamps_paths])
         # If acquisition crashes, the full sync data might not get saved leaving nan values in some columns
         all_non_nan_timestamps = all_timestamps[~all_timestamps.isna().any(axis=1)]
-        sorted_timestamps = all_non_nan_timestamps.sort_values(by="Seconds")
+        sorted_timestamps = all_non_nan_timestamps.sort_values(by='Seconds')
 
         chunk = (EphysChunk & key).to_dicts()[0]
-        clock_path = Path(ephys_data_path) / chunk["clock_path"]
+        clock_path = Path(ephys_data_path) / chunk['clock_path']
 
         model_info = compute_chunk_time_model(clock_path, sorted_timestamps)
 
         if model_info is None:
-            logger.warning(
-                "Could not compute chunk sync model. Likely that entire chunk was outside "
-                "of computed HarpSync interval."
-            )
+            logger.warning("Could not compute chunk sync model. Likely that entire chunk was outside " \
+            "of computed HarpSync interval.")
             return
 
-        self.insert1({**key, **model_info})
+        self.insert1({
+            **key,
+            **model_info
+        })
 
 
 @schema
@@ -579,8 +589,17 @@ class EphysBlockInfo(dj.Imported):
         -> EphysChunk
         """
 
+    class Channel(dj.Part):
+        definition = """  # Electrode-channel mapping
+        -> master
+        channel_idx: int32  # channel idx (idx of the raw data)
+        ---
+        -> ElectrodeConfig.Electrode
+        channel_name="": varchar(64)  # alias of the channel
+        """
+
     def make(self, key: dict[str, Any]) -> None:
-        """Compute block metadata: chunk associations, duration.
+        """Compute block metadata: chunk associations, channel mappings, duration.
 
         Raises if chunks in this block span multiple ElectrodeConfigs.
         """
@@ -639,6 +658,37 @@ class EphysBlockInfo(dj.Imported):
         )
         self.Chunk.insert(
             chunk_query.proj(block_start=f"'{key['block_start']}'", block_end=f"'{key['block_end']}'")
+        )
+
+        # Channel-to-electrode mapping from the per-epoch ProbeInterface JSON.
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
+
+        # Pick the earliest chunk's epoch (deterministic; all chunks in this
+        # block share the same ElectrodeConfig per the uniform-config check
+        # above, so any chunk would yield the same config_file_name).
+        epoch_start, config_file_name = (chunk_insertions & dj.Top(limit=1, order_by="chunk_start")).fetch1(
+            "epoch_start", "config_file_name"
+        )
+        raw_dir_result = resolve_raw_dir_and_epochs(key["experiment_name"])
+        if raw_dir_result is None:
+            raise ValueError(f"Cannot resolve raw-ephys directory for {key['experiment_name']}")
+        raw_dir = raw_dir_result[0]
+        epoch_dir = (EphysEpoch & key & {"epoch_start": epoch_start}).fetch1("epoch_dir")
+        epoch_path = raw_dir / Path(epoch_dir).parts[0]
+        json_path = resolve_epoch_probe_json(raw_dir, epoch_path, config_file_name)
+        channel_map = load_device_channel_map(json_path)
+
+        electrode_df = (ElectrodeConfig.Electrode & econfig).keys(order_by="electrode")
+        self.Channel.insert(
+            (
+                {
+                    **key,
+                    "channel_idx": channel_map[ch_key["electrode"]],
+                    "channel_name": channel_map[ch_key["electrode"]],
+                    **ch_key,
+                }
+                for ch_key in electrode_df
+            ),
         )
 
 
