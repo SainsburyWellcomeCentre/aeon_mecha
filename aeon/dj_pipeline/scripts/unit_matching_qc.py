@@ -13,6 +13,10 @@ notebooks/zofia/spike_sorting/unit_matching.ipynb) rather than run as a CLI:
    their best (possibly sub-threshold) candidate on the other side.
 """
 
+# This script exists to QC spike_sorting's matching internals, so it reaches into
+# that module's private helpers by design.
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 import numpy as np

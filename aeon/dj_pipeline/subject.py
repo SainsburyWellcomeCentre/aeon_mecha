@@ -467,7 +467,7 @@ _pyrat_animal_attributes = [
 ]
 
 
-def get_pyrat_data(endpoint: str, params: dict = None, **kwargs):
+def get_pyrat_data(endpoint: str, params: dict | None = None, **kwargs):
     """Get data from PyRat API.
 
     See docs at: https://swc.pyrat.cloud/api/v3/docs (production)

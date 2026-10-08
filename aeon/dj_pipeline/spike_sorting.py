@@ -279,7 +279,9 @@ class PreProcessing(dj.Computed):
         import probeinterface as pi
         import spikeinterface as si
         import spikeinterface.extractors as se
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
         from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
@@ -468,7 +470,9 @@ class SpikeSorting(dj.Computed):
             )
 
         import spikeinterface as si
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
         execution_time = datetime.now(UTC)
         sorter_name = sorting_method.replace(".", "_")
@@ -619,7 +623,9 @@ class PostProcessing(dj.Computed):
             Tuple of (analyzer_output_dir, execution_time, execution_duration)
         """
         import spikeinterface as si
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
         execution_time = datetime.now(UTC)
 
@@ -710,7 +716,9 @@ class SIExport(dj.Computed):
     def make(self, key):
         """Export spike sorting results to standardised formats for downstream analysis and sharing."""
         import spikeinterface as si
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
         execution_time = datetime.now(UTC)
 
@@ -794,7 +802,9 @@ class SortedSpikes(dj.Imported):
     def make(self, key):
         """Extract units, spike times, and electrodes from sorting output; sync to HARP clock."""
         import spikeinterface as si
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
         execution_time = datetime.now(UTC)
 
@@ -991,7 +1001,9 @@ class Waveform(dj.Imported):
     def make(self, key):
         """Extract spike waveforms for each unit and electrode from sorting analyzer templates."""
         import spikeinterface as si
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
@@ -1089,7 +1101,9 @@ class SortingQuality(dj.Imported):
     def make(self, key):
         """Extract quality metrics for each unit from sorting analyzer extensions."""
         import spikeinterface as si
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
@@ -1344,10 +1358,11 @@ def _load_block_unit_spike_trains(block_key: dict) -> dict[int, np.ndarray]:
     # .proj(): both tables declare a secondary `spike_count` with no common lineage, which
     # DataJoint 2.x rejects (same bug class as #609).
     non_noise_units = (SortedSpikes.Unit - {"unit_quality": "noise"}).proj()
-    trains: dict[int, list] = {}
+    chunks_by_unit: dict[int, list] = {}
     for unit_entry in (SyncedSpikes.Unit & block_key & non_noise_units).to_dicts():
-        trains.setdefault(unit_entry["unit"], []).append(unit_entry["spike_times"])
-    for unit_id, chunks in trains.items():
+        chunks_by_unit.setdefault(unit_entry["unit"], []).append(unit_entry["spike_times"])
+    trains: dict[int, np.ndarray] = {}
+    for unit_id, chunks in chunks_by_unit.items():
         concatenated = np.sort(np.concatenate(chunks))
         if concatenated.dtype.kind == "M":  # datetime64
             concatenated = concatenated.astype("datetime64[ns]").astype(np.int64) / 1e9
@@ -1796,7 +1811,9 @@ def ephys_preproc(recording) -> Any:
         Preprocessed recording object
     """
     import spikeinterface as si
-    import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
+
+    # registers sorters/preprocessing/exporters submodules on the package
+    import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
     recording = si.preprocessing.bandpass_filter(recording=recording, freq_min=300, freq_max=6000)
     recording = si.preprocessing.common_reference(recording=recording, operator="median")

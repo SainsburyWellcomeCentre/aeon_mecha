@@ -4,7 +4,6 @@ This module provides a reusable pattern for programmatically creating new experi
 in the DataJoint pipeline.
 """
 
-from datetime import datetime
 from pathlib import Path
 
 from aeon.dj_pipeline import acquisition

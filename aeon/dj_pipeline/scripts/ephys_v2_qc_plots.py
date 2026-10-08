@@ -14,17 +14,18 @@ import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
-import datajoint as dj
-import matplotlib
+import matplotlib  # noqa: ICN001
 
 matplotlib.use("Agg")  # non-interactive backend for HPC
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.container import BarContainer
 
-from aeon.dj_pipeline import ephys, get_schema_name, spike_sorting
+from aeon.dj_pipeline import ephys, spike_sorting
 
 # ---------------------------------------------------------------------------
 # Configuration (same as ephys_v2_setup.py)
@@ -259,18 +260,26 @@ def plot_longevity_histogram(longevity, n_blocks, output_dir):
     """Histogram: how many units survived N blocks."""
     fig, ax = plt.subplots(figsize=(6, 5))
 
-    bins = np.arange(0.5, n_blocks + 1.5, 1)
+    bins = np.arange(0.5, n_blocks + 1.5, 1).tolist()
     counts, _, bars = ax.hist(longevity, bins=bins, color=COLOR_MATCHED, edgecolor="white", linewidth=1.5)
 
     # Color bars by longevity
     max_lon = n_blocks
-    for bar, b in zip(bars, range(1, n_blocks + 1), strict=True):
+    for bar, b in zip(cast(BarContainer, bars), range(1, n_blocks + 1), strict=True):
         bar.set_facecolor(CMAP_LONGEVITY(b / max_lon))
 
     # Annotate counts
     for i, c in enumerate(counts):
         if c > 0:
-            ax.text(i + 1, c + 0.3, str(int(c)), ha="center", va="bottom", fontsize=11, fontweight="bold")
+            ax.text(
+                i + 1,
+                float(c) + 0.3,
+                str(int(c)),
+                ha="center",
+                va="bottom",
+                fontsize=11,
+                fontweight="bold",
+            )
 
     ax.set_xticks(range(1, n_blocks + 1))
     ax.set_xlabel("Number of blocks tracked", fontsize=11)

@@ -57,10 +57,13 @@ class CameraQC(dj.Imported):
     @property
     def key_source(self):
         """Return the keys for the CameraQC table."""
+        # streams tables are generated at runtime by streams_maker, so they are
+        # invisible to static analysis.
+        video_source = streams.SpinnakerVideoSource  # pyright: ignore[reportAttributeAccessIssue]
         return (
             acquisition.Chunk
             * (
-                streams.SpinnakerVideoSource.join(streams.SpinnakerVideoSource.RemovalTime, left=True)
+                video_source.join(video_source.RemovalTime, left=True)
                 & "spinnaker_video_source_name='CameraTop'"
             )
             & "chunk_start >= spinnaker_video_source_install_time"
@@ -71,11 +74,12 @@ class CameraQC(dj.Imported):
         """Perform quality control checks on the CameraTop stream."""
         chunk_start, chunk_end = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
 
-        device_name = (streams.SpinnakerVideoSource & key).fetch1("spinnaker_video_source_name")
+        video_source = streams.SpinnakerVideoSource  # pyright: ignore[reportAttributeAccessIssue]
+        device_name = (video_source & key).fetch1("spinnaker_video_source_name")
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
         devices_schema = getattr(
-            acquisition.aeon_schemas,
+            acquisition.aeon_schemas,  # pyright: ignore[reportAttributeAccessIssue]
             (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
                 "devices_schema_name"
             ),
