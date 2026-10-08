@@ -480,10 +480,7 @@ def verify_registration(experiment_name):
     behavior_count = len(acquisition.Epoch & {"experiment_name": experiment_name})
     ephys_epoch_count = len(EphysEpoch & {"experiment_name": experiment_name})
     ephys_populated = len(EphysEpochConfig & {"experiment_name": experiment_name})
-    print(
-        f"Epochs: {behavior_count} behavior, {ephys_epoch_count} ephys "
-        f"({ephys_populated} configured)"
-    )
+    print(f"Epochs: {behavior_count} behavior, {ephys_epoch_count} ephys ({ephys_populated} configured)")
 
     # Probe insertions
     insertions = (ProbeInsertion & {"experiment_name": experiment_name}).to_dicts()

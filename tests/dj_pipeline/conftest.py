@@ -146,9 +146,9 @@ GOLDEN_DATASETS = {
         "probe_type": "neuropixels2.0-multishank",
         "electrode_config_name": "M81_ProbeB_4Shanks_1000_to_1700_um",
         "probe_serial": "23299108854",
-        "n_channels": 96,                      # sorting subset: all active contacts on shank3
-        "n_recording_channels": 384,           # full recording width (active subset of probe)
-        "shank_id": "3",                       # electrodes are read from the probe JSON
+        "n_channels": 96,  # sorting subset: all active contacts on shank3
+        "n_recording_channels": 384,  # full recording width (active subset of probe)
+        "shank_id": "3",  # electrodes are read from the probe JSON
         "required_files": [
             "Metadata.yml",
             "NeuropixelsV2/NeuropixelsV2_ProbeB_AmplifierData_0.bin",
@@ -797,9 +797,7 @@ def ephys_block_info_populated(ephys_chunks_ingested, ephys_test_blocks, ctx):
         order_by="block_start"
     )
     for block, expected_slice in zip(blocks, expected_slices, strict=True):
-        linked = sorted(
-            c["chunk_start"] for c in (ctx.ephys.EphysBlockInfo.Chunk & block).to_dicts()
-        )
+        linked = sorted(c["chunk_start"] for c in (ctx.ephys.EphysBlockInfo.Chunk & block).to_dicts())
         expected = epoch_starts[expected_slice]
         assert linked == expected, (
             f"Block {block['block_start']} links {len(linked)} chunks starting at {linked[:2]}..., "
@@ -807,9 +805,7 @@ def ephys_block_info_populated(ephys_chunks_ingested, ephys_test_blocks, ctx):
             "sorting's chunk set have diverged; spike indices would overrun the recording."
         )
 
-    return (
-        ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}
-    ).to_dicts()
+    return (ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
 
 
 def _shank_electrodes(probe_json, shank_id):
@@ -842,9 +838,7 @@ def ephys_sorting_setup(
     from aeon.dj_pipeline import acquisition
     from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
 
-    raw_dir = Path(
-        acquisition.Experiment.get_data_directory({"experiment_name": exp_name}, "raw-ephys")
-    )
+    raw_dir = Path(acquisition.Experiment.get_data_directory({"experiment_name": exp_name}, "raw-ephys"))
     try:
         probe_json = resolve_epoch_probe_json(
             raw_dir, require_ephys_golden_data, f"{cfg['electrode_config_name']}.json"
@@ -872,10 +866,7 @@ def ephys_sorting_setup(
     )
     # All active contacts on one shank (96 of the probe's 384), read from the probe JSON.
     spike_sorting.ElectrodeGroup.Electrode.insert(
-        (
-            {**electrode_config_key, "electrode_group": "shank3", "electrode": e}
-            for e in electrodes
-        ),
+        ({**electrode_config_key, "electrode_group": "shank3", "electrode": e} for e in electrodes),
         skip_duplicates=True,
     )
 
@@ -1071,6 +1062,7 @@ def ephys_sorting_injected(
         "output_dirs": output_dirs,
     }
 
+
 @pytest.fixture(scope="session")
 def ephys_curation_applied(ephys_sorting_injected, ephys_full_pipeline):
     """Auto-approve the raw sorting, satisfying UnitMatching.key_source.
@@ -1146,9 +1138,7 @@ def ephys_noise_units_marked(ephys_curation_applied, ephys_full_pipeline):
 
 
 @pytest.fixture(scope="session")
-def ephys_unit_matching_populated(
-    ephys_noise_units_marked, ephys_curation_applied, ephys_full_pipeline
-):
+def ephys_unit_matching_populated(ephys_noise_units_marked, ephys_curation_applied, ephys_full_pipeline):
     """Register a matching paramset seeded on block 1 and populate UnitMatching."""
     spike_sorting = ephys_full_pipeline["spike_sorting"]
     blocks = ephys_curation_applied["blocks"]

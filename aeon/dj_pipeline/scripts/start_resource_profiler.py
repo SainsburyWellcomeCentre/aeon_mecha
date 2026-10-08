@@ -48,7 +48,7 @@ def get_usage_sample(prev_net=None):
     try:
         gpu_stats = (
             subprocess.check_output(
-                [
+                [  # noqa: S607 -- nvidia-smi resolved from PATH by design
                     "nvidia-smi",
                     "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw",
                     "--format=csv,noheader,nounits",

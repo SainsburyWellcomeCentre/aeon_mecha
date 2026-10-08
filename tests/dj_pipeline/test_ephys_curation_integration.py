@@ -45,9 +45,7 @@ class TestAutoApprovedCuration:
             }
             sorting_dir = ephys_curation_applied["sorting_dirs"][block["block_start"]]
             expected = {int(u) for u in si.load(sorting_dir / "in_container_sorting").unit_ids}
-            actual = {
-                int(u) for u in (ctx.spike_sorting.SortedSpikes.Unit & block_key).to_arrays("unit")
-            }
+            actual = {int(u) for u in (ctx.spike_sorting.SortedSpikes.Unit & block_key).to_arrays("unit")}
             assert actual == expected, (
                 f"Block {block['block_start']}: SortedSpikes units differ from the artifact "
                 f"(missing {sorted(expected - actual)[:5]}, extra {sorted(actual - expected)[:5]})"

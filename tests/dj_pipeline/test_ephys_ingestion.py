@@ -32,8 +32,7 @@ class TestExperimentTopology:
         assert len(ctx.ephys.acquisition.Experiment & exp_key) == 1
 
         dir_types = {
-            r["directory_type"]
-            for r in (ctx.ephys.acquisition.Experiment.Directory & exp_key).to_dicts()
+            r["directory_type"] for r in (ctx.ephys.acquisition.Experiment.Directory & exp_key).to_dicts()
         }
         assert {"raw", "raw-ephys"} <= dir_types, (
             f"expected both arms registered under {ctx.cfg['experiment_name']}, got {dir_types}"
@@ -212,9 +211,7 @@ class TestPreProcessing:
         # Summed span of the linked chunks: a loose range would accept 1 to 11 chunks.
         chunks = (ctx.ephys.EphysBlockInfo.Chunk * ctx.ephys.EphysChunk & key).to_dicts()
         assert chunks, "block links no chunks"
-        expected_s = sum(
-            (c["chunk_end"] - c["chunk_start"]).total_seconds() for c in chunks
-        )
+        expected_s = sum((c["chunk_end"] - c["chunk_start"]).total_seconds() for c in chunks)
         duration_s = rec.get_num_samples() / rec.get_sampling_frequency()
         assert duration_s == pytest.approx(expected_s, abs=2.0), (
             f"preprocessed recording is {duration_s:.1f}s but its {len(chunks)} linked chunks "

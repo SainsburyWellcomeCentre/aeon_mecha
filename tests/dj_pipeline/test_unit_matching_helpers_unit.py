@@ -87,9 +87,7 @@ class TestCompareSpikeTrainsInOverlap:
 
         this_train = self._train(self.B2, 60, step=0.01)
         prev_train = self._train(self.B2, 60.005, step=0.01)  # 5 ms offset, beyond delta_time
-        comparison = _compare_spike_trains_in_overlap(
-            {7: this_train}, {3: prev_train}, self.B1, self.B2
-        )
+        comparison = _compare_spike_trains_in_overlap({7: this_train}, {3: prev_train}, self.B1, self.B2)
         assert comparison is not None
         # 5 ms apart at delta_time=0.4 ms: no coincidences. `< 0.5` would accept 0.49.
         assert comparison.agreement_scores.loc[3, 7] == pytest.approx(0.0, abs=0.01)

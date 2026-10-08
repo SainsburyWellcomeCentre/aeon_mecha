@@ -30,21 +30,81 @@ _base = {
 
 keys = [
     # --- shank0 ---
-    {**_base, "electrode_group": "shank0", "block_start": "2026-05-11 07:49:46.571574", "block_end": "2026-05-11 08:19:46.571574"},
-    {**_base, "electrode_group": "shank0", "block_start": "2026-05-11 08:09:46.571574", "block_end": "2026-05-11 08:39:46.571574"},
-    {**_base, "electrode_group": "shank0", "block_start": "2026-05-11 08:29:46.571574", "block_end": "2026-05-11 08:59:46.571574"},
+    {
+        **_base,
+        "electrode_group": "shank0",
+        "block_start": "2026-05-11 07:49:46.571574",
+        "block_end": "2026-05-11 08:19:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank0",
+        "block_start": "2026-05-11 08:09:46.571574",
+        "block_end": "2026-05-11 08:39:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank0",
+        "block_start": "2026-05-11 08:29:46.571574",
+        "block_end": "2026-05-11 08:59:46.571574",
+    },
     # --- shank1 ---
-    {**_base, "electrode_group": "shank1", "block_start": "2026-05-11 07:49:46.571574", "block_end": "2026-05-11 08:19:46.571574"},
-    {**_base, "electrode_group": "shank1", "block_start": "2026-05-11 08:09:46.571574", "block_end": "2026-05-11 08:39:46.571574"},
-    {**_base, "electrode_group": "shank1", "block_start": "2026-05-11 08:29:46.571574", "block_end": "2026-05-11 08:59:46.571574"},
+    {
+        **_base,
+        "electrode_group": "shank1",
+        "block_start": "2026-05-11 07:49:46.571574",
+        "block_end": "2026-05-11 08:19:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank1",
+        "block_start": "2026-05-11 08:09:46.571574",
+        "block_end": "2026-05-11 08:39:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank1",
+        "block_start": "2026-05-11 08:29:46.571574",
+        "block_end": "2026-05-11 08:59:46.571574",
+    },
     # --- shank2 ---
-    {**_base, "electrode_group": "shank2", "block_start": "2026-05-11 07:49:46.571574", "block_end": "2026-05-11 08:19:46.571574"},
-    {**_base, "electrode_group": "shank2", "block_start": "2026-05-11 08:09:46.571574", "block_end": "2026-05-11 08:39:46.571574"},
-    {**_base, "electrode_group": "shank2", "block_start": "2026-05-11 08:29:46.571574", "block_end": "2026-05-11 08:59:46.571574"},
+    {
+        **_base,
+        "electrode_group": "shank2",
+        "block_start": "2026-05-11 07:49:46.571574",
+        "block_end": "2026-05-11 08:19:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank2",
+        "block_start": "2026-05-11 08:09:46.571574",
+        "block_end": "2026-05-11 08:39:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank2",
+        "block_start": "2026-05-11 08:29:46.571574",
+        "block_end": "2026-05-11 08:59:46.571574",
+    },
     # --- shank3 ---
-    {**_base, "electrode_group": "shank3", "block_start": "2026-05-11 07:49:46.571574", "block_end": "2026-05-11 08:19:46.571574"},
-    {**_base, "electrode_group": "shank3", "block_start": "2026-05-11 08:09:46.571574", "block_end": "2026-05-11 08:39:46.571574"},
-    {**_base, "electrode_group": "shank3", "block_start": "2026-05-11 08:29:46.571574", "block_end": "2026-05-11 08:59:46.571574"},
+    {
+        **_base,
+        "electrode_group": "shank3",
+        "block_start": "2026-05-11 07:49:46.571574",
+        "block_end": "2026-05-11 08:19:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank3",
+        "block_start": "2026-05-11 08:09:46.571574",
+        "block_end": "2026-05-11 08:39:46.571574",
+    },
+    {
+        **_base,
+        "electrode_group": "shank3",
+        "block_start": "2026-05-11 08:29:46.571574",
+        "block_end": "2026-05-11 08:59:46.571574",
+    },
 ]
 
 # =============================================================================
@@ -63,7 +123,11 @@ CLEAR_JOB = False
 def clear_job(key):
     """Clear errored jobs for SpikeSorting to allow re-running."""
     try:
-        (spike_sorting.schema.jobs & {"table_name": spike_sorting.SpikeSorting.table_name, "status": "error"} & key).delete()
+        (
+            spike_sorting.schema.jobs
+            & {"table_name": spike_sorting.SpikeSorting.table_name, "status": "error"}
+            & key
+        ).delete()
     except Exception as e:
         print(f"[WARNING] Could not clear error jobs: {e}")
 

@@ -112,21 +112,24 @@ Data ingestion/populate with DataJoint is idempotent, so it is safe to run the s
 
     aeon_ingest analysis_worker
 
-# Contribute Guide
+## Contributing
 
-The project uses [ruff](https://docs.astral.sh/ruff/) to lint and format our source code. Before submitting a
-PR please check that your code conforms to our formatting by running
-
-```
- uv run ruff check aeon/
-```
-
-from inside the local repo folder. Or you can set up autoformatting by using `pre-commit`. Use this by installing
-`pre-commit` on your system and then adding it to this project
+CI runs [ruff](https://docs.astral.sh/ruff/) (lint + format) and
+[pyright](https://microsoft.github.io/pyright/) (types). Run all three before opening a PR:
 
 ```
-uv tool install pre-commit  
-pre-commit install
+uv run ruff check .
+uv run ruff format --check .
+uv run pyright --level error --project ./pyproject.toml .
 ```
 
-By doing this, your code will auto-reformat whenever you commit.
+Or run the whole pre-commit suite in one go:
+
+```
+uv tool install pre-commit
+uv run pre-commit run --all-files
+```
+
+`pre-commit install` additionally wires these into every `git commit`. That's optional — if
+you make lots of small commits you may prefer running the check manually when you're ready.
+To skip the hook for a single commit, use `git commit --no-verify`.
