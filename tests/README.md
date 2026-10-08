@@ -30,7 +30,7 @@ Set `_tear_down=True` in `conftest.py` for proper cleanup of test artifacts afte
 
 The test can then be run with the following simple command at the root directory of the repo:
 ```
-pytest 
+pytest
 ```
 
 With no command line arguments being specified, the command will run on any modules or functions that start with ```test_```)

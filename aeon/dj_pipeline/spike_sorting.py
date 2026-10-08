@@ -277,9 +277,9 @@ class PreProcessing(dj.Computed):
             Tuple of (output_dir, execution_time, recording_dir)
         """
         import probeinterface as pi
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
         import spikeinterface.extractors as se
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
@@ -467,8 +467,8 @@ class SpikeSorting(dj.Computed):
                 "expandable_segments:True,garbage_collection_threshold:0.6"
             )
 
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
 
         execution_time = datetime.now(UTC)
         sorter_name = sorting_method.replace(".", "_")
@@ -618,8 +618,8 @@ class PostProcessing(dj.Computed):
         Returns:
             Tuple of (analyzer_output_dir, execution_time, execution_duration)
         """
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
 
         execution_time = datetime.now(UTC)
 
@@ -709,8 +709,8 @@ class SIExport(dj.Computed):
 
     def make(self, key):
         """Export spike sorting results to standardised formats for downstream analysis and sharing."""
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
 
         execution_time = datetime.now(UTC)
 
@@ -793,8 +793,8 @@ class SortedSpikes(dj.Imported):
 
     def make(self, key):
         """Extract units, spike times, and electrodes from sorting output; sync to HARP clock."""
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
 
         execution_time = datetime.now(UTC)
 
@@ -906,7 +906,9 @@ class SortedSpikes(dj.Imported):
                 else ""
             )
             if not quality:
-                quality = si_sorting.get_unit_property(unit_id, "KSLabel") if "KSLabel" in prop_keys else "n.a."
+                quality = (
+                    si_sorting.get_unit_property(unit_id, "KSLabel") if "KSLabel" in prop_keys else "n.a."
+                )
             unit_quality_map[int(unit_id)] = quality
 
         spike_locations = sorting_analyzer.get_extension("spike_locations")
@@ -988,8 +990,8 @@ class Waveform(dj.Imported):
 
     def make(self, key):
         """Extract spike waveforms for each unit and electrode from sorting analyzer templates."""
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
 
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
@@ -1086,8 +1088,8 @@ class SortingQuality(dj.Imported):
 
     def make(self, key):
         """Extract quality metrics for each unit from sorting analyzer extensions."""
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
 
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
@@ -1534,8 +1536,9 @@ class UnitMatching(dj.Computed):
         min_score = params["min_score"]
 
         logger.info(
-            f"Matching block {key['block_start']} ({key['electrode_group']}, insertion {key['insertion_number']}) "
-            f"[{_matching_method}]: delta_time={delta_time}ms  match_score={match_score}  min_score={min_score}"
+            f"Matching block {key['block_start']} ({key['electrode_group']}, insertion "
+            f"{key['insertion_number']}) [{_matching_method}]: delta_time={delta_time}ms  "
+            f"match_score={match_score}  min_score={min_score}"
         )
 
         insertion_key = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
@@ -1792,8 +1795,8 @@ def ephys_preproc(recording) -> Any:
     Returns:
         Preprocessed recording object
     """
-    import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
     import spikeinterface as si
+    import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
 
     recording = si.preprocessing.bandpass_filter(recording=recording, freq_min=300, freq_max=6000)
     recording = si.preprocessing.common_reference(recording=recording, operator="median")

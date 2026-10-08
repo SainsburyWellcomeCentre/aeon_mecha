@@ -67,5 +67,3 @@ class DeviceName(dj.Lookup):
     ---
     -> DeviceType
     """
-
-

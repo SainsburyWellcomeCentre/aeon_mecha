@@ -510,8 +510,8 @@ class Chunk(dj.Manual):
             if enforce_hour_completed:
                 # chunk_start is naive but represents UTC (see tz_localize(None) above);
                 # attach UTC explicitly for a correct comparison against `now(UTC)`.
-                chunk_start_utc = chunk_start.replace(tzinfo=datetime.timezone.utc)
-                time_now_utc = datetime.datetime.now(datetime.timezone.utc)
+                chunk_start_utc = chunk_start.replace(tzinfo=datetime.UTC)
+                time_now_utc = datetime.datetime.now(datetime.UTC)
                 if (time_now_utc - chunk_start_utc) < datetime.timedelta(hours=1, minutes=10):
                     # Skip recently started chunks: the data may not yet be fully written/copied.
                     continue
