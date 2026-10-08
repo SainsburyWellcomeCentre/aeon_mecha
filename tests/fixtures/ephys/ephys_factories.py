@@ -212,7 +212,7 @@ def make_synthetic_amplifier_data(
 
     # Each AmplifierData file has 10 samples (minimal valid binary).
     n_samples = 10
-    n_channels = 4  # minimal channel count (uint16 per sample)
+    n_channels = 1  # matches the one electrode register_synthetic_probe_insertion configures
 
     for n in range(n_chunks):
         if ts_ranges is not None:
