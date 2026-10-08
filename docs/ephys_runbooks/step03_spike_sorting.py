@@ -134,10 +134,10 @@ def setup_sorting_prerequisites(
             # Storage format for recording, sorting output, and analyzer
             # ("zarr" or "binary"). Defaults to "zarr" if omitted.
             "save_format": "zarr",
-            # Preprocessing method, by name, from the registry in spike_sorting.py
-            # (see register_preprocessing). "aeon_default" (bandpass 300-6000 Hz
-            # + median common average referencing) is used if omitted; "none"
-            # passes the recording through unchanged.
+            # Preprocessing method, by name, from
+            # aeon/dj_pipeline/utils/ephys_preprocessing.py (add new ones there).
+            # "aeon_default" (bandpass 300-6000 Hz + median common average
+            # referencing) is used if omitted; "none" passes the recording through.
             "SI_PREPROCESSING_METHOD": "aeon_default",
             # Keyword arguments for the preprocessing method; aeon_default takes
             # freq_min, freq_max, operator. Unknown keys raise.
