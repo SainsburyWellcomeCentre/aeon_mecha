@@ -13,6 +13,10 @@ notebooks/zofia/spike_sorting/unit_matching.ipynb) rather than run as a CLI:
    their best (possibly sub-threshold) candidate on the other side.
 """
 
+# This script exists to QC spike_sorting's matching internals, so it reaches into
+# that module's private helpers by design.
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 import numpy as np
@@ -57,9 +61,9 @@ def get_matched_pairs(restriction: dict | None = None) -> pd.DataFrame:
     for _, group in df.groupby(group_cols):
         if len(group) < 2:
             continue
-        group = group.sort_values("block_start")
-        seed = group.iloc[0]
-        for _, child in group.iloc[1:].iterrows():
+        blockstart_group = group.sort_values("block_start")
+        seed = blockstart_group.iloc[0]
+        for _, child in blockstart_group.iloc[1:].iterrows():
             if pd.isna(child["matched_spike_count"]):
                 continue
             row = {f"{k}_a": seed[k] for k in ("block_start", "block_end", "unit")}
@@ -201,8 +205,7 @@ def backfill_block_comparisons(key: dict) -> int:
         return 0
 
     existing_matched_starts = {
-        e["matched_block_start"]
-        for e in (spike_sorting.UnitMatching.BlockComparison & key).to_dicts()
+        e["matched_block_start"] for e in (spike_sorting.UnitMatching.BlockComparison & key).to_dicts()
     }
 
     new_rows = []
@@ -267,8 +270,8 @@ def _best_candidate(unit_id: int, is_prev_side: bool, later_block_key: dict, ear
     if not grid:
         return none_result
     row = grid.fetch1()
-    scores = np.asarray(row["agreement_scores"])              # [matched_block_unit_ids x unit_ids]
-    this_units = np.asarray(row["unit_ids"])                  # columns (later block)
+    scores = np.asarray(row["agreement_scores"])  # [matched_block_unit_ids x unit_ids]
+    this_units = np.asarray(row["unit_ids"])  # columns (later block)
     matched_units = np.asarray(row["matched_block_unit_ids"])  # rows (earlier block)
     if scores.size == 0:
         return none_result
@@ -318,10 +321,10 @@ def _annotate_orphans(
             ]
         )
 
-    quality_map = dict(
-        (e["unit"], e["unit_quality"])
+    quality_map = {
+        e["unit"]: e["unit_quality"]
         for e in (spike_sorting.SortedSpikes.Unit & block_key_).proj("unit_quality").to_dicts()
-    )
+    }
     qc_metrics = get_unit_quality_metrics(block_key_)
     locations = get_unit_locations(block_key_)
     manual_labels = get_unit_manual_labels(block_key_)
@@ -415,12 +418,20 @@ def get_orphan_units(shank_key: dict, matching_paramset_id: int) -> tuple[pd.Dat
     b_orphan_ids = b_rows.loc[b_rows["matched_spike_count"].isna(), "unit"].tolist()
 
     a_orphans = _annotate_orphans(
-        a_orphan_ids, block_a_key, block_b_key,
-        later_block_key=block_b_key, earlier_block_start=block_a_key["block_start"], is_prev_side=True,
+        a_orphan_ids,
+        block_a_key,
+        block_b_key,
+        later_block_key=block_b_key,
+        earlier_block_start=block_a_key["block_start"],
+        is_prev_side=True,
     )
     b_orphans = _annotate_orphans(
-        b_orphan_ids, block_b_key, block_a_key,
-        later_block_key=block_b_key, earlier_block_start=block_a_key["block_start"], is_prev_side=False,
+        b_orphan_ids,
+        block_b_key,
+        block_a_key,
+        later_block_key=block_b_key,
+        earlier_block_start=block_a_key["block_start"],
+        is_prev_side=False,
     )
     return a_orphans, b_orphans
 
@@ -440,15 +451,23 @@ def get_unit_match_summary(shank_key: dict, matching_paramset_id: int) -> pd.Dat
     b_matched_ids = set(b_rows.loc[b_rows["matched_spike_count"].notna(), "unit"])
 
     a_summary = _annotate_orphans(
-        a_rows["unit"].tolist(), block_a_key, block_b_key,
-        later_block_key=block_b_key, earlier_block_start=block_a_key["block_start"], is_prev_side=True,
+        a_rows["unit"].tolist(),
+        block_a_key,
+        block_b_key,
+        later_block_key=block_b_key,
+        earlier_block_start=block_a_key["block_start"],
+        is_prev_side=True,
     )
     a_summary["side"] = "A"
     a_summary["is_matched"] = a_summary["unit"].isin(a_matched_ids)
 
     b_summary = _annotate_orphans(
-        b_rows["unit"].tolist(), block_b_key, block_a_key,
-        later_block_key=block_b_key, earlier_block_start=block_a_key["block_start"], is_prev_side=False,
+        b_rows["unit"].tolist(),
+        block_b_key,
+        block_a_key,
+        later_block_key=block_b_key,
+        earlier_block_start=block_a_key["block_start"],
+        is_prev_side=False,
     )
     b_summary["side"] = "B"
     b_summary["is_matched"] = b_summary["unit"].isin(b_matched_ids)

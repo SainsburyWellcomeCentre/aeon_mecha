@@ -116,6 +116,7 @@ lint.ignore = [
   "PLR0912", 
   "PLR0913",
   "PLR0915",
+  "D107",
 ]
 extend-exclude = [
   ".git",
@@ -126,6 +127,17 @@ extend-exclude = [
   "aeon/dj_pipeline/streams.py",
 ]
 [tool.ruff.lint.per-file-ignores]
+# Runbooks are step-by-step walkthroughs, not library code: local imports and
+# long literal paths are the point. Real checks (undefined names, unused
+# imports, ...) still apply.
+"docs/ephys_runbooks/*" = [
+  "PLC0415",  # `import` should be at top-level of a file
+  "ICN001",   # enforces `import matplotlib as mpl`
+  "E501",     # line too long
+  "D205",     # 1 blank line required between summary line and description
+  "D415",     # first line should end with a period
+  "PLR2004",  # magic value used in comparison
+]
 "tests/*" = [
   "D101",    # skip adding docstrings for public classes
   "D102",    # skip adding docstrings for public methods

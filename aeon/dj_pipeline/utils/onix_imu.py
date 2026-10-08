@@ -15,10 +15,19 @@ import numpy as np
 import pandas as pd
 
 IMU_COLUMNS: tuple[str, ...] = (
-    "euler_x", "euler_y", "euler_z",
-    "gravity_vector_x", "gravity_vector_y", "gravity_vector_z",
-    "linear_acceleration_x", "linear_acceleration_y", "linear_acceleration_z",
-    "quaternion_w", "quaternion_x", "quaternion_y", "quaternion_z",
+    "euler_x",
+    "euler_y",
+    "euler_z",
+    "gravity_vector_x",
+    "gravity_vector_y",
+    "gravity_vector_z",
+    "linear_acceleration_x",
+    "linear_acceleration_y",
+    "linear_acceleration_z",
+    "quaternion_w",
+    "quaternion_x",
+    "quaternion_y",
+    "quaternion_z",
 )
 
 # Map dotmap stream class name -> column prefix used in IMU_COLUMNS

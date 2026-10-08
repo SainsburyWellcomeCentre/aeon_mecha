@@ -22,7 +22,7 @@ DEVICE_PROBE_TYPE_MAP = {
 
 
 def _serial_from_gain_cal(gain_cal: str | None) -> str | None:
-    """Extract the numeric probe serial from a GainCalibrationFileName path.
+    r"""Extract the numeric probe serial from a GainCalibrationFileName path.
 
     The serial is the name of the parent directory, e.g.
     ``...\\23107805942\\23107805942_gainCalValues.csv`` -> ``"23107805942"``.
@@ -89,7 +89,9 @@ def resolve_ephys_file(raw_bin_path: Path) -> Path:
     raise FileNotFoundError(f"No ephys file found (checked {checked}).")
 
 
-def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> str | None:
+def get_probe_id(  # noqa: PLR0911 -- one return per metadata shape
+    metadata: dict | None, device_name: str, probe_label: str
+) -> str | None:
     """Extract probe identifier from metadata.
 
     For V2Beta hardware (no serial numbers): probe ID = "{device_name}_{label}"
@@ -119,7 +121,7 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
 
     # V2 hardware: check enable flag, then extract serial from calibration path
     if device_name == "NeuropixelsV2":
-        suffix = probe_label[len("Probe"):]  # "A", "B", ...
+        suffix = probe_label[len("Probe") :]  # "A", "B", ...
 
         # New metadata format: each probe is its own top-level device block
         # "NeuropixelsV2A"/"NeuropixelsV2B" holding a single "ProbeConfiguration";
@@ -437,13 +439,11 @@ def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
     new_blocks = {
         k: v
         for k, v in data.items()
-        if re.fullmatch(r"NeuropixelsV2[A-Z]", k)
-        and isinstance(v, dict)
-        and "ProbeConfiguration" in v
+        if re.fullmatch(r"NeuropixelsV2[A-Z]", k) and isinstance(v, dict) and "ProbeConfiguration" in v
     }
     if new_blocks:
         for dev_key, block in new_blocks.items():
-            suffix = dev_key[len("NeuropixelsV2"):]  # "A", "B", ...
+            suffix = dev_key[len("NeuropixelsV2") :]  # "A", "B", ...
             probe_config = block.get("ProbeConfiguration") or {}
             pifn = probe_config.get("ProbeInterfaceFileName")
             result[f"Probe{suffix}"] = _probe_json_basename(pifn)
