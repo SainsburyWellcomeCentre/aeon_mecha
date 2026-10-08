@@ -110,6 +110,7 @@ class SortingMethod(dj.Lookup):
         ("kilosort2.5", "kilosort2.5 sorting method"),
         ("kilosort3", "kilosort3 sorting method"),
         ("kilosort4", "kilosort4 sorting method"),
+        ("lupin", "lupin sorting method (SpikeInterface internal)"),
     ]
 
 
@@ -509,7 +510,9 @@ class SpikeSorting(dj.Computed):
 
         # Prevent SpikeInterface from re-running write_binary_recording internally:
         # https://github.com/SpikeInterface/spikeinterface/blob/705c932/src/spikeinterface/sorters/external/kilosortbase.py#L124
-        sorting_params["skip_kilosort_preprocessing"] = False
+        # Kilosort-only parameter; other sorters (e.g. lupin) reject it.
+        if sorting_method.startswith("kilosort"):
+            sorting_params["skip_kilosort_preprocessing"] = False
 
         intermediate_dir = scratch_recording_dir(Path(recording_file).parent)
         if save_format == "zarr":

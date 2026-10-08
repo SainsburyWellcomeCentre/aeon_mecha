@@ -714,3 +714,43 @@ class TestSortingParamSetPreprocessingMethod:
             skip_duplicates=True,
         )
         assert spike_sorting.SortingParamSet & key
+
+
+class TestSpikeSortingLupin:
+    def test_lupin_sorts_unpreprocessed_recording(self, ephys_full_pipeline, tmp_path):
+        """Lupin runs through SpikeSorting.make_compute with SI_PREPROCESSING_METHOD="none".
+
+        The recording is laid out as PreProcessing writes it (si_recording.pkl + recording.zarr).
+        Guards against Kilosort-only sorter params (skip_kilosort_preprocessing) being passed
+        to non-Kilosort sorters, which reject them.
+        """
+        import spikeinterface.full as si
+
+        from aeon.dj_pipeline import spike_sorting
+        from aeon.dj_pipeline.utils.ephys_preprocessing import get_preprocessing_method
+
+        assert spike_sorting.SortingMethod & {"sorting_method": "lupin"}
+
+        recording, _ = si.generate_ground_truth_recording(
+            durations=[10.0], num_channels=32, num_units=5, seed=0
+        )
+        recording = get_preprocessing_method("none")(recording)
+
+        output_dir = tmp_path / "lupin_test"
+        recording_dir = output_dir.parent / "recording"
+        recording_dir.mkdir(parents=True)
+        recording_file = recording_dir / "si_recording.pkl"
+        recording.dump_to_pickle(file_path=recording_file)
+        recording.save(format="zarr", folder=recording_dir / "recording.zarr")
+
+        params = {
+            "SI_PREPROCESSING_METHOD": "none",
+            # n_jobs=1: SI 0.104's threaded template matching can deadlock in lupin.
+            "SI_SORTING_PARAMS": {"job_kwargs": {"n_jobs": 1, "chunk_duration": "1s"}},
+        }
+        sorting_output_dir, _, _ = spike_sorting.SpikeSorting().make_compute(
+            {}, recording_file, output_dir, params, "lupin"
+        )
+
+        sorting = si.load(sorting_output_dir / "si_sorting.pkl", base_folder=output_dir)
+        assert len(sorting.unit_ids) > 0
