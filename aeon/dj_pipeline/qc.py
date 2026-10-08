@@ -78,6 +78,7 @@ class CameraQC(dj.Imported):
         device_name = (video_source & key).fetch1("spinnaker_video_source_name")
         data_dirs = acquisition.Experiment.get_data_directories(key)
 
+        # acquisition.aeon_schemas no longer exists -- see issue #627.
         devices_schema = getattr(
             acquisition.aeon_schemas,  # pyright: ignore[reportAttributeAccessIssue]
             (acquisition.Experiment.DevicesSchema & {"experiment_name": key["experiment_name"]}).fetch1(
