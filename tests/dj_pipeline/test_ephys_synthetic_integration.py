@@ -473,7 +473,17 @@ class TestSyncedSpikesIndexingAndExtrapolation:
     """
 
     def _build_and_populate(
-        self, tmp_path, experiment_name, n_chunks, spike_indices, chunk_indices, ts_ranges=None
+        self,
+        tmp_path,
+        experiment_name,
+        n_chunks,
+        spike_indices,
+        chunk_indices,
+        ts_ranges=None,
+        amp_samples=None,
+        clock_samples=None,
+        sorted_samples=None,
+        amp_as_zarr=False,
     ):
         """Set up minimal DB state for SyncedSpikes.make(), run it, and return spike_counts.
 
@@ -486,6 +496,12 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         - ``chunk_indices``: which ephys chunks' spike_counts to return (0-based, ordered
           by chunk_start). Returns a list in the same order; 0 for a chunk that got no
           SyncedSpikes.Unit row at all.
+        - ``amp_samples`` / ``clock_samples``: optional per-chunk sample counts to truncate
+          the AmplifierData / Clock files to (the factory writes 10 samples per chunk).
+        - ``sorted_samples``: sample count of the sorted recording; defaults to the sum of
+          the AmplifierData sample counts, as PreProcessing would have concatenated them.
+        - ``amp_as_zarr``: replace each AmplifierData .bin with its compressed .zarr twin
+          under the processed root, as raw ephys compression leaves them.
         """
         from datetime import UTC, datetime
 
@@ -518,6 +534,16 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             n_chunks=n_chunks,
             ts_ranges=ts_ranges,
         )
+        amp_samples = amp_samples or [10] * n_chunks
+        clock_samples = clock_samples or [10] * n_chunks
+        device_dir = raw_dir / epoch_dir_name / device_name
+        for n in range(n_chunks):  # truncate files, e.g. as a copy of a still-open file would
+            for stream, dtype, n_keep in (
+                ("AmplifierData", np.uint16, amp_samples[n]),
+                ("Clock", np.uint64, clock_samples[n]),
+            ):
+                path = device_dir / f"{device_name}_{probe_label}_{stream}_{n}.bin"
+                np.fromfile(path, dtype=dtype)[:n_keep].tofile(path)
 
         epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
@@ -535,6 +561,15 @@ class TestSyncedSpikesIndexingAndExtrapolation:
 
         ephys.EphysSyncModel.ingest(experiment_name)
         ephys.EphysChunk.ingest_chunks(experiment_name)
+        if amp_as_zarr:  # after ingestion, which reads the raw files
+            import spikeinterface.extractors as se
+
+            zarr_dir = tmp_path / "processed" / epoch_dir_name / device_name
+            for amp_bin in sorted(device_dir.glob("*AmplifierData_*.bin")):
+                se.read_binary(amp_bin, sampling_frequency=30e3, dtype=np.uint16, num_channels=1).save(
+                    format="zarr", folder=zarr_dir / amp_bin.with_suffix(".zarr").name
+                )
+                amp_bin.unlink()
 
         chunk_rows = (ephys.EphysChunk & {"experiment_name": experiment_name}).to_dicts(
             order_by="chunk_start"
@@ -605,13 +640,32 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         }
         spike_sorting.SortingTask.insert1(sorting_task_key)
 
+        # SyncedSpikes checks the AmplifierData sample counts against the sorted recording,
+        # so write a minimal analyzer with the sorted recording's sample count.
+        import probeinterface as pi
+        import spikeinterface as si
+
+        probe = pi.generate_linear_probe(num_elec=1)
+        probe.set_device_channel_indices([0])
+        recording = si.NumpyRecording(
+            np.zeros((sorted_samples or sum(amp_samples), 1), dtype=np.float32), sampling_frequency=30e3
+        )
+        sorting_output_dir = experiment_name
+        si.create_sorting_analyzer(
+            si.NumpySorting.from_unit_dict({1: np.array([0])}, sampling_frequency=30e3),
+            recording.set_probe(probe),
+            format="binary_folder",
+            folder=spike_sorting.get_sorting_root_dir() / sorting_output_dir / "sorting_analyzer",
+            sparse=False,
+        )
+
         now = datetime.now(UTC)
         spike_sorting.PreProcessing.insert1(
             {
                 **sorting_task_key,
                 "execution_time": now,
                 "execution_duration": 0.0,
-                "sorting_output_dir": "x",
+                "sorting_output_dir": sorting_output_dir,
             },
             allow_direct_insert=True,
         )
@@ -689,3 +743,60 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             "[onix_ts_start, onix_ts_end] bounds; they must be extrapolated via the window's "
             f"model, not dropped. Got spike_count={chunk_count}."
         )
+
+    def test_truncated_amplifier_file_sets_chunk_boundary(self, ephys_full_pipeline, tmp_path):
+        """Chunk boundaries follow the AmplifierData sample counts, not the Clock file lengths.
+
+        Chunk A's AmplifierData lost its last 4 samples (6 left, Clock still 10), so the
+        sorted recording is [A: 0-5 | B: 6-15]. Spikes [5, 6, 15] belong 1 to A and 2 to B;
+        boundaries from the Clock files would put index 6 in A instead.
+        """
+        chunk_a_count, chunk_b_count = self._build_and_populate(
+            tmp_path,
+            "test_synced_spikes_trunc_amp",
+            n_chunks=2,
+            spike_indices=[5, 6, 15],
+            chunk_indices=[0, 1],
+            amp_samples=[6, 10],
+        )
+
+        assert (chunk_a_count, chunk_b_count) == (1, 2)
+
+    def test_short_clock_file_is_extrapolated(self, ephys_full_pipeline, tmp_path):
+        """Spikes past the end of a short Clock file get extrapolated times, not dropped."""
+        (chunk_count,) = self._build_and_populate(
+            tmp_path,
+            "test_synced_spikes_short_clock",
+            n_chunks=1,
+            spike_indices=[0, 8, 9],  # 8 and 9 lie past the truncated Clock file's 8 samples
+            chunk_indices=[0],
+            clock_samples=[8],
+        )
+
+        assert chunk_count == 3
+
+    def test_raw_files_changed_since_sorting_raises(self, ephys_full_pipeline, tmp_path):
+        """AmplifierData files that no longer add up to the sorted recording raise."""
+        with pytest.raises(ValueError, match="changed since sorting"):
+            self._build_and_populate(
+                tmp_path,
+                "test_synced_spikes_changed",
+                n_chunks=1,
+                spike_indices=[0],
+                chunk_indices=[0],
+                sorted_samples=8,  # e.g. sorted while the file was truncated, then re-copied
+            )
+
+    def test_compressed_amplifier_file_sets_chunk_boundary(self, ephys_full_pipeline, tmp_path):
+        """With only the compressed .zarr twin on disk, its sample count sets the boundary."""
+        chunk_a_count, chunk_b_count = self._build_and_populate(
+            tmp_path,
+            "test_synced_spikes_zarr",
+            n_chunks=2,
+            spike_indices=[5, 6, 15],
+            chunk_indices=[0, 1],
+            amp_samples=[6, 10],
+            amp_as_zarr=True,
+        )
+
+        assert (chunk_a_count, chunk_b_count) == (1, 2)
