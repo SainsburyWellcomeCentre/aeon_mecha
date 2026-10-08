@@ -22,6 +22,10 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
+from aeon.dj_pipeline.utils.ephys_preprocessing import (
+    DEFAULT_PREPROCESSING_METHOD,
+    get_preprocessing_method,
+)
 from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, resolve_ephys_file
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
@@ -106,6 +110,7 @@ class SortingMethod(dj.Lookup):
         ("kilosort2.5", "kilosort2.5 sorting method"),
         ("kilosort3", "kilosort3 sorting method"),
         ("kilosort4", "kilosort4 sorting method"),
+        ("lupin", "lupin sorting method (SpikeInterface internal)"),
     ]
 
 
@@ -118,6 +123,18 @@ class SortingParamSet(dj.Lookup):
     paramset_description='': varchar(1000)
     params: <blob>  # dictionary of all applicable parameters
     """
+
+    def insert(self, rows, **kwargs):
+        """Insert paramsets, rejecting an unknown ``SI_PREPROCESSING_METHOD`` up front."""
+        # Only plain sequences of dicts are checked; DataFrames, query expressions and
+        # generators pass through untouched (PreProcessing still fails on an unknown name).
+        if isinstance(rows, list | tuple):
+            for row in rows:
+                if isinstance(row, dict):
+                    method = (row.get("params") or {}).get("SI_PREPROCESSING_METHOD")
+                    if method is not None:
+                        get_preprocessing_method(method)
+        super().insert(rows, **kwargs)
 
 
 @schema
@@ -334,12 +351,16 @@ class PreProcessing(dj.Computed):
         si_probe.set_device_channel_indices(electrodes_df["channel_idx"].values)
         si_recording.set_probe(probe=si_probe, in_place=True)
 
+        params = (SortingParamSet & key).fetch1("params")
+
         # Run preprocessing and save results to output folder
         si_recording = si.preprocessing.unsigned_to_signed(si_recording)
-        si_recording = ephys_preproc(si_recording)
+        preprocess = get_preprocessing_method(
+            params.get("SI_PREPROCESSING_METHOD", DEFAULT_PREPROCESSING_METHOD)
+        )
+        si_recording = preprocess(si_recording, **params.get("SI_PREPROCESSING_PARAMS", {}))
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
-        params = (SortingParamSet & key).fetch1("params")
         save_format = params.get("save_format", "zarr")
 
         # 30s chunk_duration matches the raw standalone-compression default; it sets the
@@ -489,7 +510,9 @@ class SpikeSorting(dj.Computed):
 
         # Prevent SpikeInterface from re-running write_binary_recording internally:
         # https://github.com/SpikeInterface/spikeinterface/blob/705c932/src/spikeinterface/sorters/external/kilosortbase.py#L124
-        sorting_params["skip_kilosort_preprocessing"] = False
+        # Kilosort-only parameter; other sorters (e.g. lupin) reject it.
+        if sorting_method.startswith("kilosort"):
+            sorting_params["skip_kilosort_preprocessing"] = False
 
         intermediate_dir = scratch_recording_dir(Path(recording_file).parent)
         if save_format == "zarr":
@@ -1775,29 +1798,6 @@ class UnitMatching(dj.Computed):
             f"  {n_matched} matched to existing global units\n"
             f"  {n_new} new global units created"
         )
-
-
-# ---- Ephys preprocessing with spike interface ----
-
-
-def ephys_preproc(recording) -> Any:
-    """Apply standard ephys preprocessing pipeline.
-
-    Performs unsigned-to-signed conversion, bandpass filtering (300-6000 Hz),
-    and common average referencing using median.
-
-    Args:
-        recording: SpikeInterface recording object
-
-    Returns:
-        Preprocessed recording object
-    """
-    import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
-    import spikeinterface as si
-
-    recording = si.preprocessing.bandpass_filter(recording=recording, freq_min=300, freq_max=6000)
-    recording = si.preprocessing.common_reference(recording=recording, operator="median")
-    return recording
 
 
 def load_and_verify_binary_file(binary_file_path: Path, se_recording_obj: Any) -> Any:
