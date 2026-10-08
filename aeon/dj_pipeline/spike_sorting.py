@@ -9,8 +9,8 @@ import json
 import os
 import shutil
 import tempfile
-from collections import defaultdict
-from collections.abc import Iterator
+from collections import Counter, defaultdict
+from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -1380,6 +1380,7 @@ _DEFAULT_MATCHING_PARAMS = {
     "delta_time": 0.4,  # ms; coincidence window for compare_two_sorters
     "match_score": 0.5,  # min agreement_score to accept a 1:1 (Hungarian) match
     "min_score": 0.1,  # compare_two_sorters chance_score (below = noise-level)
+    "exclude_noise": True,  # hold units labelled "noise" out of matching (no global unit id)
 }
 
 
@@ -1407,20 +1408,23 @@ def _restrict_to_overlap(spike_times_s: np.ndarray, start_s: float, end_s: float
     return spike_times_s[mask] - start_s
 
 
-def _load_block_unit_spike_trains(block_key: dict) -> dict[int, np.ndarray]:
-    """Return {unit_id: sorted spike times in epoch seconds} for every non-noise unit in a block.
+def _load_block_unit_spike_trains(block_key: dict, exclude_noise: bool = True) -> dict[int, np.ndarray]:
+    """Return {unit_id: sorted spike times in epoch seconds} for the units of a block.
 
-    Units the curator manually labeled "noise" (SortedSpikes.Unit.unit_quality == "noise") are
-    excluded: they are kept in SortedSpikes/SyncedSpikes but should never be matched across blocks or
-    handed a global unit id. Matching only runs on curated blocks, so unit_quality there is the
-    curator's own call; the antijoin excludes only that exact "noise" label, leaving every other label
-    (including Kilosort's own on any raw unit) loaded.
+    With exclude_noise=True (the default), units the curator labeled "noise"
+    (SortedSpikes.Unit.unit_quality == "noise") are left out: they are kept in
+    SortedSpikes/SyncedSpikes but never matched across blocks or handed a global unit id. Matching
+    only runs on curated blocks, so unit_quality there is the curator's own call; the antijoin
+    excludes only that exact "noise" label, leaving every other label (including Kilosort's own on
+    any raw unit) loaded. With exclude_noise=False every unit is loaded, noise included.
     """
-    # .proj(): both tables declare a secondary `spike_count` with no common lineage, which
-    # DataJoint 2.x rejects (same bug class as #609).
-    non_noise_units = (SortedSpikes.Unit - {"unit_quality": "noise"}).proj()
+    units = SyncedSpikes.Unit & block_key
+    if exclude_noise:
+        # .proj(): both tables declare a secondary `spike_count` with no common lineage, which
+        # DataJoint 2.x rejects (same bug class as #609).
+        units &= (SortedSpikes.Unit - {"unit_quality": "noise"}).proj()
     trains: dict[int, list] = {}
-    for unit_entry in (SyncedSpikes.Unit & block_key & non_noise_units).to_dicts():
+    for unit_entry in units.to_dicts():
         trains.setdefault(unit_entry["unit"], []).append(unit_entry["spike_times"])
     for unit_id, chunks in trains.items():
         concatenated = np.sort(np.concatenate(chunks))
@@ -1609,10 +1613,12 @@ class UnitMatching(dj.Computed):
         delta_time = params["delta_time"]
         match_score = params["match_score"]
         min_score = params["min_score"]
+        exclude_noise = params["exclude_noise"]
 
         logger.info(
             f"Matching block {key['block_start']} ({key['electrode_group']}, insertion {key['insertion_number']}) "
-            f"[{_matching_method}]: delta_time={delta_time}ms  match_score={match_score}  min_score={min_score}"
+            f"[{_matching_method}]: delta_time={delta_time}ms  match_score={match_score}  min_score={min_score}  "
+            f"exclude_noise={exclude_noise}"
         )
 
         insertion_key = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
@@ -1643,7 +1649,7 @@ class UnitMatching(dj.Computed):
                     f"There may be unprocessed intermediate blocks (check curation status)."
                 )
 
-        this_block_units = _load_block_unit_spike_trains(key)
+        this_block_units = _load_block_unit_spike_trains(key, exclude_noise)
 
         if not this_block_units:
             logger.warning(f"No synced spike data found for block {key}. Skipping.")
@@ -1681,7 +1687,7 @@ class UnitMatching(dj.Computed):
 
         for prev_block in overlapping_blocks:
             prev_key = prev_block
-            prev_units = _load_block_unit_spike_trains(prev_key)
+            prev_units = _load_block_unit_spike_trains(prev_key, exclude_noise)
             if not prev_units:
                 continue
 
@@ -1852,6 +1858,69 @@ class UnitMatching(dj.Computed):
             f"  {n_matched} matched to existing global units\n"
             f"  {n_new} new global units created"
         )
+
+
+@schema
+class GlobalUnitQuality(dj.Computed):
+    definition = """
+    # Majority quality label of a global unit across every block it was matched in
+    -> GlobalUnit
+    ---
+    -> UnitQuality      # majority unit_quality; on a tie, the worse label one wins.
+    n_blocks: int32     # blocks the label was computed over
+    n_good: int32
+    n_mua: int32
+    n_noise: int32
+    """
+
+    # Rank of each unit_quality if there a tie for the majority
+    quality_rank = {"good": 0, "mua": 1, "noise": 2}
+
+    @classmethod
+    def majority_unit_quality(cls, labels: Iterable[str]) -> str:
+        """Return the most common label; on a tie, the worse of the tied labels."""
+        counts = Counter(labels)
+        if not counts:
+            raise ValueError("No labels to take the majority of.")
+        unknown = set(counts) - set(cls.quality_rank)
+        if unknown:
+            raise ValueError(f"Unexpected unit_quality label(s) {unknown}; expected {set(cls.quality_rank)}.")
+        top = max(counts.values())
+        return max((label for label, n in counts.items() if n == top), key=cls.quality_rank.__getitem__)
+
+    @property
+    def key_source(self):
+        """Global units matched in at least one block."""
+        return GlobalUnit & UnitMatching.Unit
+
+    def make(self, key):
+        """Count the unit's per-block labels and store the majority."""
+        labels = (SortedSpikes.Unit & (UnitMatching.Unit & key).proj()).to_arrays("unit_quality")
+        counts = Counter(labels)
+        self.insert1(
+            {
+                **key,
+                "unit_quality": self.majority_unit_quality(labels),
+                "n_blocks": len(labels),
+                **{f"n_{quality}": counts.get(quality, 0) for quality in self.quality_rank},
+            }
+        )
+
+    @classmethod
+    def refresh(cls, *restrictions, **populate_kwargs) -> None:
+        """Bring labels up to date after more blocks were matched, then populate.
+
+        A label is not true once its global unit has been matched in more blocks than it
+        was computed on before. Only those GlobalUnitQuality rows are deleted, but nothing depends on this table so its safe :)
+        """
+        n_matched = GlobalUnit.aggr(UnitMatching.Unit, n_matched="COUNT(*)")
+        stale = (cls.proj("n_blocks") * n_matched & "n_blocks != n_matched").proj()
+        for restriction in restrictions:
+            stale &= restriction
+        if stale:
+            logger.info(f"Deleting {len(stale)} stale GlobalUnitQuality row(s) for recomputation.")
+            (cls & stale).delete(prompt=False)
+        cls.populate(*restrictions, **populate_kwargs)
 
 
 # ---- Ephys preprocessing with spike interface ----

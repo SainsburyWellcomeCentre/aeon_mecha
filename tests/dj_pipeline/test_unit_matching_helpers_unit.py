@@ -12,7 +12,7 @@ class TestResolveMatchingParams:
     def test_merges_over_defaults(self):
         from aeon.dj_pipeline.spike_sorting import _resolve_matching_params
 
-        defaults = {"delta_time": 0.4, "match_score": 0.5, "min_score": 0.1}
+        defaults = {"delta_time": 0.4, "match_score": 0.5, "min_score": 0.1, "exclude_noise": True}
         assert _resolve_matching_params({}) == defaults
         assert _resolve_matching_params({"delta_time": 1.0}) == {**defaults, "delta_time": 1.0}
 

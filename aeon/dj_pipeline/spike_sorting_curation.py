@@ -147,8 +147,9 @@ class ApplyOfficialCuration(dj.Imported):
         # Units manually labeled "noise" are kept, not deleted: apply_curation() runs on the
         # curation exactly as saved, so noise units survive into the curated analyzer carrying
         # their "quality"="noise" property, which SortedSpikes.make() writes into
-        # SortedSpikes.Unit.unit_quality on repopulation. They are held out of unit matching instead
-        # (see _load_block_unit_spike_trains in spike_sorting.py), not deleted here.
+        # SortedSpikes.Unit.unit_quality on repopulation. Whether they take part in unit matching is
+        # set per UnitMatchingParamSet ("exclude_noise", default True - see
+        # _load_block_unit_spike_trains in spike_sorting.py); they are never deleted here.
 
         # Load original sorting analyzer
         analyzer_output_dir = _get_analyzer_dir_from_key(key)
