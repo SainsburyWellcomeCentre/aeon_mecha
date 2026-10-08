@@ -4,11 +4,8 @@
 import re  # pyright: ignore[reportUnusedImport]
 import datajoint as dj
 import pandas as pd  # pyright: ignore[reportUnusedImport]
-from uuid import UUID  # pyright: ignore[reportUnusedImport]
 
-import aeon  # pyright: ignore[reportUnusedImport]
 from aeon.dj_pipeline import acquisition, get_schema_name  # pyright: ignore[reportUnusedImport]
-from swc.aeon.io import api as io_api  # pyright: ignore[reportUnusedImport]
 
 schema = dj.Schema(get_schema_name("streams"))
 
