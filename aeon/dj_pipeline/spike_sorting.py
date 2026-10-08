@@ -10,7 +10,7 @@ import os
 import shutil
 import tempfile
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -118,6 +118,18 @@ class SortingParamSet(dj.Lookup):
     paramset_description='': varchar(1000)
     params: <blob>  # dictionary of all applicable parameters
     """
+
+    def insert(self, rows, **kwargs):
+        """Insert paramsets, rejecting an unknown ``SI_PREPROCESSING_METHOD`` up front."""
+        # Only plain sequences of dicts are checked; DataFrames, query expressions and
+        # generators pass through untouched (PreProcessing still fails on an unknown name).
+        if isinstance(rows, list | tuple):
+            for row in rows:
+                if isinstance(row, dict):
+                    method = (row.get("params") or {}).get("SI_PREPROCESSING_METHOD")
+                    if method is not None:
+                        get_preprocessing_method(method)
+        super().insert(rows, **kwargs)
 
 
 @schema
@@ -334,12 +346,16 @@ class PreProcessing(dj.Computed):
         si_probe.set_device_channel_indices(electrodes_df["channel_idx"].values)
         si_recording.set_probe(probe=si_probe, in_place=True)
 
+        params = (SortingParamSet & key).fetch1("params")
+
         # Run preprocessing and save results to output folder
         si_recording = si.preprocessing.unsigned_to_signed(si_recording)
-        si_recording = ephys_preproc(si_recording)
+        preprocess = get_preprocessing_method(
+            params.get("SI_PREPROCESSING_METHOD", DEFAULT_PREPROCESSING_METHOD)
+        )
+        si_recording = preprocess(si_recording, **params.get("SI_PREPROCESSING_PARAMS", {}))
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
-        params = (SortingParamSet & key).fetch1("params")
         save_format = params.get("save_format", "zarr")
 
         # 30s chunk_duration matches the raw standalone-compression default; it sets the
@@ -1779,24 +1795,69 @@ class UnitMatching(dj.Computed):
 
 # ---- Ephys preprocessing with spike interface ----
 
+# Preprocessing methods selectable via SortingParamSet.params["SI_PREPROCESSING_METHOD"],
+# keyed by name. Each takes a SpikeInterface recording plus keyword arguments from
+# params["SI_PREPROCESSING_PARAMS"], and returns a (lazy) recording.
+# A name referenced by an existing paramset must not change behavior - register
+# modified logic under a new name instead.
+_PREPROCESSING_METHODS: dict[str, Callable[..., Any]] = {}
 
-def ephys_preproc(recording) -> Any:
-    """Apply standard ephys preprocessing pipeline.
+DEFAULT_PREPROCESSING_METHOD = "aeon_default"
 
-    Performs unsigned-to-signed conversion, bandpass filtering (300-6000 Hz),
-    and common average referencing using median.
 
-    Args:
-        recording: SpikeInterface recording object
+def register_preprocessing(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Register a preprocessing function under ``name`` for use in SortingParamSet."""
 
-    Returns:
-        Preprocessed recording object
-    """
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        if name in _PREPROCESSING_METHODS:
+            raise ValueError(f"Preprocessing method '{name}' is already registered.")
+        _PREPROCESSING_METHODS[name] = func
+        return func
+
+    return decorator
+
+
+def get_preprocessing_method(name: str) -> Callable[..., Any]:
+    """Return the preprocessing function registered under ``name``."""
+    try:
+        return _PREPROCESSING_METHODS[name]
+    except KeyError:
+        raise ValueError(
+            f"Unknown SI_PREPROCESSING_METHOD '{name}'. "
+            f"Registered methods: {sorted(_PREPROCESSING_METHODS)}"
+        ) from None
+
+
+def _reject_unused_kwargs(method: str, kwargs: dict[str, Any]) -> None:
+    """Raise on SI_PREPROCESSING_PARAMS keys that ``method`` does not use."""
+    if kwargs:
+        raise ValueError(
+            f"Preprocessing method '{method}' does not accept SI_PREPROCESSING_PARAMS: {sorted(kwargs)}"
+        )
+
+
+# "ephys_preproc": the name earlier runbooks wrote into SI_PREPROCESSING_METHOD, when the
+# key was ignored and this recipe always ran. Kept so those paramsets resolve unchanged.
+@register_preprocessing("ephys_preproc")
+@register_preprocessing("aeon_default")
+def aeon_default(
+    recording, freq_min: float = 300, freq_max: float = 6000, operator: str = "median", **kwargs
+) -> Any:
+    """Bandpass filter (default 300-6000 Hz), then common average reference (default median)."""
+    _reject_unused_kwargs("aeon_default", kwargs)
+
     import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
     import spikeinterface as si
 
-    recording = si.preprocessing.bandpass_filter(recording=recording, freq_min=300, freq_max=6000)
-    recording = si.preprocessing.common_reference(recording=recording, operator="median")
+    recording = si.preprocessing.bandpass_filter(recording=recording, freq_min=freq_min, freq_max=freq_max)
+    recording = si.preprocessing.common_reference(recording=recording, operator=operator)
+    return recording
+
+
+@register_preprocessing("none")
+def no_preprocessing(recording, **kwargs) -> Any:
+    """Return the recording unchanged, e.g. to leave preprocessing to the sorter."""
+    _reject_unused_kwargs("none", kwargs)
     return recording
 
 

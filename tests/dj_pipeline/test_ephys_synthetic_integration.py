@@ -689,3 +689,28 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             "[onix_ts_start, onix_ts_end] bounds; they must be extrapolated via the window's "
             f"model, not dropped. Got spike_count={chunk_count}."
         )
+
+
+class TestSortingParamSetPreprocessingMethod:
+    def test_unknown_method_rejected_on_insert(self, ephys_full_pipeline):
+        """A typo in SI_PREPROCESSING_METHOD fails at insert, not hours into PreProcessing."""
+        from aeon.dj_pipeline import spike_sorting
+
+        row = {
+            "paramset_id": "test-bad-preproc",
+            "sorting_method": "kilosort4",
+            "params": {"SI_PREPROCESSING_METHOD": "aeon_defualt"},
+        }
+        with pytest.raises(ValueError, match="aeon_defualt"):
+            spike_sorting.SortingParamSet.insert1(row)
+        assert not (spike_sorting.SortingParamSet & {"paramset_id": "test-bad-preproc"})
+
+    def test_registered_method_accepted(self, ephys_full_pipeline):
+        from aeon.dj_pipeline import spike_sorting
+
+        key = {"paramset_id": "test-none-pp"}
+        spike_sorting.SortingParamSet.insert1(
+            {**key, "sorting_method": "kilosort4", "params": {"SI_PREPROCESSING_METHOD": "none"}},
+            skip_duplicates=True,
+        )
+        assert spike_sorting.SortingParamSet & key
