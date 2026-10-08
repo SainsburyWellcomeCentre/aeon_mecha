@@ -12,26 +12,43 @@ saved for sorting. A paramset picks the method and its arguments::
 
 Adding a method
 ---------------
-Write a function in this module and register it under a name::
+Register a function under a name. It can live in this module or in any other
+module or package::
+
+    from aeon.dj_pipeline.utils.ephys_preprocessing import (
+        register_preprocessing,
+        reject_unused_kwargs,
+    )
+
 
     @register_preprocessing("my_method")
     def my_method(recording, my_option: float = 1.0, **kwargs) -> Any:
-        _reject_unused_kwargs("my_method", kwargs)
+        reject_unused_kwargs("my_method", kwargs)
 
         import spikeinterface.preprocessing as spre
 
         recording = spre.highpass_filter(recording, freq_min=my_option)
         return recording
 
+Registration happens on import. A method defined outside this module must be
+imported before inserting a paramset that names it and before running
+``PreProcessing.populate()``, e.g. at the top of the script that runs it::
+
+    import my_lab.preprocessing  # noqa: F401 -- registers "my_method"
+
+    spike_sorting.PreProcessing.populate()
+
 Rules for a method:
 
 - Take a SpikeInterface recording plus keyword arguments, and return a recording.
 - Keep it lazy: chain SpikeInterface preprocessing steps rather than loading traces.
-  The result is pickled and reloaded by the sorting step in another process.
+  The result is pickled and reloaded by the sorting step in another process, so a
+  custom preprocessor class must be importable there too.
 - Expose tunable values as keyword arguments with defaults, and call
-  ``_reject_unused_kwargs`` so a misspelled key fails instead of being ignored.
-- Once a paramset references a name, don't change what it does. Register modified
-  logic under a new name.
+  ``reject_unused_kwargs`` so a misspelled key fails instead of being ignored.
+- Names are unique; registering an existing name raises. Once a paramset
+  references a name, don't change what it does - register modified logic under a
+  new name.
 
 This module has no database dependency, so methods can be unit-tested directly.
 """
@@ -45,7 +62,10 @@ DEFAULT_PREPROCESSING_METHOD = "aeon_default"
 
 
 def register_preprocessing(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Register a preprocessing function under ``name`` for use in SortingParamSet."""
+    """Register a preprocessing function under ``name`` for use in SortingParamSet.
+
+    Usable from any module; the function is registered when that module is imported.
+    """
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         if name in _PREPROCESSING_METHODS:
@@ -67,7 +87,7 @@ def get_preprocessing_method(name: str) -> Callable[..., Any]:
         ) from None
 
 
-def _reject_unused_kwargs(method: str, kwargs: dict[str, Any]) -> None:
+def reject_unused_kwargs(method: str, kwargs: dict[str, Any]) -> None:
     """Raise on SI_PREPROCESSING_PARAMS keys that ``method`` does not use."""
     if kwargs:
         raise ValueError(
@@ -86,7 +106,7 @@ def aeon_default(
     recording, freq_min: float = 300, freq_max: float = 6000, operator: str = "median", **kwargs
 ) -> Any:
     """Bandpass filter (default 300-6000 Hz), then common average reference (default median)."""
-    _reject_unused_kwargs("aeon_default", kwargs)
+    reject_unused_kwargs("aeon_default", kwargs)
 
     import spikeinterface.preprocessing as spre
 
@@ -98,5 +118,5 @@ def aeon_default(
 @register_preprocessing("none")
 def no_preprocessing(recording, **kwargs) -> Any:
     """Return the recording unchanged, e.g. to leave preprocessing to the sorter."""
-    _reject_unused_kwargs("none", kwargs)
+    reject_unused_kwargs("none", kwargs)
     return recording
