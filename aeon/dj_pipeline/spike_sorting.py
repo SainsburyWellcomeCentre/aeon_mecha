@@ -1220,10 +1220,14 @@ class SyncedSpikes(dj.Imported):
         for f, d in zip(ephys_files, dir_types, strict=True):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
             onix_ts = np.memmap(ephys_dir / f, mode="r", dtype=np.uint64)
-            amp_file = ephys_dir / f.replace("Clock", "AmplifierData")
-            amp_len = se.read_binary(
-                amp_file, sampling_frequency=fs_hz, dtype=np.uint16, num_channels=num_channels
-            ).get_num_samples()
+            # Resolved as in PreProcessing: the compressed .zarr twin if present, else the raw .bin
+            amp_file = resolve_ephys_file(ephys_dir / f.replace("Clock", "AmplifierData"))
+            if amp_file.suffix == ".zarr":
+                amp_len = si.load(amp_file).get_num_samples()
+            else:
+                amp_len = se.read_binary(
+                    amp_file, sampling_frequency=fs_hz, dtype=np.uint16, num_channels=num_channels
+                ).get_num_samples()
             n_missing = amp_len - len(onix_ts)  # > 0: Clock file short, < 0: AmplifierData file short
             if n_missing < 0:
                 logger.warning(
