@@ -22,10 +22,13 @@ def chunk_window():
 
 @pytest.fixture
 def chunk_key():
+    """Primary key of a single acquisition chunk."""
     return {"experiment_name": "exp", "chunk_start": pd.Timestamp("2025-01-01 00:00:00")}
 
 
 class TestEnvironmentRow:
+    """Tests for building Environment stream rows with `_environment_row`."""
+
     def test_builds_full_row_when_dataframe_has_data(self, chunk_key, chunk_window):
         from aeon.dj_pipeline import acquisition
 
