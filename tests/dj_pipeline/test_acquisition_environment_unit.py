@@ -27,7 +27,7 @@ def chunk_key():
 
 class TestEnvironmentRow:
     def test_builds_full_row_when_dataframe_has_data(self, chunk_key, chunk_window):
-        import aeon.dj_pipeline.acquisition as acquisition
+        from aeon.dj_pipeline import acquisition
 
         df = pd.DataFrame(
             {"state": ["A", "B"]},
@@ -56,7 +56,7 @@ class TestEnvironmentRow:
 
         The row carries sample_count=0, empty timestamps, AND stream_df=None.
         """
-        import aeon.dj_pipeline.acquisition as acquisition
+        from aeon.dj_pipeline import acquisition
 
         row = acquisition._environment_row(
             None,
@@ -73,7 +73,7 @@ class TestEnvironmentRow:
 
         Empty timestamps dict, but stream_df IS populated (decode will yield empty DataFrame).
         """
-        import aeon.dj_pipeline.acquisition as acquisition
+        from aeon.dj_pipeline import acquisition
 
         empty_df = pd.DataFrame({"state": []}, index=pd.DatetimeIndex([]))
         row = acquisition._environment_row(
@@ -88,7 +88,7 @@ class TestEnvironmentRow:
         assert row["stream_df"]["device_name"] == "Environment"
 
     def test_includes_pk_fields_from_key(self, chunk_key, chunk_window):
-        import aeon.dj_pipeline.acquisition as acquisition
+        from aeon.dj_pipeline import acquisition
 
         row = acquisition._environment_row(
             None,
