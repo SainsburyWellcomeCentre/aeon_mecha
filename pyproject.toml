@@ -84,10 +84,10 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://sainsburywellcomecentre.github.io/aeon_docs/"
+Homepage = "https://aeon.swc.ucl.ac.uk/"
 Repository = "https://github.com/sainsburyWellcomeCentre/aeon_mecha"
-Documentation = "https://sainsburywellcomecentre.github.io/aeon_docs/"
-DataJoint = "https://docs.datajoint.org/"
+Documentation = "https://aeon.swc.ucl.ac.uk/"
+DataJoint = "https://docs.datajoint.com/"
 
 [tool.setuptools.packages.find]
 include = ["aeon*"]
