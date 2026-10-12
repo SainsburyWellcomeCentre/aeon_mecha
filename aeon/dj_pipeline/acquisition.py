@@ -255,20 +255,6 @@ class Epoch(dj.Manual):
                 raw_data_dirs,
             )
 
-            # find previous epoch end-time
-            previous_epoch_key = None
-            if i > 0:
-                previous_chunk = all_chunks.iloc[i - 1]
-                previous_chunk_path = pathlib.Path(previous_chunk.path)
-                previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
-                previous_epoch_start = parse_epoch_timestamp(previous_epoch_dir.name)
-                previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=io_api.CHUNK_DURATION)
-                previous_epoch_end = min(previous_chunk_end, epoch_start)
-                previous_epoch_key = {
-                    "experiment_name": experiment_name,
-                    "epoch_start": previous_epoch_start,
-                }
-
             with cls.connection.transaction:
                 # insert new epoch
                 cls.insert1(
@@ -280,12 +266,23 @@ class Epoch(dj.Manual):
                 )
                 epoch_list.append(epoch_key)
 
+                if i == 0:
+                    continue
+
+                # find previous epoch end-time
+                previous_chunk = all_chunks.iloc[i - 1]
+                previous_chunk_path = pathlib.Path(previous_chunk.path)
+                previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
+                previous_epoch_start = parse_epoch_timestamp(previous_epoch_dir.name)
+                previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=io_api.CHUNK_DURATION)
+                previous_epoch_end = min(previous_chunk_end, epoch_start)
+                previous_epoch_key = {
+                    "experiment_name": experiment_name,
+                    "epoch_start": previous_epoch_start,
+                }
+
                 # update previous epoch
-                if (
-                    previous_epoch_key
-                    and (cls & previous_epoch_key)
-                    and not (EpochEnd & previous_epoch_key)
-                ):
+                if (cls & previous_epoch_key) and not (EpochEnd & previous_epoch_key):
                     # insert end-time for previous epoch
                     EpochEnd.insert1(
                         {

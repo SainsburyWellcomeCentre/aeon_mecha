@@ -140,8 +140,6 @@ reportAssertAlwaysTrue = "error"
 reportSelfClsParameterName = "error"
 reportUnusedExpression = "error"
 reportMatchNotExhaustive = "error"
-reportPossiblyUnboundVariable = "warning"
-# *Note*: we may want to set all 'ReportOptional*' rules to "none", but leaving 'em default for now
 venvPath = "."
 venv = ".venv"
 exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests", "docs"]

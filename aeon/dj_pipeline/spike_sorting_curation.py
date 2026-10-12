@@ -534,6 +534,7 @@ def save_manual_curation(key: dict, description: str = "") -> int:
     """
     analyzer_dir = _get_analyzer_dir_from_key(key)
     gui_dir = analyzer_dir / "spikeinterface_gui"
+    curation_data_file = gui_dir / "curation_data.json"
     is_zarr = analyzer_dir.name.endswith(".zarr")
 
     # ManualCuration's insert needs the *complete* primary key (adds subject, probe_type,
@@ -562,7 +563,6 @@ def save_manual_curation(key: dict, description: str = "") -> int:
                 "'Save in analyzer' button."
             )
     else:
-        curation_data_file = gui_dir / "curation_data.json"
         if not curation_data_file.exists():
             raise FileNotFoundError(
                 f"Curation data file not found: {curation_data_file}\n"
@@ -639,6 +639,8 @@ def save_manual_curation(key: dict, description: str = "") -> int:
 
     # Now safe to clear the original, live-editable copy
     if is_zarr:
+        import zarr
+
         zarr_root_rw = zarr.open(str(analyzer_dir), mode="r+")
         del zarr_root_rw["spikeinterface_gui"].attrs["curation_data"]
         logger.info(f"Cleared curation_data from zarr attrs (saved as {curated_file_name})")
