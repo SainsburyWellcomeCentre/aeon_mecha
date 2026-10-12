@@ -1551,11 +1551,16 @@ class UnitMatching(dj.Computed):
     def key_source(self):
         """Yield the seed block (if unprocessed), then frontier blocks on both ends.
 
-        For each (insertion, paramset):
+        For each (insertion, matching paramset, shank, sorting paramset):
         - If seed is unprocessed -> yield the seed
         - Else -> yield the forward frontier (MIN unprocessed > processed max)
                   and the backward frontier (MAX unprocessed < processed min)
         Only blocks with ApplyOfficialCuration are eligible.
+
+        The frontier is found per shank (electrode_group) and sorting paramset, not just per
+        matching paramset: otherwise an eligible block of another shank or sorting paramset that
+        starts between two of this run's blocks (e.g. a short paramset-401 block) becomes the
+        frontier, gets filtered out by populate()'s restriction, and matching stops early.
         """
         from aeon.dj_pipeline import spike_sorting_curation
 
@@ -1569,7 +1574,14 @@ class UnitMatching(dj.Computed):
         # Case 2: seed already processed -> find frontiers
         processed = all_candidates & self  # already done
         # Bounds of the processed region
-        group_keys = ("experiment_name", "subject", "insertion_number", "matching_paramset_id")
+        group_keys = (
+            "experiment_name",
+            "subject",
+            "insertion_number",
+            "matching_paramset_id",
+            "electrode_group",
+            "paramset_id",
+        )
         processed_bounds = dj.U(*group_keys).aggr(
             processed, proc_min="MIN(block_start)", proc_max="MAX(block_start)"
         )
