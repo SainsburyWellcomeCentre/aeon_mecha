@@ -95,8 +95,11 @@ By default the tests look for the data under
 truth lives on Ceph, so you have two options:
 
 - **Point at the Ceph copy** by setting the `DJ_REPOSITORY_CONFIG` env var to a
-  DataJoint config whose `repository_config` maps `ceph_aeon` to the golden-data
-  root, or
+  DataJoint config whose `repository_config` maps `ceph_aeon` to the golden-data root, e.g.
+  
+  ```
+  export DJ_REPOSITORY_CONFIG='{"ceph_aeon": "/ceph/aeon/aeon/data"}'
+  ```
 - **Stage a local copy** into `~/sciops-data/...` (rsync from Ceph — see the
   staging pattern in `docs/specs/SPEC_TESTING.md`).
 
