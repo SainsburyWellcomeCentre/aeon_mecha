@@ -104,14 +104,6 @@ extend-exclude = [
   "aeon/dj_pipeline/streams.py",
 ]
 [tool.ruff.lint.per-file-ignores]
-# Runbooks are step-by-step walkthroughs, not library code: long literal
-# paths and terse docstrings are the point. Real checks (undefined names, unused
-# imports, ...) still apply.
-"docs/ephys_runbooks/*" = [
-  "E501",     # line too long
-  "D205",     # 1 blank line required between summary line and description
-  "D415",     # first line should end with a period
-]
 "tests/*" = [
   "D101",    # skip adding docstrings for public classes
   "D102",    # skip adding docstrings for public methods

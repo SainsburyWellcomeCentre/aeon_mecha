@@ -1,5 +1,5 @@
-"""01 -- Register Experiment
-========================
+"""01 -- Register Experiment.
+
 Register the experiment, subject, probe type, electrode configuration,
 and probe assignments needed before any ephys data can be ingested.
 
