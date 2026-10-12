@@ -193,8 +193,11 @@ try:
             reader = RecordBatchFileReader(source)
 
             stream_names = reader.schema.names
-            channel_ids = [name for name in stream_names if stream_name in name]
-
+            if sum([stream_name == name for name in stream_names]) == 1:
+                # there is a unique stream matching the name
+                channel_ids = [stream_name]
+            else:
+                channel_ids = [name for name in stream_names if stream_name in name]
             if len(channel_ids) == 0:
                 raise ValueError(f"Cannot find any data with `stream_name` = {stream_name}")
 
