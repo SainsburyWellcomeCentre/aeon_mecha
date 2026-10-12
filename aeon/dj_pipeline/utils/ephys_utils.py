@@ -112,43 +112,29 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
     """
     default_id = f"{device_name}_{probe_label}"
 
-    if metadata is None:
+    # Only V2 hardware carries an enable flag and a serial in its metadata
+    if metadata is None or device_name != "NeuropixelsV2":
         return default_id
 
-    devices = metadata.get("Devices", {})
+    suffix = probe_label[len("Probe") :]  # "A", "B", ...
 
-    # V2 hardware: check enable flag, then extract serial from calibration path
-    if device_name == "NeuropixelsV2":
-        suffix = probe_label[len("Probe") :]  # "A", "B", ...
-
+    new_block = metadata.get(f"NeuropixelsV2{suffix}")
+    if isinstance(new_block, dict):
         # New metadata format: each probe is its own top-level device block
         # "NeuropixelsV2A"/"NeuropixelsV2B" holding a single "ProbeConfiguration";
         # the enable flag lives inside the block.
-        new_block = metadata.get(f"NeuropixelsV2{suffix}")
-        if isinstance(new_block, dict):
-            enable = new_block.get("Enable", "true")
-            if isinstance(enable, str) and enable.lower() == "false":
-                return None
-            probe_config = new_block.get("ProbeConfiguration", {})
-            serial = _serial_from_gain_cal(probe_config.get("GainCalibrationFileName"))
-            return serial or default_id
-
+        enable = new_block.get("Enable", "true")
+        probe_config = new_block.get("ProbeConfiguration", {})
+    else:
         # Old metadata format: Devices.NeuropixelsV2e.ConfigurationA/B, with the
         # enable flag at Devices.ProbeA/B = "true"/"false".
-        enabled = devices.get(probe_label, "true")
-        if isinstance(enabled, str) and enabled.lower() == "false":
-            return None
+        devices = metadata.get("Devices", {})
+        enable = devices.get(probe_label, "true")
+        probe_config = devices.get("NeuropixelsV2e", {}).get(f"Configuration{suffix}", {})
 
-        v2e_config = devices.get("NeuropixelsV2e", {})
-        config_key = {"ProbeA": "ConfigurationA", "ProbeB": "ConfigurationB"}.get(probe_label)
-        if config_key and config_key in v2e_config:
-            serial = _serial_from_gain_cal(v2e_config[config_key].get("GainCalibrationFileName"))
-            if serial:
-                return serial
-
-        return default_id
-
-    return default_id
+    if isinstance(enable, str) and enable.lower() == "false":
+        return None
+    return _serial_from_gain_cal(probe_config.get("GainCalibrationFileName")) or default_id
 
 
 def find_or_create_probe_insertion(
