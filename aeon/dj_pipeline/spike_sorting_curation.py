@@ -793,7 +793,7 @@ def restore_raw_sorting(key: dict) -> None:
     # (those with no remaining UnitMatching.Unit references from any block)
     insertion_key = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
     n_orphans = 0
-    for gu_key in (spike_sorting.GlobalUnit & insertion_key).keys():  # noqa: SIM118
+    for gu_key in (spike_sorting.GlobalUnit & insertion_key).keys():
         if len(spike_sorting.UnitMatching.Unit & gu_key) == 0:
             logger.info(f"Deleting orphaned GlobalUnit {gu_key['global_unit']}...")
             (spike_sorting.GlobalUnit & gu_key).delete(prompt=False)

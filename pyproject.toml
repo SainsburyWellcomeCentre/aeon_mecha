@@ -93,29 +93,10 @@ DataJoint = "https://docs.datajoint.org/"
 include = ["aeon*"]
 
 [tool.ruff]
-lint.select = [
-  "E",
-  "W",
-  "F",
-  "I",
-  "D",
-  "UP",
-  "S",
-  "B",
-  "A",
-  "C4",
-  "ICN",
-  "PIE",
-  "PT",
-  "SIM",
-  "PL",
-]
+lint.select = ["E", "F", "I", "D", "UP", "S", "B"]
 line-length = 108
 lint.ignore = [
   "E731",
-  "PLR0912", 
-  "PLR0913",
-  "PLR0915",
   "D107",
 ]
 extend-exclude = [
@@ -123,16 +104,13 @@ extend-exclude = [
   "aeon/dj_pipeline/streams.py",
 ]
 [tool.ruff.lint.per-file-ignores]
-# Runbooks are step-by-step walkthroughs, not library code: local imports and
-# long literal paths are the point. Real checks (undefined names, unused
+# Runbooks are step-by-step walkthroughs, not library code: long literal
+# paths and terse docstrings are the point. Real checks (undefined names, unused
 # imports, ...) still apply.
 "docs/ephys_runbooks/*" = [
-  "PLC0415",  # `import` should be at top-level of a file
-  "ICN001",   # enforces `import matplotlib as mpl`
   "E501",     # line too long
   "D205",     # 1 blank line required between summary line and description
   "D415",     # first line should end with a period
-  "PLR2004",  # magic value used in comparison
 ]
 "tests/*" = [
   "D101",    # skip adding docstrings for public classes
@@ -141,9 +119,6 @@ extend-exclude = [
   "S101",    # skip using assert
   "S105",    # skip checking for hardcoded password str (used in testcontainers MySQL setup)
   "S106",    # skip checking for hardcoded password in func arg (used in testcontainers MySQL setup)
-  "SIM105",  # skip contextlib.suppress suggestion
-  "PLC0415", # skip checking `import` at the top-level of a file
-  "PLR2004", # skip checking for magic values
 ]
 "aeon/schema/*" = [
   "D101",    # skip adding docstrings for schema classes
@@ -153,8 +128,6 @@ extend-exclude = [
   "D101",    # skip adding docstrings for schema classes
   "D106",    # skip adding docstrings for nested streams
   "S324",    # skip hashlib insecure hash function (md5) warning
-  "PLC0415", # skip checking `import` at the top-level of a file
-  "PLR2004", # skip checking for magic values
 ]
 
 [tool.ruff.lint.pydocstyle]
