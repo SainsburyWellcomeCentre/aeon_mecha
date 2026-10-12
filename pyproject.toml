@@ -112,10 +112,6 @@ extend-exclude = [
   "S105",    # skip checking for hardcoded password str (used in testcontainers MySQL setup)
   "S106",    # skip checking for hardcoded password in func arg (used in testcontainers MySQL setup)
 ]
-"aeon/schema/*" = [
-  "D101",    # skip adding docstrings for schema classes
-  "D106",    # skip adding docstrings for nested streams
-]
 "aeon/dj_pipeline/*" = [
   "D101",    # skip adding docstrings for schema classes
   "D106",    # skip adding docstrings for nested streams
