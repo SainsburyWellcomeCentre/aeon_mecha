@@ -22,9 +22,10 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
-from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, resolve_ephys_file
+from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
+    extend_clock,
     fork_safe_job_kwargs,
     resolve_analyzer_dir,
     strip_non_numeric_properties,
@@ -35,6 +36,9 @@ ephys = importlib.import_module("aeon.dj_pipeline.ephys")
 
 schema = dj.Schema(get_schema_name("spike_sorting"))
 logger = dj.logger
+
+# Neuropixels 2.0 sampling rate - TODO: read this from the metadata
+NP2_FS_HZ = 30e3
 
 
 @schema
@@ -224,8 +228,8 @@ class PreProcessing(dj.Computed):
         electrodes_df.drop(columns=list(key), inplace=True, errors="ignore")
 
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
-        # Neuropixels 2.0 constants - TODO: read this from the metadata
-        fs_hz = 30e3
+        fs_hz = NP2_FS_HZ
+        # Neuropixels 2.0 gain - TODO: read this from the metadata
         gain_to_uV = 3.05176
         offset_to_uV = -2048 * gain_to_uV
 
@@ -278,7 +282,6 @@ class PreProcessing(dj.Computed):
         """
         import probeinterface as pi
         import spikeinterface as si
-        import spikeinterface.extractors as se
 
         # registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
@@ -286,29 +289,17 @@ class PreProcessing(dj.Computed):
 
         execution_time = datetime.now(UTC)
 
-        # Concatenate recordings. Each chunk file is resolved on disk: prefer the
-        # compressed .zarr twin under the processed store, else the raw .bin.
-        si_recs = []
-        for f, d in zip(ephys_files, dir_types, strict=False):
-            ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
-            resolved = resolve_ephys_file(ephys_dir / f)
-            if resolved.suffix == ".zarr":
-                # The compression library writes zarr from a plain read_binary
-                # (no gains), so re-attach the gain/offset metadata the .bin
-                # branch sets, to keep the two branches equivalent.
-                si_rec = si.load(resolved)
-                si_rec.set_channel_gains(gain_to_uV)
-                si_rec.set_channel_offsets(offset_to_uV)
-            else:
-                si_rec = se.read_binary(
-                    resolved,
-                    sampling_frequency=fs_hz,
-                    dtype=np.uint16,
-                    num_channels=num_channels,
-                    gain_to_uV=gain_to_uV,
-                    offset_to_uV=offset_to_uV,
-                )
-            si_recs.append(si_rec)
+        # Concatenate the block's AmplifierData chunks (compressed .zarr twin if present).
+        si_recs = [
+            read_amplifier_recording(
+                acquisition.Experiment.get_data_directory(key, directory_type=d) / f,
+                num_channels,
+                fs_hz,
+                gain_to_uV,
+                offset_to_uV,
+            )
+            for f, d in zip(ephys_files, dir_types, strict=False)
+        ]
         si_recording = si.concatenate_recordings(si_recs)
 
         # Select channels based on the electrode group
@@ -491,6 +482,14 @@ class SpikeSorting(dj.Computed):
         if sorting_method == "kilosort4" and "clear_cache" not in sorting_params:
             sorting_params["clear_cache"] = True
 
+        if sorting_method == "kilosort4":
+            # Kilosort4 reads a flat binary, so SpikeInterface first exports recording.zarr
+            # to recording.dat. With its default job kwargs (1 worker, 1s chunks) every 1s
+            # written decompresses a whole 30s zarr chunk: ~42 MB/s, 3-4.5 h per 30 h block.
+            # Default to the job kwargs PreProcessing wrote the zarr with; n_jobs,
+            # chunk_duration etc. in the paramset's SI_SORTING_PARAMS take precedence.
+            sorting_params = {**fork_safe_job_kwargs("30s"), **sorting_params}
+
         # Prevent SpikeInterface from re-running write_binary_recording internally:
         # https://github.com/SpikeInterface/spikeinterface/blob/705c932/src/spikeinterface/sorters/external/kilosortbase.py#L124
         sorting_params["skip_kilosort_preprocessing"] = False
@@ -634,7 +633,16 @@ class PostProcessing(dj.Computed):
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
 
-        job_kwargs = postprocessing_params.get("job_kwargs", fork_safe_job_kwargs("1s"))
+        # n_jobs always follows the job's CPU allocation; the paramset's job_kwargs set the
+        # rest (chunk size, pool engine). A fixed n_jobs in the paramset either idles cores
+        # or oversubscribes them, and changing it in the paramset to match an allocation
+        # breaks every running job of that paramset: make_fetch reads the params, and
+        # DataJoint refuses the insert when they changed during the run.
+        job_kwargs = {
+            **fork_safe_job_kwargs("1s"),
+            **postprocessing_params.get("job_kwargs", {}),
+            "n_jobs": fork_safe_job_kwargs("1s")["n_jobs"],
+        }
 
         save_format = params.get("save_format", "zarr")
         analyzer_format = "zarr" if save_format == "zarr" else "binary_folder"
@@ -1168,7 +1176,8 @@ class SyncedSpikes(dj.Imported):
 
         Process:
         1. Load sync models for ONIX→HARP timestamp conversion
-        2. Load ONIX clock data from all ephys chunks in the block
+        2. Load ONIX clock data from all ephys chunks in the block, with chunk boundaries
+           taken from the AmplifierData sample counts the sorter saw
         3. For each unit's spike indices:
            - Map indices to corresponding ephys chunks
            - Convert indices to ONIX timestamps using clock data
@@ -1177,7 +1186,13 @@ class SyncedSpikes(dj.Imported):
 
         Args:
             key: Dictionary containing sorting task identifiers
+
+        Raises:
+            ValueError: If a Clock file is more than 1 s shorter than its AmplifierData file,
+                or if the AmplifierData files no longer add up to the recording that was sorted.
         """
+        import spikeinterface as si
+
         # Load ephys sync models
         chunk_windows = defaultdict(list)  # chunk_start -> its linked (onix_ts_start, onix_ts_end, model)
         with tempfile.TemporaryDirectory() as tempdir, dj.config.override(download_path=tempdir):
@@ -1199,12 +1214,35 @@ class SyncedSpikes(dj.Imported):
         ephys_files = [r["file_path"] for r in _clock_rows]
         dir_types = [r["directory_type"] for r in _clock_rows]
 
-        onix_times = []
+        # Spike indices count samples of the AmplifierData files concatenated in PreProcessing, so
+        # the chunk boundaries come from those files, not from the Clock files. They differ when an
+        # amplifier file lost its tail e.g. due to a copying error.
+        # Its samples still start at Clock[0], so sample k of a chunk sits at Clock[k]. A Clock file
+        # that lost its tail instead is extrapolated at its own tick rate, by at most 1 s.
+        num_channels = len(ephys.ElectrodeConfig.Electrode & key)
+        onix_times, amp_lengths = [], []
         for f, d in zip(ephys_files, dir_types, strict=True):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
+            amp_len = read_amplifier_recording(
+                ephys_dir / f.replace("Clock", "AmplifierData"), num_channels, NP2_FS_HZ
+            ).get_num_samples()
             onix_ts = np.memmap(ephys_dir / f, mode="r", dtype=np.uint64)
-            onix_times.append(onix_ts)
-        onix_lengths = np.cumsum([len(s) for s in onix_times])
+            onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=f))
+            amp_lengths.append(amp_len)
+        chunk_bounds = np.cumsum(amp_lengths)  # end of each chunk in the concatenated recording
+
+        # Guard against raw files that changed since sorting (e.g. a truncated file re-copied in
+        # full): the chunk boundaries must add up to the recording the sorter saw.
+        units = (SortedSpikes.Unit.proj("spike_indices") & key).to_dicts()
+        if units:
+            output_dir = get_sorting_root_dir() / (PreProcessing & key).fetch1("sorting_output_dir")
+            analyzer = si.load_sorting_analyzer(resolve_analyzer_dir(output_dir), load_extensions=False)
+            if chunk_bounds[-1] != analyzer.get_num_samples():
+                raise ValueError(
+                    f"The AmplifierData files of this block add up to {chunk_bounds[-1]} samples, but "
+                    f"the sorted recording has {analyzer.get_num_samples()}; the raw files changed "
+                    f"since sorting, so spike indices cannot be mapped to chunks."
+                )
 
         def indices2syncedtimes(spike_indices: np.ndarray) -> Iterator[tuple[dict[str, Any], np.ndarray]]:
             """Convert spike indices to HARP-synchronized timestamps by ephys chunk.
@@ -1218,20 +1256,20 @@ class SyncedSpikes(dj.Imported):
             Yields:
                 Tuple of (chunk_key, synced_timestamps) for each ephys chunk
             """
-            for idx, onix_bound in enumerate(onix_lengths):
+            for idx, chunk_bound in enumerate(chunk_bounds):
                 # Find spikes belonging to this ephys chunk
                 if idx == 0:
-                    spk_ind = spike_indices[spike_indices < onix_bound]
+                    spk_ind = spike_indices[spike_indices < chunk_bound]
                 else:
                     spk_ind = spike_indices[
-                        (spike_indices >= onix_lengths[idx - 1]) & (spike_indices < onix_bound)
+                        (spike_indices >= chunk_bounds[idx - 1]) & (spike_indices < chunk_bound)
                     ]
 
                 if not len(spk_ind):  # no spikes in this chunk
                     continue
 
                 # Convert absolute indices to relative indices within this chunk
-                spk_ind = spk_ind - (onix_lengths[idx - 1] if idx else 0)  # make relative to chunk start
+                spk_ind = spk_ind - (chunk_bounds[idx - 1] if idx else 0)  # make relative to chunk start
                 spk_times = onix_times[idx][spk_ind]  # get ONIX timestamps
 
                 # Apply sync models to convert ONIX→HARP timestamps. Each spike uses the last
@@ -1253,7 +1291,7 @@ class SyncedSpikes(dj.Imported):
                 yield chunk_key, synced_ts
 
         self.insert1(key)
-        for unit_data in (SortedSpikes.Unit.proj("spike_indices") & key).to_dicts():
+        for unit_data in units:
             spike_indices = unit_data.pop("spike_indices")
             for ephys_chunk_key, synced_times in indices2syncedtimes(spike_indices):
                 self.Unit.insert1(
@@ -1375,7 +1413,7 @@ def _compare_spike_trains_in_overlap(
     prev_block_units: dict[int, np.ndarray],
     this_block_bounds: tuple,
     prev_block_bounds: tuple,
-    sampling_frequency: float = 30000,
+    sampling_frequency: float = NP2_FS_HZ,
     delta_time: float = 0.4,
     match_score: float = 0.5,
     min_score: float = 0.1,

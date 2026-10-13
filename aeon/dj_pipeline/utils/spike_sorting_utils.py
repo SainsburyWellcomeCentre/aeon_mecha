@@ -8,7 +8,10 @@ activating the spike_sorting schema.
 import os
 from pathlib import Path
 
+import datajoint as dj
 import numpy as np
+
+logger = dj.logger
 
 
 def fork_safe_job_kwargs(chunk_duration: str, max_jobs: int = 8) -> dict:
@@ -28,6 +31,41 @@ def fork_safe_job_kwargs(chunk_duration: str, max_jobs: int = 8) -> dict:
         "max_threads_per_worker": 1,
         "chunk_duration": chunk_duration,
     }
+
+
+def extend_clock(onix_ts: np.ndarray, n_samples: int, max_extrapolation: int, name: str) -> np.ndarray:
+    """Return ONIX clock times covering ``n_samples`` AmplifierData samples.
+
+    A Clock file longer than its AmplifierData file is returned as is: sample k still
+    sits at Clock[k]. A short one is extrapolated linearly at the tick rate of its last
+    ``max_extrapolation`` samples, over at most that many samples. Either mismatch
+    (a file lost its tail, e.g. in a copying error) is logged under ``name``.
+
+    Raises:
+        ValueError: If more than ``max_extrapolation`` samples are missing, or the
+            clock has fewer than 2 samples to take a tick rate from.
+    """
+    n_missing = n_samples - len(onix_ts)
+    if n_missing < 0:
+        logger.warning(
+            f"{name}: AmplifierData file is {-n_missing} samples shorter than its Clock file; "
+            f"its chunk ends early."
+        )
+    if n_missing <= 0:
+        return onix_ts
+    if n_missing > max_extrapolation or len(onix_ts) < 2:
+        raise ValueError(
+            f"{name}: cannot extrapolate a {len(onix_ts)}-sample clock over {n_missing} missing "
+            f"samples (at most {max_extrapolation})."
+        )
+    logger.warning(
+        f"{name}: Clock file is {n_missing} samples shorter than its AmplifierData file; "
+        f"extrapolating the clock over them."
+    )
+    tail = onix_ts[-max_extrapolation:]
+    ticks_per_sample = (float(tail[-1]) - float(tail[0])) / (len(tail) - 1)
+    extra = np.round(ticks_per_sample * np.arange(1, n_missing + 1)).astype(np.uint64)
+    return np.concatenate([onix_ts, tail[-1] + extra])
 
 
 def resolve_analyzer_dir(output_dir: Path) -> Path:
