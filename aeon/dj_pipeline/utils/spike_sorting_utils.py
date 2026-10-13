@@ -4,6 +4,7 @@ These functions have no database or table dependencies, so they live here (rathe
 than in spike_sorting.py) to keep them importable and unit-testable without
 activating the spike_sorting schema.
 """
+
 import importlib.util
 import os
 import warnings
@@ -67,7 +68,6 @@ def strip_non_numeric_properties(si_recording) -> None:
 # definitions since classes inherit from base SpikeInterface classes
 
 try:
-
     from spikeinterface.core import BaseRecording, BaseRecordingSegment
     from spikeinterface.core.core_tools import define_function_from_class
 
@@ -144,7 +144,6 @@ try:
 
             table = pa.Table.from_batches(slices)
             return np.column_stack([table[c].to_numpy(zero_copy_only=False) for c in channel_ids])
-
 
     class BonsaiOnixArrowRecording(BaseRecording):
         """Recording class for the openephys arrow format.
@@ -244,10 +243,9 @@ try:
                 "is_filtered": is_filtered,
             }
 
-
     read_bonsai_onix_arrow = define_function_from_class(
         source_class=BonsaiOnixArrowRecording, name="read_bonsai_onix_arrow"
     )
 
 except ModuleNotFoundError:
-    warnings.warn('SpikeInterface is not installed', stacklevel=2)
+    warnings.warn("SpikeInterface is not installed", stacklevel=2)
