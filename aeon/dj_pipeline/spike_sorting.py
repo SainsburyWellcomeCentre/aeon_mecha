@@ -1139,7 +1139,7 @@ class SortingQuality(dj.Imported):
         template_metrics = sorting_analyzer.get_extension("template_metrics").get_data()
         metrics_df = pd.concat([qc_metrics, template_metrics], axis=1)
 
-        for unit_key in (SortedSpikes.Unit & key).keys():  # noqa: SIM118
+        for unit_key in (SortedSpikes.Unit & key).keys():
             unit_qc = metrics_df.loc[unit_key["unit"]].to_dict()
             self.Metric.insert1({**unit_key, "qc_metrics": json.dumps(unit_qc, default=str)})
 

@@ -265,7 +265,7 @@ class SLEAPTracking(dj.Imported):
         self.Part.insert(part_entries)
 
         # explicit garbage collect `pose_data` to avoid memory build up
-        del pose_data, identity_position, part_position
+        del pose_data
         gc.collect()
 
 
