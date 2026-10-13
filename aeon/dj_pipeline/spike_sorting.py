@@ -22,9 +22,10 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
-from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, resolve_ephys_file
+from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
+    extend_clock,
     fork_safe_job_kwargs,
     resolve_analyzer_dir,
     strip_non_numeric_properties,
@@ -278,7 +279,6 @@ class PreProcessing(dj.Computed):
         """
         import probeinterface as pi
         import spikeinterface as si
-        import spikeinterface.extractors as se
 
         # registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
@@ -286,29 +286,17 @@ class PreProcessing(dj.Computed):
 
         execution_time = datetime.now(UTC)
 
-        # Concatenate recordings. Each chunk file is resolved on disk: prefer the
-        # compressed .zarr twin under the processed store, else the raw .bin.
-        si_recs = []
-        for f, d in zip(ephys_files, dir_types, strict=False):
-            ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
-            resolved = resolve_ephys_file(ephys_dir / f)
-            if resolved.suffix == ".zarr":
-                # The compression library writes zarr from a plain read_binary
-                # (no gains), so re-attach the gain/offset metadata the .bin
-                # branch sets, to keep the two branches equivalent.
-                si_rec = si.load(resolved)
-                si_rec.set_channel_gains(gain_to_uV)
-                si_rec.set_channel_offsets(offset_to_uV)
-            else:
-                si_rec = se.read_binary(
-                    resolved,
-                    sampling_frequency=fs_hz,
-                    dtype=np.uint16,
-                    num_channels=num_channels,
-                    gain_to_uV=gain_to_uV,
-                    offset_to_uV=offset_to_uV,
-                )
-            si_recs.append(si_rec)
+        # Concatenate the block's AmplifierData chunks (compressed .zarr twin if present).
+        si_recs = [
+            read_amplifier_recording(
+                acquisition.Experiment.get_data_directory(key, directory_type=d) / f,
+                num_channels,
+                fs_hz,
+                gain_to_uV,
+                offset_to_uV,
+            )
+            for f, d in zip(ephys_files, dir_types, strict=False)
+        ]
         si_recording = si.concatenate_recordings(si_recs)
 
         # Select channels based on the electrode group
@@ -1201,7 +1189,6 @@ class SyncedSpikes(dj.Imported):
                 or if the AmplifierData files no longer add up to the recording that was sorted.
         """
         import spikeinterface as si
-        import spikeinterface.extractors as se
 
         # Load ephys sync models
         chunk_windows = defaultdict(list)  # chunk_start -> its linked (onix_ts_start, onix_ts_end, model)
@@ -1229,44 +1216,16 @@ class SyncedSpikes(dj.Imported):
         # amplifier file lost its tail e.g. due to a copying error.
         # Its samples still start at Clock[0], so sample k of a chunk sits at Clock[k]. A Clock file
         # that lost its tail instead is extrapolated at its own tick rate, by at most 1 s.
-        fs_hz = 30e3  # Neuropixels 2.0, as in PreProcessing
-        max_clock_extrapolation = int(1.0 * fs_hz)  # samples
-        num_channels = len(ephys.ElectrodeConfig.Electrode & key)  # as in PreProcessing
+        fs_hz = 30e3  # Neuropixels 2.0
+        num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         onix_times, amp_lengths = [], []
         for f, d in zip(ephys_files, dir_types, strict=True):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
+            amp_len = read_amplifier_recording(
+                ephys_dir / f.replace("Clock", "AmplifierData"), num_channels, fs_hz
+            ).get_num_samples()
             onix_ts = np.memmap(ephys_dir / f, mode="r", dtype=np.uint64)
-            # Resolved as in PreProcessing: the compressed .zarr twin if present, else the raw .bin
-            amp_file = resolve_ephys_file(ephys_dir / f.replace("Clock", "AmplifierData"))
-            if amp_file.suffix == ".zarr":
-                amp_len = si.load(amp_file).get_num_samples()
-            else:
-                amp_len = se.read_binary(
-                    amp_file, sampling_frequency=fs_hz, dtype=np.uint16, num_channels=num_channels
-                ).get_num_samples()
-            n_missing = amp_len - len(onix_ts)  # > 0: Clock file short, < 0: AmplifierData file short
-            if n_missing < 0:
-                logger.warning(
-                    f"{amp_file.name} has {-n_missing} fewer samples ({-n_missing / fs_hz:.3f} s) than "
-                    f"its Clock file: amplifier data were lost at the end of the file."
-                )
-            elif n_missing > 0:
-                if n_missing > max_clock_extrapolation:
-                    raise ValueError(
-                        f"Clock file {f} has {n_missing} fewer samples ({n_missing / fs_hz:.3f} s) "
-                        f"than its AmplifierData file, more than the {max_clock_extrapolation / fs_hz:g} s "
-                        f"the clock may be extrapolated over."
-                    )
-                logger.warning(
-                    f"Clock file {f} is too short: it has {n_missing} fewer samples "
-                    f"({n_missing / fs_hz:.3f} s) than its AmplifierData file (clock data lost at the "
-                    f"end of the file). Extrapolating the clock linearly over the missing samples."
-                )
-                tail = onix_ts[-max_clock_extrapolation:]  # the last second sets the tick rate
-                ticks_per_sample = (float(tail[-1]) - float(tail[0])) / (len(tail) - 1)
-                extra = np.round(ticks_per_sample * np.arange(1, n_missing + 1)).astype(np.uint64)
-                onix_ts = np.concatenate([onix_ts, tail[-1] + extra])
-            onix_times.append(onix_ts)
+            onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(fs_hz), name=f))
             amp_lengths.append(amp_len)
         chunk_bounds = np.cumsum(amp_lengths)  # end of each chunk in the concatenated recording
 
