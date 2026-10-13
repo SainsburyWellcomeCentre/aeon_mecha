@@ -37,6 +37,9 @@ ephys = importlib.import_module("aeon.dj_pipeline.ephys")
 schema = dj.Schema(get_schema_name("spike_sorting"))
 logger = dj.logger
 
+# Neuropixels 2.0 sampling rate - TODO: read this from the metadata
+NP2_FS_HZ = 30e3
+
 
 @schema
 class ElectrodeGroup(dj.Manual):
@@ -225,8 +228,8 @@ class PreProcessing(dj.Computed):
         electrodes_df.drop(columns=list(key), inplace=True, errors="ignore")
 
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
-        # Neuropixels 2.0 constants - TODO: read this from the metadata
-        fs_hz = 30e3
+        fs_hz = NP2_FS_HZ
+        # Neuropixels 2.0 gain - TODO: read this from the metadata
         gain_to_uV = 3.05176
         offset_to_uV = -2048 * gain_to_uV
 
@@ -1216,16 +1219,15 @@ class SyncedSpikes(dj.Imported):
         # amplifier file lost its tail e.g. due to a copying error.
         # Its samples still start at Clock[0], so sample k of a chunk sits at Clock[k]. A Clock file
         # that lost its tail instead is extrapolated at its own tick rate, by at most 1 s.
-        fs_hz = 30e3  # Neuropixels 2.0
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         onix_times, amp_lengths = [], []
         for f, d in zip(ephys_files, dir_types, strict=True):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
             amp_len = read_amplifier_recording(
-                ephys_dir / f.replace("Clock", "AmplifierData"), num_channels, fs_hz
+                ephys_dir / f.replace("Clock", "AmplifierData"), num_channels, NP2_FS_HZ
             ).get_num_samples()
             onix_ts = np.memmap(ephys_dir / f, mode="r", dtype=np.uint64)
-            onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(fs_hz), name=f))
+            onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=f))
             amp_lengths.append(amp_len)
         chunk_bounds = np.cumsum(amp_lengths)  # end of each chunk in the concatenated recording
 
@@ -1411,7 +1413,7 @@ def _compare_spike_trains_in_overlap(
     prev_block_units: dict[int, np.ndarray],
     this_block_bounds: tuple,
     prev_block_bounds: tuple,
-    sampling_frequency: float = 30000,
+    sampling_frequency: float = NP2_FS_HZ,
     delta_time: float = 0.4,
     match_score: float = 0.5,
     min_score: float = 0.1,
