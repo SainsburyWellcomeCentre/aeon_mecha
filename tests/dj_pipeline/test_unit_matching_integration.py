@@ -39,19 +39,14 @@ class TestUnitMatchingStructure:
         assert rows, "Spikes is empty"
 
         # The union must extend past block 1's chunks, i.e. block 2 contributed.
-        block1_chunks = {
-            c["chunk_start"]
-            for c in (ctx.ephys.EphysBlockInfo.Chunk & blocks[0]).to_dicts()
-        }
+        block1_chunks = {c["chunk_start"] for c in (ctx.ephys.EphysBlockInfo.Chunk & blocks[0]).to_dicts()}
         all_owned = {r["chunk_start"] for r in rows}
         assert all_owned - block1_chunks, (
             "no Spikes rows outside block 1's chunks - block 2 contributed nothing"
         )
 
         for gu in sorted(shared):
-            owned_by_block = {
-                (r["chunk_start"], r["block_start"]) for r in rows if r["global_unit"] == gu
-            }
+            owned_by_block = {(r["chunk_start"], r["block_start"]) for r in rows if r["global_unit"] == gu}
             for chunk_start, owner in owned_by_block:
                 if chunk_start in block1_chunks:
                     assert owner == blocks[0]["block_start"], (
@@ -100,9 +95,7 @@ class TestUnitMatchingGuards:
         """make() must refuse a first block that is not the seed."""
         blocks = ephys_curation_applied["blocks"]
         # Only clean up what this test created.
-        pre_existing = bool(
-            ctx.spike_sorting.UnitMatchingParamSet & {"matching_paramset_id": 99}
-        )
+        pre_existing = bool(ctx.spike_sorting.UnitMatchingParamSet & {"matching_paramset_id": 99})
         ctx.spike_sorting.UnitMatchingParamSet.insert1(
             {
                 "matching_paramset_id": 99,
@@ -138,9 +131,7 @@ class TestUnitMatchingGuards:
 
 
 class TestUnitMatchingBehaviour:
-    def test_overlap_produces_at_least_one_match(
-        self, ephys_unit_matching_populated, ctx, record_property
-    ):
+    def test_overlap_produces_at_least_one_match(self, ephys_unit_matching_populated, ctx, record_property):
         """Blocks 1 and 2 share 3 chunks, so some units should be the same neuron."""
         blocks = ephys_unit_matching_populated["blocks"]
         per_block = []

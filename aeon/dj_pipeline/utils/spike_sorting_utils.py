@@ -20,10 +20,9 @@ def fork_safe_job_kwargs(chunk_duration: str, max_jobs: int = 8) -> dict:
     ``n_jobs=-1``, which SpikeInterface resolves against ``os.cpu_count()`` (every
     core on the node, not the allocation) and then thrashes or fork-deadlocks.
     """
-    try:
-        n_jobs = len(os.sched_getaffinity(0))
-    except AttributeError:  # not Linux
-        n_jobs = os.cpu_count() or 1
+    # Check if OS can access `sched_getaffinity`` method
+    sched_affinity = getattr(os, "sched_getaffinity", None)
+    n_jobs = len(sched_affinity(0)) if sched_affinity else (os.cpu_count() or 1)
     return {
         "n_jobs": max(1, min(max_jobs, n_jobs)),
         "pool_engine": "thread",
