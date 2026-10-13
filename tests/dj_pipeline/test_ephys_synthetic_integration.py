@@ -562,6 +562,8 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         ephys.EphysSyncModel.ingest(experiment_name)
         ephys.EphysChunk.ingest_chunks(experiment_name)
         if amp_as_zarr:  # after ingestion, which reads the raw files
+            import gc
+
             import spikeinterface.extractors as se
 
             zarr_dir = tmp_path / "processed" / epoch_dir_name / device_name
@@ -569,6 +571,7 @@ class TestSyncedSpikesIndexingAndExtrapolation:
                 se.read_binary(amp_bin, sampling_frequency=30e3, dtype=np.uint16, num_channels=1).save(
                     format="zarr", folder=zarr_dir / amp_bin.with_suffix(".zarr").name
                 )
+                gc.collect()  # read_binary's memmap blocks unlink on Windows
                 amp_bin.unlink()
 
         chunk_rows = (ephys.EphysChunk & {"experiment_name": experiment_name}).to_dicts(
