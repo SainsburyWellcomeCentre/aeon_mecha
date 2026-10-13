@@ -129,7 +129,6 @@ def setup_sorting_prerequisites(
     paramset_id_str = str(paramset_id)
 
     if not (spike_sorting.SortingParamSet & {"paramset_id": paramset_id_str}):
-
         params = {
             # Storage format for recording, sorting output, and analyzer
             # ("zarr" or "binary"). Defaults to "zarr" if omitted.
@@ -178,7 +177,9 @@ def setup_sorting_prerequisites(
             {
                 "paramset_id": paramset_id_str,
                 "sorting_method": sorting_method,
-                "paramset_description": ("Default parameter set for Kilosort4 with SpikeInterface, parallel postprocessing"),
+                "paramset_description": (
+                    "Default parameter set for Kilosort4 with SpikeInterface, parallel postprocessing"
+                ),
                 "params": params,
             }
         )
@@ -299,10 +300,7 @@ def setup_sorting_prerequisites(
     blocks = (ephys.EphysBlock & block_rest).to_dicts()
 
     if not blocks:
-        print(
-            f"No EphysBlock entries found for experiment={experiment_name}. "
-            f"Run step 2 first."
-        )
+        print(f"No EphysBlock entries found for experiment={experiment_name}. Run step 2 first.")
         return
 
     insert_count = 0

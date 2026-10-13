@@ -14,16 +14,18 @@ import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
-import datajoint as dj
-import matplotlib
+import matplotlib  # noqa: ICN001
+
 matplotlib.use("Agg")  # non-interactive backend for HPC
-import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.container import BarContainer
 
-from aeon.dj_pipeline import ephys, spike_sorting, get_schema_name
+from aeon.dj_pipeline import ephys, spike_sorting
 
 # ---------------------------------------------------------------------------
 # Configuration (same as ephys_v2_setup.py)
@@ -48,9 +50,11 @@ def fetch_unit_matching_data():
     }
 
     # All blocks
-    blocks = pd.DataFrame(
-        (ephys.EphysBlock & insertion_key).proj("block_start", "block_end").to_dicts()
-    ).sort_values("block_start").reset_index(drop=True)
+    blocks = (
+        pd.DataFrame((ephys.EphysBlock & insertion_key).proj("block_start", "block_end").to_dicts())
+        .sort_values("block_start")
+        .reset_index(drop=True)
+    )
     blocks["block_idx"] = range(len(blocks))
     blocks["block_label"] = blocks["block_start"].apply(
         lambda t: t.strftime("%H:%M") if hasattr(t, "strftime") else str(t)[:5]
@@ -58,16 +62,16 @@ def fetch_unit_matching_data():
 
     # UnitMatching.Unit — which global_unit appears in which block
     unit_entries = pd.DataFrame(
-        (spike_sorting.UnitMatching.Unit & insertion_key).proj(
-            "block_start", "block_end", "unit", "global_unit", "match_confidence"
-        ).to_dicts()
+        (spike_sorting.UnitMatching.Unit & insertion_key)
+        .proj("block_start", "block_end", "unit", "global_unit", "match_confidence")
+        .to_dicts()
     )
 
     # Spike counts per global unit per block (sum across chunks)
     spike_entries = pd.DataFrame(
-        (spike_sorting.UnitMatching.Spikes & insertion_key).proj(
-            "block_start", "block_end", "global_unit", "spike_count"
-        ).to_dicts()
+        (spike_sorting.UnitMatching.Spikes & insertion_key)
+        .proj("block_start", "block_end", "global_unit", "spike_count")
+        .to_dicts()
     )
 
     return blocks, unit_entries, spike_entries
@@ -80,7 +84,7 @@ def compute_unit_block_matrix(blocks, unit_entries):
     n_blocks = len(blocks)
 
     # Map block_start → block index
-    block_start_to_idx = dict(zip(blocks["block_start"], blocks["block_idx"]))
+    block_start_to_idx = dict(zip(blocks["block_start"], blocks["block_idx"], strict=True))
 
     # Presence matrix: 1 if unit present in block, 0 otherwise
     presence = np.zeros((n_units, n_blocks), dtype=int)
@@ -122,8 +126,12 @@ def plot_unit_gantt(blocks, global_units, presence, longevity, output_dir):
         left_edge = first_b - 0.45
         right_edge = last_b + 0.45
         ax.barh(
-            plot_row, width=right_edge - left_edge, left=left_edge,
-            height=0.6, color=color, edgecolor="none",
+            plot_row,
+            width=right_edge - left_edge,
+            left=left_edge,
+            height=0.6,
+            color=color,
+            edgecolor="none",
         )
 
     # Axis formatting
@@ -142,10 +150,12 @@ def plot_unit_gantt(blocks, global_units, presence, longevity, output_dir):
     # Legend for longevity
     handles = []
     for lon_val in range(1, max_longevity + 1):
-        handles.append(mpatches.Patch(
-            color=CMAP_LONGEVITY(lon_val / max_longevity),
-            label=f"{lon_val} block{'s' if lon_val > 1 else ''}"
-        ))
+        handles.append(
+            mpatches.Patch(
+                color=CMAP_LONGEVITY(lon_val / max_longevity),
+                label=f"{lon_val} block{'s' if lon_val > 1 else ''}",
+            )
+        )
     ax.legend(handles=handles, title="Longevity", loc="upper right", fontsize=9)
 
     plt.tight_layout()
@@ -166,7 +176,7 @@ def plot_unit_heatmap(blocks, global_units, presence, longevity, output_dir):
     sorted_presence = presence[sort_idx]
 
     fig, ax = plt.subplots(figsize=(max(6, n_blocks * 1.5 + 2), max(6, n_units * 0.12 + 2)))
-    im = ax.imshow(sorted_presence, aspect="auto", cmap="Blues", interpolation="nearest")
+    _ = ax.imshow(sorted_presence, aspect="auto", cmap="Blues", interpolation="nearest")
 
     ax.set_xticks(range(n_blocks))
     ax.set_xticklabels(blocks["block_label"], fontsize=10)
@@ -228,8 +238,15 @@ def plot_unit_yield(blocks, global_units, presence, longevity, output_dir):
         total = matched_counts[i] + new_counts[i]
         ax.text(i, total + 0.5, str(total), ha="center", va="bottom", fontsize=10, fontweight="bold")
         if lost_counts[i] > 0:
-            ax.text(i, -lost_counts[i] - 0.5, f"-{lost_counts[i]}", ha="center", va="top",
-                    fontsize=9, color=COLOR_LOST)
+            ax.text(
+                i,
+                -lost_counts[i] - 0.5,
+                f"-{lost_counts[i]}",
+                ha="center",
+                va="top",
+                fontsize=9,
+                color=COLOR_LOST,
+            )
 
     plt.tight_layout()
     path = output_dir / "unit_yield.png"
@@ -243,20 +260,26 @@ def plot_longevity_histogram(longevity, n_blocks, output_dir):
     """Histogram: how many units survived N blocks."""
     fig, ax = plt.subplots(figsize=(6, 5))
 
-    bins = np.arange(0.5, n_blocks + 1.5, 1)
-    counts, _, bars = ax.hist(longevity, bins=bins, color=COLOR_MATCHED,
-                               edgecolor="white", linewidth=1.5)
+    bins = np.arange(0.5, n_blocks + 1.5, 1).tolist()
+    counts, _, bars = ax.hist(longevity, bins=bins, color=COLOR_MATCHED, edgecolor="white", linewidth=1.5)
 
     # Color bars by longevity
     max_lon = n_blocks
-    for bar, b in zip(bars, range(1, n_blocks + 1)):
+    for bar, b in zip(cast(BarContainer, bars), range(1, n_blocks + 1), strict=True):
         bar.set_facecolor(CMAP_LONGEVITY(b / max_lon))
 
     # Annotate counts
     for i, c in enumerate(counts):
         if c > 0:
-            ax.text(i + 1, c + 0.3, str(int(c)), ha="center", va="bottom",
-                    fontsize=11, fontweight="bold")
+            ax.text(
+                i + 1,
+                float(c) + 0.3,
+                str(int(c)),
+                ha="center",
+                va="bottom",
+                fontsize=11,
+                fontweight="bold",
+            )
 
     ax.set_xticks(range(1, n_blocks + 1))
     ax.set_xlabel("Number of blocks tracked", fontsize=11)
@@ -271,23 +294,22 @@ def plot_longevity_histogram(longevity, n_blocks, output_dir):
     return path
 
 
-def plot_spike_count_consistency(blocks, global_units, presence, longevity,
-                                  spike_entries, output_dir):
+def plot_spike_count_consistency(blocks, global_units, presence, longevity, spike_entries, output_dir):
     """Line plot: spike count per global unit across blocks.
 
     Only shows units tracked across 2+ blocks. Lines colored by longevity.
     """
     n_blocks = len(blocks)
-    block_start_to_idx = dict(zip(blocks["block_start"], blocks["block_idx"]))
+    block_start_to_idx = dict(zip(blocks["block_start"], blocks["block_idx"], strict=True))
     max_longevity = longevity.max()
 
     # Aggregate spike counts per (global_unit, block)
-    spike_per_block = spike_entries.groupby(
-        ["global_unit", "block_start"]
-    )["spike_count"].sum().reset_index()
+    spike_per_block = (
+        spike_entries.groupby(["global_unit", "block_start"])["spike_count"].sum().reset_index()
+    )
 
     # Only units with longevity >= 2
-    multi_block_units = [i for i, l in enumerate(longevity) if l >= 2]
+    multi_block_units = [i for i, long_index in enumerate(longevity) if long_index >= 2]
     if not multi_block_units:
         print("  Skipped spike_count_consistency (no multi-block units)")
         return None
@@ -315,10 +337,9 @@ def plot_spike_count_consistency(blocks, global_units, presence, longevity,
     # Legend
     handles = []
     for lon_val in range(2, max_longevity + 1):
-        handles.append(mpatches.Patch(
-            color=CMAP_LONGEVITY(lon_val / max_longevity),
-            label=f"{lon_val} blocks"
-        ))
+        handles.append(
+            mpatches.Patch(color=CMAP_LONGEVITY(lon_val / max_longevity), label=f"{lon_val} blocks")
+        )
     ax.legend(handles=handles, title="Longevity", loc="upper right", fontsize=9)
 
     plt.tight_layout()
@@ -343,14 +364,18 @@ def generate_html_report(output_dir, plot_paths, blocks, global_units, longevity
 <head>
     <title>Ephys v2 Unit Matching QC — {EXPERIMENT_NAME}</title>
     <style>
-        body {{ font-family: -apple-system, sans-serif; max-width: 1100px; margin: 40px auto; padding: 0 20px; background: #fafafa; }}
+        body {{ font-family: -apple-system, sans-serif; max-width: 1100px; margin: 40px auto; \
+padding: 0 20px; background: #fafafa; }}
         h1 {{ color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }}
         h2 {{ color: #34495e; margin-top: 40px; }}
-        .summary {{ background: white; border-radius: 8px; padding: 20px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+        .summary {{ background: white; border-radius: 8px; padding: 20px; margin: 20px 0; \
+box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
         .summary table {{ border-collapse: collapse; width: 100%; }}
-        .summary td, .summary th {{ text-align: left; padding: 8px 12px; border-bottom: 1px solid #ecf0f1; }}
+        .summary td, .summary th {{ text-align: left; padding: 8px 12px; \
+border-bottom: 1px solid #ecf0f1; }}
         .summary th {{ color: #7f8c8d; font-weight: 600; width: 200px; }}
-        img {{ max-width: 100%; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin: 15px 0; }}
+        img {{ max-width: 100%; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); \
+margin: 15px 0; }}
         .timestamp {{ color: #95a5a6; font-size: 0.85em; }}
     </style>
 </head>
@@ -366,25 +391,42 @@ def generate_html_report(output_dir, plot_paths, blocks, global_units, longevity
         <tr><th>Blocks</th><td>{n_blocks} ({block_times})</td></tr>
         <tr><th>Global units</th><td>{n_units}</td></tr>
         <tr><th>Max longevity</th><td>{max_lon} blocks</td></tr>
-        <tr><th>Longevity breakdown</th><td>{', '.join(f'{v} units × {k} blocks' for k, v in sorted(lon_counts.items(), reverse=True) if v > 0)}</td></tr>
+        <tr><th>Longevity breakdown</th><td>{
+        ", ".join(f"{v} units × {k} blocks" for k, v in sorted(lon_counts.items(), reverse=True) if v > 0)
+    }</td></tr>
     </table>
     </div>
 """
 
     plot_info = [
-        ("Unit Tracking (Gantt)", "unit_gantt.png",
-         "Each horizontal line is a global unit spanning the blocks it was detected in. "
-         "Units sorted by longevity (most stable at top). Color = number of blocks tracked."),
-        ("Unit Presence Heatmap", "unit_heatmap.png",
-         "Binary presence matrix — blue = unit detected in block."),
-        ("Unit Yield Per Block", "unit_yield.png",
-         "How many units were matched from the previous block, how many are new, "
-         "and how many were lost. First block is all new by definition."),
-        ("Longevity Distribution", "longevity_histogram.png",
-         "How many global units were tracked across 1, 2, 3, ... blocks."),
-        ("Spike Count Consistency", "spike_count_consistency.png",
-         "Total spike count per block for each multi-block unit. "
-         "Large deviations may indicate suspect matching. Log scale."),
+        (
+            "Unit Tracking (Gantt)",
+            "unit_gantt.png",
+            "Each horizontal line is a global unit spanning the blocks it was detected in. "
+            "Units sorted by longevity (most stable at top). Color = number of blocks tracked.",
+        ),
+        (
+            "Unit Presence Heatmap",
+            "unit_heatmap.png",
+            "Binary presence matrix — blue = unit detected in block.",
+        ),
+        (
+            "Unit Yield Per Block",
+            "unit_yield.png",
+            "How many units were matched from the previous block, how many are new, "
+            "and how many were lost. First block is all new by definition.",
+        ),
+        (
+            "Longevity Distribution",
+            "longevity_histogram.png",
+            "How many global units were tracked across 1, 2, 3, ... blocks.",
+        ),
+        (
+            "Spike Count Consistency",
+            "spike_count_consistency.png",
+            "Total spike count per block for each multi-block unit. "
+            "Large deviations may indicate suspect matching. Log scale.",
+        ),
     ]
 
     for title, filename, description in plot_info:
@@ -407,9 +449,11 @@ def generate_html_report(output_dir, plot_paths, blocks, global_units, longevity
 
 
 def main():
+    """Generates a HTML report of unit quality."""
     parser = argparse.ArgumentParser(description="Ephys v2 unit matching QC plots")
-    parser.add_argument("--output-dir", type=str, default="./qc_output",
-                        help="Directory to save plots and report")
+    parser.add_argument(
+        "--output-dir", type=str, default="./qc_output", help="Directory to save plots and report"
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -438,8 +482,9 @@ def main():
     plot_paths.append(plot_unit_heatmap(blocks, global_units, presence, longevity, output_dir))
     plot_paths.append(plot_unit_yield(blocks, global_units, presence, longevity, output_dir))
     plot_paths.append(plot_longevity_histogram(longevity, n_blocks, output_dir))
-    plot_paths.append(plot_spike_count_consistency(
-        blocks, global_units, presence, longevity, spike_entries, output_dir))
+    plot_paths.append(
+        plot_spike_count_consistency(blocks, global_units, presence, longevity, spike_entries, output_dir)
+    )
 
     print("\nGenerating HTML report...")
     report_path = generate_html_report(output_dir, plot_paths, blocks, global_units, longevity)
