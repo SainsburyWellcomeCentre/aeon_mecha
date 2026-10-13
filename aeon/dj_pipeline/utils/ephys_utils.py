@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path, PureWindowsPath
 
 import datajoint as dj
+import numpy as np
 
 logger = dj.logger
 
@@ -87,6 +88,40 @@ def resolve_ephys_file(raw_bin_path: Path) -> Path:
 
     checked = str(raw_bin_path) if zarr_candidate is None else f"{zarr_candidate} or {raw_bin_path}"
     raise FileNotFoundError(f"No ephys file found (checked {checked}).")
+
+
+def read_amplifier_recording(
+    raw_bin_path: Path,
+    num_channels: int,
+    fs_hz: float,
+    gain_to_uV: float = 1.0,
+    offset_to_uV: float = 0.0,
+):
+    """Read an AmplifierData file as a SpikeInterface recording.
+
+    Reads the compressed ``.zarr`` twin if present, else the raw ``.bin``
+    (see ``resolve_ephys_file``).
+    """
+    import spikeinterface as si
+    import spikeinterface.extractors as se
+
+    resolved = resolve_ephys_file(raw_bin_path)
+    if resolved.suffix == ".zarr":
+        # The compression library writes zarr from a plain read_binary (no gains),
+        # so re-attach the gain/offset metadata the .bin branch sets, to keep the
+        # two branches equivalent.
+        rec = si.load(resolved)
+        rec.set_channel_gains(gain_to_uV)
+        rec.set_channel_offsets(offset_to_uV)
+        return rec
+    return se.read_binary(
+        resolved,
+        sampling_frequency=fs_hz,
+        dtype=np.uint16,
+        num_channels=num_channels,
+        gain_to_uV=gain_to_uV,
+        offset_to_uV=offset_to_uV,
+    )
 
 
 def get_probe_id(  # noqa: PLR0911 -- one return per metadata shape
