@@ -39,6 +39,7 @@ def _write_bno_chunk(tmp_path, device_name, n, n_samples, seed=0):
 
 
 def test_imu_columns_canonical_order():
+    """IMU_COLUMNS lists the BNO055 channels in canonical order."""
     from aeon.dj_pipeline.utils.onix_imu import IMU_COLUMNS
 
     assert IMU_COLUMNS == (
@@ -59,6 +60,7 @@ def test_imu_columns_canonical_order():
 
 
 def test_load_and_merge_bno055_returns_canonical_columns(tmp_path):
+    """Merged BNO055 data has the canonical columns, indexed by ONIX clock."""
     from aeon.dj_pipeline.utils.onix_imu import IMU_COLUMNS, load_and_merge_bno055
 
     device_name = "NeuropixelsV2Beta"
@@ -82,6 +84,7 @@ def test_load_and_merge_bno055_returns_canonical_columns(tmp_path):
 
 
 def test_load_and_merge_bno055_raises_on_missing_stream_file(tmp_path):
+    """A missing BNO055 stream file raises FileNotFoundError."""
     from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
 
     device_name = "NeuropixelsV2Beta"
