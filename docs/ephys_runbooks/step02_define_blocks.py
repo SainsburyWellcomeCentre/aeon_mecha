@@ -1,5 +1,5 @@
-"""02 -- Define Blocks
-===================
+"""02 -- Define Blocks.
+
 Define time windows ("blocks") for spike sorting.
 
 Continuous ephys recordings can span many hours or even days, but spike

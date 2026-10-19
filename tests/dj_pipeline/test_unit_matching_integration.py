@@ -11,6 +11,8 @@ pytestmark = pytest.mark.specialized
 
 
 class TestUnitMatchingStructure:
+    """Structural invariants of the UnitMatching output."""
+
     def test_earlier_block_owns_the_overlap(self, ephys_unit_matching_populated, ctx):
         """For a global unit in both blocks, block 1 owns the shared chunks.
 
@@ -91,6 +93,8 @@ class TestUnitMatchingStructure:
 
 
 class TestUnitMatchingGuards:
+    """UnitMatching.make() rejects invalid configurations."""
+
     def test_non_seed_first_block_raises(self, ephys_curation_applied, ctx):
         """make() must refuse a first block that is not the seed."""
         blocks = ephys_curation_applied["blocks"]
@@ -131,6 +135,8 @@ class TestUnitMatchingGuards:
 
 
 class TestUnitMatchingBehaviour:
+    """UnitMatching finds matches across overlapping blocks."""
+
     def test_overlap_produces_at_least_one_match(self, ephys_unit_matching_populated, ctx, record_property):
         """Blocks 1 and 2 share 3 chunks, so some units should be the same neuron."""
         blocks = ephys_unit_matching_populated["blocks"]
