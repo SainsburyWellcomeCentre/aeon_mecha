@@ -78,6 +78,8 @@ try:
             from pyarrow import memory_map
             from pyarrow.ipc import RecordBatchFileReader
 
+            self._num_samples = None
+
             self._source = memory_map(filepath, "r")
             self._reader = RecordBatchFileReader(self._source)
             self.batch_len = batch_len
@@ -90,11 +92,15 @@ try:
             Returns:
                 SampleIndex : Number of samples in the signal block
             """
-            # arrow has fast access to number of samples per batch
-            num_samples = sum(
-                self._reader.get_batch(i).num_rows for i in range(self._reader.num_record_batches)
-            )
-            return num_samples
+            # cache num_samples, since it requires a computation to find them.
+            if self._num_samples is None:
+                # arrow has fast access to number of samples per batch
+                num_samples = sum(
+                    self._reader.get_batch(i).num_rows for i in range(self._reader.num_record_batches)
+                )
+                self._num_samples = num_samples
+
+            return self._num_samples
 
         def get_traces(
             self,
