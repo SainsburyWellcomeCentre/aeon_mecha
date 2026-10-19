@@ -118,7 +118,8 @@ try:
                 start_frame = 0
             if end_frame is None:
                 end_frame = self.get_num_samples()
-                import pyarrow as pa
+
+            import pyarrow as pa
 
             # Arrow saves data in "batch"es, in the time dimension, which we can
             # load individually. We need to figure out which batches our requested
