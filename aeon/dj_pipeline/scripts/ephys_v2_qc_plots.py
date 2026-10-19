@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import cast
 
-import matplotlib  # noqa: ICN001
+import matplotlib
 
 matplotlib.use("Agg")  # non-interactive backend for HPC
 import matplotlib.patches as mpatches

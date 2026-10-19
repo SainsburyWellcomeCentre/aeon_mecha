@@ -42,10 +42,10 @@ pymysql.converters.conversions[dict] = _escape_dict_as_json
 # Register Aeon codecs BEFORE any schema activation. The placement below the
 # MariaDB patch is deliberate, hence the E402 suppression.
 from aeon.dj_pipeline.utils.codec import (  # noqa: E402
-    AeonStreamCodec,  # pyright: ignore[reportUnusedImport]
-    OnixStreamCodec,  # pyright: ignore[reportUnusedImport]
-    PynappleCodec,  # pyright: ignore[reportUnusedImport]
-    XArrayNetCDFCodec,  # pyright: ignore[reportUnusedImport]
+    AeonStreamCodec,  # noqa: F401  # pyright: ignore[reportUnusedImport]
+    OnixStreamCodec,  # noqa: F401  # pyright: ignore[reportUnusedImport]
+    PynappleCodec,  # noqa: F401  # pyright: ignore[reportUnusedImport]
+    XArrayNetCDFCodec,  # noqa: F401  # pyright: ignore[reportUnusedImport]
 )
 
 logger = dj.logger

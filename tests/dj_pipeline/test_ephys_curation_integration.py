@@ -12,6 +12,8 @@ pytestmark = pytest.mark.specialized
 
 
 class TestAutoApprovedCuration:
+    """Applying an auto-approved curation leaves the sorted units unchanged."""
+
     def test_apply_is_a_no_op(self, ephys_curation_applied, ctx):
         rows = (
             ctx.spike_sorting_curation.ApplyOfficialCuration

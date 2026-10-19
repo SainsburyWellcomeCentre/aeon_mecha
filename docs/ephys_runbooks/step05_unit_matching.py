@@ -1,5 +1,5 @@
-"""05 -- Unit Matching
-===================
+"""05 -- Unit Matching.
+
 Synchronize spike times to the behavioral clock, then match units across
 overlapping ephys blocks to establish persistent neuron identities.
 
