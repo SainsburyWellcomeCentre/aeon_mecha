@@ -214,84 +214,92 @@ class TestFindNearestWindow:
         np.testing.assert_array_equal(result, [0, 0, 1, 2])
 
 
+def _gain_cal(serial):
+    """GainCalibrationFileName entry as Bonsai writes it: a Windows path with the serial as parent dir."""
+    return {"GainCalibrationFileName": f"Z:\\aeon\\code\\{serial}\\file.csv"}
+
+
+def _old_layout(probe_a="true", config_a=None):
+    """Pre-2026 metadata: enable flags at Devices.ProbeA/B, configs at Devices.NeuropixelsV2e."""
+    return {
+        "Devices": {
+            "ProbeA": probe_a,
+            "ProbeB": "true",
+            "NeuropixelsV2e": {
+                "ConfigurationA": _gain_cal("11111111") if config_a is None else config_a,
+                "ConfigurationB": _gain_cal("22222222"),
+            },
+        },
+    }
+
+
+def _new_layout(block):
+    """2026+ metadata: a top-level NeuropixelsV2B block holding its own enable flag and config."""
+    return {"NeuropixelsV2B": block}
+
+
 class TestGetProbeId:
     """Regression tests for get_probe_id — covers bugs 1, 2, 3 from bugs_found.md."""
 
-    def test_v2_extracts_serial_from_windows_path(self):
-        """V2 hardware: parses the Bonsai-written Windows path and returns the serial directory name.
-
-        Covers bug 1 (correct metadata path: Devices.NeuropixelsV2e.ConfigurationA/B) AND
-        bug 3 (PureWindowsPath correctly parses backslash separators on Linux).
-        """
+    @pytest.mark.parametrize(
+        ("metadata", "probe_label", "expected"),
+        [
+            pytest.param(None, "ProbeA", "NeuropixelsV2_ProbeA", id="no metadata"),
+            # Bug 1: serial comes from Devices.NeuropixelsV2e.ConfigurationA/B.
+            # Bug 3: PureWindowsPath parses the backslash separators on Linux.
+            pytest.param(_old_layout(), "ProbeA", "11111111", id="old layout, serial"),
+            pytest.param(_old_layout(), "ProbeB", "22222222", id="old layout, ProbeB reads ConfigurationB"),
+            # Bug 2: a disabled/dummy probe returns None, which EphysEpoch.make filters out.
+            pytest.param(_old_layout(probe_a="false"), "ProbeA", None, id="old layout, disabled"),
+            pytest.param(
+                _old_layout(config_a={}), "ProbeA", "NeuropixelsV2_ProbeA", id="old layout, no serial"
+            ),
+            pytest.param(
+                _new_layout({"Enable": "true", "ProbeConfiguration": _gain_cal("33333333")}),
+                "ProbeB",
+                "33333333",
+                id="new layout, serial",
+            ),
+            pytest.param(
+                _new_layout({"ProbeConfiguration": _gain_cal("33333333")}),
+                "ProbeB",
+                "33333333",
+                id="new layout, enable flag absent defaults to enabled",
+            ),
+            pytest.param(
+                _new_layout({"Enable": "False", "ProbeConfiguration": _gain_cal("33333333")}),
+                "ProbeB",
+                None,
+                id="new layout, disabled",
+            ),
+            pytest.param(
+                _new_layout({"Enable": "true", "ProbeConfiguration": {}}),
+                "ProbeB",
+                "NeuropixelsV2_ProbeB",
+                id="new layout, no serial",
+            ),
+            # Devices.NeuropixelsV2e.ConfigurationB holds a different serial (22222222),
+            # so this fails if the old layout is read before the new block.
+            pytest.param(
+                {**_old_layout(), **_new_layout({"ProbeConfiguration": _gain_cal("33333333")})},
+                "ProbeB",
+                "33333333",
+                id="new layout takes precedence over Devices",
+            ),
+        ],
+    )
+    def test_v2(self, metadata, probe_label, expected):
+        """V2 hardware: probe ID is the serial from GainCalibrationFileName, or None if disabled."""
         from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
 
-        metadata = {
-            "Devices": {
-                "ProbeA": "true",
-                "NeuropixelsV2e": {
-                    "ConfigurationA": {
-                        "GainCalibrationFileName": r"Z:\aeon\code\23299108854\file.csv",
-                    },
-                },
-            },
-        }
-        assert get_probe_id(metadata, "NeuropixelsV2", "ProbeA") == "23299108854"
-
-    def test_v2_returns_none_for_disabled_probe(self):
-        """V2 hardware: Devices.ProbeA = "false" signals a disabled/dummy probe → return None.
-
-        Covers bug 2 (downstream EphysEpoch.make filters None-returning probes).
-        """
-        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
-
-        metadata = {
-            "Devices": {
-                "ProbeA": "false",
-                "NeuropixelsV2e": {
-                    "ConfigurationA": {
-                        "GainCalibrationFileName": r"Z:\aeon\code\12345678\file.csv",
-                    },
-                },
-            },
-        }
-        assert get_probe_id(metadata, "NeuropixelsV2", "ProbeA") is None
-
-    def test_v2_falls_back_to_default_when_metadata_missing(self):
-        """V2 hardware with metadata=None: fall back to "{device_name}_{probe_label}"."""
-        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
-
-        assert get_probe_id(None, "NeuropixelsV2", "ProbeA") == "NeuropixelsV2_ProbeA"
-
-    def test_v2_falls_back_to_default_when_calibration_missing(self):
-        """V2 hardware where GainCalibrationFileName is absent: fall back to default ID."""
-        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
-
-        metadata = {
-            "Devices": {
-                "ProbeA": "true",
-                "NeuropixelsV2e": {
-                    "ConfigurationA": {},  # no GainCalibrationFileName
-                },
-            },
-        }
-        assert get_probe_id(metadata, "NeuropixelsV2", "ProbeA") == "NeuropixelsV2_ProbeA"
+        assert get_probe_id(metadata, "NeuropixelsV2", probe_label) == expected
 
     def test_v2beta_uses_default_id(self):
         """V2Beta hardware has no per-probe serial; always returns the default ID."""
         from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
 
-        # Even with metadata present, V2Beta path is not exercised — default returned.
-        metadata = {
-            "Devices": {
-                "ProbeA": "true",
-                "NeuropixelsV2e": {
-                    "ConfigurationA": {
-                        "GainCalibrationFileName": r"Z:\aeon\code\99999999\file.csv",
-                    },
-                },
-            },
-        }
-        assert get_probe_id(metadata, "NeuropixelsV2Beta", "ProbeA") == "NeuropixelsV2Beta_ProbeA"
+        # Even with V2 metadata present, the V2 path is not taken — default returned.
+        assert get_probe_id(_old_layout(), "NeuropixelsV2Beta", "ProbeA") == "NeuropixelsV2Beta_ProbeA"
 
 
 class TestDiscoverEpochProbes:

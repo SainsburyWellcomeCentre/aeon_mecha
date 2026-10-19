@@ -1,5 +1,5 @@
-"""04 -- Post-Sorting and Curation
-================================
+"""04 -- Post-Sorting and Curation.
+
 After the SLURM spike sorting job completes, this script:
   1. Populates post-sorting tables (PostProcessing, SortedSpikes,
      Waveform, SortingQuality)
