@@ -28,7 +28,11 @@ class Binary(_reader.Reader):
 
 
 class HarpSync(Stream):
+    """ONIX-to-HARP clock synchronisation samples."""
+
     class Reader(_reader.Csv):
+        """Reads HarpSync CSV files (ONIX clock, hub clock, HARP time)."""
+
         def __init__(self, pattern):
             super().__init__(f"{pattern}_HarpSync_*", columns=["clock", "hub_clock", "harp_time"])
 
@@ -37,7 +41,11 @@ class HarpSync(Stream):
 
 
 class HarpSyncModel(Stream):
+    """Per-chunk linear model mapping ONIX clock to HARP time."""
+
     class Reader(HarpSync.Reader):
+        """Fits a clock-to-HARP-time linear model for each HarpSync CSV file."""
+
         def __init__(self, pattern):
             super().__init__(pattern)
 
@@ -82,35 +90,49 @@ class HarpSyncModel(Stream):
 
 
 class OnixClock(Stream):
+    """ONIX hardware clock counter values."""
+
     def __init__(self, pattern):
         super().__init__(Binary(pattern, dtype=np.uint64, columns=["clock"]))
 
 
 class Bno055(StreamGroup):
+    """BNO055 inertial measurement unit streams."""
+
     def __init__(self, path):
         super().__init__(path)
 
     class Bno055Clock(OnixClock):
+        """ONIX clock values for BNO055 samples."""
+
         def __init__(self, pattern):
             super().__init__(f"{pattern}_Bno055_Clock_*")
 
     class Bno055Euler(Stream):
+        """BNO055 orientation as Euler angles."""
+
         def __init__(self, pattern):
             super().__init__(Binary(f"{pattern}_Bno055_Euler_*", dtype=np.float32, columns=["x", "y", "z"]))
 
     class Bno055GravityVector(Stream):
+        """BNO055 gravity vector."""
+
         def __init__(self, pattern):
             super().__init__(
                 Binary(f"{pattern}_Bno055_GravityVector_*", dtype=np.float32, columns=["x", "y", "z"])
             )
 
     class Bno055LinearAcceleration(Stream):
+        """BNO055 linear acceleration, gravity removed."""
+
         def __init__(self, pattern):
             super().__init__(
                 Binary(f"{pattern}_Bno055_LinearAcceleration_*", dtype=np.float32, columns=["x", "y", "z"])
             )
 
     class Bno055Quaternion(Stream):
+        """BNO055 orientation as a quaternion."""
+
         def __init__(self, pattern):
             super().__init__(
                 Binary(f"{pattern}_Bno055_Quaternion_*", dtype=np.float32, columns=["w", "x", "y", "z"])
@@ -118,11 +140,15 @@ class Bno055(StreamGroup):
 
 
 class NeuropixelsV2Beta(StreamGroup):
+    """Clock sync streams for a Neuropixels 2.0-beta headstage."""
+
     def __init__(self, path):
         super().__init__(path, HarpSync, HarpSyncModel)
 
 
 class NeuropixelsV2(StreamGroup):
+    """Clock sync streams for a Neuropixels 2.0 headstage."""
+
     def __init__(self, path):
         super().__init__(path, HarpSync, HarpSyncModel)
 

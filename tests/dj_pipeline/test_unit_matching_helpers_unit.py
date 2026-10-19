@@ -9,6 +9,8 @@ pytestmark = pytest.mark.unit
 
 
 class TestResolveMatchingParams:
+    """Tests for merging unit-matching params over their defaults."""
+
     def test_merges_over_defaults(self):
         from aeon.dj_pipeline.spike_sorting import _resolve_matching_params
 
@@ -25,6 +27,8 @@ class TestResolveMatchingParams:
 
 
 class TestRestrictToOverlap:
+    """Tests for restricting spike times to a block-overlap window."""
+
     def test_restricts_inclusively_and_rebases(self):
         """Spikes outside [start, end] drop; the rest are rebased to the window start."""
         from aeon.dj_pipeline.spike_sorting import _restrict_to_overlap
