@@ -242,9 +242,6 @@ try:
             self._kwargs = {
                 "file_path": str(Path(file_path).absolute()),
                 "sampling_frequency": sampling_frequency,
-                "num_channels": len(channel_ids),
-                "dtype": numpy_type.str,
-                "channel_ids": channel_ids,
                 "gain_to_uV": gain_to_uV,
                 "offset_to_uV": offset_to_uV,
                 "is_filtered": is_filtered,
