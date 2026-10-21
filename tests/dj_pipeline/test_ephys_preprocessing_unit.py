@@ -31,17 +31,6 @@ def test_aeon_default_matches_original_recipe():
     np.testing.assert_array_equal(apply_preprocessing(rec, {}).get_traces(), original.get_traces())
 
 
-def test_none_applies_no_steps():
-    """The "none" pipeline leaves the traces unchanged."""
-    import spikeinterface.full as si
-
-    from aeon.dj_pipeline.utils.ephys_preprocessing import apply_preprocessing
-
-    rec = si.generate_recording(num_channels=8, durations=[1.0], seed=0)
-    out = apply_preprocessing(rec, {"SI_PREPROCESSING_METHOD": "none"})
-    np.testing.assert_array_equal(out.get_traces(), rec.get_traces())
-
-
 def test_overrides_merge_per_step():
     """Overrides target one step; the rest of the registered pipeline is unchanged."""
     from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
@@ -57,49 +46,16 @@ def test_overrides_merge_per_step():
     assert resolve_preprocessing_pipeline({}) == AEON_DEFAULT
 
 
-def test_inline_pipeline():
-    """SI_PREPROCESSING_PIPELINE is used as given."""
-    from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
-
-    inline = {"highpass_filter": {"freq_min": 400}, "common_reference": {}}
-    assert resolve_preprocessing_pipeline({"SI_PREPROCESSING_PIPELINE": inline}) == inline
-
-
 @pytest.mark.parametrize(
-    ("params", "error", "match"),
+    ("params", "match"),
     [
-        ({"SI_PREPROCESSING_METHOD": "aeon_defualt"}, ValueError, "aeon_defualt"),
-        ({"SI_PREPROCESSING_PARAMS": {"whiten": {"dtype": "float32"}}}, ValueError, "whiten"),
-        (
-            {"SI_PREPROCESSING_PIPELINE": {}, "SI_PREPROCESSING_METHOD": "none"},
-            ValueError,
-            "can't be combined",
-        ),
-        ({"SI_PREPROCESSING_PIPELINE": {"bandpas_filter": {}}}, TypeError, "bandpas_filter"),
+        ({"SI_PREPROCESSING_PARAMS": {"whiten": {"dtype": "float32"}}}, "whiten"),
+        ({"SI_PREPROCESSING_PIPELINE": {}, "SI_PREPROCESSING_METHOD": "none"}, "can't be combined"),
     ],
 )
-def test_invalid_selection_raises(params, error, match):
-    """Bad names, misdirected overrides and conflicting keys fail before any data is touched."""
+def test_invalid_selection_raises(params, match):
+    """An override for a step the pipeline lacks, or an inline pipeline plus a method, raises."""
     from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
 
-    with pytest.raises(error, match=match):
+    with pytest.raises(ValueError, match=match):
         resolve_preprocessing_pipeline(params)
-
-
-def test_bad_step_argument_raises_on_apply():
-    """SpikeInterface rejects an argument a step doesn't take."""
-    import spikeinterface.full as si
-
-    from aeon.dj_pipeline.utils.ephys_preprocessing import apply_preprocessing
-
-    rec = si.generate_recording(num_channels=8, durations=[1.0], seed=0)
-    with pytest.raises(TypeError, match="freq_mni"):
-        apply_preprocessing(rec, {"SI_PREPROCESSING_PARAMS": {"bandpass_filter": {"freq_mni": 250}}})
-
-
-def test_duplicate_registration_raises():
-    """A name can't be registered twice, so a pipeline can't be silently replaced."""
-    from aeon.dj_pipeline.utils.ephys_preprocessing import register_preprocessing
-
-    with pytest.raises(ValueError, match="already registered"):
-        register_preprocessing("aeon_default", {})

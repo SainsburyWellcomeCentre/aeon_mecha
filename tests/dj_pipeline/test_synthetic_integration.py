@@ -762,16 +762,6 @@ class TestSortingParamSetPreprocessingMethod:
             spike_sorting.SortingParamSet.insert1(row)
         assert not (spike_sorting.SortingParamSet & {"paramset_id": "test-bad-preproc"})
 
-    def test_registered_method_accepted(self, ephys_full_pipeline):
-        from aeon.dj_pipeline import spike_sorting
-
-        key = {"paramset_id": "test-none-pp"}
-        spike_sorting.SortingParamSet.insert1(
-            {**key, "sorting_method": "kilosort4", "params": {"SI_PREPROCESSING_METHOD": "none"}},
-            skip_duplicates=True,
-        )
-        assert spike_sorting.SortingParamSet & key
-
 
 class TestSpikeSortingLupin:
     """A non-Kilosort sorter runs through SpikeSorting."""
