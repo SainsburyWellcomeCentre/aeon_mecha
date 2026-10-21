@@ -301,7 +301,7 @@ class PreProcessing(dj.Computed):
                 gain_to_uV,
                 offset_to_uV,
             )
-            for f, d in zip(ephys_files, dir_types, strict=False)
+            for f, d in zip(ephys_files, dir_types, strict=True)
         ]
         si_recording = si.concatenate_recordings(si_recs)
 
