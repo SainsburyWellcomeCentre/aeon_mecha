@@ -124,9 +124,7 @@ def read_amplifier_recording(
     )
 
 
-def get_probe_id(  # noqa: PLR0911 -- one return per metadata shape
-    metadata: dict | None, device_name: str, probe_label: str
-) -> str | None:
+def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> str | None:
     """Extract probe identifier from metadata.
 
     For V2Beta hardware (no serial numbers): probe ID = "{device_name}_{label}"
