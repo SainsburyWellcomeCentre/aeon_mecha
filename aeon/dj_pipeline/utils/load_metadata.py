@@ -13,6 +13,7 @@ import importlib
 import inspect
 import json
 import re
+import types
 import typing
 from collections import defaultdict
 from functools import cached_property
@@ -105,7 +106,8 @@ def get_device_class_from_field(field_info) -> type | None:
     """Extract Device class from Pydantic field annotation.
 
     A class is considered a Device if it has @data_reader decorated methods.
-    Handles both Dict[Name, Device] and single Device field types.
+    Handles Dict[Name, Device], single Device, and optional Device
+    (``Device | None`` / ``Optional[Device]``) field types.
 
     Args:
         field_info: Pydantic FieldInfo from model_fields
@@ -115,6 +117,13 @@ def get_device_class_from_field(field_info) -> type | None:
     """
     annotation = field_info.annotation
     origin = typing.get_origin(annotation)
+
+    # Unwrap optional single-device fields, e.g. `sound_card: SoundCard | None`
+    if origin in (typing.Union, types.UnionType):
+        non_none = [a for a in typing.get_args(annotation) if a is not type(None)]
+        if len(non_none) == 1:
+            annotation = non_none[0]
+            origin = typing.get_origin(annotation)
 
     # Handle Dict[Name, Device] - e.g., Dict[CameraName, Camera]
     if origin is dict:
