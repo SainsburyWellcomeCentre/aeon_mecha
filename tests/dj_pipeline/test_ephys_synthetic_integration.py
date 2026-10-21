@@ -727,14 +727,14 @@ class TestSpikeSortingLupin:
         import spikeinterface.full as si
 
         from aeon.dj_pipeline import spike_sorting
-        from aeon.dj_pipeline.utils.ephys_preprocessing import get_preprocessing_method
+        from aeon.dj_pipeline.utils.ephys_preprocessing import apply_preprocessing
 
         assert spike_sorting.SortingMethod & {"sorting_method": "lupin"}
 
         recording, _ = si.generate_ground_truth_recording(
             durations=[10.0], num_channels=32, num_units=5, seed=0
         )
-        recording = get_preprocessing_method("none")(recording)
+        recording = apply_preprocessing(recording, {"SI_PREPROCESSING_METHOD": "none"})
 
         output_dir = tmp_path / "lupin_test"
         recording_dir = output_dir.parent / "recording"

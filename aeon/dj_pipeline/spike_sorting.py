@@ -22,10 +22,7 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
-from aeon.dj_pipeline.utils.ephys_preprocessing import (
-    DEFAULT_PREPROCESSING_METHOD,
-    get_preprocessing_method,
-)
+from aeon.dj_pipeline.utils.ephys_preprocessing import apply_preprocessing, resolve_preprocessing_pipeline
 from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, resolve_ephys_file
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
@@ -125,15 +122,17 @@ class SortingParamSet(dj.Lookup):
     """
 
     def insert(self, rows, **kwargs):
-        """Insert paramsets, rejecting an unknown ``SI_PREPROCESSING_METHOD`` up front."""
+        """Insert paramsets, rejecting an invalid preprocessing selection up front.
+
+        Checks the method name, step names and override targets; step arguments are
+        checked by SpikeInterface when PreProcessing applies the pipeline.
+        """
         # Only plain sequences of dicts are checked; DataFrames, query expressions and
-        # generators pass through untouched (PreProcessing still fails on an unknown name).
+        # generators pass through untouched (PreProcessing still fails on them).
         if isinstance(rows, list | tuple):
             for row in rows:
                 if isinstance(row, dict):
-                    method = (row.get("params") or {}).get("SI_PREPROCESSING_METHOD")
-                    if method is not None:
-                        get_preprocessing_method(method)
+                    resolve_preprocessing_pipeline(row.get("params") or {})
         super().insert(rows, **kwargs)
 
 
@@ -355,10 +354,7 @@ class PreProcessing(dj.Computed):
 
         # Run preprocessing and save results to output folder
         si_recording = si.preprocessing.unsigned_to_signed(si_recording)
-        preprocess = get_preprocessing_method(
-            params.get("SI_PREPROCESSING_METHOD", DEFAULT_PREPROCESSING_METHOD)
-        )
-        si_recording = preprocess(si_recording, **params.get("SI_PREPROCESSING_PARAMS", {}))
+        si_recording = apply_preprocessing(si_recording, params)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
         save_format = params.get("save_format", "zarr")

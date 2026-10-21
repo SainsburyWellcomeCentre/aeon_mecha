@@ -1,122 +1,123 @@
-"""Preprocessing methods for spike sorting, selectable per SortingParamSet.
+"""Preprocessing pipelines for spike sorting, selectable per SortingParamSet.
 
-``spike_sorting.PreProcessing`` looks a method up by name and applies it to the
-recording, after the fixed unsigned-to-signed conversion and before the result is
-saved for sorting. A paramset picks the method and its arguments::
+A preprocessing pipeline is a SpikeInterface pipeline dict: ordered step names, each
+mapped to that step's keyword arguments (omitted arguments take SpikeInterface's
+defaults). See
+https://spikeinterface.readthedocs.io/en/stable/how_to/build_pipeline_with_dicts.html
+
+``spike_sorting.PreProcessing`` applies the selected pipeline to the recording, after
+the fixed unsigned-to-signed conversion and before the result is saved for sorting.
+A paramset selects a pipeline in one of two ways:
+
+1. A registered pipeline, by name, with optional per-step argument overrides::
 
     params = {
         "SI_PREPROCESSING_METHOD": "aeon_default",  # default if omitted
-        "SI_PREPROCESSING_PARAMS": {"freq_min": 250},  # passed as **kwargs
+        "SI_PREPROCESSING_PARAMS": {"bandpass_filter": {"freq_min": 250}},
         ...
     }
 
-Adding a method
----------------
-Register a function under a name. It can live in this module or in any other
-module or package::
+2. A pipeline written inline::
 
-    from aeon.dj_pipeline.utils.ephys_preprocessing import (
-        register_preprocessing,
-        reject_unused_kwargs,
+    params = {
+        "SI_PREPROCESSING_PIPELINE": {
+            "bandpass_filter": {"freq_min": 300, "freq_max": 6000},
+            "common_reference": {"operator": "median"},
+        },
+        ...
+    }
+
+Registering a pipeline
+----------------------
+Register a pipeline under a name, from this module or any other::
+
+    from aeon.dj_pipeline.utils.ephys_preprocessing import register_preprocessing
+
+    register_preprocessing(
+        "my_pipeline",
+        {
+            "highpass_filter": {"freq_min": 400},
+            "common_reference": {"operator": "median"},
+        },
     )
 
-
-    @register_preprocessing("my_method")
-    def my_method(recording, my_option: float = 1.0, **kwargs) -> Any:
-        reject_unused_kwargs("my_method", kwargs)
-
-        import spikeinterface.preprocessing as spre
-
-        recording = spre.highpass_filter(recording, freq_min=my_option)
-        return recording
-
-Registration happens on import. A method defined outside this module must be
+Registration happens on import. A pipeline registered outside this module must be
 imported before inserting a paramset that names it and before running
-``PreProcessing.populate()``, e.g. at the top of the script that runs it::
+``PreProcessing.populate()``.
 
-    import my_lab.preprocessing  # noqa: F401 -- registers "my_method"
-
-    spike_sorting.PreProcessing.populate()
-
-Rules for a method:
-
-- Take a SpikeInterface recording plus keyword arguments, and return a recording.
-- Keep it lazy: chain SpikeInterface preprocessing steps rather than loading traces.
-  The result is pickled and reloaded by the sorting step in another process, so a
-  custom preprocessor class must be importable there too.
-- Expose tunable values as keyword arguments with defaults, and call
-  ``reject_unused_kwargs`` so a misspelled key fails instead of being ignored.
-- Names are unique; registering an existing name raises. Once a paramset
-  references a name, don't change what it does - register modified logic under a
-  new name.
-
-This module has no database dependency, so methods can be unit-tested directly.
+Names are unique; registering an existing name raises. Once a paramset references a
+name, don't change its pipeline - register the modified pipeline under a new name.
 """
 
-from collections.abc import Callable
 from typing import Any
 
-_PREPROCESSING_METHODS: dict[str, Callable[..., Any]] = {}
+PipelineDict = dict[str, dict[str, Any]]
+
+_PREPROCESSING_PIPELINES: dict[str, PipelineDict] = {}
 
 DEFAULT_PREPROCESSING_METHOD = "aeon_default"
 
 
-def register_preprocessing(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Register a preprocessing function under ``name`` for use in SortingParamSet.
+def register_preprocessing(name: str, pipeline: PipelineDict) -> None:
+    """Register a SpikeInterface preprocessing pipeline dict under ``name``."""
+    if name in _PREPROCESSING_PIPELINES:
+        raise ValueError(f"Preprocessing method '{name}' is already registered.")
+    _PREPROCESSING_PIPELINES[name] = pipeline
 
-    Usable from any module; the function is registered when that module is imported.
+
+def resolve_preprocessing_pipeline(params: dict[str, Any]) -> PipelineDict:
+    """Return the pipeline dict a SortingParamSet's ``params`` selects.
+
+    Raises:
+        ValueError: Unknown method name, an override for a step the pipeline doesn't
+            have, or an inline pipeline combined with a method or overrides.
+        TypeError: A step name SpikeInterface doesn't support.
     """
+    from spikeinterface.preprocessing import PreprocessingPipeline
 
-    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        if name in _PREPROCESSING_METHODS:
-            raise ValueError(f"Preprocessing method '{name}' is already registered.")
-        _PREPROCESSING_METHODS[name] = func
-        return func
+    if "SI_PREPROCESSING_PIPELINE" in params:
+        conflicting = {"SI_PREPROCESSING_METHOD", "SI_PREPROCESSING_PARAMS"} & set(params)
+        if conflicting:
+            raise ValueError(f"SI_PREPROCESSING_PIPELINE can't be combined with {sorted(conflicting)}.")
+        pipeline = params["SI_PREPROCESSING_PIPELINE"]
+    else:
+        name = params.get("SI_PREPROCESSING_METHOD", DEFAULT_PREPROCESSING_METHOD)
+        if name not in _PREPROCESSING_PIPELINES:
+            raise ValueError(
+                f"Unknown SI_PREPROCESSING_METHOD '{name}'. "
+                f"Registered methods: {sorted(_PREPROCESSING_PIPELINES)}"
+            )
+        registered = _PREPROCESSING_PIPELINES[name]
+        overrides = params.get("SI_PREPROCESSING_PARAMS", {})
+        unknown_steps = set(overrides) - set(registered)
+        if unknown_steps:
+            raise ValueError(
+                f"SI_PREPROCESSING_PARAMS step(s) {sorted(unknown_steps)} are not in "
+                f"the '{name}' pipeline: {list(registered)}"
+            )
+        pipeline = {step: {**kwargs, **overrides.get(step, {})} for step, kwargs in registered.items()}
 
-    return decorator
-
-
-def get_preprocessing_method(name: str) -> Callable[..., Any]:
-    """Return the preprocessing function registered under ``name``."""
-    try:
-        return _PREPROCESSING_METHODS[name]
-    except KeyError:
-        raise ValueError(
-            f"Unknown SI_PREPROCESSING_METHOD '{name}'. "
-            f"Registered methods: {sorted(_PREPROCESSING_METHODS)}"
-        ) from None
-
-
-def reject_unused_kwargs(method: str, kwargs: dict[str, Any]) -> None:
-    """Raise on SI_PREPROCESSING_PARAMS keys that ``method`` does not use."""
-    if kwargs:
-        raise ValueError(
-            f"Preprocessing method '{method}' does not accept SI_PREPROCESSING_PARAMS: {sorted(kwargs)}"
-        )
-
-
-# ---- Methods ----
+    PreprocessingPipeline(pipeline)  # raises TypeError on an unsupported step name
+    return pipeline
 
 
+def apply_preprocessing(recording: Any, params: dict[str, Any]) -> Any:
+    """Apply the pipeline ``params`` selects to ``recording`` and return the (lazy) result."""
+    from spikeinterface.preprocessing import apply_preprocessing_pipeline
+
+    return apply_preprocessing_pipeline(recording, resolve_preprocessing_pipeline(params))
+
+
+# ---- Registered pipelines ----
+
+_AEON_DEFAULT: PipelineDict = {
+    "bandpass_filter": {"freq_min": 300, "freq_max": 6000},
+    "common_reference": {"operator": "median"},
+}
+
+register_preprocessing("aeon_default", _AEON_DEFAULT)
 # "ephys_preproc": the name earlier runbooks wrote into SI_PREPROCESSING_METHOD, when the
-# key was ignored and this recipe always ran. Kept so those paramsets resolve unchanged.
-@register_preprocessing("ephys_preproc")
-@register_preprocessing("aeon_default")
-def aeon_default(
-    recording, freq_min: float = 300, freq_max: float = 6000, operator: str = "median", **kwargs
-) -> Any:
-    """Bandpass filter (default 300-6000 Hz), then common average reference (default median)."""
-    reject_unused_kwargs("aeon_default", kwargs)
-
-    import spikeinterface.preprocessing as spre
-
-    recording = spre.bandpass_filter(recording=recording, freq_min=freq_min, freq_max=freq_max)
-    recording = spre.common_reference(recording=recording, operator=operator)
-    return recording
-
-
-@register_preprocessing("none")
-def no_preprocessing(recording, **kwargs) -> Any:
-    """Return the recording unchanged, e.g. to leave preprocessing to the sorter."""
-    reject_unused_kwargs("none", kwargs)
-    return recording
+# key was ignored and this pipeline always ran. Kept so those paramsets resolve unchanged.
+register_preprocessing("ephys_preproc", _AEON_DEFAULT)
+# No preprocessing in PreProcessing, e.g. to leave it to the sorter.
+register_preprocessing("none", {})
