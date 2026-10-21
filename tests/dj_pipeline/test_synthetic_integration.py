@@ -747,6 +747,8 @@ class TestSyncedSpikesIndexingAndExtrapolation:
 
 
 class TestSortingParamSetPreprocessingMethod:
+    """SortingParamSet.insert validates the preprocessing selection."""
+
     def test_unknown_method_rejected_on_insert(self, ephys_full_pipeline):
         """A typo in SI_PREPROCESSING_METHOD fails at insert, not hours into PreProcessing."""
         from aeon.dj_pipeline import spike_sorting
@@ -772,6 +774,8 @@ class TestSortingParamSetPreprocessingMethod:
 
 
 class TestSpikeSortingLupin:
+    """A non-Kilosort sorter runs through SpikeSorting."""
+
     def test_lupin_sorts_unpreprocessed_recording(self, ephys_full_pipeline, tmp_path):
         """Lupin runs through SpikeSorting.make_compute with SI_PREPROCESSING_METHOD="none".
 
