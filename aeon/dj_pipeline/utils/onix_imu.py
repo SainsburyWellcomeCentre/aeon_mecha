@@ -48,7 +48,7 @@ def load_and_merge_bno055(
 
     Args:
         device_dir: Path to the ONIX device directory containing the binaries.
-        device_name: ``"NeuropixelsV2Beta"`` or ``"NeuropixelsV2"``.
+        device_name: ``"NeuropixelsV2Beta"``, ``"NeuropixelsV2"`` or ``"Neuropixels"``.
         chunk_index: Integer suffix of the binary file group.
 
     Returns:

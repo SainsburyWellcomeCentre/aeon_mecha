@@ -31,7 +31,7 @@ Run from the repo root on an HPC compute node:
 
 from datetime import UTC
 
-EXPERIMENT_NAME = "abcGolden01-aeonx1"
+EXPERIMENT_NAME = "ProjectAeonOVC-2026-09-14_001"
 
 
 # --------------------------------------------------------------------------
@@ -74,19 +74,19 @@ def run_post_sorting(experiment_name):
 
     # 1. PostProcessing -- quality metrics and analyzer extensions.
     print("\nPopulating PostProcessing...")
-    spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
+    spike_sorting.PostProcessing.populate(restriction, display_progress=True, suppress_errors=False)
 
     # 2. SortedSpikes -- spike times and unit info into DB.
     print("\nPopulating SortedSpikes...")
-    spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
+    spike_sorting.SortedSpikes.populate(restriction, display_progress=True, suppress_errors=False)
 
     # 3. Waveform -- mean waveform templates per unit.
     print("\nPopulating Waveform...")
-    spike_sorting.Waveform.populate(display_progress=True, suppress_errors=False)
+    spike_sorting.Waveform.populate(restriction, display_progress=True, suppress_errors=False)
 
     # 4. SortingQuality -- per-unit quality metrics.
     print("\nPopulating SortingQuality...")
-    spike_sorting.SortingQuality.populate(display_progress=True, suppress_errors=False)
+    spike_sorting.SortingQuality.populate(restriction, display_progress=True, suppress_errors=False)
 
     print("\nPost-sorting population complete.")
 
@@ -187,7 +187,7 @@ def auto_approve_curation(experiment_name):
                 skip_duplicates=True,
             )
 
-    curation.ApplyOfficialCuration.populate(display_progress=True)
+    curation.ApplyOfficialCuration.populate({"experiment_name": experiment_name}, display_progress=True)
     print("Auto-approval curation complete.")
 
 
@@ -221,7 +221,7 @@ If you want to review units interactively instead of auto-approving:
 4. MAKE OFFICIAL AND APPLY
        spike_sorting_curation.make_curation_official(key, curation_id)
        from aeon.dj_pipeline import spike_sorting_curation as curation
-       curation.ApplyOfficialCuration.populate(display_progress=True)
+       curation.ApplyOfficialCuration.populate(key, display_progress=True)
 
    NOTE: Applying manual curation DELETES the existing SortedSpikes and all
    downstream entries (Waveform, SortingQuality, SyncedSpikes). It does NOT
@@ -229,10 +229,13 @@ If you want to review units interactively instead of auto-approving:
    from the curated analyzer (SortedSpikes.make reads the manual quality
    labels + tags off it into unit_quality/UnitTag):
 
-       spike_sorting.SortedSpikes.populate(display_progress=True)
-       spike_sorting.Waveform.populate(display_progress=True)
-       spike_sorting.SortingQuality.populate(display_progress=True)
-       spike_sorting.SyncedSpikes.populate(display_progress=True)
+       spike_sorting.SortedSpikes.populate(key, display_progress=True)
+       spike_sorting.Waveform.populate(key, display_progress=True)
+       spike_sorting.SortingQuality.populate(key, display_progress=True)
+       spike_sorting.SyncedSpikes.populate(key, display_progress=True)
+
+   (Always pass a restriction such as `key` - an unrestricted populate()
+   processes every pending entry in the database, across all experiments.)
 
 ITERATING: To refine an existing curation, pass parent_curation_id:
     spike_sorting_curation.launch_spikeinterface_gui(key, parent_curation_id=1)

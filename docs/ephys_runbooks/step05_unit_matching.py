@@ -36,8 +36,8 @@ Run from the repo root on an HPC compute node (Ceph must be visible):
 # Configuration -- edit these for your experiment
 # --------------------------------------------------------------------------
 
-EXPERIMENT_NAME = "abcGolden01-aeonx1"
-SUBJECT = "IAA-1147881"
+EXPERIMENT_NAME = "ProjectAeonOVC-2026-09-14_001"
+SUBJECT = "BAA-1107307"
 MATCHING_PARAMSET_ID = 1
 
 # --------------------------------------------------------------------------

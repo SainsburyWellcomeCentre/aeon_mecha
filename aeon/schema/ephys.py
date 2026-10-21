@@ -127,6 +127,13 @@ class NeuropixelsV2(StreamGroup):
         super().__init__(path, HarpSync, HarpSyncModel)
 
 
+class Neuropixels(StreamGroup):
+    """NeuropixelsV2 hardware as named by the newer (>= 2026-09) Ephys.bonsai workflow."""
+
+    def __init__(self, path):
+        super().__init__(path, HarpSync, HarpSyncModel)
+
+
 # ----
 
 
@@ -134,5 +141,6 @@ social_ephys = DotMap(
     [
         Device("NeuropixelsV2Beta", NeuropixelsV2Beta, Bno055),
         Device("NeuropixelsV2", NeuropixelsV2, Bno055),
+        Device("Neuropixels", Neuropixels, Bno055),
     ]
 )

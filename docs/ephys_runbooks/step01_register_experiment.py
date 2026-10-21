@@ -26,8 +26,8 @@ from pathlib import Path
 # --------------------------------------------------------------------------
 
 # Name that identifies this experiment in the database.
-# Convention: <experiment_tag>-<arena>, e.g. "abcGolden01-aeonx1".
-EXPERIMENT_NAME = "abcGolden01-aeonx1"
+# Convention: <experiment_tag>-<arena>, e.g. "abcGolden01-aeonx1". source .venv/bin/activate; uv run python /submodules/aeon_mecha/docs/ephys_runbooks/step01_register_experiment.py
+EXPERIMENT_NAME = "ProjectAeonOVC-2026-04-02_001"
 
 # Absolute paths to raw data on Ceph.
 # abc experiments record behavior and ephys on separate acquisition machines:
@@ -35,29 +35,29 @@ EXPERIMENT_NAME = "abcGolden01-aeonx1"
 #   - AEONX1 captures ephys (NeuropixelsV2)
 # Each is registered as a separate directory type so the pipeline knows where
 # to look for each kind of data.
-RAW_BEHAVIOR_DIR = "/ceph/aeon/aeon/data/raw/AEON3/abcGolden01"
-RAW_EPHYS_DIR = "/ceph/aeon/aeon/data/raw/AEONX1/abcGolden01"
+RAW_BEHAVIOR_DIR = "/ceph/aeon/aeon/data/raw/AEON3/experiment_beh/aeon-ovc-beh-2026-04-02"
+RAW_EPHYS_DIR = "/ceph/aeon/aeon/data/raw/AEONX1/ProjectAeonOVC/aeon-ovc-2026-04-02"
 
 # SWC subject ID.
-SUBJECT = "IAA-1147881"
+SUBJECT = "BAA-1106718"
 
 # Serial number of the physical probe (from Metadata.yml / GainCalibrationFileName).
-PROBE_SERIAL = "23299108854"
+PROBE_SERIAL = "22420004142"
 
 # Probe type string used by the pipeline. The device directory on Ceph is
 # called "NeuropixelsV2", and the pipeline maps that to "neuropixels2.0"
 # via DEVICE_PROBE_TYPE_MAP in ephys_utils.py. The ProbeType entry we
 # create here must match that string exactly.
-PROBE_TYPE = "neuropixels2.0"
+PROBE_TYPE = "neuropixels2.0-multishank"
 
 # Path to the channel mapping JSON (probeinterface format), relative to
 # the first epoch directory. This defines the 384 active electrodes.
-CHANNEL_MAP_FILE = "M81_ProbeB_4Shanks_1000_to_1700_um.json"
+CHANNEL_MAP_FILE = "/ceph/branco/Rokas/Ephys/Channel_maps/020426/M01_ProbeA_4Shanks_1500_to_2200um.json"
 
 # Local directory for probe_assignments.json when Ceph is read-only.
 # The file will be written here if the epoch directory on Ceph can't be
 # written to. EphysEpochConfig.populate() checks this location automatically.
-PROBE_ASSIGNMENTS_DIR = Path.home() / ".aeon_probe_assignments"
+PROBE_ASSIGNMENTS_DIR = Path("/ceph/branco/Rokas/Ephys/probe_assignments")
 
 
 # --------------------------------------------------------------------------
@@ -82,8 +82,8 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
         {
             "subject": subject,
             "sex": "U",
-            "subject_birth_date": "2024-01-01",
-            "subject_description": "Ephys pilot subject",
+            "subject_birth_date": "2026-01-27",
+            "subject_description": "NPX2.0 RSP and HPC",
         },
         skip_duplicates=True,
     )
@@ -110,7 +110,7 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
     if not epoch_dirs:
         raise FileNotFoundError(f"No epoch directories found in {raw_ephys_dir}")
     date_part, time_part = epoch_dirs[0].split("T")
-    experiment_start_time = f"{date_part} {time_part.replace('-', ':')}"
+    experiment_start_time = f"{date_part} {time_part[:2]}:{time_part[2:4]}:{time_part[4:6]}"
 
     # --- Derive directory_path relative to ceph_aeon root ---
     # The pipeline resolves full paths as:
@@ -126,7 +126,7 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
         {
             "experiment_name": experiment_name,
             "experiment_start_time": experiment_start_time,
-            "experiment_description": "Golden baseline dataset - abc ephys (AEON3 + AEONX1)",
+            "experiment_description": "OVC experiment (AEON3 + AEONX1)",
             "arena_name": "circle-2m",
             "lab": "SWC",
             "location": "AEONX1",
@@ -370,8 +370,12 @@ def create_probe_assignments(raw_ephys_dir, probe_serial, subject):
     return str(override_dir)
 
 
-def register_epochs(experiment_name, probe_assignments_dir=None):
-    """Ingest behavior + ephys epochs and populate per-epoch probe configs."""
+def register_epochs(experiment_name, probe_assignments_dir=None, channel_map_file=None):
+    """Ingest behavior + ephys epochs and populate per-epoch probe configs.
+
+    ``channel_map_file`` is used for ProbeA in epochs whose metadata has no
+    ProbeInterfaceFileName (older recordings).
+    """
     from aeon.dj_pipeline import acquisition
     from aeon.dj_pipeline.ephys import EphysEpoch, EphysEpochConfig
 
@@ -409,8 +413,10 @@ def register_epochs(experiment_name, probe_assignments_dir=None):
     # (because Ceph is read-only), point the make() body at it.
     if probe_assignments_dir is not None:
         EphysEpochConfig.probe_assignments_override_dir = probe_assignments_dir
+    if channel_map_file is not None:
+        EphysEpochConfig.probe_config_override = {"ProbeA": channel_map_file}
     print("Populating EphysEpochConfig...")
-    EphysEpochConfig.populate(display_progress=True)
+    EphysEpochConfig.populate({"experiment_name": experiment_name}, display_progress=True)
 
     # Report results — every populated EphysEpochConfig row has resolved probes
     # (config failures raise rather than insert sentinel rows).
@@ -529,7 +535,7 @@ if __name__ == "__main__":
     assignments_dir = create_probe_assignments(RAW_EPHYS_DIR, PROBE_SERIAL, SUBJECT)
 
     print("\n--- 5/8: Register epochs ---")
-    register_epochs(EXPERIMENT_NAME, probe_assignments_dir=assignments_dir)
+    register_epochs(EXPERIMENT_NAME, probe_assignments_dir=assignments_dir, channel_map_file=CHANNEL_MAP_FILE)
 
     print("\n--- 6/8: Ingest sync models ---")
     ingest_sync_models(EXPERIMENT_NAME)

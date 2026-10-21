@@ -634,7 +634,11 @@ class PostProcessing(dj.Computed):
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
 
-        job_kwargs = postprocessing_params.get("job_kwargs", fork_safe_job_kwargs("1s"))
+        # Always use the fork-safe thread pool sized to the SLURM allocation; take only
+        # chunk_duration from the paramset (its n_jobs=-1 means every core on the node).
+        paramset_job_kwargs = postprocessing_params.get("job_kwargs", {})
+        job_kwargs = fork_safe_job_kwargs(paramset_job_kwargs.get("chunk_duration", "1s"))
+
 
         save_format = params.get("save_format", "zarr")
         analyzer_format = "zarr" if save_format == "zarr" else "binary_folder"

@@ -20,6 +20,35 @@ import pytest
 pytestmark = pytest.mark.unit
 
 
+def _headstage_metadata():
+    """Metadata.json layout of the >= 2026-09 Ephys.bonsai workflow (ephys.Headstage.ProbeA/B)."""
+    return {
+        "workflow": "Ephys.bonsai",
+        "ephys": {
+            "Subject": "BAA-1107307",
+            "Headstage": {
+                "DiscriminatorType": "NeuropixelsV2eBetaHeadstage",
+                "ProbeA": {
+                    "Enable": True,
+                    "ProbeConfiguration": {
+                        "GainCalibrationFileName": (
+                            "D:/probe_settings/OVC_Project/gain_cal_files/20403305313_gainCalValues.csv"
+                        ),
+                        "ProbeInterfaceFileName": (
+                            "D:/probe_settings/OVC_Project/electrode_selections/Rokas_140926_converted_v4.json"
+                        ),
+                    },
+                },
+                "ProbeB": {
+                    "Enable": False,
+                    "ProbeConfiguration": {"GainCalibrationFileName": "", "ProbeInterfaceFileName": ""},
+                },
+                "Port": 1,
+            },
+        },
+    }
+
+
 class TestParseProbeAssignmentsFile:
     """Test the JSON file parsing helper (pure function, no DB)."""
 
@@ -293,6 +322,39 @@ class TestGetProbeId:
         }
         assert get_probe_id(metadata, "NeuropixelsV2Beta", "ProbeA") == "NeuropixelsV2Beta_ProbeA"
 
+    def test_v2_new_block_nested_under_devices(self):
+        """New-format NeuropixelsV2A/B blocks nested under Devices; serial from filename prefix."""
+        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
+
+        metadata = {
+            "Devices": {
+                "NeuropixelsV2A": {
+                    "Enable": "true",
+                    "ProbeConfiguration": {
+                        "GainCalibrationFileName": (
+                            r"D:\probe_settings\OVC_Project\gain_cal_files\22420004822_gainCalValues.csv"
+                        ),
+                    },
+                },
+                "NeuropixelsV2B": {
+                    "Enable": "false",
+                    "ProbeConfiguration": {
+                        "GainCalibrationFileName": r"D:\probe_settings\23409404271\23409404271_gainCalValues.csv",
+                    },
+                },
+            },
+        }
+        assert get_probe_id(metadata, "NeuropixelsV2", "ProbeA") == "22420004822"
+        assert get_probe_id(metadata, "NeuropixelsV2", "ProbeB") is None
+
+    def test_neuropixels_headstage_layout(self):
+        """>= 2026-09 layout: ephys.Headstage.ProbeA/B with boolean Enable; device named "Neuropixels"."""
+        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
+
+        metadata = _headstage_metadata()
+        assert get_probe_id(metadata, "Neuropixels", "ProbeA") == "20403305313"
+        assert get_probe_id(metadata, "Neuropixels", "ProbeB") is None
+
 
 class TestDiscoverEpochProbes:
     """Tests for discover_epoch_probes(epoch_path)."""
@@ -367,6 +429,23 @@ class TestDiscoverEpochProbes:
 
         assert labels == ["ProbeA"]
 
+    def test_neuropixels_device_directory(self, tmp_path):
+        """>= 2026-09 workflow names the device directory and file prefix "Neuropixels"."""
+        from aeon.dj_pipeline.utils.ephys_utils import DEVICE_PROBE_TYPE_MAP, discover_epoch_probes
+
+        device_dir = tmp_path / "Neuropixels"
+        device_dir.mkdir()
+        (device_dir / "Neuropixels_ProbeA_AmplifierData_0.bin").touch()
+        (device_dir / "Neuropixels_ProbeB_AmplifierData_0.bin").touch()
+        (device_dir / "Neuropixels_Commutator_Turns_0.bin").touch()
+
+        device_name, device_path, labels = discover_epoch_probes(tmp_path)
+
+        assert device_name == "Neuropixels"
+        assert device_path == device_dir
+        assert labels == ["ProbeA", "ProbeB"]
+        assert DEVICE_PROBE_TYPE_MAP[device_name] == "neuropixels2.0-multishank"
+
 
 class TestParseEpochMetadata:
     """Tests for parse_epoch_metadata(epoch_path)."""
@@ -397,6 +476,24 @@ class TestParseEpochMetadata:
         result = parse_epoch_metadata(tmp_path)
 
         assert result is None
+
+    def test_metadata_json_fallback(self, tmp_path):
+        """>= 2026-09 workflow writes Metadata.json instead of Metadata.yml."""
+        from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
+
+        (tmp_path / "Metadata.json").write_text(json.dumps(_headstage_metadata()))
+        result = parse_epoch_metadata(tmp_path)
+
+        assert result is not None
+        assert result["ephys"]["Headstage"]["ProbeA"]["Enable"] is True
+
+    def test_metadata_yml_preferred_over_json(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
+
+        (tmp_path / "Metadata.yml").write_text(json.dumps({"source": "yml"}))
+        (tmp_path / "Metadata.json").write_text(json.dumps({"source": "json"}))
+
+        assert parse_epoch_metadata(tmp_path) == {"source": "yml"}
 
 
 def _mock_table_with_transaction():
@@ -541,6 +638,34 @@ class TestParseMetadataProbeConfigs:
         )
         result = parse_metadata_probe_configs(ep)
         assert result == {"ProbeA": None, "ProbeB": "probeB.json"}
+
+    def test_new_blocks_nested_under_devices(self, tmp_path):
+        """NeuropixelsV2A/B blocks under Devices; a disabled probe maps to None."""
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+
+        data = {
+            "Devices": {
+                "NeuropixelsV2A": {
+                    "Enable": "true",
+                    "ProbeConfiguration": {"ProbeInterfaceFileName": "pi_configuration310826.json"},
+                },
+                "NeuropixelsV2B": {
+                    "Enable": "false",
+                    "ProbeConfiguration": {"ProbeInterfaceFileName": r"D:\probe_settings\probeB.json"},
+                },
+            },
+        }
+        (tmp_path / "Metadata.yml").write_text(json.dumps(data))
+        result = parse_metadata_probe_configs(tmp_path)
+        assert result == {"ProbeA": "pi_configuration310826.json", "ProbeB": None}
+
+    def test_headstage_layout_in_metadata_json(self, tmp_path):
+        """>= 2026-09 Metadata.json: ephys.Headstage.ProbeA/B; disabled ProbeB (Enable False) maps to None."""
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+
+        (tmp_path / "Metadata.json").write_text(json.dumps(_headstage_metadata()))
+        result = parse_metadata_probe_configs(tmp_path)
+        assert result == {"ProbeA": "Rokas_140926_converted_v4.json", "ProbeB": None}
 
     def test_missing_metadata_raises(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs

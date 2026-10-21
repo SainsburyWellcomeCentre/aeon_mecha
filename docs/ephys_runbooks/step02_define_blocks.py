@@ -31,18 +31,18 @@ from datetime import timedelta
 # Configuration -- edit these for your experiment
 # --------------------------------------------------------------------------
 
-EXPERIMENT_NAME = "abcGolden01-aeonx1"
-SUBJECT = "IAA-1147881"
+EXPERIMENT_NAME = "ProjectAeonOVC-2026-08-31_001"
+SUBJECT = "BAA-1107080"
 
-# Test subset: small blocks for fast iteration.
-# 30-minute blocks with 10-minute overlap produce 3 blocks spanning ~70 min.
-BLOCK_DURATION_MIN = 30
-OVERLAP_MIN = 10
-N_BLOCKS = 3
+# # Test subset: small blocks for fast iteration.
+# # 30-minute blocks with 10-minute overlap produce 3 blocks spanning ~70 min.
+# BLOCK_DURATION_MIN = 30
+# OVERLAP_MIN = 10
+# N_BLOCKS = 3
 
 # Production params (uncomment for real use):
-# BLOCK_DURATION_HRS = 20
-# OVERLAP_HRS = 5
+BLOCK_DURATION_HRS = 12
+OVERLAP_HRS = 3
 
 
 # --------------------------------------------------------------------------
@@ -109,7 +109,7 @@ def query_available_data(experiment_name):
             print(f"  insertion {pi['insertion_number']} (subject={pi['subject']}): 0 chunks")
 
 
-def calculate_block_boundaries(start_time, block_duration, overlap, n_blocks=None):
+def calculate_block_boundaries(start_time, block_duration, overlap, n_blocks=None, end_time=None):
     """Compute block start/end times from a starting timestamp.
 
     This is a pure function -- no database access. It calculates evenly
@@ -132,9 +132,9 @@ def calculate_block_boundaries(start_time, block_duration, overlap, n_blocks=Non
         block_duration: timedelta -- length of each block.
         overlap: timedelta -- how much adjacent blocks should overlap.
         n_blocks: int or None -- exact number of blocks to create. If None,
-            blocks are created until start_time + block_duration would
-            exceed start_time + total available duration (the caller is
-            responsible for passing a sensible start_time in that case).
+            blocks are created until one reaches end_time.
+        end_time: datetime or None -- end of the available data. Used when
+            n_blocks is None: stop once the last block covers end_time.
 
     Returns:
         List of (block_start, block_end) datetime tuples.
@@ -151,13 +151,18 @@ def calculate_block_boundaries(start_time, block_duration, overlap, n_blocks=Non
     while True:
         block_start = start_time + i * advance
         block_end = block_start + block_duration
+        if end_time is not None:
+            # Don't extend the last block past the end of recorded data.
+            block_end = min(block_end, end_time)
 
         if n_blocks is not None:
             # Fixed number of blocks: stop when we have enough.
             if i >= n_blocks:
                 break
-        # No fixed count: the caller should stop us externally, but
-        # as a safety valve, break if we have generated 1000 blocks.
+        # No fixed count: stop once the previous block reaches the end of data.
+        elif end_time is not None and blocks and blocks[-1][1] >= end_time:
+            break
+        # Safety valve: break if we have generated 1000 blocks.
         elif i >= 1000:
             print("WARNING: hit 1000-block safety limit. Stopping.")
             break
@@ -224,13 +229,17 @@ def create_blocks(
         return
 
     start_time = min(c["chunk_start"] for c in chunks)
+    end_time = max(c["chunk_end"] for c in chunks)
     print(f"\nEarliest chunk start: {start_time}")
+    print(f"Latest chunk end:     {end_time}")
 
     # --- 3. Calculate block boundaries ---
     block_duration = timedelta(minutes=block_duration_min)
     overlap = timedelta(minutes=overlap_min)
 
-    blocks_to_create = calculate_block_boundaries(start_time, block_duration, overlap, n_blocks)
+    blocks_to_create = calculate_block_boundaries(
+        start_time, block_duration, overlap, n_blocks, end_time=end_time
+    )
 
     print(f"\nBlock schedule ({len(blocks_to_create)} blocks):")
     advance = block_duration - overlap
@@ -319,7 +328,14 @@ if __name__ == "__main__":
     query_available_data(EXPERIMENT_NAME)
 
     print("\n--- 2/3: Create blocks ---")
-    create_blocks(EXPERIMENT_NAME, SUBJECT, BLOCK_DURATION_MIN, OVERLAP_MIN, N_BLOCKS)
+    # create_blocks takes minutes; n_blocks=None covers the full recording.
+    create_blocks(
+        EXPERIMENT_NAME,
+        SUBJECT,
+        block_duration_min=BLOCK_DURATION_HRS * 60,
+        overlap_min=OVERLAP_HRS * 60,
+        n_blocks=None,
+    )
 
     print("\n--- 3/3: Verify blocks ---")
     verify_blocks(EXPERIMENT_NAME)

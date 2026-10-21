@@ -11,6 +11,7 @@ import datajoint as dj
 from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import (
     DEVICE_PROBE_TYPE_MAP,
+    EPHYS_DEVICE_DIRS,
     discover_epoch_probes,
     find_nearest_window,
     find_or_create_probe_insertion,
@@ -201,7 +202,7 @@ class EphysEpochEnd(dj.Manual):
 class EphysEpochConfig(dj.Imported):
     definition = """
     # Per-epoch probe registry — discovers probes, populates Probe/ProbeInsertion
-    # and per-probe ElectrodeConfig from Metadata.yml.
+    # and per-probe ElectrodeConfig from Metadata.yml / Metadata.json.
     -> EphysEpoch
     ---
     n_probes: int32  # number of probes discovered + registered in this epoch
@@ -209,6 +210,9 @@ class EphysEpochConfig(dj.Imported):
 
     # Override probe_assignments.json source dir (used when Ceph is read-only).
     probe_assignments_override_dir = None
+    # {probe_label: ProbeInterface JSON path}, used only when the epoch metadata
+    # has no ProbeInterfaceFileName for that (enabled) probe.
+    probe_config_override = None
 
     class Insertion(dj.Part):
         definition = """
@@ -259,7 +263,7 @@ class EphysEpochConfig(dj.Imported):
         device_name, _device_dir, probe_labels = discover_epoch_probes(epoch_path)
         if not probe_labels:
             raise FileNotFoundError(
-                f"No NeuropixelsV2/Beta probe directories found in {epoch_path}. "
+                f"No {'/'.join(EPHYS_DEVICE_DIRS)} probe directories found in {epoch_path}. "
                 f"EphysEpoch was created from this dir, but probe discovery now "
                 f"finds nothing — likely data was removed or moved after ingestion."
             )
@@ -283,7 +287,7 @@ class EphysEpochConfig(dj.Imported):
         if not probe_info:
             raise ValueError(
                 f"All probes in {epoch_path} are disabled/dummy (no probe configuration "
-                f"in Metadata.yml). Either enable probes in the rig metadata or remove "
+                f"in Metadata.yml/Metadata.json). Either enable probes in the rig metadata or remove "
                 f"the empty probe directories before re-running EphysEpoch.ingest_epochs()."
             )
 
@@ -297,6 +301,11 @@ class EphysEpochConfig(dj.Imported):
         # Register per-probe ElectrodeConfig — fail loud on missing JSON
         # (silently skipping leaves a downstream gap that's hard to diagnose).
         probe_configs = parse_metadata_probe_configs(epoch_path)
+        # Older metadata may leave ProbeInterfaceFileName null for an enabled probe;
+        # fall back to the configured channel map (stored as an absolute path).
+        for label, json_file in (self.probe_config_override or {}).items():
+            if label in probe_info and probe_configs.get(label) is None:
+                probe_configs[label] = str(json_file)
         probe_to_econfig: dict[str, dict[str, str]] = {}
         for label, basename in probe_configs.items():
             if basename is None:
@@ -347,7 +356,7 @@ class EphysEpochConfig(dj.Imported):
             if label not in probe_to_econfig:
                 raise RuntimeError(
                     f"Probe '{label}' is active but has no resolved ElectrodeConfig. "
-                    f"Metadata.yml's ProbeInterfaceFileName for {label} may be missing "
+                    f"The epoch metadata's ProbeInterfaceFileName for {label} may be missing "
                     f"or its JSON cannot be located. This is an invariant violation."
                 )
             subject = probe_assignments[label]["subject"]
@@ -920,7 +929,7 @@ class OnixImuChunk(dj.Imported):
 
         # Discover device directory
         device_name = None
-        for candidate in ("NeuropixelsV2Beta", "NeuropixelsV2"):
+        for candidate in EPHYS_DEVICE_DIRS:
             if (epoch_path / candidate).is_dir():
                 device_name = candidate
                 break
