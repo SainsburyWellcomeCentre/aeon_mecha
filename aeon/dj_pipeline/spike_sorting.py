@@ -486,12 +486,14 @@ class SpikeSorting(dj.Computed):
             sorting_params["clear_cache"] = True
 
         if sorting_method == "kilosort4":
-            # Kilosort4 reads a flat binary, so SpikeInterface first exports recording.zarr
-            # to recording.dat. With its default job kwargs (1 worker, 1s chunks) every 1s
-            # written decompresses a whole 30s zarr chunk: ~42 MB/s, 3-4.5 h per 30 h block.
-            # Default to the job kwargs PreProcessing wrote the zarr with; n_jobs,
-            # chunk_duration etc. in the paramset's SI_SORTING_PARAMS take precedence.
-            sorting_params = {**fork_safe_job_kwargs("30s"), **sorting_params}
+            # Kilosort4 needs a flat binary file, so SpikeInterface first converts
+            # recording.zarr to recording.dat. Its default settings (1 worker, 1 s chunks)
+            # make this slow: each 1 s written re-reads a whole 30 s zarr chunk, and a 30 h
+            # block took 3-4.5 h. So use the settings PreProcessing wrote the zarr with.
+            # Values in the paramset still win, except n_jobs: it follows the job's CPU
+            # allocation, and a paramset n_jobs can only lower it.
+            job_kwargs = fork_safe_job_kwargs("30s", max_jobs=sorting_params.get("n_jobs"))
+            sorting_params = {**job_kwargs, **sorting_params, "n_jobs": job_kwargs["n_jobs"]}
 
         # Prevent SpikeInterface from re-running write_binary_recording internally:
         # https://github.com/SpikeInterface/spikeinterface/blob/705c932/src/spikeinterface/sorters/external/kilosortbase.py#L124
@@ -636,16 +638,12 @@ class PostProcessing(dj.Computed):
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
 
-        # n_jobs always follows the job's CPU allocation; the paramset's job_kwargs set the
-        # rest (chunk size, pool engine). A fixed n_jobs in the paramset either idles cores
-        # or oversubscribes them, and changing it in the paramset to match an allocation
-        # breaks every running job of that paramset: make_fetch reads the params, and
-        # DataJoint refuses the insert when they changed during the run.
-        job_kwargs = {
-            **fork_safe_job_kwargs("1s"),
-            **postprocessing_params.get("job_kwargs", {}),
-            "n_jobs": fork_safe_job_kwargs("1s")["n_jobs"],
-        }
+        # n_jobs follows the job's CPU allocation, and a paramset n_jobs can only lower it.
+        # A fixed value doesn't work: one paramset is shared by jobs with different
+        # allocations, and editing it breaks the jobs already running with it.
+        paramset_job_kwargs = postprocessing_params.get("job_kwargs", {})
+        default_job_kwargs = fork_safe_job_kwargs("1s", max_jobs=paramset_job_kwargs.get("n_jobs"))
+        job_kwargs = {**default_job_kwargs, **paramset_job_kwargs, "n_jobs": default_job_kwargs["n_jobs"]}
 
         save_format = params.get("save_format", "zarr")
         analyzer_format = "zarr" if save_format == "zarr" else "binary_folder"
