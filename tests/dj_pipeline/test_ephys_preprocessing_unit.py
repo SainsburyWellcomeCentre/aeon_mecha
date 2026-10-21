@@ -32,6 +32,7 @@ def test_aeon_default_matches_original_recipe():
 
 
 def test_none_applies_no_steps():
+    """The "none" pipeline leaves the traces unchanged."""
     import spikeinterface.full as si
 
     from aeon.dj_pipeline.utils.ephys_preprocessing import apply_preprocessing
@@ -57,6 +58,7 @@ def test_overrides_merge_per_step():
 
 
 def test_inline_pipeline():
+    """SI_PREPROCESSING_PIPELINE is used as given."""
     from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
 
     inline = {"highpass_filter": {"freq_min": 400}, "common_reference": {}}
@@ -77,6 +79,7 @@ def test_inline_pipeline():
     ],
 )
 def test_invalid_selection_raises(params, error, match):
+    """Bad names, misdirected overrides and conflicting keys fail before any data is touched."""
     from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
 
     with pytest.raises(error, match=match):
@@ -95,6 +98,7 @@ def test_bad_step_argument_raises_on_apply():
 
 
 def test_duplicate_registration_raises():
+    """A name can't be registered twice, so a pipeline can't be silently replaced."""
     from aeon.dj_pipeline.utils.ephys_preprocessing import register_preprocessing
 
     with pytest.raises(ValueError, match="already registered"):

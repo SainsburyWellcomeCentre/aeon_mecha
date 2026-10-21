@@ -34,6 +34,7 @@ def synthetic_harp_csv(tmp_path):
 
 
 def test_read_returns_observed_harp_bounds_and_sample_count(synthetic_harp_csv):
+    """HarpSyncModel.Reader reports the observed clock and HARP bounds and sample count."""
     reader = HarpSyncModel.Reader(pattern="NeuropixelsV2Beta")
     df = reader.read(synthetic_harp_csv)
 

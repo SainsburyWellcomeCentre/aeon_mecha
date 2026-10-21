@@ -16,6 +16,8 @@ pytestmark = pytest.mark.unit
 
 
 class TestColumnStats:
+    """Tests for `column_stats` summary statistics of a single column."""
+
     @pytest.mark.parametrize(
         ("values", "expected"),
         [
@@ -94,6 +96,8 @@ class TestColumnStats:
 
 
 class TestTimestampStats:
+    """Tests for `timestamp_stats` summary statistics of a timestamp index."""
+
     @pytest.mark.parametrize(
         ("index", "expected"),
         [

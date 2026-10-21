@@ -1,12 +1,7 @@
-"""Synthetic-data integration tests for ephys schema invariants.
+"""Synthetic-data integration tests for acquisition and ephys schema invariants.
 
 These tests do not require the golden dataset on disk. Each test builds its
-own minimal DB state to exercise a specific behavior:
-
-- TestEphysEpochEndLookback: ``EphysEpoch.ingest_epochs`` backfills
-  ``EphysEpochEnd`` for the previous epoch when a newer one is discovered.
-- TestEphysBlockInfoMultiConfigValidation: ``EphysBlockInfo.populate`` refuses
-  to populate a block whose chunks reference different ElectrodeConfigs.
+own minimal DB state to exercise a specific behavior.
 """
 
 import csv
@@ -121,6 +116,65 @@ def _register_experiment_only(tmp_path: Path, raw_dir: Path, experiment_name: st
             },
             skip_duplicates=True,
         )
+
+
+class TestEpochEndLookback:
+    """Epoch.ingest_epochs backfills EpochEnd for each epoch once its successor is found.
+
+    epoch_end is the earlier of the previous epoch's last chunk end and the next
+    epoch's start, so the three epochs below cover both sides of that min().
+    """
+
+    def test_look_back_inserts_end_for_previous_epochs(self, dj_config_integration, tmp_path):
+        import datetime
+
+        from aeon.dj_pipeline import acquisition
+
+        experiment_name = "test_epoch_end_lookback"
+        raw_dir = tmp_path / "raw"
+        # Only the chunk file names matter: Epoch.ingest_epochs reads the epoch from the
+        # parent dir and the chunk start from the file name. CameraTop is the default
+        # chunk-discovery device for experiments not in _ref_device_mapping.
+        # As on a real rig, epochs start at arbitrary times but chunk files are named for
+        # the whole hour they cover, so an epoch's first chunk starts before the epoch does.
+        chunks = {
+            "2024-06-04T10-00-00": ["2024-06-04T10-00-00", "2024-06-04T11-00-00"],  # A
+            # B starts mid-way through A's last chunk; both have an 11:00 chunk.
+            "2024-06-04T11-30-00": ["2024-06-04T11-00-00"],
+            # C starts after B's last chunk ends.
+            "2024-06-04T14-20-00": ["2024-06-04T14-00-00"],
+        }
+        for epoch_dir, chunk_starts in chunks.items():
+            device_dir = raw_dir / epoch_dir / "CameraTop"
+            device_dir.mkdir(parents=True)
+            for chunk_start in chunk_starts:
+                (device_dir / f"CameraTop_{chunk_start}.csv").touch()
+
+        _register_experiment_only(tmp_path, raw_dir, experiment_name)
+
+        acquisition.Epoch.ingest_epochs(experiment_name)
+
+        exp_key = {"experiment_name": experiment_name}
+        epoch_starts = (acquisition.Epoch & exp_key).to_arrays("epoch_start", order_by="epoch_start")
+        assert [ts.isoformat() for ts in epoch_starts] == [
+            "2024-06-04T10:00:00",
+            "2024-06-04T11:30:00",
+            "2024-06-04T14:20:00",
+        ]
+
+        ends = {
+            row["epoch_start"]: row
+            for row in (acquisition.EpochEnd & exp_key).to_dicts(order_by="epoch_start")
+        }
+        a, b = (datetime.datetime.fromisoformat(s) for s in ("2024-06-04T10:00", "2024-06-04T11:30"))
+        assert set(ends) == {a, b}, "Only epochs with a successor get an EpochEnd (not C)"
+
+        # A: next epoch starts (11:30) before A's last chunk ends (12:00).
+        assert ends[a]["epoch_end"] == b
+        assert ends[a]["epoch_duration"] == pytest.approx(1.5)
+        # B: B's last chunk ends (12:00 - chunk start + 1 h) before the next epoch starts (14:20).
+        assert ends[b]["epoch_end"] == datetime.datetime.fromisoformat("2024-06-04T12:00")
+        assert ends[b]["epoch_duration"] == pytest.approx(0.5)
 
 
 class TestEphysEpochEndLookback:
@@ -466,10 +520,11 @@ class TestEphysChunkOutsideAllWindows:
 
 
 class TestSyncedSpikesIndexingAndExtrapolation:
-    """Build the minimal DB state for SyncedSpikes.make() without the full spike-sorting pipeline.
+    """SyncedSpikes.make() indexes spikes from the chunk start and extrapolates out-of-window spikes.
 
-    Ephys chunks (each backed by a real 10-sample Clock.bin), SortedSpikes, and everything
-    upstream of it are inserted directly.
+    Builds the minimal DB state without the full spike-sorting pipeline: ephys chunks
+    (each backed by a real 10-sample Clock.bin), SortedSpikes, and everything upstream
+    of it are inserted directly.
     """
 
     def _build_and_populate(

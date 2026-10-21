@@ -553,7 +553,8 @@ class TestStreamPopulationInventory:
 
     Diagnostic — run with `-s` to see the printed inventory:
 
-        uv run pytest -m integration tests/dj_pipeline/test_full_ingestion.py::TestStreamPopulationInventory -s
+        uv run pytest -m integration -s \
+            tests/dj_pipeline/test_full_ingestion.py::TestStreamPopulationInventory
     """
 
     POPULATE_LIMIT = 50
@@ -587,9 +588,7 @@ class TestStreamPopulationInventory:
         all_tables = {**acq_tables, **stream_tables}
         results: list[tuple[str, int, int]] = []
         for label, tbl in all_tables.items():
-            tbl.populate(
-                max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True
-            )
+            tbl.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
             q = tbl & {"experiment_name": cfg["experiment_name"]}
             row_count = len(q)
             sample_total = 0

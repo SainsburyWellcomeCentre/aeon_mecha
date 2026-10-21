@@ -1,5 +1,5 @@
-"""03 -- Spike Sorting
-===================
+"""03 -- Spike Sorting.
+
 Set up spike sorting prerequisites, preprocess ephys data, generate
 SLURM submission scripts, and submit GPU sorting.
 
@@ -129,7 +129,6 @@ def setup_sorting_prerequisites(
     paramset_id_str = str(paramset_id)
 
     if not (spike_sorting.SortingParamSet & {"paramset_id": paramset_id_str}):
-
         params = {
             # Storage format for recording, sorting output, and analyzer
             # ("zarr" or "binary"). Defaults to "zarr" if omitted.
@@ -184,7 +183,9 @@ def setup_sorting_prerequisites(
             {
                 "paramset_id": paramset_id_str,
                 "sorting_method": sorting_method,
-                "paramset_description": ("Default parameter set for Kilosort4 with SpikeInterface, parallel postprocessing"),
+                "paramset_description": (
+                    "Default parameter set for Kilosort4 with SpikeInterface, parallel postprocessing"
+                ),
                 "params": params,
             }
         )
@@ -305,10 +306,7 @@ def setup_sorting_prerequisites(
     blocks = (ephys.EphysBlock & block_rest).to_dicts()
 
     if not blocks:
-        print(
-            f"No EphysBlock entries found for experiment={experiment_name}. "
-            f"Run step 2 first."
-        )
+        print(f"No EphysBlock entries found for experiment={experiment_name}. Run step 2 first.")
         return
 
     insert_count = 0
@@ -523,7 +521,8 @@ CLEAR_JOB = False
 def clear_job(key):
     """Clear errored jobs for SpikeSorting to allow re-running."""
     try:
-        (spike_sorting.schema.jobs & {{"table_name": spike_sorting.SpikeSorting.table_name, "status": "error"}} & key).delete()
+        error_jobs = {{"table_name": spike_sorting.SpikeSorting.table_name, "status": "error"}}
+        (spike_sorting.schema.jobs & error_jobs & key).delete()
     except Exception as e:
         print(f"[WARNING] Could not clear error jobs: {{e}}")
 
@@ -628,7 +627,8 @@ echo "Set PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,garbage_collection_th
 PROFILER_PATH="submodules/aeon_mecha/aeon/dj_pipeline/scripts/start_resource_profiler.py"
 if [ -f "$PROFILER_PATH" ]; then
     echo "Starting resource profiler..."
-    .venv/bin/python "$PROFILER_PATH" -o "./slurm_output/resource_use_${{SLURM_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}.csv" & PROFILER_PID=$!
+    PROFILER_CSV="./slurm_output/resource_use_${{SLURM_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}.csv"
+    .venv/bin/python "$PROFILER_PATH" -o "$PROFILER_CSV" & PROFILER_PID=$!
     echo "Resource profiler started with PID: $PROFILER_PID"
 else
     echo "Resource profiler not found at $PROFILER_PATH, skipping."
