@@ -601,7 +601,6 @@ class TestSyncedSpikesIndexingAndExtrapolation:
                 path = device_dir / f"{device_name}_{probe_label}_{stream}_{n}.bin"
                 np.fromfile(path, dtype=dtype)[:n_keep].tofile(path)
 
-
         epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
         subj_mod.Subject.insert1(
@@ -631,7 +630,6 @@ class TestSyncedSpikesIndexingAndExtrapolation:
                 )
                 gc.collect()  # read_binary's memmap blocks unlink on Windows
                 amp_bin.unlink()
-
 
         chunk_rows = (ephys.EphysChunk & {"experiment_name": experiment_name}).to_dicts(
             order_by="chunk_start"
