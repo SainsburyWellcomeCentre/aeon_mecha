@@ -97,6 +97,19 @@ class TestForkSafeJobKwargs:
         monkeypatch.setattr(os, "sched_getaffinity", lambda pid: set(range(64)), raising=False)
         assert fork_safe_job_kwargs("30s", max_jobs=8)["n_jobs"] == 8
 
+    @pytest.mark.parametrize(
+        ("max_jobs", "expected"),
+        [(1, 1), (16, 16), (None, 32), (-1, 32), (0.5, 32), (64, 64)],
+        ids=["serial", "lower", "none", "minus_one", "fraction", "above_default"],
+    )
+    def test_max_jobs_from_paramset(self, monkeypatch, max_jobs, expected):
+        import os
+
+        from aeon.dj_pipeline.utils.spike_sorting_utils import fork_safe_job_kwargs
+
+        monkeypatch.setattr(os, "sched_getaffinity", lambda pid: set(range(64)), raising=False)
+        assert fork_safe_job_kwargs("30s", max_jobs=max_jobs)["n_jobs"] == expected
+
     def test_fallback_to_cpu_count_without_affinity(self, monkeypatch):
         import os
 

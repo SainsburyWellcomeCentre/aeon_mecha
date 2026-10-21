@@ -14,17 +14,25 @@ import numpy as np
 logger = dj.logger
 
 
-def fork_safe_job_kwargs(chunk_duration: str, max_jobs: int = 32) -> dict:
+MAX_FORK_SAFE_JOBS = 32  # default cap on SpikeInterface workers
+
+
+def fork_safe_job_kwargs(chunk_duration: str, max_jobs: int | None = MAX_FORK_SAFE_JOBS) -> dict:
     """SpikeInterface job_kwargs that avoid the SLURM fork/oversubscription hang.
 
     Uses a thread pool (no fork) and a worker count taken from the cgroup CPU
     allocation (``os.sched_getaffinity``), capped at ``max_jobs`` -- rather than
     ``n_jobs=-1``, which SpikeInterface resolves against ``os.cpu_count()`` (every
     core on the node, not the allocation) and then thrashes or fork-deadlocks.
+
+    ``max_jobs`` may come from a paramset's ``n_jobs``; anything other than a
+    positive int, e.g. ``-1`` or ``None``, falls back to ``MAX_FORK_SAFE_JOBS``.
     """
     # Check if OS can access `sched_getaffinity`` method
     sched_affinity = getattr(os, "sched_getaffinity", None)
     n_jobs = len(sched_affinity(0)) if sched_affinity else (os.cpu_count() or 1)
+    if not isinstance(max_jobs, int) or max_jobs < 1:
+        max_jobs = MAX_FORK_SAFE_JOBS
     return {
         "n_jobs": max(1, min(max_jobs, n_jobs)),
         "pool_engine": "thread",
