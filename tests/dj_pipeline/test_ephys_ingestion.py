@@ -102,6 +102,15 @@ class TestEphysChunkIngestion:
     def test_chunks_ingested(self, ephys_chunks_ingested, ctx):
         count = len(ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]})
         assert count >= 1
+        # EphysChunk is per (probe, chunk), so a dataset declaring its shape pins the
+        # product. Without this, a dropped probe or a lost final chunk goes unnoticed.
+        expected = ctx.cfg.get("n_chunks")
+        if expected is not None:
+            n_probes = ctx.cfg["expected_probe_count"]
+            assert count == expected * n_probes, (
+                f"{count} EphysChunk rows; expected {expected} chunks x {n_probes} probes "
+                f"= {expected * n_probes}"
+            )
 
     def test_chunk_timestamps_valid(self, ephys_chunks_ingested, ctx):
         chunks = (ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()

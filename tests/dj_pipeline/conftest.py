@@ -185,8 +185,9 @@ GOLDEN_DATASETS = {
         ],
     },
     # Ephys arm of golden_arrow_01 — Bonsai arrow format, two active probes
-    # (abcGolden01 has ProbeB only). Covered through PreProcessing; the sorting
-    # cascade stays on abcGolden01, which ships golden sorting artifacts.
+    # (abcGolden01 has ProbeB only). Covered through EphysChunk and OnixImuChunk.
+    # The sorting cascade, PreProcessing included, stays on abcGolden01, which
+    # ships golden sorting artifacts; arrow's PreProcessing coverage is synthetic.
     "foraging_abc_ephys_arrow_2026_10_13": {
         "experiment_name": "goldenArrow01-aeon3",
         "experiment_path": "AEONX1/golden_arrow_01",
@@ -585,21 +586,14 @@ def test_epochs(test_experiment, full_pipeline, golden_dataset_config):
 def ephys_golden_dataset_config(request):
     """Ephys golden dataset configuration, one per registered ephys golden.
 
-    Ingestion and PreProcessing run for both. Fixtures below the sorting
-    boundary request ``ephys_sorting_dataset_config`` instead, which stays on
-    the dataset that ships golden sorting artifacts.
+    Ingestion through ``EphysChunk`` and ``OnixImuChunk`` runs for every dataset
+    here. Everything from ``EphysBlockInfo`` down is the sorting cascade and runs
+    only for a dataset shipping golden sorting artifacts -- ``ephys_test_blocks``
+    skips the rest. ``PreProcessing`` is part of that cascade (it is keyed on
+    ``SortingTask``), so arrow's ``PreProcessing`` coverage comes from the
+    synthetic factory instead; see SPEC_ARROW_INGESTION section 6.
     """
     return GOLDEN_DATASETS[request.param]
-
-
-@pytest.fixture(scope="session")
-def ephys_sorting_dataset_config():
-    """The ephys golden that ships pre-computed sorting artifacts.
-
-    Everything below PreProcessing is format-agnostic (SPEC_ARROW_INGESTION §6),
-    so the sorting cascade is exercised on one dataset only.
-    """
-    return GOLDEN_DATASETS["foraging_abc_ephys_2026_05_11"]
 
 
 @pytest.fixture(scope="session")
@@ -812,8 +806,9 @@ def ephys_test_blocks(ephys_chunks_ingested, ephys_full_pipeline, ephys_golden_d
     exp_name = cfg["experiment_name"]
 
     chunks = (ephys.EphysChunk & {"experiment_name": exp_name}).to_dicts(order_by="chunk_start")
-    assert len(chunks) == 12, (
-        f"Expected exactly 12 ingested EphysChunks for the golden epoch, got {len(chunks)}. "
+    expected_chunks = cfg.get("n_chunks", 12) * cfg.get("expected_probe_count", 1)
+    assert len(chunks) == expected_chunks, (
+        f"Expected {expected_chunks} ingested EphysChunks for the golden epoch, got {len(chunks)}. "
         "The block bounds below assume the full 12-chunk epoch."
     )
 

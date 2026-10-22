@@ -36,8 +36,12 @@ Everything below `PreProcessing` is format-agnostic (§6) and stays covered by
 - Reworking the zarr/`aeon_raw_compression` path for *binary* data. It stays as is.
   **Confirmed redundant for arrow**, which is compressed at acquisition: arrow files take
   their own branch in `make_compute` and never consult `resolve_ephys_file`, which keeps
-  its `.bin` -> `.zarr` preference for binary only. No arrow file should ever acquire a
-  zarr twin.
+  its `.bin` -> `.zarr` preference for binary only. No arrow file acquires a *raw*
+  compression twin.
+
+  **This is not the same artifact as `PreProcessing`'s `recording.zarr`.** That one is the
+  *preprocessed* intermediate the sorter consumes, and it is written for **both** formats.
+  Do not remove it for arrow on the strength of the paragraph above.
 - A major version. Both formats work, so this is additive, not breaking.
 - **Implementing Commutator ingestion.** Deferred: every `Turns` sample is zero in both
   golden datasets, so there is nothing to validate against. The design thinking is kept
@@ -319,12 +323,31 @@ It accepts `gain_to_uV`/`offset_to_uV` and infers channel count, so it slots in 
 `"AmplifierData"`, so a reload picks the right stream) but bites any non-default stream —
 i.e. the clock reader. Fix it regardless.
 
+### Where `PreProcessing` actually sits — corrected
+
+The original draft of this section placed `PreProcessing` above the sorting fixtures, so
+"arrow coverage stops at `PreProcessing`" read as a clean boundary. **It is not one.**
+`PreProcessing` is keyed on `SortingTask`, which is keyed on `ElectrodeGroup` and
+`SortingParamSet` (`spike_sorting.py:148-170`) — it is *inside* the sorting cascade.
+
+Consequences, found in review round 1:
+
+- A fixture split that skips the sorting cascade also skips `PreProcessing`. The golden
+  arrow dataset therefore never reached it, and the defect that `PreProcessing.make_fetch`
+  still selected `.bin` only survived the whole branch.
+- Reaching `PreProcessing` for a dataset means giving it an electrode group and a
+  paramset, i.e. sorting-task configuration — not ingestion configuration.
+
+So arrow's `PreProcessing` coverage comes from the **synthetic factory**, which can build a
+SortingTask cheaply, rather than from the golden dataset, which would need a 109 GB
+intermediate. The golden arrow dataset covers ingestion through `EphysChunk` and IMU.
+
 ### Coverage split
 
 | Dataset | Covers |
 |---|---|
-| `golden_arrow_01` | ingestion -> `EphysChunk` -> `PreProcessing`, plus IMU |
-| **synthetic factory (arrow variant)** | **`SyncedSpikes` arrow path** |
+| `golden_arrow_01` | ingestion -> `EphysChunk`, plus IMU |
+| **synthetic factory (arrow variant)** | **`PreProcessing` and `SyncedSpikes` arrow paths** |
 | `abcGolden01` | unchanged — full cascade through curation and unit matching |
 
 `SyncedSpikes` already has integration coverage built on **synthetic** data, not golden:
