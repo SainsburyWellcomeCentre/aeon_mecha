@@ -549,12 +549,16 @@ class EphysChunk(dj.Manual):
             key=lambda x: x.as_posix(),
         )
 
+        print(epoch_probe_labels)
         if len(all_ephys_files) == 0:
-            all_ephys_files = sorted(
-                raw_dir.rglob(f"*{epoch_probe_labels}*.arrow"),
-                key=lambda x: x.as_posix(),
-            )
-            print(all_ephys_files)
+            for probe_label in epoch_probe_labels:
+                ephys_files = sorted(
+                    raw_dir.rglob(f"*{probe_label}*.arrow"),
+                    key=lambda x: x.as_posix(),
+                )
+                all_ephys_files += ephys_files
+
+        print(all_ephys_files)
 
         return
 
