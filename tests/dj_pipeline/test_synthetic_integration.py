@@ -586,9 +586,7 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         raw_dir = tmp_path / "raw"
         raw_dir.mkdir(parents=True)
 
-        if fmt != "binary" and (
-            amp_samples is not None or clock_samples is not None or amp_as_zarr
-        ):
+        if fmt != "binary" and (amp_samples is not None or clock_samples is not None or amp_as_zarr):
             raise ValueError(
                 f"amp_samples/clock_samples/amp_as_zarr all operate on the raw .bin "
                 f"files, which fmt={fmt!r} does not write. The request would be ignored "
@@ -878,9 +876,9 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         def spike_times(experiment_name):
             return [
                 r["spike_times"]
-                for r in (
-                    spike_sorting.SyncedSpikes.Unit & {"experiment_name": experiment_name}
-                ).to_dicts(order_by="chunk_start")
+                for r in (spike_sorting.SyncedSpikes.Unit & {"experiment_name": experiment_name}).to_dicts(
+                    order_by="chunk_start"
+                )
             ]
 
         arrow_times, binary_times = spike_times("test_synced_arrow"), spike_times("test_synced_binary")
@@ -922,17 +920,14 @@ class TestSyncedSpikesIndexingAndExtrapolation:
                         "directory_type": "raw-ephys",
                         "file_name": f"{device_name}_Commutator_Clock_{n}.bin",
                         "file_path": (
-                            f"2024-06-13T10-24-07/{device_name}/"
-                            f"{device_name}_Commutator_Clock_{n}.bin"
+                            f"2024-06-13T10-24-07/{device_name}/{device_name}_Commutator_Clock_{n}.bin"
                         ),
                     }
                     for n, r in enumerate(rows)
                 ],
                 allow_direct_insert=True,
             )
-            selected = (ephys.EphysChunk.File & {"experiment_name": experiment_name}).to_arrays(
-                "file_name"
-            )
+            selected = (ephys.EphysChunk.File & {"experiment_name": experiment_name}).to_arrays("file_name")
             assert any("Commutator" in n for n in selected), (
                 "the commutator row must be in EphysChunk.File for the restriction to reject it"
             )
@@ -1471,7 +1466,6 @@ class TestArrowChunkIngestion:
         """
         from ephys_factories import make_synthetic_amplifier_data
 
-
         device_name, probe_label = "NeuropixelsV2", "ProbeA"
         epoch_dir_name = "2026-10-13T094255Z"
 
@@ -1491,9 +1485,7 @@ class TestArrowChunkIngestion:
             src.rename(raw_dir / epoch_dir_name / device_name / src.name)
 
         with pytest.raises(ValueError, match="both binary and arrow"):
-            self._setup(
-                tmp_path, "test_arrow_dup_index", ["binary"], before_ingest=write_arrow_twin
-            )
+            self._setup(tmp_path, "test_arrow_dup_index", ["binary"], before_ingest=write_arrow_twin)
 
     def test_arrow_chunk_bounds_match_binary(self, ephys_full_pipeline, tmp_path):
         """Same ONIX timestamps must yield the same chunk_start/end either way."""

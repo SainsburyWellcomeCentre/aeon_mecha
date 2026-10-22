@@ -74,7 +74,10 @@ def test_unknown_method_raises_rather_than_falling_back():
 
 
 def test_none_resolves_to_an_empty_pipeline_and_passes_traces_through():
-    """"none" must apply nothing -- the failure mode is silently applying (or skipping)."""
+    """The "none" method must apply nothing.
+
+    Its failure mode is silently applying preprocessing, or silently skipping it.
+    """
     import spikeinterface.full as si
 
     from aeon.dj_pipeline.utils.ephys_preprocessing import (

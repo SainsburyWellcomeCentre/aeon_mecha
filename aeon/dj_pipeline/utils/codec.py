@@ -155,9 +155,7 @@ class OnixStreamCodec(dj.Codec):
             # decode tests `== "arrow"`, so a typo silently takes the binary branch
             # and the row later fails with "the raw tree changed format" about a tree
             # nobody touched. This is the only writer, so reject it here.
-            raise ValueError(
-                f"stream_format must be 'binary' or 'arrow', got {stored['stream_format']!r}"
-            )
+            raise ValueError(f"stream_format must be 'binary' or 'arrow', got {stored['stream_format']!r}")
         return stored
 
     def decode(self, stored, *, key=None):

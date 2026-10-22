@@ -164,9 +164,7 @@ def load_and_merge_bno055(
     return merged[list(IMU_COLUMNS)]
 
 
-def concat_bno055_chunks(
-    device_dir: Path, device_name: str, chunk_indices: Iterable[int]
-) -> pd.DataFrame:
+def concat_bno055_chunks(device_dir: Path, device_name: str, chunk_indices: Iterable[int]) -> pd.DataFrame:
     """Load and concatenate Bno055 chunks, refusing to mix column sets.
 
     An epoch written across a format change yields 13-column binary frames and

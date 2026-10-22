@@ -171,9 +171,7 @@ class TestEphysChunkIngestion:
             # duplicate chunk is exactly what shifts every spike after it.
             per_probe = Counter(
                 r["insertion_number"]
-                for r in (
-                    ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}
-                ).to_dicts()
+                for r in (ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
             )
             assert sorted(per_probe.values()) == [expected] * n_probes, per_probe
 

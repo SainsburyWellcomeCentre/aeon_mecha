@@ -458,8 +458,7 @@ class TestBno055Arrow:
             expected = 100.0 + ARROW_IMU_COLUMNS.index(arrow_name)
             got = df[canonical].iloc[0]
             assert got == expected, (
-                f"{canonical} holds {got}, which is "
-                f"{ARROW_IMU_COLUMNS[int(got) - 100]}, not {arrow_name}"
+                f"{canonical} holds {got}, which is {ARROW_IMU_COLUMNS[int(got) - 100]}, not {arrow_name}"
             )
 
     def test_calibration_and_temperature_present(self, tmp_path):

@@ -90,7 +90,6 @@ class TestArrowIO:
         with pytest.raises(ValueError, match="no record batches"):
             read_arrow_clock_bounds(f)
 
-
     def test_empty_file_column_keeps_its_declared_dtype(self, tmp_path):
         """A float64 empty clock would silently change the timebase in extend_clock."""
         import pyarrow as pa
