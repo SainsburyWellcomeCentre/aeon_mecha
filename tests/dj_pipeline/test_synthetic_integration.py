@@ -1041,12 +1041,20 @@ class TestProbeInsertionFromImplants:
         pi_key = find_or_create_probe_insertion(
             exp, "SUBJ-1", "SER-4", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
         )
+        # a name no other test uses: the warning fires only the first time an area appears
+        area = "TestArea-NeverSeenBefore"
         with caplog.at_level("WARNING"):
-            _record_target_area("mPFC", pi_key)
+            _record_target_area(area, pi_key)
 
-        assert ephys.TargetArea & {"target_area": "mPFC"}
-        assert ephys.InsertionTargetArea & {**pi_key, "target_area": "mPFC"}
-        assert any("mPFC" in r.message for r in caplog.records), "new area should warn"
+        assert ephys.TargetArea & {"target_area": area}
+        assert ephys.InsertionTargetArea & {**pi_key, "target_area": area}
+        assert any(area in r.message for r in caplog.records), "a new area should warn"
+
+        # ...and not again for an area that already exists
+        caplog.clear()
+        with caplog.at_level("WARNING"):
+            _record_target_area(area, pi_key)
+        assert not any(area in r.message for r in caplog.records), "existing area should not warn"
 
     def test_target_area_none_is_a_noop(self, ephys_full_pipeline, tmp_path):
         from aeon.dj_pipeline.ephys import _record_target_area
