@@ -437,3 +437,46 @@ class TestPynappleInDB:
         assert isinstance(stored, dict)
         assert stored["kind"] == "TsGroup"
         assert stored["path"].endswith(".npz")
+
+
+class TestOnixStreamFormatDiscriminator:
+    """A stored row records which format it was ingested from.
+
+    Without it the format is re-derived from disk at fetch time, so a row's
+    column set depends on today's raw tree rather than on what was ingested.
+    """
+
+    def test_encode_defaults_format_for_rows_without_one(self):
+        from aeon.dj_pipeline.utils.codec import OnixStreamCodec
+
+        payload = {
+            "experiment_name": "e",
+            "epoch_start": "2026-10-13 09:42:55",
+            "sync_start": "2026-10-13 10:00:00",
+            "device_name": "NeuropixelsV2",
+            "stream_group": "Bno055",
+        }
+        stored = OnixStreamCodec().encode(dict(payload))
+        import json
+
+        decoded = json.loads(stored) if isinstance(stored, str) else stored
+        assert decoded.get("stream_format") == "binary", (
+            "rows ingested before the discriminator existed must keep decoding as binary"
+        )
+
+    def test_encode_preserves_an_explicit_format(self):
+        import json
+
+        from aeon.dj_pipeline.utils.codec import OnixStreamCodec
+
+        payload = {
+            "experiment_name": "e",
+            "epoch_start": "2026-10-13 09:42:55",
+            "sync_start": "2026-10-13 10:00:00",
+            "device_name": "NeuropixelsV2",
+            "stream_group": "Bno055",
+            "stream_format": "arrow",
+        }
+        stored = OnixStreamCodec().encode(dict(payload))
+        decoded = json.loads(stored) if isinstance(stored, str) else stored
+        assert decoded["stream_format"] == "arrow"

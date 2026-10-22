@@ -1102,6 +1102,33 @@ class TestProbeInsertionFromImplants:
         assert str((ephys.ProbeInsertion & key).fetch1("implantation_date")) == "2026-05-20 00:00:00"
 
 
+class TestFactoryFormatValidation:
+    """An unvalidated fmt would make the arrow-vs-binary equivalence test vacuous."""
+
+    def test_unknown_format_raises(self, tmp_path):
+        from ephys_factories import make_synthetic_amplifier_data
+
+        with pytest.raises(ValueError, match="fmt"):
+            make_synthetic_amplifier_data(
+                tmp_path, "ep", "NeuropixelsV2", "ProbeA", n_chunks=1, fmt="Arrow"
+            )
+
+    def test_arrow_and_binary_write_different_trees(self, tmp_path):
+        """Guards the equivalence test: the formats must not produce the same files."""
+        from ephys_factories import make_synthetic_amplifier_data
+
+        for fmt in ("binary", "arrow"):
+            make_synthetic_amplifier_data(
+                tmp_path / fmt, "ep", "NeuropixelsV2", "ProbeA", n_chunks=1, fmt=fmt
+            )
+        suffixes = {
+            fmt: sorted(q.suffix for q in (tmp_path / fmt / "ep" / "NeuropixelsV2").iterdir())
+            for fmt in ("binary", "arrow")
+        }
+        assert suffixes["binary"] == [".bin", ".bin"], suffixes
+        assert suffixes["arrow"] == [".arrow"], suffixes
+
+
 class TestPreProcessingOnArrow:
     """PreProcessing must build a SpikeInterface recording from arrow chunks.
 

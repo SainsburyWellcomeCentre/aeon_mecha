@@ -213,6 +213,11 @@ def make_synthetic_amplifier_data(
     chunk's ONIX timestamps outside every sync window instead, e.g. to
     exercise the "chunk falls entirely outside all HarpSync rows" case.
     """
+    if fmt not in ("binary", "arrow"):
+        # A typo would silently fall through to binary and make an arrow-vs-binary
+        # equivalence test compare binary with binary, passing green.
+        raise ValueError(f"fmt must be 'binary' or 'arrow', got {fmt!r}")
+
     device_dir = raw_dir / epoch_dir_name / device_name
     device_dir.mkdir(parents=True, exist_ok=True)
 

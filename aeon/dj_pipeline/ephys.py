@@ -1055,6 +1055,9 @@ class OnixImuChunk(dj.Imported):
                     "sync_start": str(key["sync_start"]),
                     "device_name": device_name,
                     "stream_group": "Bno055",
+                    # recorded so a fetch reproduces the shape that was ingested,
+                    # independent of what the raw tree looks like later
+                    "stream_format": ("arrow" if set(ARROW_EXTRA_COLUMNS) <= set(df.columns) else "binary"),
                     "chunk_indices": chunk_indices,
                     "onix_ts_start": onix_ts_start,
                     "onix_ts_end": onix_ts_end,
