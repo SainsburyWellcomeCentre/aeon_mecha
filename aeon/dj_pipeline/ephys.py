@@ -815,6 +815,7 @@ class EphysBlockInfo(dj.Imported):
         epoch_dir = (EphysEpoch & key & {"epoch_start": epoch_start}).fetch1("epoch_dir")
         epoch_path = raw_dir / Path(epoch_dir).parts[0]
         json_path = resolve_epoch_probe_json(raw_dir, epoch_path, config_file_name)
+
         channel_map = load_device_channel_map(json_path)
 
         electrode_df = (ElectrodeConfig.Electrode & econfig).keys(order_by="electrode")
