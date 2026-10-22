@@ -874,3 +874,33 @@ class TestParseMetadataImplants:
         meta = {"subject": {"Subject": "S1", "Implants": [{"Probe": "ProbeA"}]}}
         with pytest.raises(ValueError, match="InsertionNumber"):
             parse_metadata_implants(meta)
+
+
+class TestEnabledProbeLabels:
+    """Probes the metadata declares enabled, for cross-checking against disk."""
+
+    def test_headstage_layout_lists_enabled_only(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import enabled_probe_labels, parse_epoch_metadata
+
+        meta = parse_epoch_metadata(_epoch_with(tmp_path, "ephys_headstage_Metadata.json", "Metadata.json"))
+        assert enabled_probe_labels(meta) == {"ProbeA", "ProbeB"}
+
+    def test_disabled_probe_excluded(self):
+        from aeon.dj_pipeline.utils.ephys_utils import enabled_probe_labels
+
+        meta = {
+            "ephys": {
+                "Headstage": {
+                    "ProbeA": {"Enable": True, "ProbeConfiguration": {}},
+                    "ProbeB": {"Enable": False, "ProbeConfiguration": {}},
+                }
+            }
+        }
+        assert enabled_probe_labels(meta) == {"ProbeA"}
+
+    def test_returns_none_for_layouts_without_an_enable_flag(self, tmp_path):
+        """Older layouts express disablement differently; no cross-check is possible."""
+        from aeon.dj_pipeline.utils.ephys_utils import enabled_probe_labels, parse_epoch_metadata
+
+        meta = parse_epoch_metadata(_epoch_with(tmp_path, "ephys_devices_Metadata.yml", "Metadata.yml"))
+        assert enabled_probe_labels(meta) is None

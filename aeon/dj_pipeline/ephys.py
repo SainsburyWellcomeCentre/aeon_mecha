@@ -13,6 +13,7 @@ from aeon.dj_pipeline.utils.arrow_io import read_arrow_clock_bounds
 from aeon.dj_pipeline.utils.ephys_utils import (
     DEVICE_PROBE_TYPE_MAP,
     discover_epoch_probes,
+    enabled_probe_labels,
     find_nearest_window,
     find_or_create_probe_insertion,
     get_probe_id,
@@ -302,6 +303,19 @@ class EphysEpochConfig(dj.Imported):
                 continue
             probe_info[label] = probe_id
 
+        # The metadata is authoritative about which probes should be here, so a probe
+        # it declares enabled whose files are absent is a transfer problem, not a
+        # single-probe epoch. Without this, a half-copied epoch ingests as clean.
+        declared = enabled_probe_labels(metadata)
+        if declared is not None:
+            absent = sorted(declared - set(probe_info))
+            if absent:
+                raise FileNotFoundError(
+                    f"Metadata declares {absent} enabled for epoch {epoch_dir}, but no data "
+                    f"files were found for them (discovered: {sorted(probe_info)}). "
+                    f"The epoch looks partially transferred."
+                )
+
         if not probe_info:
             raise ValueError(
                 f"All probes in {epoch_path} are disabled/dummy (no probe configuration "
@@ -322,7 +336,13 @@ class EphysEpochConfig(dj.Imported):
         probe_to_econfig: dict[str, dict[str, str]] = {}
         for label, basename in probe_configs.items():
             if basename is None:
-                continue  # disabled/spoofed probe
+                continue  # disabled/spoofed probe (older layouts null the filename)
+            if label not in probe_info:
+                # Enabled-flag layouts keep the filename populated on a disabled probe,
+                # so resolving it would either block the epoch on a stale path or
+                # register an ElectrodeConfig for hardware that recorded nothing.
+                logger.info(f"Skipping ElectrodeConfig for {label}: not an active probe")
+                continue
             json_path = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, basename)
             ec_probe_type, ec_config_name = create_electrode_config(
                 json_path=json_path,

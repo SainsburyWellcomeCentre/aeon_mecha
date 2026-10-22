@@ -205,6 +205,28 @@ def parse_metadata_implants(metadata: dict | None) -> dict[str, dict] | None:
     return result or None
 
 
+def enabled_probe_labels(metadata: dict | None) -> set[str] | None:
+    """Probe labels the metadata declares enabled, or None if it cannot say.
+
+    Only the ``ephys.Headstage`` layout carries an explicit ``Enable`` flag. The
+    older layouts express disablement as a null ``ProbeInterfaceFileName``, which
+    is already handled by ``get_probe_id``, so they return None and no
+    disk-vs-metadata cross-check is attempted.
+    """
+    if not isinstance(metadata, dict):
+        return None
+    headstage = (metadata.get("ephys") or {}).get("Headstage")
+    if not isinstance(headstage, dict):
+        return None
+    return {
+        label
+        for label, block in headstage.items()
+        if re.fullmatch(r"Probe[A-Z]", label)
+        and isinstance(block, dict)
+        and block.get("Enable", True) is not False
+    }
+
+
 def _headstage_probe_block(metadata: dict | None, probe_label: str) -> dict | None:
     """Return the ``ephys.Headstage.<probe_label>`` block, or None if not this layout.
 
