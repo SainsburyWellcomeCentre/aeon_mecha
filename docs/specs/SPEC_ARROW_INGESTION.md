@@ -108,6 +108,14 @@ for seven returns. Do not add a third sniffed branch.
 Replace shape-sniffing with dispatch on a declared discriminator — `workflow:
 "Ephys.bonsai"`; older files are identified by the shapes already handled.
 
+**Implementation note (deviation):** this section argued for dispatch on a declared
+discriminator over shape-sniffing. `get_probe_id` in practice tries
+`_headstage_probe_block` first, then `NeuropixelsV2{suffix}`, then `Devices` — a third
+sniffed branch, which is what this section said not to add. Kept deliberately: the three
+layouts are distinguished by disjoint, unambiguous keys, and a `workflow`-string dispatch
+would add a lookup table that the shapes already encode. Recorded so it reads as a
+decision rather than drift.
+
 **`DiscriminatorType` is deliberately NOT used.** Its value (`"NeuropixelsV2eHeadstage"`)
 matches neither key in `DEVICE_PROBE_TYPE_MAP` (`NeuropixelsV2Beta`, `NeuropixelsV2`), and
 `device_name` is not only a type — it is the filename prefix, the device subdirectory, and
@@ -461,10 +469,22 @@ ephys/curation fixture, which arrow does not reach. Adding `golden_arrow_01` thr
   Files on disk with `Enable: false` -> skip with an info log. Matches today's golden,
   where ProbeA is present but disabled (`expected_discovered_probes: 2` vs
   `expected_probe_count: 1`).
+
+  **Both halves implemented.** The raise needed a new `enabled_probe_labels`, because
+  `probe_info` is built by iterating labels discovered from *disk* — a probe the metadata
+  declares enabled whose files never copied simply never appeared. Only the
+  `ephys.Headstage` layout carries an `Enable` flag, so the cross-check is skipped for
+  older layouts, which express disablement as a null `ProbeInterfaceFileName`.
 - **`stream_df` column set.** Return the native set per format: 15 for arrow, 13 for
-  binary. Normalising would discard `Calibration`/`Temperature`. Requires a format
-  discriminator in the codec payload (`codec.py:126-134`), defaulting to binary for
-  already-ingested rows. Note this is a published *fetch contract* change, not just DDL.
+  binary. Normalising would discard `Calibration`/`Temperature`.
+
+  **Implemented with the discriminator** (`stream_format`, defaulting to `binary` for rows
+  written before it existed). An execution ruling had dropped it, reasoning that
+  `load_and_merge_bno055` already dispatches on which file is on disk. Review round 1
+  found the case that missed: `_load_bno055_arrow` validates by exact column-set equality
+  at *decode* time, so one added upstream BNO055 column would make every previously
+  ingested arrow row unfetchable, retroactively. Archiving or converting a raw file has
+  the same effect from the other side. This is a published *fetch contract* change.
 - **Metadata filename.** Try `Metadata.json`, fall back to `Metadata.yml`.
 - **#630 is an in-repo dependency**, not a package one — it vendors the reader into
   `aeon_mecha/utils/spike_sorting_utils.py`. No `pyproject` change. Its missing
@@ -504,6 +524,27 @@ ephys/curation fixture, which arrow does not reach. Adding `golden_arrow_01` thr
 - How the ephys fixtures split ingestion-only vs full-cascade datasets (marker, separate
   fixture, or a config flag on the dataset entry).
 - The shape of the arrow emitter in the synthetic ephys factory.
+
+# Known loss of a correctness guard
+
+`abcGolden01` has `Seconds = Value.HarpTime + 1`; `golden_arrow_01` has them identical.
+Bonsai used to add the HARP sync second twice into the `Seconds` index column, and that
+is fixed upstream.
+
+Production was always correct — `HarpSyncModel.Reader` fits its regression on
+`Value.HarpTime`, never on `Seconds`. But two tests asserted the 1 s offset *as a
+requirement* and failed on the new data. They now accept either era.
+
+**The cost:** `test_sync_start_matches_value_harptime_column` carried a negative
+assertion — that the `Seconds`-derived value is absent from stored sync starts — which
+proved the reader was not using the wrong column. When the two columns are identical that
+assertion cannot discriminate at all; it would fail against a perfectly correct reader.
+It now runs only when the columns differ.
+
+So **on new-format acquisitions there is no longer a test that would catch a reader
+switching to the `Seconds` column.** The guard survives only for older data. This is
+driven by an acquisition change the spec otherwise declares out of scope, and is recorded
+here rather than left in a test comment.
 
 # Constraints recorded from the team
 
