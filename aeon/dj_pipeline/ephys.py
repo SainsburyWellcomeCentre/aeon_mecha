@@ -608,7 +608,7 @@ class EphysChunk(dj.Manual):
                 )
                 continue
 
-            if ephys_file.suffix == "arrow":
+            if ephys_file.suffix == ".arrow":
                 clock_file = ephys_file
             else:
                 # Read ONIX timestamps from the companion Clock binary
