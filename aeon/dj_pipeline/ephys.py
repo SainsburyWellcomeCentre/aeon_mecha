@@ -12,7 +12,7 @@ from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import (
     DEVICE_PROBE_TYPE_MAP,
     discover_epoch_probes,
-    find_nearest_window,
+    find_nearest_window,  # type: ignore
     find_or_create_probe_insertion,
     get_probe_id,
     harp_to_naive,
@@ -528,12 +528,14 @@ class EphysChunk(dj.Manual):
 
         # {(epoch_start, probe_label): ProbeInsertion key}
         insertion_lookup: dict[tuple[datetime, str], dict] = {}
+        epoch_probe_labels = []
         for entry in (EphysEpochConfig.Insertion & exp_key).to_dicts():
             insertion_lookup[(entry["epoch_start"], entry["probe_label"])] = {
                 "experiment_name": entry["experiment_name"],
                 "subject": entry["subject"],
                 "insertion_number": entry["insertion_number"],
             }
+            epoch_probe_labels.append(entry["probe_label"])
 
         if not insertion_lookup:
             logger.warning(
@@ -546,6 +548,15 @@ class EphysChunk(dj.Manual):
             raw_dir.rglob("*_AmplifierData*.bin"),
             key=lambda x: x.as_posix(),
         )
+
+        if len(all_ephys_files) == 0:
+            all_ephys_files = sorted(
+                raw_dir.rglob(f"*{epoch_probe_labels}*.arrow"),
+                key=lambda x: x.as_posix(),
+            )
+            print(all_ephys_files)
+
+        return
 
         if not all_ephys_files:
             logger.info(f"No ephys amplifier files found in {raw_dir}")
