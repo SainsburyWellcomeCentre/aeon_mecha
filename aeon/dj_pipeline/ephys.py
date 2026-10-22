@@ -676,7 +676,6 @@ class EphysChunk(dj.Manual):
                 "chunk_end": chunk_end,
                 "epoch_start": epoch_start,
             }
-            print(chunk_entry)
             try:
                 with cls.connection.transaction:
                     cls.insert1(chunk_entry)
