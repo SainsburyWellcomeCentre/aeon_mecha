@@ -39,6 +39,12 @@ ephys = importlib.import_module("aeon.dj_pipeline.ephys")
 schema = dj.Schema(get_schema_name("spike_sorting"))
 logger = dj.logger
 
+# Files carrying amplifier samples, in either acquisition format. Binary writes
+# AmplifierData_N.bin beside Clock_N.bin; arrow puts amplifier, Clock and HubClock
+# in one <device>_<probe>_N.arrow. Shared so PreProcessing and SyncedSpikes cannot
+# drift apart -- they must agree on which file a block's samples come from.
+AMPLIFIER_FILE_RESTRICTION = "file_name LIKE '%AmplifierData%.bin' OR file_name LIKE '%.arrow'"
+
 # Neuropixels 2.0 sampling rate - TODO: read this from the metadata
 NP2_FS_HZ = 30e3
 
@@ -228,10 +234,15 @@ class PreProcessing(dj.Computed):
 
         # Load ephys data
         ephys_files, dir_types = (
-            ephys.EphysChunk.File
-            & (ephys.EphysBlockInfo.Chunk & key)
-            & "file_name LIKE '%AmplifierData%.bin'"
+            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & AMPLIFIER_FILE_RESTRICTION
         ).to_arrays("file_path", "directory_type", order_by="chunk_start")
+
+        if len(ephys_files) == 0:
+            raise ValueError(
+                f"No amplifier files registered for block {key.get('block_start')}. "
+                f"EphysChunk.File has no row matching {AMPLIFIER_FILE_RESTRICTION!r}; "
+                f"without this, concatenation would fail with an opaque IndexError."
+            )
 
         # Channels
         electrodes_query = (
@@ -1234,7 +1245,7 @@ class SyncedSpikes(dj.Imported):
             # indices count against. Arrow carries its clock in the same file; binary
             # has a companion Clock_N.bin derived below. Keying on '%Clock%.bin' would
             # also match Commutator_Clock_N.bin, which sits in the same directory.
-            & "file_name LIKE '%AmplifierData%.bin' OR file_name LIKE '%.arrow'"
+            & AMPLIFIER_FILE_RESTRICTION
         )
         _clock_rows = _clock_query.to_dicts(order_by="chunk_start")
         _pk = _clock_query.primary_key

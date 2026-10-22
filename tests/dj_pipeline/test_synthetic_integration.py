@@ -1113,6 +1113,140 @@ class TestProbeInsertionFromImplants:
         assert str((ephys.ProbeInsertion & key).fetch1("implantation_date")) == "2026-05-20 00:00:00"
 
 
+class TestPreProcessingOnArrow:
+    """PreProcessing must build a SpikeInterface recording from arrow chunks.
+
+    This is the spec's definition of "works" for arrow, and the fixture split in
+    the golden tests does not reach it: PreProcessing is keyed on SortingTask,
+    which sits inside the sorting cascade.
+    """
+
+    def _populate(self, tmp_path, experiment_name, fmt):
+        from aeon.dj_pipeline import ephys, spike_sorting
+
+        exp = TestArrowChunkIngestion()._setup(tmp_path, experiment_name, [fmt, fmt])
+
+        chunks = (ephys.EphysChunk & {"experiment_name": exp}).to_dicts(order_by="chunk_start")
+        assert len(chunks) == 2, chunks
+        insertion = {k: chunks[0][k] for k in ("experiment_name", "subject", "insertion_number")}
+        block_key = {
+            **insertion,
+            "block_start": chunks[0]["chunk_start"],
+            "block_end": chunks[-1]["chunk_end"],
+        }
+        ephys.EphysBlock.insert1(block_key)
+        probe_type, econfig = (ephys.EphysEpochConfig.Insertion & {"experiment_name": exp}).fetch1(
+            "probe_type", "electrode_config_name"
+        )
+        econfig_key = {"probe_type": probe_type, "electrode_config_name": econfig}
+        ephys.EphysBlockInfo.insert1(
+            {
+                **block_key,
+                "block_duration": 1.0,
+                **econfig_key,
+            },
+            allow_direct_insert=True,
+        )
+        ephys.EphysBlockInfo.Chunk.insert(
+            [{**block_key, "chunk_start": c["chunk_start"]} for c in chunks],
+            allow_direct_insert=True,
+        )
+        ephys.EphysBlockInfo.Channel.insert(
+            [{**block_key, **econfig_key, "electrode": 0, "channel_idx": 0}],
+            allow_direct_insert=True,
+        )
+        spike_sorting.ElectrodeGroup.insert1(
+            {
+                **econfig_key,
+                "electrode_group": "all",
+                "electrode_group_description": "synthetic",
+                "electrode_count": 1,
+            },
+            skip_duplicates=True,
+        )
+        spike_sorting.ElectrodeGroup.Electrode.insert1(
+            {**econfig_key, "electrode_group": "all", "electrode": 0}, skip_duplicates=True
+        )
+        spike_sorting.SortingParamSet.insert1(
+            {
+                "paramset_id": "pp-arrow",
+                "sorting_method": "kilosort4",
+                "paramset_description": "synthetic",
+                "params": {"SI_PREPROCESSING_METHOD": "none"},
+            },
+            skip_duplicates=True,
+        )
+        task = {**block_key, **econfig_key, "electrode_group": "all", "paramset_id": "pp-arrow"}
+        spike_sorting.SortingTask.insert1(task)
+
+        spike_sorting.PreProcessing.populate(task, suppress_errors=False)
+        return spike_sorting, task
+
+    def test_preprocessing_runs_on_arrow_chunks(self, ephys_full_pipeline, tmp_path):
+        spike_sorting, task = self._populate(tmp_path, "test_pp_arrow", "arrow")
+        assert spike_sorting.PreProcessing & task, "PreProcessing produced no row for arrow"
+
+    def test_preprocessed_recording_is_loadable_and_has_expected_samples(
+        self, ephys_full_pipeline, tmp_path
+    ):
+        """The written si_recording.pkl must reload with the arrow chunks' samples."""
+        import spikeinterface as si
+
+        spike_sorting, task = self._populate(tmp_path, "test_pp_arrow_load", "arrow")
+        out = spike_sorting.get_sorting_root_dir() / (spike_sorting.PreProcessing & task).fetch1(
+            "sorting_output_dir"
+        )
+        pkl = out.parent / "recording" / "si_recording.pkl"
+        assert pkl.exists(), f"si_recording.pkl not written to {pkl}"
+        rec = si.load(pkl, base_folder=out)
+        # the factory writes 10 samples per chunk, two chunks concatenated
+        assert rec.get_num_samples() == 20, rec.get_num_samples()
+
+
+class TestAmplifierFileSelection:
+    """The restriction that finds amplifier files must match both formats.
+
+    PreProcessing and SyncedSpikes both select the amplifier file for a block.
+    A restriction that misses arrow leaves PreProcessing with an empty file list
+    and si.concatenate_recordings([]) raises IndexError naming nothing.
+    """
+
+    def test_restriction_selects_arrow_files(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline import ephys
+        from aeon.dj_pipeline.spike_sorting import AMPLIFIER_FILE_RESTRICTION
+
+        exp = TestArrowChunkIngestion()._setup(tmp_path, "test_amp_sel_arrow", ["arrow", "arrow"])
+        rows = (ephys.EphysChunk.File & {"experiment_name": exp} & AMPLIFIER_FILE_RESTRICTION).to_dicts()
+        names = sorted(r["file_name"] for r in rows)
+        assert len(names) == 2, f"arrow amplifier files not selected: {names}"
+        assert all(n.endswith(".arrow") for n in names), names
+
+    def test_restriction_selects_binary_files(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline import ephys
+        from aeon.dj_pipeline.spike_sorting import AMPLIFIER_FILE_RESTRICTION
+
+        exp = TestArrowChunkIngestion()._setup(tmp_path, "test_amp_sel_bin", ["binary", "binary"])
+        rows = (ephys.EphysChunk.File & {"experiment_name": exp} & AMPLIFIER_FILE_RESTRICTION).to_dicts()
+        names = sorted(r["file_name"] for r in rows)
+        assert len(names) == 2, f"expected 2 AmplifierData files, got {names}"
+        assert all("AmplifierData" in n for n in names), names
+
+    def test_restriction_excludes_clock_and_commutator(self, ephys_full_pipeline, tmp_path):
+        """Clock and Commutator files must never be mistaken for amplifier data."""
+        import numpy as np
+
+        from aeon.dj_pipeline import ephys
+        from aeon.dj_pipeline.spike_sorting import AMPLIFIER_FILE_RESTRICTION
+
+        exp = TestArrowChunkIngestion()._setup(tmp_path, "test_amp_sel_excl", ["binary"])
+        d = tmp_path / "raw" / "2026-10-13T094255Z" / "NeuropixelsV2"
+        np.arange(1, 7, dtype=np.uint64).tofile(d / "NeuropixelsV2_Commutator_Clock_0.bin")
+        rows = (ephys.EphysChunk.File & {"experiment_name": exp} & AMPLIFIER_FILE_RESTRICTION).to_dicts()
+        names = [r["file_name"] for r in rows]
+        assert not any("Commutator" in n for n in names), names
+        assert not any(n.endswith("_Clock_0.bin") for n in names), names
+
+
 class TestArrowChunkIngestion:
     """ingest_chunks discovers arrow amplifier files and reads their Clock column."""
 
