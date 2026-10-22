@@ -12,7 +12,7 @@ from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import (
     DEVICE_PROBE_TYPE_MAP,
     discover_epoch_probes,
-    find_nearest_window,  # type: ignore
+    find_nearest_window,
     find_or_create_probe_insertion,
     get_probe_id,
     harp_to_naive,
@@ -549,7 +549,6 @@ class EphysChunk(dj.Manual):
             key=lambda x: x.as_posix(),
         )
 
-        print(epoch_probe_labels)
         if len(all_ephys_files) == 0:
             for probe_label in epoch_probe_labels:
                 ephys_files = sorted(
@@ -677,6 +676,7 @@ class EphysChunk(dj.Manual):
                 "chunk_end": chunk_end,
                 "epoch_start": epoch_start,
             }
+            print(chunk_entry)
             try:
                 with cls.connection.transaction:
                     cls.insert1(chunk_entry)
