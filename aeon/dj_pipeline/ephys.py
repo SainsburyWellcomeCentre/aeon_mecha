@@ -677,33 +677,32 @@ class EphysChunk(dj.Manual):
                 "epoch_start": epoch_start,
             }
             print(chunk_entry)
-            try:
-                with cls.connection.transaction:
-                    cls.insert1(chunk_entry)
-                    cls.File.insert(
-                        [
-                            {
-                                **chunk_entry,
-                                "directory_type": "raw-ephys",
-                                "file_name": f.name,
-                                "file_path": f.relative_to(raw_dir).as_posix(),
-                            }
-                            for f in (ephys_file, clock_file)
-                        ],
-                        ignore_extra_fields=True,
-                    )
-                    cls.SyncModel.insert(
-                        [{**chunk_entry, "sync_start": m["sync_start"]} for m in matched],
-                        ignore_extra_fields=True,
-                    )
-                logger.info(
-                    f"Inserted EphysChunk: {experiment_name} "
-                    f"subject={insertion_key['subject']} "
-                    f"chunk_start={chunk_start}"
+            with cls.connection.transaction:
+                cls.insert1(chunk_entry)
+                cls.File.insert(
+                    [
+                        {
+                            **chunk_entry,
+                            "directory_type": "raw-ephys",
+                            "file_name": f.name,
+                            "file_path": f.relative_to(raw_dir).as_posix(),
+                        }
+                        for f in (ephys_file, clock_file)
+                    ],
+                    ignore_extra_fields=True,
                 )
-            except Exception as e:
-                logger.error(f"Failed to insert EphysChunk for {ephys_file}: {e}")
-                continue
+                cls.SyncModel.insert(
+                    [{**chunk_entry, "sync_start": m["sync_start"]} for m in matched],
+                    ignore_extra_fields=True,
+                )
+            logger.info(
+                f"Inserted EphysChunk: {experiment_name} "
+                f"subject={insertion_key['subject']} "
+                f"chunk_start={chunk_start}"
+            )
+            # except Exception as e:
+            #     logger.error(f"Failed to insert EphysChunk for {ephys_file}: {e}")
+            #     continue
 
 
 @schema
