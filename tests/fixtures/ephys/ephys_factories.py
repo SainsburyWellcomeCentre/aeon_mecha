@@ -191,8 +191,14 @@ def make_synthetic_amplifier_data(
     probe_label: str,
     n_chunks: int,
     ts_ranges: "list[tuple[int, int]] | None" = None,
+    fmt: str = "binary",
 ):
-    """Write synthetic AmplifierData_N.bin + Clock_N.bin files for each chunk.
+    """Write synthetic per-chunk amplifier files for each chunk.
+
+    ``fmt="binary"`` writes the historical pair ``AmplifierData_N.bin`` +
+    ``Clock_N.bin``. ``fmt="arrow"`` writes a single ``<device>_<probe>_N.arrow``
+    carrying ``AmplifierData0..`` plus ``Clock`` and ``HubClock`` columns, as the
+    Bonsai arrow acquisition does.
 
     By default, ONIX timestamps in each Clock file fall WITHIN the matching
     HarpSync CSV's clock range so the BETWEEN query in ingest_chunks finds the
@@ -226,14 +232,33 @@ def make_synthetic_amplifier_data(
             ts_end = clock_end - 500
         onix_ts = np.linspace(ts_start, ts_end, n_samples, dtype=np.uint64)
 
+        amp_data = np.zeros((n_samples, n_channels), dtype=np.uint16)
+
+        if fmt == "arrow":
+            _write_arrow_chunk(device_dir, device_name, probe_label, n, onix_ts, amp_data)
+            continue
+
         # Write Clock binary (uint64 ONIX timestamps)
         clock_path = device_dir / f"{device_name}_{probe_label}_Clock_{n}.bin"
         onix_ts.tofile(clock_path)
 
-        # Write AmplifierData binary (uint16, shape n_samples x n_channels, all zeros)
+        # Write AmplifierData binary (uint16, shape n_samples x n_channels)
         amp_path = device_dir / f"{device_name}_{probe_label}_AmplifierData_{n}.bin"
-        amp_data = np.zeros((n_samples, n_channels), dtype=np.uint16)
         amp_data.tofile(amp_path)
+
+
+def _write_arrow_chunk(device_dir, device_name, probe_label, n, onix_ts, amp_data):
+    """One arrow file per chunk: AmplifierData<i> columns plus Clock and HubClock."""
+    import pyarrow as pa
+    import pyarrow.ipc as ipc
+
+    cols = {f"AmplifierData{i}": amp_data[:, i] for i in range(amp_data.shape[1])}
+    cols["HubClock"] = onix_ts
+    cols["Clock"] = onix_ts
+    schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in cols.items()])
+    path = device_dir / f"{device_name}_{probe_label}_{n}.arrow"
+    with ipc.new_file(path, schema) as w:
+        w.write_batch(pa.RecordBatch.from_arrays([pa.array(v) for v in cols.values()], schema=schema))
 
 
 def register_synthetic_probe_insertion(
