@@ -90,6 +90,32 @@ def resolve_ephys_file(raw_bin_path: Path) -> Path:
     raise FileNotFoundError(f"No ephys file found (checked {checked}).")
 
 
+def _check_uniform_batches(rec, path) -> None:
+    """Reject a file whose batches are not uniform-except-the-last.
+
+    ``BonsaiOnixArrowRecordingSegment.get_traces`` addresses batches arithmetically
+    (``start_frame // batch_len``) while ``get_num_samples`` sums true per-batch
+    rows. On a non-uniform file the length stays right and every trace read is
+    offset, which would shift every spike time with no error.
+    """
+    segment = rec._recording_segments[0]
+    reader, batch_len = segment._reader, segment.batch_len
+    n = reader.num_record_batches
+    total = 0
+    for i in range(n):
+        rows = reader.get_batch(i).num_rows
+        if i < n - 1 and rows != batch_len:  # the final batch may be short
+            raise ValueError(
+                f"{path} batch {i} has {rows} rows, expected {batch_len}. get_traces "
+                f"addresses batches by a constant stride, so a non-uniform file would "
+                f"return offset traces while reporting a correct sample count."
+            )
+        total += rows
+    # This walk is the same one get_num_samples would do, so seed its cache rather
+    # than deserialising all 398 batches of a 6.75 GB file twice.
+    segment._num_samples = total
+
+
 def _check_arrow_channels(rec, num_channels: int, path) -> None:
     """Verify the arrow schema against the registered channel count and ordering.
 
@@ -98,6 +124,7 @@ def _check_arrow_channels(rec, num_channels: int, path) -> None:
     disagrees with the ElectrodeConfig, or columns ordered lexicographically
     (``AmplifierData0, 1, 10, 2``) instead of numerically.
     """
+    _check_uniform_batches(rec, path)
     ids = [str(c) for c in rec.channel_ids]
     if len(ids) != num_channels:
         raise ValueError(

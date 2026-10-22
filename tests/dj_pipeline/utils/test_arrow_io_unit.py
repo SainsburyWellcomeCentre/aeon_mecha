@@ -191,3 +191,50 @@ class TestArrowChannelIntegrity:
         self._write(f, [f"AmplifierData{i}" for i in range(4)])
         rec = read_amplifier_recording(f, num_channels=4, fs_hz=30000.0)
         assert rec.get_num_channels() == 4
+
+
+class TestNonUniformBatchGuard:
+    """get_traces addresses batches by a constant; a file that breaks it must not pass.
+
+    ``start_frame // batch_len`` assumes every batch but the last has the same row
+    count. ``get_num_samples`` sums true per-batch rows, so a non-uniform file keeps
+    a correct length while every trace read is offset -- a recording that looks
+    healthy with every spike time wrong.
+    """
+
+    def _write(self, path, batch_sizes):
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        total = sum(batch_sizes)
+        cols = {
+            "AmplifierData0": np.arange(total, dtype=np.uint16),
+            "Clock": np.arange(total, dtype=np.uint64),
+        }
+        schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in cols.items()])
+        off = 0
+        with ipc.new_file(path, schema) as w:
+            for n in batch_sizes:
+                w.write_batch(
+                    pa.RecordBatch.from_arrays(
+                        [pa.array(v[off : off + n]) for v in cols.values()], schema=schema
+                    )
+                )
+                off += n
+
+    def test_uniform_with_short_final_batch_is_accepted(self, tmp_path):
+        """The real golden files are exactly this shape."""
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
+        self._write(f, [100, 100, 37])
+        rec = read_amplifier_recording(f, num_channels=1, fs_hz=30000.0)
+        assert rec.get_num_samples() == 237
+
+    def test_non_uniform_middle_batch_raises(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
+        self._write(f, [100, 70, 100])
+        with pytest.raises(ValueError, match="batch"):
+            read_amplifier_recording(f, num_channels=1, fs_hz=30000.0)
