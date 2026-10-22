@@ -13,6 +13,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.feather as feather
 
 IMU_COLUMNS: tuple[str, ...] = (
     "euler_x",
@@ -65,8 +66,19 @@ def load_and_merge_bno055(
 
     device_dir = Path(device_dir)
     clock_file = device_dir / f"{device_name}_Bno055_Clock_{chunk_index}.bin"
+
+    if not clock_file.exists():
+        clock_file = device_dir / f"{device_name}_Bno055_{chunk_index}.arrow"
+
     if not clock_file.exists():
         raise FileNotFoundError(clock_file)
+
+    if clock_file.suffix == ".arrow":
+        bno55_data = feather.read_table(clock_file)
+        bno55_df = bno55_data.to_pandas()
+        bno55_df.set_index("Clock", inplace=True)
+        return bno55_df
+
     onix_clock = np.fromfile(clock_file, dtype=np.uint64)
 
     streams = social_ephys[device_name]
@@ -117,26 +129,40 @@ def find_overlapping_bno055_chunks(
     """
     device_dir = Path(device_dir)
     pattern = f"{device_name}_Bno055_Clock_*.bin"
+    clock_files = list(device_dir.glob(pattern))
+
+    if len(clock_files) == 0:
+        clock_files = list(device_dir.glob(f"{device_name}_Bno055_*.arrow"))
+
     overlapping: list[int] = []
-    for clock_file in device_dir.glob(pattern):
-        size = clock_file.stat().st_size
-        # Floor to a uint64 boundary in case a trailing partial sample was
-        # left behind by an interrupted acquisition. Skip files with no
-        # whole samples.
-        whole = (size // 8) * 8
-        if whole < 8:
-            continue
-        match = re.search(r"_Clock_(\d+)\.bin$", clock_file.name)
-        if not match:
-            continue
-        n = int(match.group(1))
-        first = int(np.fromfile(clock_file, dtype=np.uint64, count=1)[0])
-        if whole >= 16:
-            with open(clock_file, "rb") as f:
-                f.seek(whole - 8)
-                last = int(np.frombuffer(f.read(8), dtype=np.uint64)[0])
+    for clock_file in clock_files:
+        if clock_file.suffix == ".arrow":
+            table = feather.read_table(clock_file)
+            clock_array = table["Clock"].to_numpy()
+            first = clock_array[0]
+            last = clock_array[-1]
+            n = int(clock_file.name.split("_")[-1])
+
         else:
-            last = first
+            size = clock_file.stat().st_size
+            # Floor to a uint64 boundary in case a trailing partial sample was
+            # left behind by an interrupted acquisition. Skip files with no
+            # whole samples.
+            whole = (size // 8) * 8
+            if whole < 8:
+                continue
+            match = re.search(r"_Clock_(\d+)\.bin$", clock_file.name)
+            if not match:
+                continue
+            n = int(match.group(1))
+            first = int(np.fromfile(clock_file, dtype=np.uint64, count=1)[0])
+            if whole >= 16:
+                with open(clock_file, "rb") as f:
+                    f.seek(whole - 8)
+                    last = int(np.frombuffer(f.read(8), dtype=np.uint64)[0])
+            else:
+                last = first
+
         # Inclusive interval overlap test on both ends.
         if first <= onix_ts_end and last >= onix_ts_start:
             overlapping.append(n)
