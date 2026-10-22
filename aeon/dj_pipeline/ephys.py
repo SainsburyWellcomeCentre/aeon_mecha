@@ -9,6 +9,7 @@ from typing import Any
 import datajoint as dj
 
 from aeon.dj_pipeline import acquisition, get_schema_name
+from aeon.dj_pipeline.utils.arrow_io import read_arrow_clock_bounds
 from aeon.dj_pipeline.utils.ephys_utils import (
     DEVICE_PROBE_TYPE_MAP,
     discover_epoch_probes,
@@ -578,8 +579,10 @@ class EphysChunk(dj.Manual):
             )
             return
 
+        # Binary acquisition writes AmplifierData_N.bin beside Clock_N.bin; the arrow
+        # acquisition writes one <device>_<probe>_N.arrow holding both as columns.
         all_ephys_files = sorted(
-            raw_dir.rglob("*_AmplifierData*.bin"),
+            [*raw_dir.rglob("*_AmplifierData*.bin"), *raw_dir.rglob("*_Probe[A-Z]_*.arrow")],
             key=lambda x: x.as_posix(),
         )
 
@@ -594,7 +597,7 @@ class EphysChunk(dj.Manual):
                 continue  # already ingested
 
             # Parse probe_label from filename
-            name_match = re.search(r"_(Probe[A-Z])_AmplifierData", ephys_file.name)
+            name_match = re.search(r"_(Probe[A-Z])_(?:AmplifierData_)?\d+\.(?:bin|arrow)$", ephys_file.name)
             if not name_match:
                 logger.warning(f"Cannot parse probe label from {ephys_file.name}. Skipping.")
                 continue
@@ -628,17 +631,27 @@ class EphysChunk(dj.Manual):
                 )
                 continue
 
-            # Read ONIX timestamps from the companion Clock binary
-            clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
-            if not clock_file.exists():
-                logger.warning(f"Clock file not found for {ephys_file.name}. Skipping.")
-                continue
-            # Guard before memmap — np.memmap raises ValueError on 0-byte files.
-            if clock_file.stat().st_size < 8:
-                logger.warning(f"Empty/short Clock file for {ephys_file.name}. Skipping.")
-                continue
-            onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
-            first_ts, last_ts = int(onix_ts[0]), int(onix_ts[-1])
+            # ONIX timestamp bounds: a column of the arrow file, or the companion binary.
+            if ephys_file.suffix == ".arrow":
+                try:
+                    first_ts, last_ts = read_arrow_clock_bounds(ephys_file)
+                except (KeyError, ValueError) as e:
+                    logger.warning(f"Cannot read Clock from {ephys_file.name}: {e}. Skipping.")
+                    continue
+                # Arrow carries amplifier and clock in one file: one File row, not two.
+                chunk_files = [ephys_file]
+            else:
+                clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
+                if not clock_file.exists():
+                    logger.warning(f"Clock file not found for {ephys_file.name}. Skipping.")
+                    continue
+                # Guard before memmap — np.memmap raises ValueError on 0-byte files.
+                if clock_file.stat().st_size < 8:
+                    logger.warning(f"Empty/short Clock file for {ephys_file.name}. Skipping.")
+                    continue
+                onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
+                first_ts, last_ts = int(onix_ts[0]), int(onix_ts[-1])
+                chunk_files = [ephys_file, clock_file]
 
             # Fetch + resolve inside a temp download dir so the <attach> sync_model
             # files DataJoint extracts on fetch are cleaned up (issue #598). Any
@@ -697,7 +710,7 @@ class EphysChunk(dj.Manual):
                                 "file_name": f.name,
                                 "file_path": f.relative_to(raw_dir).as_posix(),
                             }
-                            for f in (ephys_file, clock_file)
+                            for f in chunk_files
                         ],
                         ignore_extra_fields=True,
                     )

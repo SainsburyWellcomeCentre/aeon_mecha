@@ -1030,3 +1030,83 @@ class TestProbeInsertionFromImplants:
             implantation_date="2026-05-20",
         )
         assert str((ephys.ProbeInsertion & key).fetch1("implantation_date")) == "2026-05-20 00:00:00"
+
+
+class TestArrowChunkIngestion:
+    """ingest_chunks discovers arrow amplifier files and reads their Clock column."""
+
+    def _setup(self, tmp_path, experiment_name, fmts):
+        """Build an epoch whose chunk n uses fmts[n]; return (epoch_start, n_chunks)."""
+        from ephys_factories import (
+            make_synthetic_amplifier_data,
+            make_synthetic_ephys_epoch,
+            register_synthetic_experiment,
+            register_synthetic_probe_insertion,
+        )
+
+        import aeon.dj_pipeline.subject as subj_mod
+        from aeon.dj_pipeline import acquisition, ephys
+
+        epoch_dir_name, device_name, probe_label = "2026-10-13T094255Z", "NeuropixelsV2", "ProbeA"
+        subject_name = "test-mouse-arrow"
+        raw_dir = tmp_path / "raw"
+        raw_dir.mkdir(parents=True)
+
+        make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=len(fmts))
+        # one call per chunk so each can pick its own on-disk format
+        dest = raw_dir / epoch_dir_name / device_name
+        for n, fmt in enumerate(fmts):
+            # The factory always writes chunk index 0, so build each chunk in its own
+            # scratch tree and move it into place under the right index -- writing in
+            # place would overwrite the previous chunk before it could be renamed.
+            scratch = tmp_path / f"scratch{n}"
+            make_synthetic_amplifier_data(
+                scratch,
+                epoch_dir_name,
+                device_name,
+                probe_label,
+                n_chunks=1,
+                ts_ranges=[(60000 * n + 501, 60000 * n + 58501)],
+                fmt=fmt,
+            )
+            for src in (scratch / epoch_dir_name / device_name).iterdir():
+                src.rename(dest / src.name.replace("_0.", f"_{n}."))
+
+        epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+        subj_mod.Subject.insert1(
+            {"subject": subject_name, "sex": "U", "subject_birth_date": "2026-01-01"},
+            skip_duplicates=True,
+        )
+        acquisition.Experiment.Subject.insert1(
+            {"experiment_name": experiment_name, "subject": subject_name}, skip_duplicates=True
+        )
+        register_synthetic_probe_insertion(
+            experiment_name, subject_name, epoch_start, probe_label, device_name
+        )
+        ephys.EphysSyncModel.ingest(experiment_name)
+        ephys.EphysChunk.ingest_chunks(experiment_name)
+        return experiment_name
+
+    def test_arrow_chunks_are_ingested(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline import ephys
+
+        exp = self._setup(tmp_path, "test_arrow_ingest", ["arrow", "arrow"])
+        assert len((ephys.EphysChunk & {"experiment_name": exp}).to_dicts()) == 2
+
+    def test_mixed_binary_and_arrow_in_one_epoch(self, ephys_full_pipeline, tmp_path):
+        """Review Focus #2: discovery must handle both formats in one pass."""
+        from aeon.dj_pipeline import ephys
+
+        exp = self._setup(tmp_path, "test_arrow_mixed", ["binary", "arrow"])
+        chunks = (ephys.EphysChunk & {"experiment_name": exp}).to_dicts(order_by="chunk_start")
+        assert len(chunks) == 2, f"mixed-format epoch ingested {len(chunks)} chunks, expected 2"
+
+    def test_arrow_chunk_bounds_match_binary(self, ephys_full_pipeline, tmp_path):
+        """Same ONIX timestamps must yield the same chunk_start/end either way."""
+        from aeon.dj_pipeline import ephys
+
+        a = self._setup(tmp_path / "a", "test_arrow_bounds_a", ["arrow"])
+        b = self._setup(tmp_path / "b", "test_arrow_bounds_b", ["binary"])
+        ca = (ephys.EphysChunk & {"experiment_name": a}).fetch1("chunk_start", "chunk_end")
+        cb = (ephys.EphysChunk & {"experiment_name": b}).fetch1("chunk_start", "chunk_end")
+        assert ca == cb
