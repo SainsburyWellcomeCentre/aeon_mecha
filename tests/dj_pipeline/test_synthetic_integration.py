@@ -592,6 +592,16 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             ts_ranges=ts_ranges,
             fmt=fmt,
         )
+        amp_samples = amp_samples or [10] * n_chunks
+        clock_samples = clock_samples or [10] * n_chunks
+        device_dir = raw_dir / epoch_dir_name / device_name
+        for n in range(n_chunks):  # truncate files, e.g. as a copy of a still-open file would
+            for stream, dtype, n_keep in (
+                ("AmplifierData", np.uint16, amp_samples[n]),
+                ("Clock", np.uint64, clock_samples[n]),
+            ):
+                path = device_dir / f"{device_name}_{probe_label}_{stream}_{n}.bin"
+                np.fromfile(path, dtype=dtype)[:n_keep].tofile(path)
 
         amp_samples = amp_samples or [10] * n_chunks
         clock_samples = clock_samples or [10] * n_chunks
@@ -623,6 +633,18 @@ class TestSyncedSpikesIndexingAndExtrapolation:
 
         ephys.EphysSyncModel.ingest(experiment_name)
         ephys.EphysChunk.ingest_chunks(experiment_name)
+        if amp_as_zarr:  # after ingestion, which reads the raw files
+            import gc
+
+            import spikeinterface.extractors as se
+
+            zarr_dir = tmp_path / "processed" / epoch_dir_name / device_name
+            for amp_bin in sorted(device_dir.glob("*AmplifierData_*.bin")):
+                se.read_binary(amp_bin, sampling_frequency=30e3, dtype=np.uint16, num_channels=1).save(
+                    format="zarr", folder=zarr_dir / amp_bin.with_suffix(".zarr").name
+                )
+                gc.collect()  # read_binary's memmap blocks unlink on Windows
+                amp_bin.unlink()
 
         if amp_as_zarr:  # after ingestion, which reads the raw files
             import gc
