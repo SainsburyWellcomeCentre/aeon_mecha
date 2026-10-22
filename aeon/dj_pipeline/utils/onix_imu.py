@@ -31,6 +31,22 @@ IMU_COLUMNS: tuple[str, ...] = (
     "quaternion_z",
 )
 
+IMU_arrow_to_DJ = {
+    "EulerAngle_Yaw": "euler_x",
+    "EulerAngle_Pitch": "euler_y",
+    "EulerAngle_Roll": "euler_z",
+    "Gravity_X": "gravity_vector_x",
+    "Gravity_Y": "gravity_vector_y",
+    "Gravity_Z": "gravity_vector_z",
+    "Acceleration_X": "linear_acceleration_x",
+    "Acceleration_Y": "linear_acceleration_y",
+    "Acceleration_Z": "linear_acceleration_z",
+    "Quaternion_W": "quaternion_w",
+    "Quaternion_X": "quaternion_x",
+    "Quaternion_Y": "quaternion_y",
+    "Quaternion_Z": "quaternion_z",
+}
+
 # Map dotmap stream class name -> column prefix used in IMU_COLUMNS
 _PREFIX_BY_CLASS: dict[str, str] = {
     "Bno055Euler": "euler",
@@ -76,8 +92,9 @@ def load_and_merge_bno055(
     if clock_file.suffix == ".arrow":
         bno55_data = feather.read_table(clock_file)
         bno55_df = bno55_data.to_pandas()
-        bno55_df.set_index("Clock", inplace=True)
-        return bno55_df
+        bno55_df.index = bno55_df["Clock"].values
+        reduced_bno55 = bno55_df.rename(columns=IMU_arrow_to_DJ)[list(IMU_arrow_to_DJ.values())]
+        return reduced_bno55
 
     onix_clock = np.fromfile(clock_file, dtype=np.uint64)
 
