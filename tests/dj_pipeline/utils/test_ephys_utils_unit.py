@@ -801,3 +801,36 @@ class TestMetadataLayouts:
 
         epoch = _epoch_with(tmp_path, "ephys_devices_Metadata.yml", "Metadata.yml")
         assert parse_epoch_metadata(epoch)["Workflow"] == "Ephys-AEONX1.bonsai"
+
+
+class TestResolveEpochProbeJson:
+    """Probe JSONs may sit in the central config dir, the epoch dir, or the device dir."""
+
+    def _mk(self, tmp_path, where):
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
+
+        raw, epoch = tmp_path / "raw", tmp_path / "raw" / "2026-10-13T094255Z"
+        target = {
+            "central": raw / "recording_configurations",
+            "epoch": epoch,
+            "device": epoch / "NeuropixelsV2",
+        }[where]
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "probe.json").write_text("{}")
+        return resolve_epoch_probe_json, raw, epoch
+
+    @pytest.mark.parametrize("where", ["central", "epoch", "device"])
+    def test_resolves_from_each_location(self, tmp_path, where):
+        resolve, raw, epoch = self._mk(tmp_path, where)
+        assert resolve(raw, epoch, "probe.json").exists()
+
+    def test_missing_raises_naming_every_location(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
+
+        raw, epoch = tmp_path / "raw", tmp_path / "raw" / "2026-10-13T094255Z"
+        epoch.mkdir(parents=True)
+        with pytest.raises(FileNotFoundError) as e:
+            resolve_epoch_probe_json(raw, epoch, "probe.json")
+        msg = str(e.value)
+        assert "recording_configurations" in msg, "error should name the central config dir"
+        assert "NeuropixelsV2" in msg, "error should name the device dirs it searched"
