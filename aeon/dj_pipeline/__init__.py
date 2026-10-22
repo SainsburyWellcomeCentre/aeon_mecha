@@ -117,4 +117,6 @@ except ImportError:
 
         streams = dj.VirtualModule("streams", streams_maker.schema_name)
     except Exception as e:
-        logger.debug(f"Could not import streams module: {e}")
+        logger.warning(f"Could not build virtual streams module: {e}")
+except Exception as e:
+    logger.warning(f"Could not import streams module: {e}")
