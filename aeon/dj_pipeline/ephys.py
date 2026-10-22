@@ -18,6 +18,7 @@ from aeon.dj_pipeline.utils.ephys_utils import (
     harp_to_naive,
     load_device_channel_map,
     parse_epoch_metadata,
+    read_onix_ts,
     read_probe_assignments,
     resolve_harp,
     resolve_raw_dir_and_epochs,
@@ -517,8 +518,6 @@ class EphysChunk(dj.Manual):
         Args:
             experiment_name: Name of the experiment to process
         """
-        import numpy as np
-
         resolved = resolve_raw_dir_and_epochs(experiment_name)
         if resolved is None:
             return
@@ -620,14 +619,8 @@ class EphysChunk(dj.Manual):
             if clock_file.stat().st_size < 8:
                 logger.warning(f"Empty/short Clock file for {ephys_file.name}. Skipping.")
                 continue
-            if ephys_file.suffix == ".arrow":
-                import pyarrow.dataset as ds
+            onix_ts = read_onix_ts(clock_file)
 
-                dataset = ds.dataset(clock_file, format="ipc")
-                table = dataset.to_table(columns=["Clock"])
-                onix_ts = table["Clock"].to_numpy()
-            else:
-                onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
             first_ts, last_ts = int(onix_ts[0]), int(onix_ts[-1])
 
             # Fetch + resolve inside a temp download dir so the <attach> sync_model
