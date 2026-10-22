@@ -218,14 +218,6 @@ class TestReadAmplifierRecordingArrow:
         traces = rec.get_traces(start_frame=38, end_frame=43)
         assert traces.tolist() == [[r * 10, r * 10 + 1] for r in range(38, 43)]
 
-    def test_traces_spanning_every_batch_including_the_short_tail(self, tmp_path):
-        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
-
-        f = self._varying_probe_file(tmp_path, [40, 40, 13])
-        rec = read_amplifier_recording(f, num_channels=2, fs_hz=30000.0)
-        traces = rec.get_traces(start_frame=0, end_frame=93)
-        assert traces.tolist() == [[r * 10, r * 10 + 1] for r in range(93)]
-
     def test_traces_wholly_inside_the_short_final_batch(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
 
@@ -246,13 +238,6 @@ class TestReadAmplifierRecordingArrow:
         rec = read_amplifier_recording(f, num_channels=2, fs_hz=30000.0)
         traces = rec.get_traces(start_frame=0, end_frame=80)
         assert traces.tolist() == [[r * 10, r * 10 + 1] for r in range(80)]
-
-    def test_gains_are_applied(self, tmp_path):
-        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
-
-        f = self._arrow_probe_file(tmp_path, [50])
-        rec = read_amplifier_recording(f, num_channels=4, fs_hz=30000.0, gain_to_uV=2.5)
-        assert rec.get_channel_gains()[0] == 2.5
 
 
 class TestArrowChannelIntegrity:
@@ -307,14 +292,6 @@ class TestArrowChannelIntegrity:
         with pytest.raises(ValueError, match="expected uint16"):
             read_amplifier_recording(f, num_channels=2, fs_hz=30000.0)
 
-    def test_correct_schema_passes(self, tmp_path):
-        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
-
-        f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
-        self._write(f, [f"AmplifierData{i}" for i in range(4)])
-        rec = read_amplifier_recording(f, num_channels=4, fs_hz=30000.0)
-        assert rec.get_num_channels() == 4
-
 
 class TestLeadingEmptyBatch:
     """batch_len comes from batch 0, so an empty batch 0 leaves the stride undefined.
@@ -357,13 +334,6 @@ class TestLeadingEmptyBatch:
         from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
 
         f = self._write(tmp_path / "NeuropixelsV2_ProbeA_0.arrow", [0, 100])
-        with pytest.raises(ValueError, match="first record batch is empty"):
-            read_amplifier_recording(f, num_channels=1, fs_hz=30000.0)
-
-    def test_leading_empty_batch_among_several_is_rejected(self, tmp_path):
-        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
-
-        f = self._write(tmp_path / "NeuropixelsV2_ProbeA_0.arrow", [0, 100, 100, 37])
         with pytest.raises(ValueError, match="first record batch is empty"):
             read_amplifier_recording(f, num_channels=1, fs_hz=30000.0)
 

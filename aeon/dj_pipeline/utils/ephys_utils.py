@@ -147,10 +147,8 @@ def _check_arrow_channels(rec, num_channels: int, path) -> None:
             f"registers {num_channels}. Positional electrode mapping would mislabel "
             f"every channel."
         )
-    # gain_to_uV / offset_to_uV in spike_sorting assume 16-bit samples, and
-    # unsigned_to_signed assumes unsigned. A uint8 or uint32 arrow file passes every
-    # other check here and scales wrong, where the binary reader pins dtype=uint16
-    # explicitly at the call site.
+    # The gain and offset applied downstream assume uint16. The binary reader pins
+    # that at its call site; arrow takes whatever the schema says, so check it.
     dtype = rec.get_dtype()
     if dtype != np.uint16:
         raise ValueError(

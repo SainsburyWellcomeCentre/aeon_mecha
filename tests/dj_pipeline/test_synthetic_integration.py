@@ -887,15 +887,11 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             np.testing.assert_array_equal(a, b)
 
     def test_commutator_clock_files_are_not_mistaken_for_ephys(self, ephys_full_pipeline, tmp_path):
-        """A registered Commutator_Clock_N.bin row must never be selected as amplifier data.
+        """A commutator clock must never be selected as amplifier data.
 
-        A 'file_name LIKE %Clock%.bin' restriction matches it, which would splice a
-        10 Hz turns-counter clock into the ONIX timeline and shift every spike.
-
-        The row is inserted into EphysChunk.File directly: ingest_chunks' discovery
-        globs only yield amplifier files and their derived Clock twins, so seeding the
-        file on disk alone leaves AMPLIFIER_FILE_RESTRICTION with nothing to reject and
-        the assertion below could not fail.
+        It is a 10 Hz turns counter; splicing it into the ONIX timeline shifts every
+        spike. The row is inserted directly because discovery never registers one, so
+        writing the file to disk alone would leave the restriction nothing to reject.
         """
         import numpy as np
 
@@ -1455,14 +1451,11 @@ class TestArrowChunkIngestion:
         assert len(chunks) == 2, f"mixed-format epoch ingested {len(chunks)} chunks, expected 2"
 
     def test_same_chunk_index_in_both_formats_raises(self, ephys_full_pipeline, tmp_path):
-        """One chunk index present as both .bin and .arrow is ambiguous, not two chunks.
+        """One chunk index in both formats is ambiguous, not two chunks.
 
-        Discovery globs both patterns in one pass, so the pair is iterated twice. The
-        file_path dedup does not help -- the paths differ. If the two copies disagree
-        by even one leading sample their first_ts differ, two EphysChunk rows cover
-        the same samples, and PreProcessing concatenates them twice: every spike after
-        the duplicate shifts by a chunk. This is the amplifier-side twin of the Bno055
-        collision find_overlapping_bno055_chunks already refuses.
+        Discovery globs both patterns in one pass and the paths differ, so the pair
+        gets registered twice and PreProcessing concatenates the chunk twice -- every
+        later spike shifts by a chunk.
         """
         from ephys_factories import make_synthetic_amplifier_data
 

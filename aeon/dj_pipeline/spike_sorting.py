@@ -39,17 +39,12 @@ ephys = importlib.import_module("aeon.dj_pipeline.ephys")
 schema = dj.Schema(get_schema_name("spike_sorting"))
 logger = dj.logger
 
-# Files carrying amplifier samples, in either acquisition format. Binary writes
-# AmplifierData_N.bin beside Clock_N.bin; arrow puts amplifier, Clock and HubClock
-# in one <device>_<probe>_N.arrow. Shared so PreProcessing and SyncedSpikes cannot
-# drift apart -- they must agree on which file a block's samples come from.
-# '%Probe%.arrow' rather than '%.arrow': the Bno055 arrow file sits in the same
-# directory and is an obvious future candidate for registration. If one were ever
-# registered, '%.arrow' would hand PreProcessing a 17-column IMU table as amplifier
-# data and give SyncedSpikes its length as a chunk boundary. Note '_' is a LIKE
-# wildcard, so '%_Probe%' would be wrong.
-# Parenthesised: DataJoint ANDs restrictions together, so a bare OR would bind
-# loosely and widen whatever it is combined with.
+# The amplifier files of a block, in either format. Shared by PreProcessing and
+# SyncedSpikes so they cannot disagree about which files a block's samples come from.
+# Matches the probe stream, not the extension: the Bno055 arrow file sits in the same
+# directory, and '%.arrow' would select it as amplifier data. ('_' is a LIKE wildcard,
+# so '%_Probe%' would be wrong; the OR is parenthesised because DataJoint ANDs
+# restrictions together.)
 AMPLIFIER_FILE_RESTRICTION = "(file_name LIKE '%AmplifierData%.bin' OR file_name LIKE '%Probe%.arrow')"
 
 # Neuropixels 2.0 sampling rate - TODO: read this from the metadata
@@ -1298,11 +1293,9 @@ class SyncedSpikes(dj.Imported):
                 # only place the two could disagree disappears.
                 onix_ts = read_arrow_column(amp_path, "Clock")
                 amp_len = len(onix_ts)
-                # Spill to a memmap. onix_times holds one array per chunk for the whole
-                # of indices2syncedtimes, and the binary branch below keeps an OS-paged
-                # memmap; leaving the arrow clock in RAM costs 8 bytes x 30 kHz x block
-                # duration resident, which is tens of GB on the long blocks this module
-                # is sized for. The spill keeps the length coming from the clock column.
+                # Spill to a memmap: onix_times keeps one array per chunk for the whole
+                # block, which is tens of GB in RAM on a long one. The binary branch
+                # below is already OS-paged.
                 spill = Path(clock_spill_dir.name) / f"{len(amp_lengths)}.u64"
                 onix_ts.tofile(spill)
                 onix_ts = np.memmap(spill, mode="r", dtype=np.uint64)

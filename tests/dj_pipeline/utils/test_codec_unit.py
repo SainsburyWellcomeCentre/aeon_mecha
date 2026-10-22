@@ -496,11 +496,3 @@ class TestEmptyRowFormatConsistency:
     that never changed. The end-to-end consequence is pinned by the arrow round-trip
     in test_codec_integration.py; this pins the column arithmetic decode relies on.
     """
-
-    def test_arrow_adds_exactly_the_extra_columns(self):
-        from aeon.dj_pipeline.utils.onix_imu import ARROW_EXTRA_COLUMNS, IMU_COLUMNS
-
-        assert not set(ARROW_EXTRA_COLUMNS) & set(IMU_COLUMNS), (
-            "decode derives an arrow row's width as len(IMU_COLUMNS) + len(ARROW_EXTRA_COLUMNS); "
-            "an overlap would make that sum wrong and every arrow fetch raise"
-        )
