@@ -748,3 +748,56 @@ class TestResolveEphysFile:
         bin_path.parent.mkdir(parents=True)
         bin_path.write_bytes(b"\x00")
         assert resolve_ephys_file(bin_path) == bin_path
+
+
+FIXTURES = Path(__file__).parents[2] / "fixtures" / "metadata"
+
+
+def _epoch_with(tmp_path, fixture_name, as_name):
+    """Copy a real metadata fixture into an epoch dir under its production filename."""
+    epoch = tmp_path / "2026-10-13T094255Z"
+    epoch.mkdir(parents=True, exist_ok=True)
+    (epoch / as_name).write_text((FIXTURES / fixture_name).read_text())
+    return epoch
+
+
+class TestMetadataLayouts:
+    """Three metadata layouts must all resolve probe identity and config."""
+
+    def test_probe_configs_headstage_layout(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+
+        epoch = _epoch_with(tmp_path, "ephys_headstage_Metadata.json", "Metadata.json")
+        assert parse_metadata_probe_configs(epoch) == {
+            "ProbeA": "M01_ProbeA_4Shanks_1500_to_2200um.json",
+            "ProbeB": "M01_ProbeB_4Shanks_2000_to_2700um_LFP.json",
+        }
+
+    def test_probe_configs_devices_layout_unchanged(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
+
+        epoch = _epoch_with(tmp_path, "ephys_devices_Metadata.yml", "Metadata.yml")
+        assert parse_metadata_probe_configs(epoch) == {
+            "ProbeA": None,
+            "ProbeB": "M81_ProbeB_4Shanks_1000_to_1700_um.json",
+        }
+
+    def test_probe_id_headstage_layout(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id, parse_epoch_metadata
+
+        meta = parse_epoch_metadata(_epoch_with(tmp_path, "ephys_headstage_Metadata.json", "Metadata.json"))
+        assert get_probe_id(meta, "NeuropixelsV2", "ProbeA") == "23107805942"
+        assert get_probe_id(meta, "NeuropixelsV2", "ProbeB") == "23409404271"
+
+    def test_parse_epoch_metadata_prefers_json(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
+
+        epoch = _epoch_with(tmp_path, "ephys_headstage_Metadata.json", "Metadata.json")
+        (epoch / "Metadata.yml").write_text('{"Workflow": "stale"}')
+        assert parse_epoch_metadata(epoch)["workflow"] == "Ephys.bonsai"
+
+    def test_parse_epoch_metadata_falls_back_to_yml(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
+
+        epoch = _epoch_with(tmp_path, "ephys_devices_Metadata.yml", "Metadata.yml")
+        assert parse_epoch_metadata(epoch)["Workflow"] == "Ephys-AEONX1.bonsai"

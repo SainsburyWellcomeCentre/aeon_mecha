@@ -124,6 +124,21 @@ def read_amplifier_recording(
     )
 
 
+def _headstage_probe_block(metadata: dict | None, probe_label: str) -> dict | None:
+    """Return the ``ephys.Headstage.<probe_label>`` block, or None if not this layout.
+
+    Layout introduced with the Arrow acquisition: probe config and the enable flag
+    live under ``ephys.Headstage.ProbeA/ProbeB``.
+    """
+    if not isinstance(metadata, dict):
+        return None
+    headstage = (metadata.get("ephys") or {}).get("Headstage")
+    if not isinstance(headstage, dict):
+        return None
+    block = headstage.get(probe_label)
+    return block if isinstance(block, dict) else None
+
+
 def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> str | None:
     """Extract probe identifier from metadata.
 
@@ -153,8 +168,12 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
 
     suffix = probe_label[len("Probe") :]  # "A", "B", ...
 
+    headstage_block = _headstage_probe_block(metadata, probe_label)
     new_block = metadata.get(f"NeuropixelsV2{suffix}")
-    if isinstance(new_block, dict):
+    if headstage_block is not None:
+        enable = headstage_block.get("Enable", True)
+        probe_config = headstage_block.get("ProbeConfiguration", {})
+    elif isinstance(new_block, dict):
         # New metadata format: each probe is its own top-level device block
         # "NeuropixelsV2A"/"NeuropixelsV2B" holding a single "ProbeConfiguration";
         # the enable flag lives inside the block.
@@ -167,7 +186,7 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
         enable = devices.get(probe_label, "true")
         probe_config = devices.get("NeuropixelsV2e", {}).get(f"Configuration{suffix}", {})
 
-    if isinstance(enable, str) and enable.lower() == "false":
+    if (isinstance(enable, str) and enable.lower() == "false") or enable is False:
         return None
     return _serial_from_gain_cal(probe_config.get("GainCalibrationFileName")) or default_id
 
@@ -408,14 +427,16 @@ def parse_epoch_metadata(epoch_path: Path) -> dict | None:
     Returns:
         Parsed metadata dict, or None if not found or unparseable.
     """
-    metadata_path = epoch_path / "Metadata.yml"
-    if not metadata_path.exists():
+    metadata_path = next(
+        (epoch_path / n for n in ("Metadata.json", "Metadata.yml") if (epoch_path / n).exists()), None
+    )
+    if metadata_path is None:
         return None
     try:
         with open(metadata_path) as f:
-            return json.load(f)  # JSON despite .yml extension
+            return json.load(f)  # older epochs use a .yml name for JSON content
     except (json.JSONDecodeError, OSError) as e:
-        logger.warning(f"Failed to parse Metadata.yml at {metadata_path}: {e}")
+        logger.warning(f"Failed to parse {metadata_path.name} at {metadata_path}: {e}")
         return None
 
 
@@ -432,7 +453,8 @@ def _probe_json_basename(pifn: str | None) -> str | None:
 def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
     """Extract per-probe config-file basenames from an epoch's Metadata.yml.
 
-    Reads ``ProbeInterfaceFileName`` for each probe, supporting two layouts:
+    Reads ``ProbeInterfaceFileName`` for each probe, supporting three layouts:
+        Arrow-era: ``ephys.Headstage.ProbeA/B.ProbeConfiguration``.
         New (>= 2026): top-level ``NeuropixelsV2A/B.ProbeConfiguration``.
         Old: ``Devices.NeuropixelsV2e.ConfigurationA/B``.
 
@@ -447,11 +469,22 @@ def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
     Raises:
         FileNotFoundError: If Metadata.yml doesn't exist.
     """
-    metadata_path = Path(epoch_path) / "Metadata.yml"
-    with open(metadata_path) as f:
-        data = json.load(f)  # JSON despite .yml extension
+    data = parse_epoch_metadata(Path(epoch_path))
+    if data is None:
+        raise FileNotFoundError(f"No Metadata.json or Metadata.yml in {epoch_path}")
 
     result: dict[str, str | None] = {}
+
+    # Arrow-era layout: ephys.Headstage.ProbeA/ProbeB.ProbeConfiguration
+    headstage = (data.get("ephys") or {}).get("Headstage")
+    if isinstance(headstage, dict):
+        for label, block in headstage.items():
+            if not re.fullmatch(r"Probe[A-Z]", label) or not isinstance(block, dict):
+                continue
+            probe_config = block.get("ProbeConfiguration") or {}
+            result[label] = _probe_json_basename(probe_config.get("ProbeInterfaceFileName"))
+        if result:
+            return result
 
     # New metadata format: probe configs are top-level device blocks
     # "NeuropixelsV2A"/"NeuropixelsV2B", each with a single "ProbeConfiguration".
