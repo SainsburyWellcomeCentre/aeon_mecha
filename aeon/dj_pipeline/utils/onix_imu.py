@@ -30,6 +30,31 @@ IMU_COLUMNS: tuple[str, ...] = (
     "quaternion_z",
 )
 
+# Arrow column -> canonical name. Verified against real data: the arrow
+# EulerAngle_{Yaw,Pitch,Roll} ranges match the binary euler_{x,y,z} exactly
+# ([0,360], +/-90, +/-180), and |Acceleration| ~ 4.9 against |Gravity| ~ 9.8
+# confirms Acceleration is gravity-compensated, i.e. the binary linear_acceleration.
+_ARROW_TO_CANONICAL: dict[str, str] = {
+    "EulerAngle_Yaw": "euler_x",
+    "EulerAngle_Pitch": "euler_y",
+    "EulerAngle_Roll": "euler_z",
+    "Gravity_X": "gravity_vector_x",
+    "Gravity_Y": "gravity_vector_y",
+    "Gravity_Z": "gravity_vector_z",
+    "Acceleration_X": "linear_acceleration_x",
+    "Acceleration_Y": "linear_acceleration_y",
+    "Acceleration_Z": "linear_acceleration_z",
+    "Quaternion_W": "quaternion_w",
+    "Quaternion_X": "quaternion_x",
+    "Quaternion_Y": "quaternion_y",
+    "Quaternion_Z": "quaternion_z",
+    "Calibration": "calibration",
+    "Temperature": "temperature",
+}
+
+# Columns an arrow chunk carries beyond the binary format.
+ARROW_EXTRA_COLUMNS: tuple[str, ...] = ("calibration", "temperature")
+
 # Map dotmap stream class name -> column prefix used in IMU_COLUMNS
 _PREFIX_BY_CLASS: dict[str, str] = {
     "Bno055Euler": "euler",
@@ -37,6 +62,38 @@ _PREFIX_BY_CLASS: dict[str, str] = {
     "Bno055LinearAcceleration": "linear_acceleration",
     "Bno055Quaternion": "quaternion",
 }
+
+
+def _load_bno055_arrow(path: Path) -> pd.DataFrame:
+    """Load one Bno055 arrow chunk, renamed to the canonical column names.
+
+    Returns the 13 shared columns plus ``calibration`` and ``temperature``,
+    indexed by the ONIX ``Clock`` column.
+    """
+    import pyarrow as pa
+    from pyarrow.ipc import RecordBatchFileReader
+
+    source = pa.memory_map(str(path), "r")
+    try:
+        reader = RecordBatchFileReader(source)
+        table = pa.Table.from_batches([reader.get_batch(i) for i in range(reader.num_record_batches)])
+        present = set(table.column_names)
+        unknown = present - set(_ARROW_TO_CANONICAL) - {"Clock", "HubClock"}
+        missing = set(_ARROW_TO_CANONICAL) - present
+        if unknown or missing:
+            raise ValueError(
+                f"Unexpected Bno055 column set in {path.name}: "
+                f"unknown={sorted(unknown)}, missing={sorted(missing)}. "
+                f"The acquisition schema changed -- update _ARROW_TO_CANONICAL and IMU_COLUMNS."
+            )
+        data = {
+            canonical: table[arrow_name].to_numpy(zero_copy_only=False)
+            for arrow_name, canonical in _ARROW_TO_CANONICAL.items()
+        }
+        df = pd.DataFrame(data, index=table["Clock"].to_numpy(zero_copy_only=False))
+    finally:
+        source.close()
+    return df[[*IMU_COLUMNS, *ARROW_EXTRA_COLUMNS]]
 
 
 def load_and_merge_bno055(
@@ -64,6 +121,11 @@ def load_and_merge_bno055(
     from aeon.schema.ephys import social_ephys
 
     device_dir = Path(device_dir)
+
+    arrow_file = device_dir / f"{device_name}_Bno055_{chunk_index}.arrow"
+    if arrow_file.exists():
+        return _load_bno055_arrow(arrow_file)
+
     clock_file = device_dir / f"{device_name}_Bno055_Clock_{chunk_index}.bin"
     if not clock_file.exists():
         raise FileNotFoundError(clock_file)
@@ -103,6 +165,9 @@ def find_overlapping_bno055_chunks(
 ) -> list[int]:
     """Return sorted Bno055 chunk indices whose ONIX range overlaps the window.
 
+    Arrow chunks carry their ONIX clock as a column, read from the first and last
+    record batch. Binary chunks keep a companion ``Bno055_Clock_N.bin``.
+
     For each ``Bno055_Clock_N.bin`` file, reads just the first and last uint64
     sample (the binaries are monotonic, so those two values fully bound the
     chunk's coverage — no need to scan the rest). A standard interval-overlap
@@ -116,8 +181,25 @@ def find_overlapping_bno055_chunks(
     helper to gather all overlapping chunks before concatenating + filtering.
     """
     device_dir = Path(device_dir)
-    pattern = f"{device_name}_Bno055_Clock_*.bin"
     overlapping: list[int] = []
+
+    arrow_chunks = sorted(device_dir.glob(f"{device_name}_Bno055_*.arrow"))
+    if arrow_chunks:
+        from aeon.dj_pipeline.utils.arrow_io import read_arrow_clock_bounds
+
+        for arrow_file in arrow_chunks:
+            match = re.search(r"_Bno055_(\d+)\.arrow$", arrow_file.name)
+            if not match:
+                continue
+            try:
+                first, last = read_arrow_clock_bounds(arrow_file)
+            except (KeyError, ValueError):
+                continue
+            if first <= onix_ts_end and last >= onix_ts_start:
+                overlapping.append(int(match.group(1)))
+        return sorted(overlapping)
+
+    pattern = f"{device_name}_Bno055_Clock_*.bin"
     for clock_file in device_dir.glob(pattern):
         size = clock_file.stat().st_size
         # Floor to a uint64 boundary in case a trailing partial sample was

@@ -881,9 +881,9 @@ class OnixImuChunk(dj.Imported):
     ---
     sample_count: int32
     timestamps: json
-    euler_x: json
-    euler_y: json
-    euler_z: json
+    euler_x: json              # yaw / heading, 0-360
+    euler_y: json              # pitch, +/-90
+    euler_z: json              # roll, +/-180
     gravity_vector_x: json
     gravity_vector_y: json
     gravity_vector_z: json
@@ -894,6 +894,8 @@ class OnixImuChunk(dj.Imported):
     quaternion_x: json
     quaternion_y: json
     quaternion_z: json
+    calibration=null: json     # BNO055 status byte; arrow chunks only
+    temperature=null: json     # arrow chunks only
     stream_df: <aeon_onix_stream>
     """
 
@@ -937,6 +939,7 @@ class OnixImuChunk(dj.Imported):
         import pandas as pd
 
         from aeon.dj_pipeline.utils.onix_imu import (
+            ARROW_EXTRA_COLUMNS,
             IMU_COLUMNS,
             find_overlapping_bno055_chunks,
             load_and_merge_bno055,
@@ -1024,6 +1027,8 @@ class OnixImuChunk(dj.Imported):
                 "sample_count": len(df),
                 "timestamps": timestamp_stats(harp_index),
                 **{col: column_stats(df[col].values) for col in IMU_COLUMNS},
+                # arrow chunks carry two extra fields; binary chunks leave them null
+                **{col: column_stats(df[col].values) for col in ARROW_EXTRA_COLUMNS if col in df.columns},
                 "stream_df": {
                     "experiment_name": key["experiment_name"],
                     "epoch_start": str(key["epoch_start"]),

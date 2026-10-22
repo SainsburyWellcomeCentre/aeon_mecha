@@ -312,3 +312,123 @@ def test_overlap_concat_filter_pattern_empty_window(tmp_path):
     else:
         df = pd.concat([load_and_merge_bno055(device_dir, device_name, n) for n in idxs])
     assert df.empty
+
+
+ARROW_IMU_COLUMNS = (
+    "HubClock",
+    "Clock",
+    "Calibration",
+    "Temperature",
+    "Gravity_X",
+    "Gravity_Y",
+    "Gravity_Z",
+    "Acceleration_X",
+    "Acceleration_Y",
+    "Acceleration_Z",
+    "Quaternion_X",
+    "Quaternion_Y",
+    "Quaternion_Z",
+    "Quaternion_W",
+    "EulerAngle_Yaw",
+    "EulerAngle_Pitch",
+    "EulerAngle_Roll",
+)
+
+
+def _write_bno055_arrow(device_dir, device_name, chunk_index, n=20, columns=ARROW_IMU_COLUMNS):
+    """Write one Bno055_<n>.arrow with the real arrow column set."""
+    import numpy as np
+    import pyarrow as pa
+    import pyarrow.ipc as ipc
+
+    device_dir.mkdir(parents=True, exist_ok=True)
+    data = {}
+    for c in columns:
+        if c in ("HubClock", "Clock"):
+            data[c] = (np.arange(n, dtype=np.uint64) + 1) * 100 + chunk_index * 10_000
+        elif c == "Calibration":
+            data[c] = np.full(n, 15, dtype=np.uint8)
+        elif c == "Temperature":
+            data[c] = np.full(n, 87, dtype=np.int32)
+        else:
+            data[c] = np.linspace(1, 2, n, dtype=np.float32)
+    schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in data.items()])
+    path = device_dir / f"{device_name}_Bno055_{chunk_index}.arrow"
+    with ipc.new_file(path, schema) as w:
+        w.write_batch(pa.RecordBatch.from_arrays([pa.array(v) for v in data.values()], schema=schema))
+    return path
+
+
+class TestBno055Arrow:
+    """Arrow IMU chunks map onto the canonical column names, plus two new fields."""
+
+    def test_maps_arrow_columns_to_canonical_names(self, tmp_path):
+        from aeon.dj_pipeline.utils.onix_imu import IMU_COLUMNS, load_and_merge_bno055
+
+        _write_bno055_arrow(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
+        df = load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
+        for col in IMU_COLUMNS:
+            assert col in df.columns, f"{col} missing from arrow-loaded frame"
+
+    def test_euler_mapping_is_yaw_pitch_roll(self, tmp_path):
+        """Verified empirically against real data: x=Yaw, y=Pitch, z=Roll."""
+        import numpy as np
+
+        from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
+
+        d = tmp_path / "NeuropixelsV2"
+        _write_bno055_arrow(d, "NeuropixelsV2", 0, n=3)
+        # overwrite with distinguishable per-column values
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        vals = {"EulerAngle_Yaw": 10.0, "EulerAngle_Pitch": 20.0, "EulerAngle_Roll": 30.0}
+        data = {}
+        for c in ARROW_IMU_COLUMNS:
+            if c in ("HubClock", "Clock"):
+                data[c] = np.arange(3, dtype=np.uint64) + 1
+            elif c == "Calibration":
+                data[c] = np.full(3, 15, dtype=np.uint8)
+            elif c == "Temperature":
+                data[c] = np.full(3, 87, dtype=np.int32)
+            else:
+                data[c] = np.full(3, vals.get(c, 0.0), dtype=np.float32)
+        schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in data.items()])
+        with ipc.new_file(d / "NeuropixelsV2_Bno055_0.arrow", schema) as w:
+            w.write_batch(pa.RecordBatch.from_arrays([pa.array(v) for v in data.values()], schema=schema))
+
+        df = load_and_merge_bno055(d, "NeuropixelsV2", 0)
+        assert df["euler_x"].iloc[0] == 10.0
+        assert df["euler_y"].iloc[0] == 20.0
+        assert df["euler_z"].iloc[0] == 30.0
+
+    def test_calibration_and_temperature_present(self, tmp_path):
+        from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
+
+        _write_bno055_arrow(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
+        df = load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
+        assert df["calibration"].iloc[0] == 15
+        assert df["temperature"].iloc[0] == 87
+
+    def test_unexpected_column_set_raises(self, tmp_path):
+        """Review Focus #5: a frame matching neither schema must not be ingested silently."""
+        from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
+
+        _write_bno055_arrow(
+            tmp_path / "NeuropixelsV2",
+            "NeuropixelsV2",
+            0,
+            columns=("Clock", "HubClock", "Gravity_X", "Mystery_Column"),
+        )
+        with pytest.raises(ValueError, match="column"):
+            load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
+
+    def test_overlap_finder_sees_arrow_chunks(self, tmp_path):
+        from aeon.dj_pipeline.utils.onix_imu import find_overlapping_bno055_chunks
+
+        d = tmp_path / "NeuropixelsV2"
+        for n in range(3):
+            _write_bno055_arrow(d, "NeuropixelsV2", n)
+        # chunk n spans [100 + n*10000, 2000 + n*10000]
+        assert find_overlapping_bno055_chunks(d, "NeuropixelsV2", 10_050, 10_200) == [1]
+        assert find_overlapping_bno055_chunks(d, "NeuropixelsV2", 0, 100_000) == [0, 1, 2]
