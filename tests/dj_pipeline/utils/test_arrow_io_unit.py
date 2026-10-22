@@ -146,3 +146,48 @@ class TestReadAmplifierRecordingArrow:
         f = self._arrow_probe_file(tmp_path, [50])
         rec = read_amplifier_recording(f, num_channels=4, fs_hz=30000.0, gain_to_uV=2.5)
         assert rec.get_channel_gains()[0] == 2.5
+
+
+class TestArrowChannelIntegrity:
+    """Channel count and order come from the arrow schema; both must be checked.
+
+    PreProcessing maps electrodes positionally
+    (``si_recording.channel_ids[electrodes_df.channel_idx.values]``), so a column
+    count that disagrees with the registered ElectrodeConfig, or columns in
+    non-numeric order, mislabels every channel with no error.
+    """
+
+    def _write(self, path, names):
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        cols = {n: np.zeros(4, dtype=np.uint16) for n in names}
+        cols["Clock"] = np.arange(4, dtype=np.uint64)
+        schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in cols.items()])
+        with ipc.new_file(path, schema) as w:
+            w.write_batch(pa.RecordBatch.from_arrays([pa.array(v) for v in cols.values()], schema=schema))
+
+    def test_channel_count_mismatch_raises(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
+        self._write(f, [f"AmplifierData{i}" for i in range(4)])
+        with pytest.raises(ValueError, match="channel"):
+            read_amplifier_recording(f, num_channels=8, fs_hz=30000.0)
+
+    def test_non_numeric_channel_order_raises(self, tmp_path):
+        """Lexicographic order (0, 1, 10, 2, ...) would silently transpose channels."""
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
+        self._write(f, ["AmplifierData0", "AmplifierData1", "AmplifierData10", "AmplifierData2"])
+        with pytest.raises(ValueError, match="order"):
+            read_amplifier_recording(f, num_channels=4, fs_hz=30000.0)
+
+    def test_correct_schema_passes(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
+        self._write(f, [f"AmplifierData{i}" for i in range(4)])
+        rec = read_amplifier_recording(f, num_channels=4, fs_hz=30000.0)
+        assert rec.get_num_channels() == 4

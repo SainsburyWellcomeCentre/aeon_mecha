@@ -90,6 +90,30 @@ def resolve_ephys_file(raw_bin_path: Path) -> Path:
     raise FileNotFoundError(f"No ephys file found (checked {checked}).")
 
 
+def _check_arrow_channels(rec, num_channels: int, path) -> None:
+    """Verify the arrow schema against the registered channel count and ordering.
+
+    PreProcessing maps electrodes positionally into ``channel_ids``, so both of
+    these would mislabel every channel rather than fail: a column count that
+    disagrees with the ElectrodeConfig, or columns ordered lexicographically
+    (``AmplifierData0, 1, 10, 2``) instead of numerically.
+    """
+    ids = [str(c) for c in rec.channel_ids]
+    if len(ids) != num_channels:
+        raise ValueError(
+            f"{path} has {len(ids)} AmplifierData columns but the ElectrodeConfig "
+            f"registers {num_channels}. Positional electrode mapping would mislabel "
+            f"every channel."
+        )
+    expected = [f"AmplifierData{i}" for i in range(num_channels)]
+    if ids != expected:
+        raise ValueError(
+            f"{path} AmplifierData columns are not in numeric order: got {ids[:4]}..., "
+            f"expected {expected[:4]}.... Positional electrode mapping assumes index i "
+            f"is AmplifierData{{i}}."
+        )
+
+
 def read_amplifier_recording(
     raw_bin_path: Path,
     num_channels: int,
@@ -111,13 +135,15 @@ def read_amplifier_recording(
     if Path(raw_bin_path).suffix == ".arrow":
         from aeon.dj_pipeline.utils.spike_sorting_utils import read_bonsai_onix_arrow
 
-        return read_bonsai_onix_arrow(
+        rec = read_bonsai_onix_arrow(
             str(raw_bin_path),
             sampling_frequency=fs_hz,
             stream_name="AmplifierData",
             gain_to_uV=gain_to_uV,
             offset_to_uV=offset_to_uV,
         )
+        _check_arrow_channels(rec, num_channels, raw_bin_path)
+        return rec
 
     resolved = resolve_ephys_file(raw_bin_path)
     if resolved.suffix == ".zarr":

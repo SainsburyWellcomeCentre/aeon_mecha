@@ -595,17 +595,6 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         amp_samples = amp_samples or [10] * n_chunks
         clock_samples = clock_samples or [10] * n_chunks
         device_dir = raw_dir / epoch_dir_name / device_name
-        for n in range(n_chunks):  # truncate files, e.g. as a copy of a still-open file would
-            for stream, dtype, n_keep in (
-                ("AmplifierData", np.uint16, amp_samples[n]),
-                ("Clock", np.uint64, clock_samples[n]),
-            ):
-                path = device_dir / f"{device_name}_{probe_label}_{stream}_{n}.bin"
-                np.fromfile(path, dtype=dtype)[:n_keep].tofile(path)
-
-        amp_samples = amp_samples or [10] * n_chunks
-        clock_samples = clock_samples or [10] * n_chunks
-        device_dir = raw_dir / epoch_dir_name / device_name
         for n in range(n_chunks) if fmt == "binary" else ():  # truncate, as a half-copied file would
             for stream, dtype, n_keep in (
                 ("AmplifierData", np.uint16, amp_samples[n]),
