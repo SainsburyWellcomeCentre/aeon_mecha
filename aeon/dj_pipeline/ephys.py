@@ -568,7 +568,7 @@ class EphysChunk(dj.Manual):
             if cls.File & exp_key & {"file_path": rel_path}:
                 continue  # already ingested
 
-            if ephys_file.suffix == "arrow":
+            if ephys_file.suffix == ".arrow":
                 # In arrow, the only file with Probe? in it is the ephys file
                 name_match = re.search(r"_(Probe[A-Z])_", ephys_file.name)
             else:
