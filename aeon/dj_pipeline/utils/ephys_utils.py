@@ -97,13 +97,27 @@ def read_amplifier_recording(
     gain_to_uV: float = 1.0,
     offset_to_uV: float = 0.0,
 ):
-    """Read an AmplifierData file as a SpikeInterface recording.
+    """Read an amplifier file as a SpikeInterface recording.
 
-    Reads the compressed ``.zarr`` twin if present, else the raw ``.bin``
+    ``.arrow`` reads the AmplifierData columns directly. Otherwise reads the
+    compressed ``.zarr`` twin if present, else the raw ``.bin``
     (see ``resolve_ephys_file``).
     """
     import spikeinterface as si
     import spikeinterface.extractors as se
+
+    # Arrow is compressed at acquisition and carries its own dtype and channel
+    # count, so it never consults resolve_ephys_file and never has a .zarr twin.
+    if Path(raw_bin_path).suffix == ".arrow":
+        from aeon.dj_pipeline.utils.spike_sorting_utils import read_bonsai_onix_arrow
+
+        return read_bonsai_onix_arrow(
+            str(raw_bin_path),
+            sampling_frequency=fs_hz,
+            stream_name="AmplifierData",
+            gain_to_uV=gain_to_uV,
+            offset_to_uV=offset_to_uV,
+        )
 
     resolved = resolve_ephys_file(raw_bin_path)
     if resolved.suffix == ".zarr":
