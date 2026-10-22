@@ -525,7 +525,7 @@ def resolve_epoch_probe_json(
         return epoch_local
     device_names = ["NeuropixelsV2"]
     for device_name in device_names:
-        epoch_data_folder = Path(epoch_path) / config_file_name / device_name
+        epoch_data_folder = Path(epoch_path) / device_name / config_file_name
         if epoch_data_folder.exists():
             return epoch_local
     raise FileNotFoundError(f"Probe config JSON not found at {central} or {epoch_local}")
