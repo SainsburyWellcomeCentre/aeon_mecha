@@ -787,6 +787,36 @@ def _epoch_with(tmp_path, fixture_name, as_name):
     return epoch
 
 
+class TestImplantsEdgeCases:
+    """Two states the Implants parser must not conflate with "no block at all"."""
+
+    def test_entries_that_are_all_non_mappings_raise(self):
+        """A list of strings is a malformed block, not an absent one.
+
+        Returning None reads as "metadata predates Implants" and silently falls back
+        to probe_assignments.json, so the subject-probe mapping comes from the wrong
+        source with nothing to notice.
+        """
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
+
+        meta = {"subject": {"Subject": "AAA-1", "Implants": ["ProbeA", "ProbeB"]}}
+        with pytest.raises(ValueError, match="none is a mapping"):
+            parse_metadata_implants(meta)
+
+    def test_explicitly_empty_implants_falls_back(self):
+        """An empty list declares nothing, which is the documented None case."""
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
+
+        assert parse_metadata_implants({"subject": {"Subject": "AAA-1", "Implants": []}}) is None
+
+    def test_subject_missing_beside_implants_raises(self):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
+
+        meta = {"subject": {"Implants": [{"Probe": "ProbeA", "InsertionNumber": 1}]}}
+        with pytest.raises(ValueError, match="subject.Subject is missing"):
+            parse_metadata_implants(meta)
+
+
 class TestMetadataLayouts:
     """Three metadata layouts must all resolve probe identity and config."""
 
@@ -851,7 +881,7 @@ class TestMetadataLayouts:
         assert parse_metadata_probe_configs(epoch)["ProbeA"] == "M01_ProbeA_4Shanks_1500_to_2200um.json"
         assert get_probe_id(parse_epoch_metadata(epoch), "NeuropixelsV2", "ProbeA") == "23107805942"
 
-    def test_disabled_probe_is_recognised_as_bool_and_as_string(self, tmp_path):
+    def test_disabled_probe_is_recognised_as_bool_and_as_string(self):
         """Enable may be a JSON bool or the string "false", depending on the writer.
 
         enabled_probe_labels and get_probe_id must agree: if one reads a probe as

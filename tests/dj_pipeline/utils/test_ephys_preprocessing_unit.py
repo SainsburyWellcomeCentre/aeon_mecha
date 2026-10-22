@@ -107,3 +107,25 @@ def test_inline_pipeline_is_used_verbatim():
         apply_preprocessing(rec, {"SI_PREPROCESSING_PIPELINE": inline}).get_traces(),
         expected.get_traces(),
     )
+
+
+@pytest.mark.parametrize(
+    "key", ["SI_PREPROCESSING_METHOOD", "SI_PREPROCESSING_PARAM", "SI_PREPROCESSING_PIPLINE"]
+)
+def test_misspelled_key_raises_rather_than_falling_through(key):
+    """A typo in the key is as silent as a typo in the value, and worse to spot.
+
+    Without this the paramset reads as if it selected something, and aeon_default
+    (bandpass + CAR) runs anyway.
+    """
+    from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
+
+    with pytest.raises(ValueError, match="Unrecognised preprocessing key"):
+        resolve_preprocessing_pipeline({key: "whatever"})
+
+
+def test_unrelated_paramset_keys_are_left_alone():
+    """Only SI_PREPROCESSING* keys are policed; a paramset carries sorter args too."""
+    from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
+
+    assert resolve_preprocessing_pipeline({"n_jobs": 4, "detect_threshold": 6}) == AEON_DEFAULT

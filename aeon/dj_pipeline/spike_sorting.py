@@ -150,7 +150,12 @@ class SortingParamSet(dj.Lookup):
         if isinstance(rows, list | tuple):
             for row in rows:
                 if isinstance(row, dict):
-                    params = row.get("params") or {}
+                    # Test the raw value: `or {}` would turn a falsy non-dict ("", 0,
+                    # []) into an empty dict and accept the row with the default
+                    # pipeline, which is the case this check exists to reject.
+                    params = row.get("params")
+                    if params is None:
+                        params = {}
                     if not isinstance(params, dict):
                         # `"KEY" in params` on a str or list is a substring/element
                         # test, so a non-dict would skip every check below silently.
@@ -1277,6 +1282,8 @@ class SyncedSpikes(dj.Imported):
         # that lost its tail instead is extrapolated at its own tick rate, by at most 1 s.
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         onix_times, amp_lengths = [], []
+        # Held for the life of this call; its finalizer removes the spilled clocks.
+        clock_spill_dir = tempfile.TemporaryDirectory(prefix="aeon-onix-clock-")
         if not ephys_files:
             raise ValueError(
                 f"No amplifier files registered for the chunks of block {key.get('block_start')}. "
@@ -1291,6 +1298,14 @@ class SyncedSpikes(dj.Imported):
                 # only place the two could disagree disappears.
                 onix_ts = read_arrow_column(amp_path, "Clock")
                 amp_len = len(onix_ts)
+                # Spill to a memmap. onix_times holds one array per chunk for the whole
+                # of indices2syncedtimes, and the binary branch below keeps an OS-paged
+                # memmap; leaving the arrow clock in RAM costs 8 bytes x 30 kHz x block
+                # duration resident, which is tens of GB on the long blocks this module
+                # is sized for. The spill keeps the length coming from the clock column.
+                spill = Path(clock_spill_dir.name) / f"{len(amp_lengths)}.u64"
+                onix_ts.tofile(spill)
+                onix_ts = np.memmap(spill, mode="r", dtype=np.uint64)
             else:
                 amp_len = read_amplifier_recording(amp_path, num_channels, NP2_FS_HZ).get_num_samples()
                 onix_ts = np.memmap(

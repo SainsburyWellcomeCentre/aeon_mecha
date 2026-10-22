@@ -586,6 +586,15 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         raw_dir = tmp_path / "raw"
         raw_dir.mkdir(parents=True)
 
+        if fmt != "binary" and (
+            amp_samples is not None or clock_samples is not None or amp_as_zarr
+        ):
+            raise ValueError(
+                f"amp_samples/clock_samples/amp_as_zarr all operate on the raw .bin "
+                f"files, which fmt={fmt!r} does not write. The request would be ignored "
+                f"and the test would assert against the plain path while claiming otherwise."
+            )
+
         # n_chunks HarpSync windows; amplifier chunk n matches window n by default.
         make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=n_chunks)
         make_synthetic_amplifier_data(
@@ -597,12 +606,6 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             ts_ranges=ts_ranges,
             fmt=fmt,
         )
-        if fmt != "binary" and (amp_samples or clock_samples):
-            raise ValueError(
-                f"amp_samples/clock_samples truncate the raw .bin files, which fmt={fmt!r} "
-                f"does not write. The request would be ignored and the test would assert "
-                f"against untruncated data."
-            )
         amp_samples = amp_samples or [10] * n_chunks
         clock_samples = clock_samples or [10] * n_chunks
         device_dir = raw_dir / epoch_dir_name / device_name
@@ -863,6 +866,27 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         expected = [2, 1]  # 10 samples/chunk, spikes at 5 and 6 in chunk 0, 15 in chunk 1
         assert arrow == expected, f"arrow split {arrow}, expected {expected}"
         assert binary == expected, f"binary split {binary}, expected {expected}"
+
+        # The split is by sample index, so it would survive a corrupted clock. Compare
+        # the synced HARP times too: the arrow clock is spilled to a memmap on the way
+        # into extend_clock, and a dtype or truncation slip there moves every spike
+        # without changing any count.
+        import numpy as np
+
+        from aeon.dj_pipeline import spike_sorting
+
+        def spike_times(experiment_name):
+            return [
+                r["spike_times"]
+                for r in (
+                    spike_sorting.SyncedSpikes.Unit & {"experiment_name": experiment_name}
+                ).to_dicts(order_by="chunk_start")
+            ]
+
+        arrow_times, binary_times = spike_times("test_synced_arrow"), spike_times("test_synced_binary")
+        assert len(arrow_times) == len(binary_times) == 2
+        for a, b in zip(arrow_times, binary_times, strict=True):
+            np.testing.assert_array_equal(a, b)
 
     def test_commutator_clock_files_are_not_mistaken_for_ephys(self, ephys_full_pipeline, tmp_path):
         """A registered Commutator_Clock_N.bin row must never be selected as amplifier data.
@@ -1359,11 +1383,13 @@ class TestAmplifierFileSelection:
 class TestArrowChunkIngestion:
     """ingest_chunks discovers arrow amplifier files and reads their Clock column."""
 
-    def _setup(self, tmp_path, experiment_name, fmts, after_ingest=None):
+    def _setup(self, tmp_path, experiment_name, fmts, after_ingest=None, before_ingest=None):
         """Build an epoch whose chunk n uses fmts[n]; return the experiment name.
 
-        ``after_ingest(experiment_name)`` runs once chunks are registered, for tests
-        that need EphysChunk.File rows the discovery globs would never produce.
+        ``before_ingest(raw_dir, epoch_dir_name, device_name)`` runs before discovery,
+        for tests that seed extra raw files. ``after_ingest(experiment_name)`` runs
+        once chunks are registered, for tests that need EphysChunk.File rows the
+        discovery globs would never produce.
         """
         from ephys_factories import (
             make_synthetic_amplifier_data,
@@ -1411,6 +1437,8 @@ class TestArrowChunkIngestion:
         register_synthetic_probe_insertion(
             experiment_name, subject_name, epoch_start, probe_label, device_name
         )
+        if before_ingest is not None:  # seed extra raw files before discovery
+            before_ingest(raw_dir, epoch_dir_name, device_name)
         ephys.EphysSyncModel.ingest(experiment_name)
         ephys.EphysChunk.ingest_chunks(experiment_name)
         if after_ingest is not None:  # register rows the discovery globs never produce
@@ -1430,6 +1458,42 @@ class TestArrowChunkIngestion:
         exp = self._setup(tmp_path, "test_arrow_mixed", ["binary", "arrow"])
         chunks = (ephys.EphysChunk & {"experiment_name": exp}).to_dicts(order_by="chunk_start")
         assert len(chunks) == 2, f"mixed-format epoch ingested {len(chunks)} chunks, expected 2"
+
+    def test_same_chunk_index_in_both_formats_raises(self, ephys_full_pipeline, tmp_path):
+        """One chunk index present as both .bin and .arrow is ambiguous, not two chunks.
+
+        Discovery globs both patterns in one pass, so the pair is iterated twice. The
+        file_path dedup does not help -- the paths differ. If the two copies disagree
+        by even one leading sample their first_ts differ, two EphysChunk rows cover
+        the same samples, and PreProcessing concatenates them twice: every spike after
+        the duplicate shifts by a chunk. This is the amplifier-side twin of the Bno055
+        collision find_overlapping_bno055_chunks already refuses.
+        """
+        from ephys_factories import make_synthetic_amplifier_data
+
+
+        device_name, probe_label = "NeuropixelsV2", "ProbeA"
+        epoch_dir_name = "2026-10-13T094255Z"
+
+        def write_arrow_twin(raw_dir, _epoch_dir_name, _device_name):
+            # the same chunk 0, also written as arrow, one sample later
+            scratch = tmp_path / "twin"
+            make_synthetic_amplifier_data(
+                scratch,
+                epoch_dir_name,
+                device_name,
+                probe_label,
+                n_chunks=1,
+                ts_ranges=[(502, 58501)],
+                fmt="arrow",
+            )
+            src = scratch / epoch_dir_name / device_name / f"{device_name}_{probe_label}_0.arrow"
+            src.rename(raw_dir / epoch_dir_name / device_name / src.name)
+
+        with pytest.raises(ValueError, match="both binary and arrow"):
+            self._setup(
+                tmp_path, "test_arrow_dup_index", ["binary"], before_ingest=write_arrow_twin
+            )
 
     def test_arrow_chunk_bounds_match_binary(self, ephys_full_pipeline, tmp_path):
         """Same ONIX timestamps must yield the same chunk_start/end either way."""

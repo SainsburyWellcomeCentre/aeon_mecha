@@ -135,7 +135,8 @@ class TestMetadataReachesTheDatabase:
 
     def test_implantation_date_recorded(self, ephys_test_epochs, ctx):
         cfg = ctx.cfg
-        if "probe_serial" in cfg:
+        expected_date = cfg.get("implantation_date")
+        if expected_date is None:
             pytest.skip(f"{cfg['experiment_name']}: metadata predates subject.Implants")
         dates = (
             ctx.ephys.ProbeInsertion
@@ -145,7 +146,7 @@ class TestMetadataReachesTheDatabase:
         # the insertions (or writes them under another subject) would pass silently.
         expected = cfg["expected_probe_count"]
         assert len(dates) == expected, f"expected {expected} insertion(s), got {list(dates)}"
-        assert all(str(d).startswith("2026-05-20") for d in dates), list(dates)
+        assert all(str(d).startswith(expected_date) for d in dates), list(dates)
 
 
 class TestEphysChunkIngestion:
@@ -158,11 +159,23 @@ class TestEphysChunkIngestion:
         # product. Without this, a dropped probe or a lost final chunk goes unnoticed.
         expected = ctx.cfg.get("n_chunks")
         if expected is not None:
+            from collections import Counter
+
             n_probes = ctx.cfg["expected_probe_count"]
             assert count == expected * n_probes, (
                 f"{count} EphysChunk rows; expected {expected} chunks x {n_probes} probes "
                 f"= {expected * n_probes}"
             )
+            # The product alone does not pin the distribution: one probe gaining a
+            # duplicate chunk while another loses one still totals correctly, and a
+            # duplicate chunk is exactly what shifts every spike after it.
+            per_probe = Counter(
+                r["insertion_number"]
+                for r in (
+                    ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}
+                ).to_dicts()
+            )
+            assert sorted(per_probe.values()) == [expected] * n_probes, per_probe
 
     def test_chunk_timestamps_valid(self, ephys_chunks_ingested, ctx):
         chunks = (ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
@@ -173,15 +186,25 @@ class TestEphysChunkIngestion:
         files = list(
             (ctx.ephys.EphysChunk.File & {"experiment_name": ctx.cfg["experiment_name"]}).fetch("file_name")
         )
-        if any(fn.endswith(".arrow") for fn in files):
-            # Arrow carries amplifier and clock in one file: one row per chunk.
+        n_chunks = len(ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]})
+        arrow = [fn for fn in files if fn.endswith(".arrow")]
+        binary = [fn for fn in files if fn.endswith(".bin")]
+
+        # Arrow carries amplifier and clock in one file (one row per chunk); binary
+        # registers the pair. A mixed epoch is legitimate, so count rather than
+        # excluding one format: the invariant is that every chunk is accounted for.
+        assert len(arrow) + len(binary) // 2 == n_chunks, (
+            f"{len(arrow)} arrow + {len(binary)} binary file rows do not account for "
+            f"{n_chunks} chunks. Got first 5: {files[:5]}"
+        )
+        assert len(binary) % 2 == 0, (
+            f"binary chunks register AmplifierData + Clock in pairs; got {len(binary)} rows"
+        )
+        if arrow:
             assert any(fn.endswith("_0.arrow") for fn in files), (
                 f"no chunk-0 arrow file registered. Got first 5: {files[:5]}"
             )
-            assert not any(fn.endswith(".bin") for fn in files), (
-                f"arrow epoch also registered .bin files: {[f for f in files if f.endswith('.bin')]}"
-            )
-        else:
+        if binary:
             assert any("AmplifierData_0.bin" in fn for fn in files), (
                 f"AmplifierData_0.bin not registered. Got first 5: {files[:5]}"
             )

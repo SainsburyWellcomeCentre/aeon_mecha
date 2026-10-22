@@ -97,10 +97,25 @@ def _check_uniform_batches(rec, path) -> None:
     (``start_frame // batch_len``) while ``get_num_samples`` sums true per-batch
     rows. On a non-uniform file the length stays right and every trace read is
     offset, which would shift every spike time with no error.
+
+    This is deliberately stricter than ``read_arrow_clock_bounds``, which walks past
+    an empty batch at either end: that reader takes only the first and last values
+    and does no stride arithmetic, so an empty edge batch costs it nothing. Here a
+    LEADING empty batch makes ``i * batch_len`` wrong for every batch after it, so it
+    has to be rejected. A trailing one is harmless to both.
     """
     segment = rec._recording_segments[0]
     reader, batch_len = segment._reader, segment.batch_len
     n = reader.num_record_batches
+    if batch_len == 0:
+        # batch_len is read from batch 0. Zero slips through the loop below (0 != 0
+        # is false) and reaches get_traces, which dies on `start_frame // 0` naming
+        # neither the file nor the cause.
+        raise ValueError(
+            f"{path} first record batch is empty, so the batch stride is undefined. "
+            f"get_traces addresses batch i at i * batch_len; a leading empty batch "
+            f"makes that offset wrong for every batch after it."
+        )
     total = 0
     for i in range(n):
         rows = reader.get_batch(i).num_rows
@@ -131,6 +146,16 @@ def _check_arrow_channels(rec, num_channels: int, path) -> None:
             f"{path} has {len(ids)} AmplifierData columns but the ElectrodeConfig "
             f"registers {num_channels}. Positional electrode mapping would mislabel "
             f"every channel."
+        )
+    # gain_to_uV / offset_to_uV in spike_sorting assume 16-bit samples, and
+    # unsigned_to_signed assumes unsigned. A uint8 or uint32 arrow file passes every
+    # other check here and scales wrong, where the binary reader pins dtype=uint16
+    # explicitly at the call site.
+    dtype = rec.get_dtype()
+    if dtype != np.uint16:
+        raise ValueError(
+            f"{path} AmplifierData columns are {dtype}, expected uint16. The gain and "
+            f"offset applied downstream assume 16-bit unsigned samples."
         )
     expected = [f"AmplifierData{i}" for i in range(num_channels)]
     if ids != expected:
@@ -210,6 +235,8 @@ def parse_metadata_implants(metadata: dict | None) -> dict[str, dict] | None:
     implants = subject_block.get("Implants")
     if not isinstance(implants, list):
         return None
+    if not implants:
+        return None  # declared but empty: nothing to map, fall back as before
 
     subject = subject_block.get("Subject")
     if implants and not subject:
@@ -234,7 +261,14 @@ def parse_metadata_implants(metadata: dict | None) -> dict[str, dict] | None:
             "target_area": target_area.strip() if isinstance(target_area, str) else None,
             "implantation_date": entry.get("ImplantationDate"),
         }
-    return result or None
+    if not result:
+        # implants was a non-empty list, so every entry was skipped as a non-dict.
+        # Returning None here would read as "metadata predates the Implants block"
+        # and silently fall back to probe_assignments.json.
+        raise ValueError(
+            f"subject.Implants[] has {len(implants)} entr(ies) but none is a mapping: {implants!r}"
+        )
+    return result
 
 
 def _is_enabled(value) -> bool:
@@ -373,6 +407,18 @@ def find_or_create_probe_insertion(
                 f"Metadata asserts insertion_number={insertion_number} for probe {probe_id!r} "
                 f"(subject {subject!r}, experiment {experiment_name!r}), but an existing "
                 f"ProbeInsertion has insertion_number={row['insertion_number']}. Resolve by hand."
+            )
+        # Backfill a date the metadata asserts onto a row that predates the Implants
+        # block. Only the NULL case is filled: a row already holding a different date
+        # is a conflict, not a stale field, and is left for a human.
+        if implantation_date is not None and row.get("implantation_date") is None:
+            probe_insertion_table.update1(
+                {
+                    "experiment_name": row["experiment_name"],
+                    "subject": row["subject"],
+                    "insertion_number": row["insertion_number"],
+                    "implantation_date": implantation_date,
+                }
             )
         return {
             "experiment_name": row["experiment_name"],

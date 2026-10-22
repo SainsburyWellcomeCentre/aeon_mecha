@@ -343,7 +343,7 @@ def _write_bno055_arrow(device_dir, device_name, chunk_index, n=20, columns=ARRO
 
     device_dir.mkdir(parents=True, exist_ok=True)
     data = {}
-    for c in columns:
+    for i, c in enumerate(columns):
         if c == "Clock":
             data[c] = (np.arange(n, dtype=np.uint64) + 1) * 100 + chunk_index * 10_000
         elif c == "HubClock":
@@ -354,7 +354,10 @@ def _write_bno055_arrow(device_dir, device_name, chunk_index, n=20, columns=ARRO
         elif c == "Temperature":
             data[c] = np.full(n, 87, dtype=np.int32)
         else:
-            data[c] = np.linspace(1, 2, n, dtype=np.float32)
+            # Each float column gets its own value. An identical ramp everywhere
+            # would make a Gravity <-> Acceleration <-> Quaternion swap in
+            # _ARROW_TO_CANONICAL pass every assertion in this file.
+            data[c] = np.full(n, 100.0 + i, dtype=np.float32)
     schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in data.items()])
     path = device_dir / f"{device_name}_Bno055_{chunk_index}.arrow"
     with ipc.new_file(path, schema) as w:
@@ -418,6 +421,46 @@ class TestBno055Arrow:
         _write_bno055_arrow(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0, n=4)
         df = load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
         assert list(df.index) == [100, 200, 300, 400]
+
+    def test_every_arrow_column_lands_on_its_own_canonical_name(self, tmp_path):
+        """Pins the whole mapping, not just the euler triple.
+
+        A swap between gravity, linear_acceleration and quaternion is the
+        mislabelled-channel anti-goal: the frame looks healthy and every summary
+        stat is computed over the wrong axis.
+
+        The expected pairs are written out here rather than read from
+        _ARROW_TO_CANONICAL -- taking them from the dict under test makes the
+        assertion follow any swap made to it, which is how the first version of
+        this test passed a Gravity_X <-> Acceleration_X mutation.
+        """
+        from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
+
+        expected_pairs = {
+            "EulerAngle_Yaw": "euler_x",
+            "EulerAngle_Pitch": "euler_y",
+            "EulerAngle_Roll": "euler_z",
+            "Gravity_X": "gravity_vector_x",
+            "Gravity_Y": "gravity_vector_y",
+            "Gravity_Z": "gravity_vector_z",
+            "Acceleration_X": "linear_acceleration_x",
+            "Acceleration_Y": "linear_acceleration_y",
+            "Acceleration_Z": "linear_acceleration_z",
+            "Quaternion_W": "quaternion_w",
+            "Quaternion_X": "quaternion_x",
+            "Quaternion_Y": "quaternion_y",
+            "Quaternion_Z": "quaternion_z",
+        }
+        _write_bno055_arrow(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0, n=4)
+        df = load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
+        for arrow_name, canonical in expected_pairs.items():
+            # _write_bno055_arrow fills float column i with 100.0 + i
+            expected = 100.0 + ARROW_IMU_COLUMNS.index(arrow_name)
+            got = df[canonical].iloc[0]
+            assert got == expected, (
+                f"{canonical} holds {got}, which is "
+                f"{ARROW_IMU_COLUMNS[int(got) - 100]}, not {arrow_name}"
+            )
 
     def test_calibration_and_temperature_present(self, tmp_path):
         from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
@@ -549,6 +592,29 @@ class TestMixedFormatImu:
         df = concat_bno055_chunks(d, "NeuropixelsV2", [0, 1])
         assert tuple(df.columns) == IMU_COLUMNS + ARROW_EXTRA_COLUMNS
         assert len(df) == 40
+
+    def test_collision_raises_even_when_only_one_side_overlaps(self, tmp_path):
+        """The ambiguity raise must key on file existence, not on window overlap.
+
+        load_and_merge_bno055 picks arrow purely because the file exists. If the
+        collision is only tested after the overlap filter, a window matched on the
+        BINARY clock is then loaded from the ARROW file: the frame's index is
+        somewhere else entirely, the window filter keeps nothing, and OnixImuChunk
+        inserts sample_count=0 for a window whose data is sitting on disk.
+        """
+        import numpy as np
+
+        from aeon.dj_pipeline.utils.onix_imu import find_overlapping_bno055_chunks
+
+        d = tmp_path / "NeuropixelsV2"
+        # arrow chunk 0 lives far from the window; binary chunk 0 covers it
+        _write_bno055_arrow(d, "NeuropixelsV2", 0)  # Clock 100..2000
+        _write_staggered_bno_chunk(
+            d, "NeuropixelsV2", 0, np.arange(900_000, 900_020, dtype=np.uint64), seed=0
+        )
+
+        with pytest.raises(ValueError, match="both arrow and binary"):
+            find_overlapping_bno055_chunks(d, "NeuropixelsV2", 900_000, 900_019)
 
     def test_both_formats_are_found(self, tmp_path):
         import numpy as np

@@ -71,7 +71,12 @@ class TestArrowIO:
         _write_arrow(f, [10])
         with pytest.raises(KeyError) as exc:
             read_arrow_column(f, "HubClock")
-        assert "HubClock" in str(exc.value) and "Clock" in str(exc.value)
+        message = str(exc.value)
+        assert "HubClock" in message
+        # Asserting "Clock" here would be satisfied by "HubClock" itself; the point
+        # is that the message lists what IS available, so name a column only the
+        # available list can supply.
+        assert "AmplifierData0" in message, message
 
     def test_empty_file_raises(self, tmp_path):
         import pyarrow as pa
@@ -275,7 +280,7 @@ class TestArrowChannelIntegrity:
 
         f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
         self._write(f, [f"AmplifierData{i}" for i in range(4)])
-        with pytest.raises(ValueError, match="channel"):
+        with pytest.raises(ValueError, match="AmplifierData columns but the ElectrodeConfig"):
             read_amplifier_recording(f, num_channels=8, fs_hz=30000.0)
 
     def test_non_numeric_channel_order_raises(self, tmp_path):
@@ -284,8 +289,24 @@ class TestArrowChannelIntegrity:
 
         f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
         self._write(f, ["AmplifierData0", "AmplifierData1", "AmplifierData10", "AmplifierData2"])
-        with pytest.raises(ValueError, match="order"):
+        with pytest.raises(ValueError, match="not in numeric order"):
             read_amplifier_recording(f, num_channels=4, fs_hz=30000.0)
+
+    def test_non_uint16_samples_are_rejected(self, tmp_path):
+        """uint8/uint32 pass every other check and then get 16-bit gain applied."""
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
+        cols = {f"AmplifierData{i}": np.zeros(4, dtype=np.uint32) for i in range(2)}
+        cols["Clock"] = np.arange(4, dtype=np.uint64)
+        schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in cols.items()])
+        with ipc.new_file(f, schema) as w:
+            w.write_batch(pa.RecordBatch.from_arrays([pa.array(v) for v in cols.values()], schema=schema))
+        with pytest.raises(ValueError, match="expected uint16"):
+            read_amplifier_recording(f, num_channels=2, fs_hz=30000.0)
 
     def test_correct_schema_passes(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
@@ -294,6 +315,67 @@ class TestArrowChannelIntegrity:
         self._write(f, [f"AmplifierData{i}" for i in range(4)])
         rec = read_amplifier_recording(f, num_channels=4, fs_hz=30000.0)
         assert rec.get_num_channels() == 4
+
+
+class TestLeadingEmptyBatch:
+    """batch_len comes from batch 0, so an empty batch 0 leaves the stride undefined.
+
+    read_arrow_clock_bounds tolerates an empty batch at either end because it only
+    reads first and last values -- no stride arithmetic is involved. get_traces is
+    the opposite: it addresses batch i at i*batch_len, which a leading empty batch
+    makes false for every batch after it. The two readers differ on purpose; what
+    must not happen is batch_len reaching get_traces as zero.
+    """
+
+    def _write(self, path, batch_sizes):
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        total = sum(batch_sizes)
+        rows = np.arange(total, dtype=np.uint16)
+        schema = pa.schema([("AmplifierData0", pa.uint16()), ("Clock", pa.uint64())])
+        off = 0
+        with ipc.new_file(path, schema) as w:
+            for n in batch_sizes:
+                w.write_batch(
+                    pa.RecordBatch.from_arrays(
+                        [
+                            pa.array(rows[off : off + n]),
+                            pa.array(np.arange(off, off + n, dtype=np.uint64)),
+                        ],
+                        schema=schema,
+                    )
+                )
+                off += n
+        return path
+
+    def test_empty_first_batch_is_rejected_by_name(self, tmp_path):
+        """[0, 100] slipped through: 0 != 0 is false and the last batch is exempt.
+
+        get_traces then died on 'integer division or modulo by zero', naming neither
+        the file nor the cause.
+        """
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        f = self._write(tmp_path / "NeuropixelsV2_ProbeA_0.arrow", [0, 100])
+        with pytest.raises(ValueError, match="first record batch is empty"):
+            read_amplifier_recording(f, num_channels=1, fs_hz=30000.0)
+
+    def test_leading_empty_batch_among_several_is_rejected(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        f = self._write(tmp_path / "NeuropixelsV2_ProbeA_0.arrow", [0, 100, 100, 37])
+        with pytest.raises(ValueError, match="first record batch is empty"):
+            read_amplifier_recording(f, num_channels=1, fs_hz=30000.0)
+
+    def test_trailing_empty_batch_is_accepted(self, tmp_path):
+        """A writer flushing at stop costs nothing: the stride still holds."""
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        f = self._write(tmp_path / "NeuropixelsV2_ProbeA_0.arrow", [100, 100, 0])
+        rec = read_amplifier_recording(f, num_channels=1, fs_hz=30000.0)
+        assert rec.get_num_samples() == 200
+        assert rec.get_traces(start_frame=98, end_frame=102).ravel().tolist() == [98, 99, 100, 101]
 
 
 class TestNonUniformBatchGuard:
@@ -339,5 +421,5 @@ class TestNonUniformBatchGuard:
 
         f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
         self._write(f, [100, 70, 100])
-        with pytest.raises(ValueError, match="batch"):
+        with pytest.raises(ValueError, match="addresses batches by a constant stride"):
             read_amplifier_recording(f, num_channels=1, fs_hz=30000.0)

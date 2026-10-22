@@ -150,7 +150,15 @@ class OnixStreamCodec(dj.Codec):
         # existed predate the arrow format, so they default to binary.
         # Copy rather than setdefault: the caller may reuse the dict it passed, and
         # an injected default would then leak into rows that never set one.
-        return {"stream_format": "binary", **value}
+        stored = {"stream_format": "binary", **value}
+        if stored["stream_format"] not in ("binary", "arrow"):
+            # decode tests `== "arrow"`, so a typo silently takes the binary branch
+            # and the row later fails with "the raw tree changed format" about a tree
+            # nobody touched. This is the only writer, so reject it here.
+            raise ValueError(
+                f"stream_format must be 'binary' or 'arrow', got {stored['stream_format']!r}"
+            )
+        return stored
 
     def decode(self, stored, *, key=None):
         """Load + merge the referenced ONIX stream group as an ONIX-indexed DataFrame.

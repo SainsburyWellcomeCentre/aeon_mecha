@@ -65,15 +65,31 @@ def register_preprocessing(name: str, pipeline: PipelineDict) -> None:
     _PREPROCESSING_PIPELINES[name] = pipeline
 
 
+_RECOGNISED_KEYS = frozenset(
+    {"SI_PREPROCESSING_METHOD", "SI_PREPROCESSING_PARAMS", "SI_PREPROCESSING_PIPELINE"}
+)
+
+
 def resolve_preprocessing_pipeline(params: dict[str, Any]) -> PipelineDict:
     """Return the pipeline dict a SortingParamSet's ``params`` selects.
 
     Raises:
-        ValueError: Unknown method name, an override for a step the pipeline doesn't
-            have, or an inline pipeline combined with a method or overrides.
+        ValueError: An unrecognised ``SI_PREPROCESSING*`` key, an unknown method name,
+            an override for a step the pipeline doesn't have, or an inline pipeline
+            combined with a method or overrides.
         TypeError: A step name SpikeInterface doesn't support.
     """
     from spikeinterface.preprocessing import PreprocessingPipeline
+
+    # A typo in a KEY is as silent as a typo in a value: SI_PREPROCESSING_METHOOD
+    # falls straight through to aeon_default, and the paramset then reads as if it
+    # asked for something else while bandpass + CAR run.
+    unknown_keys = {k for k in params if k.startswith("SI_PREPROCESSING")} - _RECOGNISED_KEYS
+    if unknown_keys:
+        raise ValueError(
+            f"Unrecognised preprocessing key(s) {sorted(unknown_keys)}. "
+            f"Recognised: {sorted(_RECOGNISED_KEYS)}"
+        )
 
     if "SI_PREPROCESSING_PIPELINE" in params:
         conflicting = {"SI_PREPROCESSING_METHOD", "SI_PREPROCESSING_PARAMS"} & set(params)

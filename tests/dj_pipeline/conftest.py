@@ -209,6 +209,9 @@ GOLDEN_DATASETS = {
         "expected_probe_count": 2,
         "expected_discovered_probes": 2,
         "n_chunks": 9,
+        # Asserted by test_implantation_date_recorded; a property of this recording,
+        # not of the test, so a second Implants-carrying dataset can declare its own.
+        "implantation_date": "2026-05-20",
         # no golden_sorting_dir: arrow coverage stops at PreProcessing
     },
 }
@@ -817,6 +820,13 @@ def ephys_test_blocks(ephys_chunks_ingested, ephys_full_pipeline, ephys_golden_d
     # while the count assertion above still passed.
     first_insertion = min(c["insertion_number"] for c in all_chunks)
     chunks = [c for c in all_chunks if c["insertion_number"] == first_insertion]
+    # The total above does not pin the split: an uneven one (12 + 6 where 9 + 9 was
+    # meant) passes it and leaves this list the wrong length, so the fixed indices
+    # below would name the wrong chunks or run off the end.
+    assert len(chunks) == cfg.get("n_chunks", 12), (
+        f"insertion {first_insertion} has {len(chunks)} chunks, expected "
+        f"{cfg.get('n_chunks', 12)}; the block bounds below index fixed positions."
+    )
 
     def midpoint(chunk):
         return chunk["chunk_start"] + (chunk["chunk_end"] - chunk["chunk_start"]) / 2

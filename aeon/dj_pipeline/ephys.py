@@ -322,14 +322,13 @@ class EphysEpochConfig(dj.Imported):
         declared = enabled_probe_labels(metadata)
         if declared is not None:
             # Compare against what discovery found on disk, not probe_info: the latter
-            # also excludes probes get_probe_id considers disabled, and the two
-            # functions disagree when Enable is the string "false" rather than a bool.
-            # Using probe_info would report a correctly-disabled probe as a missing file.
+            # also drops probes get_probe_id could not identify, which would report a
+            # correctly-disabled probe as a missing file.
             absent = sorted(declared - set(probe_labels))
             if absent:
                 raise FileNotFoundError(
                     f"Metadata declares {absent} enabled for epoch {epoch_dir}, but no data "
-                    f"files were found for them (discovered: {sorted(probe_info)}). "
+                    f"files were found for them (discovered: {sorted(probe_labels)}). "
                     f"The epoch looks partially transferred."
                 )
 
@@ -543,6 +542,37 @@ class EphysSyncModel(dj.Manual):
                 )
 
 
+def _reject_duplicate_chunk_formats(ephys_files: list[Path], raw_dir: Path) -> None:
+    """Refuse an epoch where one probe chunk exists as both a binary and an arrow file.
+
+    Discovery globs both patterns in one pass, so such a pair is iterated twice and
+    registered as two EphysChunk rows (the file_path dedup cannot see it -- the paths
+    differ). If the two copies disagree by even one leading sample their first_ts
+    differ, both rows survive, and PreProcessing concatenates the chunk twice: every
+    spike after it shifts by a chunk's length with nothing to notice.
+
+    Mixing formats across DIFFERENT chunk indices in one epoch stays supported; only
+    the same index in both formats is ambiguous.
+    """
+    seen: dict[tuple[str, ...], dict[str, Path]] = {}
+    for f in ephys_files:
+        m = re.search(r"_(Probe[A-Z])_(?:AmplifierData_)?(\d+)\.(bin|arrow)$", f.name)
+        if not m:
+            continue
+        probe_label, chunk_index, suffix = m.groups()
+        # Key on the containing directory too: two epochs each have their own chunk 0.
+        key = (*f.relative_to(raw_dir).parts[:-1], probe_label, chunk_index)
+        fmt = "binary" if suffix == "bin" else "arrow"
+        if (other := seen.setdefault(key, {})).get("arrow" if fmt == "binary" else "binary"):
+            raise ValueError(
+                f"Chunk {chunk_index} of {probe_label} exists in both binary and arrow "
+                f"form: {other.get('binary', f)} and {other.get('arrow', f)}. Which is "
+                f"authoritative is undefined, and registering both would concatenate "
+                f"the chunk twice. Remove one."
+            )
+        other[fmt] = f
+
+
 @schema
 class EphysChunk(dj.Manual):
     definition = """  # One ~hour-long ephys recording period
@@ -626,6 +656,8 @@ class EphysChunk(dj.Manual):
         if not all_ephys_files:
             logger.info(f"No ephys amplifier files found in {raw_dir}")
             return
+
+        _reject_duplicate_chunk_formats(all_ephys_files, raw_dir)
 
         for ephys_file in all_ephys_files:
             rel_path = ephys_file.relative_to(raw_dir).as_posix()
@@ -1022,11 +1054,16 @@ class OnixImuChunk(dj.Imported):
         )
 
         def _empty_row(chunk_indices: list[int]) -> dict:
+            # The arrow extras get {} like every other column: leaving them NULL makes
+            # an empty arrow row fail the "are the extra columns present" test the
+            # populated branch below uses to decide the same thing.
+            extras = {col: {} for col in ARROW_EXTRA_COLUMNS} if is_arrow else {}
             return {
                 **key,
                 "sample_count": 0,
                 "timestamps": {},
                 **{col: {} for col in IMU_COLUMNS},
+                **extras,
                 "stream_df": {
                     "stream_format": "arrow" if is_arrow else "binary",
                     "experiment_name": key["experiment_name"],

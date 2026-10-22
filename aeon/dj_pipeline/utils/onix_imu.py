@@ -191,6 +191,21 @@ def concat_bno055_chunks(
     return pd.concat(frames)
 
 
+def _indices_in_both_formats(device_dir: Path, device_name: str) -> set[int]:
+    """Chunk indices that have BOTH a Bno055 arrow file and a Bno055 Clock binary."""
+    arrow = {
+        int(m.group(1))
+        for f in device_dir.glob(f"{device_name}_Bno055_*.arrow")
+        if (m := re.search(r"_Bno055_(\d+)\.arrow$", f.name))
+    }
+    binary = {
+        int(m.group(1))
+        for f in device_dir.glob(f"{device_name}_Bno055_Clock_*.bin")
+        if (m := re.search(r"_Clock_(\d+)\.bin$", f.name))
+    }
+    return arrow & binary
+
+
 def find_overlapping_bno055_chunks(
     device_dir: Path,
     device_name: str,
@@ -221,7 +236,19 @@ def find_overlapping_bno055_chunks(
     # Arrow chunks keep their ONIX clock as a column; binary chunks have a companion
     # Clock_N.bin. Both are scanned: an epoch written across a format change has some
     # of each, and returning after the arrow pass would silently drop the binary half.
-    from aeon.dj_pipeline.utils.arrow_io import read_arrow_clock_bounds
+    from aeon.dj_pipeline.utils.arrow_io import EmptyArrowChunk, read_arrow_clock_bounds
+
+    # Ambiguity is decided on file existence alone, BEFORE any overlap test.
+    # load_and_merge_bno055 picks arrow because the file is there, not because its
+    # clock matched: testing the collision after the overlap filter would let a
+    # window selected on the binary clock be loaded from the arrow file, whose index
+    # is elsewhere, and the caller would record an empty window as a real one.
+    both = _indices_in_both_formats(device_dir, device_name)
+    if both:
+        raise ValueError(
+            f"Bno055 chunk(s) {sorted(both)} exist in both arrow and binary form in "
+            f"{device_dir}; which is authoritative is undefined. Remove one set."
+        )
 
     for arrow_file in sorted(device_dir.glob(f"{device_name}_Bno055_*.arrow")):
         match = re.search(r"_Bno055_(\d+)\.arrow$", arrow_file.name)
@@ -234,10 +261,8 @@ def find_overlapping_bno055_chunks(
         # its equivalent, so failing here would block every sync window in the epoch.
         try:
             first, last = read_arrow_clock_bounds(arrow_file)
-        except ValueError as e:
-            if "record batches" in str(e):
-                continue
-            raise
+        except EmptyArrowChunk:
+            continue
         if first <= onix_ts_end and last >= onix_ts_start:
             arrow_idx.add(int(match.group(1)))
 
@@ -264,12 +289,5 @@ def find_overlapping_bno055_chunks(
         # Inclusive interval overlap test on both ends.
         if first <= onix_ts_end and last >= onix_ts_start:
             binary_idx.add(n)
-    both = arrow_idx & binary_idx
-    if both:
-        # load_and_merge_bno055 prefers arrow when both exist, so returning the index
-        # twice would load it twice and double the frame with nothing to notice.
-        raise ValueError(
-            f"Bno055 chunk(s) {sorted(both)} exist in both arrow and binary form in "
-            f"{device_dir}; which is authoritative is undefined. Remove one set."
-        )
+    # Disjoint by construction: the collision check above already raised.
     return sorted(arrow_idx | binary_idx)
