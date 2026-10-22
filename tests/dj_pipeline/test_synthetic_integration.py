@@ -191,7 +191,7 @@ class TestEphysEpochEndLookback:
         experiment_name = "test_ephys_epoch_end_lookback"
         device_name = "NeuropixelsV2"
         raw_dir = tmp_path / "raw"
-        raw_dir.mkdir()
+        raw_dir.mkdir(parents=True)
 
         # Two epoch directories with distinct, monotonic HARP starts (1 hour apart).
         epoch_a_name = "2024-06-04T10-00-00"
@@ -474,7 +474,7 @@ class TestEphysChunkOutsideAllWindows:
         subject_name = "test-mouse-outside"
 
         raw_dir = tmp_path / "raw"
-        raw_dir.mkdir()
+        raw_dir.mkdir(parents=True)
 
         # Single HarpSync window: ONIX clock range [1, 59001].
         make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=1)
@@ -539,6 +539,8 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         clock_samples=None,
         sorted_samples=None,
         amp_as_zarr=False,
+        fmt="binary",
+        before_ingest=None,
     ):
         """Set up minimal DB state for SyncedSpikes.make(), run it, and return spike_counts.
 
@@ -577,7 +579,7 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         subject_name = "test-mouse-synced"
 
         raw_dir = tmp_path / "raw"
-        raw_dir.mkdir()
+        raw_dir.mkdir(parents=True)
 
         # n_chunks HarpSync windows; amplifier chunk n matches window n by default.
         make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=n_chunks)
@@ -588,12 +590,13 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             probe_label,
             n_chunks=n_chunks,
             ts_ranges=ts_ranges,
+            fmt=fmt,
         )
 
         amp_samples = amp_samples or [10] * n_chunks
         clock_samples = clock_samples or [10] * n_chunks
         device_dir = raw_dir / epoch_dir_name / device_name
-        for n in range(n_chunks):  # truncate files, e.g. as a copy of a still-open file would
+        for n in range(n_chunks) if fmt == "binary" else ():  # truncate, as a half-copied file would
             for stream, dtype, n_keep in (
                 ("AmplifierData", np.uint16, amp_samples[n]),
                 ("Clock", np.uint64, clock_samples[n]),
@@ -614,6 +617,9 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         register_synthetic_probe_insertion(
             experiment_name, subject_name, epoch_start, probe_label, device_name
         )
+
+        if before_ingest is not None:  # seed raw files that must not be picked up
+            before_ingest(raw_dir, epoch_dir_name, device_name)
 
         ephys.EphysSyncModel.ingest(experiment_name)
         ephys.EphysChunk.ingest_chunks(experiment_name)
@@ -821,6 +827,51 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         )
 
         assert (chunk_a_count, chunk_b_count) == (1, 2)
+
+    def test_arrow_chunks_assign_spikes_like_binary(self, ephys_full_pipeline, tmp_path):
+        """Same ONIX timestamps and spike indices must split identically either way."""
+        arrow = self._build_and_populate(
+            tmp_path / "arrow",
+            "test_synced_arrow",
+            n_chunks=2,
+            spike_indices=[5, 6, 15],
+            chunk_indices=[0, 1],
+            fmt="arrow",
+        )
+        binary = self._build_and_populate(
+            tmp_path / "binary",
+            "test_synced_binary",
+            n_chunks=2,
+            spike_indices=[5, 6, 15],
+            chunk_indices=[0, 1],
+            fmt="binary",
+        )
+        assert arrow == binary, f"arrow split {arrow}, binary split {binary}"
+
+    def test_commutator_clock_files_are_not_mistaken_for_ephys(self, ephys_full_pipeline, tmp_path):
+        """Commutator_Clock_N.bin sits beside the probe files and must never be selected.
+
+        A 'file_name LIKE %Clock%.bin' restriction matches it, which would splice a
+        10 Hz turns-counter clock into the ONIX timeline and shift every spike.
+        """
+        import numpy as np
+
+        def seed_commutator(raw_dir, epoch_dir_name, device_name):
+            d = raw_dir / epoch_dir_name / device_name
+            for n in range(2):
+                # plausible but wrong timestamps: same dtype, different rate
+                np.arange(1, 7, dtype=np.uint64).tofile(d / f"{device_name}_Commutator_Clock_{n}.bin")
+                np.zeros(6, dtype=np.uint32).tofile(d / f"{device_name}_Commutator_Turns_{n}.bin")
+
+        counts = self._build_and_populate(
+            tmp_path,
+            "test_synced_commutator",
+            n_chunks=2,
+            spike_indices=[5, 15],
+            chunk_indices=[0, 1],
+            before_ingest=seed_commutator,
+        )
+        assert list(counts) == [1, 1], f"commutator files perturbed the split: {counts}"
 
     def test_short_clock_file_is_extrapolated(self, ephys_full_pipeline, tmp_path):
         """Spikes past the end of a short Clock file get extrapolated times, not dropped."""

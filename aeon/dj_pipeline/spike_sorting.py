@@ -22,6 +22,7 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
+from aeon.dj_pipeline.utils.arrow_io import read_arrow_column
 from aeon.dj_pipeline.utils.ephys_preprocessing import apply_preprocessing, resolve_preprocessing_pipeline
 from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
@@ -1227,7 +1228,13 @@ class SyncedSpikes(dj.Imported):
 
         # Load ephys onix times
         _clock_query = (
-            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & "file_name LIKE '%Clock%.bin'"
+            ephys.EphysChunk.File
+            & (ephys.EphysBlockInfo.Chunk & key)
+            # Select the AMPLIFIER file: it defines the chunk boundaries the spike
+            # indices count against. Arrow carries its clock in the same file; binary
+            # has a companion Clock_N.bin derived below. Keying on '%Clock%.bin' would
+            # also match Commutator_Clock_N.bin, which sits in the same directory.
+            & "file_name LIKE '%AmplifierData%.bin' OR file_name LIKE '%.arrow'"
         )
         _clock_rows = _clock_query.to_dicts(order_by="chunk_start")
         _pk = _clock_query.primary_key
@@ -1242,12 +1249,21 @@ class SyncedSpikes(dj.Imported):
         # that lost its tail instead is extrapolated at its own tick rate, by at most 1 s.
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         onix_times, amp_lengths = [], []
+        if not ephys_files:
+            raise ValueError(
+                f"No amplifier files registered for the chunks of block {key.get('block_start')}. "
+                f"EphysChunk.File has no '*AmplifierData*.bin' or '*.arrow' row for them."
+            )
         for f, d in zip(ephys_files, dir_types, strict=True):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
-            amp_len = read_amplifier_recording(
-                ephys_dir / f.replace("Clock", "AmplifierData"), num_channels, NP2_FS_HZ
-            ).get_num_samples()
-            onix_ts = np.memmap(ephys_dir / f, mode="r", dtype=np.uint64)
+            amp_path = ephys_dir / f
+            amp_len = read_amplifier_recording(amp_path, num_channels, NP2_FS_HZ).get_num_samples()
+            if amp_path.suffix == ".arrow":
+                onix_ts = read_arrow_column(amp_path, "Clock")
+            else:
+                onix_ts = np.memmap(
+                    ephys_dir / f.replace("AmplifierData", "Clock"), mode="r", dtype=np.uint64
+                )
             onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=f))
             amp_lengths.append(amp_len)
         chunk_bounds = np.cumsum(amp_lengths)  # end of each chunk in the concatenated recording
