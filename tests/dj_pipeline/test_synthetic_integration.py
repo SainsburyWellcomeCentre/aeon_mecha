@@ -919,3 +919,114 @@ class TestSpikeSortingLupin:
 
         sorting = si.load(sorting_output_dir / "si_sorting.pkl", base_folder=output_dir)
         assert len(sorting.unit_ids) > 0
+
+
+class TestProbeInsertionFromImplants:
+    """Metadata-asserted insertion numbers are authoritative, and conflicts raise."""
+
+    def _tables(self, ephys_full_pipeline):
+        ephys = ephys_full_pipeline["ephys"]
+        acquisition = ephys_full_pipeline["acquisition"]
+        return ephys, acquisition
+
+    def _experiment(self, tmp_path, name):
+        """Register a minimal experiment and return its name."""
+        from ephys_factories import make_synthetic_ephys_epoch, register_synthetic_experiment
+
+        from aeon.dj_pipeline import acquisition, ephys, subject
+
+        raw_dir, epoch = tmp_path / "raw", "2026-10-13T094255Z"
+        make_synthetic_ephys_epoch(raw_dir, epoch, "NeuropixelsV2", n_chunks=1)
+        register_synthetic_experiment(tmp_path, raw_dir, name, epoch)
+        ephys.ProbeType.insert1({"probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True)
+        subject.Subject.insert1(
+            {"subject": "SUBJ-1", "sex": "U", "subject_birth_date": "2026-01-01"},
+            skip_duplicates=True,
+        )
+        acquisition.Experiment.Subject.insert1(
+            {"experiment_name": name, "subject": "SUBJ-1"}, skip_duplicates=True
+        )
+        return name
+
+    def test_explicit_insertion_number_is_used(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
+
+        ephys, _ = self._tables(ephys_full_pipeline)
+        exp = self._experiment(tmp_path, "test_implants_explicit")
+        ephys.Probe.insert1(
+            {"probe": "SER-1", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
+        )
+        key = find_or_create_probe_insertion(
+            exp, "SUBJ-1", "SER-1", ephys.ProbeInsertion, ephys.Probe, insertion_number=7
+        )
+        assert key["insertion_number"] == 7
+
+    def test_conflicting_insertion_number_raises(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
+
+        ephys, _ = self._tables(ephys_full_pipeline)
+        exp = self._experiment(tmp_path, "test_implants_conflict")
+        ephys.Probe.insert1(
+            {"probe": "SER-2", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
+        )
+        find_or_create_probe_insertion(
+            exp, "SUBJ-1", "SER-2", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
+        )
+        with pytest.raises(ValueError, match="insertion_number"):
+            find_or_create_probe_insertion(
+                exp, "SUBJ-1", "SER-2", ephys.ProbeInsertion, ephys.Probe, insertion_number=2
+            )
+
+    def test_target_area_auto_created_and_linked(self, ephys_full_pipeline, tmp_path, caplog):
+        """A new area is created (warned about) and linked to the insertion."""
+        from aeon.dj_pipeline.ephys import _record_target_area
+        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
+
+        ephys, _ = self._tables(ephys_full_pipeline)
+        exp = self._experiment(tmp_path, "test_implants_area")
+        ephys.Probe.insert1(
+            {"probe": "SER-4", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
+        )
+        pi_key = find_or_create_probe_insertion(
+            exp, "SUBJ-1", "SER-4", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
+        )
+        with caplog.at_level("WARNING"):
+            _record_target_area("mPFC", pi_key)
+
+        assert ephys.TargetArea & {"target_area": "mPFC"}
+        assert ephys.InsertionTargetArea & {**pi_key, "target_area": "mPFC"}
+        assert any("mPFC" in r.message for r in caplog.records), "new area should warn"
+
+    def test_target_area_none_is_a_noop(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline.ephys import _record_target_area
+        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
+
+        ephys, _ = self._tables(ephys_full_pipeline)
+        exp = self._experiment(tmp_path, "test_implants_noarea")
+        ephys.Probe.insert1(
+            {"probe": "SER-5", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
+        )
+        pi_key = find_or_create_probe_insertion(
+            exp, "SUBJ-1", "SER-5", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
+        )
+        _record_target_area(None, pi_key)
+        assert not (ephys.InsertionTargetArea & pi_key)
+
+    def test_implantation_date_recorded(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
+
+        ephys, _ = self._tables(ephys_full_pipeline)
+        exp = self._experiment(tmp_path, "test_implants_date")
+        ephys.Probe.insert1(
+            {"probe": "SER-3", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
+        )
+        key = find_or_create_probe_insertion(
+            exp,
+            "SUBJ-1",
+            "SER-3",
+            ephys.ProbeInsertion,
+            ephys.Probe,
+            insertion_number=1,
+            implantation_date="2026-05-20",
+        )
+        assert str((ephys.ProbeInsertion & key).fetch1("implantation_date")) == "2026-05-20 00:00:00"

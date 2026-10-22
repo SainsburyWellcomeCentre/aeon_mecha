@@ -18,6 +18,7 @@ from aeon.dj_pipeline.utils.ephys_utils import (
     harp_to_naive,
     load_device_channel_map,
     parse_epoch_metadata,
+    parse_metadata_implants,
     read_probe_assignments,
     resolve_harp,
     resolve_raw_dir_and_epochs,
@@ -197,6 +198,26 @@ class EphysEpochEnd(dj.Manual):
     """
 
 
+def _record_target_area(target_area: str | None, insertion_key: dict) -> None:
+    """Link a ProbeInsertion to its target area, creating the lookup row if new.
+
+    TargetArea is a controlled vocabulary in spirit but open in practice: a new
+    brain area must not block ingestion. New values are created and warned about
+    so spelling drift ("mPFC" vs "mpfc") shows up in the logs instead of silently
+    splitting InsertionTargetArea joins.
+    """
+    if not target_area:
+        return
+    is_new = not (TargetArea & {"target_area": target_area})
+    TargetArea.insert1({"target_area": target_area}, skip_duplicates=True)
+    if is_new:
+        logger.warning(
+            f"Created new TargetArea {target_area!r} from acquisition metadata. "
+            f"Check it against existing areas for spelling drift."
+        )
+    InsertionTargetArea.insert1({**insertion_key, "target_area": target_area}, skip_duplicates=True)
+
+
 @schema
 class EphysEpochConfig(dj.Imported):
     definition = """
@@ -323,16 +344,27 @@ class EphysEpochConfig(dj.Imported):
                 )
                 logger.info(f"Auto-created Probe entry: {label}={probe_id} (type={probe_type})")
 
-        # Read subject-probe mapping
+        # Subject-probe mapping: the acquisition metadata is authoritative when it
+        # carries subject.Implants[]; older epochs fall back to probe_assignments.json.
         active_labels = list(probe_info.keys())
-        probe_assignments = read_probe_assignments(
-            key,
-            epoch_path,
-            active_labels,
-            self.Insertion,
-            probe_info,
-            override_dir=self.probe_assignments_override_dir,
-        )
+        implants = parse_metadata_implants(metadata)
+        if implants is not None:
+            missing = [lbl for lbl in active_labels if lbl not in implants]
+            if missing:
+                raise KeyError(
+                    f"Metadata declares Implants but has no entry for {missing} "
+                    f"(present: {sorted(implants)}). Fix the acquisition metadata."
+                )
+            probe_assignments = {lbl: {"subject": implants[lbl]["subject"]} for lbl in active_labels}
+        else:
+            probe_assignments = read_probe_assignments(
+                key,
+                epoch_path,
+                active_labels,
+                self.Insertion,
+                probe_info,
+                override_dir=self.probe_assignments_override_dir,
+            )
 
         # Create/validate ProbeInsertion entries and build Insertion Part rows
         insertion_entries = []
@@ -352,13 +384,17 @@ class EphysEpochConfig(dj.Imported):
                 )
             subject = probe_assignments[label]["subject"]
 
+            implant = (implants or {}).get(label, {})
             pi_key = find_or_create_probe_insertion(
                 key["experiment_name"],
                 subject,
                 probe_id,
                 ProbeInsertion,
                 Probe,
+                insertion_number=implant.get("insertion_number"),
+                implantation_date=implant.get("implantation_date"),
             )
+            _record_target_area(implant.get("target_area"), pi_key)
             insertion_entries.append({**key, **pi_key, "probe_label": label, **probe_to_econfig[label]})
 
         # Insert master + Part rows

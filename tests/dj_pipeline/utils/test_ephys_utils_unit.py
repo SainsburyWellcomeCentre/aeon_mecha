@@ -815,3 +815,62 @@ class TestMetadataLayouts:
 
         epoch = _epoch_with(tmp_path, "ephys_devices_Metadata.yml", "Metadata.yml")
         assert parse_epoch_metadata(epoch)["Workflow"] == "Ephys-AEONX1.bonsai"
+
+
+class TestParseMetadataImplants:
+    """subject.Implants[] carries subject, insertion number and target area per probe."""
+
+    def _meta(self, tmp_path, fixture, as_name):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
+
+        return parse_epoch_metadata(_epoch_with(tmp_path, fixture, as_name))
+
+    def test_returns_none_for_metadata_without_implants(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
+
+        meta = self._meta(tmp_path, "ephys_devices_Metadata.yml", "Metadata.yml")
+        assert parse_metadata_implants(meta) is None
+
+    def test_maps_each_probe_to_subject_and_insertion(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
+
+        meta = self._meta(tmp_path, "ephys_headstage_Metadata.json", "Metadata.json")
+        assert parse_metadata_implants(meta) == {
+            "ProbeA": {
+                "subject": "AAA-1140901",
+                "insertion_number": 1,
+                "target_area": "mPFC",
+                "implantation_date": "2026-05-20",
+            },
+            "ProbeB": {
+                "subject": "AAA-1140901",
+                "insertion_number": 2,
+                "target_area": "HPC",
+                "implantation_date": "2026-05-20",
+            },
+        }
+
+    def test_target_area_whitespace_stripped_case_preserved(self):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
+
+        meta = {
+            "subject": {
+                "Subject": "S1",
+                "Implants": [{"Probe": "ProbeA", "InsertionNumber": 1, "TargetArea": "  mPFC "}],
+            }
+        }
+        assert parse_metadata_implants(meta)["ProbeA"]["target_area"] == "mPFC"
+
+    def test_missing_optional_fields_become_none(self):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
+
+        meta = {"subject": {"Subject": "S1", "Implants": [{"Probe": "ProbeA", "InsertionNumber": 3}]}}
+        entry = parse_metadata_implants(meta)["ProbeA"]
+        assert entry["target_area"] is None and entry["implantation_date"] is None
+
+    def test_implant_without_insertion_number_raises(self):
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
+
+        meta = {"subject": {"Subject": "S1", "Implants": [{"Probe": "ProbeA"}]}}
+        with pytest.raises(ValueError, match="InsertionNumber"):
+            parse_metadata_implants(meta)

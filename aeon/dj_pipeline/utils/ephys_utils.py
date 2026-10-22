@@ -124,6 +124,47 @@ def read_amplifier_recording(
     )
 
 
+def parse_metadata_implants(metadata: dict | None) -> dict[str, dict] | None:
+    """Map probe label -> implant record from ``subject.Implants[]``.
+
+    Returns None when the metadata predates this block, in which case the caller
+    falls back to ``probe_assignments.json``.
+
+    Raises:
+        ValueError: if an implant entry omits ``Probe`` or ``InsertionNumber`` --
+            the acquisition is the authority here, so an incomplete record is a
+            data problem to surface, not a default to invent.
+    """
+    if not isinstance(metadata, dict):
+        return None
+    subject_block = metadata.get("subject")
+    if not isinstance(subject_block, dict):
+        return None
+    implants = subject_block.get("Implants")
+    if not isinstance(implants, list):
+        return None
+
+    subject = subject_block.get("Subject")
+    result: dict[str, dict] = {}
+    for entry in implants:
+        if not isinstance(entry, dict):
+            continue
+        label = entry.get("Probe")
+        if not label:
+            raise ValueError(f"Implant entry without a 'Probe' label: {entry}")
+        if entry.get("InsertionNumber") is None:
+            raise ValueError(f"Implant entry for {label} has no 'InsertionNumber'")
+        target_area = entry.get("TargetArea")
+        result[label] = {
+            "subject": subject,
+            "insertion_number": int(entry["InsertionNumber"]),
+            # strip only -- capitalisation is meaningful in area names (mPFC vs HPC)
+            "target_area": target_area.strip() if isinstance(target_area, str) else None,
+            "implantation_date": entry.get("ImplantationDate"),
+        }
+    return result or None
+
+
 def _headstage_probe_block(metadata: dict | None, probe_label: str) -> dict | None:
     """Return the ``ephys.Headstage.<probe_label>`` block, or None if not this layout.
 
@@ -197,6 +238,8 @@ def find_or_create_probe_insertion(
     probe_id: str,
     probe_insertion_table,
     probe_table,
+    insertion_number: int | None = None,
+    implantation_date=None,
 ) -> dict:
     """Find existing or create new ProbeInsertion for this (experiment, subject, probe).
 
@@ -208,6 +251,10 @@ def find_or_create_probe_insertion(
         probe_id: Probe identifier (serial number)
         probe_insertion_table: The ProbeInsertion table class
         probe_table: The Probe table class
+        insertion_number: Number asserted by acquisition metadata. When given and an
+            existing row holds a different number, raises rather than reconciling.
+            When None, the next free number is assigned.
+        implantation_date: Optional implantation date for a newly created row.
 
     Returns:
         Dict with ProbeInsertion PK fields
@@ -218,17 +265,28 @@ def find_or_create_probe_insertion(
     ).to_dicts()
     if existing:
         row = existing[0]
+        if insertion_number is not None and int(row["insertion_number"]) != int(insertion_number):
+            # The acquisition metadata asserts one number, the database holds another.
+            # Silently preferring either would mis-attribute this probe's data.
+            raise ValueError(
+                f"Metadata asserts insertion_number={insertion_number} for probe {probe_id!r} "
+                f"(subject {subject!r}, experiment {experiment_name!r}), but an existing "
+                f"ProbeInsertion has insertion_number={row['insertion_number']}. Resolve by hand."
+            )
         return {
             "experiment_name": row["experiment_name"],
             "subject": row["subject"],
             "insertion_number": row["insertion_number"],
         }
 
-    # Create new ProbeInsertion with auto-assigned insertion_number
-    existing_nums = (
-        probe_insertion_table & {"experiment_name": experiment_name, "subject": subject}
-    ).to_arrays("insertion_number")
-    new_num = int(existing_nums.max()) + 1 if len(existing_nums) > 0 else 1
+    if insertion_number is not None:
+        new_num = int(insertion_number)
+    else:
+        # No metadata assertion -- auto-assign the next free number
+        existing_nums = (
+            probe_insertion_table & {"experiment_name": experiment_name, "subject": subject}
+        ).to_arrays("insertion_number")
+        new_num = int(existing_nums.max()) + 1 if len(existing_nums) > 0 else 1
 
     probe_insertion_table.insert1(
         {
@@ -236,6 +294,7 @@ def find_or_create_probe_insertion(
             "subject": subject,
             "insertion_number": new_num,
             "probe": probe_id,
+            "implantation_date": implantation_date,
         }
     )
     logger.info(
