@@ -158,7 +158,7 @@ def find_overlapping_bno055_chunks(
             clock_array = table["Clock"].to_numpy()
             first = clock_array[0]
             last = clock_array[-1]
-            n = int(clock_file.name.split("_")[-1])
+            n = int(clock_file.stem.split("_")[-1])
 
         else:
             size = clock_file.stat().st_size
