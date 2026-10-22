@@ -621,7 +621,7 @@ class EphysChunk(dj.Manual):
             if clock_file.stat().st_size < 8:
                 logger.warning(f"Empty/short Clock file for {ephys_file.name}. Skipping.")
                 continue
-            if ephys_file.suffix == "arrow":
+            if ephys_file.suffix == ".arrow":
                 import pyarrow.dataset as ds
 
                 dataset = ds.dataset(clock_file, format="ipc")
