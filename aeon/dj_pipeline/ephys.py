@@ -210,6 +210,18 @@ def _record_target_area(target_area: str | None, insertion_key: dict) -> None:
     """
     if not target_area:
         return
+    # target_area is part of InsertionTargetArea's primary key, so a changed area
+    # would append a second row rather than replace the first, and every join through
+    # that table would fan out. Surface it instead.
+    existing = (InsertionTargetArea & insertion_key).to_arrays("target_area")
+    other = [a for a in existing if a != target_area]
+    if other:
+        raise ValueError(
+            f"Insertion {insertion_key} is already linked to target area(s) {list(other)}; "
+            f"metadata now says {target_area!r}. Two areas on one insertion fan out every "
+            f"join through InsertionTargetArea. Resolve by hand."
+        )
+
     is_new = not (TargetArea & {"target_area": target_area})
     TargetArea.insert1({"target_area": target_area}, skip_duplicates=True)
     if is_new:

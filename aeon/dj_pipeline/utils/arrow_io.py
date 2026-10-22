@@ -35,7 +35,9 @@ def read_arrow_column(path: Path, column: str) -> np.ndarray:
         _require_column(reader, column, path)
         batches = [reader.get_batch(i).column(column) for i in range(reader.num_record_batches)]
         if not batches:
-            return np.empty(0)
+            # Match the column's declared dtype: np.empty(0) is float64, and a float
+            # clock flowing into extend_clock would silently change the timebase.
+            return np.empty(0, dtype=reader.schema.field(column).type.to_pandas_dtype())
         import pyarrow as pa
 
         return pa.chunked_array(batches).to_numpy(zero_copy_only=False)

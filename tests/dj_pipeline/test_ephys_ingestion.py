@@ -96,6 +96,54 @@ class TestEphysEpochDiscovery:
         assert len(labels) == ctx.cfg["expected_discovered_probes"]
 
 
+class TestMetadataReachesTheDatabase:
+    """subject.Implants must actually land in the tables, not just parse.
+
+    The parser and find_or_create_probe_insertion are unit-tested separately;
+    this covers the seam between them, which is where the two removed inference
+    sites now run.
+    """
+
+    def test_insertion_numbers_come_from_metadata(self, ephys_test_epochs, ctx):
+        cfg = ctx.cfg
+        if "probe_serial" in cfg:
+            pytest.skip(f"{cfg['experiment_name']}: metadata predates subject.Implants")
+        rows = (
+            ctx.ephys.EphysEpochConfig.Insertion & {"experiment_name": cfg["experiment_name"]}
+        ).to_dicts()
+        by_label = {r["probe_label"]: r for r in rows}
+        assert set(by_label) == {"ProbeA", "ProbeB"}, sorted(by_label)
+        # golden_arrow_01's metadata asserts ProbeA -> 1, ProbeB -> 2. Note this
+        # dataset cannot distinguish metadata-driven numbering from the auto-assign
+        # fallback, which yields the same 1, 2 in discovery order -- verified by
+        # mutation. The discriminating cases are unit-level:
+        # TestProbeInsertionFromImplants::test_explicit_insertion_number_is_used
+        # (asserts 7) and ::test_conflicting_insertion_number_raises.
+        assert by_label["ProbeA"]["insertion_number"] == 1
+        assert by_label["ProbeB"]["insertion_number"] == 2
+
+    def test_target_areas_recorded(self, ephys_test_epochs, ctx):
+        cfg = ctx.cfg
+        if "probe_serial" in cfg:
+            pytest.skip(f"{cfg['experiment_name']}: metadata predates subject.Implants")
+        subject = cfg["subject"]
+        linked = (
+            ctx.ephys.InsertionTargetArea & {"experiment_name": cfg["experiment_name"], "subject": subject}
+        ).to_dicts()
+        areas = {(r["insertion_number"], r["target_area"]) for r in linked}
+        assert areas == {(1, "mPFC"), (2, "HPC")}, areas
+
+    def test_implantation_date_recorded(self, ephys_test_epochs, ctx):
+        cfg = ctx.cfg
+        if "probe_serial" in cfg:
+            pytest.skip(f"{cfg['experiment_name']}: metadata predates subject.Implants")
+        dates = (
+            ctx.ephys.ProbeInsertion
+            & {"experiment_name": cfg["experiment_name"], "subject": cfg["subject"]}
+        ).to_arrays("implantation_date")
+        assert all(str(d).startswith("2026-05-20") for d in dates), list(dates)
+
+
 class TestEphysChunkIngestion:
     """Verify EphysChunk.ingest_chunks() output."""
 
@@ -571,7 +619,7 @@ class TestEphysSyncModel:
         # this test pins is that sync_start follows Value.HarpTime either way.
         drift = (seconds_harp_start - expected_harp_start).total_seconds()
         assert drift in (0.0, 1.0), (
-            f"Seconds ({df.index[0]}) and Value.HarpTime ({df['harp_time'].iloc[0]}) "
+            f"Seconds ({df.index[0]}) and Value.HarpTime ({df['Value.HarpTime'].iloc[0]}) "
             f"differ by {drift}s; expected 0 (newer acquisition) or 1 (older)."
         )
 

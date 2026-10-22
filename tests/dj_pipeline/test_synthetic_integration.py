@@ -1067,6 +1067,23 @@ class TestProbeInsertionFromImplants:
             _record_target_area(area, pi_key)
         assert not any(area in r.message for r in caplog.records), "existing area should not warn"
 
+    def test_changing_target_area_raises(self, ephys_full_pipeline, tmp_path):
+        """A second area on one insertion would fan out every join through the link table."""
+        from aeon.dj_pipeline.ephys import _record_target_area
+        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
+
+        ephys, _ = self._tables(ephys_full_pipeline)
+        exp = self._experiment(tmp_path, "test_implants_area_conflict")
+        ephys.Probe.insert1(
+            {"probe": "SER-6", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
+        )
+        pi_key = find_or_create_probe_insertion(
+            exp, "SUBJ-1", "SER-6", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
+        )
+        _record_target_area("AreaOne", pi_key)
+        with pytest.raises(ValueError, match="already linked"):
+            _record_target_area("AreaTwo", pi_key)
+
     def test_target_area_none_is_a_noop(self, ephys_full_pipeline, tmp_path):
         from aeon.dj_pipeline.ephys import _record_target_area
         from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion

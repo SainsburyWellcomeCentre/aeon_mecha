@@ -1238,7 +1238,7 @@ class SyncedSpikes(dj.Imported):
                 chunk_windows[c].append((s, e, joblib.load(m)))
 
         # Load ephys onix times
-        _clock_query = (
+        _amp_query = (
             ephys.EphysChunk.File
             & (ephys.EphysBlockInfo.Chunk & key)
             # Select the AMPLIFIER file: it defines the chunk boundaries the spike
@@ -1247,11 +1247,11 @@ class SyncedSpikes(dj.Imported):
             # also match Commutator_Clock_N.bin, which sits in the same directory.
             & AMPLIFIER_FILE_RESTRICTION
         )
-        _clock_rows = _clock_query.to_dicts(order_by="chunk_start")
-        _pk = _clock_query.primary_key
-        ephys_file_keys = [{k: r[k] for k in _pk} for r in _clock_rows]
-        ephys_files = [r["file_path"] for r in _clock_rows]
-        dir_types = [r["directory_type"] for r in _clock_rows]
+        _amp_rows = _amp_query.to_dicts(order_by="chunk_start")
+        _pk = _amp_query.primary_key
+        ephys_file_keys = [{k: r[k] for k in _pk} for r in _amp_rows]
+        ephys_files = [r["file_path"] for r in _amp_rows]
+        dir_types = [r["directory_type"] for r in _amp_rows]
 
         # Spike indices count samples of the AmplifierData files concatenated in PreProcessing, so
         # the chunk boundaries come from those files, not from the Clock files. They differ when an
@@ -1268,10 +1268,14 @@ class SyncedSpikes(dj.Imported):
         for f, d in zip(ephys_files, dir_types, strict=True):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
             amp_path = ephys_dir / f
-            amp_len = read_amplifier_recording(amp_path, num_channels, NP2_FS_HZ).get_num_samples()
             if amp_path.suffix == ".arrow":
+                # Clock and amplifier are columns of one table, so the clock length is
+                # the sample count by construction -- one read instead of two, and the
+                # only place the two could disagree disappears.
                 onix_ts = read_arrow_column(amp_path, "Clock")
+                amp_len = len(onix_ts)
             else:
+                amp_len = read_amplifier_recording(amp_path, num_channels, NP2_FS_HZ).get_num_samples()
                 onix_ts = np.memmap(
                     ephys_dir / f.replace("AmplifierData", "Clock"), mode="r", dtype=np.uint64
                 )
