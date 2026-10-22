@@ -97,6 +97,19 @@ class TestForkSafeJobKwargs:
         monkeypatch.setattr(os, "sched_getaffinity", lambda pid: set(range(64)), raising=False)
         assert fork_safe_job_kwargs("30s", max_jobs=8)["n_jobs"] == 8
 
+    @pytest.mark.parametrize(
+        ("max_jobs", "expected"),
+        [(1, 1), (16, 16), (None, 32), (-1, 32), (0.5, 32), (64, 64)],
+        ids=["serial", "lower", "none", "minus_one", "fraction", "above_default"],
+    )
+    def test_max_jobs_from_paramset(self, monkeypatch, max_jobs, expected):
+        import os
+
+        from aeon.dj_pipeline.utils.spike_sorting_utils import fork_safe_job_kwargs
+
+        monkeypatch.setattr(os, "sched_getaffinity", lambda pid: set(range(64)), raising=False)
+        assert fork_safe_job_kwargs("30s", max_jobs=max_jobs)["n_jobs"] == expected
+
     def test_fallback_to_cpu_count_without_affinity(self, monkeypatch):
         import os
 
@@ -116,3 +129,35 @@ class TestForkSafeJobKwargs:
         assert kw["pool_engine"] == "thread"
         assert kw["max_threads_per_worker"] == 1
         assert kw["chunk_duration"] == "2s"
+
+
+class TestExtendClock:
+    """extend_clock extrapolates a short Clock file at its own tick rate, within limits."""
+
+    def test_long_enough_clock_unchanged(self):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import extend_clock
+
+        onix_ts = np.arange(0, 100, 10, dtype=np.uint64)
+        assert extend_clock(onix_ts, n_samples=8, max_extrapolation=5, name="Clock_0.bin") is onix_ts
+
+    def test_short_clock_extrapolated_at_tick_rate(self):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import extend_clock
+
+        onix_ts = np.arange(0, 100, 10, dtype=np.uint64)  # 10 samples, 10 ticks apart
+        extended = extend_clock(onix_ts, n_samples=13, max_extrapolation=5, name="Clock_0.bin")
+        np.testing.assert_array_equal(extended, np.arange(0, 130, 10, dtype=np.uint64))
+
+    @pytest.mark.parametrize(
+        ("n_clock", "n_samples"),
+        [(10, 16), (1, 2)],  # too many missing samples; too few to take a tick rate from
+    )
+    def test_raises_when_cannot_extrapolate(self, n_clock, n_samples):
+        from aeon.dj_pipeline.utils.spike_sorting_utils import extend_clock
+
+        with pytest.raises(ValueError, match="Clock_0.bin: cannot extrapolate"):
+            extend_clock(
+                np.arange(n_clock, dtype=np.uint64),
+                n_samples=n_samples,
+                max_extrapolation=5,
+                name="Clock_0.bin",
+            )
