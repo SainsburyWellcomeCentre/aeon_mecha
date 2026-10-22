@@ -1,8 +1,8 @@
 """Column-oriented access to Bonsai ONIX Arrow IPC files.
 
 ``read_bonsai_onix_arrow`` (spike_sorting_utils) is optimised for time-slicing a
-384-channel recording. These helpers do the opposite: whole-column reads and
-metadata-only lookups, for the clock streams that share the probe's file.
+384-channel recording. These helpers do the opposite: a whole-column read and a
+cheap bounds lookup, for the clock streams that share the probe's file.
 """
 
 from pathlib import Path
@@ -16,7 +16,14 @@ def _open(path: Path):
     from pyarrow.ipc import RecordBatchFileReader
 
     source = pa.memory_map(str(path), "r")
-    return source, RecordBatchFileReader(source)
+    try:
+        return source, RecordBatchFileReader(source)
+    except Exception:
+        # The caller's try/finally only starts once this returns, so a truncated or
+        # non-arrow file would leak the map on every one of the hundreds of files
+        # an epoch walk opens.
+        source.close()
+        raise
 
 
 def _require_column(reader, column: str, path: Path) -> None:
@@ -45,23 +52,13 @@ def read_arrow_column(path: Path, column: str) -> np.ndarray:
         source.close()
 
 
-def arrow_num_samples(path: Path) -> int:
-    """Total rows, summed from batch metadata.
-
-    The final batch of a Bonsai file is short whenever acquisition stopped
-    mid-batch, so this cannot be derived from batch count x batch size.
-
-    Costs ~6 s on a 6.75 GB probe file: pyarrow exposes no per-batch row count
-    without deserialising the batch. That is paid deliberately -- a sample count
-    inferred from a uniform-batch assumption would shift every spike timestamp
-    on a file that does not meet it.
-    """
-    path = Path(path)
-    source, reader = _open(path)
-    try:
-        return sum(reader.get_batch(i).num_rows for i in range(reader.num_record_batches))
-    finally:
-        source.close()
+def _first_nonempty(reader, column: str, order):
+    """First batch column in ``order`` that has rows, or None."""
+    for i in order:
+        col = reader.get_batch(i).column(column)
+        if len(col):
+            return col
+    return None
 
 
 def read_arrow_clock_bounds(path: Path, column: str = "Clock") -> tuple[int, int]:
@@ -77,10 +74,13 @@ def read_arrow_clock_bounds(path: Path, column: str = "Clock") -> tuple[int, int
         n = reader.num_record_batches
         if n == 0:
             raise ValueError(f"{path} has no record batches")
-        first = reader.get_batch(0).column(column)
-        last = first if n == 1 else reader.get_batch(n - 1).column(column)
-        if len(first) == 0 or len(last) == 0:
-            raise ValueError(f"{path} has no record batches with rows")
+        # A writer that flushes at stop can leave an empty batch at either end, so
+        # walk past those rather than reporting a file with data as having none.
+        # In the common case this touches exactly the first and last batch.
+        first = _first_nonempty(reader, column, range(n))
+        last = _first_nonempty(reader, column, range(n - 1, -1, -1))
+        if first is None or last is None:
+            raise ValueError(f"{path} has record batches but none with rows")
         return int(first[0].as_py()), int(last[-1].as_py())
     finally:
         source.close()

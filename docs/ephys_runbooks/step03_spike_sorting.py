@@ -135,7 +135,8 @@ def setup_sorting_prerequisites(
             "save_format": "zarr",
             # Preprocessing pipeline, by registered name. "aeon_default" (bandpass
             # 300-6000 Hz + median common average referencing) is used if omitted;
-            # "none" passes the recording through. Or write a SpikeInterface pipeline
+            # "none" applies no filtering or referencing (the fixed unsigned-to-signed
+            # conversion still runs). Or write a SpikeInterface pipeline
             # dict inline as "SI_PREPROCESSING_PIPELINE" instead. See
             # aeon/dj_pipeline/utils/ephys_preprocessing.py.
             "SI_PREPROCESSING_METHOD": "aeon_default",

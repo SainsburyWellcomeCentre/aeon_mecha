@@ -398,13 +398,18 @@ class TestParseEpochMetadata:
 
         assert result is None
 
-    def test_malformed_metadata(self, tmp_path):
+    def test_malformed_metadata_names_the_file_rather_than_denying_it(self, tmp_path):
+        """A corrupt file must not be reported as an absent one.
+
+        Returning None here reaches parse_metadata_probe_configs as
+        FileNotFoundError("No Metadata.json or Metadata.yml in ..."), sending an
+        operator after a file that is sitting right there, truncated.
+        """
         from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
 
         (tmp_path / "Metadata.yml").write_text("not: valid: json: {{}")
-        result = parse_epoch_metadata(tmp_path)
-
-        assert result is None
+        with pytest.raises(ValueError, match="Metadata.yml"):
+            parse_epoch_metadata(tmp_path)
 
 
 def _mock_table_with_transaction():
@@ -626,9 +631,16 @@ class TestResolveEpochProbeJson:
         epoch.mkdir(parents=True)
         with pytest.raises(FileNotFoundError) as exc:
             resolve_epoch_probe_json(raw, epoch, "probe.json")
-        # the message must name every location searched, so a miss is diagnosable
-        assert "recording_configurations" in str(exc.value)
-        assert "NeuropixelsV2" in str(exc.value)
+        # The message must name every candidate path, so a miss is diagnosable.
+        # Asserting on the bare device name would be satisfied by 'NeuropixelsV2Beta'
+        # alone, and would not notice a candidate dropped from the search list.
+        from aeon.dj_pipeline.utils.ephys_utils import DEVICE_PROBE_TYPE_MAP
+
+        message = str(exc.value)
+        assert str(raw / "recording_configurations" / "probe.json") in message
+        assert str(epoch / "probe.json") in message
+        for device in DEVICE_PROBE_TYPE_MAP:
+            assert str(epoch / device / "probe.json") in message, device
 
     def test_accepts_str_args(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
@@ -802,6 +814,63 @@ class TestMetadataLayouts:
         meta = parse_epoch_metadata(_epoch_with(tmp_path, "ephys_headstage_Metadata.json", "Metadata.json"))
         assert get_probe_id(meta, "NeuropixelsV2", "ProbeA") == "23107805942"
         assert get_probe_id(meta, "NeuropixelsV2", "ProbeB") == "23409404271"
+
+    def test_headstage_wins_over_both_older_layouts(self, tmp_path):
+        """A transitional file carrying all three blocks must resolve by the headstage.
+
+        parse_metadata_probe_configs returns early on the headstage branch and
+        get_probe_id checks it first; without this, a file written during the
+        changeover resolves to a different serial and config with no error.
+        """
+        import json
+
+        from aeon.dj_pipeline.utils.ephys_utils import (
+            get_probe_id,
+            parse_epoch_metadata,
+            parse_metadata_probe_configs,
+        )
+
+        epoch = _epoch_with(tmp_path, "ephys_headstage_Metadata.json", "Metadata.json")
+        data = json.loads((epoch / "Metadata.json").read_text())
+        data["NeuropixelsV2A"] = {
+            "ProbeConfiguration": {
+                "ProbeInterfaceFileName": r"C:\\configs\\stale_A.json",
+                "ProbeSerialNumber": "00000000001",
+            }
+        }
+        data["Devices"] = {
+            "NeuropixelsV2e": {
+                "ConfigurationA": {
+                    "ProbeInterfaceFileName": r"C:\\configs\\older_A.json",
+                    "ProbeSerialNumber": "00000000002",
+                }
+            }
+        }
+        (epoch / "Metadata.json").write_text(json.dumps(data))
+
+        assert parse_metadata_probe_configs(epoch)["ProbeA"] == "M01_ProbeA_4Shanks_1500_to_2200um.json"
+        assert get_probe_id(parse_epoch_metadata(epoch), "NeuropixelsV2", "ProbeA") == "23107805942"
+
+    def test_disabled_probe_is_recognised_as_bool_and_as_string(self, tmp_path):
+        """Enable may be a JSON bool or the string "false", depending on the writer.
+
+        enabled_probe_labels and get_probe_id must agree: if one reads a probe as
+        enabled and the other returns None, EphysEpochConfig.make aborts the epoch
+        with "partially transferred" on a perfectly ingestible recording.
+        """
+        import json
+
+        from aeon.dj_pipeline.utils.ephys_utils import enabled_probe_labels, get_probe_id
+
+        base = json.loads((FIXTURES / "ephys_headstage_Metadata.json").read_text())
+        for flag in (False, "false", "False"):
+            data = json.loads(json.dumps(base))
+            data["ephys"]["Headstage"]["ProbeA"]["Enable"] = flag
+            assert get_probe_id(data, "NeuropixelsV2", "ProbeA") is None, flag
+            assert "ProbeA" not in enabled_probe_labels(data), flag
+            # ProbeB is untouched and must stay enabled by both readers
+            assert get_probe_id(data, "NeuropixelsV2", "ProbeB") is not None, flag
+            assert "ProbeB" in enabled_probe_labels(data), flag
 
     def test_parse_epoch_metadata_prefers_json(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata

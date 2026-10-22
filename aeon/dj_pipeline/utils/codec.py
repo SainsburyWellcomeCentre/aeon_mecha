@@ -148,8 +148,9 @@ class OnixStreamCodec(dj.Codec):
         # time makes a stored row's column set depend on today's raw tree: archive or
         # convert the files and the row changes shape. Rows written before this key
         # existed predate the arrow format, so they default to binary.
-        value.setdefault("stream_format", "binary")
-        return value
+        # Copy rather than setdefault: the caller may reuse the dict it passed, and
+        # an injected default would then leak into rows that never set one.
+        return {"stream_format": "binary", **value}
 
     def decode(self, stored, *, key=None):
         """Load + merge the referenced ONIX stream group as an ONIX-indexed DataFrame.

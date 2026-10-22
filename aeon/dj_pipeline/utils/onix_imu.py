@@ -9,6 +9,7 @@ Returns ONIX-clock-indexed DataFrames. HARP conversion is the caller's job
 """
 
 import re
+from collections.abc import Iterable
 from pathlib import Path
 
 import numpy as np
@@ -67,8 +68,8 @@ _PREFIX_BY_CLASS: dict[str, str] = {
 def _load_bno055_arrow(path: Path) -> pd.DataFrame:
     """Load one Bno055 arrow chunk, renamed to the canonical column names.
 
-    Returns the 13 shared columns plus ``calibration`` and ``temperature``,
-    indexed by the ONIX ``Clock`` column.
+    Returns the 13 shared ``IMU_COLUMNS`` plus ``ARROW_EXTRA_COLUMNS``
+    (``calibration``, ``temperature``) -- 15 in all -- indexed by ONIX ``Clock``.
     """
     import pyarrow as pa
     from pyarrow.ipc import RecordBatchFileReader
@@ -76,10 +77,15 @@ def _load_bno055_arrow(path: Path) -> pd.DataFrame:
     source = pa.memory_map(str(path), "r")
     try:
         reader = RecordBatchFileReader(source)
-        table = pa.Table.from_batches([reader.get_batch(i) for i in range(reader.num_record_batches)])
+        table = pa.Table.from_batches(
+            [reader.get_batch(i) for i in range(reader.num_record_batches)], schema=reader.schema
+        )
         present = set(table.column_names)
         unknown = present - set(_ARROW_TO_CANONICAL) - {"Clock", "HubClock"}
-        missing = set(_ARROW_TO_CANONICAL) - present
+        # Clock is required, not merely tolerated: everything downstream is aligned on
+        # it, and leaving it out of this check trades the diagnostic below for a bare
+        # KeyError four lines later.
+        missing = (set(_ARROW_TO_CANONICAL) | {"Clock"}) - present
         if unknown or missing:
             raise ValueError(
                 f"Unexpected Bno055 column set in {path.name}: "
@@ -114,7 +120,8 @@ def load_and_merge_bno055(
     Raises:
         FileNotFoundError: If the Clock or any expected stream binary is missing.
         ValueError: If the merged DataFrame's columns don't match :data:`IMU_COLUMNS`
-            exactly — a sign of schema drift in ``aeon/schema/ephys.py``.
+            exactly — a sign of schema drift in ``aeon/schema/ephys.py``. An arrow
+            chunk returns those columns plus :data:`ARROW_EXTRA_COLUMNS` instead.
     """
     # Lazy import — avoids triggering aeon.schema.ephys at module load time,
     # consistent with the pattern in aeon/dj_pipeline/ephys.py.
@@ -157,18 +164,27 @@ def load_and_merge_bno055(
     return merged[list(IMU_COLUMNS)]
 
 
-def concat_bno055_chunks(device_dir, device_name: str, chunk_indices) -> pd.DataFrame:
+def concat_bno055_chunks(
+    device_dir: Path, device_name: str, chunk_indices: Iterable[int]
+) -> pd.DataFrame:
     """Load and concatenate Bno055 chunks, refusing to mix column sets.
 
     An epoch written across a format change yields 13-column binary frames and
     15-column arrow frames. ``pd.concat`` would pad the difference with NaN and
     return a frame that looks whole, so mismatched sets raise instead.
     """
+    # Materialise once: the argument may be any iterable, and it is used twice.
+    chunk_indices = list(chunk_indices)
+    if not chunk_indices:
+        raise ValueError(
+            f"No Bno055 chunk indices given for {device_dir}; callers must handle the "
+            f"empty window themselves rather than concatenating nothing."
+        )
     frames = [load_and_merge_bno055(device_dir, device_name, n) for n in chunk_indices]
     column_sets = {tuple(f.columns) for f in frames}
     if len(column_sets) > 1:
         raise ValueError(
-            f"Bno055 chunks {list(chunk_indices)} in {device_dir} have different column "
+            f"Bno055 chunks {chunk_indices} in {device_dir} have different column "
             f"sets {[sorted(c) for c in column_sets]} -- concatenating would pad with NaN. "
             f"This epoch mixes acquisition formats; ingest the halves separately."
         )
@@ -199,7 +215,8 @@ def find_overlapping_bno055_chunks(
     helper to gather all overlapping chunks before concatenating + filtering.
     """
     device_dir = Path(device_dir)
-    overlapping: list[int] = []
+    arrow_idx: set[int] = set()
+    binary_idx: set[int] = set()
 
     # Arrow chunks keep their ONIX clock as a column; binary chunks have a companion
     # Clock_N.bin. Both are scanned: an epoch written across a format change has some
@@ -212,10 +229,17 @@ def find_overlapping_bno055_chunks(
             continue
         # A chunk whose clock cannot be read is malformed. Skipping it would make the
         # caller compute summary stats over a subset of the window and insert a row
-        # that looks healthy, so let it raise.
-        first, last = read_arrow_clock_bounds(arrow_file)
+        # that looks healthy, so let it raise. A chunk with no rows is a different
+        # thing: it contributes nothing to any window, and the binary pass below skips
+        # its equivalent, so failing here would block every sync window in the epoch.
+        try:
+            first, last = read_arrow_clock_bounds(arrow_file)
+        except ValueError as e:
+            if "record batches" in str(e):
+                continue
+            raise
         if first <= onix_ts_end and last >= onix_ts_start:
-            overlapping.append(int(match.group(1)))
+            arrow_idx.add(int(match.group(1)))
 
     pattern = f"{device_name}_Bno055_Clock_*.bin"
     for clock_file in device_dir.glob(pattern):
@@ -239,5 +263,13 @@ def find_overlapping_bno055_chunks(
             last = first
         # Inclusive interval overlap test on both ends.
         if first <= onix_ts_end and last >= onix_ts_start:
-            overlapping.append(n)
-    return sorted(overlapping)
+            binary_idx.add(n)
+    both = arrow_idx & binary_idx
+    if both:
+        # load_and_merge_bno055 prefers arrow when both exist, so returning the index
+        # twice would load it twice and double the frame with nothing to notice.
+        raise ValueError(
+            f"Bno055 chunk(s) {sorted(both)} exist in both arrow and binary form in "
+            f"{device_dir}; which is authoritative is undefined. Remove one set."
+        )
+    return sorted(arrow_idx | binary_idx)

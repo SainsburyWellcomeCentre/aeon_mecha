@@ -43,7 +43,14 @@ logger = dj.logger
 # AmplifierData_N.bin beside Clock_N.bin; arrow puts amplifier, Clock and HubClock
 # in one <device>_<probe>_N.arrow. Shared so PreProcessing and SyncedSpikes cannot
 # drift apart -- they must agree on which file a block's samples come from.
-AMPLIFIER_FILE_RESTRICTION = "file_name LIKE '%AmplifierData%.bin' OR file_name LIKE '%.arrow'"
+# '%Probe%.arrow' rather than '%.arrow': the Bno055 arrow file sits in the same
+# directory and is an obvious future candidate for registration. If one were ever
+# registered, '%.arrow' would hand PreProcessing a 17-column IMU table as amplifier
+# data and give SyncedSpikes its length as a chunk boundary. Note '_' is a LIKE
+# wildcard, so '%_Probe%' would be wrong.
+# Parenthesised: DataJoint ANDs restrictions together, so a bare OR would bind
+# loosely and widen whatever it is combined with.
+AMPLIFIER_FILE_RESTRICTION = "(file_name LIKE '%AmplifierData%.bin' OR file_name LIKE '%Probe%.arrow')"
 
 # Neuropixels 2.0 sampling rate - TODO: read this from the metadata
 NP2_FS_HZ = 30e3
@@ -132,7 +139,7 @@ class SortingParamSet(dj.Lookup):
     params: <blob>  # dictionary of all applicable parameters
     """
 
-    def insert(self, rows, **kwargs):
+    def insert(self, rows, *args, **kwargs):
         """Insert paramsets, rejecting an invalid preprocessing selection up front.
 
         Checks the method name, step names and override targets; step arguments are
@@ -143,8 +150,15 @@ class SortingParamSet(dj.Lookup):
         if isinstance(rows, list | tuple):
             for row in rows:
                 if isinstance(row, dict):
-                    resolve_preprocessing_pipeline(row.get("params") or {})
-        super().insert(rows, **kwargs)
+                    params = row.get("params") or {}
+                    if not isinstance(params, dict):
+                        # `"KEY" in params` on a str or list is a substring/element
+                        # test, so a non-dict would skip every check below silently.
+                        raise TypeError(
+                            f"SortingParamSet.params must be a dict, got {type(params).__name__}"
+                        )
+                    resolve_preprocessing_pipeline(params)
+        super().insert(rows, *args, **kwargs)
 
 
 @schema
@@ -264,6 +278,8 @@ class PreProcessing(dj.Computed):
         gain_to_uV = 3.05176
         offset_to_uV = -2048 * gain_to_uV
 
+        params = (SortingParamSet & key).fetch1("params")
+
         return (
             ephys_files,
             dir_types,
@@ -272,6 +288,7 @@ class PreProcessing(dj.Computed):
             fs_hz,
             gain_to_uV,
             offset_to_uV,
+            params,
             output_dir,
             recording_file,
             recording_dir,
@@ -287,6 +304,7 @@ class PreProcessing(dj.Computed):
         fs_hz: float,
         gain_to_uV: float,
         offset_to_uV: float,
+        params: dict,
         output_dir: Path,
         recording_file: Path,
         recording_dir: Path,
@@ -304,6 +322,7 @@ class PreProcessing(dj.Computed):
             fs_hz: Sampling frequency
             gain_to_uV: Gain conversion factor
             offset_to_uV: Offset conversion factor
+            params: SortingParamSet params; selects the preprocessing pipeline
             output_dir: Output directory path
             recording_file: Path to save recording object
             recording_dir: Directory for recording files
@@ -357,8 +376,6 @@ class PreProcessing(dj.Computed):
 
         si_probe.set_device_channel_indices(electrodes_df["channel_idx"].values)
         si_recording.set_probe(probe=si_probe, in_place=True)
-
-        params = (SortingParamSet & key).fetch1("params")
 
         # Run preprocessing and save results to output folder
         si_recording = si.preprocessing.unsigned_to_signed(si_recording)
@@ -1263,7 +1280,7 @@ class SyncedSpikes(dj.Imported):
         if not ephys_files:
             raise ValueError(
                 f"No amplifier files registered for the chunks of block {key.get('block_start')}. "
-                f"EphysChunk.File has no '*AmplifierData*.bin' or '*.arrow' row for them."
+                f"EphysChunk.File has no row matching {AMPLIFIER_FILE_RESTRICTION!r} for them."
             )
         for f, d in zip(ephys_files, dir_types, strict=True):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)

@@ -37,13 +37,6 @@ class TestArrowIO:
         clock, _ = _write_arrow(f, [500, 500, 137])
         assert np.array_equal(read_arrow_column(f, "Clock"), clock)
 
-    def test_num_samples_counts_short_final_batch(self, tmp_path):
-        from aeon.dj_pipeline.utils.arrow_io import arrow_num_samples
-
-        f = tmp_path / "t.arrow"
-        _write_arrow(f, [500, 500, 137])
-        assert arrow_num_samples(f) == 1137
-
     def test_clock_bounds_match_the_full_column(self, tmp_path):
         from aeon.dj_pipeline.utils.arrow_io import read_arrow_clock_bounds
 
@@ -67,7 +60,9 @@ class TestArrowIO:
             lambda self, i: (calls.append(i), original(self, i))[1],
         )
         read_arrow_clock_bounds(f)
-        assert len(calls) <= 2, f"read {len(calls)} batches, expected at most 2"
+        # Lower bound too: if the implementation moves to read_all()/read_next_batch,
+        # the patch records nothing and '<= 2' would pass while the file is scanned.
+        assert 1 <= len(calls) <= 2, f"read {len(calls)} batches, expected 1 or 2"
 
     def test_missing_column_raises_naming_available_columns(self, tmp_path):
         from aeon.dj_pipeline.utils.arrow_io import read_arrow_column
@@ -88,6 +83,50 @@ class TestArrowIO:
         with ipc.new_file(f, pa.schema([("Clock", pa.uint64())])):
             pass
         with pytest.raises(ValueError, match="no record batches"):
+            read_arrow_clock_bounds(f)
+
+
+    def test_empty_file_column_keeps_its_declared_dtype(self, tmp_path):
+        """A float64 empty clock would silently change the timebase in extend_clock."""
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        from aeon.dj_pipeline.utils.arrow_io import read_arrow_column
+
+        f = tmp_path / "empty.arrow"
+        with ipc.new_file(f, pa.schema([("Clock", pa.uint64())])):
+            pass
+        out = read_arrow_column(f, "Clock")
+        assert len(out) == 0
+        assert out.dtype == np.uint64
+
+    def test_bounds_walk_past_empty_batches_at_either_end(self, tmp_path):
+        """A writer that flushes at stop leaves an empty batch; the file still has data."""
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        from aeon.dj_pipeline.utils.arrow_io import read_arrow_clock_bounds
+
+        f = tmp_path / "padded.arrow"
+        schema = pa.schema([("Clock", pa.uint64())])
+        with ipc.new_file(f, schema) as w:
+            for values in ([], [10, 20, 30], []):
+                w.write_batch(
+                    pa.RecordBatch.from_arrays([pa.array(values, type=pa.uint64())], schema=schema)
+                )
+        assert read_arrow_clock_bounds(f) == (10, 30)
+
+    def test_all_batches_empty_raises(self, tmp_path):
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        from aeon.dj_pipeline.utils.arrow_io import read_arrow_clock_bounds
+
+        f = tmp_path / "all_empty.arrow"
+        schema = pa.schema([("Clock", pa.uint64())])
+        with ipc.new_file(f, schema) as w:
+            w.write_batch(pa.RecordBatch.from_arrays([pa.array([], type=pa.uint64())], schema=schema))
+        with pytest.raises(ValueError, match="none with rows"):
             read_arrow_clock_bounds(f)
 
 
@@ -139,6 +178,70 @@ class TestReadAmplifierRecordingArrow:
         assert traces.shape == (5, 3)
         # column i was filled with the constant i
         assert [int(traces[0, i]) for i in range(3)] == [0, 1, 2]
+
+    def _varying_probe_file(self, tmp_path, batch_sizes, n_channels=2):
+        """Cell (row, ch) holds row*10 + ch, so any row or channel shift changes values."""
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        total = sum(batch_sizes)
+        rows = np.arange(total, dtype=np.uint16)
+        cols = {f"AmplifierData{i}": rows * 10 + i for i in range(n_channels)}
+        cols["Clock"] = np.arange(total, dtype=np.uint64) * 7
+        schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in cols.items()])
+        f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
+        off = 0
+        with ipc.new_file(f, schema) as w:
+            for n in batch_sizes:
+                w.write_batch(
+                    pa.RecordBatch.from_arrays(
+                        [pa.array(v[off : off + n]) for v in cols.values()], schema=schema
+                    )
+                )
+                off += n
+        return f
+
+    def test_traces_across_a_batch_boundary(self, tmp_path):
+        """A read straddling two batches is where stride arithmetic first goes wrong.
+
+        get_traces addresses batches by a constant stride, so an off-by-one there
+        shifts every spike time without changing the sample count.
+        """
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        f = self._varying_probe_file(tmp_path, [40, 40, 13])
+        rec = read_amplifier_recording(f, num_channels=2, fs_hz=30000.0)
+        traces = rec.get_traces(start_frame=38, end_frame=43)
+        assert traces.tolist() == [[r * 10, r * 10 + 1] for r in range(38, 43)]
+
+    def test_traces_spanning_every_batch_including_the_short_tail(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        f = self._varying_probe_file(tmp_path, [40, 40, 13])
+        rec = read_amplifier_recording(f, num_channels=2, fs_hz=30000.0)
+        traces = rec.get_traces(start_frame=0, end_frame=93)
+        assert traces.tolist() == [[r * 10, r * 10 + 1] for r in range(93)]
+
+    def test_traces_wholly_inside_the_short_final_batch(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        f = self._varying_probe_file(tmp_path, [40, 40, 13])
+        rec = read_amplifier_recording(f, num_channels=2, fs_hz=30000.0)
+        traces = rec.get_traces(start_frame=85, end_frame=93)
+        assert traces.tolist() == [[r * 10, r * 10 + 1] for r in range(85, 93)]
+
+    def test_traces_to_end_of_a_file_with_no_short_tail(self, tmp_path):
+        """A chunk with no short tail puts end_frame exactly on a batch boundary.
+
+        A full 18M-sample chunk divides evenly, so deriving the last batch from
+        end_frame rather than end_frame - 1 indexes one past the final batch here.
+        """
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        f = self._varying_probe_file(tmp_path, [40, 40])
+        rec = read_amplifier_recording(f, num_channels=2, fs_hz=30000.0)
+        traces = rec.get_traces(start_frame=0, end_frame=80)
+        assert traces.tolist() == [[r * 10, r * 10 + 1] for r in range(80)]
 
     def test_gains_are_applied(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording

@@ -344,8 +344,11 @@ def _write_bno055_arrow(device_dir, device_name, chunk_index, n=20, columns=ARRO
     device_dir.mkdir(parents=True, exist_ok=True)
     data = {}
     for c in columns:
-        if c in ("HubClock", "Clock"):
+        if c == "Clock":
             data[c] = (np.arange(n, dtype=np.uint64) + 1) * 100 + chunk_index * 10_000
+        elif c == "HubClock":
+            # Must differ from Clock, or reading the wrong clock column passes.
+            data[c] = (np.arange(n, dtype=np.uint64) + 1) * 100 + chunk_index * 10_000 - 7
         elif c == "Calibration":
             data[c] = np.full(n, 15, dtype=np.uint8)
         elif c == "Temperature":
@@ -377,15 +380,17 @@ class TestBno055Arrow:
         from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
 
         d = tmp_path / "NeuropixelsV2"
-        _write_bno055_arrow(d, "NeuropixelsV2", 0, n=3)
-        # overwrite with distinguishable per-column values
+        d.mkdir(parents=True, exist_ok=True)
+        # written here with distinguishable per-column values
         import pyarrow as pa
         import pyarrow.ipc as ipc
 
         vals = {"EulerAngle_Yaw": 10.0, "EulerAngle_Pitch": 20.0, "EulerAngle_Roll": 30.0}
         data = {}
         for c in ARROW_IMU_COLUMNS:
-            if c in ("HubClock", "Clock"):
+            if c == "Clock":
+                data[c] = np.arange(3, dtype=np.uint64) + 10
+            elif c == "HubClock":
                 data[c] = np.arange(3, dtype=np.uint64) + 1
             elif c == "Calibration":
                 data[c] = np.full(3, 15, dtype=np.uint8)
@@ -401,6 +406,18 @@ class TestBno055Arrow:
         assert df["euler_x"].iloc[0] == 10.0
         assert df["euler_y"].iloc[0] == 20.0
         assert df["euler_z"].iloc[0] == 30.0
+
+    def test_index_is_clock_not_hubclock(self, tmp_path):
+        """The ONIX index is Clock, never HubClock.
+
+        HubClock is the hub's own counter and is offset from Clock, so indexing on it
+        shifts every sample against the sync regression.
+        """
+        from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
+
+        _write_bno055_arrow(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0, n=4)
+        df = load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
+        assert list(df.index) == [100, 200, 300, 400]
 
     def test_calibration_and_temperature_present(self, tmp_path):
         from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
@@ -442,6 +459,39 @@ class TestBno055Arrow:
         with pytest.raises(KeyError, match="Clock"):
             find_overlapping_bno055_chunks(d, "NeuropixelsV2", 0, 100_000)
 
+    def test_missing_clock_column_is_named_rather_than_a_bare_keyerror(self, tmp_path):
+        """Clock is what everything downstream aligns on, so its absence is schema drift.
+
+        Tolerating it in the column-set check trades the diagnostic for a bare
+        KeyError raised four lines later, with no hint of which file or which schema.
+        """
+        from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
+
+        d = tmp_path / "NeuropixelsV2"
+        _write_bno055_arrow(
+            d, "NeuropixelsV2", 0, columns=tuple(c for c in ARROW_IMU_COLUMNS if c != "Clock")
+        )
+        with pytest.raises(ValueError, match="column set"):
+            load_and_merge_bno055(d, "NeuropixelsV2", 0)
+
+    def test_empty_arrow_chunk_is_skipped_not_fatal(self, tmp_path):
+        """A zero-row chunk contributes to no window, as the binary pass already assumes.
+
+        Raising on it instead blocks every OnixImuChunk in the epoch, including sync
+        windows nowhere near the empty chunk.
+        """
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        from aeon.dj_pipeline.utils.onix_imu import find_overlapping_bno055_chunks
+
+        d = tmp_path / "NeuropixelsV2"
+        _write_bno055_arrow(d, "NeuropixelsV2", 0)
+        schema = pa.schema([(c, pa.uint64() if "lock" in c else pa.float32()) for c in ARROW_IMU_COLUMNS])
+        with ipc.new_file(d / "NeuropixelsV2_Bno055_1.arrow", schema):
+            pass
+        assert find_overlapping_bno055_chunks(d, "NeuropixelsV2", 0, 100_000) == [0]
+
     def test_overlap_finder_sees_arrow_chunks(self, tmp_path):
         from aeon.dj_pipeline.utils.onix_imu import find_overlapping_bno055_chunks
 
@@ -455,6 +505,50 @@ class TestBno055Arrow:
 
 class TestMixedFormatImu:
     """An epoch written across a format change has arrow and binary chunks side by side."""
+
+    def test_same_index_in_both_formats_raises(self, tmp_path):
+        """A chunk present as both arrow and binary is ambiguous, not twice as much data.
+
+        Scanning both globs (the round-1 mixed-format fix) made a same-index collision
+        reachable. Without this, the chunk is returned twice, loaded twice via the arrow
+        branch, and concatenated into a frame of double length with a non-monotonic index.
+        """
+        import numpy as np
+
+        from aeon.dj_pipeline.utils.onix_imu import find_overlapping_bno055_chunks
+
+        d = tmp_path / "NeuropixelsV2"
+        _write_bno055_arrow(d, "NeuropixelsV2", 0)
+        np.array([1, 10**9], dtype=np.uint64).tofile(d / "NeuropixelsV2_Bno055_Clock_0.bin")
+
+        with pytest.raises(ValueError, match="both arrow and binary"):
+            find_overlapping_bno055_chunks(d, "NeuropixelsV2", 0, 10**12)
+
+    def test_concat_refuses_to_mix_column_sets(self, tmp_path):
+        """13-column binary and 15-column arrow frames must not be concatenated.
+
+        pd.concat pads the difference with NaN and returns a frame that looks whole,
+        so OnixImuChunk would insert summary stats over half-NaN columns and the
+        codec's column-count check would then read the padded width as correct.
+        """
+        from aeon.dj_pipeline.utils.onix_imu import concat_bno055_chunks
+
+        d = tmp_path / "NeuropixelsV2"
+        _write_bno055_arrow(d, "NeuropixelsV2", 0)
+        _write_staggered_bno_chunk(d, "NeuropixelsV2", 1, np.arange(1, 21, dtype=np.uint64), seed=1)
+
+        with pytest.raises(ValueError, match="different column"):
+            concat_bno055_chunks(d, "NeuropixelsV2", [0, 1])
+
+    def test_concat_accepts_a_homogeneous_set(self, tmp_path):
+        from aeon.dj_pipeline.utils.onix_imu import ARROW_EXTRA_COLUMNS, IMU_COLUMNS, concat_bno055_chunks
+
+        d = tmp_path / "NeuropixelsV2"
+        for n in (0, 1):
+            _write_bno055_arrow(d, "NeuropixelsV2", n)
+        df = concat_bno055_chunks(d, "NeuropixelsV2", [0, 1])
+        assert tuple(df.columns) == IMU_COLUMNS + ARROW_EXTRA_COLUMNS
+        assert len(df) == 40
 
     def test_both_formats_are_found(self, tmp_path):
         import numpy as np

@@ -15,8 +15,13 @@ pytestmark = pytest.mark.unit
 class TestOnixStreamCodecEncode:
     """Direct ``encode()`` calls against OnixStreamCodec, no DB round trip."""
 
-    def test_encodes_valid_dict(self):
-        """Test that encode returns the input dict unchanged for a valid reference."""
+    def test_encodes_valid_dict_without_touching_the_caller(self):
+        """Encode returns the reference plus the format key, leaving the input alone.
+
+        It used to mutate in place, so ``encoded == ref`` held whatever it did; a
+        caller reusing one reference dict across inserts would carry the injected
+        default into rows that never set one.
+        """
         from aeon.dj_pipeline.utils.codec import OnixStreamCodec
 
         codec = OnixStreamCodec()
@@ -28,7 +33,8 @@ class TestOnixStreamCodecEncode:
             "stream_group": "Bno055",
         }
         encoded = codec.encode(ref)
-        assert encoded == ref
+        assert "stream_format" not in ref
+        assert encoded == {**ref, "stream_format": "binary"}
 
     def test_rejects_non_dict(self):
         """Test that encode raises TypeError for non-dict input."""
@@ -480,3 +486,21 @@ class TestOnixStreamFormatDiscriminator:
         stored = OnixStreamCodec().encode(dict(payload))
         decoded = json.loads(stored) if isinstance(stored, str) else stored
         assert decoded["stream_format"] == "arrow"
+
+
+class TestEmptyRowFormatConsistency:
+    """An empty IMU row must carry the same stream_format as its non-empty siblings.
+
+    Otherwise decode loads the arrow chunks, finds 15 columns, compares against the
+    13 a 'binary' row implies, and raises "the raw tree changed format" about a tree
+    that never changed. The end-to-end consequence is pinned by the arrow round-trip
+    in test_codec_integration.py; this pins the column arithmetic decode relies on.
+    """
+
+    def test_arrow_adds_exactly_the_extra_columns(self):
+        from aeon.dj_pipeline.utils.onix_imu import ARROW_EXTRA_COLUMNS, IMU_COLUMNS
+
+        assert not set(ARROW_EXTRA_COLUMNS) & set(IMU_COLUMNS), (
+            "decode derives an arrow row's width as len(IMU_COLUMNS) + len(ARROW_EXTRA_COLUMNS); "
+            "an overlap would make that sum wrong and every arrow fetch raise"
+        )

@@ -259,7 +259,8 @@ class EphysEpochConfig(dj.Imported):
     def make(self, key: dict[str, Any]) -> None:
         """Discover probes for an epoch; register ProbeInsertion + ElectrodeConfig.
 
-        Subject-probe mapping resolved (in priority order): per-epoch
+        Subject-probe mapping resolved (in priority order): the acquisition's own
+        ``subject.Implants[]`` metadata block, then per-epoch
         probe_assignments.json, then carry-forward from the most recent
         populated epoch, then existing ProbeInsertion matched by serial.
 
@@ -320,7 +321,11 @@ class EphysEpochConfig(dj.Imported):
         # single-probe epoch. Without this, a half-copied epoch ingests as clean.
         declared = enabled_probe_labels(metadata)
         if declared is not None:
-            absent = sorted(declared - set(probe_info))
+            # Compare against what discovery found on disk, not probe_info: the latter
+            # also excludes probes get_probe_id considers disabled, and the two
+            # functions disagree when Enable is the string "false" rather than a bool.
+            # Using probe_info would report a correctly-disabled probe as a missing file.
+            absent = sorted(declared - set(probe_labels))
             if absent:
                 raise FileNotFoundError(
                     f"Metadata declares {absent} enabled for epoch {epoch_dir}, but no data "
@@ -1009,6 +1014,13 @@ class OnixImuChunk(dj.Imported):
                 device_name = candidate
                 break
 
+        # The format is a property of the epoch, not of whether this window happened
+        # to contain samples: an empty row must record the same stream_format its
+        # non-empty siblings do, or a fetch of it returns a different column set.
+        is_arrow = device_name is not None and any(
+            (epoch_path / device_name).glob(f"{device_name}_Bno055_*.arrow")
+        )
+
         def _empty_row(chunk_indices: list[int]) -> dict:
             return {
                 **key,
@@ -1016,6 +1028,7 @@ class OnixImuChunk(dj.Imported):
                 "timestamps": {},
                 **{col: {} for col in IMU_COLUMNS},
                 "stream_df": {
+                    "stream_format": "arrow" if is_arrow else "binary",
                     "experiment_name": key["experiment_name"],
                     "epoch_start": str(key["epoch_start"]),
                     "sync_start": str(key["sync_start"]),

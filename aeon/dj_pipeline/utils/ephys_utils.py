@@ -212,6 +212,11 @@ def parse_metadata_implants(metadata: dict | None) -> dict[str, dict] | None:
         return None
 
     subject = subject_block.get("Subject")
+    if implants and not subject:
+        raise ValueError(
+            f"subject.Implants[] is present but subject.Subject is missing or empty: "
+            f"{subject_block!r}. Every insertion would be keyed on a NULL subject."
+        )
     result: dict[str, dict] = {}
     for entry in implants:
         if not isinstance(entry, dict):
@@ -232,6 +237,13 @@ def parse_metadata_implants(metadata: dict | None) -> dict[str, dict] | None:
     return result or None
 
 
+def _is_enabled(value) -> bool:
+    """Interpret an Enable flag. Newer metadata writes a bool, older the string form."""
+    if isinstance(value, str):
+        return value.strip().lower() != "false"
+    return value is not False
+
+
 def enabled_probe_labels(metadata: dict | None) -> set[str] | None:
     """Probe labels the metadata declares enabled, or None if it cannot say.
 
@@ -250,7 +262,7 @@ def enabled_probe_labels(metadata: dict | None) -> set[str] | None:
         for label, block in headstage.items()
         if re.fullmatch(r"Probe[A-Z]", label)
         and isinstance(block, dict)
-        and block.get("Enable", True) is not False
+        and _is_enabled(block.get("Enable", True))
     }
 
 
@@ -316,7 +328,7 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
         enable = devices.get(probe_label, "true")
         probe_config = devices.get("NeuropixelsV2e", {}).get(f"Configuration{suffix}", {})
 
-    if (isinstance(enable, str) and enable.lower() == "false") or enable is False:
+    if not _is_enabled(enable):
         return None
     return _serial_from_gain_cal(probe_config.get("GainCalibrationFileName")) or default_id
 
@@ -578,7 +590,12 @@ def parse_epoch_metadata(epoch_path: Path) -> dict | None:
         epoch_path: Path to the epoch directory
 
     Returns:
-        Parsed metadata dict, or None if not found or unparseable.
+        Parsed metadata dict, or None if no metadata file exists.
+
+    Raises:
+        ValueError: If a metadata file exists but cannot be parsed. Returning None
+            here would reach the caller as "no metadata file", sending an operator
+            after a truncated file they are told does not exist.
     """
     metadata_path = next(
         (epoch_path / n for n in ("Metadata.json", "Metadata.yml") if (epoch_path / n).exists()), None
@@ -589,8 +606,7 @@ def parse_epoch_metadata(epoch_path: Path) -> dict | None:
         with open(metadata_path) as f:
             return json.load(f)  # older epochs use a .yml name for JSON content
     except (json.JSONDecodeError, OSError) as e:
-        logger.warning(f"Failed to parse {metadata_path.name} at {metadata_path}: {e}")
-        return None
+        raise ValueError(f"Failed to parse {metadata_path} as JSON: {e}") from e
 
 
 def _probe_json_basename(pifn: str | None) -> str | None:

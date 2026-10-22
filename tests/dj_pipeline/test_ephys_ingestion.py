@@ -141,6 +141,10 @@ class TestMetadataReachesTheDatabase:
             ctx.ephys.ProbeInsertion
             & {"experiment_name": cfg["experiment_name"], "subject": cfg["subject"]}
         ).to_arrays("implantation_date")
+        # Count first: all() over an empty result is True, so a regression that drops
+        # the insertions (or writes them under another subject) would pass silently.
+        expected = cfg["expected_probe_count"]
+        assert len(dates) == expected, f"expected {expected} insertion(s), got {list(dates)}"
         assert all(str(d).startswith("2026-05-20") for d in dates), list(dates)
 
 

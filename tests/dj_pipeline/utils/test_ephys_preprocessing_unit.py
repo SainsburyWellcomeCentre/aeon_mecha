@@ -59,3 +59,51 @@ def test_invalid_selection_raises(params, match):
 
     with pytest.raises(ValueError, match=match):
         resolve_preprocessing_pipeline(params)
+
+
+def test_unknown_method_raises_rather_than_falling_back():
+    """A typo must not silently select the default pipeline.
+
+    Falling back would apply bandpass + CAR to a paramset that asked for something
+    else, and the sorting would look healthy.
+    """
+    from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
+
+    with pytest.raises(ValueError, match="Unknown SI_PREPROCESSING_METHOD"):
+        resolve_preprocessing_pipeline({"SI_PREPROCESSING_METHOD": "aeon_defualt"})
+
+
+def test_none_resolves_to_an_empty_pipeline_and_passes_traces_through():
+    """"none" must apply nothing -- the failure mode is silently applying (or skipping)."""
+    import spikeinterface.full as si
+
+    from aeon.dj_pipeline.utils.ephys_preprocessing import (
+        apply_preprocessing,
+        resolve_preprocessing_pipeline,
+    )
+
+    params = {"SI_PREPROCESSING_METHOD": "none"}
+    assert resolve_preprocessing_pipeline(params) == {}
+
+    rec = si.generate_recording(num_channels=4, durations=[0.5], seed=0)
+    np.testing.assert_array_equal(apply_preprocessing(rec, params).get_traces(), rec.get_traces())
+
+
+def test_inline_pipeline_is_used_verbatim():
+    """SI_PREPROCESSING_PIPELINE bypasses the registry; only its conflicts were tested."""
+    import spikeinterface.full as si
+
+    from aeon.dj_pipeline.utils.ephys_preprocessing import (
+        apply_preprocessing,
+        resolve_preprocessing_pipeline,
+    )
+
+    inline = {"bandpass_filter": {"freq_min": 500, "freq_max": 3000}}
+    assert resolve_preprocessing_pipeline({"SI_PREPROCESSING_PIPELINE": inline}) == inline
+
+    rec = si.generate_recording(num_channels=4, durations=[0.5], seed=0)
+    expected = si.bandpass_filter(rec, freq_min=500, freq_max=3000)
+    np.testing.assert_array_equal(
+        apply_preprocessing(rec, {"SI_PREPROCESSING_PIPELINE": inline}).get_traces(),
+        expected.get_traces(),
+    )

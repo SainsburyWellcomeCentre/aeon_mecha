@@ -805,12 +805,18 @@ def ephys_test_blocks(ephys_chunks_ingested, ephys_full_pipeline, ephys_golden_d
         pytest.skip(f"{cfg['experiment_name']}: no golden sorting artifacts; covered to PreProcessing")
     exp_name = cfg["experiment_name"]
 
-    chunks = (ephys.EphysChunk & {"experiment_name": exp_name}).to_dicts(order_by="chunk_start")
-    expected_chunks = cfg.get("n_chunks", 12) * cfg.get("expected_probe_count", 1)
-    assert len(chunks) == expected_chunks, (
-        f"Expected {expected_chunks} ingested EphysChunks for the golden epoch, got {len(chunks)}. "
-        "The block bounds below assume the full 12-chunk epoch."
+    n_probes = cfg.get("expected_probe_count", 1)
+    all_chunks = (ephys.EphysChunk & {"experiment_name": exp_name}).to_dicts(order_by="chunk_start")
+    expected_chunks = cfg.get("n_chunks", 12) * n_probes
+    assert len(all_chunks) == expected_chunks, (
+        f"Expected {expected_chunks} ingested EphysChunks for the golden epoch, got {len(all_chunks)}. "
+        f"The block bounds below assume a full {cfg.get('n_chunks', 12)}-chunk epoch."
     )
+    # Index into ONE insertion's chunks: a multi-probe dataset interleaves probes in
+    # chunk_start order, so chunks[6]/chunks[11] would silently name the wrong chunks
+    # while the count assertion above still passed.
+    first_insertion = min(c["insertion_number"] for c in all_chunks)
+    chunks = [c for c in all_chunks if c["insertion_number"] == first_insertion]
 
     def midpoint(chunk):
         return chunk["chunk_start"] + (chunk["chunk_end"] - chunk["chunk_start"]) / 2

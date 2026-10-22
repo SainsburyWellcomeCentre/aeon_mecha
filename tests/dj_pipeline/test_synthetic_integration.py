@@ -541,6 +541,7 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         amp_as_zarr=False,
         fmt="binary",
         before_ingest=None,
+        after_ingest=None,
     ):
         """Set up minimal DB state for SyncedSpikes.make(), run it, and return spike_counts.
 
@@ -557,6 +558,10 @@ class TestSyncedSpikesIndexingAndExtrapolation:
           the AmplifierData / Clock files to (the factory writes 10 samples per chunk).
         - ``sorted_samples``: sample count of the sorted recording; defaults to the sum of
           the AmplifierData sample counts, as PreProcessing would have concatenated them.
+        - ``before_ingest(raw_dir, epoch_dir_name, device_name)``: seed extra raw files
+          before discovery runs.
+        - ``after_ingest(experiment_name)``: register EphysChunk.File rows the discovery
+          globs would never produce, to exercise the downstream file restriction directly.
         - ``amp_as_zarr``: replace each AmplifierData .bin with its compressed .zarr twin
           under the processed root, as raw ephys compression leaves them.
         """
@@ -592,6 +597,12 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             ts_ranges=ts_ranges,
             fmt=fmt,
         )
+        if fmt != "binary" and (amp_samples or clock_samples):
+            raise ValueError(
+                f"amp_samples/clock_samples truncate the raw .bin files, which fmt={fmt!r} "
+                f"does not write. The request would be ignored and the test would assert "
+                f"against untruncated data."
+            )
         amp_samples = amp_samples or [10] * n_chunks
         clock_samples = clock_samples or [10] * n_chunks
         device_dir = raw_dir / epoch_dir_name / device_name
@@ -622,19 +633,8 @@ class TestSyncedSpikesIndexingAndExtrapolation:
 
         ephys.EphysSyncModel.ingest(experiment_name)
         ephys.EphysChunk.ingest_chunks(experiment_name)
-        if amp_as_zarr:  # after ingestion, which reads the raw files
-            import gc
-
-            import spikeinterface.extractors as se
-
-            zarr_dir = tmp_path / "processed" / epoch_dir_name / device_name
-            for amp_bin in sorted(device_dir.glob("*AmplifierData_*.bin")):
-                se.read_binary(amp_bin, sampling_frequency=30e3, dtype=np.uint16, num_channels=1).save(
-                    format="zarr", folder=zarr_dir / amp_bin.with_suffix(".zarr").name
-                )
-                gc.collect()  # read_binary's memmap blocks unlink on Windows
-                amp_bin.unlink()
-
+        if after_ingest is not None:  # register rows the discovery globs never produce
+            after_ingest(experiment_name)
         if amp_as_zarr:  # after ingestion, which reads the raw files
             import gc
 
@@ -857,15 +857,27 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             chunk_indices=[0, 1],
             fmt="binary",
         )
-        assert arrow == binary, f"arrow split {arrow}, binary split {binary}"
+        # The absolute split is pinned too: a run where SyncedSpikes inserts no Unit
+        # rows at all returns [0, 0] for both formats, and a pure differential
+        # assertion would call that agreement.
+        expected = [2, 1]  # 10 samples/chunk, spikes at 5 and 6 in chunk 0, 15 in chunk 1
+        assert arrow == expected, f"arrow split {arrow}, expected {expected}"
+        assert binary == expected, f"binary split {binary}, expected {expected}"
 
     def test_commutator_clock_files_are_not_mistaken_for_ephys(self, ephys_full_pipeline, tmp_path):
-        """Commutator_Clock_N.bin sits beside the probe files and must never be selected.
+        """A registered Commutator_Clock_N.bin row must never be selected as amplifier data.
 
         A 'file_name LIKE %Clock%.bin' restriction matches it, which would splice a
         10 Hz turns-counter clock into the ONIX timeline and shift every spike.
+
+        The row is inserted into EphysChunk.File directly: ingest_chunks' discovery
+        globs only yield amplifier files and their derived Clock twins, so seeding the
+        file on disk alone leaves AMPLIFIER_FILE_RESTRICTION with nothing to reject and
+        the assertion below could not fail.
         """
         import numpy as np
+
+        from aeon.dj_pipeline import ephys
 
         def seed_commutator(raw_dir, epoch_dir_name, device_name):
             d = raw_dir / epoch_dir_name / device_name
@@ -874,6 +886,33 @@ class TestSyncedSpikesIndexingAndExtrapolation:
                 np.arange(1, 7, dtype=np.uint64).tofile(d / f"{device_name}_Commutator_Clock_{n}.bin")
                 np.zeros(6, dtype=np.uint32).tofile(d / f"{device_name}_Commutator_Turns_{n}.bin")
 
+        def register_commutator(experiment_name):
+            rows = (ephys.EphysChunk & {"experiment_name": experiment_name}).to_dicts(
+                order_by="chunk_start"
+            )
+            device_name = "NeuropixelsV2Beta"
+            ephys.EphysChunk.File.insert(
+                [
+                    {
+                        **{k: r[k] for k in ephys.EphysChunk.primary_key},
+                        "directory_type": "raw-ephys",
+                        "file_name": f"{device_name}_Commutator_Clock_{n}.bin",
+                        "file_path": (
+                            f"2024-06-13T10-24-07/{device_name}/"
+                            f"{device_name}_Commutator_Clock_{n}.bin"
+                        ),
+                    }
+                    for n, r in enumerate(rows)
+                ],
+                allow_direct_insert=True,
+            )
+            selected = (ephys.EphysChunk.File & {"experiment_name": experiment_name}).to_arrays(
+                "file_name"
+            )
+            assert any("Commutator" in n for n in selected), (
+                "the commutator row must be in EphysChunk.File for the restriction to reject it"
+            )
+
         counts = self._build_and_populate(
             tmp_path,
             "test_synced_commutator",
@@ -881,6 +920,7 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             spike_indices=[5, 15],
             chunk_indices=[0, 1],
             before_ingest=seed_commutator,
+            after_ingest=register_commutator,
         )
         assert list(counts) == [1, 1], f"commutator files perturbed the split: {counts}"
 
@@ -1264,27 +1304,67 @@ class TestAmplifierFileSelection:
         assert len(names) == 2, f"expected 2 AmplifierData files, got {names}"
         assert all("AmplifierData" in n for n in names), names
 
-    def test_restriction_excludes_clock_and_commutator(self, ephys_full_pipeline, tmp_path):
-        """Clock and Commutator files must never be mistaken for amplifier data."""
-        import numpy as np
+    def test_restriction_excludes_clock_commutator_and_other_arrow_streams(
+        self, ephys_full_pipeline, tmp_path
+    ):
+        """Only amplifier files may match, in either format.
 
+        The non-amplifier rows are inserted into EphysChunk.File directly: discovery
+        registers amplifier files and their derived Clock twins only, so writing them
+        to disk would leave the restriction with nothing to reject. The Bno055 arrow
+        row is the one that matters for the arrow half -- it sits in the same device
+        directory, and a bare '%.arrow' would hand PreProcessing a 17-column IMU table
+        as amplifier data and give SyncedSpikes its length as a chunk boundary.
+        """
         from aeon.dj_pipeline import ephys
         from aeon.dj_pipeline.spike_sorting import AMPLIFIER_FILE_RESTRICTION
 
-        exp = TestArrowChunkIngestion()._setup(tmp_path, "test_amp_sel_excl", ["binary"])
-        d = tmp_path / "raw" / "2026-10-13T094255Z" / "NeuropixelsV2"
-        np.arange(1, 7, dtype=np.uint64).tofile(d / "NeuropixelsV2_Commutator_Clock_0.bin")
+        device_name = "NeuropixelsV2"
+        extra = [
+            f"{device_name}_Commutator_Clock_0.bin",
+            f"{device_name}_Bno055_0.arrow",
+        ]
+
+        def register_non_amplifier_rows(experiment_name):
+            chunk = (ephys.EphysChunk & {"experiment_name": experiment_name}).to_dicts()[0]
+            ephys.EphysChunk.File.insert(
+                [
+                    {
+                        **{k: chunk[k] for k in ephys.EphysChunk.primary_key},
+                        "directory_type": "raw-ephys",
+                        "file_name": name,
+                        "file_path": f"2026-10-13T094255Z/{device_name}/{name}",
+                    }
+                    for name in extra
+                ],
+                allow_direct_insert=True,
+            )
+
+        exp = TestArrowChunkIngestion()._setup(
+            tmp_path, "test_amp_sel_excl", ["binary"], after_ingest=register_non_amplifier_rows
+        )
+        all_names = set((ephys.EphysChunk.File & {"experiment_name": exp}).to_arrays("file_name"))
+        assert set(extra) <= all_names, (
+            f"the rows the restriction must reject are not in EphysChunk.File: {all_names}"
+        )
+
         rows = (ephys.EphysChunk.File & {"experiment_name": exp} & AMPLIFIER_FILE_RESTRICTION).to_dicts()
         names = [r["file_name"] for r in rows]
         assert not any("Commutator" in n for n in names), names
+        assert not any("Bno055" in n for n in names), names
         assert not any(n.endswith("_Clock_0.bin") for n in names), names
+        assert names, "the binary amplifier file must still be selected"
 
 
 class TestArrowChunkIngestion:
     """ingest_chunks discovers arrow amplifier files and reads their Clock column."""
 
-    def _setup(self, tmp_path, experiment_name, fmts):
-        """Build an epoch whose chunk n uses fmts[n]; return (epoch_start, n_chunks)."""
+    def _setup(self, tmp_path, experiment_name, fmts, after_ingest=None):
+        """Build an epoch whose chunk n uses fmts[n]; return the experiment name.
+
+        ``after_ingest(experiment_name)`` runs once chunks are registered, for tests
+        that need EphysChunk.File rows the discovery globs would never produce.
+        """
         from ephys_factories import (
             make_synthetic_amplifier_data,
             make_synthetic_ephys_epoch,
@@ -1333,6 +1413,8 @@ class TestArrowChunkIngestion:
         )
         ephys.EphysSyncModel.ingest(experiment_name)
         ephys.EphysChunk.ingest_chunks(experiment_name)
+        if after_ingest is not None:  # register rows the discovery globs never produce
+            after_ingest(experiment_name)
         return experiment_name
 
     def test_arrow_chunks_are_ingested(self, ephys_full_pipeline, tmp_path):
