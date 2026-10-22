@@ -112,13 +112,22 @@ class TestEphysChunkIngestion:
         files = list(
             (ctx.ephys.EphysChunk.File & {"experiment_name": ctx.cfg["experiment_name"]}).fetch("file_name")
         )
-        assert any("AmplifierData_0.bin" in fn for fn in files), (
-            f"AmplifierData_0.bin not registered. Got first 5: {files[:5]}"
-        )
-        assert any("Clock_0.bin" in fn for fn in files), (
-            f"Clock_0.bin not registered. Got first 5: {files[:5]}"
-        )
-        assert len(files) % 2 == 0, f"Expected even file count (Amp+Clock pairs), got {len(files)}"
+        if any(fn.endswith(".arrow") for fn in files):
+            # Arrow carries amplifier and clock in one file: one row per chunk.
+            assert any(fn.endswith("_0.arrow") for fn in files), (
+                f"no chunk-0 arrow file registered. Got first 5: {files[:5]}"
+            )
+            assert not any(fn.endswith(".bin") for fn in files), (
+                f"arrow epoch also registered .bin files: {[f for f in files if f.endswith('.bin')]}"
+            )
+        else:
+            assert any("AmplifierData_0.bin" in fn for fn in files), (
+                f"AmplifierData_0.bin not registered. Got first 5: {files[:5]}"
+            )
+            assert any("Clock_0.bin" in fn for fn in files), (
+                f"Clock_0.bin not registered. Got first 5: {files[:5]}"
+            )
+            assert len(files) % 2 == 0, f"Expected even file count (Amp+Clock pairs), got {len(files)}"
 
 
 class TestEphysBlockInfo:
@@ -252,7 +261,11 @@ class TestCompressedReadEquivalence:
         amp_files = (
             ctx.ephys.EphysChunk.File & exp_key & "file_name LIKE '%AmplifierData%.bin'"
         ).to_dicts()
-        assert amp_files, "no golden AmplifierData .bin registered"
+        if not amp_files:
+            pytest.skip(
+                "no AmplifierData .bin registered: arrow is compressed at acquisition and "
+                "never has a .zarr twin (SPEC_ARROW_INGESTION, Non-goals)"
+            )
 
         f0 = amp_files[0]
         ephys_dir = acquisition.Experiment.get_data_directory(exp_key, directory_type=f0["directory_type"])
@@ -505,14 +518,17 @@ class TestEphysSyncModel:
         # Skip the first row — its source CSV's hour bucket begins before
         # epoch_start (recording started mid-hour), so sync_start is the
         # epoch_start, not the bucket hour.
+        # The 1 s offset is an acquisition-era quirk: Bonsai used to add the HARP
+        # second twice in Seconds. Newer acquisitions emit Seconds == Value.HarpTime,
+        # so the boundary lands on XX:00:00. Either is correct; what must hold is that
+        # sync_start equals Value.HarpTime, which the next test pins directly.
+        expected = {(59, 59), (0, 0)}
         for row in rows[1:]:
             sync_start = row["sync_start"]
-            assert (sync_start.minute, sync_start.second) == (59, 59), (
+            assert (sync_start.minute, sync_start.second) in expected, (
                 f"sync_start={sync_start} is not within the last second of an "
-                f"hour (got minute={sync_start.minute}, second={sync_start.second}). "
-                f"HARP CSVs at hour boundaries should give sync_start = XX:59:59.xxx. "
-                f"A value like XX:00:00 indicates the reader uses the Seconds column, "
-                f"which is 1 s late, instead of Value.HarpTime."
+                f"hour boundary (got minute={sync_start.minute}, second={sync_start.second}); "
+                f"expected XX:59:59 (older acquisitions) or XX:00:00 (newer)."
             )
 
     def test_sync_start_matches_value_harptime_column(
@@ -541,12 +557,13 @@ class TestEphysSyncModel:
         expected_harp_start = harp_to_naive(int(df["Value.HarpTime"].iloc[0]))
         seconds_harp_start = harp_to_naive(int(df.index[0]))
 
-        # Sanity: the source data really does have the 1s difference. If this
-        # ever fails, the premise has changed and the test below is moot.
-        assert (seconds_harp_start - expected_harp_start).total_seconds() == 1.0, (
-            f"Expected Seconds ({df.index[0]}) and Value.HarpTime "
-            f"({df['Value.HarpTime'].iloc[0]}) to differ by 1 second in {csv_path.name}; "
-            f"got delta={(seconds_harp_start - expected_harp_start).total_seconds()}s."
+        # The two columns differ by 1 s in older acquisitions (Bonsai added the HARP
+        # second twice in Seconds) and are identical in newer ones. Both are fine; what
+        # this test pins is that sync_start follows Value.HarpTime either way.
+        drift = (seconds_harp_start - expected_harp_start).total_seconds()
+        assert drift in (0.0, 1.0), (
+            f"Seconds ({df.index[0]}) and Value.HarpTime ({df['harp_time'].iloc[0]}) "
+            f"differ by {drift}s; expected 0 (newer acquisition) or 1 (older)."
         )
 
         rows = (ctx.ephys.EphysSyncModel & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
@@ -556,10 +573,13 @@ class TestEphysSyncModel:
             f"not found in stored values {stored_sync_starts}. If the reader used the "
             f"Seconds index, sync_start would instead be {seconds_harp_start}."
         )
-        assert seconds_harp_start not in stored_sync_starts, (
-            f"sync_start={seconds_harp_start} (Seconds index from {csv_path.name}) "
-            f"found in stored values — the reader uses the 1 s late Seconds column."
-        )
+        if drift:
+            # Only discriminating when the two columns differ: if Seconds ==
+            # Value.HarpTime there is no way to tell which one the reader used.
+            assert seconds_harp_start not in stored_sync_starts, (
+                f"sync_start={seconds_harp_start} (Seconds index from {csv_path.name}) found in "
+                f"stored values — the reader uses the 1 s late Seconds column."
+            )
 
 
 class TestOnixImuChunkOnGoldenData:
@@ -653,7 +673,10 @@ class TestPynappleCodecOnGoldenSpikes:
         block and shank: per the artifacts' own PROVENANCE.md the block names encode
         a pre-PR-#611 clock and will change when ephys is re-ingested.
         """
-        root = require_ephys_golden_data.parent / ephys_golden_dataset_config["golden_sorting_dir"]
+        sorting_dir = ephys_golden_dataset_config.get("golden_sorting_dir")
+        if sorting_dir is None:
+            pytest.skip(f"{ephys_golden_dataset_config['experiment_name']}: no golden sorting artifacts")
+        root = require_ephys_golden_data.parent / sorting_dir
         sortings = sorted(root.glob("*/*/*/spike_sorting/in_container_sorting"))
         if not sortings:
             pytest.skip(f"no golden spike-sorting artifacts under {root}")

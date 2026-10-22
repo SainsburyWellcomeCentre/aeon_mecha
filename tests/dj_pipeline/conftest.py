@@ -124,6 +124,26 @@ GOLDEN_DATASETS = {
         "expected_camera_count": 13,
         "expected_feeder_count": 6,
     },
+    # Behaviour arm of golden_arrow_01 — paired with foraging_abc_arrow_2026_10_13.
+    # Format is unchanged from abcGolden01 (.bin/.csv/.avi); the new
+    # RigConfiguration.yaml beside Metadata.json is an extra file nothing reads.
+    "foraging_abc_arrow_2026_10_13": {
+        "experiment_name": "goldenArrow01-aeon3",
+        "experiment_path": "AEON3/golden_arrow_01",
+        "epoch_dir": "2026-10-13T094312Z",
+        "devices_schema": "swc.aeon_exp.foragingABC.experiment:Experiment",
+        "arena_name": "circle-2m",
+        "lab": "SWC",
+        "location": "AEON3",
+        "experiment_type": "foraging",
+        "required_files": [
+            "Metadata.json",
+            "CameraNest/CameraNest_2026-10-13T09-00-00.csv",
+            "Feeder1/Feeder1_32_2026-10-13T090000Z.bin",
+        ],
+        "expected_camera_count": 13,
+        "expected_feeder_count": 6,
+    },
     # Ephys golden dataset — NeuropixelsV2 ProbeB shank3 of abcGolden01
     # All 96 active contacts on shank3; two overlapping blocks (chunks 0-6 and 4-11)
     "foraging_abc_ephys_2026_05_11": {
@@ -163,6 +183,32 @@ GOLDEN_DATASETS = {
             "2026-05-11T07-49-47_2026-05-11T08-59-47",  # chunks 0..6
             "2026-05-11T08-39-47_2026-05-11T09-49-47",  # chunks 4..11
         ],
+    },
+    # Ephys arm of golden_arrow_01 — Bonsai arrow format, two active probes
+    # (abcGolden01 has ProbeB only). Covered through PreProcessing; the sorting
+    # cascade stays on abcGolden01, which ships golden sorting artifacts.
+    "foraging_abc_ephys_arrow_2026_10_13": {
+        "experiment_name": "goldenArrow01-aeon3",
+        "experiment_path": "AEONX1/golden_arrow_01",
+        "behavior_experiment_path": "AEON3/golden_arrow_01",
+        "epoch_dir": "2026-10-13T094255Z",
+        "subject": "AAA-1140901",
+        "arena_name": "circle-2m",
+        "lab": "SWC",
+        "location": "AEON3",
+        "experiment_type": "foraging",
+        "device_name": "NeuropixelsV2",
+        "probe_type": "neuropixels2.0-multishank",
+        "n_recording_channels": 384,
+        "required_files": [
+            "Metadata.json",
+            "NeuropixelsV2/NeuropixelsV2_ProbeA_0.arrow",
+            "NeuropixelsV2/NeuropixelsV2_Bno055_0.arrow",
+        ],
+        "expected_probe_count": 2,
+        "expected_discovered_probes": 2,
+        "n_chunks": 9,
+        # no golden_sorting_dir: arrow coverage stops at PreProcessing
     },
 }
 
@@ -380,6 +426,7 @@ def clean_streams_tables(pipeline_integration):
     params=[
         pytest.param("foraging_abc_2025_11_18", id="abcBehav0_2025-11-18"),
         pytest.param("foraging_abc_2026_05_11", id="abcGolden01_2026-05-11"),
+        pytest.param("foraging_abc_arrow_2026_10_13", id="goldenArrow01_2026-10-13"),
     ],
 )
 def golden_dataset_config(request):
@@ -528,9 +575,30 @@ def test_epochs(test_experiment, full_pipeline, golden_dataset_config):
 # ============================================================================
 
 
+@pytest.fixture(
+    scope="session",
+    params=[
+        pytest.param("foraging_abc_ephys_2026_05_11", id="abcGolden01_ephys"),
+        pytest.param("foraging_abc_ephys_arrow_2026_10_13", id="goldenArrow01_ephys"),
+    ],
+)
+def ephys_golden_dataset_config(request):
+    """Ephys golden dataset configuration, one per registered ephys golden.
+
+    Ingestion and PreProcessing run for both. Fixtures below the sorting
+    boundary request ``ephys_sorting_dataset_config`` instead, which stays on
+    the dataset that ships golden sorting artifacts.
+    """
+    return GOLDEN_DATASETS[request.param]
+
+
 @pytest.fixture(scope="session")
-def ephys_golden_dataset_config():
-    """Get the ephys golden dataset configuration. No DB needed."""
+def ephys_sorting_dataset_config():
+    """The ephys golden that ships pre-computed sorting artifacts.
+
+    Everything below PreProcessing is format-agnostic (SPEC_ARROW_INGESTION §6),
+    so the sorting cascade is exercised on one dataset only.
+    """
     return GOLDEN_DATASETS["foraging_abc_ephys_2026_05_11"]
 
 
@@ -700,15 +768,15 @@ def ephys_test_epochs(
     cfg = ephys_golden_dataset_config
     exp_name = cfg["experiment_name"]
 
-    # Write probe_assignments.json to temp dir for EphysEpochConfig.populate()
+    # Datasets whose metadata carries subject.Implants need no probe_assignments.json;
+    # that path exists for epochs predating it, keyed by probe serial.
     override_dir = tmp_path_factory.mktemp("probe_assignments")
-    assignments = {
-        "version": 1,
-        "probe_assignments": {
-            cfg["probe_serial"]: {"subject": cfg["subject"]},
-        },
-    }
-    (override_dir / "probe_assignments.json").write_text(json.dumps(assignments))
+    if "probe_serial" in cfg:
+        assignments = {
+            "version": 1,
+            "probe_assignments": {cfg["probe_serial"]: {"subject": cfg["subject"]}},
+        }
+        (override_dir / "probe_assignments.json").write_text(json.dumps(assignments))
 
     # Step 1: discover epochs (HARP-native epoch_start from first HarpSync CSV)
     ephys.EphysEpoch.ingest_epochs(exp_name)
@@ -737,6 +805,10 @@ def ephys_test_blocks(ephys_chunks_ingested, ephys_full_pipeline, ephys_golden_d
     """
     ephys = ephys_full_pipeline["ephys"]
     cfg = ephys_golden_dataset_config
+    if "golden_sorting_dir" not in cfg:
+        # Everything below PreProcessing is format-agnostic (SPEC_ARROW_INGESTION §6),
+        # so only the dataset shipping golden sorting artifacts runs the cascade.
+        pytest.skip(f"{cfg['experiment_name']}: no golden sorting artifacts; covered to PreProcessing")
     exp_name = cfg["experiment_name"]
 
     chunks = (ephys.EphysChunk & {"experiment_name": exp_name}).to_dicts(order_by="chunk_start")

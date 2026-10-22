@@ -477,14 +477,19 @@ def discover_epoch_probes(epoch_path: Path) -> tuple[str | None, Path | None, li
     if device_name is None or device_dir is None:
         return None, None, []
 
-    amplifier_files = sorted(device_dir.glob(f"{device_name}_Probe*_AmplifierData_*.bin"))
+    amplifier_files = sorted(
+        [
+            *device_dir.glob(f"{device_name}_Probe*_AmplifierData_*.bin"),
+            *device_dir.glob(f"{device_name}_Probe*_*.arrow"),
+        ]
+    )
     if not amplifier_files:
         return device_name, device_dir, []
 
-    # e.g., "NeuropixelsV2Beta_ProbeA_AmplifierData_0.bin" -> "ProbeA"
+    # "..._ProbeA_AmplifierData_0.bin" and "..._ProbeA_0.arrow" -> "ProbeA"
     probe_labels = set()
     for f in amplifier_files:
-        match = re.search(rf"{device_name}_(Probe[A-Z])_AmplifierData", f.name)
+        match = re.search(rf"{device_name}_(Probe[A-Z])_(?:AmplifierData_)?\d+\.(?:bin|arrow)$", f.name)
         if match:
             probe_labels.add(match.group(1))
 
