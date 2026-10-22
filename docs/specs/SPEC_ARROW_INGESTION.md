@@ -560,3 +560,58 @@ Not open questions — answered, and they shape the build:
 - **Commutator data with real rotation exists — we just do not have it locally.** So the
   deferral in §7 is an *access* blocker, not a data-existence one. When that recording is
   available, the recorded design is immediately actionable.
+
+# Behaviour added during review rounds 2 and 3
+
+Six rules the spec did not state. Each exists because a review round found a path that
+produced wrong data without saying so, and each is now pinned by a test.
+
+- **A chunk index present in both formats is an error, not two chunks.** This holds on
+  both sides: `find_overlapping_bno055_chunks` for Bno055, `_reject_duplicate_chunk_formats`
+  for amplifier chunks. An epoch written across a format change may mix formats across
+  *different* chunk indices — that stays supported and tested — but the same index in both
+  forms is ambiguous. Loading prefers arrow purely because the file exists, so the binary
+  copy would be silently discarded while its clock had already decided which window the
+  chunk belongs to.
+
+  **The ambiguity is decided on file existence, before any overlap test.** Deciding it
+  after the window filter only catches collisions where *both* copies overlap the window
+  being ingested, which is the subset that happens to be visible rather than the state
+  that is actually undefined.
+
+- **The format is a property of the epoch, not of whether a window held samples.** An
+  empty IMU row records the same `stream_format` and carries the same column set as its
+  populated siblings, or the fetch contract changes with the data.
+
+- **A file that exists but cannot be interpreted is named, never treated as absent.** A
+  corrupt `Metadata.json` raises rather than returning `None`; `None` reaches callers as
+  "no metadata file" and sends an operator after a file that is sitting there, truncated.
+  `EmptyArrowChunk` is a type, not a message substring, so the one caller that may skip an
+  empty chunk is not coupled to another module's wording.
+
+- **Selection is by stream, not by extension.** `AMPLIFIER_FILE_RESTRICTION` matches
+  `'%Probe%.arrow'`, not `'%.arrow'`: the Bno055 file sits in the same device directory,
+  and a bare extension match would hand `PreProcessing` a 17-column IMU table as amplifier
+  data. The `OR` is parenthesised because DataJoint ANDs restrictions together.
+
+- **A typo must not resolve to a default.** This applies to the *key* as well as the
+  value: an unrecognised `SI_PREPROCESSING*` key is rejected, since otherwise the paramset
+  reads as if it selected something while `aeon_default` runs. `stream_format` is validated
+  on write for the same reason.
+
+- **Arrow pins what binary pinned at the call site.** `dtype=uint16` was explicit in
+  `se.read_binary` and implicit in the arrow schema; the gain and offset applied downstream
+  assume 16-bit unsigned samples, so the arrow reader asserts it. Likewise a `Clock` column
+  containing nulls is rejected rather than upcast to `float64` + `NaN`.
+
+## Deliberate asymmetry between the two arrow readers
+
+`read_arrow_clock_bounds` walks past an empty record batch at either end;
+`_check_uniform_batches` rejects a *leading* one. This is not an inconsistency. The bounds
+reader takes only the first and last values and does no stride arithmetic. `get_traces`
+addresses batch *i* at `i * batch_len`, which a leading empty batch makes wrong for every
+batch after it — and `batch_len` is read from batch 0, so an empty first batch also reaches
+`get_traces` as zero. A trailing empty batch is harmless to both and is accepted by both.
+
+If an acquisition is ever found to emit a leading empty batch, the resolution is to derive
+`batch_len` from the first non-empty batch, not to relax the check.
