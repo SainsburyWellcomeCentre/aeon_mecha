@@ -157,6 +157,24 @@ def load_and_merge_bno055(
     return merged[list(IMU_COLUMNS)]
 
 
+def concat_bno055_chunks(device_dir, device_name: str, chunk_indices) -> pd.DataFrame:
+    """Load and concatenate Bno055 chunks, refusing to mix column sets.
+
+    An epoch written across a format change yields 13-column binary frames and
+    15-column arrow frames. ``pd.concat`` would pad the difference with NaN and
+    return a frame that looks whole, so mismatched sets raise instead.
+    """
+    frames = [load_and_merge_bno055(device_dir, device_name, n) for n in chunk_indices]
+    column_sets = {tuple(f.columns) for f in frames}
+    if len(column_sets) > 1:
+        raise ValueError(
+            f"Bno055 chunks {list(chunk_indices)} in {device_dir} have different column "
+            f"sets {[sorted(c) for c in column_sets]} -- concatenating would pad with NaN. "
+            f"This epoch mixes acquisition formats; ingest the halves separately."
+        )
+    return pd.concat(frames)
+
+
 def find_overlapping_bno055_chunks(
     device_dir: Path,
     device_name: str,
@@ -183,21 +201,21 @@ def find_overlapping_bno055_chunks(
     device_dir = Path(device_dir)
     overlapping: list[int] = []
 
-    arrow_chunks = sorted(device_dir.glob(f"{device_name}_Bno055_*.arrow"))
-    if arrow_chunks:
-        from aeon.dj_pipeline.utils.arrow_io import read_arrow_clock_bounds
+    # Arrow chunks keep their ONIX clock as a column; binary chunks have a companion
+    # Clock_N.bin. Both are scanned: an epoch written across a format change has some
+    # of each, and returning after the arrow pass would silently drop the binary half.
+    from aeon.dj_pipeline.utils.arrow_io import read_arrow_clock_bounds
 
-        for arrow_file in arrow_chunks:
-            match = re.search(r"_Bno055_(\d+)\.arrow$", arrow_file.name)
-            if not match:
-                continue
-            try:
-                first, last = read_arrow_clock_bounds(arrow_file)
-            except (KeyError, ValueError):
-                continue
-            if first <= onix_ts_end and last >= onix_ts_start:
-                overlapping.append(int(match.group(1)))
-        return sorted(overlapping)
+    for arrow_file in sorted(device_dir.glob(f"{device_name}_Bno055_*.arrow")):
+        match = re.search(r"_Bno055_(\d+)\.arrow$", arrow_file.name)
+        if not match:
+            continue
+        # A chunk whose clock cannot be read is malformed. Skipping it would make the
+        # caller compute summary stats over a subset of the window and insert a row
+        # that looks healthy, so let it raise.
+        first, last = read_arrow_clock_bounds(arrow_file)
+        if first <= onix_ts_end and last >= onix_ts_start:
+            overlapping.append(int(match.group(1)))
 
     pattern = f"{device_name}_Bno055_Clock_*.bin"
     for clock_file in device_dir.glob(pattern):

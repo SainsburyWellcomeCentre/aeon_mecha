@@ -423,6 +423,25 @@ class TestBno055Arrow:
         with pytest.raises(ValueError, match="column"):
             load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
 
+    def test_malformed_chunk_raises_rather_than_vanishing(self, tmp_path):
+        """A chunk whose Clock cannot be read must not be silently dropped.
+
+        Dropping it makes OnixImuChunk.make compute sample_count and every summary
+        stat over a subset of the window and insert a row that looks healthy -- the
+        spec's silent-wrong-data anti-goal, worse than an empty result.
+        """
+        from aeon.dj_pipeline.utils.onix_imu import find_overlapping_bno055_chunks
+
+        d = tmp_path / "NeuropixelsV2"
+        for n in range(3):
+            _write_bno055_arrow(d, "NeuropixelsV2", n)
+        # chunk 1 loses its Clock column, as a truncated acquisition would
+        _write_bno055_arrow(
+            d, "NeuropixelsV2", 1, columns=tuple(c for c in ARROW_IMU_COLUMNS if c != "Clock")
+        )
+        with pytest.raises(KeyError, match="Clock"):
+            find_overlapping_bno055_chunks(d, "NeuropixelsV2", 0, 100_000)
+
     def test_overlap_finder_sees_arrow_chunks(self, tmp_path):
         from aeon.dj_pipeline.utils.onix_imu import find_overlapping_bno055_chunks
 
@@ -432,3 +451,20 @@ class TestBno055Arrow:
         # chunk n spans [100 + n*10000, 2000 + n*10000]
         assert find_overlapping_bno055_chunks(d, "NeuropixelsV2", 10_050, 10_200) == [1]
         assert find_overlapping_bno055_chunks(d, "NeuropixelsV2", 0, 100_000) == [0, 1, 2]
+
+
+class TestMixedFormatImu:
+    """An epoch written across a format change has arrow and binary chunks side by side."""
+
+    def test_both_formats_are_found(self, tmp_path):
+        import numpy as np
+
+        from aeon.dj_pipeline.utils.onix_imu import find_overlapping_bno055_chunks
+
+        d = tmp_path / "NeuropixelsV2"
+        _write_bno055_arrow(d, "NeuropixelsV2", 0)  # chunk 0 arrow
+        # chunk 1 binary: Clock_1.bin spanning a later window
+        np.array([20_000, 30_000], dtype=np.uint64).tofile(d / "NeuropixelsV2_Bno055_Clock_1.bin")
+
+        found = find_overlapping_bno055_chunks(d, "NeuropixelsV2", 0, 100_000)
+        assert found == [0, 1], f"mixed-format epoch returned {found}; a half was dropped"

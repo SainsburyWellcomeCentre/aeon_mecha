@@ -941,8 +941,8 @@ class OnixImuChunk(dj.Imported):
         from aeon.dj_pipeline.utils.onix_imu import (
             ARROW_EXTRA_COLUMNS,
             IMU_COLUMNS,
+            concat_bno055_chunks,
             find_overlapping_bno055_chunks,
-            load_and_merge_bno055,
         )
         from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
 
@@ -1005,7 +1005,7 @@ class OnixImuChunk(dj.Imported):
             self.insert1(_empty_row([]))
             return
 
-        df = pd.concat([load_and_merge_bno055(device_dir, device_name, n) for n in chunk_indices])
+        df = concat_bno055_chunks(device_dir, device_name, chunk_indices)
         df = df[(df.index >= onix_ts_start) & (df.index <= onix_ts_end)]
 
         if df.empty:

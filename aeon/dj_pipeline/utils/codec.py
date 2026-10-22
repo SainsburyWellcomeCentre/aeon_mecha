@@ -156,8 +156,8 @@ class OnixStreamCodec(dj.Codec):
         from aeon.dj_pipeline import acquisition, ephys
         from aeon.dj_pipeline.utils.onix_imu import (
             IMU_COLUMNS,
+            concat_bno055_chunks,
             find_overlapping_bno055_chunks,
-            load_and_merge_bno055,
         )
 
         if stored["stream_group"] != "Bno055":
@@ -203,7 +203,7 @@ class OnixStreamCodec(dj.Codec):
         if not chunk_indices:
             return pd.DataFrame(columns=list(IMU_COLUMNS), index=pd.Index([], dtype=np.uint64))
 
-        df = pd.concat([load_and_merge_bno055(device_dir, stored["device_name"], n) for n in chunk_indices])
+        df = concat_bno055_chunks(device_dir, stored["device_name"], chunk_indices)
         return df[(df.index >= int(onix_ts_start)) & (df.index <= int(onix_ts_end))]
 
 
