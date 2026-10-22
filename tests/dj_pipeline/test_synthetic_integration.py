@@ -861,6 +861,7 @@ class TestSyncedSpikesIndexingAndExtrapolation:
 
         assert (chunk_a_count, chunk_b_count) == (1, 2)
 
+
 class TestSortingParamSetPreprocessingMethod:
     """SortingParamSet.insert validates the preprocessing selection."""
 

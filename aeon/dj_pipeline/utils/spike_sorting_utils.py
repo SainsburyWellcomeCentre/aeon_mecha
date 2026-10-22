@@ -288,6 +288,9 @@ try:
             self._kwargs = {
                 "file_path": str(Path(file_path).absolute()),
                 "sampling_frequency": sampling_frequency,
+                # Without this, to_dict()/load() and parallel workers rebuild the
+                # recording with the default stream and silently read a different one.
+                "stream_name": stream_name,
                 "gain_to_uV": gain_to_uV,
                 "offset_to_uV": offset_to_uV,
                 "is_filtered": is_filtered,
