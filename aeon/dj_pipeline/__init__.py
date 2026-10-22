@@ -112,8 +112,11 @@ def fetch_stream(query, drop_pk=True, round_microseconds=True):
 try:
     from . import streams  # pyright: ignore[reportUnusedImport]
 except ImportError:
-    from .utils import streams_maker
+    try:
+        from .utils import streams_maker
 
-    streams = dj.VirtualModule("streams", streams_maker.schema_name)
+        streams = dj.VirtualModule("streams", streams_maker.schema_name)
+    except Exception as e:
+        logger.warning(f"Could not build virtual streams module: {e}")
 except Exception as e:
-    logger.debug(f"Could not import streams module: {e}")
+    logger.warning(f"Could not import streams module: {e}")
