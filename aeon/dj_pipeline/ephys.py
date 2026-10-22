@@ -558,10 +558,6 @@ class EphysChunk(dj.Manual):
                 )
                 all_ephys_files += ephys_files
 
-        print(all_ephys_files)
-
-        return
-
         if not all_ephys_files:
             logger.info(f"No ephys amplifier files found in {raw_dir}")
             return
@@ -572,8 +568,13 @@ class EphysChunk(dj.Manual):
             if cls.File & exp_key & {"file_path": rel_path}:
                 continue  # already ingested
 
-            # Parse probe_label from filename
-            name_match = re.search(r"_(Probe[A-Z])_AmplifierData", ephys_file.name)
+            if ephys_file.suffix == "arrow":
+                # In arrow, the only file with Probe? in it is the ephys file
+                name_match = re.search(r"_(Probe[A-Z])_", ephys_file.name)
+            else:
+                # Parse probe_label from filename
+                name_match = re.search(r"_(Probe[A-Z])_AmplifierData", ephys_file.name)
+
             if not name_match:
                 logger.warning(f"Cannot parse probe label from {ephys_file.name}. Skipping.")
                 continue
@@ -607,8 +608,12 @@ class EphysChunk(dj.Manual):
                 )
                 continue
 
-            # Read ONIX timestamps from the companion Clock binary
-            clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
+            if ephys_file.suffix == "arrow":
+                clock_file = ephys_file
+            else:
+                # Read ONIX timestamps from the companion Clock binary
+                clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
+
             if not clock_file.exists():
                 logger.warning(f"Clock file not found for {ephys_file.name}. Skipping.")
                 continue
@@ -616,7 +621,14 @@ class EphysChunk(dj.Manual):
             if clock_file.stat().st_size < 8:
                 logger.warning(f"Empty/short Clock file for {ephys_file.name}. Skipping.")
                 continue
-            onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
+            if ephys_file.suffix == "arrow":
+                import pyarrow.dataset as ds
+
+                dataset = ds.dataset(clock_file, format="ipc")
+                table = dataset.to_table(columns=["Clock"])
+                onix_ts = table["Clock"].to_numpy()
+            else:
+                onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
             first_ts, last_ts = int(onix_ts[0]), int(onix_ts[-1])
 
             # Fetch + resolve inside a temp download dir so the <attach> sync_model
