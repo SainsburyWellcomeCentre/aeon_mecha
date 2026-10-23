@@ -354,10 +354,11 @@ def _write_bno055_arrow(device_dir, device_name, chunk_index, n=20, columns=ARRO
         elif c == "Temperature":
             data[c] = np.full(n, 87, dtype=np.int32)
         else:
-            # Each float column gets its own value. An identical ramp everywhere
-            # would make a Gravity <-> Acceleration <-> Quaternion swap in
-            # _ARROW_TO_CANONICAL pass every assertion in this file.
-            data[c] = np.full(n, 100.0 + i, dtype=np.float32)
+            # Varies by column, by row and by chunk, so each of these stays visible:
+            # a column swap in _ARROW_TO_CANONICAL, a dropped or duplicated row, and
+            # a loader that returns another chunk's payload. Row 0 of chunk 0 is
+            # 100 + column index, which is what the mapping test asserts against.
+            data[c] = (100.0 + i + chunk_index * 1000 + np.arange(n, dtype=np.float32)).astype(np.float32)
     schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in data.items()])
     path = device_dir / f"{device_name}_Bno055_{chunk_index}.arrow"
     with ipc.new_file(path, schema) as w:
@@ -378,6 +379,9 @@ class TestBno055Arrow:
 
         _write_bno055_arrow(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0, n=4)
         df = load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
+        # dtype first: [100.0, 200.0] compares equal to the ints, so a float64 index
+        # -- what a null-bearing column upcasts to -- would slip past the values.
+        assert df.index.dtype == np.uint64, df.index.dtype
         assert list(df.index) == [100, 200, 300, 400]
 
     def test_every_arrow_column_lands_on_its_own_canonical_name(self, tmp_path):
@@ -421,17 +425,35 @@ class TestBno055Arrow:
         assert df["calibration"].iloc[0] == 15
         assert df["temperature"].iloc[0] == 87
 
-    def test_unexpected_column_set_raises(self, tmp_path):
-        """Review Focus #5: a frame matching neither schema must not be ingested silently."""
+    def test_an_added_column_raises(self, tmp_path):
+        """A frame matching neither schema must not be ingested silently.
+
+        The full set plus one extra, so only the `unknown` half of the check can
+        reject it -- a fixture that is also missing columns would pass on `missing`
+        alone and leave `unknown` untested.
+        """
         from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
 
         _write_bno055_arrow(
             tmp_path / "NeuropixelsV2",
             "NeuropixelsV2",
             0,
-            columns=("Clock", "HubClock", "Gravity_X", "Mystery_Column"),
+            columns=(*ARROW_IMU_COLUMNS, "Mystery_Column"),
         )
-        with pytest.raises(ValueError, match="column"):
+        with pytest.raises(ValueError, match="unknown="):
+            load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
+
+    def test_a_dropped_column_raises(self, tmp_path):
+        """The full set minus one, so only the `missing` half can reject it."""
+        from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
+
+        _write_bno055_arrow(
+            tmp_path / "NeuropixelsV2",
+            "NeuropixelsV2",
+            0,
+            columns=tuple(c for c in ARROW_IMU_COLUMNS if c != "Gravity_X"),
+        )
+        with pytest.raises(ValueError, match="missing="):
             load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
 
     def test_malformed_chunk_raises_rather_than_vanishing(self, tmp_path):
@@ -525,6 +547,11 @@ class TestMixedFormatImu:
         df = concat_bno055_chunks(d, "NeuropixelsV2", [0, 1])
         assert tuple(df.columns) == IMU_COLUMNS + ARROW_EXTRA_COLUMNS
         assert len(df) == 40
+        # Which chunks, not just how many rows: chunk 0 clocks at 100..2000 and
+        # chunk 1 at 10100..12000, so loading chunk 0 twice still gives 40 rows.
+        assert int(df.index.min()) == 100
+        assert int(df.index.max()) == 12000
+        assert df.index.is_monotonic_increasing
 
     def test_collision_raises_even_when_only_one_side_overlaps(self, tmp_path):
         """Ambiguity is about which files exist, not which ones overlap this window.

@@ -133,6 +133,43 @@ class TestArrowIO:
         with pytest.raises(ValueError, match="none with rows"):
             read_arrow_clock_bounds(f)
 
+    def test_null_in_a_column_raises_rather_than_upcasting(self, tmp_path):
+        """A null turns an integer column into float64 + NaN, silently.
+
+        On Clock that changes the timebase and loses precision on large ticks, which
+        is the whole reason the empty-file branch preserves the declared dtype.
+        """
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        from aeon.dj_pipeline.utils.arrow_io import read_arrow_column
+
+        f = tmp_path / "nulls.arrow"
+        schema = pa.schema([("Clock", pa.uint64())])
+        with ipc.new_file(f, schema) as w:
+            w.write_batch(
+                pa.RecordBatch.from_arrays([pa.array([1, None, 3], type=pa.uint64())], schema=schema)
+            )
+        with pytest.raises(ValueError, match="null value"):
+            read_arrow_column(f, "Clock")
+
+    def test_empty_chunk_raises_a_type_callers_can_catch(self, tmp_path):
+        """find_overlapping_bno055_chunks catches EmptyArrowChunk to skip empty chunks.
+
+        Asserting only ValueError would leave that contract unpinned, so narrowing the
+        type back to a plain ValueError would silently turn the skip into a hard fail.
+        """
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        from aeon.dj_pipeline.utils.arrow_io import EmptyArrowChunk, read_arrow_clock_bounds
+
+        f = tmp_path / "empty.arrow"
+        with ipc.new_file(f, pa.schema([("Clock", pa.uint64())])):
+            pass
+        with pytest.raises(EmptyArrowChunk):
+            read_arrow_clock_bounds(f)
+
 
 class TestReadAmplifierRecordingArrow:
     """read_amplifier_recording dispatches on suffix; arrow bypasses resolve_ephys_file."""
@@ -238,6 +275,48 @@ class TestReadAmplifierRecordingArrow:
         rec = read_amplifier_recording(f, num_channels=2, fs_hz=30000.0)
         traces = rec.get_traces(start_frame=0, end_frame=80)
         assert traces.tolist() == [[r * 10, r * 10 + 1] for r in range(80)]
+
+
+class TestStreamNameSurvivesSerialisation:
+    """The recording must rebuild with the stream it was created for.
+
+    PreProcessing pickles the recording and parallel workers rebuild it from
+    ``_kwargs``. Leaving ``stream_name`` out of that dict makes the rebuilt copy fall
+    back to the default stream, so a clock read would come back as amplifier data with
+    nothing to notice — this is the #630 defect that had to be fixed before the arrow
+    clock path could be built on it.
+    """
+
+    def _write(self, path, n_rows=8):
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        cols = {
+            "AmplifierData0": np.arange(n_rows, dtype=np.uint16),
+            "Clock": np.arange(100, 100 + n_rows, dtype=np.uint64),
+        }
+        schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in cols.items()])
+        with ipc.new_file(path, schema) as w:
+            w.write_batch(pa.RecordBatch.from_arrays([pa.array(v) for v in cols.values()], schema=schema))
+        return path
+
+    def test_non_default_stream_survives_a_round_trip(self, tmp_path):
+        import spikeinterface as si
+
+        from aeon.dj_pipeline.utils.spike_sorting_utils import read_bonsai_onix_arrow
+
+        f = self._write(tmp_path / "NeuropixelsV2_ProbeA_0.arrow")
+        rec = read_bonsai_onix_arrow(f, sampling_frequency=30000.0, stream_name="Clock")
+        assert rec.get_num_channels() == 1
+
+        rebuilt = si.load(rec.to_dict())
+        assert list(rebuilt.channel_ids) == list(rec.channel_ids), (
+            f"rebuilt with {list(rebuilt.channel_ids)}, not the Clock stream it was made for"
+        )
+        np.testing.assert_array_equal(
+            rebuilt.get_traces(start_frame=0, end_frame=8),
+            rec.get_traces(start_frame=0, end_frame=8),
+        )
 
 
 class TestArrowChannelIntegrity:

@@ -126,7 +126,7 @@ try:
 
             self._num_samples = None
 
-            self._source = memory_map(filepath, "r")
+            self._source = memory_map(str(filepath), "r")
             self._reader = RecordBatchFileReader(self._source)
             self.batch_len = batch_len
 
@@ -240,7 +240,8 @@ try:
                 from pyarrow import memory_map
                 from pyarrow.ipc import RecordBatchFileReader
 
-            source = memory_map(file_path, "r")
+            # memory_map rejects a Path, which the signature above allows.
+            source = memory_map(str(file_path), "r")
             reader = RecordBatchFileReader(source)
 
             stream_names = reader.schema.names

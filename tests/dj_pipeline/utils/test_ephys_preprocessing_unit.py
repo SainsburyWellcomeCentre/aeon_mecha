@@ -102,7 +102,12 @@ def test_inline_pipeline_is_used_verbatim():
     )
 
     inline = {"bandpass_filter": {"freq_min": 500, "freq_max": 3000}}
-    assert resolve_preprocessing_pipeline({"SI_PREPROCESSING_PIPELINE": inline}) == inline
+    resolved = resolve_preprocessing_pipeline({"SI_PREPROCESSING_PIPELINE": inline})
+    # Against a literal, not against `inline`: the inline branch returns the very dict
+    # it was handed, so comparing the two would hold even if defaults were merged in.
+    assert resolved == {"bandpass_filter": {"freq_min": 500, "freq_max": 3000}}
+    assert "common_reference" not in resolved, "the registered pipeline must not leak in"
+    assert inline == {"bandpass_filter": {"freq_min": 500, "freq_max": 3000}}, "input mutated"
 
     rec = si.generate_recording(num_channels=4, durations=[0.5], seed=0)
     expected = si.bandpass_filter(rec, freq_min=500, freq_max=3000)

@@ -1076,7 +1076,13 @@ class TestProbeInsertionFromImplants:
         key = find_or_create_probe_insertion(
             exp, "SUBJ-1", "SER-1", ephys.ProbeInsertion, ephys.Probe, insertion_number=7
         )
+        # Read it back from the table: on the create path the return value is the
+        # argument that went in, so asserting on it would pass even if the row were
+        # written with a different number, or never written at all.
         assert key["insertion_number"] == 7
+        row = (ephys.ProbeInsertion & {"experiment_name": exp, "probe": "SER-1"}).fetch1()
+        assert row["insertion_number"] == 7
+        assert row["subject"] == "SUBJ-1"
 
     def test_conflicting_insertion_number_raises(self, ephys_full_pipeline, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
