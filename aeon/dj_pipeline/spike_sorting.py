@@ -1272,7 +1272,8 @@ class SyncedSpikes(dj.Imported):
         # that lost its tail instead is extrapolated at its own tick rate, by at most 1 s.
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         onix_times, amp_lengths = [], []
-        # Held for the life of this call; its finalizer removes the spilled clocks.
+        # Not a `with`: the spilled clocks must outlive this loop, and the finalizer
+        # cleans them up when make() returns.
         clock_spill_dir = tempfile.TemporaryDirectory(prefix="aeon-onix-clock-")
         if not ephys_files:
             raise ValueError(
@@ -1283,14 +1284,14 @@ class SyncedSpikes(dj.Imported):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
             amp_path = ephys_dir / f
             if amp_path.suffix == ".arrow":
-                # Clock and amplifier are columns of one table, so the clock length is
-                # the sample count by construction -- one read instead of two, and the
-                # only place the two could disagree disappears.
+                # Read the clock from the probe file rather than a companion file: it is a
+                # column of the same table as the samples, so the two cannot disagree about
+                # length. The cost is that reading it decompresses the whole column into
+                # RAM, and onix_times holds every chunk's clock until the last unit is
+                # mapped -- ~17 GB on a production 20 h block. So write it straight back
+                # out and map it, leaving it OS-paged like the binary branch below.
                 onix_ts = read_arrow_column(amp_path, "Clock")
                 amp_len = len(onix_ts)
-                # Spill to a memmap: onix_times keeps one array per chunk for the whole
-                # block, which is tens of GB in RAM on a long one. The binary branch
-                # below is already OS-paged.
                 spill_path = Path(clock_spill_dir.name) / f"{len(amp_lengths)}.u64"
                 onix_ts.tofile(spill_path)
                 onix_ts = np.memmap(spill_path, mode="r", dtype=np.uint64)
