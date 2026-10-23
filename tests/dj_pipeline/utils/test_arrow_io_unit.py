@@ -469,5 +469,7 @@ class TestNonUniformBatchGuard:
 
         f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
         self._write(f, [100, 70, 100])
-        with pytest.raises(ValueError, match="addresses batches by a constant stride"):
+        # Anchored on the reported row counts, not on the explanation: the message
+        # states the fact, and the reason lives in a comment at the guard.
+        with pytest.raises(ValueError, match=r"batch 1 has 70 rows, expected 100"):
             read_amplifier_recording(f, num_channels=1, fs_hz=30000.0)

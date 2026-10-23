@@ -260,9 +260,8 @@ class PreProcessing(dj.Computed):
 
         if len(ephys_files) == 0:
             raise ValueError(
-                f"No amplifier files registered for block {key.get('block_start')}. "
-                f"EphysChunk.File has no row matching {AMPLIFIER_FILE_RESTRICTION!r}; "
-                f"without this, concatenation would fail with an opaque IndexError."
+                f"No amplifier files registered for block {key.get('block_start')}: "
+                f"EphysChunk.File has no row matching {AMPLIFIER_FILE_RESTRICTION!r}."
             )
 
         # Channels

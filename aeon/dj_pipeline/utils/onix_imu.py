@@ -88,13 +88,10 @@ def _load_bno055_arrow(path: Path) -> pd.DataFrame:
         missing = (set(_ARROW_TO_CANONICAL) | {"Clock"}) - present
         if unknown or missing:
             raise ValueError(
-                f"Unexpected Bno055 column set in {path.name}: "
-                f"unknown={sorted(unknown)}, missing={sorted(missing)}. "
-                f"The acquisition schema changed -- update _ARROW_TO_CANONICAL and IMU_COLUMNS."
+                f"Unexpected Bno055 column set in {path.name}: unknown={sorted(unknown)}, "
+                f"missing={sorted(missing)}. Update _ARROW_TO_CANONICAL and IMU_COLUMNS."
             )
-        # to_numpy upcasts an integer column with nulls to float64 + NaN. On Clock that
-        # silently turns the ONIX index into floats, losing precision on large ticks and
-        # quietly shifting every window filter and the HARP regression after it.
+        # Same hazard read_arrow_column guards: a null upcasts the column to float64.
         null_columns = sorted(name for name in (*_ARROW_TO_CANONICAL, "Clock") if table[name].null_count)
         if null_columns:
             raise ValueError(f"Null values in {path.name} column(s) {null_columns}.")
@@ -188,30 +185,42 @@ def concat_bno055_chunks(device_dir: Path, device_name: str, chunk_indices: Iter
     column_sets = {tuple(f.columns) for f in frames}
     if len(column_sets) > 1:
         raise ValueError(
-            f"Bno055 chunks {chunk_indices} in {device_dir} have different column "
-            f"sets {[sorted(c) for c in column_sets]} -- concatenating would pad with NaN. "
-            f"This epoch mixes acquisition formats; ingest the halves separately."
+            f"Bno055 chunks {chunk_indices} in {device_dir} have different column sets "
+            f"{[sorted(c) for c in column_sets]}; ingest the formats separately."
         )
     return pd.concat(frames)
 
 
-def _indices_in_both_formats(device_dir: Path, device_name: str) -> set[int]:
-    """Chunk indices that have BOTH a Bno055 arrow file and a Bno055 Clock binary."""
+def _bno055_chunk_files(device_dir: Path, device_name: str) -> tuple[dict[int, Path], dict[int, Path]]:
+    """One pass over the device directory: ({index: arrow file}, {index: clock binary}).
+
+    A clock binary with no whole uint64 sample is ignored, as an interrupted
+    acquisition can leave one behind and neither the collision check nor the overlap
+    test would have read it.
+    """
     arrow = {
-        int(m.group(1))
-        for f in device_dir.glob(f"{device_name}_Bno055_*.arrow")
+        int(m.group(1)): f
+        for f in sorted(device_dir.glob(f"{device_name}_Bno055_*.arrow"))
         if (m := re.search(r"_Bno055_(\d+)\.arrow$", f.name))
     }
-    # Only files with at least one whole uint64 sample count, matching what the overlap
-    # scan accepts: an interrupted acquisition can leave a 0-byte Clock_N.bin beside an
-    # arrow chunk N, and calling that an ambiguous pair would block the epoch over a
-    # file neither side would have read.
     binary = {
-        int(m.group(1))
-        for f in device_dir.glob(f"{device_name}_Bno055_Clock_*.bin")
+        int(m.group(1)): f
+        for f in sorted(device_dir.glob(f"{device_name}_Bno055_Clock_*.bin"))
         if (m := re.search(r"_Clock_(\d+)\.bin$", f.name)) and f.stat().st_size >= 8
     }
-    return arrow & binary
+    return arrow, binary
+
+
+def _binary_clock_bounds(clock_file: Path) -> tuple[int, int]:
+    """First and last ONIX tick of a Clock binary; the file is monotonic."""
+    # Floor to a uint64 boundary: an interrupted acquisition can leave a partial sample.
+    whole_bytes = (clock_file.stat().st_size // 8) * 8
+    first = int(np.fromfile(clock_file, dtype=np.uint64, count=1)[0])
+    if whole_bytes < 16:
+        return first, first
+    with open(clock_file, "rb") as f:
+        f.seek(whole_bytes - 8)
+        return first, int(np.frombuffer(f.read(8), dtype=np.uint64)[0])
 
 
 def find_overlapping_bno055_chunks(
@@ -222,81 +231,43 @@ def find_overlapping_bno055_chunks(
 ) -> list[int]:
     """Return sorted Bno055 chunk indices whose ONIX range overlaps the window.
 
-    Arrow chunks carry their ONIX clock as a column, read from the first and last
-    record batch. Binary chunks keep a companion ``Bno055_Clock_N.bin``.
+    Arrow chunks carry their clock as a column, read from the first and last record
+    batch; binary chunks keep a companion ``Bno055_Clock_N.bin``, whose first and last
+    uint64 bound it. Overlap is inclusive on both ends.
 
-    For each ``Bno055_Clock_N.bin`` file, reads just the first and last uint64
-    sample (the binaries are monotonic, so those two values fully bound the
-    chunk's coverage — no need to scan the rest). A standard interval-overlap
-    test selects chunks where
-    ``first <= onix_ts_end and last >= onix_ts_start`` — inclusive on both ends.
-
-    Why this exists: HarpSync sync windows (one per ``EphysSyncModel`` row,
-    hourly cadence) and Bno055 binary chunks (~10 min, firmware-flushed)
-    partition the ONIX clock on independent boundaries, so each sync window
-    typically overlaps multiple Bno055 files. ``OnixImuChunk.make`` uses this
-    helper to gather all overlapping chunks before concatenating + filtering.
+    Sync windows and Bno055 chunks partition the ONIX clock on independent boundaries,
+    so one window typically overlaps several chunks. ``OnixImuChunk.make`` gathers them
+    all before concatenating and filtering.
     """
-    device_dir = Path(device_dir)
-    arrow_chunks: set[int] = set()
-    binary_chunks: set[int] = set()
-
-    # Arrow chunks keep their ONIX clock as a column; binary chunks have a companion
-    # Clock_N.bin. Both are scanned: an epoch written across a format change has some
-    # of each, and returning after the arrow pass would silently drop the binary half.
     from aeon.dj_pipeline.utils.arrow_io import EmptyArrowChunk, read_arrow_clock_bounds
 
-    # Ambiguity is decided on file existence alone, BEFORE any overlap test.
-    # load_and_merge_bno055 picks arrow because the file is there, not because its
-    # clock matched: testing the collision after the overlap filter would let a
-    # window selected on the binary clock be loaded from the arrow file, whose index
-    # is elsewhere, and the caller would record an empty window as a real one.
-    chunks_in_both_formats = _indices_in_both_formats(device_dir, device_name)
-    if chunks_in_both_formats:
+    device_dir = Path(device_dir)
+    arrow_files, binary_files = _bno055_chunk_files(device_dir, device_name)
+
+    # Ambiguity is decided on which files exist, before any overlap test:
+    # load_and_merge_bno055 picks arrow because the file is there, not because its clock
+    # matched, so a window selected on the binary clock would be loaded from the arrow
+    # chunk and filtered away -- an empty window recorded as a real one.
+    if both := sorted(arrow_files.keys() & binary_files.keys()):
         raise ValueError(
-            f"Bno055 chunk(s) {sorted(chunks_in_both_formats)} exist in both arrow and binary "
-            f"form in "
-            f"{device_dir}; which is authoritative is undefined. Remove one set."
+            f"Bno055 chunk(s) {both} exist in both arrow and binary form in {device_dir}; "
+            f"which is authoritative is undefined. Remove one set."
         )
 
-    for arrow_file in sorted(device_dir.glob(f"{device_name}_Bno055_*.arrow")):
-        match = re.search(r"_Bno055_(\d+)\.arrow$", arrow_file.name)
-        if not match:
-            continue
-        # A chunk whose clock cannot be read is malformed. Skipping it would make the
-        # caller compute summary stats over a subset of the window and insert a row
-        # that looks healthy, so let it raise. A chunk with no rows is a different
-        # thing: it contributes nothing to any window, and the binary pass below skips
-        # its equivalent, so failing here would block every sync window in the epoch.
+    overlapping = set()
+    for index, arrow_file in arrow_files.items():
+        # A chunk with no rows contributes to no window, as an empty clock binary does.
+        # A chunk whose clock cannot be read at all is malformed and must raise, or the
+        # caller computes its stats over part of the window and inserts a healthy row.
         try:
             first, last = read_arrow_clock_bounds(arrow_file)
         except EmptyArrowChunk:
             continue
         if first <= onix_ts_end and last >= onix_ts_start:
-            arrow_chunks.add(int(match.group(1)))
-
-    pattern = f"{device_name}_Bno055_Clock_*.bin"
-    for clock_file in device_dir.glob(pattern):
-        size = clock_file.stat().st_size
-        # Floor to a uint64 boundary in case a trailing partial sample was
-        # left behind by an interrupted acquisition. Skip files with no
-        # whole samples.
-        whole_sample_bytes = (size // 8) * 8
-        if whole_sample_bytes < 8:
-            continue
-        match = re.search(r"_Clock_(\d+)\.bin$", clock_file.name)
-        if not match:
-            continue
-        chunk_index = int(match.group(1))
-        first = int(np.fromfile(clock_file, dtype=np.uint64, count=1)[0])
-        if whole_sample_bytes >= 16:
-            with open(clock_file, "rb") as f:
-                f.seek(whole_sample_bytes - 8)
-                last = int(np.frombuffer(f.read(8), dtype=np.uint64)[0])
-        else:
-            last = first
-        # Inclusive interval overlap test on both ends.
+            overlapping.add(index)
+    for index, clock_file in binary_files.items():
+        first, last = _binary_clock_bounds(clock_file)
         if first <= onix_ts_end and last >= onix_ts_start:
-            binary_chunks.add(chunk_index)
-    # Disjoint by construction: the collision check above already raised.
-    return sorted(arrow_chunks | binary_chunks)
+            overlapping.add(index)
+
+    return sorted(overlapping)

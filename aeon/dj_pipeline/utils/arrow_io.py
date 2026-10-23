@@ -56,14 +56,10 @@ def read_arrow_column(path: Path, column: str) -> np.ndarray:
         import pyarrow as pa
 
         whole_column = pa.chunked_array(batches)
+        # to_numpy upcasts an integer column with nulls to float64 + NaN, which on a
+        # clock changes the timebase and loses precision on large uint64 ticks.
         if whole_column.null_count:
-            # to_numpy upcasts an integer column with nulls to float64 + NaN, so a
-            # single null clock would silently change the timebase and lose precision
-            # on large uint64 ticks -- the same hazard the empty branch above guards.
-            raise ValueError(
-                f"Column {column!r} in {path} has {whole_column.null_count} null value(s). "
-                f"Converting would upcast it to float64 and change the timebase."
-            )
+            raise ValueError(f"Column {column!r} in {path} has {whole_column.null_count} null value(s).")
         return whole_column.to_numpy(zero_copy_only=False)
     finally:
         source.close()

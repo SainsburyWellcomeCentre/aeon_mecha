@@ -329,9 +329,8 @@ class EphysEpochConfig(dj.Imported):
             probes_without_files = sorted(probes_declared_enabled - set(probe_labels))
             if probes_without_files:
                 raise FileNotFoundError(
-                    f"Metadata declares {probes_without_files} enabled for epoch {epoch_dir}, but no data "
-                    f"files were found for them (discovered: {sorted(probe_labels)}). "
-                    f"The epoch looks partially transferred."
+                    f"Metadata declares {probes_without_files} enabled for epoch {epoch_dir}, "
+                    f"but only {sorted(probe_labels)} have data files."
                 )
 
         if not probe_info:
@@ -569,11 +568,9 @@ def _reject_duplicate_chunk_formats(ephys_files: list[Path], raw_dir: Path) -> N
         formats_seen = files_by_chunk.setdefault(chunk_key, {})
         if formats_seen.get(other_format):
             raise ValueError(
-                f"Chunk {chunk_index} of {probe_label} exists in both binary and arrow "
-                f"form: {formats_seen.get('binary', ephys_file)} and "
-                f"{formats_seen.get('arrow', ephys_file)}. Which is "
-                f"authoritative is undefined, and registering both would concatenate "
-                f"the chunk twice. Remove one."
+                f"Chunk {chunk_index} of {probe_label} exists in both binary and arrow form: "
+                f"{formats_seen.get('binary', ephys_file)} and "
+                f"{formats_seen.get('arrow', ephys_file)}. Remove one."
             )
         formats_seen[this_format] = ephys_file
 

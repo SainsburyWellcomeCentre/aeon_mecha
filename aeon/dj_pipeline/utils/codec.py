@@ -225,8 +225,7 @@ class OnixStreamCodec(dj.Codec):
         if len(df.columns) != expected:
             raise ValueError(
                 f"Row recorded stream_format={stream_format!r} ({expected} columns) but the raw "
-                f"files on disk now yield {len(df.columns)}. The raw tree changed format under "
-                f"this row; re-ingest rather than fetching a frame of a different shape."
+                f"files now yield {len(df.columns)}. The raw tree changed format; re-ingest."
             )
         return df[(df.index >= int(onix_ts_start)) & (df.index <= int(onix_ts_end))]
 

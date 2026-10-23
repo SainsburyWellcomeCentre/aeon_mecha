@@ -111,22 +111,14 @@ def _check_uniform_batches(rec, path) -> None:
         # batch_len is read from batch 0. Zero slips through the loop below (0 != 0
         # is false) and reaches get_traces, which dies on `start_frame // 0` naming
         # neither the file nor the cause.
-        raise ValueError(
-            f"{path} first record batch is empty, so the batch stride is undefined. "
-            f"get_traces addresses batch i at i * batch_len; a leading empty batch "
-            f"makes that offset wrong for every batch after it."
-        )
+        raise ValueError(f"{path} first record batch is empty, so the batch stride is undefined.")
     total = 0
     for i in range(n):
         rows = reader.get_batch(i).num_rows
         # The final batch may be SHORT; a longer one pushes (end_frame - 1) // batch_len
         # past the last batch index and get_traces reads off the end.
         if rows > batch_len or (i < n - 1 and rows != batch_len):
-            raise ValueError(
-                f"{path} batch {i} has {rows} rows, expected {batch_len}. get_traces "
-                f"addresses batches by a constant stride, so a non-uniform file would "
-                f"return offset traces while reporting a correct sample count."
-            )
+            raise ValueError(f"{path} batch {i} has {rows} rows, expected {batch_len}.")
         total += rows
     # This walk is the same one get_num_samples would do, so seed its cache rather
     # than deserialising all 398 batches of a 6.75 GB file twice.
@@ -145,9 +137,7 @@ def _check_arrow_channels(rec, num_channels: int, path) -> None:
     ids = [str(c) for c in rec.channel_ids]
     if len(ids) != num_channels:
         raise ValueError(
-            f"{path} has {len(ids)} AmplifierData columns but the ElectrodeConfig "
-            f"registers {num_channels}. Positional electrode mapping would mislabel "
-            f"every channel."
+            f"{path} has {len(ids)} AmplifierData columns but the ElectrodeConfig registers {num_channels}."
         )
     # The gain and offset applied downstream assume uint16. The binary reader pins
     # that at its call site; arrow takes whatever the schema says, so check it.
@@ -161,8 +151,7 @@ def _check_arrow_channels(rec, num_channels: int, path) -> None:
     if ids != expected:
         raise ValueError(
             f"{path} AmplifierData columns are not in numeric order: got {ids[:4]}..., "
-            f"expected {expected[:4]}.... Positional electrode mapping assumes index i "
-            f"is AmplifierData{{i}}."
+            f"expected {expected[:4]}..."
         )
 
 
@@ -286,10 +275,8 @@ def enabled_probe_labels(metadata: dict | None) -> set[str] | None:
     is already handled by ``get_probe_id``, so they return None and no
     disk-vs-metadata cross-check is attempted.
     """
-    if not isinstance(metadata, dict):
-        return None
-    headstage = (metadata.get("ephys") or {}).get("Headstage")
-    if not isinstance(headstage, dict):
+    headstage = _headstage_blocks(metadata)
+    if headstage is None:
         return None
     return {
         label
@@ -300,19 +287,16 @@ def enabled_probe_labels(metadata: dict | None) -> set[str] | None:
     }
 
 
-def _headstage_probe_block(metadata: dict | None, probe_label: str) -> dict | None:
-    """Return the ``ephys.Headstage.<probe_label>`` block, or None if not this layout.
+def _headstage_blocks(metadata: dict | None) -> dict | None:
+    """The ``ephys.Headstage`` mapping, or None if the metadata is not this layout.
 
-    Layout introduced with the Arrow acquisition: probe config and the enable flag
-    live under ``ephys.Headstage.ProbeA/ProbeB``.
+    Introduced with the Arrow acquisition: probe config and the enable flag live
+    under ``ephys.Headstage.ProbeA/ProbeB``.
     """
     if not isinstance(metadata, dict):
         return None
     headstage = (metadata.get("ephys") or {}).get("Headstage")
-    if not isinstance(headstage, dict):
-        return None
-    block = headstage.get(probe_label)
-    return block if isinstance(block, dict) else None
+    return headstage if isinstance(headstage, dict) else None
 
 
 def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> str | None:
@@ -344,7 +328,8 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
 
     suffix = probe_label[len("Probe") :]  # "A", "B", ...
 
-    headstage_block = _headstage_probe_block(metadata, probe_label)
+    headstage_block = (_headstage_blocks(metadata) or {}).get(probe_label)
+    headstage_block = headstage_block if isinstance(headstage_block, dict) else None
     new_block = metadata.get(f"NeuropixelsV2{suffix}")
     if headstage_block is not None:
         enable = headstage_block.get("Enable", True)
@@ -405,8 +390,8 @@ def find_or_create_probe_insertion(
             # Silently preferring either would mis-attribute this probe's data.
             raise ValueError(
                 f"Metadata asserts insertion_number={insertion_number} for probe {probe_id!r} "
-                f"(subject {subject!r}, experiment {experiment_name!r}), but an existing "
-                f"ProbeInsertion has insertion_number={row['insertion_number']}. Resolve by hand."
+                f"(subject {subject!r}), but an existing ProbeInsertion has "
+                f"{row['insertion_number']}. Resolve by hand."
             )
         # Backfill a date the metadata asserts onto a row that predates the Implants
         # block. Only the NULL case is filled: a row already holding a different date
@@ -437,9 +422,8 @@ def find_or_create_probe_insertion(
         ).to_dicts()
         if taken_by:
             raise ValueError(
-                f"Metadata asserts insertion_number={new_num} for probe {probe_id!r} "
-                f"(subject {subject!r}), but probe {taken_by[0]['probe']!r} already holds "
-                f"that number. Resolve by hand."
+                f"insertion_number={new_num} (subject {subject!r}) is already held by probe "
+                f"{taken_by[0]['probe']!r}, not {probe_id!r}. Resolve by hand."
             )
     else:
         # No metadata assertion -- auto-assign the next free number
