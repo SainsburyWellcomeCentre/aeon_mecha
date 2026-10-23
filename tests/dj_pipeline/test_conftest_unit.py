@@ -32,3 +32,28 @@ class TestDropTestSchemasGuard:
         monkeypatch.setattr(dj.config.database, "database_prefix", "")
         with pytest.raises(RuntimeError, match="not a safe test prefix"):
             conftest_mod._drop_test_schemas()
+
+
+class TestPipelinePrefixGuard:
+    """aeon.dj_pipeline's frozen prefix must match the one the tests configure.
+
+    Without this, a module-scope aeon import in any test file freezes the production
+    prefix during collection and the session writes schemas under production names.
+    """
+
+    def test_refuses_a_prefix_frozen_before_the_fixture_ran(self, monkeypatch):
+        import aeon.dj_pipeline as pipeline
+
+        conftest_mod = _load_dj_pipeline_conftest()
+
+        monkeypatch.setattr(pipeline, "db_prefix", "aeon_")
+        with pytest.raises(RuntimeError, match="froze database prefix"):
+            conftest_mod._assert_pipeline_prefix("test_aeon_")
+
+    def test_accepts_a_matching_prefix(self, monkeypatch):
+        import aeon.dj_pipeline as pipeline
+
+        conftest_mod = _load_dj_pipeline_conftest()
+
+        monkeypatch.setattr(pipeline, "db_prefix", "test_aeon_")
+        conftest_mod._assert_pipeline_prefix("test_aeon_")

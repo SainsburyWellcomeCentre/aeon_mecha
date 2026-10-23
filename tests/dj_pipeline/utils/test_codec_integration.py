@@ -21,8 +21,6 @@ from ephys_factories import (
     register_synthetic_experiment,
 )
 
-from aeon.dj_pipeline.utils.onix_imu import ARROW_EXTRA_COLUMNS, IMU_COLUMNS
-
 pytestmark = pytest.mark.integration
 
 
@@ -84,14 +82,11 @@ class TestOnixStreamCodecRoundTrip:
     """Insert through the codec via a real ephys pipeline, fetch back, and check what comes out."""
 
     @pytest.mark.parametrize(
-        ("fmt", "epoch_dir_name", "expected_columns"),
-        [
-            ("binary", "2024-06-11T10-24-07", IMU_COLUMNS),
-            ("arrow", "2024-06-13T10-24-07", IMU_COLUMNS + ARROW_EXTRA_COLUMNS),
-        ],
+        ("fmt", "epoch_dir_name"),
+        [("binary", "2024-06-11T10-24-07"), ("arrow", "2024-06-13T10-24-07")],
     )
     def test_round_trip_returns_onix_indexed_dataframe(
-        self, dj_config_integration, tmp_path, fmt, epoch_dir_name, expected_columns
+        self, dj_config_integration, tmp_path, fmt, epoch_dir_name
     ):
         """Fetch returns a DataFrame merged and indexed by ONIX clock, not HARP datetimes.
 
@@ -99,7 +94,9 @@ class TestOnixStreamCodecRoundTrip:
         arrow row carries two columns a binary one does not.
         """
         from aeon.dj_pipeline import ephys
+        from aeon.dj_pipeline.utils.onix_imu import ARROW_EXTRA_COLUMNS, IMU_COLUMNS
 
+        expected_columns = IMU_COLUMNS + (ARROW_EXTRA_COLUMNS if fmt == "arrow" else ())
         experiment_name = f"test_codec_round_trip_{fmt}"
         device_name = "NeuropixelsV2Beta"
 
@@ -142,6 +139,7 @@ class TestOnixStreamCodecRoundTrip:
         single-window epoch always owns every sample and this row cannot occur there.
         """
         from aeon.dj_pipeline import ephys
+        from aeon.dj_pipeline.utils.onix_imu import ARROW_EXTRA_COLUMNS, IMU_COLUMNS
 
         experiment_name = "test_codec_arrow_empty_window"
         epoch_dir_name = "2024-06-14T10-24-07"
@@ -171,6 +169,7 @@ class TestOnixStreamCodecRoundTrip:
     def test_round_trip_no_data_returns_empty_dataframe(self, dj_config_integration, tmp_path):
         """Test that fetch returns an empty IMU_COLUMNS DataFrame when no IMU data exists."""
         from aeon.dj_pipeline import ephys
+        from aeon.dj_pipeline.utils.onix_imu import IMU_COLUMNS
 
         experiment_name = "test_codec_no_data"
         epoch_dir_name = "2024-06-12T10-24-07"

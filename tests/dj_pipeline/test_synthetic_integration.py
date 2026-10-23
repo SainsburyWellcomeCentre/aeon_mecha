@@ -1290,6 +1290,14 @@ class TestPreProcessingOnArrow:
         # the factory writes 10 samples per chunk, two chunks concatenated
         assert rec.get_num_samples() == 20, rec.get_num_samples()
 
+        # Values, not just the count: the factory stamps each sample with its own
+        # index, so a chunk read in the wrong order or concatenated twice changes
+        # the traces while leaving the length right. PreProcessing converts
+        # unsigned to signed, which offsets every sample by a constant.
+        traces = rec.get_traces(start_frame=0, end_frame=20).ravel()
+        offset = int(traces[0])  # sample 0, channel 0 -> 0 before the conversion
+        assert [int(t) - offset for t in traces] == [i * 10 for i in range(20)], traces
+
 
 class TestAmplifierFileSelection:
     """The restriction that finds amplifier files must match both formats.

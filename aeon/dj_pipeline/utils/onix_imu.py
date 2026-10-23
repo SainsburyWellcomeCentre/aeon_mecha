@@ -92,6 +92,14 @@ def _load_bno055_arrow(path: Path) -> pd.DataFrame:
                 f"unknown={sorted(unknown)}, missing={sorted(missing)}. "
                 f"The acquisition schema changed -- update _ARROW_TO_CANONICAL and IMU_COLUMNS."
             )
+        # to_numpy upcasts an integer column with nulls to float64 + NaN. On Clock that
+        # silently turns the ONIX index into floats, losing precision on large ticks and
+        # quietly shifting every window filter and the HARP regression after it.
+        null_columns = sorted(
+            name for name in (*_ARROW_TO_CANONICAL, "Clock") if table[name].null_count
+        )
+        if null_columns:
+            raise ValueError(f"Null values in {path.name} column(s) {null_columns}.")
         data = {
             canonical: table[arrow_name].to_numpy(zero_copy_only=False)
             for arrow_name, canonical in _ARROW_TO_CANONICAL.items()

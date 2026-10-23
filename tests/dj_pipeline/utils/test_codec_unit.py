@@ -486,13 +486,3 @@ class TestOnixStreamFormatDiscriminator:
         stored = OnixStreamCodec().encode(dict(payload))
         decoded = json.loads(stored) if isinstance(stored, str) else stored
         assert decoded["stream_format"] == "arrow"
-
-
-class TestEmptyRowFormatConsistency:
-    """An empty IMU row must carry the same stream_format as its non-empty siblings.
-
-    Otherwise decode loads the arrow chunks, finds 15 columns, compares against the
-    13 a 'binary' row implies, and raises "the raw tree changed format" about a tree
-    that never changed. The end-to-end consequence is pinned by the arrow round-trip
-    in test_codec_integration.py; this pins the column arithmetic decode relies on.
-    """

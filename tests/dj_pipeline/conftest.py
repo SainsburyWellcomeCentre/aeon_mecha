@@ -260,6 +260,30 @@ def _check_golden_data(dataset_config: dict) -> Path:
     return epoch_path
 
 
+def _assert_pipeline_prefix(expected_prefix: str) -> None:
+    """Fail if aeon.dj_pipeline froze a database prefix other than the test one.
+
+    ``db_prefix`` is computed once, when ``aeon.dj_pipeline`` is first imported. Any
+    test module that imports an aeon submodule at module scope is executed during
+    pytest's collection pass, before the session fixture below sets the prefix -- so
+    the prefix freezes to the production default and every schema activates under a
+    production name, on whatever host this session connects to. Teardown then drops
+    the test prefix, finds nothing, and leaves those schemas behind.
+
+    Importing here either loads the package with the prefix already set, or finds a
+    stale one in sys.modules and raises.
+    """
+    import aeon.dj_pipeline as pipeline
+
+    if pipeline.db_prefix != expected_prefix:
+        raise RuntimeError(
+            f"aeon.dj_pipeline froze database prefix {pipeline.db_prefix!r}, but these "
+            f"tests run under {expected_prefix!r}. Something imported an aeon module at "
+            f"module scope, so the import ran during collection, before the prefix was "
+            f"set. Move that import inside the test body or fixture."
+        )
+
+
 def _drop_test_schemas() -> None:
     """Drop all test-prefixed schemas, retrying to handle FK dependencies."""
     import datajoint as dj
@@ -316,7 +340,9 @@ def dj_config_integration(mysql_container):
         dj.config.database.password = os.environ["DJ_PASS"]
     # External DB: connection details already loaded from datajoint.json
 
-    # Now import pipeline — all module-level schema activations use test prefix
+    # Import the pipeline now, with the prefix set, and refuse to go further if some
+    # module-scope import already froze a different one.
+    _assert_pipeline_prefix(TEST_DB_PREFIX)
 
     return {"database_prefix": TEST_DB_PREFIX}
 
@@ -359,9 +385,10 @@ def streams_schema(dj_config_integration):
     # - Drop test schemas ONLY when running against an external database
     #   (TEST_DB_PREFIX set, e.g. on the HPC), so re-runs start clean instead of
     #   silently reusing stale schemas. _drop_test_schemas() is scoped strictly
-    #   to dj.config.database.database_prefix (== TEST_DB_PREFIX, which must end
-    #   in "_"); it only removes schemas whose name starts with that prefix, so
-    #   it can never touch production ("aeon_") or another user's schemas.
+    #   to dj.config.database.database_prefix (== TEST_DB_PREFIX), so it only removes
+    #   schemas whose name starts with that prefix. What keeps it off production is
+    #   that it reads the live config, not the trailing-underscore rule -- "aeon_"
+    #   would satisfy that check too.
     #   When TEST_DB_PREFIX is unset, the tests use a throwaway testcontainer
     #   that is discarded at session end, so we drop nothing and leave any
     #   local/hand-managed database alone.

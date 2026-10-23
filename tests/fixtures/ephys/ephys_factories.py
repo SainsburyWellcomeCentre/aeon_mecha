@@ -237,7 +237,17 @@ def make_synthetic_amplifier_data(
             ts_end = clock_end - 500
         onix_ts = np.linspace(ts_start, ts_end, n_samples, dtype=np.uint64)
 
-        amp_data = np.zeros((n_samples, n_channels), dtype=np.uint16)
+        # Each sample carries its own position in the epoch, each channel an offset.
+        # Zeros everywhere would make a transposed read, a reversed column order and
+        # a chunk concatenated twice all produce identical traces.
+        #
+        # The ordinal comes from the chunk's own ONIX window rather than from `n`:
+        # callers that build one chunk per call (to give each its own format) always
+        # pass n=0, so keying on `n` would stamp every chunk identically and leave
+        # exactly the duplicate-chunk case undetectable.
+        chunk_ordinal = int(ts_start) // 60000
+        sample_ids = (chunk_ordinal * n_samples + np.arange(n_samples, dtype=np.uint16))[:, None]
+        amp_data = sample_ids * 10 + np.arange(n_channels, dtype=np.uint16)[None, :]
 
         if fmt == "arrow":
             _write_arrow_chunk(device_dir, device_name, probe_label, n, onix_ts, amp_data)
@@ -426,16 +436,36 @@ def make_synthetic_bno055_data(
             (device_dir / f"{device_name}_Bno055_{stream}_{n}.bin").write_bytes(data.tobytes())
 
 
+# The acquisition's own Bno055 column names, written out rather than taken from
+# _ARROW_TO_CANONICAL: generating the fixture from the dict the loader validates
+# against means a renamed key propagates into the fixture and every test stays green.
+BNO055_ARROW_COLUMNS = (
+    "EulerAngle_Yaw",
+    "EulerAngle_Pitch",
+    "EulerAngle_Roll",
+    "Gravity_X",
+    "Gravity_Y",
+    "Gravity_Z",
+    "Acceleration_X",
+    "Acceleration_Y",
+    "Acceleration_Z",
+    "Quaternion_W",
+    "Quaternion_X",
+    "Quaternion_Y",
+    "Quaternion_Z",
+    "Calibration",
+    "Temperature",
+)
+
+
 def _write_bno055_arrow_chunk(device_dir, device_name, n, clocks, rng):
     """One Bno055_<n>.arrow carrying the acquisition's own column names."""
     import pyarrow as pa
     import pyarrow.ipc as ipc
 
-    from aeon.dj_pipeline.utils.onix_imu import _ARROW_TO_CANONICAL
-
     m = len(clocks)
     cols: dict = {"Clock": clocks, "HubClock": clocks - 7}
-    for name in _ARROW_TO_CANONICAL:
+    for name in BNO055_ARROW_COLUMNS:
         if name == "Calibration":
             cols[name] = np.full(m, 15, dtype=np.uint8)
         elif name == "Temperature":
