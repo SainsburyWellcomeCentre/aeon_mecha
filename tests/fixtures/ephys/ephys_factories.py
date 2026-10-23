@@ -191,8 +191,14 @@ def make_synthetic_amplifier_data(
     probe_label: str,
     n_chunks: int,
     ts_ranges: "list[tuple[int, int]] | None" = None,
+    fmt: str = "binary",
 ):
-    """Write synthetic AmplifierData_N.bin + Clock_N.bin files for each chunk.
+    """Write synthetic per-chunk amplifier files for each chunk.
+
+    ``fmt="binary"`` writes the historical pair ``AmplifierData_N.bin`` +
+    ``Clock_N.bin``. ``fmt="arrow"`` writes a single ``<device>_<probe>_N.arrow``
+    carrying ``AmplifierData0..`` plus ``Clock`` and ``HubClock`` columns, as the
+    Bonsai arrow acquisition does.
 
     By default, ONIX timestamps in each Clock file fall WITHIN the matching
     HarpSync CSV's clock range so the BETWEEN query in ingest_chunks finds the
@@ -207,6 +213,11 @@ def make_synthetic_amplifier_data(
     chunk's ONIX timestamps outside every sync window instead, e.g. to
     exercise the "chunk falls entirely outside all HarpSync rows" case.
     """
+    if fmt not in ("binary", "arrow"):
+        # A typo would silently fall through to binary and make an arrow-vs-binary
+        # equivalence test compare binary with binary, passing green.
+        raise ValueError(f"fmt must be 'binary' or 'arrow', got {fmt!r}")
+
     device_dir = raw_dir / epoch_dir_name / device_name
     device_dir.mkdir(parents=True, exist_ok=True)
 
@@ -226,14 +237,55 @@ def make_synthetic_amplifier_data(
             ts_end = clock_end - 500
         onix_ts = np.linspace(ts_start, ts_end, n_samples, dtype=np.uint64)
 
+        # Each sample carries its own position in the epoch, each channel an offset.
+        # Zeros everywhere would make a transposed read, a reversed column order and
+        # a chunk concatenated twice all produce identical traces.
+        #
+        # The ordinal comes from the chunk's own ONIX window rather than from `n`:
+        # callers that build one chunk per call (to give each its own format) always
+        # pass n=0, so keying on `n` would stamp every chunk identically and leave
+        # exactly the duplicate-chunk case undetectable.
+        chunk_ordinal = int(ts_start) // 60000
+        sample_ids = (chunk_ordinal * n_samples + np.arange(n_samples, dtype=np.uint16))[:, None]
+        amp_data = sample_ids * 10 + np.arange(n_channels, dtype=np.uint16)[None, :]
+
+        if fmt == "arrow":
+            _write_arrow_chunk(device_dir, device_name, probe_label, n, onix_ts, amp_data)
+            continue
+
         # Write Clock binary (uint64 ONIX timestamps)
         clock_path = device_dir / f"{device_name}_{probe_label}_Clock_{n}.bin"
         onix_ts.tofile(clock_path)
 
-        # Write AmplifierData binary (uint16, shape n_samples x n_channels, all zeros)
+        # Write AmplifierData binary (uint16, shape n_samples x n_channels)
         amp_path = device_dir / f"{device_name}_{probe_label}_AmplifierData_{n}.bin"
-        amp_data = np.zeros((n_samples, n_channels), dtype=np.uint16)
         amp_data.tofile(amp_path)
+
+
+# Subtracted from Clock to form HubClock in synthetic arrow files. The subtraction is
+# checked rather than assumed safe: uint64 wraps to ~1.8e19, which reads as a plausible
+# clock and would surface as a baffling sync failure instead of a fixture error.
+HUB_CLOCK_OFFSET = 97
+
+
+def _write_arrow_chunk(device_dir, device_name, probe_label, n, onix_ts, amp_data):
+    """One arrow file per chunk: AmplifierData<i> columns plus Clock and HubClock."""
+    import pyarrow as pa
+    import pyarrow.ipc as ipc
+
+    cols = {f"AmplifierData{i}": amp_data[:, i] for i in range(amp_data.shape[1])}
+    # HubClock deliberately differs from Clock. Equal values would make a read of
+    # the wrong clock column indistinguishable from a correct one in every test.
+    if onix_ts[0] < HUB_CLOCK_OFFSET:
+        raise ValueError(
+            f"ts_start={onix_ts[0]} is below HUB_CLOCK_OFFSET={HUB_CLOCK_OFFSET}; HubClock would wrap."
+        )
+    cols["HubClock"] = onix_ts - HUB_CLOCK_OFFSET
+    cols["Clock"] = onix_ts
+    schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in cols.items()])
+    path = device_dir / f"{device_name}_{probe_label}_{n}.arrow"
+    with ipc.new_file(path, schema) as w:
+        w.write_batch(pa.RecordBatch.from_arrays([pa.array(v) for v in cols.values()], schema=schema))
 
 
 def register_synthetic_probe_insertion(
@@ -331,8 +383,9 @@ def make_synthetic_bno055_data(
     device_name: str,
     n_chunks: int,
     samples_per_chunk: int = 100,
+    fmt: str = "binary",
 ):
-    """Write synthetic Bno055 Clock + 4 stream binaries.
+    """Write synthetic Bno055 chunks, as binaries or as arrow.
 
     Bno055 chunks are staggered against the HarpSync CSV cadence to mirror the
     real-world acquisition pattern: each HarpSync window covers a 60000-tick
@@ -350,7 +403,15 @@ def make_synthetic_bno055_data(
     - Bno055_GravityVector_N.bin: float32, 3 columns
     - Bno055_LinearAcceleration_N.bin: float32, 3 columns
     - Bno055_Quaternion_N.bin: float32, 4 columns (w, x, y, z)
+
+    ``fmt="arrow"`` writes one ``Bno055_N.arrow`` per chunk instead, with the
+    acquisition's own column names and the two extra fields (Calibration,
+    Temperature) the binary format does not carry. Same clock stagger either way,
+    so a test can run the same assertions over both formats.
     """
+    if fmt not in ("binary", "arrow"):
+        raise ValueError(f"fmt must be 'binary' or 'arrow', got {fmt!r}")
+
     device_dir = raw_dir / epoch_dir_name / device_name
     device_dir.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(42)
@@ -364,6 +425,10 @@ def make_synthetic_bno055_data(
         clocks = np.linspace(chunk_ts_start, chunk_ts_end, samples_per_chunk, dtype=np.float64).astype(
             np.uint64
         )
+        if fmt == "arrow":
+            _write_bno055_arrow_chunk(device_dir, device_name, n, clocks, rng)
+            continue
+
         (device_dir / f"{device_name}_Bno055_Clock_{n}.bin").write_bytes(clocks.tobytes())
 
         for stream, n_cols in [
@@ -374,3 +439,45 @@ def make_synthetic_bno055_data(
         ]:
             data = rng.standard_normal((samples_per_chunk, n_cols)).astype(np.float32)
             (device_dir / f"{device_name}_Bno055_{stream}_{n}.bin").write_bytes(data.tobytes())
+
+
+# The acquisition's own Bno055 column names, written out rather than taken from
+# _ARROW_TO_CANONICAL: generating the fixture from the dict the loader validates
+# against means a renamed key propagates into the fixture and every test stays green.
+BNO055_ARROW_COLUMNS = (
+    "EulerAngle_Yaw",
+    "EulerAngle_Pitch",
+    "EulerAngle_Roll",
+    "Gravity_X",
+    "Gravity_Y",
+    "Gravity_Z",
+    "Acceleration_X",
+    "Acceleration_Y",
+    "Acceleration_Z",
+    "Quaternion_W",
+    "Quaternion_X",
+    "Quaternion_Y",
+    "Quaternion_Z",
+    "Calibration",
+    "Temperature",
+)
+
+
+def _write_bno055_arrow_chunk(device_dir, device_name, n, clocks, rng):
+    """One Bno055_<n>.arrow carrying the acquisition's own column names."""
+    import pyarrow as pa
+    import pyarrow.ipc as ipc
+
+    m = len(clocks)
+    cols: dict = {"Clock": clocks, "HubClock": clocks - 7}
+    for name in BNO055_ARROW_COLUMNS:
+        if name == "Calibration":
+            cols[name] = np.full(m, 15, dtype=np.uint8)
+        elif name == "Temperature":
+            cols[name] = np.full(m, 87, dtype=np.int32)
+        else:
+            cols[name] = rng.standard_normal(m).astype(np.float32)
+    schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in cols.items()])
+    path = device_dir / f"{device_name}_Bno055_{n}.arrow"
+    with ipc.new_file(path, schema) as w:
+        w.write_batch(pa.RecordBatch.from_arrays([pa.array(v) for v in cols.values()], schema=schema))

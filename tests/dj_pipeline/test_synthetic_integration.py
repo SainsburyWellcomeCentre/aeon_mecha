@@ -191,7 +191,7 @@ class TestEphysEpochEndLookback:
         experiment_name = "test_ephys_epoch_end_lookback"
         device_name = "NeuropixelsV2"
         raw_dir = tmp_path / "raw"
-        raw_dir.mkdir()
+        raw_dir.mkdir(parents=True)
 
         # Two epoch directories with distinct, monotonic HARP starts (1 hour apart).
         epoch_a_name = "2024-06-04T10-00-00"
@@ -474,7 +474,7 @@ class TestEphysChunkOutsideAllWindows:
         subject_name = "test-mouse-outside"
 
         raw_dir = tmp_path / "raw"
-        raw_dir.mkdir()
+        raw_dir.mkdir(parents=True)
 
         # Single HarpSync window: ONIX clock range [1, 59001].
         make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=1)
@@ -539,6 +539,9 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         clock_samples=None,
         sorted_samples=None,
         amp_as_zarr=False,
+        fmt="binary",
+        before_ingest=None,
+        after_ingest=None,
     ):
         """Set up minimal DB state for SyncedSpikes.make(), run it, and return spike_counts.
 
@@ -555,6 +558,10 @@ class TestSyncedSpikesIndexingAndExtrapolation:
           the AmplifierData / Clock files to (the factory writes 10 samples per chunk).
         - ``sorted_samples``: sample count of the sorted recording; defaults to the sum of
           the AmplifierData sample counts, as PreProcessing would have concatenated them.
+        - ``before_ingest(raw_dir, epoch_dir_name, device_name)``: seed extra raw files
+          before discovery runs.
+        - ``after_ingest(experiment_name)``: register EphysChunk.File rows the discovery
+          globs would never produce, to exercise the downstream file restriction directly.
         - ``amp_as_zarr``: replace each AmplifierData .bin with its compressed .zarr twin
           under the processed root, as raw ephys compression leaves them.
         """
@@ -577,7 +584,14 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         subject_name = "test-mouse-synced"
 
         raw_dir = tmp_path / "raw"
-        raw_dir.mkdir()
+        raw_dir.mkdir(parents=True)
+
+        if fmt != "binary" and (amp_samples is not None or clock_samples is not None or amp_as_zarr):
+            raise ValueError(
+                f"amp_samples/clock_samples/amp_as_zarr all operate on the raw .bin "
+                f"files, which fmt={fmt!r} does not write. The request would be ignored "
+                f"and the test would assert against the plain path while claiming otherwise."
+            )
 
         # n_chunks HarpSync windows; amplifier chunk n matches window n by default.
         make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=n_chunks)
@@ -588,11 +602,12 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             probe_label,
             n_chunks=n_chunks,
             ts_ranges=ts_ranges,
+            fmt=fmt,
         )
         amp_samples = amp_samples or [10] * n_chunks
         clock_samples = clock_samples or [10] * n_chunks
         device_dir = raw_dir / epoch_dir_name / device_name
-        for n in range(n_chunks):  # truncate files, e.g. as a copy of a still-open file would
+        for n in range(n_chunks) if fmt == "binary" else ():  # truncate, as a half-copied file would
             for stream, dtype, n_keep in (
                 ("AmplifierData", np.uint16, amp_samples[n]),
                 ("Clock", np.uint64, clock_samples[n]),
@@ -614,8 +629,13 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             experiment_name, subject_name, epoch_start, probe_label, device_name
         )
 
+        if before_ingest is not None:  # seed raw files that must not be picked up
+            before_ingest(raw_dir, epoch_dir_name, device_name)
+
         ephys.EphysSyncModel.ingest(experiment_name)
         ephys.EphysChunk.ingest_chunks(experiment_name)
+        if after_ingest is not None:  # register rows the discovery globs never produce
+            after_ingest(experiment_name)
         if amp_as_zarr:  # after ingestion, which reads the raw files
             import gc
 
@@ -820,6 +840,105 @@ class TestSyncedSpikesIndexingAndExtrapolation:
 
         assert (chunk_a_count, chunk_b_count) == (1, 2)
 
+    def test_arrow_chunks_assign_spikes_like_binary(self, ephys_full_pipeline, tmp_path):
+        """Same ONIX timestamps and spike indices must split identically either way."""
+        arrow = self._build_and_populate(
+            tmp_path / "arrow",
+            "test_synced_arrow",
+            n_chunks=2,
+            spike_indices=[5, 6, 15],
+            chunk_indices=[0, 1],
+            fmt="arrow",
+        )
+        binary = self._build_and_populate(
+            tmp_path / "binary",
+            "test_synced_binary",
+            n_chunks=2,
+            spike_indices=[5, 6, 15],
+            chunk_indices=[0, 1],
+            fmt="binary",
+        )
+        # The absolute split is pinned too: a run where SyncedSpikes inserts no Unit
+        # rows at all returns [0, 0] for both formats, and a pure differential
+        # assertion would call that agreement.
+        expected = [2, 1]  # 10 samples/chunk, spikes at 5 and 6 in chunk 0, 15 in chunk 1
+        assert arrow == expected, f"arrow split {arrow}, expected {expected}"
+        assert binary == expected, f"binary split {binary}, expected {expected}"
+
+        # The split is by sample index, so it would survive a corrupted clock. Compare
+        # the synced HARP times too: the arrow clock is spilled to a memmap on the way
+        # into extend_clock, and a dtype or truncation slip there moves every spike
+        # without changing any count.
+        import numpy as np
+
+        from aeon.dj_pipeline import spike_sorting
+
+        def spike_times(experiment_name):
+            return [
+                r["spike_times"]
+                for r in (spike_sorting.SyncedSpikes.Unit & {"experiment_name": experiment_name}).to_dicts(
+                    order_by="chunk_start"
+                )
+            ]
+
+        arrow_times, binary_times = spike_times("test_synced_arrow"), spike_times("test_synced_binary")
+        assert len(arrow_times) == len(binary_times) == 2
+        for a, b in zip(arrow_times, binary_times, strict=True):
+            np.testing.assert_array_equal(a, b)
+
+    def test_commutator_clock_files_are_not_mistaken_for_ephys(self, ephys_full_pipeline, tmp_path):
+        """A commutator clock must never be selected as amplifier data.
+
+        It is a 10 Hz turns counter; splicing it into the ONIX timeline shifts every
+        spike. The row is inserted directly because discovery never registers one, so
+        writing the file to disk alone would leave the restriction nothing to reject.
+        """
+        import numpy as np
+
+        from aeon.dj_pipeline import ephys
+
+        def seed_commutator(raw_dir, epoch_dir_name, device_name):
+            d = raw_dir / epoch_dir_name / device_name
+            for n in range(2):
+                # plausible but wrong timestamps: same dtype, different rate
+                np.arange(1, 7, dtype=np.uint64).tofile(d / f"{device_name}_Commutator_Clock_{n}.bin")
+                np.zeros(6, dtype=np.uint32).tofile(d / f"{device_name}_Commutator_Turns_{n}.bin")
+
+        def register_commutator(experiment_name):
+            rows = (ephys.EphysChunk & {"experiment_name": experiment_name}).to_dicts(
+                order_by="chunk_start"
+            )
+            device_name = "NeuropixelsV2Beta"
+            ephys.EphysChunk.File.insert(
+                [
+                    {
+                        **{k: r[k] for k in ephys.EphysChunk.primary_key},
+                        "directory_type": "raw-ephys",
+                        "file_name": f"{device_name}_Commutator_Clock_{n}.bin",
+                        "file_path": (
+                            f"2024-06-13T10-24-07/{device_name}/{device_name}_Commutator_Clock_{n}.bin"
+                        ),
+                    }
+                    for n, r in enumerate(rows)
+                ],
+                allow_direct_insert=True,
+            )
+            selected = (ephys.EphysChunk.File & {"experiment_name": experiment_name}).to_arrays("file_name")
+            assert any("Commutator" in n for n in selected), (
+                "the commutator row must be in EphysChunk.File for the restriction to reject it"
+            )
+
+        counts = self._build_and_populate(
+            tmp_path,
+            "test_synced_commutator",
+            n_chunks=2,
+            spike_indices=[5, 15],
+            chunk_indices=[0, 1],
+            before_ingest=seed_commutator,
+            after_ingest=register_commutator,
+        )
+        assert list(counts) == [1, 1], f"commutator files perturbed the split: {counts}"
+
     def test_short_clock_file_is_extrapolated(self, ephys_full_pipeline, tmp_path):
         """Spikes past the end of a short Clock file get extrapolated times, not dropped."""
         (chunk_count,) = self._build_and_populate(
@@ -860,6 +979,23 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         assert (chunk_a_count, chunk_b_count) == (1, 2)
 
 
+class TestSortingParamSetPreprocessingMethod:
+    """SortingParamSet.insert validates the preprocessing selection."""
+
+    def test_unknown_pipeline_rejected_on_insert(self, ephys_full_pipeline):
+        """A typo in si_pipeline fails at insert, not hours into PreProcessing."""
+        from aeon.dj_pipeline import spike_sorting
+
+        row = {
+            "paramset_id": "test-bad-preproc",
+            "sorting_method": "kilosort4",
+            "params": {"SI_PREPROCESSING_PARAMS": {"si_pipeline": "aeon_defualt"}},
+        }
+        with pytest.raises(ValueError, match="aeon_defualt"):
+            spike_sorting.SortingParamSet.insert1(row)
+        assert not (spike_sorting.SortingParamSet & {"paramset_id": "test-bad-preproc"})
+
+
 class TestSpikeSortingLupin:
     """A non-Kilosort sorter runs through SpikeSorting."""
 
@@ -897,3 +1033,483 @@ class TestSpikeSortingLupin:
 
         sorting = si.load(sorting_output_dir / "si_sorting.pkl", base_folder=output_dir)
         assert len(sorting.unit_ids) > 0
+
+
+class TestProbeInsertionFromImplants:
+    """Metadata-asserted insertion numbers are authoritative, and conflicts raise."""
+
+    def _tables(self, ephys_full_pipeline):
+        ephys = ephys_full_pipeline["ephys"]
+        acquisition = ephys_full_pipeline["acquisition"]
+        return ephys, acquisition
+
+    def _experiment(self, tmp_path, name):
+        """Register a minimal experiment and return its name."""
+        from ephys_factories import make_synthetic_ephys_epoch, register_synthetic_experiment
+
+        from aeon.dj_pipeline import acquisition, ephys, subject
+
+        raw_dir, epoch = tmp_path / "raw", "2026-10-13T094255Z"
+        make_synthetic_ephys_epoch(raw_dir, epoch, "NeuropixelsV2", n_chunks=1)
+        register_synthetic_experiment(tmp_path, raw_dir, name, epoch)
+        ephys.ProbeType.insert1({"probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True)
+        subject.Subject.insert1(
+            {"subject": "SUBJ-1", "sex": "U", "subject_birth_date": "2026-01-01"},
+            skip_duplicates=True,
+        )
+        acquisition.Experiment.Subject.insert1(
+            {"experiment_name": name, "subject": "SUBJ-1"}, skip_duplicates=True
+        )
+        return name
+
+    def test_explicit_insertion_number_is_used(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
+
+        ephys, _ = self._tables(ephys_full_pipeline)
+        exp = self._experiment(tmp_path, "test_implants_explicit")
+        ephys.Probe.insert1(
+            {"probe": "SER-1", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
+        )
+        key = find_or_create_probe_insertion(
+            exp, "SUBJ-1", "SER-1", ephys.ProbeInsertion, ephys.Probe, insertion_number=7
+        )
+        # Read it back from the table: on the create path the return value is the
+        # argument that went in, so asserting on it would pass even if the row were
+        # written with a different number, or never written at all.
+        assert key["insertion_number"] == 7
+        row = (ephys.ProbeInsertion & {"experiment_name": exp, "probe": "SER-1"}).fetch1()
+        assert row["insertion_number"] == 7
+        assert row["subject"] == "SUBJ-1"
+
+    def test_conflicting_insertion_number_raises(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
+
+        ephys, _ = self._tables(ephys_full_pipeline)
+        exp = self._experiment(tmp_path, "test_implants_conflict")
+        ephys.Probe.insert1(
+            {"probe": "SER-2", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
+        )
+        find_or_create_probe_insertion(
+            exp, "SUBJ-1", "SER-2", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
+        )
+        with pytest.raises(ValueError, match="insertion_number"):
+            find_or_create_probe_insertion(
+                exp, "SUBJ-1", "SER-2", ephys.ProbeInsertion, ephys.Probe, insertion_number=2
+            )
+
+    def test_target_area_auto_created_and_linked(self, ephys_full_pipeline, tmp_path, caplog):
+        """A new area is created (warned about) and linked to the insertion."""
+        from aeon.dj_pipeline.ephys import _insert_target_area
+        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
+
+        ephys, _ = self._tables(ephys_full_pipeline)
+        exp = self._experiment(tmp_path, "test_implants_area")
+        ephys.Probe.insert1(
+            {"probe": "SER-4", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
+        )
+        pi_key = find_or_create_probe_insertion(
+            exp, "SUBJ-1", "SER-4", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
+        )
+        # a name no other test uses: the warning fires only the first time an area appears
+        area = "TestArea-NeverSeenBefore"
+        with caplog.at_level("WARNING"):
+            _insert_target_area(area, pi_key)
+
+        assert ephys.TargetArea & {"target_area": area}
+        assert ephys.InsertionTargetArea & {**pi_key, "target_area": area}
+        assert any(area in r.message for r in caplog.records), "a new area should warn"
+
+        # ...and not again for an area that already exists
+        caplog.clear()
+        with caplog.at_level("WARNING"):
+            _insert_target_area(area, pi_key)
+        assert not any(area in r.message for r in caplog.records), "existing area should not warn"
+
+    def test_second_target_area_is_added_and_warned_about(self, ephys_full_pipeline, tmp_path, caplog):
+        """The link table is declared for "one or more" areas, so a second one is kept.
+
+        Refusing it would make the documented multi-area case impossible and, once a
+        curator added an area by hand, block every later ingestion of that epoch. The
+        warning is there because the other likely cause is spelling drift.
+        """
+        from aeon.dj_pipeline.ephys import _insert_target_area
+        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
+
+        ephys, _ = self._tables(ephys_full_pipeline)
+        exp = self._experiment(tmp_path, "test_implants_area_conflict")
+        ephys.Probe.insert1(
+            {"probe": "SER-6", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
+        )
+        pi_key = find_or_create_probe_insertion(
+            exp, "SUBJ-1", "SER-6", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
+        )
+        _insert_target_area("AreaOne", pi_key)
+        with caplog.at_level("WARNING"):
+            _insert_target_area("AreaTwo", pi_key)
+        assert "already linked" in caplog.text
+
+        linked = sorted((ephys.InsertionTargetArea & pi_key).to_arrays("target_area"))
+        assert linked == ["AreaOne", "AreaTwo"], linked
+
+        # Re-ingesting the same epoch must stay a no-op, not accumulate rows.
+        _insert_target_area("AreaTwo", pi_key)
+        assert len(ephys.InsertionTargetArea & pi_key) == 2
+
+    def test_target_area_none_is_a_noop(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline.ephys import _insert_target_area
+        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
+
+        ephys, _ = self._tables(ephys_full_pipeline)
+        exp = self._experiment(tmp_path, "test_implants_noarea")
+        ephys.Probe.insert1(
+            {"probe": "SER-5", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
+        )
+        pi_key = find_or_create_probe_insertion(
+            exp, "SUBJ-1", "SER-5", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
+        )
+        _insert_target_area(None, pi_key)
+        assert not (ephys.InsertionTargetArea & pi_key)
+
+    def test_implantation_date_recorded(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
+
+        ephys, _ = self._tables(ephys_full_pipeline)
+        exp = self._experiment(tmp_path, "test_implants_date")
+        ephys.Probe.insert1(
+            {"probe": "SER-3", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
+        )
+        key = find_or_create_probe_insertion(
+            exp,
+            "SUBJ-1",
+            "SER-3",
+            ephys.ProbeInsertion,
+            ephys.Probe,
+            insertion_number=1,
+            implantation_date="2026-05-20",
+        )
+        assert str((ephys.ProbeInsertion & key).fetch1("implantation_date")) == "2026-05-20 00:00:00"
+
+
+class TestFactoryFormatValidation:
+    """An unvalidated fmt would make the arrow-vs-binary equivalence test vacuous."""
+
+    def test_unknown_format_raises(self, tmp_path):
+        from ephys_factories import make_synthetic_amplifier_data
+
+        with pytest.raises(ValueError, match="fmt"):
+            make_synthetic_amplifier_data(
+                tmp_path, "ep", "NeuropixelsV2", "ProbeA", n_chunks=1, fmt="Arrow"
+            )
+
+    def test_arrow_and_binary_write_different_trees(self, tmp_path):
+        """Guards the equivalence test: the formats must not produce the same files."""
+        from ephys_factories import make_synthetic_amplifier_data
+
+        for fmt in ("binary", "arrow"):
+            make_synthetic_amplifier_data(
+                tmp_path / fmt, "ep", "NeuropixelsV2", "ProbeA", n_chunks=1, fmt=fmt
+            )
+        suffixes = {
+            fmt: sorted(q.suffix for q in (tmp_path / fmt / "ep" / "NeuropixelsV2").iterdir())
+            for fmt in ("binary", "arrow")
+        }
+        assert suffixes["binary"] == [".bin", ".bin"], suffixes
+        assert suffixes["arrow"] == [".arrow"], suffixes
+
+
+class TestPreProcessingOnArrow:
+    """PreProcessing must build a SpikeInterface recording from arrow chunks.
+
+    This is the spec's definition of "works" for arrow, and the fixture split in
+    the golden tests does not reach it: PreProcessing is keyed on SortingTask,
+    which sits inside the sorting cascade.
+    """
+
+    def _populate(self, tmp_path, experiment_name, fmt):
+        from aeon.dj_pipeline import ephys, spike_sorting
+
+        exp = TestArrowChunkIngestion()._setup(tmp_path, experiment_name, [fmt, fmt])
+
+        chunks = (ephys.EphysChunk & {"experiment_name": exp}).to_dicts(order_by="chunk_start")
+        assert len(chunks) == 2, chunks
+        insertion = {k: chunks[0][k] for k in ("experiment_name", "subject", "insertion_number")}
+        block_key = {
+            **insertion,
+            "block_start": chunks[0]["chunk_start"],
+            "block_end": chunks[-1]["chunk_end"],
+        }
+        ephys.EphysBlock.insert1(block_key)
+        probe_type, econfig = (ephys.EphysEpochConfig.Insertion & {"experiment_name": exp}).fetch1(
+            "probe_type", "electrode_config_name"
+        )
+        econfig_key = {"probe_type": probe_type, "electrode_config_name": econfig}
+        ephys.EphysBlockInfo.insert1(
+            {
+                **block_key,
+                "block_duration": 1.0,
+                **econfig_key,
+            },
+            allow_direct_insert=True,
+        )
+        ephys.EphysBlockInfo.Chunk.insert(
+            [{**block_key, "chunk_start": c["chunk_start"]} for c in chunks],
+            allow_direct_insert=True,
+        )
+        ephys.EphysBlockInfo.Channel.insert(
+            [{**block_key, **econfig_key, "electrode": 0, "channel_idx": 0}],
+            allow_direct_insert=True,
+        )
+        spike_sorting.ElectrodeGroup.insert1(
+            {
+                **econfig_key,
+                "electrode_group": "all",
+                "electrode_group_description": "synthetic",
+                "electrode_count": 1,
+            },
+            skip_duplicates=True,
+        )
+        spike_sorting.ElectrodeGroup.Electrode.insert1(
+            {**econfig_key, "electrode_group": "all", "electrode": 0}, skip_duplicates=True
+        )
+        spike_sorting.SortingParamSet.insert1(
+            {
+                "paramset_id": "pp-arrow",
+                "sorting_method": "kilosort4",
+                "paramset_description": "synthetic",
+                "params": {"SI_PREPROCESSING_PARAMS": {"si_pipeline": "none"}},
+            },
+            skip_duplicates=True,
+        )
+        task = {**block_key, **econfig_key, "electrode_group": "all", "paramset_id": "pp-arrow"}
+        spike_sorting.SortingTask.insert1(task)
+
+        spike_sorting.PreProcessing.populate(task, suppress_errors=False)
+        return spike_sorting, task
+
+    def test_preprocessing_runs_on_arrow_chunks(self, ephys_full_pipeline, tmp_path):
+        spike_sorting, task = self._populate(tmp_path, "test_pp_arrow", "arrow")
+        assert spike_sorting.PreProcessing & task, "PreProcessing produced no row for arrow"
+
+    def test_preprocessed_recording_is_loadable_and_has_expected_samples(
+        self, ephys_full_pipeline, tmp_path
+    ):
+        """The written si_recording.pkl must reload with the arrow chunks' samples."""
+        import spikeinterface as si
+
+        spike_sorting, task = self._populate(tmp_path, "test_pp_arrow_load", "arrow")
+        out = spike_sorting.get_sorting_root_dir() / (spike_sorting.PreProcessing & task).fetch1(
+            "sorting_output_dir"
+        )
+        pkl = out.parent / "recording" / "si_recording.pkl"
+        assert pkl.exists(), f"si_recording.pkl not written to {pkl}"
+        rec = si.load(pkl, base_folder=out)
+        # the factory writes 10 samples per chunk, two chunks concatenated
+        assert rec.get_num_samples() == 20, rec.get_num_samples()
+
+        # Values, not just the count: the factory stamps each sample with its own
+        # index, so a chunk read in the wrong order or concatenated twice changes
+        # the traces while leaving the length right. PreProcessing converts
+        # unsigned to signed, which offsets every sample by a constant.
+        traces = rec.get_traces(start_frame=0, end_frame=20).ravel()
+        offset = int(traces[0])  # sample 0, channel 0 -> 0 before the conversion
+        assert [int(t) - offset for t in traces] == [i * 10 for i in range(20)], traces
+
+
+class TestAmplifierFileSelection:
+    """The restriction that finds amplifier files must match both formats.
+
+    PreProcessing and SyncedSpikes both select the amplifier file for a block.
+    A restriction that misses arrow leaves PreProcessing with an empty file list
+    and si.concatenate_recordings([]) raises IndexError naming nothing.
+    """
+
+    def test_restriction_selects_arrow_files(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline import ephys
+        from aeon.dj_pipeline.spike_sorting import AMPLIFIER_FILE_RESTRICTION
+
+        exp = TestArrowChunkIngestion()._setup(tmp_path, "test_amp_sel_arrow", ["arrow", "arrow"])
+        rows = (ephys.EphysChunk.File & {"experiment_name": exp} & AMPLIFIER_FILE_RESTRICTION).to_dicts()
+        names = sorted(r["file_name"] for r in rows)
+        assert len(names) == 2, f"arrow amplifier files not selected: {names}"
+        assert all(n.endswith(".arrow") for n in names), names
+
+    def test_restriction_selects_binary_files(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline import ephys
+        from aeon.dj_pipeline.spike_sorting import AMPLIFIER_FILE_RESTRICTION
+
+        exp = TestArrowChunkIngestion()._setup(tmp_path, "test_amp_sel_bin", ["binary", "binary"])
+        rows = (ephys.EphysChunk.File & {"experiment_name": exp} & AMPLIFIER_FILE_RESTRICTION).to_dicts()
+        names = sorted(r["file_name"] for r in rows)
+        assert len(names) == 2, f"expected 2 AmplifierData files, got {names}"
+        assert all("AmplifierData" in n for n in names), names
+
+    def test_restriction_excludes_clock_commutator_and_other_arrow_streams(
+        self, ephys_full_pipeline, tmp_path
+    ):
+        """Only amplifier files may match, in either format.
+
+        The non-amplifier rows are inserted into EphysChunk.File directly: discovery
+        registers amplifier files and their derived Clock twins only, so writing them
+        to disk would leave the restriction with nothing to reject. The Bno055 arrow
+        row is the one that matters for the arrow half -- it sits in the same device
+        directory, and a bare '%.arrow' would hand PreProcessing a 17-column IMU table
+        as amplifier data and give SyncedSpikes its length as a chunk boundary.
+        """
+        from aeon.dj_pipeline import ephys
+        from aeon.dj_pipeline.spike_sorting import AMPLIFIER_FILE_RESTRICTION
+
+        device_name = "NeuropixelsV2"
+        extra = [
+            f"{device_name}_Commutator_Clock_0.bin",
+            f"{device_name}_Bno055_0.arrow",
+        ]
+
+        def register_non_amplifier_rows(experiment_name):
+            chunk = (ephys.EphysChunk & {"experiment_name": experiment_name}).to_dicts()[0]
+            ephys.EphysChunk.File.insert(
+                [
+                    {
+                        **{k: chunk[k] for k in ephys.EphysChunk.primary_key},
+                        "directory_type": "raw-ephys",
+                        "file_name": name,
+                        "file_path": f"2026-10-13T094255Z/{device_name}/{name}",
+                    }
+                    for name in extra
+                ],
+                allow_direct_insert=True,
+            )
+
+        exp = TestArrowChunkIngestion()._setup(
+            tmp_path, "test_amp_sel_excl", ["binary"], after_ingest=register_non_amplifier_rows
+        )
+        all_names = set((ephys.EphysChunk.File & {"experiment_name": exp}).to_arrays("file_name"))
+        assert set(extra) <= all_names, (
+            f"the rows the restriction must reject are not in EphysChunk.File: {all_names}"
+        )
+
+        rows = (ephys.EphysChunk.File & {"experiment_name": exp} & AMPLIFIER_FILE_RESTRICTION).to_dicts()
+        names = [r["file_name"] for r in rows]
+        assert not any("Commutator" in n for n in names), names
+        assert not any("Bno055" in n for n in names), names
+        assert not any(n.endswith("_Clock_0.bin") for n in names), names
+        assert names, "the binary amplifier file must still be selected"
+
+
+class TestArrowChunkIngestion:
+    """ingest_chunks discovers arrow amplifier files and reads their Clock column."""
+
+    def _setup(self, tmp_path, experiment_name, fmts, after_ingest=None, before_ingest=None):
+        """Build an epoch whose chunk n uses fmts[n]; return the experiment name.
+
+        ``before_ingest(raw_dir, epoch_dir_name, device_name)`` runs before discovery,
+        for tests that seed extra raw files. ``after_ingest(experiment_name)`` runs
+        once chunks are registered, for tests that need EphysChunk.File rows the
+        discovery globs would never produce.
+        """
+        from ephys_factories import (
+            make_synthetic_amplifier_data,
+            make_synthetic_ephys_epoch,
+            register_synthetic_experiment,
+            register_synthetic_probe_insertion,
+        )
+
+        import aeon.dj_pipeline.subject as subj_mod
+        from aeon.dj_pipeline import acquisition, ephys
+
+        epoch_dir_name, device_name, probe_label = "2026-10-13T094255Z", "NeuropixelsV2", "ProbeA"
+        subject_name = "test-mouse-arrow"
+        raw_dir = tmp_path / "raw"
+        raw_dir.mkdir(parents=True)
+
+        make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=len(fmts))
+        # one call per chunk so each can pick its own on-disk format
+        dest = raw_dir / epoch_dir_name / device_name
+        for n, fmt in enumerate(fmts):
+            # The factory always writes chunk index 0, so build each chunk in its own
+            # scratch tree and move it into place under the right index -- writing in
+            # place would overwrite the previous chunk before it could be renamed.
+            scratch = tmp_path / f"scratch{n}"
+            make_synthetic_amplifier_data(
+                scratch,
+                epoch_dir_name,
+                device_name,
+                probe_label,
+                n_chunks=1,
+                ts_ranges=[(60000 * n + 501, 60000 * n + 58501)],
+                fmt=fmt,
+            )
+            for src in (scratch / epoch_dir_name / device_name).iterdir():
+                src.rename(dest / src.name.replace("_0.", f"_{n}."))
+
+        epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+        subj_mod.Subject.insert1(
+            {"subject": subject_name, "sex": "U", "subject_birth_date": "2026-01-01"},
+            skip_duplicates=True,
+        )
+        acquisition.Experiment.Subject.insert1(
+            {"experiment_name": experiment_name, "subject": subject_name}, skip_duplicates=True
+        )
+        register_synthetic_probe_insertion(
+            experiment_name, subject_name, epoch_start, probe_label, device_name
+        )
+        if before_ingest is not None:  # seed extra raw files before discovery
+            before_ingest(raw_dir, epoch_dir_name, device_name)
+        ephys.EphysSyncModel.ingest(experiment_name)
+        ephys.EphysChunk.ingest_chunks(experiment_name)
+        if after_ingest is not None:  # register rows the discovery globs never produce
+            after_ingest(experiment_name)
+        return experiment_name
+
+    def test_arrow_chunks_are_ingested(self, ephys_full_pipeline, tmp_path):
+        from aeon.dj_pipeline import ephys
+
+        exp = self._setup(tmp_path, "test_arrow_ingest", ["arrow", "arrow"])
+        assert len((ephys.EphysChunk & {"experiment_name": exp}).to_dicts()) == 2
+
+    def test_mixed_binary_and_arrow_in_one_epoch(self, ephys_full_pipeline, tmp_path):
+        """Review Focus #2: discovery must handle both formats in one pass."""
+        from aeon.dj_pipeline import ephys
+
+        exp = self._setup(tmp_path, "test_arrow_mixed", ["binary", "arrow"])
+        chunks = (ephys.EphysChunk & {"experiment_name": exp}).to_dicts(order_by="chunk_start")
+        assert len(chunks) == 2, f"mixed-format epoch ingested {len(chunks)} chunks, expected 2"
+
+    def test_same_chunk_index_in_both_formats_raises(self, ephys_full_pipeline, tmp_path):
+        """One chunk index in both formats is ambiguous, not two chunks.
+
+        Discovery globs both patterns in one pass and the paths differ, so the pair
+        gets registered twice and PreProcessing concatenates the chunk twice -- every
+        later spike shifts by a chunk.
+        """
+        from ephys_factories import make_synthetic_amplifier_data
+
+        device_name, probe_label = "NeuropixelsV2", "ProbeA"
+        epoch_dir_name = "2026-10-13T094255Z"
+
+        def write_arrow_twin(raw_dir, _epoch_dir_name, _device_name):
+            # the same chunk 0, also written as arrow, one sample later
+            scratch = tmp_path / "twin"
+            make_synthetic_amplifier_data(
+                scratch,
+                epoch_dir_name,
+                device_name,
+                probe_label,
+                n_chunks=1,
+                ts_ranges=[(502, 58501)],
+                fmt="arrow",
+            )
+            src = scratch / epoch_dir_name / device_name / f"{device_name}_{probe_label}_0.arrow"
+            src.rename(raw_dir / epoch_dir_name / device_name / src.name)
+
+        with pytest.raises(ValueError, match="both binary and arrow"):
+            self._setup(tmp_path, "test_arrow_dup_index", ["binary"], before_ingest=write_arrow_twin)
+
+    def test_arrow_chunk_bounds_match_binary(self, ephys_full_pipeline, tmp_path):
+        """Same ONIX timestamps must yield the same chunk_start/end either way."""
+        from aeon.dj_pipeline import ephys
+
+        a = self._setup(tmp_path / "a", "test_arrow_bounds_a", ["arrow"])
+        b = self._setup(tmp_path / "b", "test_arrow_bounds_b", ["binary"])
+        ca = (ephys.EphysChunk & {"experiment_name": a}).fetch1("chunk_start", "chunk_end")
+        cb = (ephys.EphysChunk & {"experiment_name": b}).fetch1("chunk_start", "chunk_end")
+        assert ca == cb

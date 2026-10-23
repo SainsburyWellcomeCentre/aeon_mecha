@@ -15,8 +15,13 @@ pytestmark = pytest.mark.unit
 class TestOnixStreamCodecEncode:
     """Direct ``encode()`` calls against OnixStreamCodec, no DB round trip."""
 
-    def test_encodes_valid_dict(self):
-        """Test that encode returns the input dict unchanged for a valid reference."""
+    def test_encodes_valid_dict_without_touching_the_caller(self):
+        """Encode returns the reference plus the format key, leaving the input alone.
+
+        It used to mutate in place, so ``encoded == ref`` held whatever it did; a
+        caller reusing one reference dict across inserts would carry the injected
+        default into rows that never set one.
+        """
         from aeon.dj_pipeline.utils.codec import OnixStreamCodec
 
         codec = OnixStreamCodec()
@@ -28,7 +33,8 @@ class TestOnixStreamCodecEncode:
             "stream_group": "Bno055",
         }
         encoded = codec.encode(ref)
-        assert encoded == ref
+        assert "stream_format" not in ref
+        assert encoded == {**ref, "stream_format": "binary"}
 
     def test_rejects_non_dict(self):
         """Test that encode raises TypeError for non-dict input."""
@@ -437,3 +443,69 @@ class TestPynappleInDB:
         assert isinstance(stored, dict)
         assert stored["kind"] == "TsGroup"
         assert stored["path"].endswith(".npz")
+
+
+class TestOnixStreamFormatDiscriminator:
+    """A stored row records which format it was ingested from.
+
+    Without it the format is re-derived from disk at fetch time, so a row's
+    column set depends on today's raw tree rather than on what was ingested.
+    """
+
+    def test_encode_defaults_format_for_rows_without_one(self):
+        from aeon.dj_pipeline.utils.codec import OnixStreamCodec
+
+        payload = {
+            "experiment_name": "e",
+            "epoch_start": "2026-10-13 09:42:55",
+            "sync_start": "2026-10-13 10:00:00",
+            "device_name": "NeuropixelsV2",
+            "stream_group": "Bno055",
+        }
+        stored = OnixStreamCodec().encode(dict(payload))
+        import json
+
+        decoded = json.loads(stored) if isinstance(stored, str) else stored
+        assert decoded.get("stream_format") == "binary", (
+            "rows ingested before the discriminator existed must keep decoding as binary"
+        )
+
+    def test_encode_preserves_an_explicit_format(self):
+        import json
+
+        from aeon.dj_pipeline.utils.codec import OnixStreamCodec
+
+        payload = {
+            "experiment_name": "e",
+            "epoch_start": "2026-10-13 09:42:55",
+            "sync_start": "2026-10-13 10:00:00",
+            "device_name": "NeuropixelsV2",
+            "stream_group": "Bno055",
+            "stream_format": "arrow",
+        }
+        stored = OnixStreamCodec().encode(dict(payload))
+        decoded = json.loads(stored) if isinstance(stored, str) else stored
+        assert decoded["stream_format"] == "arrow"
+
+
+class TestOnixStreamFormatValidation:
+    """encode is the only writer of stream_format, so a bad value must stop there.
+
+    decode tests `== "arrow"`, so a typo falls into the binary branch and surfaces
+    much later as "the raw tree changed format under this row" — about a raw tree
+    nobody touched.
+    """
+
+    def test_rejects_an_unknown_format(self):
+        from aeon.dj_pipeline.utils.codec import OnixStreamCodec
+
+        payload = {
+            "experiment_name": "e",
+            "epoch_start": "2026-10-13 09:42:55",
+            "sync_start": "2026-10-13 10:00:00",
+            "device_name": "NeuropixelsV2",
+            "stream_group": "Bno055",
+            "stream_format": "Arrow",  # capitalised: decode would read this as binary
+        }
+        with pytest.raises(ValueError, match="must be 'binary' or 'arrow'"):
+            OnixStreamCodec().encode(payload)

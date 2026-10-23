@@ -24,6 +24,24 @@ from ephys_factories import (
 pytestmark = pytest.mark.integration
 
 
+def _shift_arrow_clock(path, offset):
+    """Rewrite an arrow file with Clock/HubClock shifted by ``offset``."""
+    import pyarrow as pa
+    import pyarrow.ipc as ipc
+
+    with pa.memory_map(str(path), "r") as src:
+        reader = ipc.RecordBatchFileReader(src)
+        table = pa.Table.from_batches(
+            [reader.get_batch(i) for i in range(reader.num_record_batches)], schema=reader.schema
+        )
+        cols = {name: table[name].to_numpy(zero_copy_only=False).copy() for name in table.column_names}
+    for name in ("Clock", "HubClock"):
+        cols[name] = cols[name] + offset
+    schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in cols.items()])
+    with ipc.new_file(path, schema) as w:
+        w.write_batch(pa.RecordBatch.from_arrays([pa.array(v) for v in cols.values()], schema=schema))
+
+
 class TestAeonStreamCodecEncode:
     """Direct ``encode()`` calls against AeonStreamCodec, no DB round trip."""
 
@@ -63,19 +81,29 @@ class TestAeonStreamCodecEncode:
 class TestOnixStreamCodecRoundTrip:
     """Insert through the codec via a real ephys pipeline, fetch back, and check what comes out."""
 
-    def test_round_trip_returns_onix_indexed_dataframe(self, dj_config_integration, tmp_path):
-        """Test that fetch returns a DataFrame merged and indexed by ONIX clock, not HARP datetimes."""
-        from aeon.dj_pipeline import ephys
-        from aeon.dj_pipeline.utils.onix_imu import IMU_COLUMNS
+    @pytest.mark.parametrize(
+        ("fmt", "epoch_dir_name"),
+        [("binary", "2024-06-11T10-24-07"), ("arrow", "2024-06-13T10-24-07")],
+    )
+    def test_round_trip_returns_onix_indexed_dataframe(
+        self, dj_config_integration, tmp_path, fmt, epoch_dir_name
+    ):
+        """Fetch returns a DataFrame merged and indexed by ONIX clock, not HARP datetimes.
 
-        experiment_name = "test_codec_round_trip"
-        epoch_dir_name = "2024-06-11T10-24-07"
+        Run over both formats: decode branches on the row's stream_format and an
+        arrow row carries two columns a binary one does not.
+        """
+        from aeon.dj_pipeline import ephys
+        from aeon.dj_pipeline.utils.onix_imu import ARROW_EXTRA_COLUMNS, IMU_COLUMNS
+
+        expected_columns = IMU_COLUMNS + (ARROW_EXTRA_COLUMNS if fmt == "arrow" else ())
+        experiment_name = f"test_codec_round_trip_{fmt}"
         device_name = "NeuropixelsV2Beta"
 
         raw_dir = tmp_path / "raw"
         raw_dir.mkdir()
         make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=1)
-        make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=1)
+        make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=1, fmt=fmt)
         register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
         ephys.EphysSyncModel.ingest(experiment_name)
@@ -84,12 +112,52 @@ class TestOnixStreamCodecRoundTrip:
         key = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).fetch1("KEY")
         df = (ephys.OnixImuChunk & key).fetch1("stream_df")
 
-        assert tuple(df.columns) == IMU_COLUMNS
+        assert tuple(df.columns) == expected_columns
         assert df.index.dtype == np.uint64  # ONIX-indexed (uint64), not HARP datetimes
         # Bno055 chunks are staggered against HarpSync windows in the synthetic
         # factory; the only sync window owns all of the chunk's 100 samples,
         # including those outside its HarpSync rows.
         assert len(df) == 100
+        if fmt == "arrow":
+            assert df["calibration"].iloc[0] == 15
+            assert df["temperature"].iloc[0] == 87
+
+    def test_arrow_epoch_with_an_empty_window_keeps_its_15_column_shape(
+        self, dj_config_integration, tmp_path
+    ):
+        """An arrow row whose window matches no chunk must still decode as arrow.
+
+        Without the format on the row, encode stamps it "binary" and the fetch comes
+        back 13 columns wide where its siblings are 15. Two sync windows are needed:
+        a single window is widened to cover the whole epoch, so it is never empty.
+        """
+        from aeon.dj_pipeline import ephys
+        from aeon.dj_pipeline.utils.onix_imu import ARROW_EXTRA_COLUMNS, IMU_COLUMNS
+
+        experiment_name = "test_codec_arrow_empty_window"
+        epoch_dir_name = "2024-06-14T10-24-07"
+        device_name = "NeuropixelsV2Beta"
+
+        raw_dir = tmp_path / "raw"
+        raw_dir.mkdir()
+        make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=2)
+        make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=1, fmt="arrow")
+        device_dir = raw_dir / epoch_dir_name / device_name
+        _shift_arrow_clock(device_dir / f"{device_name}_Bno055_0.arrow", 10**9)
+        register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+
+        ephys.EphysSyncModel.ingest(experiment_name)
+        ephys.OnixImuChunk.populate({"experiment_name": experiment_name})
+
+        rows = (ephys.OnixImuChunk & {"experiment_name": experiment_name}).to_dicts(order_by="sync_start")
+        assert len(rows) == 2, rows
+        assert rows[0]["sample_count"] == 0, "the first window must own no IMU samples"
+        assert rows[1]["sample_count"] > 0, "the second window must own them all"
+
+        empty_key = {k: rows[0][k] for k in ephys.OnixImuChunk.primary_key}
+        df = (ephys.OnixImuChunk & empty_key).fetch1("stream_df")
+        assert len(df) == 0
+        assert tuple(df.columns) == IMU_COLUMNS + ARROW_EXTRA_COLUMNS
 
     def test_round_trip_no_data_returns_empty_dataframe(self, dj_config_integration, tmp_path):
         """Test that fetch returns an empty IMU_COLUMNS DataFrame when no IMU data exists."""

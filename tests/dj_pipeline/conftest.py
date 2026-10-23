@@ -124,6 +124,26 @@ GOLDEN_DATASETS = {
         "expected_camera_count": 13,
         "expected_feeder_count": 6,
     },
+    # Behaviour arm of golden_arrow_01 — paired with foraging_abc_arrow_2026_10_13.
+    # Format is unchanged from abcGolden01 (.bin/.csv/.avi); the new
+    # RigConfiguration.yaml beside Metadata.json is an extra file nothing reads.
+    "foraging_abc_arrow_2026_10_13": {
+        "experiment_name": "goldenArrow01-aeon3",
+        "experiment_path": "AEON3/golden_arrow_01",
+        "epoch_dir": "2026-10-13T094312Z",
+        "devices_schema": "swc.aeon_exp.foragingABC.experiment:Experiment",
+        "arena_name": "circle-2m",
+        "lab": "SWC",
+        "location": "AEON3",
+        "experiment_type": "foraging",
+        "required_files": [
+            "Metadata.json",
+            "CameraNest/CameraNest_2026-10-13T09-00-00.csv",
+            "Feeder1/Feeder1_32_2026-10-13T090000Z.bin",
+        ],
+        "expected_camera_count": 13,
+        "expected_feeder_count": 6,
+    },
     # Ephys golden dataset — NeuropixelsV2 ProbeB shank3 of abcGolden01
     # All 96 active contacts on shank3; two overlapping blocks (chunks 0-6 and 4-11)
     "foraging_abc_ephys_2026_05_11": {
@@ -163,6 +183,36 @@ GOLDEN_DATASETS = {
             "2026-05-11T07-49-47_2026-05-11T08-59-47",  # chunks 0..6
             "2026-05-11T08-39-47_2026-05-11T09-49-47",  # chunks 4..11
         ],
+    },
+    # Ephys arm of golden_arrow_01 — Bonsai arrow format, two active probes
+    # (abcGolden01 has ProbeB only). Covered through EphysChunk and OnixImuChunk.
+    # The sorting cascade, PreProcessing included, stays on abcGolden01, which
+    # ships golden sorting artifacts; arrow's PreProcessing coverage is synthetic.
+    "foraging_abc_ephys_arrow_2026_10_13": {
+        "experiment_name": "goldenArrow01-aeon3",
+        "experiment_path": "AEONX1/golden_arrow_01",
+        "behavior_experiment_path": "AEON3/golden_arrow_01",
+        "epoch_dir": "2026-10-13T094255Z",
+        "subject": "AAA-1140901",
+        "arena_name": "circle-2m",
+        "lab": "SWC",
+        "location": "AEON3",
+        "experiment_type": "foraging",
+        "device_name": "NeuropixelsV2",
+        "probe_type": "neuropixels2.0-multishank",
+        "n_recording_channels": 384,
+        "required_files": [
+            "Metadata.json",
+            "NeuropixelsV2/NeuropixelsV2_ProbeA_0.arrow",
+            "NeuropixelsV2/NeuropixelsV2_Bno055_0.arrow",
+        ],
+        "expected_probe_count": 2,
+        "expected_discovered_probes": 2,
+        "n_chunks": 9,
+        # Asserted by test_implantation_date_recorded; a property of this recording,
+        # not of the test, so a second Implants-carrying dataset can declare its own.
+        "implantation_date": "2026-05-20",
+        # no golden_sorting_dir: arrow coverage stops at PreProcessing
     },
 }
 
@@ -208,6 +258,30 @@ def _check_golden_data(dataset_config: dict) -> Path:
             pytest.skip(f"Missing required file: {f}")
 
     return epoch_path
+
+
+def _assert_pipeline_prefix(expected_prefix: str) -> None:
+    """Fail if aeon.dj_pipeline froze a database prefix other than the test one.
+
+    ``db_prefix`` is computed once, when ``aeon.dj_pipeline`` is first imported. Any
+    test module that imports an aeon submodule at module scope is executed during
+    pytest's collection pass, before the session fixture below sets the prefix -- so
+    the prefix freezes to the production default and every schema activates under a
+    production name, on whatever host this session connects to. Teardown then drops
+    the test prefix, finds nothing, and leaves those schemas behind.
+
+    Importing here either loads the package with the prefix already set, or finds a
+    stale one in sys.modules and raises.
+    """
+    import aeon.dj_pipeline as pipeline
+
+    if pipeline.db_prefix != expected_prefix:
+        raise RuntimeError(
+            f"aeon.dj_pipeline froze database prefix {pipeline.db_prefix!r}, but these "
+            f"tests run under {expected_prefix!r}. Something imported an aeon module at "
+            f"module scope, so the import ran during collection, before the prefix was "
+            f"set. Move that import inside the test body or fixture."
+        )
 
 
 def _drop_test_schemas() -> None:
@@ -266,7 +340,9 @@ def dj_config_integration(mysql_container):
         dj.config.database.password = os.environ["DJ_PASS"]
     # External DB: connection details already loaded from datajoint.json
 
-    # Now import pipeline — all module-level schema activations use test prefix
+    # Import the pipeline now, with the prefix set, and refuse to go further if some
+    # module-scope import already froze a different one.
+    _assert_pipeline_prefix(TEST_DB_PREFIX)
 
     return {"database_prefix": TEST_DB_PREFIX}
 
@@ -309,9 +385,10 @@ def streams_schema(dj_config_integration):
     # - Drop test schemas ONLY when running against an external database
     #   (TEST_DB_PREFIX set, e.g. on the HPC), so re-runs start clean instead of
     #   silently reusing stale schemas. _drop_test_schemas() is scoped strictly
-    #   to dj.config.database.database_prefix (== TEST_DB_PREFIX, which must end
-    #   in "_"); it only removes schemas whose name starts with that prefix, so
-    #   it can never touch production ("aeon_") or another user's schemas.
+    #   to dj.config.database.database_prefix (== TEST_DB_PREFIX), so it only removes
+    #   schemas whose name starts with that prefix. What keeps it off production is
+    #   that it reads the live config, not the trailing-underscore rule -- "aeon_"
+    #   would satisfy that check too.
     #   When TEST_DB_PREFIX is unset, the tests use a throwaway testcontainer
     #   that is discarded at session end, so we drop nothing and leave any
     #   local/hand-managed database alone.
@@ -380,6 +457,7 @@ def clean_streams_tables(pipeline_integration):
     params=[
         pytest.param("foraging_abc_2025_11_18", id="abcBehav0_2025-11-18"),
         pytest.param("foraging_abc_2026_05_11", id="abcGolden01_2026-05-11"),
+        pytest.param("foraging_abc_arrow_2026_10_13", id="goldenArrow01_2026-10-13"),
     ],
 )
 def golden_dataset_config(request):
@@ -528,10 +606,24 @@ def test_epochs(test_experiment, full_pipeline, golden_dataset_config):
 # ============================================================================
 
 
-@pytest.fixture(scope="session")
-def ephys_golden_dataset_config():
-    """Get the ephys golden dataset configuration. No DB needed."""
-    return GOLDEN_DATASETS["foraging_abc_ephys_2026_05_11"]
+@pytest.fixture(
+    scope="session",
+    params=[
+        pytest.param("foraging_abc_ephys_2026_05_11", id="abcGolden01_ephys"),
+        pytest.param("foraging_abc_ephys_arrow_2026_10_13", id="goldenArrow01_ephys"),
+    ],
+)
+def ephys_golden_dataset_config(request):
+    """Ephys golden dataset configuration, one per registered ephys golden.
+
+    Ingestion through ``EphysChunk`` and ``OnixImuChunk`` runs for every dataset
+    here. Everything from ``EphysBlockInfo`` down is the sorting cascade and runs
+    only for a dataset shipping golden sorting artifacts -- ``ephys_test_blocks``
+    skips the rest. ``PreProcessing`` is part of that cascade (it is keyed on
+    ``SortingTask``), so arrow's ``PreProcessing`` coverage comes from the
+    synthetic factory instead; see SPEC_ARROW_INGESTION, 'Verification strategy'.
+    """
+    return GOLDEN_DATASETS[request.param]
 
 
 @pytest.fixture(scope="session")
@@ -700,15 +792,15 @@ def ephys_test_epochs(
     cfg = ephys_golden_dataset_config
     exp_name = cfg["experiment_name"]
 
-    # Write probe_assignments.json to temp dir for EphysEpochConfig.populate()
+    # Datasets whose metadata carries subject.Implants need no probe_assignments.json;
+    # that path exists for epochs predating it, keyed by probe serial.
     override_dir = tmp_path_factory.mktemp("probe_assignments")
-    assignments = {
-        "version": 1,
-        "probe_assignments": {
-            cfg["probe_serial"]: {"subject": cfg["subject"]},
-        },
-    }
-    (override_dir / "probe_assignments.json").write_text(json.dumps(assignments))
+    if "probe_serial" in cfg:
+        assignments = {
+            "version": 1,
+            "probe_assignments": {cfg["probe_serial"]: {"subject": cfg["subject"]}},
+        }
+        (override_dir / "probe_assignments.json").write_text(json.dumps(assignments))
 
     # Step 1: discover epochs (HARP-native epoch_start from first HarpSync CSV)
     ephys.EphysEpoch.ingest_epochs(exp_name)
@@ -737,12 +829,30 @@ def ephys_test_blocks(ephys_chunks_ingested, ephys_full_pipeline, ephys_golden_d
     """
     ephys = ephys_full_pipeline["ephys"]
     cfg = ephys_golden_dataset_config
+    if "golden_sorting_dir" not in cfg:
+        # Everything below PreProcessing is format-agnostic (SPEC_ARROW_INGESTION, Scope),
+        # so only the dataset shipping golden sorting artifacts runs the cascade.
+        pytest.skip(f"{cfg['experiment_name']}: no golden sorting artifacts; covered to PreProcessing")
     exp_name = cfg["experiment_name"]
 
-    chunks = (ephys.EphysChunk & {"experiment_name": exp_name}).to_dicts(order_by="chunk_start")
-    assert len(chunks) == 12, (
-        f"Expected exactly 12 ingested EphysChunks for the golden epoch, got {len(chunks)}. "
-        "The block bounds below assume the full 12-chunk epoch."
+    n_probes = cfg.get("expected_probe_count", 1)
+    all_chunks = (ephys.EphysChunk & {"experiment_name": exp_name}).to_dicts(order_by="chunk_start")
+    expected_chunks = cfg.get("n_chunks", 12) * n_probes
+    assert len(all_chunks) == expected_chunks, (
+        f"Expected {expected_chunks} ingested EphysChunks for the golden epoch, got {len(all_chunks)}. "
+        f"The block bounds below assume a full {cfg.get('n_chunks', 12)}-chunk epoch."
+    )
+    # Index into ONE insertion's chunks: a multi-probe dataset interleaves probes in
+    # chunk_start order, so chunks[6]/chunks[11] would silently name the wrong chunks
+    # while the count assertion above still passed.
+    first_insertion = min(c["insertion_number"] for c in all_chunks)
+    chunks = [c for c in all_chunks if c["insertion_number"] == first_insertion]
+    # The total above does not pin the split: an uneven one (12 + 6 where 9 + 9 was
+    # meant) passes it and leaves this list the wrong length, so the fixed indices
+    # below would name the wrong chunks or run off the end.
+    assert len(chunks) == cfg.get("n_chunks", 12), (
+        f"insertion {first_insertion} has {len(chunks)} chunks, expected "
+        f"{cfg.get('n_chunks', 12)}; the block bounds below index fixed positions."
     )
 
     def midpoint(chunk):

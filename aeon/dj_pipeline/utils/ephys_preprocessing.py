@@ -85,9 +85,12 @@ def resolve_preprocessing_pipeline(preprocessing_params: dict[str, Any]) -> Pipe
                 f"Unknown preprocessing pipeline '{si_pipeline}'. "
                 f"Registered: {sorted(_PREPROCESSING_PIPELINES)}"
             )
-        pipeline = _PREPROCESSING_PIPELINES[si_pipeline]
+        # Copy: the registry is process-wide, so handing out the stored dict lets one
+        # caller's edit change what every later caller gets -- a second block in the
+        # same worker would be preprocessed with the first block's settings.
+        pipeline = {step: dict(kwargs) for step, kwargs in _PREPROCESSING_PIPELINES[si_pipeline].items()}
     elif isinstance(si_pipeline, dict):
-        pipeline = si_pipeline
+        pipeline = {step: dict(kwargs) for step, kwargs in si_pipeline.items()}
     else:
         raise TypeError(
             f"si_pipeline must be a registered name or a pipeline dict, got {type(si_pipeline).__name__}."
