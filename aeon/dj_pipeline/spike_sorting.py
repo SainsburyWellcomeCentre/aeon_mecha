@@ -23,7 +23,7 @@ from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline.utils.arrow_io import read_arrow_column
-from aeon.dj_pipeline.utils.ephys_preprocessing import apply_preprocessing, resolve_preprocessing_pipeline
+from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
 from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
@@ -134,8 +134,8 @@ class SortingParamSet(dj.Lookup):
     def insert(self, rows, *args, **kwargs):
         """Insert paramsets, rejecting an invalid preprocessing selection up front.
 
-        Checks the method name, step names and override targets; step arguments are
-        checked by SpikeInterface when PreProcessing applies the pipeline.
+        Checks the SI_PREPROCESSING_PARAMS section the same way PreProcessing will, so
+        a bad pipeline name or key fails at insert rather than mid-populate.
         """
         # Only plain sequences of dicts are checked; DataFrames, query expressions and
         # generators pass through untouched (PreProcessing still fails on them).
@@ -154,7 +154,12 @@ class SortingParamSet(dj.Lookup):
                         raise TypeError(
                             f"SortingParamSet.params must be a dict, got {type(params).__name__}"
                         )
-                    resolve_preprocessing_pipeline(params)
+                    section = params.get("SI_PREPROCESSING_PARAMS") or {}
+                    if not isinstance(section, dict):
+                        raise TypeError(
+                            f"SI_PREPROCESSING_PARAMS must be a dict, got {type(section).__name__}"
+                        )
+                    resolve_preprocessing_pipeline(section)
         super().insert(rows, *args, **kwargs)
 
 
@@ -230,6 +235,11 @@ class PreProcessing(dj.Computed):
 
     def make_fetch(self, key):
         """Fetch ephys data and metadata, prepare output directory, and define preprocessing parameters."""
+        # Resolve the preprocessing pipeline first, so a malformed paramset fails before
+        # anything is created on disk.
+        params = (SortingParamSet & key).fetch1("params")
+        si_pipeline = resolve_preprocessing_pipeline(params.get("SI_PREPROCESSING_PARAMS") or {})
+
         # Safety check: refuse to overwrite existing data on ceph
         output_dir = self.infer_output_dir(key)
         if output_dir.exists() and any(output_dir.iterdir()):
@@ -275,8 +285,6 @@ class PreProcessing(dj.Computed):
         gain_to_uV = 3.05176
         offset_to_uV = -2048 * gain_to_uV
 
-        params = (SortingParamSet & key).fetch1("params")
-
         return (
             ephys_files,
             dir_types,
@@ -285,10 +293,11 @@ class PreProcessing(dj.Computed):
             fs_hz,
             gain_to_uV,
             offset_to_uV,
-            params,
             output_dir,
             recording_file,
             recording_dir,
+            params,
+            si_pipeline,
         )
 
     def make_compute(
@@ -301,10 +310,11 @@ class PreProcessing(dj.Computed):
         fs_hz: float,
         gain_to_uV: float,
         offset_to_uV: float,
-        params: dict,
         output_dir: Path,
         recording_file: Path,
         recording_dir: Path,
+        params: dict[str, Any],
+        si_pipeline: dict[str, dict[str, Any]],
     ) -> tuple[Path, datetime, Path]:
         """Preprocess ephys data for spike sorting.
 
@@ -319,10 +329,11 @@ class PreProcessing(dj.Computed):
             fs_hz: Sampling frequency
             gain_to_uV: Gain conversion factor
             offset_to_uV: Offset conversion factor
-            params: SortingParamSet params; selects the preprocessing pipeline
             output_dir: Output directory path
             recording_file: Path to save recording object
             recording_dir: Directory for recording files
+            params: SortingParamSet params
+            si_pipeline: SpikeInterface preprocessing pipeline dict to apply
 
         Returns:
             Tuple of (output_dir, execution_time, recording_dir)
@@ -376,7 +387,7 @@ class PreProcessing(dj.Computed):
 
         # Run preprocessing and save results to output folder
         si_recording = si.preprocessing.unsigned_to_signed(si_recording)
-        si_recording = apply_preprocessing(si_recording, params)
+        si_recording = si.preprocessing.apply_preprocessing_pipeline(si_recording, si_pipeline)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
         save_format = params.get("save_format", "zarr")
@@ -537,12 +548,6 @@ class SpikeSorting(dj.Computed):
             # allocation, and a paramset n_jobs can only lower it.
             job_kwargs = fork_safe_job_kwargs("30s", max_jobs=sorting_params.get("n_jobs"))
             sorting_params = {**job_kwargs, **sorting_params, "n_jobs": job_kwargs["n_jobs"]}
-
-        # Prevent SpikeInterface from re-running write_binary_recording internally:
-        # https://github.com/SpikeInterface/spikeinterface/blob/705c932/src/spikeinterface/sorters/external/kilosortbase.py#L124
-        # Kilosort-only parameter; other sorters (e.g. lupin) reject it.
-        if sorting_method.startswith("kilosort"):
-            sorting_params["skip_kilosort_preprocessing"] = False
 
         intermediate_dir = scratch_recording_dir(Path(recording_file).parent)
         if save_format == "zarr":

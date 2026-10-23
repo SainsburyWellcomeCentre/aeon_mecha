@@ -982,14 +982,14 @@ class TestSyncedSpikesIndexingAndExtrapolation:
 class TestSortingParamSetPreprocessingMethod:
     """SortingParamSet.insert validates the preprocessing selection."""
 
-    def test_unknown_method_rejected_on_insert(self, ephys_full_pipeline):
-        """A typo in SI_PREPROCESSING_METHOD fails at insert, not hours into PreProcessing."""
+    def test_unknown_pipeline_rejected_on_insert(self, ephys_full_pipeline):
+        """A typo in si_pipeline fails at insert, not hours into PreProcessing."""
         from aeon.dj_pipeline import spike_sorting
 
         row = {
             "paramset_id": "test-bad-preproc",
             "sorting_method": "kilosort4",
-            "params": {"SI_PREPROCESSING_METHOD": "aeon_defualt"},
+            "params": {"SI_PREPROCESSING_PARAMS": {"si_pipeline": "aeon_defualt"}},
         }
         with pytest.raises(ValueError, match="aeon_defualt"):
             spike_sorting.SortingParamSet.insert1(row)
@@ -1000,7 +1000,7 @@ class TestSpikeSortingLupin:
     """A non-Kilosort sorter runs through SpikeSorting."""
 
     def test_lupin_sorts_unpreprocessed_recording(self, ephys_full_pipeline, tmp_path):
-        """Lupin runs through SpikeSorting.make_compute with SI_PREPROCESSING_METHOD="none".
+        """Lupin runs through SpikeSorting.make_compute on an unpreprocessed recording.
 
         The recording is laid out as PreProcessing writes it (si_recording.pkl + recording.zarr).
         Guards against Kilosort-only sorter params (skip_kilosort_preprocessing) being passed
@@ -1009,14 +1009,12 @@ class TestSpikeSortingLupin:
         import spikeinterface.full as si
 
         from aeon.dj_pipeline import spike_sorting
-        from aeon.dj_pipeline.utils.ephys_preprocessing import apply_preprocessing
 
         assert spike_sorting.SortingMethod & {"sorting_method": "lupin"}
 
         recording, _ = si.generate_ground_truth_recording(
             durations=[10.0], num_channels=32, num_units=5, seed=0
         )
-        recording = apply_preprocessing(recording, {"SI_PREPROCESSING_METHOD": "none"})
 
         output_dir = tmp_path / "lupin_test"
         recording_dir = output_dir.parent / "recording"
@@ -1026,7 +1024,6 @@ class TestSpikeSortingLupin:
         recording.save(format="zarr", folder=recording_dir / "recording.zarr")
 
         params = {
-            "SI_PREPROCESSING_METHOD": "none",
             # n_jobs=1: SI 0.104's threaded template matching can deadlock in lupin.
             "SI_SORTING_PARAMS": {"job_kwargs": {"n_jobs": 1, "chunk_duration": "1s"}},
         }
@@ -1279,7 +1276,7 @@ class TestPreProcessingOnArrow:
                 "paramset_id": "pp-arrow",
                 "sorting_method": "kilosort4",
                 "paramset_description": "synthetic",
-                "params": {"SI_PREPROCESSING_METHOD": "none"},
+                "params": {"SI_PREPROCESSING_PARAMS": {"si_pipeline": "none"}},
             },
             skip_duplicates=True,
         )

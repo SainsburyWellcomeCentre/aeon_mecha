@@ -5,135 +5,77 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-AEON_DEFAULT = {
-    "bandpass_filter": {"freq_min": 300, "freq_max": 6000},
-    "common_reference": {"operator": "median"},
-}
 
-
-def test_default_and_legacy_names_resolve_to_aeon_default():
-    """No keys, "aeon_default" and the legacy "ephys_preproc" all select the same pipeline."""
-    from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
-
-    assert resolve_preprocessing_pipeline({}) == AEON_DEFAULT
-    assert resolve_preprocessing_pipeline({"SI_PREPROCESSING_METHOD": "aeon_default"}) == AEON_DEFAULT
-    assert resolve_preprocessing_pipeline({"SI_PREPROCESSING_METHOD": "ephys_preproc"}) == AEON_DEFAULT
-
-
-def test_aeon_default_matches_original_recipe():
-    """Same traces as the hard-coded bandpass + median CAR it replaces."""
+def test_default_pipeline_matches_original_recipe():
+    """Without si_pipeline, aeon_default is used: same traces as the old hard-coded recipe."""
     import spikeinterface.full as si
 
-    from aeon.dj_pipeline.utils.ephys_preprocessing import apply_preprocessing
+    from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
+
+    pipeline = resolve_preprocessing_pipeline({})
+    assert pipeline == resolve_preprocessing_pipeline({"si_pipeline": "aeon_default"})
 
     rec = si.generate_recording(num_channels=8, durations=[1.0], seed=0)
     original = si.common_reference(si.bandpass_filter(rec, freq_min=300, freq_max=6000), operator="median")
-    np.testing.assert_array_equal(apply_preprocessing(rec, {}).get_traces(), original.get_traces())
-
-
-def test_overrides_merge_per_step():
-    """Overrides target one step; the rest of the registered pipeline is unchanged."""
-    from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
-
-    pipeline = resolve_preprocessing_pipeline(
-        {"SI_PREPROCESSING_PARAMS": {"bandpass_filter": {"freq_min": 250, "dtype": "float32"}}}
+    np.testing.assert_array_equal(
+        si.apply_preprocessing_pipeline(rec, pipeline).get_traces(), original.get_traces()
     )
-    assert pipeline == {
-        "bandpass_filter": {"freq_min": 250, "freq_max": 6000, "dtype": "float32"},
-        "common_reference": {"operator": "median"},
-    }
-    # The registered pipeline itself is not mutated.
-    assert resolve_preprocessing_pipeline({}) == AEON_DEFAULT
 
 
 @pytest.mark.parametrize(
-    ("params", "match"),
+    ("preprocessing_params", "error", "match"),
     [
-        ({"SI_PREPROCESSING_PARAMS": {"whiten": {"dtype": "float32"}}}, "whiten"),
-        ({"SI_PREPROCESSING_PIPELINE": {}, "SI_PREPROCESSING_METHOD": "none"}, "can't be combined"),
+        ({"si_pipline": "aeon_default"}, ValueError, "si_pipline"),
+        ({"si_pipeline": "aeon_defualt"}, ValueError, "aeon_defualt"),
+        ({"si_pipeline": ["bandpass_filter"]}, TypeError, "registered name or a pipeline dict"),
     ],
 )
-def test_invalid_selection_raises(params, match):
-    """An override for a step the pipeline lacks, or an inline pipeline plus a method, raises."""
+def test_invalid_preprocessing_params_raise(preprocessing_params, error, match):
+    """Typos in the section or the name, and a value that's neither name nor dict, raise."""
     from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
 
-    with pytest.raises(ValueError, match=match):
-        resolve_preprocessing_pipeline(params)
-
-
-def test_unknown_method_raises_rather_than_falling_back():
-    """A typo must not silently select the default pipeline.
-
-    Falling back would apply bandpass + CAR to a paramset that asked for something
-    else, and the sorting would look healthy.
-    """
-    from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
-
-    with pytest.raises(ValueError, match="Unknown SI_PREPROCESSING_METHOD"):
-        resolve_preprocessing_pipeline({"SI_PREPROCESSING_METHOD": "aeon_defualt"})
+    with pytest.raises(error, match=match):
+        resolve_preprocessing_pipeline(preprocessing_params)
 
 
 def test_none_resolves_to_an_empty_pipeline_and_passes_traces_through():
-    """The "none" method must apply nothing.
+    """The "none" pipeline is registered but nothing exercised it.
 
-    Its failure mode is silently applying preprocessing, or silently skipping it.
+    Its failure mode is the one the registry exists to prevent: silently applying
+    preprocessing to a paramset that asked for none, or the reverse.
     """
     import spikeinterface.full as si
 
-    from aeon.dj_pipeline.utils.ephys_preprocessing import (
-        apply_preprocessing,
-        resolve_preprocessing_pipeline,
-    )
+    from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
 
-    params = {"SI_PREPROCESSING_METHOD": "none"}
-    assert resolve_preprocessing_pipeline(params) == {}
+    pipeline = resolve_preprocessing_pipeline({"si_pipeline": "none"})
+    assert pipeline == {}
 
     rec = si.generate_recording(num_channels=4, durations=[0.5], seed=0)
-    np.testing.assert_array_equal(apply_preprocessing(rec, params).get_traces(), rec.get_traces())
+    np.testing.assert_array_equal(
+        si.apply_preprocessing_pipeline(rec, pipeline).get_traces(), rec.get_traces()
+    )
 
 
 def test_inline_pipeline_is_used_verbatim():
-    """SI_PREPROCESSING_PIPELINE bypasses the registry; only its conflicts were tested."""
-    import spikeinterface.full as si
-
-    from aeon.dj_pipeline.utils.ephys_preprocessing import (
-        apply_preprocessing,
-        resolve_preprocessing_pipeline,
-    )
+    """An inline dict bypasses the registry; only its error branches were covered."""
+    from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
 
     inline = {"bandpass_filter": {"freq_min": 500, "freq_max": 3000}}
-    resolved = resolve_preprocessing_pipeline({"SI_PREPROCESSING_PIPELINE": inline})
+    resolved = resolve_preprocessing_pipeline({"si_pipeline": inline})
+
     # Against a literal, not against `inline`: the inline branch returns the very dict
     # it was handed, so comparing the two would hold even if defaults were merged in.
     assert resolved == {"bandpass_filter": {"freq_min": 500, "freq_max": 3000}}
     assert "common_reference" not in resolved, "the registered pipeline must not leak in"
     assert inline == {"bandpass_filter": {"freq_min": 500, "freq_max": 3000}}, "input mutated"
 
-    rec = si.generate_recording(num_channels=4, durations=[0.5], seed=0)
-    expected = si.bandpass_filter(rec, freq_min=500, freq_max=3000)
-    np.testing.assert_array_equal(
-        apply_preprocessing(rec, {"SI_PREPROCESSING_PIPELINE": inline}).get_traces(),
-        expected.get_traces(),
-    )
 
-
-@pytest.mark.parametrize(
-    "key", ["SI_PREPROCESSING_METHOOD", "SI_PREPROCESSING_PARAM", "SI_PREPROCESSING_PIPLINE"]
-)
-def test_misspelled_key_raises_rather_than_falling_through(key):
-    """A typo in the key is as silent as a typo in the value, and worse to spot.
-
-    Without this the paramset reads as if it selected something, and aeon_default
-    (bandpass + CAR) runs anyway.
-    """
+def test_resolving_does_not_mutate_the_registered_pipeline():
+    """A caller that edits what it gets back must not change the next caller's result."""
     from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
 
-    with pytest.raises(ValueError, match="Unrecognised preprocessing key"):
-        resolve_preprocessing_pipeline({key: "whatever"})
-
-
-def test_unrelated_paramset_keys_are_left_alone():
-    """Only SI_PREPROCESSING* keys are policed; a paramset carries sorter args too."""
-    from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
-
-    assert resolve_preprocessing_pipeline({"n_jobs": 4, "detect_threshold": 6}) == AEON_DEFAULT
+    first = resolve_preprocessing_pipeline({"si_pipeline": "aeon_default"})
+    first_copy = {step: dict(kwargs) for step, kwargs in first.items()}
+    first["bandpass_filter"]["freq_min"] = 1
+    assert resolve_preprocessing_pipeline({}) == first_copy
