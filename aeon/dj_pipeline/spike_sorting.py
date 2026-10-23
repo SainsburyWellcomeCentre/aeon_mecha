@@ -22,6 +22,7 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
+from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
 from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
@@ -110,6 +111,7 @@ class SortingMethod(dj.Lookup):
         ("kilosort2.5", "kilosort2.5 sorting method"),
         ("kilosort3", "kilosort3 sorting method"),
         ("kilosort4", "kilosort4 sorting method"),
+        ("lupin", "lupin sorting method (SpikeInterface internal)"),
     ]
 
 
@@ -196,6 +198,11 @@ class PreProcessing(dj.Computed):
 
     def make_fetch(self, key):
         """Fetch ephys data and metadata, prepare output directory, and define preprocessing parameters."""
+        # Resolve the preprocessing pipeline first, so a malformed paramset fails before
+        # anything is created on disk.
+        params = (SortingParamSet & key).fetch1("params")
+        si_pipeline = resolve_preprocessing_pipeline(params.get("SI_PREPROCESSING_PARAMS") or {})
+
         # Safety check: refuse to overwrite existing data on ceph
         output_dir = self.infer_output_dir(key)
         if output_dir.exists() and any(output_dir.iterdir()):
@@ -247,6 +254,8 @@ class PreProcessing(dj.Computed):
             output_dir,
             recording_file,
             recording_dir,
+            params,
+            si_pipeline,
         )
 
     def make_compute(
@@ -262,6 +271,8 @@ class PreProcessing(dj.Computed):
         output_dir: Path,
         recording_file: Path,
         recording_dir: Path,
+        params: dict[str, Any],
+        si_pipeline: dict[str, dict[str, Any]],
     ) -> tuple[Path, datetime, Path]:
         """Preprocess ephys data for spike sorting.
 
@@ -279,6 +290,8 @@ class PreProcessing(dj.Computed):
             output_dir: Output directory path
             recording_file: Path to save recording object
             recording_dir: Directory for recording files
+            params: SortingParamSet params
+            si_pipeline: SpikeInterface preprocessing pipeline dict to apply
 
         Returns:
             Tuple of (output_dir, execution_time, recording_dir)
@@ -332,10 +345,9 @@ class PreProcessing(dj.Computed):
 
         # Run preprocessing and save results to output folder
         si_recording = si.preprocessing.unsigned_to_signed(si_recording)
-        si_recording = ephys_preproc(si_recording)
+        si_recording = si.preprocessing.apply_preprocessing_pipeline(si_recording, si_pipeline)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
-        params = (SortingParamSet & key).fetch1("params")
         save_format = params.get("save_format", "zarr")
 
         # 30s chunk_duration matches the raw standalone-compression default; it sets the
@@ -494,10 +506,6 @@ class SpikeSorting(dj.Computed):
             # allocation, and a paramset n_jobs can only lower it.
             job_kwargs = fork_safe_job_kwargs("30s", max_jobs=sorting_params.get("n_jobs"))
             sorting_params = {**job_kwargs, **sorting_params, "n_jobs": job_kwargs["n_jobs"]}
-
-        # Prevent SpikeInterface from re-running write_binary_recording internally:
-        # https://github.com/SpikeInterface/spikeinterface/blob/705c932/src/spikeinterface/sorters/external/kilosortbase.py#L124
-        sorting_params["skip_kilosort_preprocessing"] = False
 
         intermediate_dir = scratch_recording_dir(Path(recording_file).parent)
         if save_format == "zarr":
@@ -1833,31 +1841,6 @@ class UnitMatching(dj.Computed):
             f"  {n_matched} matched to existing global units\n"
             f"  {n_new} new global units created"
         )
-
-
-# ---- Ephys preprocessing with spike interface ----
-
-
-def ephys_preproc(recording) -> Any:
-    """Apply standard ephys preprocessing pipeline.
-
-    Performs unsigned-to-signed conversion, bandpass filtering (300-6000 Hz),
-    and common average referencing using median.
-
-    Args:
-        recording: SpikeInterface recording object
-
-    Returns:
-        Preprocessed recording object
-    """
-    import spikeinterface as si
-
-    # registers sorters/preprocessing/exporters submodules on the package
-    import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
-
-    recording = si.preprocessing.bandpass_filter(recording=recording, freq_min=300, freq_max=6000)
-    recording = si.preprocessing.common_reference(recording=recording, operator="median")
-    return recording
 
 
 def load_and_verify_binary_file(binary_file_path: Path, se_recording_obj: Any) -> Any:
