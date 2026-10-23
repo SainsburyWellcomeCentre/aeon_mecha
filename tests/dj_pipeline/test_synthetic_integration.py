@@ -1096,7 +1096,7 @@ class TestProbeInsertionFromImplants:
 
     def test_target_area_auto_created_and_linked(self, ephys_full_pipeline, tmp_path, caplog):
         """A new area is created (warned about) and linked to the insertion."""
-        from aeon.dj_pipeline.ephys import _record_target_area
+        from aeon.dj_pipeline.ephys import _insert_target_area
         from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
 
         ephys, _ = self._tables(ephys_full_pipeline)
@@ -1110,7 +1110,7 @@ class TestProbeInsertionFromImplants:
         # a name no other test uses: the warning fires only the first time an area appears
         area = "TestArea-NeverSeenBefore"
         with caplog.at_level("WARNING"):
-            _record_target_area(area, pi_key)
+            _insert_target_area(area, pi_key)
 
         assert ephys.TargetArea & {"target_area": area}
         assert ephys.InsertionTargetArea & {**pi_key, "target_area": area}
@@ -1119,12 +1119,12 @@ class TestProbeInsertionFromImplants:
         # ...and not again for an area that already exists
         caplog.clear()
         with caplog.at_level("WARNING"):
-            _record_target_area(area, pi_key)
+            _insert_target_area(area, pi_key)
         assert not any(area in r.message for r in caplog.records), "existing area should not warn"
 
     def test_changing_target_area_raises(self, ephys_full_pipeline, tmp_path):
         """A second area on one insertion would fan out every join through the link table."""
-        from aeon.dj_pipeline.ephys import _record_target_area
+        from aeon.dj_pipeline.ephys import _insert_target_area
         from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
 
         ephys, _ = self._tables(ephys_full_pipeline)
@@ -1135,12 +1135,12 @@ class TestProbeInsertionFromImplants:
         pi_key = find_or_create_probe_insertion(
             exp, "SUBJ-1", "SER-6", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
         )
-        _record_target_area("AreaOne", pi_key)
+        _insert_target_area("AreaOne", pi_key)
         with pytest.raises(ValueError, match="already linked"):
-            _record_target_area("AreaTwo", pi_key)
+            _insert_target_area("AreaTwo", pi_key)
 
     def test_target_area_none_is_a_noop(self, ephys_full_pipeline, tmp_path):
-        from aeon.dj_pipeline.ephys import _record_target_area
+        from aeon.dj_pipeline.ephys import _insert_target_area
         from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
 
         ephys, _ = self._tables(ephys_full_pipeline)
@@ -1151,7 +1151,7 @@ class TestProbeInsertionFromImplants:
         pi_key = find_or_create_probe_insertion(
             exp, "SUBJ-1", "SER-5", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
         )
-        _record_target_area(None, pi_key)
+        _insert_target_area(None, pi_key)
         assert not (ephys.InsertionTargetArea & pi_key)
 
     def test_implantation_date_recorded(self, ephys_full_pipeline, tmp_path):
