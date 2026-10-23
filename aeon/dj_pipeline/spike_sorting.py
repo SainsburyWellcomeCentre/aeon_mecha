@@ -216,10 +216,16 @@ class PreProcessing(dj.Computed):
             & "file_name LIKE '%AmplifierData%.bin'"
         ).to_arrays("file_path", "directory_type", order_by="chunk_start")
 
+        print(f"{len(ephys_files)=}")
+
         if len(ephys_files) == 0:
             ephys_files, dir_types = (
-                ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & "file_name LIKE 'Probe%.arrow'"
+                ephys.EphysChunk.File
+                & (ephys.EphysBlockInfo.Chunk & key)
+                & "file_name LIKE '%Probe%.arrow'"
             ).to_arrays("file_path", "directory_type", order_by="chunk_start")
+            print(f"{ephys_files=}")
+            print(f"{dir_types=}")
 
         # Channels
         electrodes_query = (
