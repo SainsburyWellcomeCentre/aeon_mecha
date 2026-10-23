@@ -299,6 +299,9 @@ class PreProcessing(dj.Computed):
 
         execution_time = datetime.now(UTC)
 
+        print(f"{ephys_files=}")
+        print(f"{dir_types=}")
+
         # Concatenate the block's AmplifierData chunks (compressed .zarr twin if present).
         si_recs = [
             read_amplifier_recording(
