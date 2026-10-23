@@ -39,12 +39,9 @@ ephys = importlib.import_module("aeon.dj_pipeline.ephys")
 schema = dj.Schema(get_schema_name("spike_sorting"))
 logger = dj.logger
 
-# The amplifier files of a block, in either format. Shared by PreProcessing and
-# SyncedSpikes so they cannot disagree about which files a block's samples come from.
-# Matches the probe stream, not the extension: the Bno055 arrow file sits in the same
-# directory, and '%.arrow' would select it as amplifier data. ('_' is a LIKE wildcard,
-# so '%_Probe%' would be wrong; the OR is parenthesised because DataJoint ANDs
-# restrictions together.)
+# A block's amplifier files, in either format. Shared so PreProcessing and SyncedSpikes
+# cannot disagree. Matches the probe stream rather than the extension, since the Bno055
+# arrow file sits in the same directory.
 AMPLIFIER_FILE_RESTRICTION = "(file_name LIKE '%AmplifierData%.bin' OR file_name LIKE '%Probe%.arrow')"
 
 # Neuropixels 2.0 sampling rate - TODO: read this from the metadata
