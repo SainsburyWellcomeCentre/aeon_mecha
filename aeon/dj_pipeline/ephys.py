@@ -18,6 +18,7 @@ from aeon.dj_pipeline.utils.ephys_utils import (
     harp_to_naive,
     load_device_channel_map,
     parse_epoch_metadata,
+    read_onix_ts,
     read_probe_assignments,
     resolve_harp,
     resolve_raw_dir_and_epochs,
@@ -517,8 +518,6 @@ class EphysChunk(dj.Manual):
         Args:
             experiment_name: Name of the experiment to process
         """
-        import numpy as np
-
         resolved = resolve_raw_dir_and_epochs(experiment_name)
         if resolved is None:
             return
@@ -528,12 +527,14 @@ class EphysChunk(dj.Manual):
 
         # {(epoch_start, probe_label): ProbeInsertion key}
         insertion_lookup: dict[tuple[datetime, str], dict] = {}
+        epoch_probe_labels = []
         for entry in (EphysEpochConfig.Insertion & exp_key).to_dicts():
             insertion_lookup[(entry["epoch_start"], entry["probe_label"])] = {
                 "experiment_name": entry["experiment_name"],
                 "subject": entry["subject"],
                 "insertion_number": entry["insertion_number"],
             }
+            epoch_probe_labels.append(entry["probe_label"])
 
         if not insertion_lookup:
             logger.warning(
@@ -547,6 +548,14 @@ class EphysChunk(dj.Manual):
             key=lambda x: x.as_posix(),
         )
 
+        if len(all_ephys_files) == 0:
+            for probe_label in epoch_probe_labels:
+                ephys_files = sorted(
+                    raw_dir.rglob(f"*{probe_label}*.arrow"),
+                    key=lambda x: x.as_posix(),
+                )
+                all_ephys_files += ephys_files
+
         if not all_ephys_files:
             logger.info(f"No ephys amplifier files found in {raw_dir}")
             return
@@ -557,8 +566,13 @@ class EphysChunk(dj.Manual):
             if cls.File & exp_key & {"file_path": rel_path}:
                 continue  # already ingested
 
-            # Parse probe_label from filename
-            name_match = re.search(r"_(Probe[A-Z])_AmplifierData", ephys_file.name)
+            if ephys_file.suffix == ".arrow":
+                # In arrow, the only file with Probe? in it is the ephys file
+                name_match = re.search(r"_(Probe[A-Z])_", ephys_file.name)
+            else:
+                # Parse probe_label from filename
+                name_match = re.search(r"_(Probe[A-Z])_AmplifierData", ephys_file.name)
+
             if not name_match:
                 logger.warning(f"Cannot parse probe label from {ephys_file.name}. Skipping.")
                 continue
@@ -592,8 +606,12 @@ class EphysChunk(dj.Manual):
                 )
                 continue
 
-            # Read ONIX timestamps from the companion Clock binary
-            clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
+            if ephys_file.suffix == ".arrow":
+                clock_file = ephys_file
+            else:
+                # Read ONIX timestamps from the companion Clock binary
+                clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
+
             if not clock_file.exists():
                 logger.warning(f"Clock file not found for {ephys_file.name}. Skipping.")
                 continue
@@ -601,7 +619,8 @@ class EphysChunk(dj.Manual):
             if clock_file.stat().st_size < 8:
                 logger.warning(f"Empty/short Clock file for {ephys_file.name}. Skipping.")
                 continue
-            onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
+            onix_ts = read_onix_ts(clock_file)
+
             first_ts, last_ts = int(onix_ts[0]), int(onix_ts[-1])
 
             # Fetch + resolve inside a temp download dir so the <attach> sync_model
@@ -653,6 +672,10 @@ class EphysChunk(dj.Manual):
             try:
                 with cls.connection.transaction:
                     cls.insert1(chunk_entry)
+                    if ephys_file == clock_file:
+                        file_list = (ephys_file,)
+                    else:
+                        file_list = (ephys_file, clock_file)
                     cls.File.insert(
                         [
                             {
@@ -661,7 +684,7 @@ class EphysChunk(dj.Manual):
                                 "file_name": f.name,
                                 "file_path": f.relative_to(raw_dir).as_posix(),
                             }
-                            for f in (ephys_file, clock_file)
+                            for f in file_list
                         ],
                         ignore_extra_fields=True,
                     )
@@ -792,6 +815,7 @@ class EphysBlockInfo(dj.Imported):
         epoch_dir = (EphysEpoch & key & {"epoch_start": epoch_start}).fetch1("epoch_dir")
         epoch_path = raw_dir / Path(epoch_dir).parts[0]
         json_path = resolve_epoch_probe_json(raw_dir, epoch_path, config_file_name)
+
         channel_map = load_device_channel_map(json_path)
 
         electrode_df = (ElectrodeConfig.Electrode & econfig).keys(order_by="electrode")
