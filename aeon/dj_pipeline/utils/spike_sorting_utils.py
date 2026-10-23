@@ -240,6 +240,8 @@ try:
                 from pyarrow import memory_map
                 from pyarrow.ipc import RecordBatchFileReader
 
+            file_path = str(file_path)
+
             source = memory_map(file_path, "r")
             reader = RecordBatchFileReader(source)
 
