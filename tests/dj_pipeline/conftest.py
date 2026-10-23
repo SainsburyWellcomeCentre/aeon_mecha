@@ -594,7 +594,7 @@ def ephys_golden_dataset_config(request):
     only for a dataset shipping golden sorting artifacts -- ``ephys_test_blocks``
     skips the rest. ``PreProcessing`` is part of that cascade (it is keyed on
     ``SortingTask``), so arrow's ``PreProcessing`` coverage comes from the
-    synthetic factory instead; see SPEC_ARROW_INGESTION section 6.
+    synthetic factory instead; see SPEC_ARROW_INGESTION, 'Verification strategy'.
     """
     return GOLDEN_DATASETS[request.param]
 
@@ -803,7 +803,7 @@ def ephys_test_blocks(ephys_chunks_ingested, ephys_full_pipeline, ephys_golden_d
     ephys = ephys_full_pipeline["ephys"]
     cfg = ephys_golden_dataset_config
     if "golden_sorting_dir" not in cfg:
-        # Everything below PreProcessing is format-agnostic (SPEC_ARROW_INGESTION §6),
+        # Everything below PreProcessing is format-agnostic (SPEC_ARROW_INGESTION, Scope),
         # so only the dataset shipping golden sorting artifacts runs the cascade.
         pytest.skip(f"{cfg['experiment_name']}: no golden sorting artifacts; covered to PreProcessing")
     exp_name = cfg["experiment_name"]

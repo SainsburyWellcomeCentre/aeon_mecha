@@ -346,7 +346,7 @@ class TestCompressedReadEquivalence:
         if not amp_files:
             pytest.skip(
                 "no AmplifierData .bin registered: arrow is compressed at acquisition and "
-                "never has a .zarr twin (SPEC_ARROW_INGESTION, Non-goals)"
+                "never has a .zarr twin (SPEC_ARROW_INGESTION, Scope)"
             )
 
         f0 = amp_files[0]
