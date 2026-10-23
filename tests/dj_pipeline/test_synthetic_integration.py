@@ -1122,9 +1122,7 @@ class TestProbeInsertionFromImplants:
             _insert_target_area(area, pi_key)
         assert not any(area in r.message for r in caplog.records), "existing area should not warn"
 
-    def test_second_target_area_is_added_and_warned_about(
-        self, ephys_full_pipeline, tmp_path, caplog
-    ):
+    def test_second_target_area_is_added_and_warned_about(self, ephys_full_pipeline, tmp_path, caplog):
         """The link table is declared for "one or more" areas, so a second one is kept.
 
         Refusing it would make the documented multi-area case impossible and, once a
