@@ -523,7 +523,7 @@ def resolve_epoch_probe_json(
     epoch_local = Path(epoch_path) / config_file_name
     if epoch_local.exists():
         return epoch_local
-    device_names = ["NeuropixelsV2"]
+    device_names = ["NeuropixelsV2", "NeuropixelsV2Beta"]
     for device_name in device_names:
         probe_path = Path(epoch_path) / device_name / config_file_name
         if probe_path.exists():
