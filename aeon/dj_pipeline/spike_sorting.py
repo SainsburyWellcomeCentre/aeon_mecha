@@ -216,16 +216,12 @@ class PreProcessing(dj.Computed):
             & "file_name LIKE '%AmplifierData%.bin'"
         ).to_arrays("file_path", "directory_type", order_by="chunk_start")
 
-        print(f"{len(ephys_files)=}")
-
         if len(ephys_files) == 0:
             ephys_files, dir_types = (
                 ephys.EphysChunk.File
                 & (ephys.EphysBlockInfo.Chunk & key)
                 & "file_name LIKE '%Probe%.arrow'"
             ).to_arrays("file_path", "directory_type", order_by="chunk_start")
-            print(f"{ephys_files=}")
-            print(f"{dir_types=}")
 
         # Channels
         electrodes_query = (
@@ -302,9 +298,6 @@ class PreProcessing(dj.Computed):
         from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
-
-        print(f"{ephys_files=}")
-        print(f"{dir_types=}")
 
         # Concatenate the block's AmplifierData chunks (compressed .zarr twin if present).
         si_recs = [
