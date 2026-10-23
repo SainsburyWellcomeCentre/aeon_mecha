@@ -119,7 +119,9 @@ def _check_uniform_batches(rec, path) -> None:
     total = 0
     for i in range(n):
         rows = reader.get_batch(i).num_rows
-        if i < n - 1 and rows != batch_len:  # the final batch may be short
+        # The final batch may be SHORT; a longer one pushes (end_frame - 1) // batch_len
+        # past the last batch index and get_traces reads off the end.
+        if rows > batch_len or (i < n - 1 and rows != batch_len):
             raise ValueError(
                 f"{path} batch {i} has {rows} rows, expected {batch_len}. get_traces "
                 f"addresses batches by a constant stride, so a non-uniform file would "
@@ -426,6 +428,19 @@ def find_or_create_probe_insertion(
 
     if insertion_number is not None:
         new_num = int(insertion_number)
+        # (experiment, subject, insertion_number) is ProbeInsertion's primary key, so a
+        # number another probe already holds fails deep in DataJoint with an integrity
+        # error that names neither probe. Say which one holds it.
+        taken_by = (
+            probe_insertion_table
+            & {"experiment_name": experiment_name, "subject": subject, "insertion_number": new_num}
+        ).to_dicts()
+        if taken_by:
+            raise ValueError(
+                f"Metadata asserts insertion_number={new_num} for probe {probe_id!r} "
+                f"(subject {subject!r}), but probe {taken_by[0]['probe']!r} already holds "
+                f"that number. Resolve by hand."
+            )
     else:
         # No metadata assertion -- auto-assign the next free number
         existing_nums = (

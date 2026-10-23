@@ -210,16 +210,18 @@ def _insert_target_area(target_area: str | None, insertion_key: dict) -> None:
     """
     if not target_area:
         return
-    # target_area is part of InsertionTargetArea's primary key, so a changed area
-    # would append a second row rather than replace the first, and every join through
-    # that table would fan out. Surface it instead.
+    # InsertionTargetArea is declared to link an insertion to "one or more" areas --
+    # a long shank really can span two. So an existing different area is reported,
+    # not refused: raising here would make the documented multi-area case impossible
+    # and, once a curator added a second area by hand, would block every later
+    # ingestion of that epoch with no way back.
     linked_areas = (InsertionTargetArea & insertion_key).to_arrays("target_area")
-    conflicting_areas = [area for area in linked_areas if area != target_area]
-    if conflicting_areas:
-        raise ValueError(
-            f"Insertion {insertion_key} is already linked to target area(s) {conflicting_areas}; "
-            f"metadata now says {target_area!r}. Two areas on one insertion fan out every "
-            f"join through InsertionTargetArea. Resolve by hand."
+    other_areas = [area for area in linked_areas if area != target_area]
+    if other_areas:
+        logger.warning(
+            f"Insertion {insertion_key} is already linked to target area(s) {other_areas}; "
+            f"metadata says {target_area!r}, which will be added alongside them. If that is "
+            f"spelling drift rather than a second area, fix it -- joins fan out per area."
         )
 
     area_is_new = not (TargetArea & {"target_area": target_area})
@@ -1049,18 +1051,33 @@ class OnixImuChunk(dj.Imported):
                 device_name = candidate
                 break
 
-        # The format is a property of the epoch, not of whether this window happened
-        # to contain samples: an empty row must record the same stream_format its
-        # non-empty siblings do, or a fetch of it returns a different column set.
-        is_arrow = device_name is not None and any(
-            (epoch_path / device_name).glob(f"{device_name}_Bno055_*.arrow")
-        )
+        def _row_format(chunk_indices: list[int]) -> str:
+            """The format of the chunks this row covers.
+
+            Derived from the chunks rather than from the epoch as a whole: an epoch
+            written across a format change holds some of each, so "does the device dir
+            contain any arrow file" would label a row built from binary chunks "arrow"
+            and make its fetch fail the column-count check. concat_bno055_chunks
+            refuses to mix column sets within one row, so the first chunk settles it.
+            """
+            if device_name is None:
+                return "binary"
+            device_dir = epoch_path / device_name
+            if chunk_indices:
+                first = chunk_indices[0]
+                return (
+                    "arrow" if (device_dir / f"{device_name}_Bno055_{first}.arrow").exists() else "binary"
+                )
+            # No chunks to go on. Fall back to the epoch, so an empty row still matches
+            # the siblings it would have had.
+            return "arrow" if any(device_dir.glob(f"{device_name}_Bno055_*.arrow")) else "binary"
 
         def _empty_row(chunk_indices: list[int]) -> dict:
             # The arrow extras get {} like every other column: leaving them NULL makes
             # an empty arrow row fail the "are the extra columns present" test the
             # populated branch below uses to decide the same thing.
-            arrow_extra_stats = {col: {} for col in ARROW_EXTRA_COLUMNS} if is_arrow else {}
+            row_format = _row_format(chunk_indices)
+            arrow_extra_stats = {col: {} for col in ARROW_EXTRA_COLUMNS} if row_format == "arrow" else {}
             return {
                 **key,
                 "sample_count": 0,
@@ -1068,7 +1085,7 @@ class OnixImuChunk(dj.Imported):
                 **{col: {} for col in IMU_COLUMNS},
                 **arrow_extra_stats,
                 "stream_df": {
-                    "stream_format": "arrow" if is_arrow else "binary",
+                    "stream_format": row_format,
                     "experiment_name": key["experiment_name"],
                     "epoch_start": str(key["epoch_start"]),
                     "sync_start": str(key["sync_start"]),
@@ -1120,9 +1137,9 @@ class OnixImuChunk(dj.Imported):
                     "sync_start": str(key["sync_start"]),
                     "device_name": device_name,
                     "stream_group": "Bno055",
-                    # recorded so a fetch reproduces the shape that was ingested,
-                    # independent of what the raw tree looks like later
-                    "stream_format": ("arrow" if set(ARROW_EXTRA_COLUMNS) <= set(df.columns) else "binary"),
+                    # Recorded so a fetch reproduces the shape that was ingested, whatever
+                    # the raw tree looks like later. Same derivation as the empty rows.
+                    "stream_format": _row_format(chunk_indices),
                     "chunk_indices": chunk_indices,
                     "onix_ts_start": onix_ts_start,
                     "onix_ts_end": onix_ts_end,

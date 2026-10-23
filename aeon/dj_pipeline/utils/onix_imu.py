@@ -95,9 +95,7 @@ def _load_bno055_arrow(path: Path) -> pd.DataFrame:
         # to_numpy upcasts an integer column with nulls to float64 + NaN. On Clock that
         # silently turns the ONIX index into floats, losing precision on large ticks and
         # quietly shifting every window filter and the HARP regression after it.
-        null_columns = sorted(
-            name for name in (*_ARROW_TO_CANONICAL, "Clock") if table[name].null_count
-        )
+        null_columns = sorted(name for name in (*_ARROW_TO_CANONICAL, "Clock") if table[name].null_count)
         if null_columns:
             raise ValueError(f"Null values in {path.name} column(s) {null_columns}.")
         data = {
@@ -204,10 +202,14 @@ def _indices_in_both_formats(device_dir: Path, device_name: str) -> set[int]:
         for f in device_dir.glob(f"{device_name}_Bno055_*.arrow")
         if (m := re.search(r"_Bno055_(\d+)\.arrow$", f.name))
     }
+    # Only files with at least one whole uint64 sample count, matching what the overlap
+    # scan accepts: an interrupted acquisition can leave a 0-byte Clock_N.bin beside an
+    # arrow chunk N, and calling that an ambiguous pair would block the epoch over a
+    # file neither side would have read.
     binary = {
         int(m.group(1))
         for f in device_dir.glob(f"{device_name}_Bno055_Clock_*.bin")
-        if (m := re.search(r"_Clock_(\d+)\.bin$", f.name))
+        if (m := re.search(r"_Clock_(\d+)\.bin$", f.name)) and f.stat().st_size >= 8
     }
     return arrow & binary
 

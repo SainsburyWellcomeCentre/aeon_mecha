@@ -1292,6 +1292,10 @@ class SyncedSpikes(dj.Imported):
                 # out and map it, leaving it OS-paged like the binary branch below.
                 onix_ts = read_arrow_column(amp_path, "Clock")
                 amp_len = len(onix_ts)
+                if onix_ts.dtype != np.uint64:
+                    # tofile writes whatever dtype the column declared, so a non-uint64
+                    # Clock would be reinterpreted on the way back in.
+                    raise ValueError(f"{amp_path} declares Clock as {onix_ts.dtype}, expected uint64.")
                 spill_path = Path(clock_spill_dir.name) / f"{len(amp_lengths)}.u64"
                 onix_ts.tofile(spill_path)
                 onix_ts = np.memmap(spill_path, mode="r", dtype=np.uint64)

@@ -1122,8 +1122,15 @@ class TestProbeInsertionFromImplants:
             _insert_target_area(area, pi_key)
         assert not any(area in r.message for r in caplog.records), "existing area should not warn"
 
-    def test_changing_target_area_raises(self, ephys_full_pipeline, tmp_path):
-        """A second area on one insertion would fan out every join through the link table."""
+    def test_second_target_area_is_added_and_warned_about(
+        self, ephys_full_pipeline, tmp_path, caplog
+    ):
+        """The link table is declared for "one or more" areas, so a second one is kept.
+
+        Refusing it would make the documented multi-area case impossible and, once a
+        curator added an area by hand, block every later ingestion of that epoch. The
+        warning is there because the other likely cause is spelling drift.
+        """
         from aeon.dj_pipeline.ephys import _insert_target_area
         from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
 
@@ -1136,8 +1143,16 @@ class TestProbeInsertionFromImplants:
             exp, "SUBJ-1", "SER-6", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
         )
         _insert_target_area("AreaOne", pi_key)
-        with pytest.raises(ValueError, match="already linked"):
+        with caplog.at_level("WARNING"):
             _insert_target_area("AreaTwo", pi_key)
+        assert "already linked" in caplog.text
+
+        linked = sorted((ephys.InsertionTargetArea & pi_key).to_arrays("target_area"))
+        assert linked == ["AreaOne", "AreaTwo"], linked
+
+        # Re-ingesting the same epoch must stay a no-op, not accumulate rows.
+        _insert_target_area("AreaTwo", pi_key)
+        assert len(ephys.InsertionTargetArea & pi_key) == 2
 
     def test_target_area_none_is_a_noop(self, ephys_full_pipeline, tmp_path):
         from aeon.dj_pipeline.ephys import _insert_target_area

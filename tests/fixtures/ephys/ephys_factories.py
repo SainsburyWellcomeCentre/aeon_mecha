@@ -262,8 +262,9 @@ def make_synthetic_amplifier_data(
         amp_data.tofile(amp_path)
 
 
-# Subtracted from Clock to form HubClock in synthetic arrow files; small enough to
-# stay well inside every ts_start used here, so the uint64 subtraction cannot wrap.
+# Subtracted from Clock to form HubClock in synthetic arrow files. The subtraction is
+# checked rather than assumed safe: uint64 wraps to ~1.8e19, which reads as a plausible
+# clock and would surface as a baffling sync failure instead of a fixture error.
 HUB_CLOCK_OFFSET = 97
 
 
@@ -275,6 +276,10 @@ def _write_arrow_chunk(device_dir, device_name, probe_label, n, onix_ts, amp_dat
     cols = {f"AmplifierData{i}": amp_data[:, i] for i in range(amp_data.shape[1])}
     # HubClock deliberately differs from Clock. Equal values would make a read of
     # the wrong clock column indistinguishable from a correct one in every test.
+    if onix_ts[0] < HUB_CLOCK_OFFSET:
+        raise ValueError(
+            f"ts_start={onix_ts[0]} is below HUB_CLOCK_OFFSET={HUB_CLOCK_OFFSET}; HubClock would wrap."
+        )
     cols["HubClock"] = onix_ts - HUB_CLOCK_OFFSET
     cols["Clock"] = onix_ts
     schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in cols.items()])
