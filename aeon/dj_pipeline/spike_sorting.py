@@ -218,9 +218,7 @@ class PreProcessing(dj.Computed):
 
         if len(ephys_files) == 0:
             ephys_files, dir_types = (
-                ephys.EphysChunk.File
-                & (ephys.EphysBlockInfo.Chunk & key)
-                & "file_name LIKE '%AmplifierData%.bin'"
+                ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & "file_name LIKE 'Probe%.arrow'"
             ).to_arrays("file_path", "directory_type", order_by="chunk_start")
 
         # Channels
