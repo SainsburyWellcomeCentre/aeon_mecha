@@ -203,18 +203,15 @@ class EphysEpochEnd(dj.Manual):
 def _insert_target_area(target_area: str | None, insertion_key: dict) -> None:
     """Link a ProbeInsertion to its target area, creating the lookup row if new.
 
-    TargetArea is a controlled vocabulary in spirit but open in practice: a new
-    brain area must not block ingestion. New values are created and warned about
-    so spelling drift ("mPFC" vs "mpfc") shows up in the logs instead of silently
-    splitting InsertionTargetArea joins.
+    TargetArea is open rather than closed -- a new brain area must not block
+    ingestion -- so new values are created with a warning, which is where spelling
+    drift ("mPFC" vs "mpfc") shows up.
     """
     if not target_area:
         return
-    # InsertionTargetArea is declared to link an insertion to "one or more" areas --
-    # a long shank really can span two. So an existing different area is reported,
-    # not refused: raising here would make the documented multi-area case impossible
-    # and, once a curator added a second area by hand, would block every later
-    # ingestion of that epoch with no way back.
+    # The link table allows "one or more" areas -- a long shank can span two -- so a
+    # different existing area is reported, not refused. Refusing would also block every
+    # later ingestion of an epoch a curator had added an area to.
     linked_areas = (InsertionTargetArea & insertion_key).to_arrays("target_area")
     other_areas = [area for area in linked_areas if area != target_area]
     if other_areas:
@@ -546,14 +543,9 @@ class EphysSyncModel(dj.Manual):
 def _reject_duplicate_chunk_formats(ephys_files: list[Path], raw_dir: Path) -> None:
     """Refuse an epoch where one probe chunk exists as both a binary and an arrow file.
 
-    Discovery globs both patterns in one pass, so such a pair is iterated twice and
-    registered as two EphysChunk rows (the file_path dedup cannot see it -- the paths
-    differ). If the two copies disagree by even one leading sample their first_ts
-    differ, both rows survive, and PreProcessing concatenates the chunk twice: every
-    spike after it shifts by a chunk's length with nothing to notice.
-
-    Mixing formats across DIFFERENT chunk indices in one epoch stays supported; only
-    the same index in both formats is ambiguous.
+    Discovery globs both patterns in one pass and the paths differ, so the pair would
+    register as two chunks and PreProcessing would concatenate it twice. Mixing formats
+    across different chunk indices stays supported.
     """
     # Keyed on the containing directory as well: two epochs each have their own chunk 0.
     files_by_chunk: dict[tuple[str, ...], dict[str, Path]] = {}
@@ -1051,11 +1043,9 @@ class OnixImuChunk(dj.Imported):
         def _row_format(chunk_indices: list[int]) -> str:
             """The format of the chunks this row covers.
 
-            Derived from the chunks rather than from the epoch as a whole: an epoch
-            written across a format change holds some of each, so "does the device dir
-            contain any arrow file" would label a row built from binary chunks "arrow"
-            and make its fetch fail the column-count check. concat_bno055_chunks
-            refuses to mix column sets within one row, so the first chunk settles it.
+            From the chunks, not the epoch: one written across a format change holds
+            some of each. concat_bno055_chunks refuses to mix sets within a row, so
+            the first chunk settles it.
             """
             if device_name is None:
                 return "binary"

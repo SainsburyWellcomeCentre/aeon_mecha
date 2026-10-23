@@ -66,10 +66,9 @@ _PREFIX_BY_CLASS: dict[str, str] = {
 
 
 def _load_bno055_arrow(path: Path) -> pd.DataFrame:
-    """Load one Bno055 arrow chunk, renamed to the canonical column names.
+    """Load one Bno055 arrow chunk under the canonical column names.
 
-    Returns the 13 shared ``IMU_COLUMNS`` plus ``ARROW_EXTRA_COLUMNS``
-    (``calibration``, ``temperature``) -- 15 in all -- indexed by ONIX ``Clock``.
+    ``IMU_COLUMNS`` plus ``ARROW_EXTRA_COLUMNS`` -- 15 in all -- indexed by ONIX ``Clock``.
     """
     import pyarrow as pa
     from pyarrow.ipc import RecordBatchFileReader
@@ -170,9 +169,8 @@ def load_and_merge_bno055(
 def concat_bno055_chunks(device_dir: Path, device_name: str, chunk_indices: Iterable[int]) -> pd.DataFrame:
     """Load and concatenate Bno055 chunks, refusing to mix column sets.
 
-    An epoch written across a format change yields 13-column binary frames and
-    15-column arrow frames. ``pd.concat`` would pad the difference with NaN and
-    return a frame that looks whole, so mismatched sets raise instead.
+    Binary frames have 13 columns and arrow 15; ``pd.concat`` would NaN-pad the
+    difference into a frame that looks whole.
     """
     # Materialise once: the argument may be any iterable, and it is used twice.
     chunk_indices = list(chunk_indices)
@@ -194,9 +192,8 @@ def concat_bno055_chunks(device_dir: Path, device_name: str, chunk_indices: Iter
 def _bno055_chunk_files(device_dir: Path, device_name: str) -> tuple[dict[int, Path], dict[int, Path]]:
     """One pass over the device directory: ({index: arrow file}, {index: clock binary}).
 
-    A clock binary with no whole uint64 sample is ignored, as an interrupted
-    acquisition can leave one behind and neither the collision check nor the overlap
-    test would have read it.
+    A clock binary with no whole uint64 sample is ignored: an interrupted acquisition
+    leaves those behind and neither caller would read one.
     """
     arrow = {
         int(m.group(1)): f
@@ -231,22 +228,17 @@ def find_overlapping_bno055_chunks(
 ) -> list[int]:
     """Return sorted Bno055 chunk indices whose ONIX range overlaps the window.
 
-    Arrow chunks carry their clock as a column, read from the first and last record
-    batch; binary chunks keep a companion ``Bno055_Clock_N.bin``, whose first and last
-    uint64 bound it. Overlap is inclusive on both ends.
-
-    Sync windows and Bno055 chunks partition the ONIX clock on independent boundaries,
-    so one window typically overlaps several chunks. ``OnixImuChunk.make`` gathers them
-    all before concatenating and filtering.
+    Bounds come from the arrow ``Clock`` column or the companion ``Clock_N.bin``;
+    overlap is inclusive both ends. Sync windows and Bno055 chunks sit on independent
+    boundaries, so one window usually spans several chunks.
     """
     from aeon.dj_pipeline.utils.arrow_io import EmptyArrowChunk, read_arrow_clock_bounds
 
     device_dir = Path(device_dir)
     arrow_files, binary_files = _bno055_chunk_files(device_dir, device_name)
 
-    # Ambiguity is decided on which files exist, before any overlap test:
-    # load_and_merge_bno055 picks arrow because the file is there, not because its clock
-    # matched, so a window selected on the binary clock would be loaded from the arrow
+    # Decided on which files exist, before any overlap test: loading picks arrow on
+    # existence, so a window matched on the binary clock would be loaded from the arrow
     # chunk and filtered away -- an empty window recorded as a real one.
     if both := sorted(arrow_files.keys() & binary_files.keys()):
         raise ValueError(

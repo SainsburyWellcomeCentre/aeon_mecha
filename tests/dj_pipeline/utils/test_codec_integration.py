@@ -127,16 +127,9 @@ class TestOnixStreamCodecRoundTrip:
     ):
         """An arrow row whose window matches no chunk must still decode as arrow.
 
-        _empty_row has to record the format: without it encode stamps the row
-        "binary", and decode then sizes the expected column set at 13. The
-        chunk_indices == [] row comes back with 13 columns where its non-empty
-        siblings have 15, so the fetch contract changes with the data; the other
-        _empty_row path (chunks found, all filtered out) raises "the raw tree changed
-        format" about a tree nobody touched.
-
-        Two sync windows, with the only Bno055 chunk pushed into the second: the
-        last window of an epoch is widened to 2**63-1 and the first down to 0, so a
-        single-window epoch always owns every sample and this row cannot occur there.
+        Without the format on the row, encode stamps it "binary" and the fetch comes
+        back 13 columns wide where its siblings are 15. Two sync windows are needed:
+        a single window is widened to cover the whole epoch, so it is never empty.
         """
         from aeon.dj_pipeline import ephys
         from aeon.dj_pipeline.utils.onix_imu import ARROW_EXTRA_COLUMNS, IMU_COLUMNS

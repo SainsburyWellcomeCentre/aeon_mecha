@@ -1285,12 +1285,10 @@ class SyncedSpikes(dj.Imported):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
             amp_path = ephys_dir / f
             if amp_path.suffix == ".arrow":
-                # Read the clock from the probe file rather than a companion file: it is a
-                # column of the same table as the samples, so the two cannot disagree about
-                # length. The cost is that reading it decompresses the whole column into
-                # RAM, and onix_times holds every chunk's clock until the last unit is
-                # mapped -- ~17 GB on a production 20 h block. So write it straight back
-                # out and map it, leaving it OS-paged like the binary branch below.
+                # The clock is a column of the same table as the samples, so the two cannot
+                # disagree about length. Reading it decompresses the column into RAM though,
+                # and onix_times holds every chunk until the last unit is mapped (~17 GB on a
+                # 20 h block), so spill it back out and map it like the binary branch below.
                 onix_ts = read_arrow_column(amp_path, "Clock")
                 amp_len = len(onix_ts)
                 if onix_ts.dtype != np.uint64:

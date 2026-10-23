@@ -93,16 +93,10 @@ def resolve_ephys_file(raw_bin_path: Path) -> Path:
 def _check_uniform_batches(rec, path) -> None:
     """Reject a file whose batches are not uniform-except-the-last.
 
-    ``BonsaiOnixArrowRecordingSegment.get_traces`` addresses batches arithmetically
-    (``start_frame // batch_len``) while ``get_num_samples`` sums true per-batch
-    rows. On a non-uniform file the length stays right and every trace read is
-    offset, which would shift every spike time with no error.
-
-    This is deliberately stricter than ``read_arrow_clock_bounds``, which walks past
-    an empty batch at either end: that reader takes only the first and last values
-    and does no stride arithmetic, so an empty edge batch costs it nothing. Here a
-    LEADING empty batch makes ``i * batch_len`` wrong for every batch after it, so it
-    has to be rejected. A trailing one is harmless to both.
+    ``get_traces`` addresses batch i at ``i * batch_len`` while ``get_num_samples``
+    sums real rows, so a non-uniform file keeps its length and offsets every read.
+    Stricter than ``read_arrow_clock_bounds``, which may skip an empty edge batch:
+    that reader does no stride arithmetic.
     """
     segment = rec._recording_segments[0]
     reader, batch_len = segment._reader, segment.batch_len
@@ -128,10 +122,8 @@ def _check_uniform_batches(rec, path) -> None:
 def _check_arrow_channels(rec, num_channels: int, path) -> None:
     """Verify the arrow schema against the registered channel count and ordering.
 
-    PreProcessing maps electrodes positionally into ``channel_ids``, so both of
-    these would mislabel every channel rather than fail: a column count that
-    disagrees with the ElectrodeConfig, or columns ordered lexicographically
-    (``AmplifierData0, 1, 10, 2``) instead of numerically.
+    PreProcessing maps electrodes positionally, so a wrong count or lexicographic
+    ordering (``AmplifierData0, 1, 10, 2``) mislabels every channel rather than failing.
     """
     _check_uniform_batches(rec, path)
     ids = [str(c) for c in rec.channel_ids]
@@ -208,13 +200,9 @@ def read_amplifier_recording(
 def parse_metadata_implants(metadata: dict | None) -> dict[str, dict] | None:
     """Map probe label -> implant record from ``subject.Implants[]``.
 
-    Returns None when the metadata predates this block, in which case the caller
-    falls back to ``probe_assignments.json``.
-
-    Raises:
-        ValueError: if an implant entry omits ``Probe`` or ``InsertionNumber`` --
-            the acquisition is the authority here, so an incomplete record is a
-            data problem to surface, not a default to invent.
+    None when the metadata predates the block; the caller then falls back to
+    ``probe_assignments.json``. An incomplete entry raises rather than defaulting --
+    the acquisition is the authority here.
     """
     if not isinstance(metadata, dict):
         return None
@@ -270,10 +258,9 @@ def _is_enabled(value) -> bool:
 def enabled_probe_labels(metadata: dict | None) -> set[str] | None:
     """Probe labels the metadata declares enabled, or None if it cannot say.
 
-    Only the ``ephys.Headstage`` layout carries an explicit ``Enable`` flag. The
-    older layouts express disablement as a null ``ProbeInterfaceFileName``, which
-    is already handled by ``get_probe_id``, so they return None and no
-    disk-vs-metadata cross-check is attempted.
+    Only the ``ephys.Headstage`` layout has an explicit ``Enable`` flag; older
+    layouts express it as a null ``ProbeInterfaceFileName``, which ``get_probe_id``
+    already handles, so they get no disk-vs-metadata cross-check.
     """
     headstage = _headstage_blocks(metadata)
     if headstage is None:
@@ -290,8 +277,7 @@ def enabled_probe_labels(metadata: dict | None) -> set[str] | None:
 def _headstage_blocks(metadata: dict | None) -> dict | None:
     """The ``ephys.Headstage`` mapping, or None if the metadata is not this layout.
 
-    Introduced with the Arrow acquisition: probe config and the enable flag live
-    under ``ephys.Headstage.ProbeA/ProbeB``.
+    Arrow-era layout: probe config and the enable flag live under ``Headstage.ProbeA``.
     """
     if not isinstance(metadata, dict):
         return None
