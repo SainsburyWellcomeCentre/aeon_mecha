@@ -1254,21 +1254,16 @@ class SyncedSpikes(dj.Imported):
             for c, s, e, m in zip(*sync_, strict=True):
                 chunk_windows[c].append((s, e, joblib.load(m)))
 
-        # Load ephys onix times
-        _amp_query = (
-            ephys.EphysChunk.File
-            & (ephys.EphysBlockInfo.Chunk & key)
-            # Select the AMPLIFIER file: it defines the chunk boundaries the spike
-            # indices count against. Arrow carries its clock in the same file; binary
-            # has a companion Clock_N.bin derived below. Keying on '%Clock%.bin' would
-            # also match Commutator_Clock_N.bin, which sits in the same directory.
-            & AMPLIFIER_FILE_RESTRICTION
+        # The amplifier files define the chunk boundaries the spike indices count
+        # against; a binary chunk's clock is derived from the filename further down.
+        amplifier_query = (
+            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & AMPLIFIER_FILE_RESTRICTION
         )
-        _amp_rows = _amp_query.to_dicts(order_by="chunk_start")
-        _pk = _amp_query.primary_key
-        ephys_file_keys = [{k: r[k] for k in _pk} for r in _amp_rows]
-        ephys_files = [r["file_path"] for r in _amp_rows]
-        dir_types = [r["directory_type"] for r in _amp_rows]
+        amplifier_rows = amplifier_query.to_dicts(order_by="chunk_start")
+        file_primary_key = amplifier_query.primary_key
+        ephys_file_keys = [{k: row[k] for k in file_primary_key} for row in amplifier_rows]
+        ephys_files = [row["file_path"] for row in amplifier_rows]
+        dir_types = [row["directory_type"] for row in amplifier_rows]
 
         # Spike indices count samples of the AmplifierData files concatenated in PreProcessing, so
         # the chunk boundaries come from those files, not from the Clock files. They differ when an
@@ -1296,9 +1291,9 @@ class SyncedSpikes(dj.Imported):
                 # Spill to a memmap: onix_times keeps one array per chunk for the whole
                 # block, which is tens of GB in RAM on a long one. The binary branch
                 # below is already OS-paged.
-                spill = Path(clock_spill_dir.name) / f"{len(amp_lengths)}.u64"
-                onix_ts.tofile(spill)
-                onix_ts = np.memmap(spill, mode="r", dtype=np.uint64)
+                spill_path = Path(clock_spill_dir.name) / f"{len(amp_lengths)}.u64"
+                onix_ts.tofile(spill_path)
+                onix_ts = np.memmap(spill_path, mode="r", dtype=np.uint64)
             else:
                 amp_len = read_amplifier_recording(amp_path, num_channels, NP2_FS_HZ).get_num_samples()
                 onix_ts = np.memmap(

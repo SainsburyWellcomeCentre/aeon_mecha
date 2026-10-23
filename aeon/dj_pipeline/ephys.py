@@ -200,7 +200,7 @@ class EphysEpochEnd(dj.Manual):
     """
 
 
-def _record_target_area(target_area: str | None, insertion_key: dict) -> None:
+def _insert_target_area(target_area: str | None, insertion_key: dict) -> None:
     """Link a ProbeInsertion to its target area, creating the lookup row if new.
 
     TargetArea is a controlled vocabulary in spirit but open in practice: a new
@@ -213,18 +213,18 @@ def _record_target_area(target_area: str | None, insertion_key: dict) -> None:
     # target_area is part of InsertionTargetArea's primary key, so a changed area
     # would append a second row rather than replace the first, and every join through
     # that table would fan out. Surface it instead.
-    existing = (InsertionTargetArea & insertion_key).to_arrays("target_area")
-    other = [a for a in existing if a != target_area]
-    if other:
+    linked_areas = (InsertionTargetArea & insertion_key).to_arrays("target_area")
+    conflicting_areas = [area for area in linked_areas if area != target_area]
+    if conflicting_areas:
         raise ValueError(
-            f"Insertion {insertion_key} is already linked to target area(s) {list(other)}; "
+            f"Insertion {insertion_key} is already linked to target area(s) {conflicting_areas}; "
             f"metadata now says {target_area!r}. Two areas on one insertion fan out every "
             f"join through InsertionTargetArea. Resolve by hand."
         )
 
-    is_new = not (TargetArea & {"target_area": target_area})
+    area_is_new = not (TargetArea & {"target_area": target_area})
     TargetArea.insert1({"target_area": target_area}, skip_duplicates=True)
-    if is_new:
+    if area_is_new:
         logger.warning(
             f"Created new TargetArea {target_area!r} from acquisition metadata. "
             f"Check it against existing areas for spelling drift."
@@ -319,15 +319,15 @@ class EphysEpochConfig(dj.Imported):
         # The metadata is authoritative about which probes should be here, so a probe
         # it declares enabled whose files are absent is a transfer problem, not a
         # single-probe epoch. Without this, a half-copied epoch ingests as clean.
-        declared = enabled_probe_labels(metadata)
-        if declared is not None:
+        probes_declared_enabled = enabled_probe_labels(metadata)
+        if probes_declared_enabled is not None:
             # Compare against what discovery found on disk, not probe_info: the latter
             # also drops probes get_probe_id could not identify, which would report a
             # correctly-disabled probe as a missing file.
-            absent = sorted(declared - set(probe_labels))
-            if absent:
+            probes_without_files = sorted(probes_declared_enabled - set(probe_labels))
+            if probes_without_files:
                 raise FileNotFoundError(
-                    f"Metadata declares {absent} enabled for epoch {epoch_dir}, but no data "
+                    f"Metadata declares {probes_without_files} enabled for epoch {epoch_dir}, but no data "
                     f"files were found for them (discovered: {sorted(probe_labels)}). "
                     f"The epoch looks partially transferred."
                 )
@@ -431,7 +431,7 @@ class EphysEpochConfig(dj.Imported):
                 insertion_number=implant.get("insertion_number"),
                 implantation_date=implant.get("implantation_date"),
             )
-            _record_target_area(implant.get("target_area"), pi_key)
+            _insert_target_area(implant.get("target_area"), pi_key)
             insertion_entries.append({**key, **pi_key, "probe_label": label, **probe_to_econfig[label]})
 
         # Insert master + Part rows
@@ -554,23 +554,26 @@ def _reject_duplicate_chunk_formats(ephys_files: list[Path], raw_dir: Path) -> N
     Mixing formats across DIFFERENT chunk indices in one epoch stays supported; only
     the same index in both formats is ambiguous.
     """
-    seen: dict[tuple[str, ...], dict[str, Path]] = {}
-    for f in ephys_files:
-        m = re.search(r"_(Probe[A-Z])_(?:AmplifierData_)?(\d+)\.(bin|arrow)$", f.name)
-        if not m:
+    # Keyed on the containing directory as well: two epochs each have their own chunk 0.
+    files_by_chunk: dict[tuple[str, ...], dict[str, Path]] = {}
+    for ephys_file in ephys_files:
+        name_match = re.search(r"_(Probe[A-Z])_(?:AmplifierData_)?(\d+)\.(bin|arrow)$", ephys_file.name)
+        if not name_match:
             continue
-        probe_label, chunk_index, suffix = m.groups()
-        # Key on the containing directory too: two epochs each have their own chunk 0.
-        key = (*f.relative_to(raw_dir).parts[:-1], probe_label, chunk_index)
-        fmt = "binary" if suffix == "bin" else "arrow"
-        if (other := seen.setdefault(key, {})).get("arrow" if fmt == "binary" else "binary"):
+        probe_label, chunk_index, suffix = name_match.groups()
+        chunk_key = (*ephys_file.relative_to(raw_dir).parts[:-1], probe_label, chunk_index)
+        this_format = "binary" if suffix == "bin" else "arrow"
+        other_format = "arrow" if this_format == "binary" else "binary"
+        formats_seen = files_by_chunk.setdefault(chunk_key, {})
+        if formats_seen.get(other_format):
             raise ValueError(
                 f"Chunk {chunk_index} of {probe_label} exists in both binary and arrow "
-                f"form: {other.get('binary', f)} and {other.get('arrow', f)}. Which is "
+                f"form: {formats_seen.get('binary', ephys_file)} and "
+                f"{formats_seen.get('arrow', ephys_file)}. Which is "
                 f"authoritative is undefined, and registering both would concatenate "
                 f"the chunk twice. Remove one."
             )
-        other[fmt] = f
+        formats_seen[this_format] = ephys_file
 
 
 @schema
@@ -1057,13 +1060,13 @@ class OnixImuChunk(dj.Imported):
             # The arrow extras get {} like every other column: leaving them NULL makes
             # an empty arrow row fail the "are the extra columns present" test the
             # populated branch below uses to decide the same thing.
-            extras = {col: {} for col in ARROW_EXTRA_COLUMNS} if is_arrow else {}
+            arrow_extra_stats = {col: {} for col in ARROW_EXTRA_COLUMNS} if is_arrow else {}
             return {
                 **key,
                 "sample_count": 0,
                 "timestamps": {},
                 **{col: {} for col in IMU_COLUMNS},
-                **extras,
+                **arrow_extra_stats,
                 "stream_df": {
                     "stream_format": "arrow" if is_arrow else "binary",
                     "experiment_name": key["experiment_name"],

@@ -228,8 +228,8 @@ def find_overlapping_bno055_chunks(
     helper to gather all overlapping chunks before concatenating + filtering.
     """
     device_dir = Path(device_dir)
-    arrow_idx: set[int] = set()
-    binary_idx: set[int] = set()
+    arrow_chunks: set[int] = set()
+    binary_chunks: set[int] = set()
 
     # Arrow chunks keep their ONIX clock as a column; binary chunks have a companion
     # Clock_N.bin. Both are scanned: an epoch written across a format change has some
@@ -241,10 +241,11 @@ def find_overlapping_bno055_chunks(
     # clock matched: testing the collision after the overlap filter would let a
     # window selected on the binary clock be loaded from the arrow file, whose index
     # is elsewhere, and the caller would record an empty window as a real one.
-    both = _indices_in_both_formats(device_dir, device_name)
-    if both:
+    chunks_in_both_formats = _indices_in_both_formats(device_dir, device_name)
+    if chunks_in_both_formats:
         raise ValueError(
-            f"Bno055 chunk(s) {sorted(both)} exist in both arrow and binary form in "
+            f"Bno055 chunk(s) {sorted(chunks_in_both_formats)} exist in both arrow and binary "
+            f"form in "
             f"{device_dir}; which is authoritative is undefined. Remove one set."
         )
 
@@ -262,7 +263,7 @@ def find_overlapping_bno055_chunks(
         except EmptyArrowChunk:
             continue
         if first <= onix_ts_end and last >= onix_ts_start:
-            arrow_idx.add(int(match.group(1)))
+            arrow_chunks.add(int(match.group(1)))
 
     pattern = f"{device_name}_Bno055_Clock_*.bin"
     for clock_file in device_dir.glob(pattern):
@@ -270,22 +271,22 @@ def find_overlapping_bno055_chunks(
         # Floor to a uint64 boundary in case a trailing partial sample was
         # left behind by an interrupted acquisition. Skip files with no
         # whole samples.
-        whole = (size // 8) * 8
-        if whole < 8:
+        whole_sample_bytes = (size // 8) * 8
+        if whole_sample_bytes < 8:
             continue
         match = re.search(r"_Clock_(\d+)\.bin$", clock_file.name)
         if not match:
             continue
-        n = int(match.group(1))
+        chunk_index = int(match.group(1))
         first = int(np.fromfile(clock_file, dtype=np.uint64, count=1)[0])
-        if whole >= 16:
+        if whole_sample_bytes >= 16:
             with open(clock_file, "rb") as f:
-                f.seek(whole - 8)
+                f.seek(whole_sample_bytes - 8)
                 last = int(np.frombuffer(f.read(8), dtype=np.uint64)[0])
         else:
             last = first
         # Inclusive interval overlap test on both ends.
         if first <= onix_ts_end and last >= onix_ts_start:
-            binary_idx.add(n)
+            binary_chunks.add(chunk_index)
     # Disjoint by construction: the collision check above already raised.
-    return sorted(arrow_idx | binary_idx)
+    return sorted(arrow_chunks | binary_chunks)

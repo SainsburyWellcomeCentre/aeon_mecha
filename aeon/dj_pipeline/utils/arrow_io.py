@@ -55,16 +55,16 @@ def read_arrow_column(path: Path, column: str) -> np.ndarray:
             return np.empty(0, dtype=reader.schema.field(column).type.to_pandas_dtype())
         import pyarrow as pa
 
-        arr = pa.chunked_array(batches)
-        if arr.null_count:
+        whole_column = pa.chunked_array(batches)
+        if whole_column.null_count:
             # to_numpy upcasts an integer column with nulls to float64 + NaN, so a
             # single null clock would silently change the timebase and lose precision
             # on large uint64 ticks -- the same hazard the empty branch above guards.
             raise ValueError(
-                f"Column {column!r} in {path} has {arr.null_count} null value(s). "
+                f"Column {column!r} in {path} has {whole_column.null_count} null value(s). "
                 f"Converting would upcast it to float64 and change the timebase."
             )
-        return arr.to_numpy(zero_copy_only=False)
+        return whole_column.to_numpy(zero_copy_only=False)
     finally:
         source.close()
 
@@ -88,14 +88,14 @@ def read_arrow_clock_bounds(path: Path, column: str = "Clock") -> tuple[int, int
     source, reader = _open(path)
     try:
         _require_column(reader, column, path)
-        n = reader.num_record_batches
-        if n == 0:
+        n_batches = reader.num_record_batches
+        if n_batches == 0:
             raise EmptyArrowChunk(f"{path} has no record batches")
         # A writer that flushes at stop can leave an empty batch at either end, so
         # walk past those rather than reporting a file with data as having none.
         # In the common case this touches exactly the first and last batch.
-        first = _first_nonempty(reader, column, range(n))
-        last = _first_nonempty(reader, column, range(n - 1, -1, -1))
+        first = _first_nonempty(reader, column, range(n_batches))
+        last = _first_nonempty(reader, column, range(n_batches - 1, -1, -1))
         if first is None or last is None:
             raise EmptyArrowChunk(f"{path} has record batches but none with rows")
         return int(first[0].as_py()), int(last[-1].as_py())
