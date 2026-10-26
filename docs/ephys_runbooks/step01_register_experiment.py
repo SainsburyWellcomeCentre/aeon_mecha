@@ -27,7 +27,7 @@ from pathlib import Path
 
 # Name that identifies this experiment in the database.
 # Convention: <experiment_tag>-<arena>, e.g. "abcGolden01-aeonx1". source .venv/bin/activate; uv run python /submodules/aeon_mecha/docs/ephys_runbooks/step01_register_experiment.py
-EXPERIMENT_NAME = "ProjectAeonOVC-2026-04-02_001"
+EXPERIMENT_NAME = "ProjectAeonOVC-2026-06-07_001"
 
 # Absolute paths to raw data on Ceph.
 # abc experiments record behavior and ephys on separate acquisition machines:
@@ -35,14 +35,14 @@ EXPERIMENT_NAME = "ProjectAeonOVC-2026-04-02_001"
 #   - AEONX1 captures ephys (NeuropixelsV2)
 # Each is registered as a separate directory type so the pipeline knows where
 # to look for each kind of data.
-RAW_BEHAVIOR_DIR = "/ceph/aeon/aeon/data/raw/AEON3/experiment_beh/aeon-ovc-beh-2026-04-02"
-RAW_EPHYS_DIR = "/ceph/aeon/aeon/data/raw/AEONX1/ProjectAeonOVC/aeon-ovc-2026-04-02"
+RAW_BEHAVIOR_DIR = "/ceph/aeon/aeon/data/raw/AEON3/experiment_beh/aeon-ovc-beh-2026-06-07"
+RAW_EPHYS_DIR = "/ceph/aeon/aeon/data/raw/AEONX1/ProjectAeonOVC/aeon-ovc-2026-06-07"
 
 # SWC subject ID.
-SUBJECT = "BAA-1106718"
+SUBJECT = "CAA-1124420"
 
 # Serial number of the physical probe (from Metadata.yml / GainCalibrationFileName).
-PROBE_SERIAL = "22420004142"
+PROBE_SERIAL = "23409404231"
 
 # Probe type string used by the pipeline. The device directory on Ceph is
 # called "NeuropixelsV2", and the pipeline maps that to "neuropixels2.0"
@@ -52,7 +52,7 @@ PROBE_TYPE = "neuropixels2.0-multishank"
 
 # Path to the channel mapping JSON (probeinterface format), relative to
 # the first epoch directory. This defines the 384 active electrodes.
-CHANNEL_MAP_FILE = "/ceph/branco/Rokas/Ephys/Channel_maps/020426/M01_ProbeA_4Shanks_1500_to_2200um.json"
+CHANNEL_MAP_FILE = "/ceph/branco/Rokas/Ephys/Channel_maps/070626/For_070626_RS.json"
 
 # Local directory for probe_assignments.json when Ceph is read-only.
 # The file will be written here if the epoch directory on Ceph can't be
@@ -82,7 +82,7 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
         {
             "subject": subject,
             "sex": "U",
-            "subject_birth_date": "2026-01-27",
+            "subject_birth_date": "2026-03-24",
             "subject_description": "NPX2.0 RSP and HPC",
         },
         skip_duplicates=True,
