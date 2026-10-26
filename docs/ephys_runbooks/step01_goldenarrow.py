@@ -46,7 +46,7 @@ else:
 
 # The ephys metadata contains all subject data, which we can use to ingest automatically
 # There might be a better way to do this...
-one_metadata_path = Path(RAW_EPHYS_DIR / "2026-10-13T094255Z/Metadata.json")
+one_metadata_path = Path(RAW_EPHYS_DIR) / "2026-10-13T094255Z/Metadata.json"
 with open(one_metadata_path) as f:
     metadata = json.load(f)
 
