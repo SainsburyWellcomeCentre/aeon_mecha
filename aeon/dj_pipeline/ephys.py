@@ -546,14 +546,14 @@ class EphysChunk(dj.Manual):
 
         all_ephys_files = sorted(
             raw_dir.rglob("*_AmplifierData*.bin"),
-            key=lambda x: x.as_posix(),
+            key=lambda x: int(x.stem.split("_")[-1]),
         )
 
         if len(all_ephys_files) == 0:
             for probe_label in epoch_probe_labels:
                 ephys_files = sorted(
                     raw_dir.rglob(f"*{probe_label}*.arrow"),
-                    key=lambda x: x.as_posix(),
+                    key=lambda x: int(x.stem.split("_")[-1]),
                 )
                 all_ephys_files += ephys_files
 
@@ -568,7 +568,7 @@ class EphysChunk(dj.Manual):
                 continue  # already ingested
 
             if ephys_file.suffix == ".arrow":
-                # In arrow, the only file with Probe? in it is the ephys file
+                # In arrow, the only file with Probe[A-Z] in it is the ephys file
                 name_match = re.search(r"_(Probe[A-Z])_", ephys_file.name)
             else:
                 # Parse probe_label from filename
@@ -674,6 +674,7 @@ class EphysChunk(dj.Manual):
                 with cls.connection.transaction:
                     cls.insert1(chunk_entry)
                     if ephys_file == clock_file:
+                        # this is true for the arrow format files
                         file_list = (ephys_file,)
                     else:
                         file_list = (ephys_file, clock_file)
@@ -816,7 +817,6 @@ class EphysBlockInfo(dj.Imported):
         epoch_dir = (EphysEpoch & key & {"epoch_start": epoch_start}).fetch1("epoch_dir")
         epoch_path = raw_dir / Path(epoch_dir).parts[0]
         json_path = resolve_epoch_probe_json(raw_dir, epoch_path, config_file_name)
-
         channel_map = load_device_channel_map(json_path)
 
         electrode_df = (ElectrodeConfig.Electrode & econfig).keys(order_by="electrode")
