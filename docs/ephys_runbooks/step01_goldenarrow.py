@@ -207,7 +207,7 @@ for epoch in EphysEpoch:
     # For now, we have all the probe data here already.
 
     epoch_dir = Path(epoch["epoch_dir"])
-    epoch_metadata_path = epoch_dir / "Metadata.json"
+    epoch_metadata_path = Path(RAW_EPHYS_DIR) / epoch_dir / "Metadata.json"
     with open(epoch_metadata_path) as f:
         epoch_metadata = json.load(f)
 
