@@ -142,7 +142,7 @@ acquisition.Experiment.Subject.insert1(
 def get_probes_metadata_from_epoch_metadata(epoch_metadata):
     """Get probe metadata for each epoch."""
     headstage_metadata = epoch_metadata["ephys"]["Headstage"]
-    implants_metadata = epoch_metadata["Subject"]["Implants"]
+    implants_metadata = epoch_metadata["subject"]["Implants"]
 
     probes = {}
     for key, values in headstage_metadata.items():
