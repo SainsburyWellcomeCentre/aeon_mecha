@@ -88,7 +88,26 @@ def _old_v2e_probe_configs(metadata: dict) -> dict[str, object]:
     The ``NeuropixelsV2e`` block sits under ``Devices`` or at the top level (early
     2026 workflow), with per-probe keys ``ConfigurationA/B`` or ``ProbeConfigurationA/B``.
     """
-    npx = (metadata.get("Devices") or {}).get("NeuropixelsV2e") or metadata.get("NeuropixelsV2e") or {}
+    devices = metadata.get("Devices") or {}
+    npx = devices.get("NeuropixelsV2e") or metadata.get("NeuropixelsV2e") or {}
+    configs = _probe_configs_from_block(npx)
+    if configs:
+        return configs
+
+    # Some 2026-06 workflow exports drop Devices.NeuropixelsV2e (a BNO055 node named
+    # "NeuroPixelsV2e" sits there instead); the probe configuration then survives only in
+    # Devices.Builder.NeuropixelsV2e(Beta). Builder's own ProbeA/B flags are unreliable
+    # ("false" even for a recording probe), so only the configurations are taken from it.
+    builder = devices.get("Builder") or {}
+    for block_key in ("NeuropixelsV2e", "NeuropixelsV2eBeta"):
+        configs = _probe_configs_from_block(builder.get(block_key) or {})
+        if configs:
+            return configs
+    return {}
+
+
+def _probe_configs_from_block(npx: dict) -> dict[str, object]:
+    """Return ``{"ProbeA": config, ...}`` from a block's ``(Probe)ConfigurationA/B`` keys."""
     configs = {}
     for cfg_key, cfg_value in npx.items():
         match = re.fullmatch(r"(?:Probe)?Configuration([A-Z])", cfg_key)
@@ -435,6 +454,17 @@ def discover_epoch_probes(epoch_path: Path) -> tuple[str | None, Path | None, li
             probe_labels.add(match.group(1))
 
     return device_name, device_dir, sorted(probe_labels)
+
+
+def probe_has_data(device_dir: Path, device_name: str, probe_label: str) -> bool:
+    """True if any of the probe's amplifier binary files is non-empty.
+
+    A probe that was configured but never streamed (e.g. unplugged ProbeB) still gets
+    a zero-byte ``{device}_{label}_AmplifierData_*.bin`` file per epoch.
+    """
+    return any(
+        f.stat().st_size > 0 for f in Path(device_dir).glob(f"{device_name}_{probe_label}_AmplifierData_*.bin")
+    )
 
 
 def find_epoch_metadata_path(epoch_path: Path) -> Path | None:

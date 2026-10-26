@@ -19,6 +19,7 @@ from aeon.dj_pipeline.utils.ephys_utils import (
     harp_to_naive,
     load_device_channel_map,
     parse_epoch_metadata,
+    probe_has_data,
     read_probe_assignments,
     resolve_harp,
     resolve_raw_dir_and_epochs,
@@ -260,7 +261,7 @@ class EphysEpochConfig(dj.Imported):
         epoch_path = raw_ephys_dir / epoch_dir
 
         # Discover probes
-        device_name, _device_dir, probe_labels = discover_epoch_probes(epoch_path)
+        device_name, device_dir, probe_labels = discover_epoch_probes(epoch_path)
         if not probe_labels:
             raise FileNotFoundError(
                 f"No {'/'.join(EPHYS_DEVICE_DIRS)} probe directories found in {epoch_path}. "
@@ -278,6 +279,9 @@ class EphysEpochConfig(dj.Imported):
         # Build probe info, filtering out unconfigured (dummy) probes
         probe_info = {}
         for label in probe_labels:
+            if not probe_has_data(device_dir, device_name, label):
+                logger.info(f"Skipping {label}: amplifier data files are empty (probe not recording)")
+                continue
             probe_id = get_probe_id(metadata, device_name, label)
             if probe_id is None:
                 logger.info(f"Skipping {label}: no probe configuration found (disabled/dummy)")

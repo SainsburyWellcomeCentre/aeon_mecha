@@ -355,6 +355,80 @@ class TestGetProbeId:
         assert get_probe_id(metadata, "Neuropixels", "ProbeA") == "20403305313"
         assert get_probe_id(metadata, "Neuropixels", "ProbeB") is None
 
+    def test_v2_serial_from_builder_block_when_v2e_missing(self):
+        """2026-06 exports without Devices.NeuropixelsV2e: serial read from Devices.Builder.
+
+        Mirrors aeon-ovc-2026-06-07 epochs 2-7: "NeuroPixelsV2e" is a BNO055 node, and
+        Builder.ProbeA = "false" is ignored (it is "false" even for the recording probe).
+        """
+        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
+
+        metadata = {
+            "Devices": {
+                "NeuroPixelsV2e": {"Name": "EphysBno055", "Selector": "HarpTime"},
+                "Builder": {
+                    "NeuropixelsV2eBeta": {
+                        "ConfigurationA": {
+                            "GainCalibrationFileName": (
+                                r"Z:\aeon\code\probecalibrations\SpoofProbe\23409404231\23409404231_gainCalValues.csv"
+                            ),
+                        },
+                        "ConfigurationB": {"GainCalibrationFileName": None},
+                    },
+                    "ProbeA": "false",
+                    "ProbeB": "false",
+                },
+            },
+        }
+        assert get_probe_id(metadata, "NeuropixelsV2", "ProbeA") == "23409404231"
+
+    def test_v2_builder_block_ignored_when_v2e_present(self):
+        """Devices.NeuropixelsV2e (the live configuration) wins over Devices.Builder."""
+        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
+
+        metadata = {
+            "Devices": {
+                "ProbeA": "true",
+                "NeuropixelsV2e": {
+                    "ProbeConfigurationA": {
+                        "GainCalibrationFileName": r"D:\probe_settings\SpoofProbe\23409404231\file.csv",
+                    },
+                },
+                "Builder": {
+                    "NeuropixelsV2eBeta": {
+                        "ConfigurationA": {"GainCalibrationFileName": r"Z:\other\11111111111\file.csv"},
+                    },
+                },
+            },
+        }
+        assert get_probe_id(metadata, "NeuropixelsV2", "ProbeA") == "23409404231"
+
+
+class TestProbeHasData:
+    """Tests for probe_has_data — zero-byte amplifier files mean the probe did not record."""
+
+    def test_non_empty_and_empty_probes(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import probe_has_data
+
+        (tmp_path / "NeuropixelsV2_ProbeA_AmplifierData_0.bin").write_bytes(b"\x00\x01")
+        (tmp_path / "NeuropixelsV2_ProbeB_AmplifierData_0.bin").touch()
+
+        assert probe_has_data(tmp_path, "NeuropixelsV2", "ProbeA")
+        assert not probe_has_data(tmp_path, "NeuropixelsV2", "ProbeB")
+
+    def test_any_non_empty_file_counts(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import probe_has_data
+
+        (tmp_path / "NeuropixelsV2_ProbeA_AmplifierData_0.bin").touch()
+        (tmp_path / "NeuropixelsV2_ProbeA_AmplifierData_1.bin").write_bytes(b"\x00")
+
+        assert probe_has_data(tmp_path, "NeuropixelsV2", "ProbeA")
+
+    def test_no_files(self, tmp_path):
+        from aeon.dj_pipeline.utils.ephys_utils import probe_has_data
+
+        assert not probe_has_data(tmp_path, "NeuropixelsV2", "ProbeA")
+
 
 class TestDiscoverEpochProbes:
     """Tests for discover_epoch_probes(epoch_path)."""
