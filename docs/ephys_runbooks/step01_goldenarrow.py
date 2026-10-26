@@ -137,12 +137,13 @@ acquisition.Experiment.Subject.insert1(
 
 # ------- probe
 
+
 # Extract probes metadata from metadata file
 def get_probes_metadata_from_epoch_metadata(epoch_metadata):
     """Get probe metadata for each epoch."""
     headstage_metadata = epoch_metadata["ephys"]["Headstage"]
     implants_metadata = epoch_metadata["Subject"]["Implants"]
-    
+
     probes = {}
     for key, values in headstage_metadata.items():
         if "Probe" in key:
@@ -153,12 +154,12 @@ def get_probes_metadata_from_epoch_metadata(epoch_metadata):
             probe_filename = Path(values["ProbeConfiguration"]["ProbeInterfaceFileName"])
             probe["channel_map_file"] = probe_filename.name
             probes[key] = probe
-    
+
     for implant_metadata in implants_metadata:
         probe_name = implant_metadata["Probe"]
         for property in ["InsertionNumber", "TargetArea", "ImplantationDate"]:
             probes[probe_name][property] = implant_metadata[property]
-    
+
     return probes
 
 
@@ -178,7 +179,7 @@ def register_probes(probes, exp_key, subject_key):
                 "probe": probe_metadata["serial_number"],
                 "probe_type": PROBE_TYPE,
             },
-            skip_duplicates = True,
+            skip_duplicates=True,
         )
         ProbeInsertion.insert1(
             {
@@ -188,8 +189,9 @@ def register_probes(probes, exp_key, subject_key):
                 **exp_key,
                 **subject_key,
             },
-            skip_duplicates = True,
+            skip_duplicates=True,
         )
+
 
 # Ingest actual ephys data - Epochs and Chunks
 
@@ -204,14 +206,14 @@ for epoch in EphysEpoch:
     # This code should probably go in EphysEpochConfig.make
     # For now, we have all the probe data here already.
 
-    epoch_dir = Path(epoch['epoch_dir'])
-    epoch_metadata_path = epoch_dir / 'Metadata.json'
+    epoch_dir = Path(epoch["epoch_dir"])
+    epoch_metadata_path = epoch_dir / "Metadata.json"
     with open(epoch_metadata_path) as f:
         epoch_metadata = json.load(f)
-    
+
     epoch_probes = get_probes_metadata_from_epoch_metadata(epoch_metadata)
     register_probes(epoch_probes, exp_key, subject_key)
-    
+
     EphysEpochConfig.insert1(
         {
             **epoch_key,
