@@ -10,6 +10,7 @@ import datajoint as dj
 
 from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import (
+    DEVICE_NAMES,
     DEVICE_PROBE_TYPE_MAP,
     discover_epoch_probes,
     find_nearest_window,
@@ -944,7 +945,7 @@ class OnixImuChunk(dj.Imported):
 
         # Discover device directory
         device_name = None
-        for candidate in ("NeuropixelsV2Beta", "NeuropixelsV2"):
+        for candidate in DEVICE_NAMES:
             if (epoch_path / candidate).is_dir():
                 device_name = candidate
                 break

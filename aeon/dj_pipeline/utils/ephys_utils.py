@@ -12,6 +12,7 @@ from pathlib import Path, PureWindowsPath
 
 import datajoint as dj
 import numpy as np
+import pyarrow.dataset as ds
 
 logger = dj.logger
 
@@ -21,12 +22,12 @@ DEVICE_PROBE_TYPE_MAP = {
     "NeuropixelsV2": "neuropixels2.0-multishank",
 }
 
+DEVICE_NAMES = list(DEVICE_PROBE_TYPE_MAP.keys())
+
 
 def read_onix_ts(clock_file):
     """Returns the ephys clock data as a numpy array, from either a .arrow file or a .bin file."""
     if clock_file.suffix == ".arrow":
-        import pyarrow.dataset as ds
-
         dataset = ds.dataset(clock_file, format="ipc")
         table = dataset.to_table(columns=["Clock"])
         onix_ts = table["Clock"].to_numpy()
@@ -399,7 +400,7 @@ def discover_epoch_probes(epoch_path: Path) -> tuple[str | None, Path | None, li
     """
     device_name = None
     device_dir = None
-    for subdir_name in ("NeuropixelsV2Beta", "NeuropixelsV2"):
+    for subdir_name in DEVICE_NAMES:
         candidate = epoch_path / subdir_name
         if candidate.exists() and candidate.is_dir():
             device_name = subdir_name
@@ -523,8 +524,7 @@ def resolve_epoch_probe_json(
     epoch_local = Path(epoch_path) / config_file_name
     if epoch_local.exists():
         return epoch_local
-    device_names = ["NeuropixelsV2", "NeuropixelsV2Beta"]
-    for device_name in device_names:
+    for device_name in DEVICE_NAMES:
         probe_path = Path(epoch_path) / device_name / config_file_name
         if probe_path.exists():
             return probe_path
