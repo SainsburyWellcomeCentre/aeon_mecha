@@ -99,8 +99,11 @@ class TestEpochIngestion:
         acquisition = full_pipeline["acquisition"]
         cfg = golden_dataset_config
 
-        epoch = (acquisition.Epoch & {"experiment_name": cfg["experiment_name"]}).fetch1()
-        assert epoch["epoch_dir"] == cfg["epoch_dir"]
+        # The repository may hold more epochs than the golden one; check it is among them.
+        epoch_dirs = (acquisition.Epoch & {"experiment_name": cfg["experiment_name"]}).to_arrays(
+            "epoch_dir"
+        )
+        assert cfg["epoch_dir"] in epoch_dirs
 
 
 class TestEpochConfigMake:
@@ -124,7 +127,11 @@ class TestEpochConfigMake:
 
         acquisition.EpochConfig.populate({"experiment_name": cfg["experiment_name"]})
 
-        meta = (acquisition.EpochConfig.Meta & {"experiment_name": cfg["experiment_name"]}).fetch1()
+        golden_epoch = acquisition.Epoch & {
+            "experiment_name": cfg["experiment_name"],
+            "epoch_dir": cfg["epoch_dir"],
+        }
+        meta = (acquisition.EpochConfig.Meta & golden_epoch).fetch1()
 
         # metadata may be a JSON string (MariaDB json-as-longtext) or a dict
         metadata = meta["metadata"]
@@ -156,8 +163,11 @@ class TestChunkIngestion:
 
         acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
 
-        chunk = (acquisition.Chunk & {"experiment_name": cfg["experiment_name"]}).fetch1()
-        assert chunk["chunk_start"] is not None
+        chunk_starts = (acquisition.Chunk & {"experiment_name": cfg["experiment_name"]}).to_arrays(
+            "chunk_start"
+        )
+        assert len(chunk_starts) >= 1
+        assert all(cs is not None for cs in chunk_starts)
 
 
 class TestStreamDataIngestion:
@@ -441,7 +451,7 @@ class TestCodecStreamData:
 
     POPULATE_LIMIT = 10
 
-    def _ensure_and_find(self, full_pipeline, golden_dataset_config, name_filter=None):
+    def _ensure_and_find(self, full_pipeline, golden_dataset_config, name_filter=None, restriction=None):
         """Populate streams and find one with data."""
         import datajoint as dj
 
@@ -461,6 +471,8 @@ class TestCodecStreamData:
             if isinstance(obj, type) and issubclass(obj, dj.Imported) and obj is not dj.Imported:
                 obj.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
                 query = obj & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
+                if restriction is not None:
+                    query = query & restriction
                 if len(query):
                     # Restrict to a single row — datasets may span multiple chunks
                     # per (epoch, device); these tests only check codec correctness
@@ -513,14 +525,16 @@ class TestCodecStreamData:
         import numpy as np
 
         result = self._ensure_and_find(
-            full_pipeline, golden_dataset_config, name_filter=lambda n: "Encoder" in n
+            full_pipeline,
+            golden_dataset_config,
+            name_filter=lambda n: "Encoder" in n,
+            restriction="device_name LIKE '%1'",  # one device; applied before the single-row limit
         )
         if result is None:
             pytest.skip("No Encoder stream data populated")
 
         name, table, query = result
-        # Restrict to one device to get exactly one row
-        row = (query & "device_name LIKE '%1'").fetch1()
+        row = query.fetch1()
         df = row["stream_df"]
 
         for col in df.columns:
