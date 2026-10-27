@@ -53,7 +53,7 @@ own credentials.
 ```json
 {
   "database": {
-    "host": "aeon-db",
+    "host": "aeondj",
     "port": 3306,
     "reconnect": true,
     "database_prefix": "u_<your_user>_test_"
@@ -126,20 +126,45 @@ uv run python -c "import os, datajoint as dj; dj.conn(); print('host:', dj.confi
 
 ## 6. Run the tests
 
-```
-uv run pytest -m integration tests/dj_pipeline/test_ephys_ingestion.py -v --tb=short -ra 2>&1 | tee golden_test_output.txt
-```
-
-Curation and unit matching are in the `specialized` tier and are not picked up by the command
-above. They share one ~18-minute fixture build, so run them together:
+The full test suite (unit, integration and specialized tiers):
 
 ```
-uv run pytest -m specialized tests/dj_pipeline/test_ephys_curation_integration.py tests/dj_pipeline/test_unit_matching_integration.py -v --tb=short -ra 2>&1 | tee matching_test_output.txt
+uv run pytest -v --tb=short -ra 2>&1 | tee full_test_output.txt
+```
+
+Unit tests (no database or golden data needed):
+
+```
+uv run pytest -m unit -v --tb=short -ra 2>&1 | tee unit_test_output.txt
+```
+
+All integration tests, including the `specialized` ones (the specialized tests are
+auto-marked `integration`). A mix of synthetic-data and golden-dataset tests:
+
+```
+uv run pytest -m integration -v --tb=short -ra 2>&1 | tee integration_test_output.txt
+```
+
+Only the `specialized` tier (curation and unit matching), which share one ~18-minute fixture build:
+
+```
+uv run pytest tests/dj_pipeline/test_ephys_curation_integration.py tests/dj_pipeline/test_unit_matching_integration.py -v --tb=short -ra 2>&1 | tee matching_test_output.txt
+```
+
+All integration tests, excluding the `specialized` tier:
+
+```
+uv run pytest -m "integration and not specialized" -v --tb=short -ra 2>&1 | tee integration_no_specialized_output.txt
+```
+
+Integration tests for the ephys ingestion module (golden dataset):
+
+```
+uv run pytest tests/dj_pipeline/test_ephys_ingestion.py -v --tb=short -ra 2>&1 | tee golden_test_output.txt
 ```
 
 ## 7. Reading the output
 
-- **Expected result: `29 passed`.** That is the golden baseline for this module.
 - **Skipped** tests mean a dependency or the golden data wasn't found. A run
   that's mostly skips is NOT a pass — recheck step 2 (the extra/group) and step 4
   (the data root).
