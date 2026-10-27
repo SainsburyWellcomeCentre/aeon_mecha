@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aeon_mecha"
-version = "0.4.8"
+version = "0.4.11"
 requires-python = ">=3.11,<3.13"
 description = '''
     Code for managing acquired data from Project Aeon experiments. Includes general file IO,
@@ -47,6 +47,7 @@ dependencies = [
 
 [project.optional-dependencies]
 gpu = ["cupy", "dask"]
+pynapple = ["pynapple>=0.11.4,<0.12"]
 spike_sorting = [
   "spikeinterface[full]>=0.104.0",
   "spython", 
@@ -72,6 +73,7 @@ test = [
   "pytest-cov",
   "testcontainers[mysql]>=3.7",
   "spikeinterface>=0.104.0",
+  "pynapple>=0.11.4,<0.12",
 ]
 test-golden = [
   { include-group = "test" },
@@ -82,74 +84,36 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://sainsburywellcomecentre.github.io/aeon_docs/"
+Homepage = "https://aeon.swc.ucl.ac.uk/"
 Repository = "https://github.com/sainsburyWellcomeCentre/aeon_mecha"
-Documentation = "https://sainsburywellcomecentre.github.io/aeon_docs/"
-DataJoint = "https://docs.datajoint.org/"
+Documentation = "https://aeon.swc.ucl.ac.uk/"
+DataJoint = "https://docs.datajoint.com/"
 
 [tool.setuptools.packages.find]
 include = ["aeon*"]
 
 [tool.ruff]
-lint.select = [
-  "E",
-  "W",
-  "F",
-  "I",
-  "D",
-  "UP",
-  "S",
-  "B",
-  "A",
-  "C4",
-  "ICN",
-  "PIE",
-  "PT",
-  "SIM",
-  "PL",
-]
+lint.select = ["E", "F", "I", "D", "UP", "S", "B"]
 line-length = 108
 lint.ignore = [
   "E731",
-  "PLR0912", 
-  "PLR0913",
-  "PLR0915",
+  "D107",
 ]
 extend-exclude = [
-  ".git",
-  ".github",
-  ".idea",
   "*.ipynb",
-  ".vscode",
   "aeon/dj_pipeline/streams.py",
 ]
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = [
-  "D101",    # skip adding docstrings for public classes
   "D102",    # skip adding docstrings for public methods
-  "D103",    # skip adding docstrings for public functions
   "S101",    # skip using assert
   "S105",    # skip checking for hardcoded password str (used in testcontainers MySQL setup)
   "S106",    # skip checking for hardcoded password in func arg (used in testcontainers MySQL setup)
-  "S110",    # skip try-except-pass (used in test teardown)
-  "SIM105",  # skip contextlib.suppress suggestion
-  "PLC0415", # skip checking `import` at the top-level of a file
-  "PLR2004", # skip checking for magic values
-]
-"aeon/schema/*" = [
-  "D101",    # skip adding docstrings for schema classes
-  "D106",    # skip adding docstrings for nested streams
 ]
 "aeon/dj_pipeline/*" = [
   "D101",    # skip adding docstrings for schema classes
   "D106",    # skip adding docstrings for nested streams
   "S324",    # skip hashlib insecure hash function (md5) warning
-  "F401",    # skip incorrectly detecting `aeon.dj_pipeline` dependencies as unused
-  "PLC0415", # skip checking `import` at the top-level of a file
-  "PLR2004", # skip checking for magic values
-]
-"tests/dj_pipeline/*" = [
-  "PLC0415", # skip checking `import` at the top-level of a file
 ]
 
 [tool.ruff.lint.pydocstyle]
@@ -176,11 +140,9 @@ reportAssertAlwaysTrue = "error"
 reportSelfClsParameterName = "error"
 reportUnusedExpression = "error"
 reportMatchNotExhaustive = "error"
-reportPossiblyUnboundVariable = "warning"
-# *Note*: we may want to set all 'ReportOptional*' rules to "none", but leaving 'em default for now
 venvPath = "."
 venv = ".venv"
-exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests", "docs", ".venv"]
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", "tests", "docs"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
