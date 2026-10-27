@@ -1227,7 +1227,9 @@ class SyncedSpikes(dj.Imported):
         )
         if len(_clock_query) == 0:
             _clock_query = (
-                ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & "file_name LIKE 'Probe%.arrow'"
+                ephys.EphysChunk.File
+                & (ephys.EphysBlockInfo.Chunk & key)
+                & "file_name LIKE '%Probe%.arrow'"
             )
 
         _clock_rows = _clock_query.to_dicts(order_by="chunk_start")
