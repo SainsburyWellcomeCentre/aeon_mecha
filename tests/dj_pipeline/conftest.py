@@ -328,13 +328,15 @@ def streams_schema(dj_config_integration):
     #   over multiple goldens, so dropping here (rather than in full_pipeline's
     #   per-iteration teardown) avoids wiping schemas a later iteration needs.
     # - restore original streams.py file
-    if os.environ.get("TEST_DB_PREFIX"):
-        _drop_test_schemas()
-
-    if original is not None:
-        f.write_bytes(original)
-    else:
-        f.unlink(missing_ok=True)
+    try:
+        if os.environ.get("TEST_DB_PREFIX"):
+            _drop_test_schemas()
+    finally:
+        # Always restore, even if the schema drop raises.
+        if original is not None:
+            f.write_bytes(original)
+        else:
+            f.unlink(missing_ok=True)
 
 
 @pytest.fixture(scope="session")
