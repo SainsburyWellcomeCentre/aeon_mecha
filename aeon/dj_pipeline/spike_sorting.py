@@ -1491,7 +1491,7 @@ class UnitMatching(dj.Computed):
     def key_source(self):
         """Yield the seed block (if unprocessed), then frontier blocks on both ends.
 
-        For each (insertion, paramset):
+        For each (insertion, electrode group, paramset):
         - If seed is unprocessed -> yield the seed
         - Else -> yield the forward frontier (MIN unprocessed > processed max)
                   and the backward frontier (MAX unprocessed < processed min)
@@ -1509,7 +1509,13 @@ class UnitMatching(dj.Computed):
         # Case 2: seed already processed -> find frontiers
         processed = all_candidates & self  # already done
         # Bounds of the processed region
-        group_keys = ("experiment_name", "subject", "insertion_number", "matching_paramset_id")
+        group_keys = (
+            "experiment_name",
+            "subject",
+            "insertion_number",
+            "electrode_group",
+            "matching_paramset_id",
+        )
         processed_bounds = dj.U(*group_keys).aggr(
             processed, proc_min="MIN(block_start)", proc_max="MAX(block_start)"
         )
@@ -1562,12 +1568,16 @@ class UnitMatching(dj.Computed):
 
         insertion_key = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
         paramset_key = {"matching_paramset_id": key["matching_paramset_id"]}
+        # Units are only matched within the same electrode group (shank): other shanks'
+        # blocks record different units, and comparing against them would also yield
+        # several BlockComparison rows for the same matched block.
+        group_key = {"electrode_group": key["electrode_group"]}
 
         # ---- Load block boundaries (used by guard and later) ----
         block_start, block_end = (ephys.EphysBlock & key).fetch1("block_start", "block_end")
 
         # ---- Seed / overlap guard ----
-        previously_matched = (self & insertion_key & paramset_key).to_dicts()
+        previously_matched = (self & insertion_key & group_key & paramset_key).to_dicts()
 
         if not previously_matched:
             # First block must be the seed
@@ -1617,7 +1627,7 @@ class UnitMatching(dj.Computed):
         block_comparison_rows = []
 
         if not previously_matched:
-            logger.info("First block for this insertion — all units will be new global units.")
+            logger.info("First block for this electrode group — all units will be new global units.")
         elif not overlapping_blocks:
             logger.warning(
                 f"No overlapping blocks found among {len(previously_matched)} previous blocks. "
