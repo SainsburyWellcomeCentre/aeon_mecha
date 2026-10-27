@@ -997,14 +997,17 @@ def ephys_sorting_injected(
 
     epoch_path = require_ephys_golden_data
     golden_root = epoch_path.parent / cfg["golden_sorting_dir"]
-    if not golden_root.exists():
-        # Fallback for ceph_repo_path/golden_tests/<experiment_path>/<epoch_dir>
-        # epoch_path = repo_path/raw/<experiment_path>/<epoch_dir>
-        parts = list(epoch_path.parent.parts)
-        parts[parts.index("raw")] = "golden_tests"
-        golden_root = Path(*parts) / cfg["golden_sorting_dir"]
-    if not golden_root.exists():
-        pytest.skip(f"Golden sorting output not found: {golden_root}")
+    # Fallback for ceph: the processed sorting outputs live in dj_store, a sibling of the data
+    # root (e.g. /ceph/aeon/aeon/data -> /ceph/aeon/aeon/dj_store/ephys-processed/...)
+    processed_root = (
+        epoch_path.parents[len(Path(cfg["experiment_path"]).parts) + 1].parent
+        / "dj_store"
+        / "ephys-processed"
+        / cfg["experiment_name"]
+        / cfg["subject"]
+    )
+    if not golden_root.exists() and not processed_root.exists():
+        pytest.skip(f"Golden sorting output not found: {golden_root} or {processed_root}")
 
     electrode_config_key = {
         "probe_type": cfg["probe_type"],
@@ -1023,6 +1026,16 @@ def ephys_sorting_injected(
     output_dirs = {}
     for block, block_dir_name in zip(blocks, cfg["golden_blocks"], strict=True):
         src = golden_root / block_dir_name / "shank3" / "kilosort4_400" / "spike_sorting"
+        if not src.exists():
+            src = (
+                processed_root
+                / f"insertion_{block['insertion_number']}"
+                / "ephys_blocks"
+                / block_dir_name
+                / "shank3"
+                / "kilosort4_400"
+                / "spike_sorting"
+            )
         for required in ("si_sorting.pkl", "in_container_sorting"):
             if not (src / required).exists():
                 pytest.skip(f"Golden sorting incomplete, missing {required}: {src}")
