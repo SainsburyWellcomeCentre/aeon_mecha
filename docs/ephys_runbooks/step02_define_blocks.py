@@ -31,8 +31,8 @@ from datetime import timedelta
 # Configuration -- edit these for your experiment
 # --------------------------------------------------------------------------
 
-EXPERIMENT_NAME = "ProjectAeonOVC-2026-08-31_001"
-SUBJECT = "BAA-1107080"
+EXPERIMENT_NAME = "ProjectAeonOVC-2026-06-07_001"
+SUBJECT = "CAA-1124420"
 
 # # Test subset: small blocks for fast iteration.
 # # 30-minute blocks with 10-minute overlap produce 3 blocks spanning ~70 min.

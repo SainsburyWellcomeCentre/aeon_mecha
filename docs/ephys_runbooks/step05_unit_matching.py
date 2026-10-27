@@ -36,9 +36,12 @@ Run from the repo root on an HPC compute node (Ceph must be visible):
 # Configuration -- edit these for your experiment
 # --------------------------------------------------------------------------
 
-EXPERIMENT_NAME = "ProjectAeonOVC-2026-09-14_001"
-SUBJECT = "BAA-1107307"
-MATCHING_PARAMSET_ID = 1
+EXPERIMENT_NAME = "ProjectAeonOVC-2026-09-28_001"
+SUBJECT = "BAA-1107306"
+# None: reuse the paramset seeded at this experiment's first block, or create
+# one with the next free ID. The seed is per paramset, so each experiment
+# needs its own; set an ID here only to pin it explicitly.
+MATCHING_PARAMSET_ID = None
 
 # --------------------------------------------------------------------------
 # Functions
@@ -96,13 +99,13 @@ def sync_spikes(experiment_name):
         "converts spike indices to HARP timestamps. May take a while "
         "for blocks with many units.)"
     )
-    spike_sorting.SyncedSpikes.populate(display_progress=True, suppress_errors=False)
+    spike_sorting.SyncedSpikes.populate(restriction, display_progress=True, suppress_errors=False)
 
     synced_after = len(spike_sorting.SyncedSpikes & restriction)
     print(f"SyncedSpikes entries (post): {synced_after}")
 
 
-def run_unit_matching(experiment_name, subject, matching_paramset_id):
+def run_unit_matching(experiment_name, subject, matching_paramset_id=None):
     """Set up the matching parameter set and populate UnitMatching.
 
     Unit matching identifies the same neuron across overlapping ephys
@@ -116,10 +119,14 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
            units are assigned new global unit IDs
 
     This function:
-        a) Inserts UnitMatchingParamSet (idempotent) with the seed block
-           start time and matching parameters
-        b) Populates UnitMatching, which processes blocks outward from
-           the seed in both directions
+        a) Finds or inserts the UnitMatchingParamSet seeded at this
+           experiment's first block. The seed lives on the paramset, so
+           each experiment gets its own matching_paramset_id.
+        b) Populates UnitMatching, restricted to this experiment and
+           paramset, repeatedly until no new blocks are matched.
+           key_source only offers the seed or the next block on each side
+           of the matched region, so a single populate() call advances
+           one block at a time.
 
     HARD PREREQUISITE: ApplyOfficialCuration must exist for every block.
     This is enforced in UnitMatching.key_source -- blocks without an
@@ -130,7 +137,8 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
     Args:
         experiment_name: The experiment to run matching for.
         subject: Subject identifier (used to filter blocks).
-        matching_paramset_id: Integer ID for the parameter set.
+        matching_paramset_id: Integer ID for the parameter set, or None to
+            reuse/create the one seeded at this experiment's first block.
     """
     # Deferred imports -- no DB side effects at module level.
     from aeon.dj_pipeline import ephys, spike_sorting
@@ -138,7 +146,7 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
     restriction = {"experiment_name": experiment_name}
 
     # ------------------------------------------------------------------
-    # a) Insert UnitMatchingParamSet if it does not exist
+    # a) Find or insert this experiment's UnitMatchingParamSet
     # ------------------------------------------------------------------
     # The seed block is the first block in time -- unit matching
     # propagates outward from here in both directions.
@@ -151,8 +159,26 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
     first_block_start = min(block_starts)
     print(f"Seed block start (earliest block): {first_block_start}")
 
+    if matching_paramset_id is None:
+        seeded = spike_sorting.UnitMatchingParamSet & {"seed_block_start": first_block_start}
+        if seeded:
+            matching_paramset_id = int(min(seeded.to_arrays("matching_paramset_id")))
+        else:
+            existing_ids = spike_sorting.UnitMatchingParamSet.to_arrays("matching_paramset_id")
+            matching_paramset_id = int(max(existing_ids, default=0)) + 1
+
     paramset_key = {"matching_paramset_id": matching_paramset_id}
-    if not (spike_sorting.UnitMatchingParamSet & paramset_key):
+    existing = spike_sorting.UnitMatchingParamSet & paramset_key
+    if existing:
+        seed = existing.fetch1("seed_block_start")
+        if seed != first_block_start:
+            raise ValueError(
+                f"matching_paramset_id={matching_paramset_id} is seeded at {seed}, not at this "
+                f"experiment's first block ({first_block_start}); no block here would ever be "
+                "matched. Set MATCHING_PARAMSET_ID = None to use this experiment's own paramset."
+            )
+        print(f"UnitMatchingParamSet already exists: matching_paramset_id={matching_paramset_id}")
+    else:
         spike_sorting.UnitMatchingParamSet.insert1(
             {
                 "matching_paramset_id": matching_paramset_id,
@@ -171,8 +197,6 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
             f"matching_paramset_id={matching_paramset_id}, "
             f"method=spike_time_overlap, delta_time=0.4ms"
         )
-    else:
-        print(f"UnitMatchingParamSet already exists: matching_paramset_id={matching_paramset_id}")
 
     # ------------------------------------------------------------------
     # b) Check the ApplyOfficialCuration prerequisite
@@ -202,7 +226,8 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
     # ------------------------------------------------------------------
     # c) Populate UnitMatching
     # ------------------------------------------------------------------
-    matched_before = len(spike_sorting.UnitMatching & restriction)
+    matching_restriction = {**restriction, **paramset_key}
+    matched_before = len(spike_sorting.UnitMatching & matching_restriction)
     print(f"\nUnitMatching entries (pre): {matched_before}")
 
     print("Running UnitMatching.populate()...")
@@ -211,7 +236,17 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
         "compares spike trains in the overlap window with previously "
         "matched blocks to assign global unit IDs.)"
     )
-    spike_sorting.UnitMatching.populate(display_progress=True, suppress_errors=False)
+    # Each call only sees the current frontier blocks, so repeat until a
+    # call matches nothing new.
+    matched_count = matched_before
+    while True:
+        spike_sorting.UnitMatching.populate(
+            matching_restriction, display_progress=True, suppress_errors=False
+        )
+        new_count = len(spike_sorting.UnitMatching & matching_restriction)
+        if new_count == matched_count:
+            break
+        matched_count = new_count
 
     matched_after = len(spike_sorting.UnitMatching & restriction)
     print(f"UnitMatching entries (post): {matched_after}")

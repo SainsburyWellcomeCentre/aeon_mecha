@@ -49,8 +49,8 @@ TODO: request #SBATCH --cpus-per-task=16 on the .sh to make the binary writing f
 # Configuration -- edit these for your experiment
 # --------------------------------------------------------------------------
 
-EXPERIMENT_NAME = "ProjectAeonOVC-2026-08-31_001"
-SUBJECT = "BAA-1107080"
+EXPERIMENT_NAME = "ProjectAeonOVC-2026-06-07_001"
+SUBJECT = "CAA-1124420"
 PARAMSET_ID = 403
 SORTING_METHOD = "kilosort4" #currently pinned to kilosort 4.1.7
 
