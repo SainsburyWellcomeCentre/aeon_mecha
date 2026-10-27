@@ -210,6 +210,15 @@ def _check_golden_data(dataset_config: dict) -> Path:
     return epoch_path
 
 
+def _processed_sorting_root(cfg: dict, epoch_path: Path) -> Path:
+    """Where Ceph keeps processed sorting outputs: ``dj_store``, a sibling of the data root.
+
+    e.g. /ceph/aeon/aeon/data -> /ceph/aeon/aeon/dj_store/ephys-processed/<experiment>/<subject>
+    """
+    data_root = epoch_path.parents[len(Path(cfg["experiment_path"]).parts) + 1]
+    return data_root.parent / "dj_store" / "ephys-processed" / cfg["experiment_name"] / cfg["subject"]
+
+
 def _drop_test_schemas() -> None:
     """Drop all test-prefixed schemas, retrying to handle FK dependencies."""
     import datajoint as dj
@@ -526,6 +535,12 @@ def test_epochs(test_experiment, full_pipeline, golden_dataset_config):
 # ============================================================================
 # Ephys Golden Dataset Fixtures
 # ============================================================================
+
+
+@pytest.fixture(scope="session")
+def ephys_processed_sorting_root(require_ephys_golden_data, ephys_golden_dataset_config):
+    """Ceph ``dj_store`` directory holding processed sorting outputs (may not exist)."""
+    return _processed_sorting_root(ephys_golden_dataset_config, require_ephys_golden_data)
 
 
 @pytest.fixture(scope="session")
@@ -997,15 +1012,7 @@ def ephys_sorting_injected(
 
     epoch_path = require_ephys_golden_data
     golden_root = epoch_path.parent / cfg["golden_sorting_dir"]
-    # Fallback for ceph: the processed sorting outputs live in dj_store, a sibling of the data
-    # root (e.g. /ceph/aeon/aeon/data -> /ceph/aeon/aeon/dj_store/ephys-processed/...)
-    processed_root = (
-        epoch_path.parents[len(Path(cfg["experiment_path"]).parts) + 1].parent
-        / "dj_store"
-        / "ephys-processed"
-        / cfg["experiment_name"]
-        / cfg["subject"]
-    )
+    processed_root = _processed_sorting_root(cfg, epoch_path)
     if not golden_root.exists() and not processed_root.exists():
         pytest.skip(f"Golden sorting output not found: {golden_root} or {processed_root}")
 

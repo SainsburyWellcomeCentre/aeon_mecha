@@ -641,7 +641,9 @@ class TestPynappleCodecOnGoldenSpikes:
         return nap.TsGroup(data, time_support=support)
 
     @pytest.fixture(scope="class")
-    def golden_tsgroup(self, require_ephys_golden_data, ephys_golden_dataset_config):
+    def golden_tsgroup(
+        self, require_ephys_golden_data, ephys_golden_dataset_config, ephys_processed_sorting_root
+    ):
         """The largest golden sorting, as a TsGroup. Skips if the artifacts are absent.
 
         ``require_ephys_golden_data`` returns the epoch path and, via
@@ -655,6 +657,10 @@ class TestPynappleCodecOnGoldenSpikes:
         """
         root = require_ephys_golden_data.parent / ephys_golden_dataset_config["golden_sorting_dir"]
         sortings = sorted(root.glob("*/*/*/spike_sorting/in_container_sorting"))
+        if not sortings:
+            # Ceph layout: <insertion>/ephys_blocks/<block>/<shank>/<sorter>/spike_sorting
+            root = ephys_processed_sorting_root
+            sortings = sorted(root.glob("*/*/*/*/*/spike_sorting/in_container_sorting"))
         if not sortings:
             pytest.skip(f"no golden spike-sorting artifacts under {root}")
         largest = max(sortings, key=lambda p: sum(f.stat().st_size for f in p.rglob("*")))
