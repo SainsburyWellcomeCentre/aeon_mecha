@@ -72,13 +72,13 @@ row records the format it was ingested from, so a fetch returns what was stored.
 discriminator lives in the row, not re-derived from disk at fetch time, or archiving the
 raw files would change a stored row's shape.
 
-**Schema changes are additive only.** Not a style preference: DataJoint 2.3.2's
-attribute-rename marker is dead code. Tested against live MySQL 8.0 across three types,
-the generated DDL is `DROP` + `ADD` rather than `CHANGE`, so the data is destroyed
-without an error — detection is a regex against the column comment, which DataJoint
-itself defeats by prefixing every comment with its type. Any rename shipped here would
-be a landmine for whoever next runs `alter()`. Pure `ADD` is verified safe. *This is an
-upstream DataJoint bug and should be reported.*
+**Schema changes are additive only.** The two new IMU fields are nullable columns;
+nothing is renamed. Renaming is now *safe* — DataJoint 2.3.2's rename marker was dead
+code, generating `DROP` + `ADD` rather than `CHANGE` and destroying the data without an
+error, but that is [datajoint-python#1631](https://github.com/datajoint/datajoint-python/issues/1631),
+fixed in 2.3.5. It is still not *wanted*: `euler_x/y/z` are a published fetch contract,
+the column comments already record which axis each holds, and renaming would break
+every downstream consumer to no end.
 
 ---
 

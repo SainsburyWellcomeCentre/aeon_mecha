@@ -18,14 +18,31 @@ class EmptyArrowChunk(ValueError):
     """
 
 
-def _open(path: Path):
-    """Return (memory_mapped_source, RecordBatchFileReader). Caller closes the source."""
+def _open(path: Path, column: str | None = None):
+    """Return (memory_mapped_source, RecordBatchFileReader). Caller closes the source.
+
+    With ``column``, the reader decompresses only that field. ``get_batch`` otherwise
+    decompresses the whole batch, so pulling one clock out of a 386-column probe file
+    costs all 384 amplifier channels too -- ~24x the time, measured.
+    """
     import pyarrow as pa
-    from pyarrow.ipc import RecordBatchFileReader
+    from pyarrow.ipc import IpcReadOptions, RecordBatchFileReader
 
     source = pa.memory_map(str(path), "r")
     try:
-        return source, RecordBatchFileReader(source)
+        reader = RecordBatchFileReader(source)
+        if column is not None:
+            names = reader.schema.names
+            if column not in names:
+                raise KeyError(
+                    f"Column {column!r} not in {path}. Available: {list(names)[:8]}"
+                    f"{'...' if len(names) > 8 else ''}"
+                )
+            # Reading the footer costs nothing; only batches are compressed.
+            reader = RecordBatchFileReader(
+                source, options=IpcReadOptions(included_fields=[names.index(column)])
+            )
+        return source, reader
     except Exception:
         # The caller's try/finally only starts once this returns, so a truncated or
         # non-arrow file would leak the map on every one of the hundreds of files
@@ -34,20 +51,29 @@ def _open(path: Path):
         raise
 
 
-def _require_column(reader, column: str, path: Path) -> None:
-    if column not in reader.schema.names:
-        raise KeyError(
-            f"Column {column!r} not in {path}. Available: {list(reader.schema.names)[:8]}"
-            f"{'...' if len(reader.schema.names) > 8 else ''}"
-        )
+def open_for_row_counts(path: Path):
+    """Open a reader that decompresses only the first field, for ``num_rows`` walks.
+
+    An empty ``included_fields`` is read as no filter, so one column is the floor.
+    """
+    import pyarrow as pa
+    from pyarrow.ipc import RecordBatchFileReader
+
+    source = pa.memory_map(str(Path(path)), "r")
+    try:
+        first = RecordBatchFileReader(source).schema.names[0]
+    except Exception:
+        source.close()
+        raise
+    source.close()
+    return _open(Path(path), first)
 
 
 def read_arrow_column(path: Path, column: str) -> np.ndarray:
     """Return one whole column as a numpy array."""
     path = Path(path)
-    source, reader = _open(path)
+    source, reader = _open(path, column)
     try:
-        _require_column(reader, column, path)
         batches = [reader.get_batch(i).column(column) for i in range(reader.num_record_batches)]
         if not batches:
             # Match the column's declared dtype: np.empty(0) is float64, and a float
@@ -81,9 +107,8 @@ def read_arrow_clock_bounds(path: Path, column: str = "Clock") -> tuple[int, int
     the 6.75 GB probe files.
     """
     path = Path(path)
-    source, reader = _open(path)
+    source, reader = _open(path, column)
     try:
-        _require_column(reader, column, path)
         n_batches = reader.num_record_batches
         if n_batches == 0:
             raise EmptyArrowChunk(f"{path} has no record batches")

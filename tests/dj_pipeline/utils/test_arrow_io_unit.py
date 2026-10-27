@@ -64,6 +64,31 @@ class TestArrowIO:
         # the patch records nothing and '<= 2' would pass while the file is scanned.
         assert 1 <= len(calls) <= 2, f"read {len(calls)} batches, expected 1 or 2"
 
+    def test_reads_only_the_requested_column(self, tmp_path):
+        """get_batch decompresses whatever the reader was opened with.
+
+        On a 386-column probe file, pulling one clock without narrowing costs all 384
+        amplifier channels as well -- measured at ~24x. A reader that stops narrowing
+        would still return the right values, so assert on the batch's width.
+        """
+        import pyarrow as pa
+        import pyarrow.ipc as ipc
+
+        from aeon.dj_pipeline.utils.arrow_io import _open
+
+        f = tmp_path / "wide.arrow"
+        cols = {f"AmplifierData{i}": np.zeros(4, dtype=np.uint16) for i in range(6)}
+        cols["Clock"] = np.arange(4, dtype=np.uint64)
+        schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in cols.items()])
+        with ipc.new_file(f, schema) as w:
+            w.write_batch(pa.RecordBatch.from_arrays([pa.array(v) for v in cols.values()], schema=schema))
+
+        source, reader = _open(f, "Clock")
+        try:
+            assert reader.get_batch(0).num_columns == 1, "reader is not narrowed to one column"
+        finally:
+            source.close()
+
     def test_missing_column_raises_naming_available_columns(self, tmp_path):
         from aeon.dj_pipeline.utils.arrow_io import read_arrow_column
 

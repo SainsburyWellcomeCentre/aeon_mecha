@@ -98,14 +98,32 @@ def _check_uniform_batches(rec, path) -> None:
     Stricter than ``read_arrow_clock_bounds``, which may skip an empty edge batch:
     that reader does no stride arithmetic.
     """
+    from aeon.dj_pipeline.utils.arrow_io import open_for_row_counts
+
     segment = rec._recording_segments[0]
-    reader, batch_len = segment._reader, segment.batch_len
-    n = reader.num_record_batches
+    batch_len = segment.batch_len
     if batch_len == 0:
         # batch_len is read from batch 0. Zero slips through the loop below (0 != 0
         # is false) and reaches get_traces, which dies on `start_frame // 0` naming
         # neither the file nor the cause.
         raise ValueError(f"{path} first record batch is empty, so the batch stride is undefined.")
+
+    # Counting rows needs no column data, but get_batch decompresses whatever the
+    # reader was opened with -- all 384 channels on the recording's own reader. A
+    # one-column reader gives the same counts for a fraction of the work.
+    source, reader = open_for_row_counts(path)
+    try:
+        total = _sum_batch_rows(reader, batch_len, path)
+    finally:
+        source.close()
+    # This walk is the same one get_num_samples would do, so seed its cache rather
+    # than deserialising all 398 batches of a 6.75 GB file twice.
+    segment._num_samples = total
+
+
+def _sum_batch_rows(reader, batch_len: int, path) -> int:
+    """Total rows, rejecting any batch that breaks the constant stride."""
+    n = reader.num_record_batches
     total = 0
     for i in range(n):
         rows = reader.get_batch(i).num_rows
@@ -114,9 +132,7 @@ def _check_uniform_batches(rec, path) -> None:
         if rows > batch_len or (i < n - 1 and rows != batch_len):
             raise ValueError(f"{path} batch {i} has {rows} rows, expected {batch_len}.")
         total += rows
-    # This walk is the same one get_num_samples would do, so seed its cache rather
-    # than deserialising all 398 batches of a 6.75 GB file twice.
-    segment._num_samples = total
+    return total
 
 
 def _check_arrow_channels(rec, num_channels: int, path) -> None:
