@@ -553,10 +553,10 @@ class EphysChunk(dj.Manual):
 
         # To protect against ingesting a file that has not been fully copied,
         # or even interrupting the copy, we only include files that have been
-        # on ceph for 3 hours
+        # created more than 3 hours ago.
         three_hours_ago = time.time() - 3 * 60 * 60
         all_ephys_files = [
-            ephys_file for ephys_file in all_ephys_files if ephys_file.stat().st_ctime < three_hours_ago
+            ephys_file for ephys_file in all_ephys_files if ephys_file.stat().st_mtime < three_hours_ago
         ]
 
         if not all_ephys_files:
