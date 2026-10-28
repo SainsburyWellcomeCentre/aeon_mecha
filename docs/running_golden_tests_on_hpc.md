@@ -173,12 +173,15 @@ uv run pytest tests/dj_pipeline/test_ephys_ingestion.py -v --tb=short -ra 2>&1 |
   (PreProcessing's recording output) and `test_sorting_analyzer_created`
   (PostProcessing's analyzer output).
 
-## Re-running
+## 8. Dropping stale schemas
 
-The integration fixtures don't drop their schemas on an external DB, so stale
-schemas from a previous run can cause confusing failures. Before re-running,
-drop your test schemas. **Check the namespace first** so you only ever drop your
-own prefix:
+When `TEST_DB_PREFIX` is set (using an **external DB**), the `streams_schema` fixture
+automatically drops any schemas created under your prefix during session teardown. After a
+normal test run, whether it passes or fails, no manual cleanup should be required.
+
+You only need to remove stale schemas manually if the process exits before teardown can run,
+for example due to an OOM kill, `scancel`, or node failure. Before dropping any schemas,
+**verify that the namespace belongs to you**:
 
 ```
 uv run python -c "import os, datajoint as dj; pref=os.environ['TEST_DB_PREFIX']; print('host:', dj.config.database.host, 'prefix:', pref); [print('would drop:', s) for s in dj.list_schemas() if s.startswith(pref)]"
@@ -187,5 +190,7 @@ uv run python -c "import os, datajoint as dj; pref=os.environ['TEST_DB_PREFIX'];
 Then drop them:
 
 ```
-uv run python -c "import os, datajoint as dj; dj.config.safemode=False; pref=os.environ['TEST_DB_PREFIX']; assert pref.endswith('_') and 'test' in pref; [dj.Schema(s).drop() for s in dj.list_schemas() if s.startswith(pref)]; print('dropped')"
+uv run python -c "import os, datajoint as dj; dj.config.safemode=False; pref=os.environ['TEST_DB_PREFIX']; assert pref.endswith('_') and 'test' in pref; todo=[s for s in dj.list_schemas() if s.startswith(pref)]; exec('for _ in range(len(todo)+1):\n rest=[]\n for s in todo:\n  try: dj.Schema(s).drop()\n  except Exception: rest.append(s)\n todo=rest'); print('left:', todo)"
 ```
+
+Schemas reference each other. The above command retries until the dependency order resolves.
