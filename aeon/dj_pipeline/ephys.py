@@ -549,17 +549,6 @@ class EphysChunk(dj.Manual):
             [*raw_dir.rglob("*_AmplifierData*.bin"), *raw_dir.rglob("*_Probe?_*.arrow")],
             key=lambda x: (x.parent.as_posix(), int(x.stem.split("_")[-1])),
         )
-            raw_dir.rglob("*_AmplifierData*.bin"),
-            key=lambda x: int(x.stem.split("_")[-1]),
-        )
-
-        if len(all_ephys_files) == 0:
-            for probe_label in epoch_probe_labels:
-                ephys_files = sorted(
-                    raw_dir.rglob(f"*{probe_label}*.arrow"),
-                    key=lambda x: int(x.stem.split("_")[-1]),
-                )
-                all_ephys_files += ephys_files
 
         if not all_ephys_files:
             logger.info(f"No ephys amplifier files found in {raw_dir}")
@@ -578,6 +567,9 @@ class EphysChunk(dj.Manual):
                 logger.warning(f"Cannot parse probe label from {ephys_file.name}. Skipping.")
                 continue
             probe_label = name_match.group(1)
+
+            if probe_label not in probe_labels:
+                continue  # no EphysEpochConfig.Insertion for this probe in any epoch
 
             # Determine epoch from directory path
             # File path structure: raw_dir / epoch_dir / device_name / files
@@ -669,11 +661,7 @@ class EphysChunk(dj.Manual):
             try:
                 with cls.connection.transaction:
                     cls.insert1(chunk_entry)
-                    if ephys_file == clock_file:
-                        # this is true for the arrow format files
-                        file_list = (ephys_file,)
-                    else:
-                        file_list = (ephys_file, clock_file)
+                    file_list = set((ephys_file, clock_file))
                     cls.File.insert(
                         [
                             {

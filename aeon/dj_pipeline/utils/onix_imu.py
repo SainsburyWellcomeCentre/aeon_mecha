@@ -8,7 +8,6 @@ Returns ONIX-clock-indexed DataFrames. HARP conversion is the caller's job
 (via ``OnixImuChunk.synced_df`` or equivalent).
 """
 
-import re
 from pathlib import Path
 
 import numpy as np
