@@ -2,6 +2,7 @@
 
 import re
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -549,6 +550,14 @@ class EphysChunk(dj.Manual):
             [*raw_dir.rglob("*_AmplifierData*.bin"), *raw_dir.rglob("*_Probe?_*.arrow")],
             key=lambda x: (x.parent.as_posix(), int(x.stem.split("_")[-1])),
         )
+
+        # To protect against ingesting a file that has not been fully copied,
+        # or even interrupting the copy, we only include files that have been
+        # on ceph for 3 hours
+        three_hours_ago = time.time() - 3 * 60 * 60
+        all_ephys_files = [
+            ephys_file for ephys_file in all_ephys_files if ephys_file.stat().st_ctime < three_hours_ago
+        ]
 
         if not all_ephys_files:
             logger.info(f"No ephys amplifier files found in {raw_dir}")
