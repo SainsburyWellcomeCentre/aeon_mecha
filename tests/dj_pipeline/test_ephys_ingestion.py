@@ -110,7 +110,9 @@ class TestEphysChunkIngestion:
 
     def test_chunk_files_registered(self, ephys_chunks_ingested, ctx):
         files = list(
-            (ctx.ephys.EphysChunk.File & {"experiment_name": ctx.cfg["experiment_name"]}).fetch("file_name")
+            (ctx.ephys.EphysChunk.File & {"experiment_name": ctx.cfg["experiment_name"]}).to_arrays(
+                "file_name"
+            )
         )
         assert any("AmplifierData_0.bin" in fn for fn in files), (
             f"AmplifierData_0.bin not registered. Got first 5: {files[:5]}"
