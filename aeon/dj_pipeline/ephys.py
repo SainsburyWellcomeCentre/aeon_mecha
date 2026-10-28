@@ -544,7 +544,11 @@ class EphysChunk(dj.Manual):
             )
             return
 
+        probe_labels = {label for _, label in insertion_lookup}
         all_ephys_files = sorted(
+            [*raw_dir.rglob("*_AmplifierData*.bin"), *raw_dir.rglob("*_Probe?_*.arrow")],
+            key=lambda x: (x.parent.as_posix(), int(x.stem.split("_")[-1])),
+        )
             raw_dir.rglob("*_AmplifierData*.bin"),
             key=lambda x: int(x.stem.split("_")[-1]),
         )
@@ -567,12 +571,8 @@ class EphysChunk(dj.Manual):
             if cls.File & exp_key & {"file_path": rel_path}:
                 continue  # already ingested
 
-            if ephys_file.suffix == ".arrow":
-                # In arrow, the only file with Probe[A-Z] in it is the ephys file
-                name_match = re.search(r"_(Probe[A-Z])_", ephys_file.name)
-            else:
-                # Parse probe_label from filename
-                name_match = re.search(r"_(Probe[A-Z])_AmplifierData", ephys_file.name)
+            # Parse probe_label from filename
+            name_match = re.search(r"_(Probe[A-Z])_", ephys_file.name)
 
             if not name_match:
                 logger.warning(f"Cannot parse probe label from {ephys_file.name}. Skipping.")
@@ -607,12 +607,8 @@ class EphysChunk(dj.Manual):
                 )
                 continue
 
-            if ephys_file.suffix == ".arrow":
-                clock_file = ephys_file
-            else:
-                # Read ONIX timestamps from the companion Clock binary
-                clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
-
+            # Read ONIX timestamps from the companion Clock binary
+            clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
             if not clock_file.exists():
                 logger.warning(f"Clock file not found for {ephys_file.name}. Skipping.")
                 continue

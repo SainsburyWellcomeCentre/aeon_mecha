@@ -145,11 +145,10 @@ def find_overlapping_bno055_chunks(
     helper to gather all overlapping chunks before concatenating + filtering.
     """
     device_dir = Path(device_dir)
-    pattern = f"{device_name}_Bno055_Clock_*.bin"
-    clock_files = list(device_dir.glob(pattern))
-
-    if len(clock_files) == 0:
-        clock_files = list(device_dir.glob(f"{device_name}_Bno055_*.arrow"))
+    clock_files = [
+        *device_dir.glob(f"{device_name}_Bno055_Clock_*.bin"),
+        *device_dir.glob(f"{device_name}_Bno055_*.arrow"),
+    ]
 
     overlapping: list[int] = []
     for clock_file in clock_files:
@@ -158,7 +157,6 @@ def find_overlapping_bno055_chunks(
             clock_array = table["Clock"].to_numpy()
             first = clock_array[0]
             last = clock_array[-1]
-            n = int(clock_file.stem.split("_")[-1])
 
         else:
             size = clock_file.stat().st_size
@@ -168,10 +166,6 @@ def find_overlapping_bno055_chunks(
             whole = (size // 8) * 8
             if whole < 8:
                 continue
-            match = re.search(r"_Clock_(\d+)\.bin$", clock_file.name)
-            if not match:
-                continue
-            n = int(match.group(1))
             first = int(np.fromfile(clock_file, dtype=np.uint64, count=1)[0])
             if whole >= 16:
                 with open(clock_file, "rb") as f:

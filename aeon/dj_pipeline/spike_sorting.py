@@ -220,15 +220,8 @@ class PreProcessing(dj.Computed):
         ephys_files, dir_types = (
             ephys.EphysChunk.File
             & (ephys.EphysBlockInfo.Chunk & key)
-            & "file_name LIKE '%AmplifierData%.bin'"
+            & ["file_name LIKE '%AmplifierData%.bin'", "file_name LIKE '%Probe%.arrow'"]
         ).to_arrays("file_path", "directory_type", order_by="chunk_start")
-
-        if len(ephys_files) == 0:
-            ephys_files, dir_types = (
-                ephys.EphysChunk.File
-                & (ephys.EphysBlockInfo.Chunk & key)
-                & "file_name LIKE '%Probe%.arrow'"
-            ).to_arrays("file_path", "directory_type", order_by="chunk_start")
 
         # Channels
         electrodes_query = (
@@ -1223,15 +1216,10 @@ class SyncedSpikes(dj.Imported):
 
         # Load ephys onix times
         _clock_query = (
-            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & "file_name LIKE '%Clock%.bin'"
+            ephys.EphysChunk.File
+            & (ephys.EphysBlockInfo.Chunk & key)
+            & ["file_name LIKE '%Clock%.bin'", "file_name LIKE '%Probe%.arrow'"]
         )
-        if len(_clock_query) == 0:
-            _clock_query = (
-                ephys.EphysChunk.File
-                & (ephys.EphysBlockInfo.Chunk & key)
-                & "file_name LIKE '%Probe%.arrow'"
-            )
-
         _clock_rows = _clock_query.to_dicts(order_by="chunk_start")
         _pk = _clock_query.primary_key
         ephys_file_keys = [{k: r[k] for k in _pk} for r in _clock_rows]
