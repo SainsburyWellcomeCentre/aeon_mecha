@@ -42,6 +42,7 @@ MB = 1e-6
 # cgroup helpers
 # --------------------------------------------------------------------------- #
 
+
 def find_job_cgroup():
     """Return the SLURM job-level cgroup path, or None if not in one.
 
@@ -138,6 +139,7 @@ def cgroup_pids(cgroup):
 # nvidia-smi helpers
 # --------------------------------------------------------------------------- #
 
+
 def nvidia_smi(query, fields):
     """Run an nvidia-smi CSV query, returning a list of per-row field lists.
 
@@ -145,16 +147,14 @@ def nvidia_smi(query, fields):
     nvidia-smi exits 6 ("No devices were found") in that last case, because
     SLURM's ConstrainDevices hides GPUs the job does not own.
     """
+    # `query` and `fields` are fixed strings from this module, not user input, and
+    # nvidia-smi is resolved from PATH on purpose: its location differs per node.
+    cmd = ["nvidia-smi", f"--query-{query}={fields}", "--format=csv,noheader,nounits"]  # noqa: S607
     try:
-        out = subprocess.check_output(
-            ["nvidia-smi", f"--query-{query}={fields}",
-             "--format=csv,noheader,nounits"],
-            text=True, stderr=subprocess.DEVNULL, timeout=10,
-        )
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL, timeout=10)  # noqa: S603
     except (subprocess.SubprocessError, OSError):
         return []
-    return [[f.strip() for f in line.split(",")]
-            for line in out.strip().splitlines() if line.strip()]
+    return [[f.strip() for f in line.split(",")] for line in out.strip().splitlines() if line.strip()]
 
 
 def to_float(text, default=0.0):
@@ -168,6 +168,7 @@ def to_float(text, default=0.0):
 # --------------------------------------------------------------------------- #
 # allocation
 # --------------------------------------------------------------------------- #
+
 
 class Allocation:
     """What this job may use, and how to measure what it does use.
@@ -193,8 +194,7 @@ class Allocation:
         """
         if self.cgroup:
             try:
-                return count_cpu_list(
-                    (self.cgroup / "cpuset.cpus.effective").read_text().strip())
+                return count_cpu_list((self.cgroup / "cpuset.cpus.effective").read_text().strip())
             except OSError:
                 pass
         for var in ("SLURM_CPUS_PER_TASK", "SLURM_CPUS_ON_NODE"):
@@ -218,13 +218,17 @@ class Allocation:
         """PIDs to attribute usage to."""
         if self.cgroup:
             return cgroup_pids(self.cgroup)
-        return {p.pid for p in psutil.process_iter(["uids"])
-                if p.info["uids"] and p.info["uids"].real == self.uid}
+        return {
+            p.pid
+            for p in psutil.process_iter(["uids"])
+            if p.info["uids"] and p.info["uids"].real == self.uid
+        }
 
 
 # --------------------------------------------------------------------------- #
 # sampling
 # --------------------------------------------------------------------------- #
+
 
 class Sampler:
     """Turns cumulative counters into per-interval rates."""
@@ -240,8 +244,7 @@ class Sampler:
         """(total, user, system) cores busy over the last interval."""
         if self.alloc.cgroup:
             stat = read_keyed(self.alloc.cgroup / "cpu.stat")
-            now = {k: stat.get(k, 0) * 1e-6
-                   for k in ("usage_usec", "user_usec", "system_usec")}
+            now = {k: stat.get(k, 0) * 1e-6 for k in ("usage_usec", "user_usec", "system_usec")}
         else:
             total = user = system = 0.0
             for proc in psutil.process_iter(["uids", "cpu_times"]):
@@ -258,8 +261,10 @@ class Sampler:
         prev, self.prev_cpu = self.prev_cpu, now
         if not prev or not elapsed:
             return 0.0, 0.0, 0.0
-        return tuple(max(now[k] - prev.get(k, 0.0), 0.0) / elapsed
-                     for k in ("usage_usec", "user_usec", "system_usec"))
+        return tuple(
+            max(now[k] - prev.get(k, 0.0), 0.0) / elapsed
+            for k in ("usage_usec", "user_usec", "system_usec")
+        )
 
     def _memory(self):
         """(current, anon, cache, shmem, peak) bytes charged to the job.
@@ -304,8 +309,10 @@ class Sampler:
         for pid in pids:
             try:
                 fields = dict(
-                    line.split(": ") for line in
-                    Path(f"/proc/{pid}/io").read_text().splitlines() if ": " in line)
+                    line.split(": ")
+                    for line in Path(f"/proc/{pid}/io").read_text().splitlines()
+                    if ": " in line
+                )
                 counters = (int(fields["rchar"]), int(fields["wchar"]))
             except (OSError, KeyError, ValueError):
                 continue  # process exited, or not ours to read
@@ -330,11 +337,9 @@ class Sampler:
         device-wide.
         """
         if not self.alloc.gpus:
-            return dict.fromkeys(
-                ("util", "mem_used", "mem_total", "temp", "power"), 0.0)
+            return dict.fromkeys(("util", "mem_used", "mem_total", "temp", "power"), 0.0)
 
-        rows = nvidia_smi(
-            "gpu", "utilization.gpu,memory.total,temperature.gpu,power.draw")
+        rows = nvidia_smi("gpu", "utilization.gpu,memory.total,temperature.gpu,power.draw")
         util = [to_float(r[0]) for r in rows]
         stats = {
             "util": sum(util) / len(util) if util else 0.0,
@@ -343,8 +348,10 @@ class Sampler:
             "power": sum(to_float(r[3]) for r in rows),
         }
         stats["mem_used"] = sum(
-            to_float(r[1]) * 1e6 for r in nvidia_smi("compute-apps", "pid,used_gpu_memory")
-            if r[0].isdigit() and int(r[0]) in pids)
+            to_float(r[1]) * 1e6
+            for r in nvidia_smi("compute-apps", "pid,used_gpu_memory")
+            if r[0].isdigit() and int(r[0]) in pids
+        )
         return stats
 
     def sample(self):
@@ -397,25 +404,25 @@ class Sampler:
 COLUMNS = [
     "timestamp",
     "elapsed_s",
-    "cpu_cores_used",           # cores busy, averaged over the interval
-    "cpu_percent",              # of allocated cores
+    "cpu_cores_used",  # cores busy, averaged over the interval
+    "cpu_percent",  # of allocated cores
     "cpu_user_cores",
     "cpu_system_cores",
-    "mem_used_GB",              # cgroup memory.current: what --mem is charged for
-    "mem_anon_GB",              # actually-held memory; unreclaimable
-    "mem_cache_GB",             # file cache (mmap-ed /ceph reads); reclaimable, harmless
-    "mem_shmem_GB",             # /dev/shm; unreclaimable (swap is off) despite being "shared"
-    "mem_percent",              # of allocated memory; inflated by cache, see mem_cache_GB
+    "mem_used_GB",  # cgroup memory.current: what --mem is charged for
+    "mem_anon_GB",  # actually-held memory; unreclaimable
+    "mem_cache_GB",  # file cache (mmap-ed /ceph reads); reclaimable, harmless
+    "mem_shmem_GB",  # /dev/shm; unreclaimable (swap is off) despite being "shared"
+    "mem_percent",  # of allocated memory; inflated by cache, see mem_cache_GB
     "mem_unreclaimable_percent",  # (anon+shmem) of allocated memory -- this predicts OOM kills
-    "mem_peak_GB",              # high-water mark since job start
-    "mem_pressure_percent",     # % of time stalled on memory (PSI); 0 => limit is fine
-    "cpu_pressure_percent",     # % of time stalled waiting for a core (PSI)
-    "mem_limit_hits",           # cumulative: times the cgroup hit its limit and reclaimed
-    "mem_oom_kills",            # cumulative: the only number that means --mem was too small
-    "io_read_MBps",             # syscall-level, so /ceph (NFS) counts
+    "mem_peak_GB",  # high-water mark since job start
+    "mem_pressure_percent",  # % of time stalled on memory (PSI); 0 => limit is fine
+    "cpu_pressure_percent",  # % of time stalled waiting for a core (PSI)
+    "mem_limit_hits",  # cumulative: times the cgroup hit its limit and reclaimed
+    "mem_oom_kills",  # cumulative: the only number that means --mem was too small
+    "io_read_MBps",  # syscall-level, so /ceph (NFS) counts
     "io_write_MBps",
     "gpu_utilization_percent",  # device-wide, not job-scoped
-    "gpu_memory_used_GB",       # this job's processes only
+    "gpu_memory_used_GB",  # this job's processes only
     "gpu_memory_total_GB",
     "gpu_temperature_C",
     "gpu_power_draw_W",
@@ -427,6 +434,7 @@ COLUMNS = [
 # metadata header
 # --------------------------------------------------------------------------- #
 
+
 def slurm_job_details():
     """Pull the job's requested TRES and limits from scontrol.
 
@@ -437,16 +445,30 @@ def slurm_job_details():
     job_id = os.environ.get("SLURM_JOB_ID")
     if not job_id:
         return {}
+    # job_id comes from SLURM's own environment; scontrol is resolved from PATH on purpose.
+    cmd = ["scontrol", "show", "job", "-o", job_id]  # noqa: S607
     try:
-        out = subprocess.check_output(["scontrol", "show", "job", "-o", job_id],
-                                      text=True, stderr=subprocess.DEVNULL, timeout=10)
+        out = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL, timeout=10)  # noqa: S603
     except (subprocess.SubprocessError, OSError):
         return {}
     fields = dict(re.findall(r"(\w+)=(\S*)", out))
-    return {key: fields[key] for key in
-            ("JobName", "Partition", "Account", "QOS", "AllocTRES", "ReqTRES",
-             "TimeLimit", "NumCPUs", "NumNodes", "MinMemoryNode", "NodeList")
-            if key in fields}
+    return {
+        key: fields[key]
+        for key in (
+            "JobName",
+            "Partition",
+            "Account",
+            "QOS",
+            "AllocTRES",
+            "ReqTRES",
+            "TimeLimit",
+            "NumCPUs",
+            "NumNodes",
+            "MinMemoryNode",
+            "NodeList",
+        )
+        if key in fields
+    }
 
 
 def collect_metadata(alloc):
@@ -467,8 +489,8 @@ def collect_metadata(alloc):
         meta["alloc_cgroup"] = alloc.cgroup
     if alloc.gpus:
         meta["alloc_gpus"] = "; ".join(
-            f"{name} ({to_float(mem_total) * 1e-3:.0f} GB)"
-            for _, name, mem_total, _ in alloc.gpus)
+            f"{name} ({to_float(mem_total) * 1e-3:.0f} GB)" for _, name, mem_total, _ in alloc.gpus
+        )
         meta["alloc_gpu_count"] = len(alloc.gpus)
         meta["gpu_driver_version"] = alloc.gpus[0][3]
     else:
@@ -476,8 +498,13 @@ def collect_metadata(alloc):
 
     for key, value in slurm_job_details().items():
         meta[f"slurm_{key}"] = value
-    for var in ("SLURM_JOB_ID", "SLURM_ARRAY_JOB_ID", "SLURM_ARRAY_TASK_ID",
-                "SLURM_SUBMIT_DIR", "CUDA_VISIBLE_DEVICES"):
+    for var in (
+        "SLURM_JOB_ID",
+        "SLURM_ARRAY_JOB_ID",
+        "SLURM_ARRAY_TASK_ID",
+        "SLURM_SUBMIT_DIR",
+        "CUDA_VISIBLE_DEVICES",
+    ):
         if os.environ.get(var):
             meta[var.lower()] = os.environ[var]
 
@@ -492,7 +519,9 @@ def collect_metadata(alloc):
 
 # --------------------------------------------------------------------------- #
 
+
 def main():
+    """Write a metadata preamble and CSV header, then append one sample row per interval until killed."""
     parser = argparse.ArgumentParser(description="Job-scoped resource logger.")
     parser.add_argument("-o", "--output", default="resource_log.csv", help="Output log file")
     parser.add_argument("-i", "--interval", type=float, default=1.0, help="Sampling interval seconds")
