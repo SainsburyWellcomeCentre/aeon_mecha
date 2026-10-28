@@ -13,6 +13,7 @@ from pathlib import Path
 
 from step01_register_experiment import create_electrode_config
 
+from aeon.dj_pipeline import acquisition
 from aeon.dj_pipeline.ephys import (
     EphysChunk,
     EphysEpoch,
@@ -20,24 +21,27 @@ from aeon.dj_pipeline.ephys import (
     EphysSyncModel,
     Probe,
     ProbeInsertion,
+    ProbeType,
+    create_probe_type,
 )
 
-EXPERIMENT_NAME = "golden_arrow_01"
+EXPERIMENT_NAME = "abcEphys02"
+subject_id = "IAA-1150342"
 
-# we should be able to get this data from the database
+exp_key = {"experiment_name": EXPERIMENT_NAME}
+subject_key = {"subject": subject_id}
 
-RAW_BEHAVIOR_DIR = f"/ceph/aeon/aeon/data/raw/AEON3/{EXPERIMENT_NAME}"
-RAW_EPHYS_DIR = f"/ceph/aeon/aeon/data/raw/AEONX1/{EXPERIMENT_NAME}"
+RAW_EPHYS_DIR = acquisition.Experiment.get_data_directory(exp_key, directory_type="raw-ephys")
 
 PROBE_TYPE = "neuropixels2.0"
 
-subject_id = ""
-
-subject_key = {"subject": subject_id}
-exp_key = {"experiment_name": EXPERIMENT_NAME}
-
 # ------- probe
 
+if ProbeType & {"probe_type": PROBE_TYPE}:
+    n_electrodes = len(ProbeType.Electrode & {"probe_type": PROBE_TYPE})
+    print(f"ProbeType already exists: {PROBE_TYPE} ({n_electrodes} electrodes)")
+else:
+    create_probe_type(PROBE_TYPE, "imec", "NP2014")
 
 # Extract probes metadata from metadata file
 def get_probes_metadata_from_epoch_metadata(epoch_metadata):

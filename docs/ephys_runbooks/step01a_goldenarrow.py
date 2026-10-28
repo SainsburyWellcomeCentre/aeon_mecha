@@ -13,10 +13,6 @@ from pathlib import Path
 
 from aeon.dj_pipeline import acquisition, lab
 from aeon.dj_pipeline import subject as subject_mod
-from aeon.dj_pipeline.ephys import (
-    ProbeType,
-    create_probe_type,
-)
 from aeon.dj_pipeline.utils.paths import get_repository_path
 
 EXPERIMENT_NAME = "golden_arrow_01"
@@ -24,17 +20,9 @@ EXPERIMENT_NAME = "golden_arrow_01"
 RAW_BEHAVIOR_DIR = f"/ceph/aeon/aeon/data/raw/AEON3/{EXPERIMENT_NAME}"
 RAW_EPHYS_DIR = f"/ceph/aeon/aeon/data/raw/AEONX1/{EXPERIMENT_NAME}"
 
-PROBE_TYPE = "neuropixels2.0"
-
-if ProbeType & {"probe_type": PROBE_TYPE}:
-    n_electrodes = len(ProbeType.Electrode & {"probe_type": PROBE_TYPE})
-    print(f"ProbeType already exists: {PROBE_TYPE} ({n_electrodes} electrodes)")
-else:
-    create_probe_type(PROBE_TYPE, "imec", "NP2014")
-
 # The ephys metadata contains all subject data, which we can use to ingest automatically
 # There might be a better way to do this...
-one_metadata_path = Path(RAW_EPHYS_DIR) / "2026-10-13T094255Z/Metadata.json"
+one_metadata_path = list(Path(RAW_EPHYS_DIR).glob("*/Metadata.json"))[0]
 with open(one_metadata_path) as f:
     metadata = json.load(f)
 
