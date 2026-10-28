@@ -43,6 +43,7 @@ if ProbeType & {"probe_type": PROBE_TYPE}:
 else:
     create_probe_type(PROBE_TYPE, "imec", "NP2014")
 
+
 # Extract probes metadata from metadata file
 def get_probes_metadata_from_epoch_metadata(epoch_metadata):
     """Get probe metadata for each epoch."""
