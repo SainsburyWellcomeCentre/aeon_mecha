@@ -126,6 +126,7 @@ try:
 
             self._num_samples = None
 
+            self._filepath = filepath
             self._source = memory_map(filepath, "r")
             self._reader = RecordBatchFileReader(self._source)
             self.batch_len = batch_len
@@ -140,10 +141,10 @@ try:
             """
             # cache num_samples, since it requires a computation to find them.
             if self._num_samples is None:
-                # arrow has fast access to number of samples per batch
-                num_samples = sum(
-                    self._reader.get_batch(i).num_rows for i in range(self._reader.num_record_batches)
-                )
+                import pyarrow.dataset as ds
+
+                dataset = ds.dataset(self._filepath, format="arrow")
+                num_samples = dataset.count_rows()
                 self._num_samples = num_samples
 
             return self._num_samples
@@ -239,6 +240,8 @@ try:
             else:
                 from pyarrow import memory_map
                 from pyarrow.ipc import RecordBatchFileReader
+
+            file_path = str(file_path)
 
             source = memory_map(file_path, "r")
             reader = RecordBatchFileReader(source)

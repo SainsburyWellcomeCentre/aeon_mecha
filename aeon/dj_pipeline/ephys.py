@@ -2,6 +2,7 @@
 
 import re
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ import datajoint as dj
 
 from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import (
+    DEVICE_NAMES,
     DEVICE_PROBE_TYPE_MAP,
     discover_epoch_probes,
     find_nearest_window,
@@ -18,6 +20,7 @@ from aeon.dj_pipeline.utils.ephys_utils import (
     harp_to_naive,
     load_device_channel_map,
     parse_epoch_metadata,
+    read_onix_ts,
     read_probe_assignments,
     resolve_harp,
     resolve_raw_dir_and_epochs,
@@ -519,8 +522,6 @@ class EphysChunk(dj.Manual):
         Args:
             experiment_name: Name of the experiment to process
         """
-        import numpy as np
-
         resolved = resolve_raw_dir_and_epochs(experiment_name)
         if resolved is None:
             return
@@ -530,12 +531,14 @@ class EphysChunk(dj.Manual):
 
         # {(epoch_start, probe_label): ProbeInsertion key}
         insertion_lookup: dict[tuple[datetime, str], dict] = {}
+        epoch_probe_labels = []
         for entry in (EphysEpochConfig.Insertion & exp_key).to_dicts():
             insertion_lookup[(entry["epoch_start"], entry["probe_label"])] = {
                 "experiment_name": entry["experiment_name"],
                 "subject": entry["subject"],
                 "insertion_number": entry["insertion_number"],
             }
+            epoch_probe_labels.append(entry["probe_label"])
 
         if not insertion_lookup:
             logger.warning(
@@ -544,10 +547,19 @@ class EphysChunk(dj.Manual):
             )
             return
 
+        probe_labels = {label for _, label in insertion_lookup}
         all_ephys_files = sorted(
-            raw_dir.rglob("*_AmplifierData*.bin"),
-            key=lambda x: x.as_posix(),
+            [*raw_dir.rglob("*_AmplifierData*.bin"), *raw_dir.rglob("*_Probe?_*.arrow")],
+            key=lambda x: (x.parent.as_posix(), int(x.stem.split("_")[-1])),
         )
+
+        # To protect against ingesting a file that has not been fully copied,
+        # or even interrupting the copy, we only include files that have been
+        # created more than 3 hours ago.
+        three_hours_ago = time.time() - 3 * 60 * 60
+        all_ephys_files = [
+            ephys_file for ephys_file in all_ephys_files if ephys_file.stat().st_mtime < three_hours_ago
+        ]
 
         if not all_ephys_files:
             logger.info(f"No ephys amplifier files found in {raw_dir}")
@@ -560,11 +572,15 @@ class EphysChunk(dj.Manual):
                 continue  # already ingested
 
             # Parse probe_label from filename
-            name_match = re.search(r"_(Probe[A-Z])_AmplifierData", ephys_file.name)
+            name_match = re.search(r"_(Probe[A-Z])_", ephys_file.name)
+
             if not name_match:
                 logger.warning(f"Cannot parse probe label from {ephys_file.name}. Skipping.")
                 continue
             probe_label = name_match.group(1)
+
+            if probe_label not in probe_labels:
+                continue  # no EphysEpochConfig.Insertion for this probe in any epoch
 
             # Determine epoch from directory path
             # File path structure: raw_dir / epoch_dir / device_name / files
@@ -603,7 +619,8 @@ class EphysChunk(dj.Manual):
             if clock_file.stat().st_size < 8:
                 logger.warning(f"Empty/short Clock file for {ephys_file.name}. Skipping.")
                 continue
-            onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
+            onix_ts = read_onix_ts(clock_file)
+
             first_ts, last_ts = int(onix_ts[0]), int(onix_ts[-1])
 
             # Fetch + resolve inside a temp download dir so the <attach> sync_model
@@ -655,6 +672,7 @@ class EphysChunk(dj.Manual):
             try:
                 with cls.connection.transaction:
                     cls.insert1(chunk_entry)
+                    file_list = set((ephys_file, clock_file))
                     cls.File.insert(
                         [
                             {
@@ -663,7 +681,7 @@ class EphysChunk(dj.Manual):
                                 "file_name": f.name,
                                 "file_path": f.relative_to(raw_dir).as_posix(),
                             }
-                            for f in (ephys_file, clock_file)
+                            for f in file_list
                         ],
                         ignore_extra_fields=True,
                     )
@@ -922,7 +940,7 @@ class OnixImuChunk(dj.Imported):
 
         # Discover device directory
         device_name = None
-        for candidate in ("NeuropixelsV2Beta", "NeuropixelsV2"):
+        for candidate in DEVICE_NAMES:
             if (epoch_path / candidate).is_dir():
                 device_name = candidate
                 break

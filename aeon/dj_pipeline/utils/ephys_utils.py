@@ -12,6 +12,7 @@ from pathlib import Path, PureWindowsPath
 
 import datajoint as dj
 import numpy as np
+import pyarrow.dataset as ds
 
 logger = dj.logger
 
@@ -20,6 +21,20 @@ DEVICE_PROBE_TYPE_MAP = {
     "NeuropixelsV2Beta": "neuropixels2.0_beta",
     "NeuropixelsV2": "neuropixels2.0-multishank",
 }
+
+DEVICE_NAMES = list(DEVICE_PROBE_TYPE_MAP.keys())
+
+
+def read_onix_ts(clock_file):
+    """Returns the ephys clock data as a numpy array, from either a .arrow file or a .bin file."""
+    if clock_file.suffix == ".arrow":
+        dataset = ds.dataset(clock_file, format="ipc")
+        table = dataset.to_table(columns=["Clock"])
+        onix_ts = table["Clock"].to_numpy()
+    else:
+        onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
+
+    return onix_ts
 
 
 def _serial_from_gain_cal(gain_cal: str | None) -> str | None:
@@ -105,6 +120,8 @@ def read_amplifier_recording(
     import spikeinterface as si
     import spikeinterface.extractors as se
 
+    from aeon.dj_pipeline.utils.spike_sorting_utils import read_bonsai_onix_arrow
+
     resolved = resolve_ephys_file(raw_bin_path)
     if resolved.suffix == ".zarr":
         # The compression library writes zarr from a plain read_binary (no gains),
@@ -113,6 +130,14 @@ def read_amplifier_recording(
         rec = si.load(resolved)
         rec.set_channel_gains(gain_to_uV)
         rec.set_channel_offsets(offset_to_uV)
+        return rec
+    elif resolved.suffix == ".arrow":
+        rec = read_bonsai_onix_arrow(
+            resolved,
+            sampling_frequency=fs_hz,
+            gain_to_uV=gain_to_uV,
+            offset_to_uV=offset_to_uV,
+        )
         return rec
     return se.read_binary(
         resolved,
@@ -375,7 +400,7 @@ def discover_epoch_probes(epoch_path: Path) -> tuple[str | None, Path | None, li
     """
     device_name = None
     device_dir = None
-    for subdir_name in ("NeuropixelsV2Beta", "NeuropixelsV2"):
+    for subdir_name in DEVICE_NAMES:
         candidate = epoch_path / subdir_name
         if candidate.exists() and candidate.is_dir():
             device_name = subdir_name
@@ -501,6 +526,10 @@ def resolve_epoch_probe_json(
     epoch_local = Path(epoch_path) / config_file_name
     if epoch_local.exists():
         return epoch_local
+    for device_name in DEVICE_NAMES:
+        probe_path = Path(epoch_path) / device_name / config_file_name
+        if probe_path.exists():
+            return probe_path
     raise FileNotFoundError(f"Probe config JSON not found at {central} or {epoch_local}")
 
 

@@ -8,11 +8,11 @@ Returns ONIX-clock-indexed DataFrames. HARP conversion is the caller's job
 (via ``OnixImuChunk.synced_df`` or equivalent).
 """
 
-import re
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.feather as feather
 
 IMU_COLUMNS: tuple[str, ...] = (
     "euler_x",
@@ -29,6 +29,22 @@ IMU_COLUMNS: tuple[str, ...] = (
     "quaternion_y",
     "quaternion_z",
 )
+
+IMU_arrow_to_DJ = {
+    "EulerAngle_Yaw": "euler_x",
+    "EulerAngle_Pitch": "euler_y",
+    "EulerAngle_Roll": "euler_z",
+    "Gravity_X": "gravity_vector_x",
+    "Gravity_Y": "gravity_vector_y",
+    "Gravity_Z": "gravity_vector_z",
+    "Acceleration_X": "linear_acceleration_x",
+    "Acceleration_Y": "linear_acceleration_y",
+    "Acceleration_Z": "linear_acceleration_z",
+    "Quaternion_W": "quaternion_w",
+    "Quaternion_X": "quaternion_x",
+    "Quaternion_Y": "quaternion_y",
+    "Quaternion_Z": "quaternion_z",
+}
 
 # Map dotmap stream class name -> column prefix used in IMU_COLUMNS
 _PREFIX_BY_CLASS: dict[str, str] = {
@@ -65,8 +81,20 @@ def load_and_merge_bno055(
 
     device_dir = Path(device_dir)
     clock_file = device_dir / f"{device_name}_Bno055_Clock_{chunk_index}.bin"
+
+    if not clock_file.exists():
+        clock_file = device_dir / f"{device_name}_Bno055_{chunk_index}.arrow"
+
     if not clock_file.exists():
         raise FileNotFoundError(clock_file)
+
+    if clock_file.suffix == ".arrow":
+        bno55_data = feather.read_table(clock_file)
+        bno55_df = bno55_data.to_pandas()
+        bno55_df.index = bno55_df["Clock"].values
+        reduced_bno55 = bno55_df.rename(columns=IMU_arrow_to_DJ)[list(IMU_arrow_to_DJ.values())]
+        return reduced_bno55
+
     onix_clock = np.fromfile(clock_file, dtype=np.uint64)
 
     streams = social_ephys[device_name]
@@ -116,27 +144,39 @@ def find_overlapping_bno055_chunks(
     helper to gather all overlapping chunks before concatenating + filtering.
     """
     device_dir = Path(device_dir)
-    pattern = f"{device_name}_Bno055_Clock_*.bin"
+    clock_files = [
+        *device_dir.glob(f"{device_name}_Bno055_Clock_*.bin"),
+        *device_dir.glob(f"{device_name}_Bno055_*.arrow"),
+    ]
+
     overlapping: list[int] = []
-    for clock_file in device_dir.glob(pattern):
-        size = clock_file.stat().st_size
-        # Floor to a uint64 boundary in case a trailing partial sample was
-        # left behind by an interrupted acquisition. Skip files with no
-        # whole samples.
-        whole = (size // 8) * 8
-        if whole < 8:
+    for clock_file in clock_files:
+        chunk_suffix = clock_file.stem.rsplit("_", 1)[-1]
+        if not chunk_suffix.isdigit():
             continue
-        match = re.search(r"_Clock_(\d+)\.bin$", clock_file.name)
-        if not match:
-            continue
-        n = int(match.group(1))
-        first = int(np.fromfile(clock_file, dtype=np.uint64, count=1)[0])
-        if whole >= 16:
-            with open(clock_file, "rb") as f:
-                f.seek(whole - 8)
-                last = int(np.frombuffer(f.read(8), dtype=np.uint64)[0])
+        n = int(chunk_suffix)
+        if clock_file.suffix == ".arrow":
+            table = feather.read_table(clock_file)
+            clock_array = table["Clock"].to_numpy()
+            first = clock_array[0]
+            last = clock_array[-1]
+
         else:
-            last = first
+            size = clock_file.stat().st_size
+            # Floor to a uint64 boundary in case a trailing partial sample was
+            # left behind by an interrupted acquisition. Skip files with no
+            # whole samples.
+            whole = (size // 8) * 8
+            if whole < 8:
+                continue
+            first = int(np.fromfile(clock_file, dtype=np.uint64, count=1)[0])
+            if whole >= 16:
+                with open(clock_file, "rb") as f:
+                    f.seek(whole - 8)
+                    last = int(np.frombuffer(f.read(8), dtype=np.uint64)[0])
+            else:
+                last = first
+
         # Inclusive interval overlap test on both ends.
         if first <= onix_ts_end and last >= onix_ts_start:
             overlapping.append(n)
