@@ -166,8 +166,14 @@ GOLDEN_DATASETS = {
     },
 }
 
-# Default golden data root (can be overridden via DJ_REPOSITORY_CONFIG env var)
-DEFAULT_GOLDEN_DATA_ROOT = Path.home() / "sciops-data/project_aeon/aeon/data"
+# Default golden data root - matches prod's ``ceph_aeon`` (/ceph/aeon).
+# Data lives under ``<root>/aeon/data/raw/...``.
+# Override via DJ_REPOSITORY_CONFIG env var.
+DEFAULT_GOLDEN_DATA_ROOT = Path.home() / "sciops-data/project_aeon"
+
+# Locations under the data root (``ceph_aeon``) as in prod.
+GOLDEN_RAW_SUBPATH = Path("aeon/data/raw")
+GOLDEN_DJ_STORE_SUBPATH = Path("aeon/dj_store")
 
 # NOTE: datajoint is imported lazily inside fixtures to allow unit tests
 # (which mock datajoint) to run without triggering DB connections
@@ -198,7 +204,9 @@ def _check_golden_data(dataset_config: dict) -> Path:
     from aeon.dj_pipeline.utils.paths import get_repository_path
 
     repo_path = get_repository_path("ceph_aeon")
-    epoch_path = repo_path / "raw" / dataset_config["experiment_path"] / dataset_config["epoch_dir"]
+    epoch_path = (
+        repo_path / GOLDEN_RAW_SUBPATH / dataset_config["experiment_path"] / dataset_config["epoch_dir"]
+    )
 
     if not epoch_path.exists():
         pytest.skip(f"Golden dataset not found: {epoch_path}")
@@ -210,13 +218,15 @@ def _check_golden_data(dataset_config: dict) -> Path:
     return epoch_path
 
 
-def _processed_sorting_root(cfg: dict, epoch_path: Path) -> Path:
-    """Where Ceph keeps processed sorting outputs: ``dj_store``, a sibling of the data root.
+def _processed_sorting_root(cfg: dict) -> Path:
+    """Where Ceph keeps processed sorting outputs under the ``ceph_aeon`` repository root.
 
-    e.g. /ceph/aeon/aeon/data -> /ceph/aeon/aeon/dj_store/ephys-processed/<experiment>/<subject>
+    e.g. /ceph/aeon -> /ceph/aeon/aeon/dj_store/ephys-processed/<experiment>/<subject>
     """
-    data_root = epoch_path.parents[len(Path(cfg["experiment_path"]).parts) + 1]
-    return data_root.parent / "dj_store" / "ephys-processed" / cfg["experiment_name"] / cfg["subject"]
+    from aeon.dj_pipeline.utils.paths import get_repository_path
+
+    repo_path = get_repository_path("ceph_aeon")
+    return repo_path / GOLDEN_DJ_STORE_SUBPATH / "ephys-processed" / cfg["experiment_name"] / cfg["subject"]
 
 
 def _drop_test_schemas() -> None:
@@ -512,7 +522,7 @@ def test_experiment(full_pipeline, require_golden_data, golden_dataset_config):
             "experiment_name": cfg["experiment_name"],
             "directory_type": "raw",
             "repository_name": "ceph_aeon",
-            "directory_path": f"raw/{cfg['experiment_path']}",
+            "directory_path": f"{GOLDEN_RAW_SUBPATH.as_posix()}/{cfg['experiment_path']}",
         },
         skip_duplicates=True,
     )
@@ -542,13 +552,19 @@ def test_epochs(test_experiment, full_pipeline, golden_dataset_config):
 @pytest.fixture(scope="session")
 def ephys_processed_sorting_root(require_ephys_golden_data, ephys_golden_dataset_config):
     """Ceph ``dj_store`` directory holding processed sorting outputs (may not exist)."""
-    return _processed_sorting_root(ephys_golden_dataset_config, require_ephys_golden_data)
+    return _processed_sorting_root(ephys_golden_dataset_config)
 
 
 @pytest.fixture(scope="session")
 def ephys_golden_dataset_config():
     """Get the ephys golden dataset configuration. No DB needed."""
     return GOLDEN_DATASETS["foraging_abc_ephys_2026_05_11"]
+
+
+@pytest.fixture(scope="session")
+def golden_raw_subpath():
+    """Raw-data path relative to the repository root. No DB needed."""
+    return GOLDEN_RAW_SUBPATH
 
 
 @pytest.fixture(scope="session")
@@ -684,13 +700,13 @@ def ephys_test_experiment(ephys_full_pipeline, require_ephys_golden_data, ephys_
                 "experiment_name": cfg["experiment_name"],
                 "directory_type": "raw",
                 "repository_name": "ceph_aeon",
-                "directory_path": f"raw/{cfg['behavior_experiment_path']}",
+                "directory_path": f"{GOLDEN_RAW_SUBPATH.as_posix()}/{cfg['behavior_experiment_path']}",
             },
             {
                 "experiment_name": cfg["experiment_name"],
                 "directory_type": "raw-ephys",
                 "repository_name": "ceph_aeon",
-                "directory_path": f"raw/{cfg['experiment_path']}",
+                "directory_path": f"{GOLDEN_RAW_SUBPATH.as_posix()}/{cfg['experiment_path']}",
             },
         ],
         skip_duplicates=True,
@@ -1014,7 +1030,7 @@ def ephys_sorting_injected(
 
     epoch_path = require_ephys_golden_data
     golden_root = epoch_path.parent / cfg["golden_sorting_dir"]
-    processed_root = _processed_sorting_root(cfg, epoch_path)
+    processed_root = _processed_sorting_root(cfg)
     if not golden_root.exists() and not processed_root.exists():
         pytest.skip(f"Golden sorting output not found: {golden_root} or {processed_root}")
 

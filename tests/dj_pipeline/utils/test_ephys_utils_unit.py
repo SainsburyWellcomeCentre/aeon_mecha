@@ -556,7 +556,9 @@ class TestParseMetadataProbeConfigs:
         with pytest.raises(FileNotFoundError):
             parse_metadata_probe_configs(tmp_path)
 
-    def test_real_golden_metadata(self, ephys_golden_dataset_config, default_golden_data_root):
+    def test_real_golden_metadata(
+        self, ephys_golden_dataset_config, default_golden_data_root, golden_raw_subpath
+    ):
         """Verify against the actual golden epoch's Metadata.yml if available."""
         import os
 
@@ -574,7 +576,7 @@ class TestParseMetadataProbeConfigs:
 
         epoch_path = (
             repo_path
-            / "raw"
+            / golden_raw_subpath
             / ephys_golden_dataset_config["experiment_path"]
             / ephys_golden_dataset_config["epoch_dir"]
         )

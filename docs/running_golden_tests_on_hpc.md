@@ -90,15 +90,15 @@ the production store.)
 ## 4. Make sure the golden data is reachable
 
 By default the tests look for the data under
-`~/sciops-data/project_aeon/aeon/data` (per-user, see
+`~/sciops-data/project_aeon/aeon/data` (repository root `~/sciops-data/project_aeon`, per-user, see
 `DEFAULT_GOLDEN_DATA_ROOT` in `tests/dj_pipeline/conftest.py`). The source of
 truth lives on Ceph, so you have two options:
 
 - **Point at the Ceph copy** by setting the `DJ_REPOSITORY_CONFIG` env var to a
-  DataJoint config whose `repository_config` maps `ceph_aeon` to the golden-data root, e.g.
+  DataJoint config whose `repository_config` maps `ceph_aeon` to the repository root (as in prod; data is under `<root>/aeon/data/raw/...`), e.g.
   
   ```
-  export DJ_REPOSITORY_CONFIG='{"ceph_aeon": "/ceph/aeon/aeon/data"}'
+  export DJ_REPOSITORY_CONFIG='{"ceph_aeon": "/ceph/aeon"}'
   ```
 - **Stage a local copy** into `~/sciops-data/...` (rsync from Ceph — see the
   staging pattern in `docs/specs/SPEC_TESTING.md`).
