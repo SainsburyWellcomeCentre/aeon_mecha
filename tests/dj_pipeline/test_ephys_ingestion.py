@@ -170,8 +170,10 @@ class TestPreProcessing:
 
     def _ensure_prerequisites(self, ctx):
         ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
-        ctx.ephys.EphysBlockInfo.populate()
-        ctx.spike_sorting.PreProcessing.populate(display_progress=True, suppress_errors=False)
+        ctx.ephys.EphysBlockInfo.populate({"experiment_name": ctx.cfg["experiment_name"]})
+        ctx.spike_sorting.PreProcessing.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
 
     def test_preprocessing_populated(self, ephys_sorting_setup, require_ephys_golden_data, ctx):
         self._ensure_prerequisites(ctx)
@@ -309,7 +311,9 @@ class TestPostProcessing:
     """
 
     def _ensure_prerequisites(self, ctx):
-        ctx.spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
+        ctx.spike_sorting.PostProcessing.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
 
     def test_postprocessing_populated(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
@@ -332,8 +336,12 @@ class TestSortedSpikes:
     """
 
     def _ensure_prerequisites(self, ctx):
-        ctx.spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
-        ctx.spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
+        ctx.spike_sorting.PostProcessing.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
+        ctx.spike_sorting.SortedSpikes.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
 
     def test_sorted_spikes_populated(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
@@ -406,9 +414,15 @@ class TestSyncedSpikes:
     """
 
     def _ensure_prerequisites(self, ctx):
-        ctx.spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
-        ctx.spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
-        ctx.spike_sorting.SyncedSpikes.populate(display_progress=True, suppress_errors=False)
+        ctx.spike_sorting.PostProcessing.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
+        ctx.spike_sorting.SortedSpikes.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
+        ctx.spike_sorting.SyncedSpikes.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
 
     def test_synced_spikes_populated(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)

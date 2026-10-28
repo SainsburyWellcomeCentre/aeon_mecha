@@ -755,7 +755,7 @@ def ephys_test_epochs(
     # Step 2: probe discovery + per-probe ElectrodeConfig registration
     ephys.EphysEpochConfig.probe_assignments_override_dir = override_dir
     try:
-        ephys.EphysEpochConfig.populate(suppress_errors=False)
+        ephys.EphysEpochConfig.populate({"experiment_name": exp_name}, suppress_errors=False)
     finally:
         ephys.EphysEpochConfig.probe_assignments_override_dir = None
 
@@ -1125,11 +1125,12 @@ def ephys_curation_applied(ephys_sorting_injected, ephys_full_pipeline):
 
     spike_sorting = ephys_full_pipeline["spike_sorting"]
     curation = ephys_full_pipeline["spike_sorting_curation"]
+    exp_restriction = {"experiment_name": ephys_sorting_injected["blocks"][0]["experiment_name"]}
 
     # SortedSpikes/SyncedSpikes must exist before a curation can be made official.
-    spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
-    spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
-    spike_sorting.SyncedSpikes.populate(display_progress=True, suppress_errors=False)
+    spike_sorting.PostProcessing.populate(exp_restriction, display_progress=True, suppress_errors=False)
+    spike_sorting.SortedSpikes.populate(exp_restriction, display_progress=True, suppress_errors=False)
+    spike_sorting.SyncedSpikes.populate(exp_restriction, display_progress=True, suppress_errors=False)
 
     for block in ephys_sorting_injected["blocks"]:
         key = {
@@ -1159,7 +1160,7 @@ def ephys_curation_applied(ephys_sorting_injected, ephys_full_pipeline):
         # ApplyOfficialCuration take its auto-approve branch.
         curation.OfficialCuration.insert1({**post_key, "curation_id": 1}, skip_duplicates=True)
 
-    curation.ApplyOfficialCuration.populate(display_progress=True, suppress_errors=False)
+    curation.ApplyOfficialCuration.populate(exp_restriction, display_progress=True, suppress_errors=False)
     return ephys_sorting_injected
 
 
@@ -1205,5 +1206,7 @@ def ephys_unit_matching_populated(ephys_noise_units_marked, ephys_curation_appli
     )
     # key_source yields the seed first, then the forward frontier, so populate twice.
     for _ in range(2):
-        spike_sorting.UnitMatching.populate(display_progress=True, suppress_errors=False)
+        spike_sorting.UnitMatching.populate(
+            {"experiment_name": blocks[0]["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
     return {"blocks": blocks, "noise_units": ephys_noise_units_marked}

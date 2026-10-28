@@ -206,7 +206,12 @@ class TestStreamDataIngestion:
         results = {}
         for table_name, table in stream_tables:
             try:
-                table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+                table.populate(
+                    {"experiment_name": cfg["experiment_name"]},
+                    max_calls=self.POPULATE_LIMIT,
+                    display_progress=False,
+                    suppress_errors=True,
+                )
                 total = len(table & {"experiment_name": cfg["experiment_name"]})
                 with_data = len(table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0")
                 results[table_name] = {"total": total, "with_data": with_data}
@@ -241,7 +246,12 @@ class TestStreamDataIngestion:
             pytest.skip("No Video stream tables found")
 
         for _table_name, table in video_tables:
-            table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+            table.populate(
+                {"experiment_name": cfg["experiment_name"]},
+                max_calls=self.POPULATE_LIMIT,
+                display_progress=False,
+                suppress_errors=True,
+            )
 
         # Check at least one video entry has actual data (sample_count > 0)
         for _table_name, table in video_tables:
@@ -276,7 +286,12 @@ class TestStreamDataIngestion:
             pytest.skip("No Harp stream tables found")
 
         for _table_name, table in harp_tables:
-            table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+            table.populate(
+                {"experiment_name": cfg["experiment_name"]},
+                max_calls=self.POPULATE_LIMIT,
+                display_progress=False,
+                suppress_errors=True,
+            )
 
         # Check at least one has actual data (sample_count > 0)
         for _table_name, table in harp_tables:
@@ -318,7 +333,12 @@ class TestFetchStream:
                 continue
             obj = getattr(streams, name, None)
             if isinstance(obj, type) and issubclass(obj, dj.Imported) and obj is not dj.Imported:
-                obj.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+                obj.populate(
+                    {"experiment_name": cfg["experiment_name"]},
+                    max_calls=self.POPULATE_LIMIT,
+                    display_progress=False,
+                    suppress_errors=True,
+                )
 
     def _find_stream_with_data(self, streams, cfg, name_filter=None):
         """Find a stream table with sample_count > 0 data."""
@@ -469,7 +489,12 @@ class TestCodecStreamData:
                 continue
             obj = getattr(streams, name, None)
             if isinstance(obj, type) and issubclass(obj, dj.Imported) and obj is not dj.Imported:
-                obj.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+                obj.populate(
+                    {"experiment_name": cfg["experiment_name"]},
+                    max_calls=self.POPULATE_LIMIT,
+                    display_progress=False,
+                    suppress_errors=True,
+                )
                 query = obj & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
                 if restriction is not None:
                     query = query & restriction
@@ -573,6 +598,7 @@ class TestStreamPopulationInventory:
 
     POPULATE_LIMIT = 50
 
+    @pytest.mark.filterwarnings("ignore:data index for .* contains out-of-order timestamps:UserWarning")
     def test_inventory(self, test_epochs, full_pipeline, golden_dataset_config):
         """Populate every stream table and report row + sample counts."""
         import datajoint as dj
@@ -602,7 +628,12 @@ class TestStreamPopulationInventory:
         all_tables = {**acq_tables, **stream_tables}
         results: list[tuple[str, int, int]] = []
         for label, tbl in all_tables.items():
-            tbl.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+            tbl.populate(
+                {"experiment_name": cfg["experiment_name"]},
+                max_calls=self.POPULATE_LIMIT,
+                display_progress=False,
+                suppress_errors=True,
+            )
             q = tbl & {"experiment_name": cfg["experiment_name"]}
             row_count = len(q)
             sample_total = 0
