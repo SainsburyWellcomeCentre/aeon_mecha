@@ -152,6 +152,10 @@ def find_overlapping_bno055_chunks(
 
     overlapping: list[int] = []
     for clock_file in clock_files:
+        chunk_suffix = clock_file.stem.rsplit("_", 1)[-1]
+        if not chunk_suffix.isdigit():
+            continue
+        n = int(chunk_suffix)
         if clock_file.suffix == ".arrow":
             table = feather.read_table(clock_file)
             clock_array = table["Clock"].to_numpy()
