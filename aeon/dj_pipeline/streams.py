@@ -171,6 +171,32 @@ class Feeder(dj.Manual):
 
 
 @schema 
+class VertiGate(dj.Manual):
+        definition = """ # verti_gate operation for time, location, experiment (v-0.4.11)
+        -> acquisition.Experiment
+        -> DeviceName
+        verti_gate_install_time : datetime(6)  # verti_gate time of placement and start operation
+        ---
+        device_serial_number=null : varchar(12)  # Optional: physical device serial/port
+        """
+
+        class Attribute(dj.Part):
+            definition = """  # Metadata (e.g. FPS, config, calibration) for this experimental device
+            -> master
+            attribute_name          : varchar(32)
+            ---
+            attribute_value=null    : <blob>
+            """
+
+        class RemovalTime(dj.Part):
+            definition = """
+            -> master
+            ---
+            verti_gate_removal_time: datetime(6)  # time of the verti_gate being removed
+            """
+
+
+@schema 
 class ActivityWeightScaleWeightFiltered(dj.Imported):
         definition = """ # Raw per-chunk WeightFiltered from ActivityWeightScale (v-unknown)
     -> ActivityWeightScale
@@ -722,6 +748,162 @@ class EnvironmentLightEvents(dj.Imported):
 
 
 @schema 
+class EnvironmentEnvironmentState(dj.Imported):
+        definition = """ # Raw per-chunk EnvironmentState from Environment (v-0.4.11)
+    -> Environment
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    state: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and Environment with overlapping time.
+
+            + Chunk(s) started after Environment install time & ended before Environment remove time
+            + Chunk(s) started after Environment install time for Environment and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    Environment.join(Environment.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= environment_install_time"
+                & 'chunk_start < IFNULL(environment_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "EnvironmentState", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "EnvironmentState",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class EnvironmentMessageLog(dj.Imported):
+        definition = """ # Raw per-chunk MessageLog from Environment (v-0.4.11)
+    -> Environment
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    priority: json             # summary stats
+    type: json             # summary stats
+    message: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and Environment with overlapping time.
+
+            + Chunk(s) started after Environment install time & ended before Environment remove time
+            + Chunk(s) started after Environment install time for Environment and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    Environment.join(Environment.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= environment_install_time"
+                & 'chunk_start < IFNULL(environment_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "MessageLog", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "MessageLog",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
 class FeederDeliverPellet(dj.Imported):
         definition = """ # Raw per-chunk DeliverPellet from Feeder (v-unknown)
     -> Feeder
@@ -1020,6 +1202,780 @@ class FeederRetriedDelivery(dj.Imported):
             # Codec reference for stream_df (self-contained for decode)
             row["stream_df"] = {
                 "stream_type": "RetriedDelivery",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class VertiGateControl(dj.Imported):
+        definition = """ # Raw per-chunk Control from VertiGate (v-0.4.11)
+    -> VertiGate
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    control: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and VertiGate with overlapping time.
+
+            + Chunk(s) started after VertiGate install time & ended before VertiGate remove time
+            + Chunk(s) started after VertiGate install time for VertiGate and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    VertiGate.join(VertiGate.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= verti_gate_install_time"
+                & 'chunk_start < IFNULL(verti_gate_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "Control", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "Control",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class VertiGateTargetPosition(dj.Imported):
+        definition = """ # Raw per-chunk TargetPosition from VertiGate (v-0.4.11)
+    -> VertiGate
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    target_position: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and VertiGate with overlapping time.
+
+            + Chunk(s) started after VertiGate install time & ended before VertiGate remove time
+            + Chunk(s) started after VertiGate install time for VertiGate and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    VertiGate.join(VertiGate.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= verti_gate_install_time"
+                & 'chunk_start < IFNULL(verti_gate_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "TargetPosition", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "TargetPosition",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class VertiGateGateState(dj.Imported):
+        definition = """ # Raw per-chunk GateState from VertiGate (v-0.4.11)
+    -> VertiGate
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    gate_state: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and VertiGate with overlapping time.
+
+            + Chunk(s) started after VertiGate install time & ended before VertiGate remove time
+            + Chunk(s) started after VertiGate install time for VertiGate and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    VertiGate.join(VertiGate.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= verti_gate_install_time"
+                & 'chunk_start < IFNULL(verti_gate_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "GateState", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "GateState",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class VertiGateSpeedRegister(dj.Imported):
+        definition = """ # Raw per-chunk SpeedRegister from VertiGate (v-0.4.11)
+    -> VertiGate
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    speed: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and VertiGate with overlapping time.
+
+            + Chunk(s) started after VertiGate install time & ended before VertiGate remove time
+            + Chunk(s) started after VertiGate install time for VertiGate and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    VertiGate.join(VertiGate.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= verti_gate_install_time"
+                & 'chunk_start < IFNULL(verti_gate_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "SpeedRegister", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "SpeedRegister",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class VertiGateTorqueRegister(dj.Imported):
+        definition = """ # Raw per-chunk TorqueRegister from VertiGate (v-0.4.11)
+    -> VertiGate
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    torque: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and VertiGate with overlapping time.
+
+            + Chunk(s) started after VertiGate install time & ended before VertiGate remove time
+            + Chunk(s) started after VertiGate install time for VertiGate and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    VertiGate.join(VertiGate.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= verti_gate_install_time"
+                & 'chunk_start < IFNULL(verti_gate_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "TorqueRegister", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "TorqueRegister",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class VertiGateCalibrationOffsetRegister(dj.Imported):
+        definition = """ # Raw per-chunk CalibrationOffsetRegister from VertiGate (v-0.4.11)
+    -> VertiGate
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    calibration_offset: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and VertiGate with overlapping time.
+
+            + Chunk(s) started after VertiGate install time & ended before VertiGate remove time
+            + Chunk(s) started after VertiGate install time for VertiGate and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    VertiGate.join(VertiGate.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= verti_gate_install_time"
+                & 'chunk_start < IFNULL(verti_gate_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "CalibrationOffsetRegister", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "CalibrationOffsetRegister",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class VertiGateMotorState(dj.Imported):
+        definition = """ # Raw per-chunk MotorState from VertiGate (v-0.4.11)
+    -> VertiGate
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    motor_state: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and VertiGate with overlapping time.
+
+            + Chunk(s) started after VertiGate install time & ended before VertiGate remove time
+            + Chunk(s) started after VertiGate install time for VertiGate and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    VertiGate.join(VertiGate.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= verti_gate_install_time"
+                & 'chunk_start < IFNULL(verti_gate_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "MotorState", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "MotorState",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class VertiGatePosition(dj.Imported):
+        definition = """ # Raw per-chunk Position from VertiGate (v-0.4.11)
+    -> VertiGate
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    position: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and VertiGate with overlapping time.
+
+            + Chunk(s) started after VertiGate install time & ended before VertiGate remove time
+            + Chunk(s) started after VertiGate install time for VertiGate and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    VertiGate.join(VertiGate.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= verti_gate_install_time"
+                & 'chunk_start < IFNULL(verti_gate_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "Position", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "Position",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class VertiGateServoTelemetry(dj.Imported):
+        definition = """ # Raw per-chunk ServoTelemetry from VertiGate (v-0.4.11)
+    -> VertiGate
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    voltage: json             # summary stats
+    temperature: json             # summary stats
+    current: json             # summary stats
+    hardware_error: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and VertiGate with overlapping time.
+
+            + Chunk(s) started after VertiGate install time & ended before VertiGate remove time
+            + Chunk(s) started after VertiGate install time for VertiGate and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    VertiGate.join(VertiGate.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= verti_gate_install_time"
+                & 'chunk_start < IFNULL(verti_gate_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "ServoTelemetry", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "ServoTelemetry",
+                "experiment_name": key["experiment_name"],
+                "device_name": device_name,
+                "chunk_start": str(chunk_start),
+                "chunk_end": str(chunk_end),
+                "epoch_start": str(epoch_start),
+            }
+
+            self.insert1(row, ignore_extra_fields=True)
+
+
+@schema 
+class VertiGateRawPosition(dj.Imported):
+        definition = """ # Raw per-chunk RawPosition from VertiGate (v-0.4.11)
+    -> VertiGate
+    -> acquisition.Chunk
+    ---
+    sample_count: int32      # number of data points
+    timestamps: json         # time range, sampling rate, count
+    encoder: json             # summary stats
+    home: json             # summary stats
+    stream_df: <aeon_stream>   # full DataFrame via codec
+    """
+
+        @property
+        def key_source(self):
+            """Only the combination of Chunk and VertiGate with overlapping time.
+
+            + Chunk(s) started after VertiGate install time & ended before VertiGate remove time
+            + Chunk(s) started after VertiGate install time for VertiGate and not yet removed
+            """
+            return (
+                acquisition.Chunk.join(
+                    VertiGate.join(VertiGate.RemovalTime, left=True),
+                    semantic_check=False,
+                )
+                & "chunk_start >= verti_gate_install_time"
+                & 'chunk_start < IFNULL(verti_gate_removal_time,"2200-01-01")'
+            )
+
+        def make(self, key):
+            """Load stream data, compute summary stats, and store codec reference."""
+            from swc.aeon.io import api as io_api
+
+            from aeon.dj_pipeline.utils.load_metadata import get_stream_reader_for_epoch
+            from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
+
+            chunk_start, chunk_end, epoch_start = (acquisition.Chunk & key).fetch1(
+                "chunk_start", "chunk_end", "epoch_start"
+            )
+            data_dirs = acquisition.Experiment.get_data_directories(key)
+            device_name = key["device_name"]
+
+            stream_reader = get_stream_reader_for_epoch(
+                key["experiment_name"], device_name, "RawPosition", epoch_start
+            )
+
+            stream_data = io_api.load(
+                root=data_dirs,
+                reader=stream_reader,
+                start=pd.Timestamp(chunk_start),
+                end=pd.Timestamp(chunk_end),
+            )
+
+            # Summary stats for JSON columns
+            row = {
+                **key,
+                "sample_count": len(stream_data),
+                "timestamps": timestamp_stats(stream_data.index) if len(stream_data) > 0 else {},
+            }
+            for col in stream_reader.columns:
+                if col.startswith("_"):
+                    continue
+                clean_col = re.sub(r"\([^)]*\)", "", col)
+                row[clean_col] = column_stats(stream_data[col].values) if len(stream_data) > 0 else {}
+
+            # Codec reference for stream_df (self-contained for decode)
+            row["stream_df"] = {
+                "stream_type": "RawPosition",
                 "experiment_name": key["experiment_name"],
                 "device_name": device_name,
                 "chunk_start": str(chunk_start),
