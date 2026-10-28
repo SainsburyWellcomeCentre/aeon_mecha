@@ -472,15 +472,17 @@ class Chunk(dj.Manual):
              * If epoch end exists, chunk end is capped at epoch end
            - Skip chunks that have already been ingested
            - If `enforce_hour_completed` is True, skip chunks whose start is less than
-             1 hour 10 minutes ago. This avoids ingesting incomplete chunks that have
-             been partially transferred (e.g. by robocopy).
+             3 hours 15 minutes ago. This avoids ingesting incomplete chunks that have
+             been partially transferred: the chunk finishes 1 hour after its start,
+             robocopy waits a further hour before copying, the copy starts at some
+             point within the following hour, and the copy itself takes up to 15 minutes.
            - Collect file information for the chunk
         3. Insert all new chunks and their associated files into the database in a single transaction
 
         Args:
             experiment_name (str): Name of the experiment to ingest chunks for
             enforce_hour_completed (bool): If True, only ingest chunks whose start is
-                at least 1 hour 10 minutes in the past (UTC).
+                at least 3 hours 15 minutes in the past (UTC).
 
         Note:
             - Chunks are 1-hour recording periods
@@ -513,8 +515,9 @@ class Chunk(dj.Manual):
                 # attach UTC explicitly for a correct comparison against `now(UTC)`.
                 chunk_start_utc = chunk_start.replace(tzinfo=datetime.UTC)
                 time_now_utc = datetime.datetime.now(datetime.UTC)
-                if (time_now_utc - chunk_start_utc) < datetime.timedelta(hours=1, minutes=10):
+                if (time_now_utc - chunk_start_utc) < datetime.timedelta(hours=3, minutes=15):
                     # Skip recently started chunks: the data may not yet be fully written/copied.
+                    # 1 h recording + 1 h robocopy delay + up to 1 h until robocopy runs + 15 min copy.
                     continue
 
             # Calculate chunk_end using timedelta for robust date handling
