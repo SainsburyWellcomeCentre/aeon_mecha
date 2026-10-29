@@ -187,7 +187,7 @@ The full ephys suite runs on the HPC against `/ceph` data. From `aeon-hpc`:
 
 1. **Get onto a compute node** (the suite is heavy; run it off the shared gateway):
    ```bash
-   srun --cpus-per-task=4 --mem=64G --time=04:00:00 --pty bash
+   srun --cpus-per-task=2 --mem=8G --time=2:00:00 --pty bash
    ```
 2. **Get the golden data** (rsync from Ceph to your home; or symlink if you trust the path):
    ```bash
