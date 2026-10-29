@@ -144,7 +144,17 @@ class OnixStreamCodec(dj.Codec):
         missing = self._REQUIRED_KEYS - value.keys()
         if missing:
             raise ValueError(f"OnixStreamCodec missing required keys: {missing}")
-        return value
+        # Record the format with the row. Re-deriving it from disk at fetch time would
+        # let an archived or converted raw tree change a stored row's columns. Rows
+        # written before this key existed are binary. Copy rather than mutate: the
+        # caller may reuse the dict.
+        stored = {"stream_format": "binary", **value}
+        if stored["stream_format"] not in ("binary", "arrow"):
+            # decode tests `== "arrow"`, so a typo silently takes the binary branch
+            # and the row later fails with "the raw tree changed format" about a tree
+            # nobody touched. This is the only writer, so reject it here.
+            raise ValueError(f"stream_format must be 'binary' or 'arrow', got {stored['stream_format']!r}")
+        return stored
 
     def decode(self, stored, *, key=None):
         """Load + merge the referenced ONIX stream group as an ONIX-indexed DataFrame.
@@ -155,11 +165,13 @@ class OnixStreamCodec(dj.Codec):
         # Lazy imports to avoid circular references at module load time.
         from aeon.dj_pipeline import acquisition, ephys
         from aeon.dj_pipeline.utils.onix_imu import (
+            ARROW_EXTRA_COLUMNS,
             IMU_COLUMNS,
+            concat_bno055_chunks,
             find_overlapping_bno055_chunks,
-            load_and_merge_bno055,
         )
 
+        stream_format = stored.get("stream_format", "binary")
         if stored["stream_group"] != "Bno055":
             raise NotImplementedError(
                 f"stream_group={stored['stream_group']!r} not supported. Only 'Bno055' is wired today."
@@ -201,9 +213,20 @@ class OnixStreamCodec(dj.Codec):
             )
 
         if not chunk_indices:
-            return pd.DataFrame(columns=list(IMU_COLUMNS), index=pd.Index([], dtype=np.uint64))
+            # An arrow row's empty frame must carry the same columns as its non-empty
+            # one, or the fetch contract changes with the data.
+            cols = list(IMU_COLUMNS)
+            if stream_format == "arrow":
+                cols += list(ARROW_EXTRA_COLUMNS)
+            return pd.DataFrame(columns=cols, index=pd.Index([], dtype=np.uint64))
 
-        df = pd.concat([load_and_merge_bno055(device_dir, stored["device_name"], n) for n in chunk_indices])
+        df = concat_bno055_chunks(device_dir, stored["device_name"], chunk_indices)
+        expected = len(IMU_COLUMNS) + (len(ARROW_EXTRA_COLUMNS) if stream_format == "arrow" else 0)
+        if len(df.columns) != expected:
+            raise ValueError(
+                f"Row recorded stream_format={stream_format!r} ({expected} columns) but the raw "
+                f"files now yield {len(df.columns)}. The raw tree changed format; re-ingest."
+            )
         return df[(df.index >= int(onix_ts_start)) & (df.index <= int(onix_ts_end))]
 
 

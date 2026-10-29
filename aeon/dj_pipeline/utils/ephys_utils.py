@@ -90,6 +90,79 @@ def resolve_ephys_file(raw_bin_path: Path) -> Path:
     raise FileNotFoundError(f"No ephys file found (checked {checked}).")
 
 
+def _check_uniform_batches(rec, path) -> None:
+    """Reject a file whose batches are not uniform-except-the-last.
+
+    ``get_traces`` addresses batch i at ``i * batch_len`` while ``get_num_samples``
+    sums real rows, so a non-uniform file keeps its length and offsets every read.
+    Stricter than ``read_arrow_clock_bounds``, which may skip an empty edge batch:
+    that reader does no stride arithmetic.
+    """
+    from aeon.dj_pipeline.utils.arrow_io import open_for_row_counts
+
+    segment = rec._recording_segments[0]
+    batch_len = segment.batch_len
+    if batch_len == 0:
+        # batch_len is read from batch 0. Zero slips through the loop below (0 != 0
+        # is false) and reaches get_traces, which dies on `start_frame // 0` naming
+        # neither the file nor the cause.
+        raise ValueError(f"{path} first record batch is empty, so the batch stride is undefined.")
+
+    # Counting rows needs no column data, but get_batch decompresses whatever the
+    # reader was opened with -- all 384 channels on the recording's own reader. A
+    # one-column reader gives the same counts for a fraction of the work.
+    source, reader = open_for_row_counts(path)
+    try:
+        total = _sum_batch_rows(reader, batch_len, path)
+    finally:
+        source.close()
+    # This walk is the same one get_num_samples would do, so seed its cache rather
+    # than deserialising all 398 batches of a 6.75 GB file twice.
+    segment._num_samples = total
+
+
+def _sum_batch_rows(reader, batch_len: int, path) -> int:
+    """Total rows, rejecting any batch that breaks the constant stride."""
+    n = reader.num_record_batches
+    total = 0
+    for i in range(n):
+        rows = reader.get_batch(i).num_rows
+        # The final batch may be SHORT; a longer one pushes (end_frame - 1) // batch_len
+        # past the last batch index and get_traces reads off the end.
+        if rows > batch_len or (i < n - 1 and rows != batch_len):
+            raise ValueError(f"{path} batch {i} has {rows} rows, expected {batch_len}.")
+        total += rows
+    return total
+
+
+def _check_arrow_channels(rec, num_channels: int, path) -> None:
+    """Verify the arrow schema against the registered channel count and ordering.
+
+    PreProcessing maps electrodes positionally, so a wrong count or lexicographic
+    ordering (``AmplifierData0, 1, 10, 2``) mislabels every channel rather than failing.
+    """
+    _check_uniform_batches(rec, path)
+    ids = [str(c) for c in rec.channel_ids]
+    if len(ids) != num_channels:
+        raise ValueError(
+            f"{path} has {len(ids)} AmplifierData columns but the ElectrodeConfig registers {num_channels}."
+        )
+    # The gain and offset applied downstream assume uint16. The binary reader pins
+    # that at its call site; arrow takes whatever the schema says, so check it.
+    dtype = rec.get_dtype()
+    if dtype != np.uint16:
+        raise ValueError(
+            f"{path} AmplifierData columns are {dtype}, expected uint16. The gain and "
+            f"offset applied downstream assume 16-bit unsigned samples."
+        )
+    expected = [f"AmplifierData{i}" for i in range(num_channels)]
+    if ids != expected:
+        raise ValueError(
+            f"{path} AmplifierData columns are not in numeric order: got {ids[:4]}..., "
+            f"expected {expected[:4]}..."
+        )
+
+
 def read_amplifier_recording(
     raw_bin_path: Path,
     num_channels: int,
@@ -97,13 +170,29 @@ def read_amplifier_recording(
     gain_to_uV: float = 1.0,
     offset_to_uV: float = 0.0,
 ):
-    """Read an AmplifierData file as a SpikeInterface recording.
+    """Read an amplifier file as a SpikeInterface recording.
 
-    Reads the compressed ``.zarr`` twin if present, else the raw ``.bin``
+    ``.arrow`` reads the AmplifierData columns directly. Otherwise reads the
+    compressed ``.zarr`` twin if present, else the raw ``.bin``
     (see ``resolve_ephys_file``).
     """
     import spikeinterface as si
     import spikeinterface.extractors as se
+
+    # Arrow is compressed at acquisition and carries its own dtype and channel
+    # count, so it never consults resolve_ephys_file and never has a .zarr twin.
+    if Path(raw_bin_path).suffix == ".arrow":
+        from aeon.dj_pipeline.utils.spike_sorting_utils import read_bonsai_onix_arrow
+
+        rec = read_bonsai_onix_arrow(
+            str(raw_bin_path),
+            sampling_frequency=fs_hz,
+            stream_name="AmplifierData",
+            gain_to_uV=gain_to_uV,
+            offset_to_uV=offset_to_uV,
+        )
+        _check_arrow_channels(rec, num_channels, raw_bin_path)
+        return rec
 
     resolved = resolve_ephys_file(raw_bin_path)
     if resolved.suffix == ".zarr":
@@ -122,6 +211,94 @@ def read_amplifier_recording(
         gain_to_uV=gain_to_uV,
         offset_to_uV=offset_to_uV,
     )
+
+
+def parse_metadata_implants(metadata: dict | None) -> dict[str, dict] | None:
+    """Map probe label -> implant record from ``subject.Implants[]``.
+
+    None when the metadata predates the block; the caller then falls back to
+    ``probe_assignments.json``. An incomplete entry raises rather than defaulting --
+    the acquisition is the authority here.
+    """
+    if not isinstance(metadata, dict):
+        return None
+    subject_block = metadata.get("subject")
+    if not isinstance(subject_block, dict):
+        return None
+    implants = subject_block.get("Implants")
+    if not isinstance(implants, list):
+        return None
+    if not implants:
+        return None  # declared but empty: nothing to map, fall back as before
+
+    subject = subject_block.get("Subject")
+    if implants and not subject:
+        raise ValueError(
+            f"subject.Implants[] is present but subject.Subject is missing or empty: "
+            f"{subject_block!r}. Every insertion would be keyed on a NULL subject."
+        )
+    result: dict[str, dict] = {}
+    for entry in implants:
+        if not isinstance(entry, dict):
+            continue
+        label = entry.get("Probe")
+        if not label:
+            raise ValueError(f"Implant entry without a 'Probe' label: {entry}")
+        if entry.get("InsertionNumber") is None:
+            raise ValueError(f"Implant entry for {label} has no 'InsertionNumber'")
+        target_area = entry.get("TargetArea")
+        result[label] = {
+            "subject": subject,
+            "insertion_number": int(entry["InsertionNumber"]),
+            # strip only -- capitalisation is meaningful in area names (mPFC vs HPC)
+            "target_area": target_area.strip() if isinstance(target_area, str) else None,
+            "implantation_date": entry.get("ImplantationDate"),
+        }
+    if not result:
+        # implants was a non-empty list, so every entry was skipped as a non-dict.
+        # Returning None here would read as "metadata predates the Implants block"
+        # and silently fall back to probe_assignments.json.
+        raise ValueError(
+            f"subject.Implants[] has {len(implants)} entr(ies) but none is a mapping: {implants!r}"
+        )
+    return result
+
+
+def _is_enabled(value) -> bool:
+    """Interpret an Enable flag. Newer metadata writes a bool, older the string form."""
+    if isinstance(value, str):
+        return value.strip().lower() != "false"
+    return value is not False
+
+
+def enabled_probe_labels(metadata: dict | None) -> set[str] | None:
+    """Probe labels the metadata declares enabled, or None if it cannot say.
+
+    Only the ``ephys.Headstage`` layout has an explicit ``Enable`` flag; older
+    layouts express it as a null ``ProbeInterfaceFileName``, which ``get_probe_id``
+    already handles, so they get no disk-vs-metadata cross-check.
+    """
+    headstage = _headstage_blocks(metadata)
+    if headstage is None:
+        return None
+    return {
+        label
+        for label, block in headstage.items()
+        if re.fullmatch(r"Probe[A-Z]", label)
+        and isinstance(block, dict)
+        and _is_enabled(block.get("Enable", True))
+    }
+
+
+def _headstage_blocks(metadata: dict | None) -> dict | None:
+    """The ``ephys.Headstage`` mapping, or None if the metadata is not this layout.
+
+    Arrow-era layout: probe config and the enable flag live under ``Headstage.ProbeA``.
+    """
+    if not isinstance(metadata, dict):
+        return None
+    headstage = (metadata.get("ephys") or {}).get("Headstage")
+    return headstage if isinstance(headstage, dict) else None
 
 
 def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> str | None:
@@ -153,8 +330,13 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
 
     suffix = probe_label[len("Probe") :]  # "A", "B", ...
 
+    headstage_block = (_headstage_blocks(metadata) or {}).get(probe_label)
+    headstage_block = headstage_block if isinstance(headstage_block, dict) else None
     new_block = metadata.get(f"NeuropixelsV2{suffix}")
-    if isinstance(new_block, dict):
+    if headstage_block is not None:
+        enable = headstage_block.get("Enable", True)
+        probe_config = headstage_block.get("ProbeConfiguration", {})
+    elif isinstance(new_block, dict):
         # New metadata format: each probe is its own top-level device block
         # "NeuropixelsV2A"/"NeuropixelsV2B" holding a single "ProbeConfiguration";
         # the enable flag lives inside the block.
@@ -167,7 +349,7 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
         enable = devices.get(probe_label, "true")
         probe_config = devices.get("NeuropixelsV2e", {}).get(f"Configuration{suffix}", {})
 
-    if isinstance(enable, str) and enable.lower() == "false":
+    if not _is_enabled(enable):
         return None
     return _serial_from_gain_cal(probe_config.get("GainCalibrationFileName")) or default_id
 
@@ -178,6 +360,8 @@ def find_or_create_probe_insertion(
     probe_id: str,
     probe_insertion_table,
     probe_table,
+    insertion_number: int | None = None,
+    implantation_date=None,
 ) -> dict:
     """Find existing or create new ProbeInsertion for this (experiment, subject, probe).
 
@@ -189,6 +373,10 @@ def find_or_create_probe_insertion(
         probe_id: Probe identifier (serial number)
         probe_insertion_table: The ProbeInsertion table class
         probe_table: The Probe table class
+        insertion_number: Number asserted by acquisition metadata. When given and an
+            existing row holds a different number, raises rather than reconciling.
+            When None, the next free number is assigned.
+        implantation_date: Optional implantation date for a newly created row.
 
     Returns:
         Dict with ProbeInsertion PK fields
@@ -199,17 +387,52 @@ def find_or_create_probe_insertion(
     ).to_dicts()
     if existing:
         row = existing[0]
+        if insertion_number is not None and int(row["insertion_number"]) != int(insertion_number):
+            # The acquisition metadata asserts one number, the database holds another.
+            # Silently preferring either would mis-attribute this probe's data.
+            raise ValueError(
+                f"Metadata asserts insertion_number={insertion_number} for probe {probe_id!r} "
+                f"(subject {subject!r}), but an existing ProbeInsertion has "
+                f"{row['insertion_number']}. Resolve by hand."
+            )
+        # Backfill a date the metadata asserts onto a row that predates the Implants
+        # block. Only the NULL case is filled: a row already holding a different date
+        # is a conflict, not a stale field, and is left for a human.
+        if implantation_date is not None and row.get("implantation_date") is None:
+            probe_insertion_table.update1(
+                {
+                    "experiment_name": row["experiment_name"],
+                    "subject": row["subject"],
+                    "insertion_number": row["insertion_number"],
+                    "implantation_date": implantation_date,
+                }
+            )
         return {
             "experiment_name": row["experiment_name"],
             "subject": row["subject"],
             "insertion_number": row["insertion_number"],
         }
 
-    # Create new ProbeInsertion with auto-assigned insertion_number
-    existing_nums = (
-        probe_insertion_table & {"experiment_name": experiment_name, "subject": subject}
-    ).to_arrays("insertion_number")
-    new_num = int(existing_nums.max()) + 1 if len(existing_nums) > 0 else 1
+    if insertion_number is not None:
+        new_num = int(insertion_number)
+        # (experiment, subject, insertion_number) is ProbeInsertion's primary key, so a
+        # number another probe already holds fails deep in DataJoint with an integrity
+        # error that names neither probe. Say which one holds it.
+        taken_by = (
+            probe_insertion_table
+            & {"experiment_name": experiment_name, "subject": subject, "insertion_number": new_num}
+        ).to_dicts()
+        if taken_by:
+            raise ValueError(
+                f"insertion_number={new_num} (subject {subject!r}) is already held by probe "
+                f"{taken_by[0]['probe']!r}, not {probe_id!r}. Resolve by hand."
+            )
+    else:
+        # No metadata assertion -- auto-assign the next free number
+        existing_nums = (
+            probe_insertion_table & {"experiment_name": experiment_name, "subject": subject}
+        ).to_arrays("insertion_number")
+        new_num = int(existing_nums.max()) + 1 if len(existing_nums) > 0 else 1
 
     probe_insertion_table.insert1(
         {
@@ -217,6 +440,7 @@ def find_or_create_probe_insertion(
             "subject": subject,
             "insertion_number": new_num,
             "probe": probe_id,
+            "implantation_date": implantation_date,
         }
     )
     logger.info(
@@ -385,14 +609,19 @@ def discover_epoch_probes(epoch_path: Path) -> tuple[str | None, Path | None, li
     if device_name is None or device_dir is None:
         return None, None, []
 
-    amplifier_files = sorted(device_dir.glob(f"{device_name}_Probe*_AmplifierData_*.bin"))
+    amplifier_files = sorted(
+        [
+            *device_dir.glob(f"{device_name}_Probe*_AmplifierData_*.bin"),
+            *device_dir.glob(f"{device_name}_Probe*_*.arrow"),
+        ]
+    )
     if not amplifier_files:
         return device_name, device_dir, []
 
-    # e.g., "NeuropixelsV2Beta_ProbeA_AmplifierData_0.bin" -> "ProbeA"
+    # "..._ProbeA_AmplifierData_0.bin" and "..._ProbeA_0.arrow" -> "ProbeA"
     probe_labels = set()
     for f in amplifier_files:
-        match = re.search(rf"{device_name}_(Probe[A-Z])_AmplifierData", f.name)
+        match = re.search(rf"{device_name}_(Probe[A-Z])_(?:AmplifierData_)?\d+\.(?:bin|arrow)$", f.name)
         if match:
             probe_labels.add(match.group(1))
 
@@ -406,17 +635,23 @@ def parse_epoch_metadata(epoch_path: Path) -> dict | None:
         epoch_path: Path to the epoch directory
 
     Returns:
-        Parsed metadata dict, or None if not found or unparseable.
+        Parsed metadata dict, or None if no metadata file exists.
+
+    Raises:
+        ValueError: If a metadata file exists but cannot be parsed. Returning None
+            here would reach the caller as "no metadata file", sending an operator
+            after a truncated file they are told does not exist.
     """
-    metadata_path = epoch_path / "Metadata.yml"
-    if not metadata_path.exists():
+    metadata_path = next(
+        (epoch_path / n for n in ("Metadata.json", "Metadata.yml") if (epoch_path / n).exists()), None
+    )
+    if metadata_path is None:
         return None
     try:
         with open(metadata_path) as f:
-            return json.load(f)  # JSON despite .yml extension
+            return json.load(f)  # older epochs use a .yml name for JSON content
     except (json.JSONDecodeError, OSError) as e:
-        logger.warning(f"Failed to parse Metadata.yml at {metadata_path}: {e}")
-        return None
+        raise ValueError(f"Failed to parse {metadata_path} as JSON: {e}") from e
 
 
 def _probe_json_basename(pifn: str | None) -> str | None:
@@ -432,7 +667,8 @@ def _probe_json_basename(pifn: str | None) -> str | None:
 def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
     """Extract per-probe config-file basenames from an epoch's Metadata.yml.
 
-    Reads ``ProbeInterfaceFileName`` for each probe, supporting two layouts:
+    Reads ``ProbeInterfaceFileName`` for each probe, supporting three layouts:
+        Arrow-era: ``ephys.Headstage.ProbeA/B.ProbeConfiguration``.
         New (>= 2026): top-level ``NeuropixelsV2A/B.ProbeConfiguration``.
         Old: ``Devices.NeuropixelsV2e.ConfigurationA/B``.
 
@@ -447,11 +683,22 @@ def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
     Raises:
         FileNotFoundError: If Metadata.yml doesn't exist.
     """
-    metadata_path = Path(epoch_path) / "Metadata.yml"
-    with open(metadata_path) as f:
-        data = json.load(f)  # JSON despite .yml extension
+    data = parse_epoch_metadata(Path(epoch_path))
+    if data is None:
+        raise FileNotFoundError(f"No Metadata.json or Metadata.yml in {epoch_path}")
 
     result: dict[str, str | None] = {}
+
+    # Arrow-era layout: ephys.Headstage.ProbeA/ProbeB.ProbeConfiguration
+    headstage = (data.get("ephys") or {}).get("Headstage")
+    if isinstance(headstage, dict):
+        for label, block in headstage.items():
+            if not re.fullmatch(r"Probe[A-Z]", label) or not isinstance(block, dict):
+                continue
+            probe_config = block.get("ProbeConfiguration") or {}
+            result[label] = _probe_json_basename(probe_config.get("ProbeInterfaceFileName"))
+        if result:
+            return result
 
     # New metadata format: probe configs are top-level device blocks
     # "NeuropixelsV2A"/"NeuropixelsV2B", each with a single "ProbeConfiguration".
@@ -489,17 +736,21 @@ def resolve_epoch_probe_json(
 ) -> Path:
     """Resolve a probeinterface JSON path by basename.
 
-    Searches ``<raw_ephys_dir>/recording_configurations/`` (production layout)
-    first, then ``<epoch_path>/`` (local-copy fallback for test/golden data).
-    Raises FileNotFoundError if neither has the file.
+    Searches ``<raw_ephys_dir>/recording_configurations/`` (production layout),
+    then ``<epoch_path>/``, then each known device subdirectory of the epoch
+    (where the Arrow-era acquisition writes it).
     """
-    central = Path(raw_ephys_dir) / "recording_configurations" / config_file_name
-    if central.exists():
-        return central
-    epoch_local = Path(epoch_path) / config_file_name
-    if epoch_local.exists():
-        return epoch_local
-    raise FileNotFoundError(f"Probe config JSON not found at {central} or {epoch_local}")
+    candidates = [
+        Path(raw_ephys_dir) / "recording_configurations" / config_file_name,
+        Path(epoch_path) / config_file_name,
+        # Arrow-era epochs keep the probe config beside the data, inside the device dir.
+        *(Path(epoch_path) / device / config_file_name for device in DEVICE_PROBE_TYPE_MAP),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    searched = "\n  ".join(str(c) for c in candidates)
+    raise FileNotFoundError(f"Probe config JSON {config_file_name!r} not found in:\n  {searched}")
 
 
 def load_device_channel_map(json_path: Path) -> dict[int, int]:
