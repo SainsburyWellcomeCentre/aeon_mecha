@@ -226,7 +226,7 @@ class TestEphysBlockInfo:
             ctx.ephys.EphysBlockInfo * ctx.ephys.EphysBlock
             & {"experiment_name": ctx.cfg["experiment_name"]}
         ).to_dicts()
-        assert len(infos) == 2
+        assert len(infos) == len(ctx.cfg["block_chunks"])
         for info in infos:
             expected_hours = (info["block_end"] - info["block_start"]).total_seconds() / 3600
             # float32 column: ~6 significant digits, tighter than an absolute 1e-6.
@@ -237,11 +237,11 @@ class TestEphysBlockInfo:
         assert chunk_links >= 1
 
     def test_channel_mappings_created(self, ephys_block_info_populated, ctx):
-        # Full active set (384) PER BLOCK - experiment-wide would be 768 across two blocks.
+        # Full active set (384) PER BLOCK - summing over blocks would hide a per-block short count.
         blocks = (ctx.ephys.EphysBlock & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
             order_by="block_start"
         )
-        assert len(blocks) == 2
+        assert len(blocks) == len(ctx.cfg["block_chunks"])
         for block in blocks:
             channel_rows = (ctx.ephys.EphysBlockInfo.Channel & block).to_dicts()
             assert len(channel_rows) == ctx.cfg["n_recording_channels"]

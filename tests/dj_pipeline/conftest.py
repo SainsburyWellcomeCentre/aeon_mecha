@@ -179,15 +179,18 @@ GOLDEN_DATASETS = {
         "golden_sorting_dir": "golden_test_sorting",
         # Unit/spike counts are derived from the artifacts at fixture time, not hardcoded:
         # they are properties of the sorting on disk and would silently rot if it is re-pulled.
+        # Must stay (0, 6) and (4, 11): the golden sortings below were produced from
+        # exactly these two windows.
+        "block_chunks": [(0, 6), (4, 11)],
         "golden_blocks": [
             "2026-05-11T07-49-47_2026-05-11T08-59-47",  # chunks 0..6
             "2026-05-11T08-39-47_2026-05-11T09-49-47",  # chunks 4..11
         ],
     },
     # Ephys arm of golden_arrow_01 — Bonsai arrow format, two active probes
-    # (abcGolden01 has ProbeB only). Covered through EphysChunk and OnixImuChunk.
-    # The sorting cascade, PreProcessing included, stays on abcGolden01, which
-    # ships golden sorting artifacts; arrow's PreProcessing coverage is synthetic.
+    # (abcGolden01 has ProbeB only). Covered through PreProcessing. Below that
+    # the cascade is format-agnostic and stays on abcGolden01, the only dataset
+    # shipping golden sorting artifacts.
     "foraging_abc_ephys_arrow_2026_10_13": {
         "experiment_name": "goldenArrow01-aeon3",
         "experiment_path": "AEONX1/golden_arrow_01",
@@ -200,7 +203,19 @@ GOLDEN_DATASETS = {
         "experiment_type": "foraging",
         "device_name": "NeuropixelsV2",
         "probe_type": "neuropixels2.0-multishank",
+        # ProbeA (insertion 1, mPFC) — the first insertion, which is the one
+        # ephys_test_blocks builds blocks for. ProbeB's shanks are uneven
+        # (94/102/92/96 active), ProbeA's are a clean 96 each.
+        # No probe_serial: that key marks a dataset registered via probe_assignments.json
+        # because its metadata predates subject.Implants. This one carries Implants.
+        "electrode_config_name": "M01_ProbeA_4Shanks_1500_to_2200um",
+        "n_channels": 96,  # sorting subset: all active contacts on shank3
+        "shank_id": "3",  # electrodes are read from the probe JSON
         "n_recording_channels": 384,
+        # One 2-chunk block: enough to exercise concatenation and the chunk-boundary
+        # arithmetic. Each arrow chunk is ~6.7 GB, so a wider block costs real time
+        # for no extra coverage.
+        "block_chunks": [(0, 1)],
         "required_files": [
             "Metadata.json",
             "NeuropixelsV2/NeuropixelsV2_ProbeA_0.arrow",
@@ -820,19 +835,18 @@ def ephys_test_epochs(
 
 @pytest.fixture(scope="session")
 def ephys_test_blocks(ephys_chunks_ingested, ephys_full_pipeline, ephys_golden_dataset_config):
-    """Create the two EphysBlock entries the golden sortings were produced from.
+    """Create the EphysBlock entries each golden dataset's tests run against.
 
-    block 1 -> chunks 0..6, block 2 -> chunks 4..11, overlapping on 4-6.
+    Bounds come from ``block_chunks``: one (first, last) chunk-index pair per block.
+    abcGolden01's two overlapping blocks (0..6 and 4..11) are the windows its golden
+    sortings on disk were produced from, so that pair is fixed; a dataset without
+    golden sortings is free to declare a smaller one.
 
     Bounds sit at chunk MIDPOINTS: create_ephys_chunk_restriction's BETWEEN is inclusive,
     so a bound on a chunk boundary matches two chunks and widens the selection.
     """
     ephys = ephys_full_pipeline["ephys"]
     cfg = ephys_golden_dataset_config
-    if "golden_sorting_dir" not in cfg:
-        # Everything below PreProcessing is format-agnostic (SPEC_ARROW_INGESTION, Scope),
-        # so only the dataset shipping golden sorting artifacts runs the cascade.
-        pytest.skip(f"{cfg['experiment_name']}: no golden sorting artifacts; covered to PreProcessing")
     exp_name = cfg["experiment_name"]
 
     n_probes = cfg.get("expected_probe_count", 1)
@@ -858,12 +872,18 @@ def ephys_test_blocks(ephys_chunks_ingested, ephys_full_pipeline, ephys_golden_d
     def midpoint(chunk):
         return chunk["chunk_start"] + (chunk["chunk_end"] - chunk["chunk_start"]) / 2
 
+    # A block starting at chunk 0 takes that chunk's start, not its midpoint: there is
+    # no earlier chunk for an inclusive BETWEEN to over-match.
     block_bounds = [
-        (chunks[0]["chunk_start"], midpoint(chunks[6])),  # chunks 0..6
-        (midpoint(chunks[4]), midpoint(chunks[11])),  # chunks 4..11
+        (chunks[first]["chunk_start"] if first == 0 else midpoint(chunks[first]), midpoint(chunks[last]))
+        for first, last in cfg["block_chunks"]
     ]
 
-    probe_insertions = (ephys.ProbeInsertion & {"experiment_name": exp_name}).to_dicts()
+    # Blocks for the first insertion only: ephys_sorting_setup registers one
+    # ElectrodeGroup, under one probe's ElectrodeConfig, and tasks every block with it.
+    probe_insertions = (
+        ephys.ProbeInsertion & {"experiment_name": exp_name, "insertion_number": first_insertion}
+    ).to_dicts()
     for pi in probe_insertions:
         for block_start, block_end in block_bounds:
             ephys.EphysBlock.insert1(
@@ -901,8 +921,11 @@ def ephys_block_info_populated(ephys_chunks_ingested, ephys_test_blocks, ctx):
     epoch_chunks = (ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
         order_by="chunk_start"
     )
-    epoch_starts = [c["chunk_start"] for c in epoch_chunks]
-    expected_slices = [slice(0, 7), slice(4, 12)]  # block 1 -> chunks 0..6, block 2 -> chunks 4..11
+    # ephys_test_blocks builds blocks for the first insertion only, and a multi-probe
+    # epoch interleaves probes in chunk_start order, so index that insertion's chunks.
+    first_insertion = min(c["insertion_number"] for c in epoch_chunks)
+    epoch_starts = [c["chunk_start"] for c in epoch_chunks if c["insertion_number"] == first_insertion]
+    expected_slices = [slice(first, last + 1) for first, last in ctx.cfg["block_chunks"]]
     blocks = (ctx.ephys.EphysBlock & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
         order_by="block_start"
     )
@@ -1100,6 +1123,11 @@ def ephys_sorting_injected(
     # populate would materialise the ~24 GB intermediate for every block before the guard.
 
     epoch_path = require_ephys_golden_data
+    if "golden_sorting_dir" not in cfg:
+        # Everything below PreProcessing is format-agnostic (SPEC_ARROW_INGESTION, Scope),
+        # so only the dataset shipping golden sorting artifacts runs the cascade. Block
+        # creation and PreProcessing are not gated on this -- they need no sorting output.
+        pytest.skip(f"{cfg['experiment_name']}: no golden sorting artifacts; covered to PreProcessing")
     golden_root = epoch_path.parent / cfg["golden_sorting_dir"]
     if not golden_root.exists():
         pytest.skip(f"Golden sorting output not found: {golden_root}")
