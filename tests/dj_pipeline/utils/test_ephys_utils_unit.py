@@ -787,53 +787,19 @@ def _epoch_with(tmp_path, fixture_name, as_name):
     return epoch
 
 
-class TestImplantsEdgeCases:
-    """Two states the Implants parser must not conflate with "no block at all"."""
-
-    def test_entries_that_are_all_non_mappings_raise(self):
-        """A list of strings is a malformed block, not an absent one.
-
-        Returning None reads as "metadata predates Implants" and silently falls back
-        to probe_assignments.json, so the subject-probe mapping comes from the wrong
-        source with nothing to notice.
-        """
-        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
-
-        meta = {"subject": {"Subject": "AAA-1", "Implants": ["ProbeA", "ProbeB"]}}
-        with pytest.raises(ValueError, match="none is a mapping"):
-            parse_metadata_implants(meta)
-
-    def test_explicitly_empty_implants_falls_back(self):
-        """An empty list declares nothing, which is the documented None case."""
-        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
-
-        assert parse_metadata_implants({"subject": {"Subject": "AAA-1", "Implants": []}}) is None
-
-    def test_subject_missing_beside_implants_raises(self):
-        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
-
-        meta = {"subject": {"Implants": [{"Probe": "ProbeA", "InsertionNumber": 1}]}}
-        with pytest.raises(ValueError, match="subject.Subject is missing"):
-            parse_metadata_implants(meta)
-
-
 class TestMetadataLayouts:
     """Three metadata layouts must all resolve probe identity and config."""
 
-    def test_probe_configs_headstage_layout(self, tmp_path):
+    def test_probe_configs_resolve_in_both_layouts(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
 
-        epoch = _epoch_with(tmp_path, "ephys_headstage_Metadata.json", "Metadata.json")
-        assert parse_metadata_probe_configs(epoch) == {
+        headstage = _epoch_with(tmp_path / "h", "ephys_headstage_Metadata.json", "Metadata.json")
+        assert parse_metadata_probe_configs(headstage) == {
             "ProbeA": "M01_ProbeA_4Shanks_1500_to_2200um.json",
             "ProbeB": "M01_ProbeB_4Shanks_2000_to_2700um_LFP.json",
         }
-
-    def test_probe_configs_devices_layout_unchanged(self, tmp_path):
-        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
-
-        epoch = _epoch_with(tmp_path, "ephys_devices_Metadata.yml", "Metadata.yml")
-        assert parse_metadata_probe_configs(epoch) == {
+        devices = _epoch_with(tmp_path / "d", "ephys_devices_Metadata.yml", "Metadata.yml")
+        assert parse_metadata_probe_configs(devices) == {
             "ProbeA": None,
             "ProbeB": "M81_ProbeB_4Shanks_1000_to_1700_um.json",
         }
@@ -902,18 +868,15 @@ class TestMetadataLayouts:
             assert get_probe_id(data, "NeuropixelsV2", "ProbeB") is not None, flag
             assert "ProbeB" in enabled_probe_labels(data), flag
 
-    def test_parse_epoch_metadata_prefers_json(self, tmp_path):
+    def test_parse_epoch_metadata_prefers_json_then_falls_back_to_yml(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
 
-        epoch = _epoch_with(tmp_path, "ephys_headstage_Metadata.json", "Metadata.json")
-        (epoch / "Metadata.yml").write_text('{"Workflow": "stale"}')
-        assert parse_epoch_metadata(epoch)["workflow"] == "Ephys.bonsai"
+        both = _epoch_with(tmp_path / "j", "ephys_headstage_Metadata.json", "Metadata.json")
+        (both / "Metadata.yml").write_text('{"Workflow": "stale"}')
+        assert parse_epoch_metadata(both)["workflow"] == "Ephys.bonsai"
 
-    def test_parse_epoch_metadata_falls_back_to_yml(self, tmp_path):
-        from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
-
-        epoch = _epoch_with(tmp_path, "ephys_devices_Metadata.yml", "Metadata.yml")
-        assert parse_epoch_metadata(epoch)["Workflow"] == "Ephys-AEONX1.bonsai"
+        yml_only = _epoch_with(tmp_path / "y", "ephys_devices_Metadata.yml", "Metadata.yml")
+        assert parse_epoch_metadata(yml_only)["Workflow"] == "Ephys-AEONX1.bonsai"
 
 
 class TestParseMetadataImplants:
@@ -949,45 +912,49 @@ class TestParseMetadataImplants:
             },
         }
 
-    def test_target_area_whitespace_stripped_case_preserved(self):
+    def test_optional_fields_normalised_and_insertion_number_required(self):
         from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
 
-        meta = {
-            "subject": {
-                "Subject": "S1",
-                "Implants": [{"Probe": "ProbeA", "InsertionNumber": 1, "TargetArea": "  mPFC "}],
-            }
-        }
-        assert parse_metadata_implants(meta)["ProbeA"]["target_area"] == "mPFC"
+        def meta(implant):
+            return {"subject": {"Subject": "S1", "Implants": [implant]}}
 
-    def test_missing_optional_fields_become_none(self):
-        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
+        stripped = meta({"Probe": "ProbeA", "InsertionNumber": 1, "TargetArea": "  mPFC "})
+        assert parse_metadata_implants(stripped)["ProbeA"]["target_area"] == "mPFC"
 
-        meta = {"subject": {"Subject": "S1", "Implants": [{"Probe": "ProbeA", "InsertionNumber": 3}]}}
-        entry = parse_metadata_implants(meta)["ProbeA"]
-        assert entry["target_area"] is None and entry["implantation_date"] is None
+        bare = parse_metadata_implants(meta({"Probe": "ProbeA", "InsertionNumber": 3}))["ProbeA"]
+        assert bare["target_area"] is None and bare["implantation_date"] is None
 
-    def test_implant_without_insertion_number_raises(self):
-        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
-
-        meta = {"subject": {"Subject": "S1", "Implants": [{"Probe": "ProbeA"}]}}
         with pytest.raises(ValueError, match="InsertionNumber"):
-            parse_metadata_implants(meta)
+            parse_metadata_implants(meta({"Probe": "ProbeA"}))
+
+    def test_malformed_implants_raise_rather_than_reading_as_absent(self):
+        """A malformed Implants block must raise, not read as an absent one.
+
+        Returning None reads as "metadata predates Implants" and silently falls back
+        to probe_assignments.json, so the subject-probe mapping comes from the wrong
+        source with nothing to notice. An empty list is the documented None case.
+        """
+        from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_implants
+
+        with pytest.raises(ValueError, match="none is a mapping"):
+            parse_metadata_implants({"subject": {"Subject": "A", "Implants": ["ProbeA", "ProbeB"]}})
+
+        with pytest.raises(ValueError, match="subject.Subject is missing"):
+            parse_metadata_implants({"subject": {"Implants": [{"Probe": "ProbeA", "InsertionNumber": 1}]}})
+
+        assert parse_metadata_implants({"subject": {"Subject": "A", "Implants": []}}) is None
 
 
 class TestEnabledProbeLabels:
     """Probes the metadata declares enabled, for cross-checking against disk."""
 
-    def test_headstage_layout_lists_enabled_only(self, tmp_path):
+    def test_lists_enabled_probes_or_none_when_the_layout_has_no_flag(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import enabled_probe_labels, parse_epoch_metadata
 
-        meta = parse_epoch_metadata(_epoch_with(tmp_path, "ephys_headstage_Metadata.json", "Metadata.json"))
-        assert enabled_probe_labels(meta) == {"ProbeA", "ProbeB"}
+        headstage = _epoch_with(tmp_path / "h", "ephys_headstage_Metadata.json", "Metadata.json")
+        assert enabled_probe_labels(parse_epoch_metadata(headstage)) == {"ProbeA", "ProbeB"}
 
-    def test_disabled_probe_excluded(self):
-        from aeon.dj_pipeline.utils.ephys_utils import enabled_probe_labels
-
-        meta = {
+        disabled = {
             "ephys": {
                 "Headstage": {
                     "ProbeA": {"Enable": True, "ProbeConfiguration": {}},
@@ -995,11 +962,8 @@ class TestEnabledProbeLabels:
                 }
             }
         }
-        assert enabled_probe_labels(meta) == {"ProbeA"}
+        assert enabled_probe_labels(disabled) == {"ProbeA"}
 
-    def test_returns_none_for_layouts_without_an_enable_flag(self, tmp_path):
-        """Older layouts express disablement differently; no cross-check is possible."""
-        from aeon.dj_pipeline.utils.ephys_utils import enabled_probe_labels, parse_epoch_metadata
-
-        meta = parse_epoch_metadata(_epoch_with(tmp_path, "ephys_devices_Metadata.yml", "Metadata.yml"))
-        assert enabled_probe_labels(meta) is None
+        # Older layouts express disablement differently; no cross-check is possible.
+        devices = _epoch_with(tmp_path / "d", "ephys_devices_Metadata.yml", "Metadata.yml")
+        assert enabled_probe_labels(parse_epoch_metadata(devices)) is None

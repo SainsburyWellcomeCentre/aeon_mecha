@@ -369,26 +369,13 @@ def _write_bno055_arrow(device_dir, device_name, chunk_index, n=20, columns=ARRO
 class TestBno055Arrow:
     """Arrow IMU chunks map onto the canonical column names, plus two new fields."""
 
-    def test_index_is_clock_not_hubclock(self, tmp_path):
-        """The ONIX index is Clock, never HubClock.
-
-        HubClock is the hub's own counter and is offset from Clock, so indexing on it
-        shifts every sample against the sync regression.
-        """
-        from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
-
-        _write_bno055_arrow(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0, n=4)
-        df = load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
-        # dtype first: [100.0, 200.0] compares equal to the ints, so a float64 index
-        # -- what a null-bearing column upcasts to -- would slip past the values.
-        assert df.index.dtype == np.uint64, df.index.dtype
-        assert list(df.index) == [100, 200, 300, 400]
-
     def test_every_arrow_column_lands_on_its_own_canonical_name(self, tmp_path):
         """Swapping gravity for acceleration gives a healthy frame of wrong numbers.
 
         The pairs are written out rather than read from _ARROW_TO_CANONICAL: reading
         them from the dict under test makes the assertion follow any swap made to it.
+        Also pins the index: HubClock is the hub's own counter, offset from Clock, so
+        indexing on it shifts every sample against the sync regression.
         """
         from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
 
@@ -416,44 +403,35 @@ class TestBno055Arrow:
             assert got == expected, (
                 f"{canonical} holds {got}, which is {ARROW_IMU_COLUMNS[int(got) - 100]}, not {arrow_name}"
             )
-
-    def test_calibration_and_temperature_present(self, tmp_path):
-        from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
-
-        _write_bno055_arrow(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
-        df = load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
+        # The two fields arrow adds over binary.
         assert df["calibration"].iloc[0] == 15
         assert df["temperature"].iloc[0] == 87
+        # dtype first: [100.0, 200.0] compares equal to the ints, so a float64 index
+        # -- what a null-bearing column upcasts to -- would slip past the values.
+        assert df.index.dtype == np.uint64, df.index.dtype
+        assert list(df.index) == [100, 200, 300, 400]
 
-    def test_an_added_column_raises(self, tmp_path):
-        """A frame matching neither schema must not be ingested silently.
-
-        The full set plus one extra, so only the `unknown` half of the check can
-        reject it -- a fixture that is also missing columns would pass on `missing`
-        alone and leave `unknown` untested.
-        """
+    @pytest.mark.parametrize(
+        ("columns", "match"),
+        [
+            # the full set plus one extra, so only the `unknown` half can reject it --
+            # a fixture also missing columns would pass on `missing` alone
+            ((*ARROW_IMU_COLUMNS, "Mystery_Column"), "unknown="),
+            # the full set minus one, so only the `missing` half can reject it
+            (tuple(c for c in ARROW_IMU_COLUMNS if c != "Gravity_X"), "missing="),
+            # Clock is what everything downstream aligns on, so its absence is schema
+            # drift. Tolerating it here trades the diagnostic for a bare KeyError four
+            # lines later, naming neither the file nor the schema.
+            (tuple(c for c in ARROW_IMU_COLUMNS if c != "Clock"), "column set"),
+        ],
+        ids=["added", "dropped", "no-clock"],
+    )
+    def test_a_frame_matching_neither_schema_is_rejected(self, tmp_path, columns, match):
+        """Ingesting it silently is the spec's anti-goal."""
         from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
 
-        _write_bno055_arrow(
-            tmp_path / "NeuropixelsV2",
-            "NeuropixelsV2",
-            0,
-            columns=(*ARROW_IMU_COLUMNS, "Mystery_Column"),
-        )
-        with pytest.raises(ValueError, match="unknown="):
-            load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
-
-    def test_a_dropped_column_raises(self, tmp_path):
-        """The full set minus one, so only the `missing` half can reject it."""
-        from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
-
-        _write_bno055_arrow(
-            tmp_path / "NeuropixelsV2",
-            "NeuropixelsV2",
-            0,
-            columns=tuple(c for c in ARROW_IMU_COLUMNS if c != "Gravity_X"),
-        )
-        with pytest.raises(ValueError, match="missing="):
+        _write_bno055_arrow(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0, columns=columns)
+        with pytest.raises(ValueError, match=match):
             load_and_merge_bno055(tmp_path / "NeuropixelsV2", "NeuropixelsV2", 0)
 
     def test_malformed_chunk_raises_rather_than_vanishing(self, tmp_path):
@@ -474,21 +452,6 @@ class TestBno055Arrow:
         )
         with pytest.raises(KeyError, match="Clock"):
             find_overlapping_bno055_chunks(d, "NeuropixelsV2", 0, 100_000)
-
-    def test_missing_clock_column_is_named_rather_than_a_bare_keyerror(self, tmp_path):
-        """Clock is what everything downstream aligns on, so its absence is schema drift.
-
-        Tolerating it in the column-set check trades the diagnostic for a bare
-        KeyError raised four lines later, with no hint of which file or which schema.
-        """
-        from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
-
-        d = tmp_path / "NeuropixelsV2"
-        _write_bno055_arrow(
-            d, "NeuropixelsV2", 0, columns=tuple(c for c in ARROW_IMU_COLUMNS if c != "Clock")
-        )
-        with pytest.raises(ValueError, match="column set"):
-            load_and_merge_bno055(d, "NeuropixelsV2", 0)
 
     def test_empty_arrow_chunk_is_skipped_not_fatal(self, tmp_path):
         """A zero-row chunk contributes to no window, as the binary pass already assumes.

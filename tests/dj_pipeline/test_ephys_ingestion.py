@@ -104,44 +104,31 @@ class TestMetadataReachesTheDatabase:
     sites now run.
     """
 
-    def test_insertion_numbers_come_from_metadata(self, ephys_test_epochs, ctx):
-        cfg = ctx.cfg
-        if "probe_serial" in cfg:
-            pytest.skip(f"{cfg['experiment_name']}: metadata predates subject.Implants")
-        rows = (
-            ctx.ephys.EphysEpochConfig.Insertion & {"experiment_name": cfg["experiment_name"]}
-        ).to_dicts()
-        by_label = {r["probe_label"]: r for r in rows}
-        assert set(by_label) == {"ProbeA", "ProbeB"}, sorted(by_label)
-        # golden_arrow_01's metadata asserts ProbeA -> 1, ProbeB -> 2. Note this
-        # dataset cannot distinguish metadata-driven numbering from the auto-assign
-        # fallback, which yields the same 1, 2 in discovery order -- verified by
-        # mutation. The discriminating cases are unit-level:
-        # TestProbeInsertionFromImplants::test_explicit_insertion_number_is_used
-        # (asserts 7) and ::test_conflicting_insertion_number_raises.
-        assert by_label["ProbeA"]["insertion_number"] == 1
-        assert by_label["ProbeB"]["insertion_number"] == 2
-
-    def test_target_areas_recorded(self, ephys_test_epochs, ctx):
-        cfg = ctx.cfg
-        if "probe_serial" in cfg:
-            pytest.skip(f"{cfg['experiment_name']}: metadata predates subject.Implants")
-        subject = cfg["subject"]
-        linked = (
-            ctx.ephys.InsertionTargetArea & {"experiment_name": cfg["experiment_name"], "subject": subject}
-        ).to_dicts()
-        areas = {(r["insertion_number"], r["target_area"]) for r in linked}
-        assert areas == {(1, "mPFC"), (2, "HPC")}, areas
-
-    def test_implantation_date_recorded(self, ephys_test_epochs, ctx):
+    def test_implants_land_in_the_tables(self, ephys_test_epochs, ctx):
         cfg = ctx.cfg
         expected_date = cfg.get("implantation_date")
         if expected_date is None:
             pytest.skip(f"{cfg['experiment_name']}: metadata predates subject.Implants")
-        dates = (
-            ctx.ephys.ProbeInsertion
-            & {"experiment_name": cfg["experiment_name"], "subject": cfg["subject"]}
-        ).to_arrays("implantation_date")
+        exp_key = {"experiment_name": cfg["experiment_name"]}
+
+        # Probe label -> insertion number. golden_arrow_01 cannot tell metadata-driven
+        # numbering from the auto-assign fallback, which yields the same 1, 2 in
+        # discovery order -- verified by mutation. The discriminating cases are at the
+        # integration tier: TestProbeInsertionFromImplants in test_synthetic_integration.
+        by_label = {
+            r["probe_label"]: r["insertion_number"]
+            for r in (ctx.ephys.EphysEpochConfig.Insertion & exp_key).to_dicts()
+        }
+        assert by_label == {"ProbeA": 1, "ProbeB": 2}, by_label
+
+        subject_key = {**exp_key, "subject": cfg["subject"]}
+        areas = {
+            (r["insertion_number"], r["target_area"])
+            for r in (ctx.ephys.InsertionTargetArea & subject_key).to_dicts()
+        }
+        assert areas == {(1, "mPFC"), (2, "HPC")}, areas
+
+        dates = (ctx.ephys.ProbeInsertion & subject_key).to_arrays("implantation_date")
         # Count first: all() over an empty result is True, so a regression that drops
         # the insertions (or writes them under another subject) would pass silently.
         expected = cfg["expected_probe_count"]

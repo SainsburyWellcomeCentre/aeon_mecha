@@ -445,67 +445,32 @@ class TestPynappleInDB:
         assert stored["path"].endswith(".npz")
 
 
-class TestOnixStreamFormatDiscriminator:
-    """A stored row records which format it was ingested from.
+class TestOnixStreamFormat:
+    """encode is the only writer of stream_format, so it both defaults and validates.
 
-    Without it the format is re-derived from disk at fetch time, so a row's
-    column set depends on today's raw tree rather than on what was ingested.
+    The "binary" default for rows written before the key existed is pinned by
+    TestOnixStreamCodecEncode. decode tests `== "arrow"`, so a typo would fall into
+    the binary branch and surface much later as "the raw tree changed format under
+    this row" — about a raw tree nobody touched.
     """
 
-    def test_encode_defaults_format_for_rows_without_one(self):
+    REF = {
+        "experiment_name": "e",
+        "epoch_start": "2026-10-13 09:42:55",
+        "sync_start": "2026-10-13 10:00:00",
+        "device_name": "NeuropixelsV2",
+        "stream_group": "Bno055",
+    }
+
+    def test_an_explicit_format_is_preserved(self):
         from aeon.dj_pipeline.utils.codec import OnixStreamCodec
 
-        payload = {
-            "experiment_name": "e",
-            "epoch_start": "2026-10-13 09:42:55",
-            "sync_start": "2026-10-13 10:00:00",
-            "device_name": "NeuropixelsV2",
-            "stream_group": "Bno055",
-        }
-        stored = OnixStreamCodec().encode(dict(payload))
-        import json
+        stored = OnixStreamCodec().encode({**self.REF, "stream_format": "arrow"})
+        assert stored["stream_format"] == "arrow"
 
-        decoded = json.loads(stored) if isinstance(stored, str) else stored
-        assert decoded.get("stream_format") == "binary", (
-            "rows ingested before the discriminator existed must keep decoding as binary"
-        )
-
-    def test_encode_preserves_an_explicit_format(self):
-        import json
-
+    def test_an_unknown_format_is_rejected(self):
         from aeon.dj_pipeline.utils.codec import OnixStreamCodec
 
-        payload = {
-            "experiment_name": "e",
-            "epoch_start": "2026-10-13 09:42:55",
-            "sync_start": "2026-10-13 10:00:00",
-            "device_name": "NeuropixelsV2",
-            "stream_group": "Bno055",
-            "stream_format": "arrow",
-        }
-        stored = OnixStreamCodec().encode(dict(payload))
-        decoded = json.loads(stored) if isinstance(stored, str) else stored
-        assert decoded["stream_format"] == "arrow"
-
-
-class TestOnixStreamFormatValidation:
-    """encode is the only writer of stream_format, so a bad value must stop there.
-
-    decode tests `== "arrow"`, so a typo falls into the binary branch and surfaces
-    much later as "the raw tree changed format under this row" — about a raw tree
-    nobody touched.
-    """
-
-    def test_rejects_an_unknown_format(self):
-        from aeon.dj_pipeline.utils.codec import OnixStreamCodec
-
-        payload = {
-            "experiment_name": "e",
-            "epoch_start": "2026-10-13 09:42:55",
-            "sync_start": "2026-10-13 10:00:00",
-            "device_name": "NeuropixelsV2",
-            "stream_group": "Bno055",
-            "stream_format": "Arrow",  # capitalised: decode would read this as binary
-        }
         with pytest.raises(ValueError, match="must be 'binary' or 'arrow'"):
-            OnixStreamCodec().encode(payload)
+            # capitalised: decode would read this as binary
+            OnixStreamCodec().encode({**self.REF, "stream_format": "Arrow"})

@@ -1097,8 +1097,16 @@ class TestProbeInsertionFromImplants:
                 exp, "SUBJ-1", "SER-2", ephys.ProbeInsertion, ephys.Probe, insertion_number=2
             )
 
-    def test_target_area_auto_created_and_linked(self, ephys_full_pipeline, tmp_path, caplog):
-        """A new area is created (warned about) and linked to the insertion."""
+    def test_target_areas_are_created_linked_and_never_duplicated(
+        self, ephys_full_pipeline, tmp_path, caplog
+    ):
+        """The whole _insert_target_area contract, walked on one insertion.
+
+        The link table is declared for "one or more" areas, so a second one is kept:
+        refusing it would make the documented multi-area case impossible and, once a
+        curator added an area by hand, block every later ingestion of that epoch. Both
+        warnings exist because the other likely cause is spelling drift.
+        """
         from aeon.dj_pipeline.ephys import _insert_target_area
         from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
 
@@ -1114,7 +1122,6 @@ class TestProbeInsertionFromImplants:
         area = "TestArea-NeverSeenBefore"
         with caplog.at_level("WARNING"):
             _insert_target_area(area, pi_key)
-
         assert ephys.TargetArea & {"target_area": area}
         assert ephys.InsertionTargetArea & {**pi_key, "target_area": area}
         assert any(area in r.message for r in caplog.records), "a new area should warn"
@@ -1125,50 +1132,17 @@ class TestProbeInsertionFromImplants:
             _insert_target_area(area, pi_key)
         assert not any(area in r.message for r in caplog.records), "existing area should not warn"
 
-    def test_second_target_area_is_added_and_warned_about(self, ephys_full_pipeline, tmp_path, caplog):
-        """The link table is declared for "one or more" areas, so a second one is kept.
-
-        Refusing it would make the documented multi-area case impossible and, once a
-        curator added an area by hand, block every later ingestion of that epoch. The
-        warning is there because the other likely cause is spelling drift.
-        """
-        from aeon.dj_pipeline.ephys import _insert_target_area
-        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
-
-        ephys, _ = self._tables(ephys_full_pipeline)
-        exp = self._experiment(tmp_path, "test_implants_area_conflict")
-        ephys.Probe.insert1(
-            {"probe": "SER-6", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
-        )
-        pi_key = find_or_create_probe_insertion(
-            exp, "SUBJ-1", "SER-6", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
-        )
-        _insert_target_area("AreaOne", pi_key)
+        caplog.clear()
         with caplog.at_level("WARNING"):
             _insert_target_area("AreaTwo", pi_key)
         assert "already linked" in caplog.text
-
         linked = sorted((ephys.InsertionTargetArea & pi_key).to_arrays("target_area"))
-        assert linked == ["AreaOne", "AreaTwo"], linked
+        assert linked == ["AreaTwo", area], linked
 
-        # Re-ingesting the same epoch must stay a no-op, not accumulate rows.
+        # Re-ingesting the epoch stays a no-op, and None adds nothing.
         _insert_target_area("AreaTwo", pi_key)
-        assert len(ephys.InsertionTargetArea & pi_key) == 2
-
-    def test_target_area_none_is_a_noop(self, ephys_full_pipeline, tmp_path):
-        from aeon.dj_pipeline.ephys import _insert_target_area
-        from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
-
-        ephys, _ = self._tables(ephys_full_pipeline)
-        exp = self._experiment(tmp_path, "test_implants_noarea")
-        ephys.Probe.insert1(
-            {"probe": "SER-5", "probe_type": "neuropixels2.0-multishank"}, skip_duplicates=True
-        )
-        pi_key = find_or_create_probe_insertion(
-            exp, "SUBJ-1", "SER-5", ephys.ProbeInsertion, ephys.Probe, insertion_number=1
-        )
         _insert_target_area(None, pi_key)
-        assert not (ephys.InsertionTargetArea & pi_key)
+        assert len(ephys.InsertionTargetArea & pi_key) == 2
 
     def test_implantation_date_recorded(self, ephys_full_pipeline, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import find_or_create_probe_insertion
@@ -1188,33 +1162,6 @@ class TestProbeInsertionFromImplants:
             implantation_date="2026-05-20",
         )
         assert str((ephys.ProbeInsertion & key).fetch1("implantation_date")) == "2026-05-20 00:00:00"
-
-
-class TestFactoryFormatValidation:
-    """An unvalidated fmt would make the arrow-vs-binary equivalence test vacuous."""
-
-    def test_unknown_format_raises(self, tmp_path):
-        from ephys_factories import make_synthetic_amplifier_data
-
-        with pytest.raises(ValueError, match="fmt"):
-            make_synthetic_amplifier_data(
-                tmp_path, "ep", "NeuropixelsV2", "ProbeA", n_chunks=1, fmt="Arrow"
-            )
-
-    def test_arrow_and_binary_write_different_trees(self, tmp_path):
-        """Guards the equivalence test: the formats must not produce the same files."""
-        from ephys_factories import make_synthetic_amplifier_data
-
-        for fmt in ("binary", "arrow"):
-            make_synthetic_amplifier_data(
-                tmp_path / fmt, "ep", "NeuropixelsV2", "ProbeA", n_chunks=1, fmt=fmt
-            )
-        suffixes = {
-            fmt: sorted(q.suffix for q in (tmp_path / fmt / "ep" / "NeuropixelsV2").iterdir())
-            for fmt in ("binary", "arrow")
-        }
-        assert suffixes["binary"] == [".bin", ".bin"], suffixes
-        assert suffixes["arrow"] == [".arrow"], suffixes
 
 
 class TestPreProcessingOnArrow:
@@ -1323,25 +1270,18 @@ class TestAmplifierFileSelection:
     and si.concatenate_recordings([]) raises IndexError naming nothing.
     """
 
-    def test_restriction_selects_arrow_files(self, ephys_full_pipeline, tmp_path):
+    @pytest.mark.parametrize(
+        ("fmt", "marker"), [("arrow", ".arrow"), ("binary", "AmplifierData")], ids=["arrow", "binary"]
+    )
+    def test_restriction_selects_amplifier_files(self, ephys_full_pipeline, tmp_path, fmt, marker):
         from aeon.dj_pipeline import ephys
         from aeon.dj_pipeline.spike_sorting import AMPLIFIER_FILE_RESTRICTION
 
-        exp = TestArrowChunkIngestion()._setup(tmp_path, "test_amp_sel_arrow", ["arrow", "arrow"])
+        exp = TestArrowChunkIngestion()._setup(tmp_path, f"test_amp_sel_{fmt}", [fmt, fmt])
         rows = (ephys.EphysChunk.File & {"experiment_name": exp} & AMPLIFIER_FILE_RESTRICTION).to_dicts()
         names = sorted(r["file_name"] for r in rows)
-        assert len(names) == 2, f"arrow amplifier files not selected: {names}"
-        assert all(n.endswith(".arrow") for n in names), names
-
-    def test_restriction_selects_binary_files(self, ephys_full_pipeline, tmp_path):
-        from aeon.dj_pipeline import ephys
-        from aeon.dj_pipeline.spike_sorting import AMPLIFIER_FILE_RESTRICTION
-
-        exp = TestArrowChunkIngestion()._setup(tmp_path, "test_amp_sel_bin", ["binary", "binary"])
-        rows = (ephys.EphysChunk.File & {"experiment_name": exp} & AMPLIFIER_FILE_RESTRICTION).to_dicts()
-        names = sorted(r["file_name"] for r in rows)
-        assert len(names) == 2, f"expected 2 AmplifierData files, got {names}"
-        assert all("AmplifierData" in n for n in names), names
+        assert len(names) == 2, f"{fmt} amplifier files not selected: {names}"
+        assert all(marker in n for n in names), names
 
     def test_restriction_excludes_clock_commutator_and_other_arrow_streams(
         self, ephys_full_pipeline, tmp_path

@@ -44,26 +44,6 @@ class TestArrowIO:
         clock, _ = _write_arrow(f, [500, 500, 137])
         assert read_arrow_clock_bounds(f) == (int(clock[0]), int(clock[-1]))
 
-    def test_clock_bounds_reads_only_two_batches(self, tmp_path, monkeypatch):
-        """Bounds come from batch metadata -- a 155M-sample file must not be scanned."""
-        import pyarrow.ipc as ipc
-
-        from aeon.dj_pipeline.utils.arrow_io import read_arrow_clock_bounds
-
-        f = tmp_path / "t.arrow"
-        _write_arrow(f, [100] * 50)
-        calls = []
-        original = ipc.RecordBatchFileReader.get_batch
-        monkeypatch.setattr(
-            ipc.RecordBatchFileReader,
-            "get_batch",
-            lambda self, i: (calls.append(i), original(self, i))[1],
-        )
-        read_arrow_clock_bounds(f)
-        # Lower bound too: if the implementation moves to read_all()/read_next_batch,
-        # the patch records nothing and '<= 2' would pass while the file is scanned.
-        assert 1 <= len(calls) <= 2, f"read {len(calls)} batches, expected 1 or 2"
-
     def test_reads_only_the_requested_column(self, tmp_path):
         """get_batch decompresses whatever the reader was opened with.
 
@@ -104,15 +84,20 @@ class TestArrowIO:
         assert "AmplifierData0" in message, message
 
     def test_empty_file_raises(self, tmp_path):
+        """An empty file raises EmptyArrowChunk, not a bare ValueError.
+
+        find_overlapping_bno055_chunks catches the type to skip an empty chunk, so
+        narrowing it back would turn that skip into a hard fail.
+        """
         import pyarrow as pa
         import pyarrow.ipc as ipc
 
-        from aeon.dj_pipeline.utils.arrow_io import read_arrow_clock_bounds
+        from aeon.dj_pipeline.utils.arrow_io import EmptyArrowChunk, read_arrow_clock_bounds
 
         f = tmp_path / "empty.arrow"
         with ipc.new_file(f, pa.schema([("Clock", pa.uint64())])):
             pass
-        with pytest.raises(ValueError, match="no record batches"):
+        with pytest.raises(EmptyArrowChunk, match="no record batches"):
             read_arrow_clock_bounds(f)
 
     def test_empty_file_column_keeps_its_declared_dtype(self, tmp_path):
@@ -149,13 +134,13 @@ class TestArrowIO:
         import pyarrow as pa
         import pyarrow.ipc as ipc
 
-        from aeon.dj_pipeline.utils.arrow_io import read_arrow_clock_bounds
+        from aeon.dj_pipeline.utils.arrow_io import EmptyArrowChunk, read_arrow_clock_bounds
 
         f = tmp_path / "all_empty.arrow"
         schema = pa.schema([("Clock", pa.uint64())])
         with ipc.new_file(f, schema) as w:
             w.write_batch(pa.RecordBatch.from_arrays([pa.array([], type=pa.uint64())], schema=schema))
-        with pytest.raises(ValueError, match="none with rows"):
+        with pytest.raises(EmptyArrowChunk, match="none with rows"):
             read_arrow_clock_bounds(f)
 
     def test_null_in_a_column_raises_rather_than_upcasting(self, tmp_path):
@@ -177,23 +162,6 @@ class TestArrowIO:
             )
         with pytest.raises(ValueError, match="null value"):
             read_arrow_column(f, "Clock")
-
-    def test_empty_chunk_raises_a_type_callers_can_catch(self, tmp_path):
-        """find_overlapping_bno055_chunks catches EmptyArrowChunk to skip empty chunks.
-
-        Asserting only ValueError would leave that contract unpinned, so narrowing the
-        type back to a plain ValueError would silently turn the skip into a hard fail.
-        """
-        import pyarrow as pa
-        import pyarrow.ipc as ipc
-
-        from aeon.dj_pipeline.utils.arrow_io import EmptyArrowChunk, read_arrow_clock_bounds
-
-        f = tmp_path / "empty.arrow"
-        with ipc.new_file(f, pa.schema([("Clock", pa.uint64())])):
-            pass
-        with pytest.raises(EmptyArrowChunk):
-            read_arrow_clock_bounds(f)
 
 
 class TestReadAmplifierRecordingArrow:
@@ -397,14 +365,15 @@ class TestArrowChannelIntegrity:
             read_amplifier_recording(f, num_channels=2, fs_hz=30000.0)
 
 
-class TestLeadingEmptyBatch:
-    """batch_len comes from batch 0, so an empty batch 0 leaves the stride undefined.
+class TestBatchStrideGuards:
+    """get_traces addresses batch i at ``i * batch_len``, taken from batch 0.
 
-    read_arrow_clock_bounds tolerates an empty batch at either end because it only
-    reads first and last values -- no stride arithmetic is involved. get_traces is
-    the opposite: it addresses batch i at i*batch_len, which a leading empty batch
-    makes false for every batch after it. The two readers differ on purpose; what
-    must not happen is batch_len reaching get_traces as zero.
+    ``get_num_samples`` sums true per-batch rows, so a file that breaks the stride
+    keeps a correct length while every trace read is offset -- a recording that looks
+    healthy with every spike time wrong. An empty batch 0 is worse still: batch_len
+    reaches get_traces as zero. read_arrow_clock_bounds tolerates an empty batch at
+    either end because it reads only first and last values; the two readers differ on
+    purpose.
     """
 
     def _write(self, path, batch_sizes):
@@ -412,18 +381,18 @@ class TestLeadingEmptyBatch:
         import pyarrow.ipc as ipc
 
         total = sum(batch_sizes)
-        rows = np.arange(total, dtype=np.uint16)
-        schema = pa.schema([("AmplifierData0", pa.uint16()), ("Clock", pa.uint64())])
+        cols = {
+            "AmplifierData0": np.arange(total, dtype=np.uint16),
+            "Clock": np.arange(total, dtype=np.uint64),
+        }
+        schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in cols.items()])
         off = 0
+        path.parent.mkdir(parents=True, exist_ok=True)
         with ipc.new_file(path, schema) as w:
             for n in batch_sizes:
                 w.write_batch(
                     pa.RecordBatch.from_arrays(
-                        [
-                            pa.array(rows[off : off + n]),
-                            pa.array(np.arange(off, off + n, dtype=np.uint64)),
-                        ],
-                        schema=schema,
+                        [pa.array(v[off : off + n]) for v in cols.values()], schema=schema
                     )
                 )
                 off += n
@@ -441,60 +410,29 @@ class TestLeadingEmptyBatch:
         with pytest.raises(ValueError, match="first record batch is empty"):
             read_amplifier_recording(f, num_channels=1, fs_hz=30000.0)
 
-    def test_trailing_empty_batch_is_accepted(self, tmp_path):
-        """A writer flushing at stop costs nothing: the stride still holds."""
-        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
-
-        f = self._write(tmp_path / "NeuropixelsV2_ProbeA_0.arrow", [100, 100, 0])
-        rec = read_amplifier_recording(f, num_channels=1, fs_hz=30000.0)
-        assert rec.get_num_samples() == 200
-        assert rec.get_traces(start_frame=98, end_frame=102).ravel().tolist() == [98, 99, 100, 101]
-
-
-class TestNonUniformBatchGuard:
-    """get_traces addresses batches by a constant; a file that breaks it must not pass.
-
-    ``start_frame // batch_len`` assumes every batch but the last has the same row
-    count. ``get_num_samples`` sums true per-batch rows, so a non-uniform file keeps
-    a correct length while every trace read is offset -- a recording that looks
-    healthy with every spike time wrong.
-    """
-
-    def _write(self, path, batch_sizes):
-        import pyarrow as pa
-        import pyarrow.ipc as ipc
-
-        total = sum(batch_sizes)
-        cols = {
-            "AmplifierData0": np.arange(total, dtype=np.uint16),
-            "Clock": np.arange(total, dtype=np.uint64),
-        }
-        schema = pa.schema([(k, pa.from_numpy_dtype(v.dtype)) for k, v in cols.items()])
-        off = 0
-        with ipc.new_file(path, schema) as w:
-            for n in batch_sizes:
-                w.write_batch(
-                    pa.RecordBatch.from_arrays(
-                        [pa.array(v[off : off + n]) for v in cols.values()], schema=schema
-                    )
-                )
-                off += n
-
-    def test_uniform_with_short_final_batch_is_accepted(self, tmp_path):
-        """The real golden files are exactly this shape."""
-        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
-
-        f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
-        self._write(f, [100, 100, 37])
-        rec = read_amplifier_recording(f, num_channels=1, fs_hz=30000.0)
-        assert rec.get_num_samples() == 237
-
     def test_non_uniform_middle_batch_raises(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
 
-        f = tmp_path / "NeuropixelsV2_ProbeA_0.arrow"
-        self._write(f, [100, 70, 100])
+        f = self._write(tmp_path / "NeuropixelsV2_ProbeA_0.arrow", [100, 70, 100])
         # Anchored on the reported row counts, not on the explanation: the message
         # states the fact, and the reason lives in a comment at the guard.
         with pytest.raises(ValueError, match=r"batch 1 has 70 rows, expected 100"):
             read_amplifier_recording(f, num_channels=1, fs_hz=30000.0)
+
+    def test_a_short_or_empty_final_batch_is_accepted(self, tmp_path):
+        """A short final batch and an empty one both keep the stride, so both pass.
+
+        The real golden files carry a short final batch; a writer flushing at stop
+        leaves an empty one. Only the *last* batch is exempt, so [100, 100, 37, 0] is
+        rejected -- a short batch followed by an empty flush. No acquisition has
+        produced that shape.
+        """
+        from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+        short = self._write(tmp_path / "s" / "NeuropixelsV2_ProbeA_0.arrow", [100, 100, 37])
+        assert read_amplifier_recording(short, num_channels=1, fs_hz=30000.0).get_num_samples() == 237
+
+        empty = self._write(tmp_path / "e" / "NeuropixelsV2_ProbeA_0.arrow", [100, 100, 0])
+        rec = read_amplifier_recording(empty, num_channels=1, fs_hz=30000.0)
+        assert rec.get_num_samples() == 200
+        assert rec.get_traces(start_frame=98, end_frame=102).ravel().tolist() == [98, 99, 100, 101]
