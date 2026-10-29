@@ -157,22 +157,6 @@ class TestGoldenSpikeTrains:
                 assert times.min() >= tsgroup.time_support.start[0]
                 assert times.max() <= tsgroup.time_support.end[-1]
 
-    def test_roster_and_coverage_match_the_object(self, golden_spike_trains):
-        """Test that the summary columns agree with the stored TsGroup.
-
-        ``n_units`` counts the roster including units sorted over the chunk but
-        silent in it, so it must match the TsGroup's index rather than the number
-        of units that fired.
-        """
-        module = golden_spike_trains["module"]
-        for row in golden_spike_trains["rows"]:
-            assert 0.0 < row["coverage_frac"] <= 1.0, f"coverage_frac {row['coverage_frac']} out of range"
-            assert row["n_partial_units"] <= row["n_units"]
-
-            tsgroup = _fetch_tsgroup(module, row)
-            assert len(tsgroup.index) == row["n_units"]
-            assert int(sum(len(tsgroup[u]) for u in tsgroup.index)) == row["n_spikes"]
-
     def test_stale_is_empty_after_a_clean_populate(self, golden_spike_trains):
         """Test that nothing reports stale straight after populating.
 

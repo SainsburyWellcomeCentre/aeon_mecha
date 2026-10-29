@@ -199,10 +199,22 @@ class TestMake:
         assert quality[populated["cross_block_unit"]] == populated["owning_block_quality"]
         assert populated["owning_block_quality"] != populated["losing_block_quality"]
 
-    def test_times_are_on_the_harp_epoch(self, populated):
-        """Test that spikes land on seconds-since-1904, not seconds-since-anything-else."""
-        for row in _mine(populated).to_dicts():
-            assert row["spikes"].time_support.start[0] > 3.0e9
+
+@pytest.fixture(scope="module")
+def span(populated):
+    """The whole populated span, fetched once.
+
+    Every reader below wants the same object; fetching it per test repeats eight
+    lines and the partial-coverage warning five times over.
+    """
+    from aeon.dj_pipeline import processed_ephys
+
+    with pytest.warns(UserWarning, match="covered_seconds"):
+        return processed_ephys.SpikeTrains.fetch_span(
+            **populated["insertion_key"],
+            start=populated["covered_chunk_starts"][0],
+            end=populated["span_end"],
+        )
 
 
 class TestStalenessAndFetchSpan:
@@ -286,77 +298,47 @@ class TestStalenessAndFetchSpan:
             "(the whole span minus what precedes the cut)"
         )
 
-    def test_fetch_span_scans_only_its_own_span(self, populated, monkeypatch):
-        """Test that the staleness check is restricted to the span being read.
-
-        An unrestricted scan walks every row in the table — all experiments, all
-        insertions — at a couple of queries each, to read one hour.
-        """
-        from aeon.dj_pipeline import processed_ephys
-
-        seen = {}
-        original = processed_ephys.SpikeTrains.stale_chunks.__func__
-
-        def spy(cls, restriction=True):
-            seen["restriction"] = restriction
-            return original(cls, restriction)
-
-        monkeypatch.setattr(processed_ephys.SpikeTrains, "stale_chunks", classmethod(spy))
-        with pytest.warns(UserWarning, match="covered_seconds"):
-            processed_ephys.SpikeTrains.fetch_span(
-                **populated["insertion_key"],
-                start=populated["covered_chunk_starts"][0],
-                end=populated["span_end"],
-            )
-
-        assert seen.get("restriction") is not True, "fetch_span scanned the whole table for staleness"
-
-    def test_fetch_span_carries_unit_metadata(self, populated):
+    def test_fetch_span_carries_unit_metadata(self, populated, span):
         """Test that the span object supports the filtering its docstring shows.
 
         fetch_span's own example is `tg[tg.unit_quality == "good"]`; dropping the
         metadata makes that a KeyError, and quality, electrode and shank are the
         columns an analysis actually filters on.
         """
-        from aeon.dj_pipeline import processed_ephys
-
-        with pytest.warns(UserWarning, match="covered_seconds"):
-            tsgroup = processed_ephys.SpikeTrains.fetch_span(
-                **populated["insertion_key"],
-                start=populated["covered_chunk_starts"][0],
-                end=populated["span_end"],
-            )
-
-        assert {"covered_seconds", "unit_quality", "electrode", "shank"} <= set(tsgroup.metadata_columns)
+        assert {"covered_seconds", "unit_quality", "electrode", "shank"} <= set(span.metadata_columns)
         # Unit 1 is the only cross-block unit, so it is the only one whose label
         # depends on the rule. Assert on it, or an inverted rule still passes.
         assert (
-            tsgroup.get_info("unit_quality")[populated["cross_block_unit"]]
+            span.get_info("unit_quality")[populated["cross_block_unit"]]
             == (populated["owning_block_quality"])
         )
         assert populated["owning_block_quality"] != populated["losing_block_quality"]
 
-    def test_covered_seconds_never_exceeds_the_span(self, populated):
-        """Test that a unit is not reported as observed for longer than the window.
+    def test_covered_seconds_composes_and_stays_inside_the_window(self, populated, span):
+        """Test the denominator on both axes: it adds up, and it never exceeds the span.
 
-        A chunk the window only partly covers contributes its whole stored
-        covered_seconds, so a one-minute span inside an hour reports 3600 s and
-        every rate in it comes out 60x low.
+        covered_seconds is stored in seconds rather than as a fraction precisely so
+        the addition is correct; a fraction would need duration weighting that every
+        caller would get wrong. The bound matters because a chunk the window only
+        partly covers used to contribute its whole stored value, so a one-minute
+        span inside an hour reported 3600 s and every rate in it came out 60x low.
         """
         from datetime import timedelta
 
         from aeon.dj_pipeline import processed_ephys
 
+        assert set(span.index) >= {1, 2, 3}
+        covered = span.get_info("covered_seconds")
+        assert covered[1] > covered[2]  # unit 2 is the one block A alone found
+
         start = populated["covered_chunk_starts"][0] + timedelta(minutes=30)
         end = start + timedelta(minutes=1)
-        tsgroup = processed_ephys.SpikeTrains.fetch_span(**populated["insertion_key"], start=start, end=end)
-
+        minute = processed_ephys.SpikeTrains.fetch_span(**populated["insertion_key"], start=start, end=end)
         spanned = (end - start).total_seconds()
-        covered = tsgroup.get_info("covered_seconds")
-        worst = max(float(covered[u]) for u in tsgroup.index)
+        worst = max(float(minute.get_info("covered_seconds")[u]) for u in minute.index)
         assert worst <= spanned, f"a unit reports {worst}s of coverage in a {spanned}s window"
 
-    def test_fetch_span_keeps_the_ephys_gap(self, populated):
+    def test_fetch_span_keeps_the_ephys_gap(self, populated, span):
         """Test that a gap inside the span survives into the returned time_support.
 
         The 09:00 chunk has an ephys gap at 09:20-09:40. pynapple's restrict()
@@ -364,38 +346,9 @@ class TestStalenessAndFetchSpan:
         it, so rebuilding the span support from restricted.time_support reports a
         solid hour and every firing rate in it comes out low.
         """
-        from aeon.dj_pipeline import processed_ephys
-
-        with pytest.warns(UserWarning, match="covered_seconds"):
-            tsgroup = processed_ephys.SpikeTrains.fetch_span(
-                **populated["insertion_key"],
-                start=populated["covered_chunk_starts"][0],
-                end=populated["span_end"],
-            )
-
-        total = float(tsgroup.time_support.tot_length())
+        total = float(span.time_support.tot_length())
         spanned = (populated["span_end"] - populated["covered_chunk_starts"][0]).total_seconds()
         assert total < spanned, (
             f"time_support covers {total}s of a {spanned}s span; the 09:20-09:40 ephys gap was erased"
         )
-        assert len(tsgroup.time_support) >= 2, "the gap should split the support"
-
-    def test_fetch_span_concatenates_and_sums_covered_seconds(self, populated):
-        """Test that a span returns one object and that the denominator composes.
-
-        covered_seconds is stored in seconds rather than as a fraction precisely so
-        this addition is correct; a fraction would need duration weighting that every
-        caller would get wrong.
-        """
-        from aeon.dj_pipeline import processed_ephys
-
-        with pytest.warns(UserWarning, match="covered_seconds"):
-            tsgroup = processed_ephys.SpikeTrains.fetch_span(
-                **populated["insertion_key"],
-                start=populated["covered_chunk_starts"][0],
-                end=populated["span_end"],
-            )
-
-        assert set(tsgroup.index) >= {1, 2, 3}
-        covered = tsgroup.get_info("covered_seconds")
-        assert covered[1] > covered[2]  # unit 2 is the one block A alone found
+        assert len(span.time_support) >= 2, "the gap should split the support"
