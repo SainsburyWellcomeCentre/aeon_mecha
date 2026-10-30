@@ -25,7 +25,7 @@ There are two ways to run it:
 
 ### Code
 
-If you do not already have a local clone of aeon_mecha, create one:
+If you do not already have a local clone of `aeon_mecha`, it is recommended to keep this somewhere in ceph (e.g. `/ceph/scratch/YOURUSERNAME`), so that your `uv` environment, your code and your data is in the same file system.
 
 ```
 git clone git@github.com:SainsburyWellcomeCentre/aeon_mecha.git
