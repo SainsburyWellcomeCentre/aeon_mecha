@@ -934,7 +934,7 @@ def ephys_sorting_setup(
                         "quality_metrics": {},
                     },
                     "job_kwargs": {
-                        "n_jobs": 4,
+                        "n_jobs": 2,
                         "pool_engine": "thread",
                         "max_threads_per_worker": 1,
                         "chunk_duration": "1s",

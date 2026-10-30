@@ -137,7 +137,7 @@ Run on a compute node rather than on the gateway. Match the resources to what
 you're running:
 
 ```
-srun --cpus-per-task=4 --time=04:00:00 --mem=16G --pty bash -i
+srun --cpus-per-task=2 --time=04:00:00 --mem=16G --pty bash -i
 ```
 
 ### 2. Install dependencies and set the environment

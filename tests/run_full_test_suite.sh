@@ -1,7 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=aeon-tests
+# Partition: cpu, or cpu_backfill (faster but can be preempted)
 #SBATCH --partition=cpu
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=2
 #SBATCH --mem=64G
 #SBATCH --time=04:00:00
 #SBATCH --output=slurm_output/%x_%j.out
