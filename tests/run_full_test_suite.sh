@@ -8,6 +8,7 @@
 #SBATCH --time=04:00:00
 #SBATCH --output=slurm_output/%x_%j.out
 #SBATCH --error=slurm_output/%x_%j.err
+#SBATCH --open-mode=append
 
 # Full golden-dataset test suite (no GPU needed). Submit from the repo root: sbatch tests/run_full_test_suite.sh
 set -uo pipefail
@@ -18,8 +19,9 @@ mkdir -p slurm_output
 export TEST_DB_PREFIX="u_${USER}_golden_tests_"
 export DJ_REPOSITORY_CONFIG='{"ceph_aeon": "/ceph/aeon"}'
 
-# The streams_schema fixture regenerates aeon/dj_pipeline/streams.py and restores it in teardown.
-# That teardown is skipped if pytest is killed, so restore it here on any exit (incl. scancel).
+# The streams_schema fixture regenerates aeon/dj_pipeline/streams.py and restores it in teardown,
+# which is skipped if pytest is killed. Restore it on start and on exit.
+git checkout -- aeon/dj_pipeline/streams.py
 trap 'git checkout -- aeon/dj_pipeline/streams.py' EXIT
 
 module load uv

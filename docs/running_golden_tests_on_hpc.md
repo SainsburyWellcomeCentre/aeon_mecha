@@ -119,9 +119,9 @@ following:
    It also drops stale schemas left by an earlier run (see
    [Dropping stale schemas](#dropping-stale-schemas)).
 4. Runs pytest.
-5. When the job ends, restores `aeon/dj_pipeline/streams.py`. The tests
-   regenerate this file and only restore it on a clean teardown, so a cancelled
-   job would otherwise leave it modified.
+5. Restores `aeon/dj_pipeline/streams.py` before pytest starts and when the job
+   ends. The tests regenerate this file and only restore it on a clean
+   teardown, so a cancelled or preempted job would otherwise leave it modified.
 
 Requested resources (CPUs, memory, walltime) are in the `#SBATCH` header of the
 script. Output goes to `slurm_output/aeon-tests_<jobid>.out` and `.err`.
