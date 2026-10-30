@@ -603,8 +603,8 @@ class TestSyncedSpikesIndexingAndExtrapolation:
                 np.fromfile(path, dtype=dtype)[:n_keep].tofile(path)
                 # we only ingest data that is at least 3 hours old, so we pretend the
                 # synthetic data was created more than three hours ago
-                three_hours_ago = time.time() - (3 * 60 * 60 + 10)
-                os.utime(path, (three_hours_ago, three_hours_ago))
+                four_hours_ago = time.time() - (4 * 60 * 60)
+                os.utime(path, (four_hours_ago, four_hours_ago))
 
         epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 

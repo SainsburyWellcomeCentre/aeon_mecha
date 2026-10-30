@@ -239,9 +239,9 @@ def make_synthetic_amplifier_data(
 
         # we only ingest data that is at least 3 hours old, so we pretend the
         # synthetic data was created more than three hours ago
-        three_hours_ago = time.time() - (3 * 60 * 60 + 10)
-        os.utime(clock_path, (three_hours_ago, three_hours_ago))
-        os.utime(amp_path, (three_hours_ago, three_hours_ago))
+        four_hours_ago = time.time() - (4 * 60 * 60 + 10)
+        os.utime(clock_path, (four_hours_ago, four_hours_ago))
+        os.utime(amp_path, (four_hours_ago, four_hours_ago))
 
 
 def register_synthetic_probe_insertion(
