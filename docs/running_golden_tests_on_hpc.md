@@ -116,6 +116,8 @@ following:
    prefix, and stops the job if the DB is unreachable or if `TEST_DB_PREFIX`
    doesn't end in `_` and contain `test` (teardown drops every schema starting
    with the prefix, so a broad one could delete schemas that aren't yours).
+   It also drops stale schemas left by an earlier run (see
+   [Dropping stale schemas](#dropping-stale-schemas)).
 4. Runs pytest.
 5. When the job ends, restores `aeon/dj_pipeline/streams.py`. The tests
    regenerate this file and only restore it on a clean teardown, so a cancelled
@@ -230,8 +232,8 @@ automatically drops any schemas created under your prefix during session teardow
 normal test run, whether it passes or fails, no manual cleanup should be required.
 
 You only need to remove stale schemas manually if the process exits before teardown can run,
-for example due to an OOM kill, `scancel`, or node failure. Before dropping any schemas,
-**verify that the namespace belongs to you**:
+for example due to an OOM kill, `scancel`, preemption, or node failure. Before dropping any
+schemas, **verify that the namespace belongs to you**:
 
 ```
 uv run python -c "import os, datajoint as dj; pref=os.environ['TEST_DB_PREFIX']; print('host:', dj.config.database.host, 'prefix:', pref); [print('would drop:', s) for s in dj.list_schemas() if s.startswith(pref)]"

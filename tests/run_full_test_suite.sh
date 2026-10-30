@@ -24,14 +24,32 @@ trap 'git checkout -- aeon/dj_pipeline/streams.py' EXIT
 
 module load uv
 uv sync --extra spike_sorting --group test-golden || exit 1
-# Preflight: log which DB/namespace this run uses and fail fast if it is unsafe or unreachable.
+# Preflight:
+# - log which DB/namespace this run uses and fail fast if it is unsafe or unreachable.
+# - drop any leftover schemas under the prefix
 uv run python -c "
 import os, datajoint as dj
 pref = os.environ['TEST_DB_PREFIX']
 assert pref.endswith('_') and 'test' in pref, f'unsafe prefix: {pref}'
 dj.conn()
 print('host:', dj.config.database.host, '| user:', dj.config.database.user, '| prefix:', pref)
-print('existing schemas under prefix:', [s for s in dj.list_schemas() if s.startswith(pref)])
+dj.config.safemode = False  # drop() would otherwise prompt on stdin, which fails in a batch job
+leftover = [s for s in dj.list_schemas() if s.startswith(pref)]
+print('existing schemas under prefix:', leftover)
+# Retry passes to resolve FK dependencies between schemas (same approach as _drop_test_schemas).
+for _ in range(len(leftover) + 1):
+    if not leftover:
+        break
+    remaining = []
+    for name in leftover:
+        try:
+            dj.Schema(name).drop()
+        except Exception as e:
+            print(f'failed to drop {name}: {e}')
+            remaining.append(name)
+    leftover = remaining
+assert not leftover, f'could not drop leftover schemas: {leftover}'
+print('dropped leftover schemas; starting clean')
 " || exit 1
 
 uv run pytest -v --tb=short -ra
