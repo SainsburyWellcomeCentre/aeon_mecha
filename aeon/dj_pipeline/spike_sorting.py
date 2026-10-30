@@ -23,7 +23,7 @@ from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
-from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording
+from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording, read_onix_ts
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
     extend_clock,
@@ -220,7 +220,7 @@ class PreProcessing(dj.Computed):
         ephys_files, dir_types = (
             ephys.EphysChunk.File
             & (ephys.EphysBlockInfo.Chunk & key)
-            & "file_name LIKE '%AmplifierData%.bin'"
+            & ["file_name LIKE '%AmplifierData%.bin'", "file_name LIKE '%Probe%.arrow'"]
         ).to_arrays("file_path", "directory_type", order_by="chunk_start")
 
         # Channels
@@ -1216,7 +1216,9 @@ class SyncedSpikes(dj.Imported):
 
         # Load ephys onix times
         _clock_query = (
-            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & "file_name LIKE '%Clock%.bin'"
+            ephys.EphysChunk.File
+            & (ephys.EphysBlockInfo.Chunk & key)
+            & ["file_name LIKE '%Clock%.bin'", "file_name LIKE '%Probe%.arrow'"]
         )
         _clock_rows = _clock_query.to_dicts(order_by="chunk_start")
         _pk = _clock_query.primary_key
@@ -1236,7 +1238,7 @@ class SyncedSpikes(dj.Imported):
             amp_len = read_amplifier_recording(
                 ephys_dir / f.replace("Clock", "AmplifierData"), num_channels, NP2_FS_HZ
             ).get_num_samples()
-            onix_ts = np.memmap(ephys_dir / f, mode="r", dtype=np.uint64)
+            onix_ts = read_onix_ts(ephys_dir / f)
             onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=f))
             amp_lengths.append(amp_len)
         chunk_bounds = np.cumsum(amp_lengths)  # end of each chunk in the concatenated recording
