@@ -529,14 +529,12 @@ class EphysChunk(dj.Manual):
 
         # {(epoch_start, probe_label): ProbeInsertion key}
         insertion_lookup: dict[tuple[datetime, str], dict] = {}
-        epoch_probe_labels = []
         for entry in (EphysEpochConfig.Insertion & exp_key).to_dicts():
             insertion_lookup[(entry["epoch_start"], entry["probe_label"])] = {
                 "experiment_name": entry["experiment_name"],
                 "subject": entry["subject"],
                 "insertion_number": entry["insertion_number"],
             }
-            epoch_probe_labels.append(entry["probe_label"])
 
         if not insertion_lookup:
             logger.warning(
@@ -553,8 +551,8 @@ class EphysChunk(dj.Manual):
 
         # To protect against ingesting a file that has not been fully copied,
         # or even interrupting the copy, we only include files that have been
-        # created more than 3 hours ago.
-        three_hours_ago = time.time() - 3 * 60 * 60
+        # created more than 3 hours + 15 mins ago.
+        three_hours_ago = time.time() - (3 * 60 * 60 + 15)
         all_ephys_files = [
             ephys_file for ephys_file in all_ephys_files if ephys_file.stat().st_mtime < three_hours_ago
         ]
