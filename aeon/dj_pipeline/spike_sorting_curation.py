@@ -22,8 +22,8 @@ class CurationMethod(dj.Lookup):
     curation_method: varchar(16)  # manual curation method/package (e.g. SpikeInterface, Phy, FigURL)
     """
     contents = [
-        ("Phy",),
-        ("SpikeInterface",),
+        {"curation_method": "Phy"},
+        {"curation_method": "SpikeInterface"},
     ]
 
 
