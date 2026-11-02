@@ -213,13 +213,6 @@ class PreProcessing(dj.Computed):
         output_dir = self.infer_output_dir(key, mkdir=True)
         recording_file = output_dir / "si_recording.pkl"
 
-        # Safety check: refuse to overwrite existing recording on ceph
-        if recording_file.exists():
-            raise FileExistsError(
-                f"Output directory already contains recording file: {recording_file}. "
-                "Refusing to overwrite existing recording."
-            )
-
         # Load ephys data
         ephys_files, dir_types = (
             ephys.EphysChunk.File
