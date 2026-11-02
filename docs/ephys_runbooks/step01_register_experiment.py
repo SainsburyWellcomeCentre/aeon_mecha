@@ -26,8 +26,8 @@ from pathlib import Path
 # --------------------------------------------------------------------------
 
 # Name that identifies this experiment in the database.
-# Convention: <experiment_tag>-<arena>, e.g. "abcGolden01-aeonx1".
-EXPERIMENT_NAME = "abcGolden01-aeonx1"
+# Convention: <experiment_tag>-<arena>, e.g. "abcGolden01-aeon3".
+EXPERIMENT_NAME = "abcGolden01-aeon3"
 
 # Absolute paths to raw data on Ceph.
 # abc experiments record behavior and ephys on separate acquisition machines:
