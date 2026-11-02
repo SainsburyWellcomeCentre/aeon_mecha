@@ -512,14 +512,6 @@ class SpikeSorting(dj.Computed):
             ]
         )
 
-        # The preprocessed recording is a large, regenerable intermediate that only the
-        # sorting reads, so reclaim it now.
-        possible_recording_dir = scratch_recording_dir(sorting_output_dir) / "recording"
-        for recording_dir in [possible_recording_dir, possible_recording_dir.with_suffix(".zarr")]:
-            if recording_dir.exists():
-                shutil.rmtree(recording_dir, ignore_errors=True)
-                logger.info(f"Deleted {recording_dir} after sorting.")
-
 
 @schema
 class PostProcessing(dj.Computed):
@@ -546,28 +538,21 @@ class PostProcessing(dj.Computed):
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
         try:
-            recording_file = Path(
-                (PreProcessing.File & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path
-            )
-        except dj.errors.DataJointError:
-            recording_file = output_dir / "si_recording.pkl"
-        try:
             sorting_file = Path(
                 (SpikeSorting.File & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file").full_path
             )
         except dj.errors.DataJointError:
             sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
 
-        return recording_file, sorting_file, output_dir, params
+        return sorting_file, output_dir, params
 
     def make_compute(
         self,
         key: dict[str, Any],
-        recording_file: Path,
         sorting_file: Path,
         output_dir: Path,
         params: dict[str, Any],
-    ) -> tuple[Path, datetime, float]:
+    ) -> tuple[Path, Path, datetime, float]:
         """Post-process spike sorting results with quality assessment.
 
         Runs SpikeInterface sorting analyzer to compute quality metrics and extensions.
@@ -589,7 +574,10 @@ class PostProcessing(dj.Computed):
 
         execution_time = datetime.now(UTC)
 
-        si_recording: si.BaseRecording = si.load(recording_file, base_folder=output_dir)
+        intermediate_dir = scratch_recording_dir(output_dir)
+        recording_path = list(intermediate_dir.glob("recording*"))[0]
+
+        si_recording = si.load(recording_path)
         si_sorting: si.sorters.BaseSorter = si.load(sorting_file, base_folder=output_dir)
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
@@ -616,7 +604,7 @@ class PostProcessing(dj.Computed):
             logger.info("No units found in sorting object. Skipping sorting analyzer.")
             analyzer_output_dir.mkdir(parents=True, exist_ok=True)
             execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
-            return analyzer_output_dir, execution_time, execution_duration
+            return analyzer_output_dir, output_dir, execution_time, execution_duration
 
         sorting_analyzer = si.create_sorting_analyzer(
             sorting=si_sorting,
@@ -642,9 +630,9 @@ class PostProcessing(dj.Computed):
 
         execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
 
-        return analyzer_output_dir, execution_time, execution_duration
+        return analyzer_output_dir, output_dir, execution_time, execution_duration
 
-    def make_insert(self, key, analyzer_output_dir, execution_time, execution_duration):
+    def make_insert(self, key, analyzer_output_dir, output_dir, execution_time, execution_duration):
         """Insert post-processing results into the database, including file references."""
         self.insert1(
             {
@@ -660,6 +648,14 @@ class PostProcessing(dj.Computed):
                 if f.is_file()
             ]
         )
+
+        # The preprocessed recording is a large, regenerable intermediate that only the
+        # sorting reads, so reclaim it now.
+        possible_recording_dir = scratch_recording_dir(output_dir) / "recording"
+        for recording_dir in [possible_recording_dir, possible_recording_dir.with_suffix(".zarr")]:
+            if recording_dir.exists():
+                shutil.rmtree(recording_dir, ignore_errors=True)
+                logger.info(f"Deleted {recording_dir} after sorting.")
 
 
 @schema
