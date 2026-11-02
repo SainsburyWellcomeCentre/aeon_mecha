@@ -72,11 +72,14 @@ class UnitQuality(dj.Lookup):
     unit_quality_description='':  varchar(4000)
     """
     contents = [
-        ("good", "single unit"),
-        ("ok", "probably a single unit, but could be contaminated"),
-        ("mua", "multi-unit activity"),
-        ("noise", "bad unit"),
-        ("n.a.", "not available"),
+        {"unit_quality": "good", "unit_quality_description": "single unit"},
+        {
+            "unit_quality": "ok",
+            "unit_quality_description": "probably a single unit, but could be contaminated",
+        },
+        {"unit_quality": "mua", "unit_quality_description": "multi-unit activity"},
+        {"unit_quality": "noise", "unit_quality_description": "bad unit"},
+        {"unit_quality": "n.a.", "unit_quality_description": "not available"},
     ]
 
 
@@ -89,12 +92,12 @@ class CurationTag(dj.Lookup):
     tag: varchar(64)
     """
     contents = [
-        ("irregular waveform",),
-        ("amplitude drift",),
-        ("bimodal amplitude",),
-        ("intermittent",),
-        ("refractory violations",),
-        ("flag",),
+        {"tag": "irregular waveform"},
+        {"tag": "amplitude drift"},
+        {"tag": "bimodal amplitude"},
+        {"tag": "intermittent"},
+        {"tag": "refractory violations"},
+        {"tag": "flag"},
     ]
 
 
@@ -107,11 +110,14 @@ class SortingMethod(dj.Lookup):
     """
 
     contents = [
-        ("kilosort2", "kilosort2 sorting method"),
-        ("kilosort2.5", "kilosort2.5 sorting method"),
-        ("kilosort3", "kilosort3 sorting method"),
-        ("kilosort4", "kilosort4 sorting method"),
-        ("lupin", "lupin sorting method (SpikeInterface internal)"),
+        {"sorting_method": "kilosort2", "sorting_method_desc": "kilosort2 sorting method"},
+        {"sorting_method": "kilosort2.5", "sorting_method_desc": "kilosort2.5 sorting method"},
+        {"sorting_method": "kilosort3", "sorting_method_desc": "kilosort3 sorting method"},
+        {"sorting_method": "kilosort4", "sorting_method_desc": "kilosort4 sorting method"},
+        {
+            "sorting_method": "lupin",
+            "sorting_method_desc": "lupin sorting method (SpikeInterface internal)",
+        },
     ]
 
 
@@ -1325,10 +1331,13 @@ class UnitMatchingMethod(dj.Lookup):
     matching_method_description: varchar(1000)
     """
     contents = [
-        (
-            "spike_time_overlap",
-            "Matches units by comparing spike times during overlapping time windows between ephys blocks",
-        ),
+        {
+            "matching_method": "spike_time_overlap",
+            "matching_method_description": (
+                "Matches units by comparing spike times during overlapping time windows "
+                "between ephys blocks"
+            ),
+        },
     ]
 
 

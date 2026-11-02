@@ -99,8 +99,11 @@ class TestEpochIngestion:
         acquisition = full_pipeline["acquisition"]
         cfg = golden_dataset_config
 
-        epoch = (acquisition.Epoch & {"experiment_name": cfg["experiment_name"]}).fetch1()
-        assert epoch["epoch_dir"] == cfg["epoch_dir"]
+        # The repository may hold more epochs than the golden one; check it is among them.
+        epoch_dirs = (acquisition.Epoch & {"experiment_name": cfg["experiment_name"]}).to_arrays(
+            "epoch_dir"
+        )
+        assert cfg["epoch_dir"] in epoch_dirs
 
 
 class TestEpochConfigMake:
@@ -124,7 +127,11 @@ class TestEpochConfigMake:
 
         acquisition.EpochConfig.populate({"experiment_name": cfg["experiment_name"]})
 
-        meta = (acquisition.EpochConfig.Meta & {"experiment_name": cfg["experiment_name"]}).fetch1()
+        golden_epoch = acquisition.Epoch & {
+            "experiment_name": cfg["experiment_name"],
+            "epoch_dir": cfg["epoch_dir"],
+        }
+        meta = (acquisition.EpochConfig.Meta & golden_epoch).fetch1()
 
         # metadata may be a JSON string (MariaDB json-as-longtext) or a dict
         metadata = meta["metadata"]
@@ -156,8 +163,11 @@ class TestChunkIngestion:
 
         acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
 
-        chunk = (acquisition.Chunk & {"experiment_name": cfg["experiment_name"]}).fetch1()
-        assert chunk["chunk_start"] is not None
+        chunk_starts = (acquisition.Chunk & {"experiment_name": cfg["experiment_name"]}).to_arrays(
+            "chunk_start"
+        )
+        assert len(chunk_starts) >= 1
+        assert all(cs is not None for cs in chunk_starts)
 
 
 class TestStreamDataIngestion:
@@ -196,7 +206,12 @@ class TestStreamDataIngestion:
         results = {}
         for table_name, table in stream_tables:
             try:
-                table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+                table.populate(
+                    {"experiment_name": cfg["experiment_name"]},
+                    max_calls=self.POPULATE_LIMIT,
+                    display_progress=False,
+                    suppress_errors=True,
+                )
                 total = len(table & {"experiment_name": cfg["experiment_name"]})
                 with_data = len(table & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0")
                 results[table_name] = {"total": total, "with_data": with_data}
@@ -231,7 +246,12 @@ class TestStreamDataIngestion:
             pytest.skip("No Video stream tables found")
 
         for _table_name, table in video_tables:
-            table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+            table.populate(
+                {"experiment_name": cfg["experiment_name"]},
+                max_calls=self.POPULATE_LIMIT,
+                display_progress=False,
+                suppress_errors=True,
+            )
 
         # Check at least one video entry has actual data (sample_count > 0)
         for _table_name, table in video_tables:
@@ -266,7 +286,12 @@ class TestStreamDataIngestion:
             pytest.skip("No Harp stream tables found")
 
         for _table_name, table in harp_tables:
-            table.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+            table.populate(
+                {"experiment_name": cfg["experiment_name"]},
+                max_calls=self.POPULATE_LIMIT,
+                display_progress=False,
+                suppress_errors=True,
+            )
 
         # Check at least one has actual data (sample_count > 0)
         for _table_name, table in harp_tables:
@@ -308,7 +333,12 @@ class TestFetchStream:
                 continue
             obj = getattr(streams, name, None)
             if isinstance(obj, type) and issubclass(obj, dj.Imported) and obj is not dj.Imported:
-                obj.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+                obj.populate(
+                    {"experiment_name": cfg["experiment_name"]},
+                    max_calls=self.POPULATE_LIMIT,
+                    display_progress=False,
+                    suppress_errors=True,
+                )
 
     def _find_stream_with_data(self, streams, cfg, name_filter=None):
         """Find a stream table with sample_count > 0 data."""
@@ -441,7 +471,7 @@ class TestCodecStreamData:
 
     POPULATE_LIMIT = 10
 
-    def _ensure_and_find(self, full_pipeline, golden_dataset_config, name_filter=None):
+    def _ensure_and_find(self, full_pipeline, golden_dataset_config, name_filter=None, restriction=None):
         """Populate streams and find one with data."""
         import datajoint as dj
 
@@ -459,8 +489,15 @@ class TestCodecStreamData:
                 continue
             obj = getattr(streams, name, None)
             if isinstance(obj, type) and issubclass(obj, dj.Imported) and obj is not dj.Imported:
-                obj.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+                obj.populate(
+                    {"experiment_name": cfg["experiment_name"]},
+                    max_calls=self.POPULATE_LIMIT,
+                    display_progress=False,
+                    suppress_errors=True,
+                )
                 query = obj & {"experiment_name": cfg["experiment_name"]} & "sample_count > 0"
+                if restriction is not None:
+                    query = query & restriction
                 if len(query):
                     # Restrict to a single row — datasets may span multiple chunks
                     # per (epoch, device); these tests only check codec correctness
@@ -513,14 +550,16 @@ class TestCodecStreamData:
         import numpy as np
 
         result = self._ensure_and_find(
-            full_pipeline, golden_dataset_config, name_filter=lambda n: "Encoder" in n
+            full_pipeline,
+            golden_dataset_config,
+            name_filter=lambda n: "Encoder" in n,
+            restriction="device_name LIKE '%1'",  # one device; applied before the single-row limit
         )
         if result is None:
             pytest.skip("No Encoder stream data populated")
 
         name, table, query = result
-        # Restrict to one device to get exactly one row
-        row = (query & "device_name LIKE '%1'").fetch1()
+        row = query.fetch1()
         df = row["stream_df"]
 
         for col in df.columns:
@@ -559,6 +598,7 @@ class TestStreamPopulationInventory:
 
     POPULATE_LIMIT = 50
 
+    @pytest.mark.filterwarnings("ignore:data index for .* contains out-of-order timestamps:UserWarning")
     def test_inventory(self, test_epochs, full_pipeline, golden_dataset_config):
         """Populate every stream table and report row + sample counts."""
         import datajoint as dj
@@ -588,7 +628,12 @@ class TestStreamPopulationInventory:
         all_tables = {**acq_tables, **stream_tables}
         results: list[tuple[str, int, int]] = []
         for label, tbl in all_tables.items():
-            tbl.populate(max_calls=self.POPULATE_LIMIT, display_progress=False, suppress_errors=True)
+            tbl.populate(
+                {"experiment_name": cfg["experiment_name"]},
+                max_calls=self.POPULATE_LIMIT,
+                display_progress=False,
+                suppress_errors=True,
+            )
             q = tbl & {"experiment_name": cfg["experiment_name"]}
             row_count = len(q)
             sample_total = 0
