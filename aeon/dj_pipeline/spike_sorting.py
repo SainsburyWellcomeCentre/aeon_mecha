@@ -209,16 +209,16 @@ class PreProcessing(dj.Computed):
         params = (SortingParamSet & key).fetch1("params")
         si_pipeline = resolve_preprocessing_pipeline(params.get("SI_PREPROCESSING_PARAMS") or {})
 
-        # Safety check: refuse to overwrite existing data on ceph
-        output_dir = self.infer_output_dir(key)
-        if output_dir.exists() and any(output_dir.iterdir()):
-            raise FileExistsError(
-                f"Output directory already contains data: {output_dir}. "
-                "Refusing to overwrite existing sorting data."
-            )
         # Create output directory
         output_dir = self.infer_output_dir(key, mkdir=True)
         recording_file = output_dir / "si_recording.pkl"
+
+        # Safety check: refuse to overwrite existing recording on ceph
+        if recording_file.exists():
+            raise FileExistsError(
+                f"Output directory already contains recording file: {recording_file}. "
+                "Refusing to overwrite existing recording."
+            )
 
         # Load ephys data
         ephys_files, dir_types = (
