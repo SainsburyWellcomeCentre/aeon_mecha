@@ -93,12 +93,12 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
     lab.Location.insert1(
         {
             "lab": "SWC",
-            "location": "AEONX1",
-            "location_description": "acquisition machine AEONX1",
+            "location": "AEON3",
+            "location_description": "acquisition machine AEON3",
         },
         skip_duplicates=True,
     )
-    print("Location: AEONX1")
+    print("Location: AEON3")
 
     # --- Derive experiment_start_time from the first epoch directory ---
     # Use the ephys directory to find the experiment start time, since that
@@ -129,7 +129,7 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
             "experiment_description": "Golden baseline dataset - abc ephys (AEON3 + AEONX1)",
             "arena_name": "circle-2m",
             "lab": "SWC",
-            "location": "AEONX1",
+            "location": "AEON3",
             "experiment_type": "foraging",
         },
         skip_duplicates=True,

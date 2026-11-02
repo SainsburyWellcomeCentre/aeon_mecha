@@ -107,7 +107,8 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
 
     Unit matching identifies the same neuron across overlapping ephys
     blocks. The algorithm (spike_time_overlap) works by:
-        1. Starting from a "seed" block (the first block in time)
+        1. Starting from a "seed" block, set by seed_block_start in the
+           paramset (this runbook uses the earliest block)
         2. For each subsequent block, comparing spike trains in the
            overlapping time window with previously matched blocks
         3. Using SpikeInterface's compare_two_sorters to find pairs of
@@ -140,8 +141,9 @@ def run_unit_matching(experiment_name, subject, matching_paramset_id):
     # ------------------------------------------------------------------
     # a) Insert UnitMatchingParamSet if it does not exist
     # ------------------------------------------------------------------
-    # The seed block is the first block in time -- unit matching
-    # propagates outward from here in both directions.
+    # The seed can be any block (ideally the one with the best signal
+    # quality); this runbook uses the earliest. Unit matching propagates
+    # outward from it in both directions.
     block_starts = (ephys.EphysBlock & restriction).to_arrays("block_start")
 
     if len(block_starts) == 0:
