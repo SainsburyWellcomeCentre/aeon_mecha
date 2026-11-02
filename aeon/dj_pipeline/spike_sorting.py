@@ -384,7 +384,7 @@ class PreProcessing(dj.Computed):
         self.File.insert(
             [
                 {**key, "file_name": f.relative_to(output_dir).as_posix(), "file": f}
-                for f in output_dir.glob("recording*")
+                for f in output_dir.glob("si_recording*")
                 if f.is_file()
             ]
         )
