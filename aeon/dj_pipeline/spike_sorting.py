@@ -489,7 +489,7 @@ class SpikeSorting(dj.Computed):
         intermediate_dir = scratch_recording_dir(output_dir)
 
         # path could be `.zarr` a binary folder
-        recording_path = intermediate_dir.glob("recording*")
+        recording_path = list(intermediate_dir.glob("recording*"))[0]
 
         recording_for_sorting = si.load(recording_path)
 
