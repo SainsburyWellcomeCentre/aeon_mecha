@@ -276,10 +276,9 @@ class PreProcessing(dj.Computed):
         offset_to_uV: float,
         output_dir: Path,
         recording_file: Path,
-        recording_dir: Path,
         params: dict[str, Any],
         si_pipeline: dict[str, dict[str, Any]],
-    ) -> tuple[Path, datetime, Path]:
+    ) -> tuple[Path, datetime]:
         """Preprocess ephys data for spike sorting.
 
         Performs data concatenation, channel selection, filtering, and probe setup.
@@ -295,7 +294,6 @@ class PreProcessing(dj.Computed):
             offset_to_uV: Offset conversion factor
             output_dir: Output directory path
             recording_file: Path to save recording object
-            recording_dir: Directory for recording files
             params: SortingParamSet params
             si_pipeline: SpikeInterface preprocessing pipeline dict to apply
 
@@ -307,7 +305,6 @@ class PreProcessing(dj.Computed):
 
         # registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
-        from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
 
@@ -365,37 +362,26 @@ class PreProcessing(dj.Computed):
         intermediate_dir = scratch_recording_dir(recording_file.parent)
         intermediate_dir.mkdir(parents=True, exist_ok=True)
 
-        if save_format == "zarr":
-            zarr_path = intermediate_dir / "recording.zarr"
-            if zarr_path.exists():
-                logger.info(f"{zarr_path} already exists. Skipping zarr write.")
-            else:
-                strip_non_numeric_properties(si_recording)
-                logger.info(f"Writing zarr recording to {zarr_path}...")
-                si_recording.save(
-                    format="zarr",
-                    folder=zarr_path,
-                    **sorters.basesorter.get_job_kwargs(job_kwargs, True),
-                )
-        else:
-            binary_file_path = intermediate_dir / "recording.dat"
-            if binary_file_path.exists():
-                load_and_verify_binary_file(
-                    binary_file_path=binary_file_path, se_recording_obj=si_recording
-                )
-                logger.info(f"{binary_file_path} already exists. Skipping writing binary file.")
-            else:
-                logger.info(f"Writing binary recording to {binary_file_path}...")
-                si.core.write_binary_recording(
-                    recording=si_recording,
-                    file_paths=[binary_file_path],
-                    dtype="int16",
-                    **sorters.basesorter.get_job_kwargs(job_kwargs, True),
-                )
+        rec_path = intermediate_dir / "recording"
+        if rec_path.exists() or rec_path.with_suffix(".zarr").exists():
+            saved_rec = si.load(rec_path)
 
-        return output_dir, execution_time, recording_dir
+            if saved_rec.get_num_samples() == si_recording.get_num_samples():
+                logger.info(f"{rec_path} already exists and has the right size. Skipping write.")
+                return output_dir, execution_time
 
-    def make_insert(self, key, output_dir, execution_time, recording_dir):
+        strip_non_numeric_properties(si_recording)
+        logger.info(f"Writing recording to {rec_path}...")
+        si_recording.save(
+            format=save_format,
+            folder=rec_path,
+            overwrite=True,
+            **job_kwargs,
+        )
+
+        return output_dir, execution_time
+
+    def make_insert(self, key, output_dir, execution_time):
         """Insert preprocessing results into the database, including file references."""
         self.insert1(
             {
@@ -407,11 +393,9 @@ class PreProcessing(dj.Computed):
         )
         self.File.insert(
             [
-                {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
-                for f in recording_dir.rglob("*")
+                {**key, "file_name": f.relative_to(output_dir).as_posix(), "file": f}
+                for f in output_dir.glob("recording*")
                 if f.is_file()
-                and f.name != "recording.dat"
-                and not f.is_relative_to(recording_dir / "recording.zarr")
             ]
         )
 
@@ -440,14 +424,7 @@ class SpikeSorting(dj.Computed):
         sorting_method, params = (SortingTask * SortingParamSet & key).fetch1("sorting_method", "params")
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
-        try:
-            recording_file = Path(
-                (PreProcessing.File & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path
-            )
-        except dj.errors.DataJointError:
-            recording_file = output_dir.parent / "recording" / "si_recording.pkl"
-
-        return recording_file, output_dir, params, sorting_method
+        return output_dir, params, sorting_method
 
     def make_compute(
         self,
@@ -495,9 +472,7 @@ class SpikeSorting(dj.Computed):
                 f"Sorting output directory already contains data: {sorting_output_dir}. "
                 "Refusing to overwrite existing sorting data."
             )
-        si_recording: si.BaseRecording = si.load(recording_file, base_folder=output_dir)
 
-        save_format = params.get("save_format", "zarr")
         sorting_params = params["SI_SORTING_PARAMS"].copy()
 
         if sorting_method == "kilosort4" and "clear_cache" not in sorting_params:
@@ -511,27 +486,14 @@ class SpikeSorting(dj.Computed):
             # Values in the paramset still win, except n_jobs: it follows the job's CPU
             # allocation, and a paramset n_jobs can only lower it.
             job_kwargs = fork_safe_job_kwargs("30s", max_jobs=sorting_params.get("n_jobs"))
-            sorting_params = {**job_kwargs, **sorting_params, "n_jobs": job_kwargs["n_jobs"]}
+            sorting_params = {**job_kwargs, **sorting_params}
 
-        intermediate_dir = scratch_recording_dir(Path(recording_file).parent)
-        if save_format == "zarr":
-            zarr_path = intermediate_dir / "recording.zarr"
-            if not zarr_path.exists():
-                raise FileNotFoundError(
-                    f"Preprocessed recording missing at {zarr_path}. It is deleted after a "
-                    "successful sort; to re-sort, delete this block's PreProcessing entry "
-                    "(cascades to SpikeSorting) and re-populate it."
-                )
-            recording_for_sorting = si.load(zarr_path)
-        else:
-            binary_file_path = intermediate_dir / "recording.dat"
-            recording_for_sorting = load_and_verify_binary_file(
-                binary_file_path=binary_file_path, se_recording_obj=si_recording
-            )
-            if not recording_for_sorting.binary_compatible_with(
-                dtype="int16", time_axis=0, file_paths_length=1
-            ):
-                raise ValueError(f"Incompatible binary file for spike sorting: {binary_file_path}")
+        intermediate_dir = scratch_recording_dir(output_dir)
+
+        # path could be `.zarr` a binary folder
+        recording_path = intermediate_dir.glob("recording*")
+
+        recording_for_sorting = si.load(recording_path)
 
         si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
             sorter_name=sorter_name,
@@ -1850,37 +1812,3 @@ class UnitMatching(dj.Computed):
             f"  {n_matched} matched to existing global units\n"
             f"  {n_new} new global units created"
         )
-
-
-def load_and_verify_binary_file(binary_file_path: Path, se_recording_obj: Any) -> Any:
-    """Load and verify binary recording file matches original recording.
-
-    Args:
-        binary_file_path: Path to binary recording file
-        se_recording_obj: Original SpikeInterface recording object
-
-    Returns:
-        Binary recording object with probe geometry
-
-    Raises:
-        ValueError: If sample counts don't match between files
-    """
-    import spikeinterface.extractors as se
-
-    binary_rec = se.read_binary(
-        binary_file_path,
-        sampling_frequency=se_recording_obj.get_sampling_frequency(),
-        dtype=se_recording_obj.dtype,
-        num_channels=se_recording_obj.get_num_channels(),
-        gain_to_uV=se_recording_obj.get_channel_gains()[0],
-    )
-    if binary_rec.get_num_samples() != se_recording_obj.get_num_samples():
-        raise ValueError(
-            f"Number of samples in binary file ({binary_rec.get_num_samples()})"
-            f" does not match the original recording ({se_recording_obj.get_num_samples()})."
-        )
-
-    binary_rec.set_probe(probe=se_recording_obj.get_probe(), in_place=True)
-    # force rename channel_ids?
-    # binary_rec._main_ids = se_recording_obj.get_channel_ids()
-    return binary_rec
