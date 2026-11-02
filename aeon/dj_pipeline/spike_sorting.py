@@ -855,9 +855,9 @@ class SortedSpikes(dj.Imported):
         # create channel2electrode_map
         electrode_map: dict[int, dict] = {elec["electrode"]: elec for elec in electrode_query.to_dicts()}
         channel2electrode_map = {
-            chn_idx: electrode_map[int(elec_id)]
-            for chn_idx, elec_id in zip(
-                sorting_analyzer.get_probe().device_channel_indices,
+            int(chn_id): electrode_map[int(elec_id)]
+            for chn_id, elec_id in zip(
+                sorting_analyzer.channel_ids,
                 sorting_analyzer.get_probe().contact_ids,
                 strict=False,
             )
