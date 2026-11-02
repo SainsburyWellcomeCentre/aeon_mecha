@@ -550,7 +550,7 @@ class PostProcessing(dj.Computed):
                 (PreProcessing.File & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path
             )
         except dj.errors.DataJointError:
-            recording_file = output_dir.parent / "recording" / "si_recording.pkl"
+            recording_file = output_dir / "si_recording.pkl"
         try:
             sorting_file = Path(
                 (SpikeSorting.File & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file").full_path
