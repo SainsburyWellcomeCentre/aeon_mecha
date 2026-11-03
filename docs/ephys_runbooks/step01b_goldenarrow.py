@@ -102,7 +102,7 @@ def register_probes(probes, exp_key, subject_key):
 # Ingest actual ephys data - Epochs and Chunks
 EphysEpoch.ingest_epochs(EXPERIMENT_NAME)
 
-for epoch in (EphysEpoch & exp_key):
+for epoch in EphysEpoch & exp_key:
     epoch_key = {
         "epoch_start": epoch["epoch_start"],
         "experiment_name": epoch["experiment_name"],
