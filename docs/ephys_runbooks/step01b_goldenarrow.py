@@ -102,7 +102,7 @@ def register_probes(probes, exp_key, subject_key):
 # Ingest actual ephys data - Epochs and Chunks
 EphysEpoch.ingest_epochs(EXPERIMENT_NAME)
 
-for epoch in EphysEpoch:
+for epoch in (EphysEpoch & exp_key):
     epoch_key = {
         "epoch_start": epoch["epoch_start"],
         "experiment_name": epoch["experiment_name"],
@@ -136,7 +136,7 @@ for epoch in EphysEpoch:
                 "probe_type": PROBE_TYPE,
                 "probe_label": probe_name,
                 "config_file_name": probe_metadata["channel_map_file"],
-                "electrode_config_name": probe_metadata["channel_map_file"].split(".")[0],
+                "electrode_config_name": Path(probe_metadata["channel_map_file"]).stem,
             },
             skip_duplicates=True,
             allow_direct_insert=True,

@@ -14,22 +14,6 @@ import numpy as np
 import pandas as pd
 import pyarrow.feather as feather
 
-IMU_COLUMNS: tuple[str, ...] = (
-    "euler_x",
-    "euler_y",
-    "euler_z",
-    "gravity_vector_x",
-    "gravity_vector_y",
-    "gravity_vector_z",
-    "linear_acceleration_x",
-    "linear_acceleration_y",
-    "linear_acceleration_z",
-    "quaternion_w",
-    "quaternion_x",
-    "quaternion_y",
-    "quaternion_z",
-)
-
 IMU_arrow_to_DJ = {
     "EulerAngle_Yaw": "euler_x",
     "EulerAngle_Pitch": "euler_y",
@@ -45,6 +29,8 @@ IMU_arrow_to_DJ = {
     "Quaternion_Y": "quaternion_y",
     "Quaternion_Z": "quaternion_z",
 }
+
+IMU_COLUMNS: tuple[str, ...] = tuple(IMU_arrow_to_DJ.values())
 
 # Map dotmap stream class name -> column prefix used in IMU_COLUMNS
 _PREFIX_BY_CLASS: dict[str, str] = {
@@ -89,11 +75,10 @@ def load_and_merge_bno055(
         raise FileNotFoundError(clock_file)
 
     if clock_file.suffix == ".arrow":
-        bno55_data = feather.read_table(clock_file)
-        bno55_df = bno55_data.to_pandas()
-        bno55_df.index = bno55_df["Clock"].values
-        reduced_bno55 = bno55_df.rename(columns=IMU_arrow_to_DJ)[list(IMU_arrow_to_DJ.values())]
-        return reduced_bno55
+        table = feather.read_table(clock_file, columns=["Clock", *IMU_arrow_to_DJ])
+        df = table.select(list(IMU_arrow_to_DJ)).to_pandas().rename(columns=IMU_arrow_to_DJ)
+        df.index = table["Clock"].to_numpy()
+        return df
 
     onix_clock = np.fromfile(clock_file, dtype=np.uint64)
 
@@ -156,11 +141,10 @@ def find_overlapping_bno055_chunks(
             continue
         n = int(chunk_suffix)
         if clock_file.suffix == ".arrow":
-            table = feather.read_table(clock_file)
-            clock_array = table["Clock"].to_numpy()
-            first = clock_array[0]
-            last = clock_array[-1]
-
+            clock_array = feather.read_table(clock_file, columns=["Clock"])["Clock"].to_numpy()
+            if len(clock_array) == 0:
+                continue
+            first, last = int(clock_array[0]), int(clock_array[-1])
         else:
             size = clock_file.stat().st_size
             # Floor to a uint64 boundary in case a trailing partial sample was

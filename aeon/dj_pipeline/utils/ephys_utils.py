@@ -515,20 +515,19 @@ def resolve_epoch_probe_json(
     """Resolve a probeinterface JSON path by basename.
 
     Searches ``<raw_ephys_dir>/recording_configurations/`` (production layout)
-    first, then ``<epoch_path>/`` (local-copy fallback for test/golden data).
-    Raises FileNotFoundError if neither has the file.
+    first, then ``<epoch_path>/`` (local-copy fallback for test/golden data),
+    then ``<epoch_path>/<device_name>/`` for each known device.
+    Raises FileNotFoundError if none has the file.
     """
-    central = Path(raw_ephys_dir) / "recording_configurations" / config_file_name
-    if central.exists():
-        return central
-    epoch_local = Path(epoch_path) / config_file_name
-    if epoch_local.exists():
-        return epoch_local
-    for device_name in DEVICE_NAMES:
-        probe_path = Path(epoch_path) / device_name / config_file_name
-        if probe_path.exists():
-            return probe_path
-    raise FileNotFoundError(f"Probe config JSON not found at {central} or {epoch_local}")
+    candidate_paths = [
+        Path(raw_ephys_dir) / "recording_configurations" / config_file_name,
+        Path(epoch_path) / config_file_name,
+        *(Path(epoch_path) / device_name / config_file_name for device_name in DEVICE_NAMES),
+    ]
+    for candidate_path in candidate_paths:
+        if candidate_path.exists():
+            return candidate_path
+    raise FileNotFoundError(f"Found no probe config JSON at any of: {', '.join(map(str, candidate_paths))}")
 
 
 def load_device_channel_map(json_path: Path) -> dict[int, int]:
