@@ -12,12 +12,11 @@ pytestmark = pytest.mark.integration
 
 @pytest.fixture(scope="module")
 def spike_trains_scenario(ephys_full_pipeline, tmp_path_factory):
-    """Build the behaviour + ephys scenario and return what the tests assert against.
+    """Build the behaviour + ephys scenario.
 
-    Takes ``dj_store`` from ``ephys_full_pipeline`` rather than configuring its own.
-    ``dj.config.stores`` is global and assigning it replaces the whole mapping, so two
-    fixtures each pointing ``dj_store`` at their own tmpdir leaves rows written by the
-    first unreadable once the second runs.
+    Takes ``dj_store`` from ``ephys_full_pipeline``: ``dj.config.stores`` is global
+    and assigning it replaces the whole mapping, so a second fixture pointing
+    ``dj_store`` elsewhere makes the first's rows unreadable.
     """
     from spike_train_factories import build_scenario
 
@@ -35,8 +34,8 @@ def spike_trains_scenario(ephys_full_pipeline, tmp_path_factory):
 def _mine(scenario):
     """SpikeTrains restricted to the synthetic experiment.
 
-    The golden suite populates this same table, and pytest runs it first, so an
-    unrestricted query here picks up its rows.
+    The golden suite populates the same table and runs first, so an unrestricted
+    query here picks up its rows.
     """
     from aeon.dj_pipeline import processed_ephys
 
@@ -47,11 +46,10 @@ class TestKeySource:
     """What is computable, and what is deliberately not."""
 
     def test_only_chunks_overlapping_matched_ephys_are_computable(self, spike_trains_scenario):
-        """Test that the key_source is the overlap, not the cross product.
+        """The key_source is the overlap, not the cross product.
 
-        Three behavioural chunks are registered but ephys covers only two. The third
-        must not appear — there is nothing to compute it from. An empty key_source is
-        not an error in DataJoint, so this asserts a positive count too.
+        Three behavioural chunks, ephys covers two. An empty key_source is not an
+        error in DataJoint, so assert the positive count too.
         """
         from aeon.dj_pipeline import processed_ephys
 
@@ -63,11 +61,10 @@ class TestKeySource:
         assert spike_trains_scenario["uncovered_chunk_start"] not in starts
 
     def test_matching_is_per_chunk_not_per_insertion(self, spike_trains_scenario):
-        """Test that one matched block does not make every chunk computable.
+        """One matched block must not make every chunk computable.
 
-        Renaming chunk_start before the semijoin drops it from the heading, so the
-        restriction degenerates to "this insertion has some match somewhere" and
-        key_source yields chunks whose own ephys was never matched.
+        Renaming chunk_start before the semijoin drops it from the heading, and the
+        restriction degenerates to "this insertion matched something, somewhere".
         """
         from aeon.dj_pipeline import acquisition, ephys, processed_ephys, spike_sorting
 
@@ -88,11 +85,10 @@ class TestKeySource:
             )
 
     def test_a_block_matched_under_two_paramsets_is_refused(self, spike_trains_scenario):
-        """Test that a second matching run stops the chunk rather than doubling it.
+        """A second matching run stops the chunk rather than doubling it.
 
-        Two matching parameter sets never compare against each other, so the same
-        neurons get an id in each family. The duplicate is removed again in the same
-        test: every later test here assumes one matching set per block.
+        Two matching paramsets never compare against each other, so the same neurons
+        get an id in each. Removed again here: later tests assume one set per block.
         """
         from spike_train_factories import ALT_MATCHING_PARAMSET, add_duplicate_sorting
 
@@ -128,16 +124,15 @@ class TestMake:
     """What a populated row actually contains."""
 
     def test_conserves_spikes_against_the_source(self, populated):
-        """Test that re-chunking loses and duplicates nothing.
+        """Every inserted spike appears exactly once across the rows.
 
-        The single assertion that catches almost any boundary bug: every spike the
-        scenario inserted appears exactly once across the rows.
+        The single assertion that catches almost any boundary bug.
         """
         total = sum(_mine(populated).to_arrays("n_spikes"))
         assert total == populated["expected_spike_counts"]["total"]
 
     def test_boundary_spike_lands_in_the_later_chunk(self, populated):
-        """Test the half-open rule end to end, on a spike at exactly 09:00:00."""
+        """The half-open rule end to end, on a spike at exactly 09:00:00."""
         from swc.aeon.io import api as io_api
 
         boundary = populated["boundary_chunk_start"]
@@ -151,11 +146,10 @@ class TestMake:
         assert edge not in earlier[1].t
 
     def test_cross_block_unit_gets_a_shorter_denominator(self, populated):
-        """Test that a unit only one block found reports honest coverage.
+        """A unit only one block found reports honest coverage.
 
-        Unit 2 exists only in block A, which stops at 09:20, so over the 09:00 chunk
-        it was sorted for 1200 s against 2400 s for units 1 and 3. Reporting the
-        chunk's own coverage for it would halve its apparent firing rate.
+        Unit 2 is in block A alone, which stops at 09:20: 1200 s against 2400 s for
+        units 1 and 3. The chunk's own coverage would halve its apparent rate.
         """
         row = (_mine(populated) & {"chunk_start": populated["boundary_chunk_start"]}).fetch1()
         covered = row["spikes"].get_info("covered_seconds")
@@ -166,17 +160,16 @@ class TestMake:
         assert row["n_partial_units"] == 1
 
     def test_ephys_gap_becomes_a_two_interval_support(self, populated):
-        """Test that a gap survives into time_support rather than being papered over."""
+        """A gap survives into time_support rather than being papered over."""
         row = (_mine(populated) & {"chunk_start": populated["boundary_chunk_start"]}).fetch1()
 
         assert len(row["spikes"].time_support) == 2
         assert row["coverage_frac"] == pytest.approx(2400 / 3600, rel=1e-4)
 
     def test_roster_grows_as_blocks_discover_units(self, populated):
-        """Test that the roster is stable, and that a later block's units appear.
+        """The roster is stable, and a later block's units appear.
 
-        An unstable roster makes concatenating a span wrong by default, which is the
-        motivating use case for the whole table.
+        An unstable roster makes concatenating a span wrong by default.
         """
         first, second = (
             set((_mine(populated) & {"chunk_start": start}).fetch1("spikes").index)
@@ -186,12 +179,11 @@ class TestMake:
         assert second == {1, 2, 3}
 
     def test_cross_block_unit_takes_the_owning_block_s_quality(self, populated):
-        """Test that a cross-block unit takes its owning block's quality label.
+        """A cross-block unit takes its owning block's quality label.
 
-        The two blocks disagree about unit 1 on purpose. In the 09:00 chunk block A
-        owns 9 of its spikes to B's 8, so A's label wins. Wire ``owning_block`` in
-        backwards and a user filtering ``unit_quality == "good"`` silently analyses
-        the wrong neurons.
+        The blocks disagree about unit 1 on purpose; block A owns 9 of its spikes to
+        B's 8. Wire the rule in backwards and someone filtering ``unit_quality ==
+        "good"`` silently analyses the wrong neurons.
         """
         tsgroup = (_mine(populated) & {"chunk_start": populated["boundary_chunk_start"]}).fetch1("spikes")
         quality = tsgroup.get_info("unit_quality")
@@ -202,11 +194,7 @@ class TestMake:
 
 @pytest.fixture(scope="module")
 def span(populated):
-    """The whole populated span, fetched once.
-
-    Every reader below wants the same object; fetching it per test repeats eight
-    lines and the partial-coverage warning five times over.
-    """
+    """The whole populated span, fetched once; every reader below wants it."""
     from aeon.dj_pipeline import processed_ephys
 
     with pytest.warns(UserWarning, match="covered_seconds"):
@@ -220,15 +208,14 @@ def span(populated):
 class TestStalenessAndFetchSpan:
     """The manual refresh that replaces the cascade, and the documented read path.
 
-    Ordered last and sharing a module-scoped population: the staleness cases mutate
-    upstream state, so they must not run before the tests that assert on a clean one.
+    Ordered last: the staleness cases mutate upstream state.
     """
 
     def test_stale_is_detected_blocks_fetch_span_and_clears_on_the_recipe(self, populated):
-        """Test the failure this design accepts, and its documented remedy.
+        """The failure this design accepts, and its documented remedy.
 
         A row built from one of two covering blocks is right when written and wrong
-        once the second lands. Nothing invalidates it, so it has to be findable.
+        once the second lands. Nothing invalidates it, so it must be findable.
         """
         from spike_train_factories import add_late_block
 
@@ -265,10 +252,10 @@ class TestStalenessAndFetchSpan:
         assert not processed_ephys.SpikeTrains.stale_chunks(mine)
 
     def test_fetch_span_includes_the_chunk_it_starts_inside(self, populated):
-        """Test that a span starting mid-chunk still returns that chunk's spikes.
+        """A span starting mid-chunk still returns that chunk's spikes.
 
-        Selecting rows on chunk_start alone drops the chunk containing `start`
-        entirely, so a window beginning at 08:30 silently loses 08:30-09:00.
+        Selecting on chunk_start alone drops the chunk containing `start`, so a
+        window beginning at 08:30 silently loses 08:30-09:00.
         """
         from datetime import timedelta
 
@@ -299,11 +286,9 @@ class TestStalenessAndFetchSpan:
         )
 
     def test_fetch_span_carries_unit_metadata(self, populated, span):
-        """Test that the span object supports the filtering its docstring shows.
+        """The span supports the filtering its docstring advertises.
 
-        fetch_span's own example is `tg[tg.unit_quality == "good"]`; dropping the
-        metadata makes that a KeyError, and quality, electrode and shank are the
-        columns an analysis actually filters on.
+        `tg[tg.unit_quality == "good"]` is a KeyError without the metadata.
         """
         assert {"covered_seconds", "unit_quality", "electrode", "shank"} <= set(span.metadata_columns)
         # Unit 1 is the only cross-block unit, so it is the only one whose label
@@ -315,13 +300,11 @@ class TestStalenessAndFetchSpan:
         assert populated["owning_block_quality"] != populated["losing_block_quality"]
 
     def test_covered_seconds_composes_and_stays_inside_the_window(self, populated, span):
-        """Test the denominator on both axes: it adds up, and it never exceeds the span.
+        """The denominator adds up, and never exceeds the span.
 
-        covered_seconds is stored in seconds rather than as a fraction precisely so
-        the addition is correct; a fraction would need duration weighting that every
-        caller would get wrong. The bound matters because a chunk the window only
-        partly covers used to contribute its whole stored value, so a one-minute
-        span inside an hour reported 3600 s and every rate in it came out 60x low.
+        Seconds rather than a fraction so the addition is correct. The bound matters
+        because an edge chunk used to contribute its whole stored value: a one-minute
+        span inside an hour reported 3600 s and every rate came out 60x low.
         """
         from datetime import timedelta
 
@@ -339,12 +322,11 @@ class TestStalenessAndFetchSpan:
         assert worst <= spanned, f"a unit reports {worst}s of coverage in a {spanned}s window"
 
     def test_fetch_span_keeps_the_ephys_gap(self, populated, span):
-        """Test that a gap inside the span survives into the returned time_support.
+        """A gap inside the span survives into the returned time_support.
 
-        The 09:00 chunk has an ephys gap at 09:20-09:40. pynapple's restrict()
-        replaces time_support with the restriction window rather than intersecting
-        it, so rebuilding the span support from restricted.time_support reports a
-        solid hour and every firing rate in it comes out low.
+        pynapple's restrict() replaces time_support rather than intersecting it, so
+        rebuilding from restricted.time_support reports a solid hour over the
+        09:20-09:40 ephys gap and every rate in it comes out low.
         """
         total = float(span.time_support.tot_length())
         spanned = (populated["span_end"] - populated["covered_chunk_starts"][0]).total_seconds()

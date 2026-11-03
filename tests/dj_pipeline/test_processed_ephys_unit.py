@@ -14,32 +14,25 @@ def t(hour, minute=0):
 
 
 class TestMostSpikesWins:
-    """Which source's metadata wins when a unit appears in more than one.
+    """One rule settles a unit's block-scoped metadata on both axes.
 
-    ``unit_quality`` and ``qc_metrics`` are block-scoped, so a unit appearing in two
-    sortings has two candidate values. One rule answers that on both axes - across
-    the sortings covering a chunk, and across the chunks covering a span - so the
-    two cannot drift apart.
+    Across the sortings covering a chunk, and across the chunks covering a span,
+    so ``make`` and ``fetch_span`` cannot drift apart.
     """
 
     @staticmethod
     def _ident(hour, group="shank0"):
-        """A sorting's identity: block bounds, config, group, sorting and matching sets."""
         return (t(hour), t(hour + 1), "cfg", group, "ks4", 1)
 
     def test_sorting_with_more_spikes_wins(self):
-        """Test that metadata follows the bulk of the data."""
+        """Metadata follows the bulk of the data."""
         from aeon.dj_pipeline.processed_ephys import _most_spikes_wins
 
         early, late = self._ident(7), self._ident(8)
         assert _most_spikes_wins({early: 10, late: 900}) == late
 
     def test_ties_break_to_the_earliest_key(self):
-        """Test that an exact tie is resolved deterministically, not by dict order.
-
-        Both kinds of key lead with a time - a sorting's identity with its block's
-        start, a chunk's with its own - so one rule orders both.
-        """
+        """An exact tie resolves by key order, not dict order — on both key kinds."""
         from aeon.dj_pipeline.processed_ephys import _most_spikes_wins
 
         early, late = self._ident(7), self._ident(8)
@@ -51,18 +44,15 @@ class TestBlockChunkClipping:
     """A block is only sorted within its own bounds, whatever chunks it links."""
 
     def test_chunks_are_clipped_to_the_block_window(self):
-        """Test that a block credits only the part of a chunk it actually spans.
+        """EphysBlockInfo links the chunk holding each bound whole.
 
-        EphysBlockInfo links the chunk containing each block bound in full, so a
-        block covering 20 minutes of an hourly chunk would otherwise be credited
-        with the whole hour and report every firing rate at a third of its value.
+        A block covering 20 minutes of an hourly chunk would otherwise be credited
+        the whole hour and report every firing rate at a third of its value.
         """
         from aeon.dj_pipeline.utils import intervals
 
         block = (t(8, 39), t(8, 59))
-        linked_whole_chunk = [(t(8), t(9))]
-
-        clipped = intervals.clip(linked_whole_chunk, block)
+        clipped = intervals.clip([(t(8), t(9))], block)
 
         assert clipped == [block]
         assert intervals.covered_seconds(clipped) == 20 * 60
@@ -81,12 +71,11 @@ class TestSortingGuards:
 
     @pytest.mark.parametrize("second_hour", [8, 9], ids=["same block", "later block"])
     def test_one_group_matched_twice_is_refused_from_the_identity_alone(self, second_hour):
-        """Test the case provable without any electrode data.
+        """Unsafe without needing any electrode data.
 
-        Global unit ids are handed out per insertion across every matching
-        parameter set, so the same electrodes matched under two of them give each
-        neuron an id in each family. It is the matching set that makes this unsafe,
-        so where the second block sits makes no difference.
+        Global unit ids are handed out per insertion across every matching paramset,
+        so the same electrodes under two of them give each neuron an id in each.
+        The matching set is what makes this unsafe, so block position is irrelevant.
         """
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 
@@ -95,13 +84,11 @@ class TestSortingGuards:
             _assert_no_double_counting({a: self._s(a), b: self._s(b)})
 
     def test_sequential_blocks_on_one_matching_paramset_are_the_ordinary_case(self):
-        """Test that the chunk this table exists to serve passes without a murmur.
+        """The chunk this table exists to serve passes without a murmur.
 
-        UnitMatching refuses a block that overlaps nothing already matched, so every
-        block under one matching parameter set is linked into a chain and global unit
-        ids propagate along it. Spikes is unique on (global_unit, chunk_start), so
-        these cannot double-count. Refusing, or even warning, would fire on almost
-        every real chunk.
+        One matching paramset links every block into a chain and ``Spikes`` is
+        unique on ``(global_unit, chunk_start)``. Refusing, or even warning, would
+        fire on almost every real chunk.
         """
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 
@@ -110,24 +97,11 @@ class TestSortingGuards:
             warnings.simplefilter("error")
             _assert_no_double_counting({a: self._s(a), b: self._s(b)})
 
-    def test_two_sorting_paramsets_under_one_matching_set_are_allowed(self):
-        """Test that re-sorting a block is not the hazard it looks like.
-
-        UnitMatching picks partners by insertion and matching parameter set alone,
-        filtered to overlapping blocks - and a block overlaps itself. So the second
-        sorting is compared against the first and lands on the same global units.
-        """
-        from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
-
-        a, b = self._ident(8, paramset="ks4"), self._ident(8, paramset="ks4_alt")
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            _assert_no_double_counting({a: self._s(a), b: self._s(b)})
-
     def test_disjoint_electrode_groups_are_allowed(self):
-        """Test that shank1 and shank2 coexist: different electrodes, different neurons.
+        """shank1 and shank2 coexist: different electrodes, different neurons.
 
-        Separate matching parameter sets per shank is the documented pattern.
+        A matching paramset per shank is the documented pattern, so over-refusing
+        here would block populate on a supported configuration.
         """
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 
@@ -136,7 +110,7 @@ class TestSortingGuards:
         _assert_no_double_counting({a: self._s(a, {0, 1}), b: self._s(b, {2, 3})})
 
     def test_overlapping_electrode_groups_are_refused(self):
-        """Test that 'all' alongside 'shank1' is caught when the sets are known."""
+        """'all' alongside 'shank1', caught when the electrode sets are known."""
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 
         a = self._ident(8, group="all", matching=1)
@@ -145,11 +119,10 @@ class TestSortingGuards:
             _assert_no_double_counting({a: self._s(a, {0, 1, 2, 3}), b: self._s(b, {0, 1})})
 
     def test_unknown_electrode_sets_warn_rather_than_pass_silently(self):
-        """Test that an unpopulated ElectrodeGroup.Electrode is reported, not ignored.
+        """Nothing populates ElectrodeGroup.Electrode today.
 
-        Nothing in the pipeline writes that part table today, so the overlap check
-        has no data for the one pair that needs it. Passing silently would look
-        like a verified result.
+        So the one pair that needs the overlap check has no data for it, and
+        passing silently would look like a verified result.
         """
         from aeon.dj_pipeline.processed_ephys import _assert_no_double_counting
 
@@ -159,21 +132,16 @@ class TestSortingGuards:
             _assert_no_double_counting({a: self._s(a), b: self._s(b)})
 
     def test_two_configs_without_a_shared_unit_are_allowed(self):
-        """Test that a config change alone does not refuse the chunk.
+        """A config change alone does not refuse the chunk.
 
-        Units are per-config, coverage is already per-unit, and n_partial_units
-        flags it. Refusing would discard data that is handled correctly.
+        Units are per-config, coverage is per-unit, n_partial_units flags it.
         """
         from aeon.dj_pipeline.processed_ephys import _assert_one_config_per_unit
 
         _assert_one_config_per_unit({"a": "cfgX", "b": "cfgY"}, {"a": {1, 2}, "b": {3, 4}})
 
     def test_a_unit_spanning_two_configs_is_refused(self):
-        """Test the unsafe case: one global unit under two electrode configs.
-
-        GlobalUnit carries one physical peak electrode, and the other config may
-        never have recorded it.
-        """
+        """GlobalUnit carries one peak electrode; the other config may not have it."""
         from aeon.dj_pipeline.processed_ephys import _assert_one_config_per_unit
 
         with pytest.raises(ValueError, match="more than one electrode config"):

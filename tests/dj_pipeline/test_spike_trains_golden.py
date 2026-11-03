@@ -1,14 +1,11 @@
 """SpikeTrains on the golden dataset: real spikes re-chunked onto behavioural hours.
 
-The synthetic suite pins the arithmetic; this pins that it survives contact with real
-data — real spike times, a real sorted block, re-chunked onto a wall-clock hour that
-aligns with neither block boundary.
+The synthetic suite pins the arithmetic; this pins that it survives real data.
 
-What this dataset cannot reach: the behavioural arm records ~07:51:34-08:00, while the
-two sorted blocks overlap at 08:39:47-08:59:47. No behavioural chunk covers that span,
-so no row here draws on more than one block. Cross-block ownership, partial coverage
-and the stale-after-a-late-block path stay with the synthetic suite, which exists to
-construct exactly the geometry the real recording happens not to have.
+What this dataset cannot reach: the behavioural arm records ~07:51:34-08:00 while the
+two sorted blocks overlap at 08:39:47-08:59:47, so no row here draws on more than one
+block. Cross-block ownership, partial coverage and the stale-after-a-late-block path
+stay with the synthetic suite, which constructs the geometry this recording lacks.
 
 Specialized tier: the fixture chain populates UnitMatching over ~2M spikes, twice.
 """
@@ -23,11 +20,9 @@ pytestmark = pytest.mark.specialized
 def golden_spike_trains(ephys_unit_matching_populated, ephys_full_pipeline, ctx):
     """Ingest the behavioural arm's chunks, then populate SpikeTrains over them.
 
-    The ephys chain drives ``ephys.EphysEpoch.ingest_epochs``, which leaves no
-    ``acquisition.Epoch`` rows, so both behavioural steps are taken here. Both arms
-    share one ``experiment_name``, so ``SpikeTrains.key_source`` joins them on it;
-    chunk discovery uses CameraNest via ``_ref_device_mapping`` and reads only the
-    ``raw`` directory, leaving the ephys arm alone.
+    The ephys chain leaves no ``acquisition.Epoch`` rows, so both behavioural steps
+    are taken here. The arms share one ``experiment_name``, which is what
+    ``key_source`` joins on.
     """
     from aeon.dj_pipeline import processed_ephys
 
@@ -63,13 +58,12 @@ class TestGoldenSpikeTrains:
     """What must hold when real spikes are re-chunked onto behavioural hours."""
 
     def test_conserves_spikes_against_unit_matching(self, golden_spike_trains, ctx):
-        """Test that every matched spike inside a chunk is kept, exactly once.
+        """Every matched spike inside a chunk is kept, exactly once.
 
-        Counted straight off ``UnitMatching.Spikes`` with no block restriction. Its
-        unique index spans ``(experiment, subject, insertion, global_unit,
-        chunk_start)`` across all blocks, so a spike cannot be stored twice and a
-        plain sum cannot double-count. That makes this independent of ``make()``'s
-        own block selection: if it drops a covering block, the counts diverge here.
+        Counted off ``UnitMatching.Spikes`` with no block restriction: its unique
+        index spans all blocks, so a plain sum cannot double-count. That makes this
+        independent of ``make()``'s block selection — drop a covering block and the
+        counts diverge here.
         """
         exp_name = golden_spike_trains["exp_name"]
         acquisition = golden_spike_trains["acquisition"]
@@ -93,20 +87,13 @@ class TestGoldenSpikeTrains:
         )
 
     def test_source_blocks_are_exactly_the_matched_overlapping_blocks(self, golden_spike_trains, ctx):
-        """Test that source_blocks records every matched sorting covering the chunk.
+        """source_blocks records every matched sorting covering the chunk.
 
-        The set of contributing sortings is recomputed here from
-        ``EphysBlock * UnitMatching`` rather than reusing ``_covering_sortings``, so
-        one silently dropped from the provenance record shows up as a set difference.
-        Only the rendering is shared, via ``_block_tag``: this test is about which
-        sortings a row drew on, not how the string is punctuated. The record is the
-        substitute for the foreign key the table does without, so it has to be exact
-        rather than non-empty.
-
-        Note the golden behavioural arm runs ~07:51:34-08:00, which overlaps only the
-        first sorted block; the two blocks overlap at 08:39:47-08:59:47, where there
-        is no behavioural data. The multi-block path is therefore unreachable on this
-        dataset and stays covered by the synthetic suite.
+        Recomputed here from ``EphysBlock * UnitMatching`` rather than reusing
+        ``_covering_sortings``, so a silently dropped sorting shows as a set
+        difference; only the rendering is shared, via ``_block_tag``. The record
+        substitutes for the foreign key this table does without, so it must be
+        exact rather than non-empty.
         """
         acquisition = golden_spike_trains["acquisition"]
         block_tag = golden_spike_trains["module"]._block_tag
@@ -119,8 +106,6 @@ class TestGoldenSpikeTrains:
                 & insertion
                 & f'block_start < "{end}" AND block_end > "{start}"'
             ).to_dicts()
-            # A sorting is a block, an electrode group, a sorting parameter set and a
-            # matching parameter set - UnitMatching's own key; the tag carries all of it.
             expected = {
                 block_tag(
                     (
@@ -142,10 +127,10 @@ class TestGoldenSpikeTrains:
             assert expected, f"chunk {start} has a row but no matched covering sorting"
 
     def test_times_are_harp_absolute_and_inside_the_support(self, golden_spike_trains):
-        """Test that times are Harp seconds since 1904 and lie within time_support.
+        """Times are Harp seconds since 1904 and lie within time_support.
 
-        A chunk-relative or Unix-epoch offset would still round-trip and still plot;
-        it would only be wrong once joined against behaviour.
+        A chunk-relative or Unix-epoch offset would round-trip and plot fine, and be
+        wrong only once joined against behaviour.
         """
         module = golden_spike_trains["module"]
         tsgroup = _fetch_tsgroup(module, golden_spike_trains["rows"][0])
@@ -158,10 +143,9 @@ class TestGoldenSpikeTrains:
                 assert times.max() <= tsgroup.time_support.end[-1]
 
     def test_stale_is_empty_after_a_clean_populate(self, golden_spike_trains):
-        """Test that nothing reports stale straight after populating.
+        """Nothing reports stale straight after populating.
 
-        ``stale()`` substitutes for the foreign key this table deliberately lacks,
-        so a false positive on untouched data would make it useless.
+        A false positive on untouched data would make ``stale_chunks`` useless.
         """
         module = golden_spike_trains["module"]
         scoped = {"experiment_name": golden_spike_trains["exp_name"]}
