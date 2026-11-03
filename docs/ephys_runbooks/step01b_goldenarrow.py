@@ -25,7 +25,7 @@ from aeon.dj_pipeline.ephys import (
     create_probe_type,
 )
 
-EXPERIMENT_NAME = "abcEphys02"
+EXPERIMENT_NAME = "abcEphys02-aeon3"
 subject_id = "IAA-1150342"
 
 exp_key = {"experiment_name": EXPERIMENT_NAME}
