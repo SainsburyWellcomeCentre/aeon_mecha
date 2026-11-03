@@ -894,14 +894,20 @@ class SortedSpikes(dj.Imported):
 
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir, load_extensions=False)
 
-        property_keys = set(sorting_analyzer.get_sorting_property_keys())
+        property_keys = set(sorting_analyzer.sorting.get_property_keys())
+
+        # unit_quality is a single field: the curator's manual label once an official curation has
+        # been applied (curation_id != -1, so we've loaded the curated analyzer), otherwise Kilosort's
+        # own KSLabel. The manual call lives in the curated sorting's "quality" property; the
+        # make_curation_official gate guarantees every curated unit has one, so a curated block's units
+        # all carry the human's call, with KSLabel only as a defensive fallback.
         use_manual_quality = curation_id != -1 and "quality" in property_keys
 
         # get data from analyzer
         main_channel_ids = sorting_analyzer.main_channel_ids
         num_spikes_per_unit = sorting_analyzer.sorting.count_num_spikes_per_unit()
         quality_label = "quality" if use_manual_quality else "KSLabel"
-        unit_qualities = sorting_analyzer.get_sorting_property(quality_label)
+        unit_qualities = sorting_analyzer.sorting.get_property(quality_label)
         unit_locations = sorting_analyzer.get_extension("unit_locations").get_data()
         unit_ids = sorting_analyzer.unit_ids
 
@@ -923,24 +929,16 @@ class SortedSpikes(dj.Imported):
                 ignore_extra_fields=True,
             )
 
-        # unit_quality is a single field: the curator's manual label once an official curation has
-        # been applied (curation_id != -1, so we've loaded the curated analyzer), otherwise Kilosort's
-        # own KSLabel. The manual call lives in the curated sorting's "quality" property; the
-        # make_curation_official gate guarantees every curated unit has one, so a curated block's units
-        # all carry the human's call, with KSLabel only as a defensive fallback.
-        property_keys = set(sorting_analyzer.get_sorting_property_keys())
-        use_manual_quality = curation_id != -1 and "quality" in property_keys
-
         unit_quality_map = {}
         for unit_id in sorting_analyzer.unit_ids:
             quality = (
-                (sorting_analyzer.get_sorting_property(unit_id, "quality") or "").strip().lower()
+                (sorting_analyzer.sorting.get_property(unit_id, "quality") or "").strip().lower()
                 if use_manual_quality
                 else ""
             )
             if not quality:
                 quality = (
-                    sorting_analyzer.get_sorting_property(unit_id, "KSLabel")
+                    sorting_analyzer.sorting.get_property(unit_id, "KSLabel")
                     if "KSLabel" in property_keys
                     else "n.a."
                 )
@@ -954,7 +952,7 @@ class SortedSpikes(dj.Imported):
                 {**key, "unit": int(unit_id), "tag": tag}
                 for unit_id in sorting_analyzer.unit_ids
                 for tag in curation_tags
-                if tag in property_keys and bool(sorting_analyzer.get_sorting_property(unit_id, tag))
+                if tag in property_keys and bool(sorting_analyzer.sorting.get_property(unit_id, tag))
             ]
             if tag_rows:
                 self.UnitTag.insert(tag_rows, ignore_extra_fields=True)
