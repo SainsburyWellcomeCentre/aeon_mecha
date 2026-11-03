@@ -810,8 +810,8 @@ class SortedSpikes(dj.Imported):
                         # label once an official curation is applied (single field, per the spec)
         spike_count: int32       # how many spikes in this recording for this unit
         spike_indices: <blob@dj_store>  # array of spike indices into the concatenated binary data (from preprocessing)
-        spike_sites : <blob@dj_store>   # array of electrode associated with each spike
-        spike_depths=null : <blob@dj_store>  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe
+        spike_sites : <blob@dj_store>   # array of electrode associated with each unit
+        spike_depths=null : <blob@dj_store>  # (um) array of depths associated with each unit, relative to the (0, 0) of the probe
         """  # noqa:E501
 
     class UnitTag(dj.Part):
@@ -918,7 +918,7 @@ class SortedSpikes(dj.Imported):
                     "spike_indices": spike_indices,
                     "spike_count": num_spikes,
                     "spike_sites": main_channel_id,
-                    "unit_depth": unit_location,
+                    "spike_depths": unit_location,
                 },
                 ignore_extra_fields=True,
             )
