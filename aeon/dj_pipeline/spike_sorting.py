@@ -904,7 +904,7 @@ class SortedSpikes(dj.Imported):
         use_manual_quality = curation_id != -1 and "quality" in property_keys
 
         # get data from analyzer
-        main_channel_ids = sorting_analyzer.main_channel_ids
+        main_channel_ids = sorting_analyzer.channel_ids[sorting_analyzer.main_channel_indices]
         num_spikes_per_unit = sorting_analyzer.sorting.count_num_spikes_per_unit()
         quality_label = "quality" if use_manual_quality else "KSLabel"
         unit_qualities = sorting_analyzer.sorting.get_property(quality_label)
