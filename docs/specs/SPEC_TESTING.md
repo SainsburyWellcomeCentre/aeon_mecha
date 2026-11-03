@@ -12,7 +12,7 @@ Three tiers, distinguished by what they need and what they cover:
 |---|---|---|---|---|
 | Unit | None | Synthetic / sample fixtures | `@pytest.mark.unit` | All OSes |
 | Integration | MySQL (testcontainers) | Synthetic or golden datasets | `@pytest.mark.integration` | Linux only |
-| Specialized | MySQL | Golden datasets + GPU | `@pytest.mark.specialized` | No (manual) |
+| Specialized | MySQL | Golden datasets + high RAM (no GPU needed) | `@pytest.mark.specialized` | No (manual) |
 
 Markers are declared in `pyproject.toml` under `[tool.pytest.ini_options]`. Tests using integration fixtures (`mysql_container`, `dj_config_integration`, `pipeline_integration`) are **auto-marked** as integration by a `pytest_collection_modifyitems` hook in `tests/conftest.py` — no manual marker needed for those.
 
@@ -81,7 +81,7 @@ GOLDEN_DATASETS = {
         # ...dataset-specific keys (expected counts, probe info, etc.)
     },
 }
-DEFAULT_GOLDEN_DATA_ROOT = Path.home() / "sciops-data/project_aeon/aeon/data"
+DEFAULT_GOLDEN_DATA_ROOT = Path.home() / "sciops-data/project_aeon"  # repo root; data under aeon/data/raw/...
 ```
 
 Override the root with the `DJ_REPOSITORY_CONFIG` env var (used on HPC). The `_check_golden_data` helper validates `required_files` and calls `pytest.skip(...)` if anything's missing — so tests just don't run when the data isn't there.
@@ -105,9 +105,9 @@ datasets — every behavior test runs once per dataset:
 | `foraging_abc_2025_11_18` | `abcBehav0-aeon3` | ~1 hour | Full 13 cameras + 6 feeders writing data; rich stream samples (`FeederEncoder` 848k, `CameraPosition` 12k) | Behavior only |
 | `foraging_abc_2026_05_11` | `abcGolden01-aeon3` | ~2 hours | 5 cameras + 4 feeders writing data; sparser samples | **Behaviour ARM** of `abcGolden01-aeon3`; `foraging_abc_ephys_2026_05_11` is the ephys arm of the *same* experiment |
 
-**Locations** (relative to `DEFAULT_GOLDEN_DATA_ROOT`):
-- `<data-root>/raw/AEON3/abcBehav0/2025-11-18T10-13-15/`
-- `<data-root>/raw/AEON3/abcGolden01/2026-05-11T075134Z/`
+**Locations** (relative to `DEFAULT_GOLDEN_DATA_ROOT`, the repository root):
+- `<root>/aeon/data/raw/AEON3/abcBehav0/2025-11-18T10-13-15/`
+- `<root>/aeon/data/raw/AEON3/abcGolden01/2026-05-11T075134Z/`
 
 **Test modules:** `tests/dj_pipeline/test_full_ingestion.py`,
 `tests/dj_pipeline/test_acquisition_environment_integration.py`
@@ -270,17 +270,7 @@ uv run pytest --cov=aeon --cov-report=html
 
 **"Cannot touch /ceph/..." / Ceph access problems.** Ceph is now mounted on the gateway as well as the compute nodes, so this is rare; if you do hit it, `srun` onto a compute node.
 
-**Stale test schemas from a crashed run.** Manually drop:
-```bash
-uv run python -c "
-import datajoint as dj
-dj.config.safemode = False
-for s in dj.list_schemas():
-    if s.startswith('u_${USER}_golden_tests_'):
-        print(f'Dropping {s}')
-        dj.Schema(s).drop()
-"
-```
+**Stale test schemas from a crashed run.** Teardown drops your prefixed schemas at session end, but a run killed before teardown (OOM/SIGKILL, `scancel`) leaves them behind, and also leaves `aeon/dj_pipeline/streams.py` modified (`git checkout -- aeon/dj_pipeline/streams.py`).
 
 **Schema-drop teardown warnings.** The teardown drops schemas in arbitrary order, which can hit FK constraints. The retry loop handles it but emits warnings — cosmetic, can be ignored.
 

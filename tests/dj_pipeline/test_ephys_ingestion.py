@@ -110,7 +110,9 @@ class TestEphysChunkIngestion:
 
     def test_chunk_files_registered(self, ephys_chunks_ingested, ctx):
         files = list(
-            (ctx.ephys.EphysChunk.File & {"experiment_name": ctx.cfg["experiment_name"]}).fetch("file_name")
+            (ctx.ephys.EphysChunk.File & {"experiment_name": ctx.cfg["experiment_name"]}).to_arrays(
+                "file_name"
+            )
         )
         assert any("AmplifierData_0.bin" in fn for fn in files), (
             f"AmplifierData_0.bin not registered. Got first 5: {files[:5]}"
@@ -168,8 +170,10 @@ class TestPreProcessing:
 
     def _ensure_prerequisites(self, ctx):
         ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
-        ctx.ephys.EphysBlockInfo.populate()
-        ctx.spike_sorting.PreProcessing.populate(display_progress=True, suppress_errors=False)
+        ctx.ephys.EphysBlockInfo.populate({"experiment_name": ctx.cfg["experiment_name"]})
+        ctx.spike_sorting.PreProcessing.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
 
     def test_preprocessing_populated(self, ephys_sorting_setup, require_ephys_golden_data, ctx):
         self._ensure_prerequisites(ctx)
@@ -307,7 +311,9 @@ class TestPostProcessing:
     """
 
     def _ensure_prerequisites(self, ctx):
-        ctx.spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
+        ctx.spike_sorting.PostProcessing.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
 
     def test_postprocessing_populated(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
@@ -330,8 +336,12 @@ class TestSortedSpikes:
     """
 
     def _ensure_prerequisites(self, ctx):
-        ctx.spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
-        ctx.spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
+        ctx.spike_sorting.PostProcessing.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
+        ctx.spike_sorting.SortedSpikes.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
 
     def test_sorted_spikes_populated(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
@@ -404,9 +414,15 @@ class TestSyncedSpikes:
     """
 
     def _ensure_prerequisites(self, ctx):
-        ctx.spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
-        ctx.spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
-        ctx.spike_sorting.SyncedSpikes.populate(display_progress=True, suppress_errors=False)
+        ctx.spike_sorting.PostProcessing.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
+        ctx.spike_sorting.SortedSpikes.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
+        ctx.spike_sorting.SyncedSpikes.populate(
+            {"experiment_name": ctx.cfg["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
 
     def test_synced_spikes_populated(self, ephys_sorting_injected, ctx):
         self._ensure_prerequisites(ctx)
@@ -641,7 +657,9 @@ class TestPynappleCodecOnGoldenSpikes:
         return nap.TsGroup(data, time_support=support)
 
     @pytest.fixture(scope="class")
-    def golden_tsgroup(self, require_ephys_golden_data, ephys_golden_dataset_config):
+    def golden_tsgroup(
+        self, require_ephys_golden_data, ephys_golden_dataset_config, ephys_processed_sorting_root
+    ):
         """The largest golden sorting, as a TsGroup. Skips if the artifacts are absent.
 
         ``require_ephys_golden_data`` returns the epoch path and, via
@@ -655,6 +673,10 @@ class TestPynappleCodecOnGoldenSpikes:
         """
         root = require_ephys_golden_data.parent / ephys_golden_dataset_config["golden_sorting_dir"]
         sortings = sorted(root.glob("*/*/*/spike_sorting/in_container_sorting"))
+        if not sortings:
+            # Ceph layout: <insertion>/ephys_blocks/<block>/<shank>/<sorter>/spike_sorting
+            root = ephys_processed_sorting_root
+            sortings = sorted(root.glob("*/*/*/*/*/spike_sorting/in_container_sorting"))
         if not sortings:
             pytest.skip(f"no golden spike-sorting artifacts under {root}")
         largest = max(sortings, key=lambda p: sum(f.stat().st_size for f in p.rglob("*")))
