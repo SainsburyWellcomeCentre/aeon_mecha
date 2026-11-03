@@ -89,14 +89,15 @@ class TestGoldenSpikeTrains:
     def test_source_blocks_are_exactly_the_matched_overlapping_blocks(self, golden_spike_trains, ctx):
         """source_blocks records every matched sorting covering the chunk.
 
-        Recomputed here from ``EphysBlock * UnitMatching`` rather than reusing
-        ``_covering_sortings``, so a silently dropped sorting shows as a set
-        difference; only the rendering is shared, via ``_block_tag``. The record
-        substitutes for the foreign key this table does without, so it must be
-        exact rather than non-empty.
+        Which sortings overlap is recomputed here from ``EphysBlock * UnitMatching``
+        rather than reusing ``_covering_sortings``, so one silently dropped shows as
+        a set difference. Identity and rendering are shared (``_ident``,
+        ``_block_tag``) — field order is formatting, not a claim about the data.
+        The record substitutes for the foreign key this table does without, so it
+        must be exact rather than non-empty.
         """
         acquisition = golden_spike_trains["acquisition"]
-        block_tag = golden_spike_trains["module"]._block_tag
+        module = golden_spike_trains["module"]
 
         for row in golden_spike_trains["rows"]:
             start, end = (acquisition.Chunk & row).fetch1("chunk_start", "chunk_end")
@@ -106,19 +107,7 @@ class TestGoldenSpikeTrains:
                 & insertion
                 & f'block_start < "{end}" AND block_end > "{start}"'
             ).to_dicts()
-            expected = {
-                block_tag(
-                    (
-                        b["block_start"],
-                        b["block_end"],
-                        b["electrode_config_name"],
-                        b["electrode_group"],
-                        b["paramset_id"],
-                        b["matching_paramset_id"],
-                    )
-                )
-                for b in matched
-            }
+            expected = {module._block_tag(module._ident(b)) for b in matched}
 
             assert set(row["source_blocks"]) == expected, (
                 f"chunk {start}: source_blocks {sorted(row['source_blocks'])} "

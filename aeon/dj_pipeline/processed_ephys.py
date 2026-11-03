@@ -35,15 +35,30 @@ logger = dj.logger
 _INSERTION = ("experiment_name", "subject", "insertion_number")
 
 
-def _block_tag(ident: tuple) -> str:
-    """Render one contributing sorting for ``source_blocks``.
+def _ident(row: dict) -> tuple:
+    """One sorting's identity: ``UnitMatching``'s own key, in one fixed order.
 
-    ``make`` writes these and ``stale_chunks`` compares against them, so they must
-    agree exactly — hence one function. A silent mismatch makes every row look
-    fresh forever.
+    Built here for every caller. Built twice, the two drift and the metadata winner
+    silently resolves against the wrong key.
     """
-    start, end, config, group, paramset, matching = ident
-    return f"{start}/{end}/{config}/{group}/{paramset}/{matching}"
+    return (
+        row["block_start"],
+        row["block_end"],
+        row["electrode_config_name"],
+        row["electrode_group"],
+        row["paramset_id"],
+        row["matching_paramset_id"],
+    )
+
+
+def _block_tag(ident: tuple) -> str:
+    """Render an identity for ``source_blocks``.
+
+    ``make`` writes these and ``stale_chunks`` compares them, so a silent mismatch
+    makes every row look fresh forever. Arity-agnostic, so a field added to
+    ``_ident`` flows through without a second edit here.
+    """
+    return "/".join(str(part) for part in ident)
 
 
 def _ts(value) -> str:
@@ -297,13 +312,7 @@ def _covering_sortings(insertion: dict, window: tuple) -> dict:
     sortings = {}
     for row in rows:
         bounds = (row["block_start"], row["block_end"])
-        ident = (
-            *bounds,
-            row["electrode_config_name"],
-            row["electrode_group"],
-            row["paramset_id"],
-            row["matching_paramset_id"],
-        )
+        ident = _ident(row)
         block_key = {k: row[k] for k in (*insertion, "block_start", "block_end")}
         chunks = (ephys.EphysBlockInfo.Chunk * ephys.EphysChunk & block_key).to_dicts()
         group_key = {k: row[k] for k in ("probe_type", "electrode_config_name", "electrode_group")}
@@ -357,15 +366,7 @@ def _fetch_spikes(insertion: dict, window: tuple, bounds: set) -> tuple[dict, di
         unit = int(row["global_unit"])
         by_unit.setdefault(unit, []).append(kept)
         counts.setdefault(unit, {})
-        # _covering_sortings' identity, so the winner resolves per sorting.
-        ident = (
-            row["block_start"],
-            row["block_end"],
-            row["electrode_config_name"],
-            row["electrode_group"],
-            row["paramset_id"],
-            row["matching_paramset_id"],
-        )
+        ident = _ident(row)  # same key as _covering_sortings, so winners line up
         counts[unit][ident] = counts[unit].get(ident, 0) + len(kept)
     return {u: np.sort(np.concatenate(v)) for u, v in by_unit.items()}, counts
 
