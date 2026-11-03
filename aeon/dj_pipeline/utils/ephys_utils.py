@@ -527,7 +527,9 @@ def resolve_epoch_probe_json(
     for candidate_path in candidate_paths:
         if candidate_path.exists():
             return candidate_path
-    raise FileNotFoundError(f"Found no probe config JSON at any of: {', '.join(map(str, candidate_paths))}")
+    raise FileNotFoundError(
+        f"Probe config JSON not found at any of: {', '.join(map(str, candidate_paths))}"
+    )
 
 
 def load_device_channel_map(json_path: Path) -> dict[int, int]:
