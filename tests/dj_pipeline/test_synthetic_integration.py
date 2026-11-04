@@ -877,11 +877,7 @@ class TestSpikeSortingLupin:
 
         assert spike_sorting.SortingMethod & {"sorting_method": "lupin"}
 
-        recording, _ = si.generate_ground_truth_recording(
-            durations=[10.0], num_channels=32, num_units=5, seed=0
-        )
-        # the sorting attached to rec in `generate_ground_truth_recording` makes it non-pickle-able
-        recording._kwargs.pop("sorting")
+        recording, _ = si.generate_recording(durations=[10.0], num_channels=32, seed=0)
 
         output_dir = tmp_path / "lupin_test"
         recording_dir = output_dir.parent / "recording"
