@@ -708,7 +708,7 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         recording = si.NumpyRecording(
             np.zeros((sorted_samples or sum(amp_samples), 1), dtype=np.float32), sampling_frequency=30e3
         )
-        recording.set_probe(probe, set_probe=True)
+        recording.set_probe(probe, in_place=True)
         sorting_output_dir = experiment_name
         si.create_sorting_analyzer(
             si.NumpySorting.from_unit_dict({1: np.array([0])}, sampling_frequency=30e3),
