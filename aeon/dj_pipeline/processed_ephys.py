@@ -129,7 +129,7 @@ class SpikeTrains(dj.Computed):
             start=[io_api.to_seconds(s) for s, _ in coverage],
             end=[io_api.to_seconds(e) for _, e in coverage],
         )
-        metadata = _unit_metadata(insertion, roster, counts_by_unit_block, covered)
+        metadata = _unit_metadata(insertion, roster, counts_by_unit_block, covered, block_units)
         tsgroup = nap.TsGroup(data, time_support=support, metadata=metadata)
 
         n_spikes = int(sum(len(tsgroup[u]) for u in tsgroup.index))
@@ -234,7 +234,9 @@ def _most_spikes_wins(counts: dict):
     return min(counts, key=lambda k: (-counts[k], k))
 
 
-def _unit_metadata(insertion: dict, roster: list, counts_by_unit_block: dict, covered: list) -> dict:
+def _unit_metadata(
+    insertion: dict, roster: list, counts_by_unit_block: dict, covered: list, block_units: dict
+) -> dict:
     """Per-unit metadata columns for the TsGroup, in roster order.
 
     ``covered_seconds`` is each unit's rate denominator — seconds, not a fraction,
@@ -251,10 +253,12 @@ def _unit_metadata(insertion: dict, roster: list, counts_by_unit_block: dict, co
     }
     quality = {}
     for unit in roster:
-        counts = counts_by_unit_block.get(unit)
-        if not counts:
-            quality[unit] = "n.a."
-            continue
+        # A unit silent all chunk has no spike rows, so no block can win on count.
+        # Enter every block that sorted it with zero and the usual tie-break applies.
+        # The roster is built from these same rosters, so there is always a candidate.
+        counts = counts_by_unit_block.get(unit) or {
+            ident: 0 for ident, units in block_units.items() if unit in units
+        }
         winner = _most_spikes_wins(counts)
         rows = (
             spike_sorting.UnitMatching.Unit * spike_sorting.SortedSpikes.Unit
