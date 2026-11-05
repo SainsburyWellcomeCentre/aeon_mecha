@@ -26,8 +26,8 @@ from pathlib import Path
 # --------------------------------------------------------------------------
 
 # Name that identifies this experiment in the database.
-# Convention: <experiment_tag>-<arena>, e.g. "abcGolden01-aeonx1".
-EXPERIMENT_NAME = "abcGolden01-aeonx1"
+# Convention: <experiment_tag>-<arena>, e.g. "abcGolden01-aeon3".
+EXPERIMENT_NAME = "abcGolden01-aeon3"
 
 # Absolute paths to raw data on Ceph.
 # abc experiments record behavior and ephys on separate acquisition machines:
@@ -93,12 +93,12 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
     lab.Location.insert1(
         {
             "lab": "SWC",
-            "location": "AEONX1",
-            "location_description": "acquisition machine AEONX1",
+            "location": "AEON3",
+            "location_description": "acquisition machine AEON3",
         },
         skip_duplicates=True,
     )
-    print("Location: AEONX1")
+    print("Location: AEON3")
 
     # --- Derive experiment_start_time from the first epoch directory ---
     # Use the ephys directory to find the experiment start time, since that
@@ -129,7 +129,7 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
             "experiment_description": "Golden baseline dataset - abc ephys (AEON3 + AEONX1)",
             "arena_name": "circle-2m",
             "lab": "SWC",
-            "location": "AEONX1",
+            "location": "AEON3",
             "experiment_type": "foraging",
         },
         skip_duplicates=True,
