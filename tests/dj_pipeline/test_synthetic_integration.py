@@ -887,18 +887,16 @@ class TestSpikeSortingLupin:
         )
 
         output_dir = tmp_path / "lupin_test"
-        recording_dir = output_dir.parent / "recording"
-        recording_dir.mkdir(parents=True)
-        recording_file = recording_dir / "si_recording.pkl"
+        recording_file = output_dir / "si_recording.pkl"
         recording.dump_to_pickle(file_path=recording_file)
-        recording.save(format="zarr", folder=recording_dir / "recording.zarr")
+        recording.save(format="zarr", folder=output_dir / "recording.zarr")
 
         params = {
             # n_jobs=1: SI 0.104's threaded template matching can deadlock in lupin.
             "SI_SORTING_PARAMS": {"job_kwargs": {"n_jobs": 1, "chunk_duration": "1s"}},
         }
         sorting_output_dir, _, _ = spike_sorting.SpikeSorting().make_compute(
-            {}, recording_file, output_dir, params, "lupin"
+            {}, output_dir, params, "lupin"
         )
 
         sorting = si.load(sorting_output_dir / "si_sorting.pkl", base_folder=output_dir)

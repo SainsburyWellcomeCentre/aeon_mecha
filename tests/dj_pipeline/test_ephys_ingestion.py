@@ -203,7 +203,7 @@ class TestPreProcessing:
             order_by="block_start"
         )[0]
         output_dir = ctx.spike_sorting.PreProcessing.infer_output_dir(key)
-        recording_file = output_dir.parent / "recording" / "si_recording.pkl"
+        recording_file = output_dir / "si_recording.pkl"
         assert recording_file.exists(), f"Expected si_recording.pkl at {recording_file}"
 
         import numpy as np
