@@ -7,6 +7,8 @@ own minimal DB state to exercise a specific behavior.
 import csv
 import json
 import logging
+import os
+import time
 import uuid
 from pathlib import Path
 
@@ -599,6 +601,10 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             ):
                 path = device_dir / f"{device_name}_{probe_label}_{stream}_{n}.bin"
                 np.fromfile(path, dtype=dtype)[:n_keep].tofile(path)
+                # we only ingest data that is at least 3 hours old, so we pretend the
+                # synthetic data was created more than three hours ago
+                four_hours_ago = time.time() - (4 * 60 * 60)
+                os.utime(path, (four_hours_ago, four_hours_ago))
 
         epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
