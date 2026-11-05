@@ -11,7 +11,7 @@ changes. ``source_blocks`` records what went in, so a row that has fallen behind
 can be found again.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import datajoint as dj
 import numpy as np
@@ -24,20 +24,26 @@ from aeon.dj_pipeline.utils import intervals
 logger = dj.logger
 
 
+# ``UnitMatching``'s own key for one sorting. Named once so the tuple below and the
+# restriction that resolves a winner stay the same six fields; two of them identify a
+# block, and a block can hold more than one sorting.
+_SORTING_FIELDS = (
+    "block_start",
+    "block_end",
+    "electrode_config_name",
+    "electrode_group",
+    "paramset_id",
+    "matching_paramset_id",
+)
+
+
 def _sorting_key(row: dict) -> tuple:
-    """``UnitMatching``'s own key for one sorting, in one fixed order.
+    """One sorting's key, in one fixed order.
 
     Built here for every caller. Built twice, the two drift and the metadata winner
     silently resolves against the wrong sorting.
     """
-    return (
-        row["block_start"],
-        row["block_end"],
-        row["electrode_config_name"],
-        row["electrode_group"],
-        row["paramset_id"],
-        row["matching_paramset_id"],
-    )
+    return tuple(row[f] for f in _SORTING_FIELDS)
 
 
 schema = dj.Schema(get_schema_name("processed_ephys"))
@@ -78,7 +84,7 @@ class SpikeTrains(dj.Computed):
 
         # Taken before the first read, so anything matched later is provably newer
         # than what went into this row.
-        started = datetime.now()
+        started = datetime.now(UTC)
 
         window = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
         insertion = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
@@ -239,7 +245,7 @@ def _unit_metadata(
         rows = (
             spike_sorting.UnitMatching.Unit * spike_sorting.SortedSpikes.Unit
             & insertion
-            & {"global_unit": unit, "block_start": winner[0], "block_end": winner[1]}
+            & {"global_unit": unit, **dict(zip(_SORTING_FIELDS, winner, strict=True))}
         ).to_dicts(order_by="unit")
         quality[unit] = rows[0]["unit_quality"] if rows else "n.a."
 
