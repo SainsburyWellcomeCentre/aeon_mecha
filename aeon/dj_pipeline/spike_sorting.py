@@ -805,7 +805,6 @@ class SortedSpikes(dj.Imported):
         -> master
         unit: int32
         ---
-        -> ephys.ElectrodeConfig.Electrode  # electrode with highest waveform amplitude for this unit
         -> UnitQuality  # Kilosort's KSLabel for raw sorting; replaced by the curator's manual quality
                         # label once an official curation is applied (single field, per the spec)
         spike_count: int32       # how many spikes in this recording for this unit
