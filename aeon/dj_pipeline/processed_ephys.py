@@ -22,15 +22,11 @@ from aeon.dj_pipeline.utils import intervals
 logger = dj.logger
 
 
-#: The attributes that identify a probe insertion, shared by every query here.
-_INSERTION = ("experiment_name", "subject", "insertion_number")
-
-
-def _ident(row: dict) -> tuple:
-    """One sorting's identity: ``UnitMatching``'s own key, in one fixed order.
+def _sorting_key(row: dict) -> tuple:
+    """``UnitMatching``'s own key for one sorting, in one fixed order.
 
     Built here for every caller. Built twice, the two drift and the metadata winner
-    silently resolves against the wrong key.
+    silently resolves against the wrong sorting.
     """
     return (
         row["block_start"],
@@ -40,22 +36,6 @@ def _ident(row: dict) -> tuple:
         row["paramset_id"],
         row["matching_paramset_id"],
     )
-
-
-def _block_tag(ident: tuple) -> str:
-    """Render an identity for ``source_blocks``.
-
-    Rendering has to stay stable: a row is judged out of date by comparing its
-    stored tags against freshly built ones, so a silent change of format makes
-    every row look current forever. Arity-agnostic, so a field added to ``_ident``
-    flows through without a second edit here.
-    """
-    return "/".join(str(part) for part in ident)
-
-
-def _ts(value) -> str:
-    """Format a datetime for a restriction string; DJ restrictions are SQL text."""
-    return pd.Timestamp(value).strftime("%Y-%m-%d %H:%M:%S.%f")
 
 
 schema = dj.Schema(get_schema_name("processed_ephys"))
@@ -83,10 +63,6 @@ class SpikeTrains(dj.Computed):
         Half-open: an ephys chunk ending exactly at ``chunk_start`` belongs to the
         previous hour. Unmatched blocks do not count.
         """
-        # Restrict before renaming: `proj` drops `chunk_start`, so a semijoin after
-        # the rename shares only insertion attributes and degenerates to "matched
-        # something, somewhere". The rename still earns its place — a surviving
-        # `chunk_start` carries ephys lineage, which populate()'s antijoin refuses.
         matched = (
             ephys.EphysChunk & (spike_sorting.UnitMatching * ephys.EphysBlockInfo.Chunk).proj()
         ).proj(eph_start="chunk_start", eph_end="chunk_end")
@@ -98,7 +74,7 @@ class SpikeTrains(dj.Computed):
         import pynapple as nap  # optional extra; kept lazy so importing this module is cheap
 
         window = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
-        insertion = {k: key[k] for k in _INSERTION}
+        insertion = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
 
         sortings = _covering_sortings(insertion, window)
         block_chunks = {i: v["chunks"] for i, v in sortings.items()}
@@ -148,33 +124,35 @@ class SpikeTrains(dj.Computed):
                 "n_spikes": n_spikes,
                 "coverage_frac": covered_total / chunk_seconds,
                 "n_partial_units": int(sum(c < covered_total for c in covered)),
-                "source_blocks": sorted(_block_tag(i) for i in sortings),
+                "source_blocks": sorted("/".join(map(str, k)) for k in sortings),
                 "spikes": tsgroup,
             }
         )
 
 
 def _covering_sortings(insertion: dict, window: tuple) -> dict:
-    """Every matched sorting overlapping ``window``, keyed by its real identity.
+    """Every matched sorting overlapping ``window``, keyed by ``_sorting_key``.
 
-    The identity is ``UnitMatching``'s own key; anything less silently drops a
+    That key is ``UnitMatching``'s own; anything less silently drops a
     sorting and its spikes lose the unit they belong to. The matching parameter set
     matters most — global unit ids are handed out per insertion across all of them,
     so two paramsets describe the same neurons with different ids.
 
     Matched sortings only: an unmatched one credits coverage to nobody.
     """
-    overlap = f'block_start < "{_ts(window[1])}" AND block_end > "{_ts(window[0])}"'
+    # DJ restrictions are SQL text, so the window goes in formatted, not as datetimes.
+    lo, hi = (pd.Timestamp(t).strftime("%Y-%m-%d %H:%M:%S.%f") for t in window)
+    overlap = f'block_start < "{hi}" AND block_end > "{lo}"'
     rows = (ephys.EphysBlock * spike_sorting.UnitMatching & insertion & overlap).to_dicts()
 
     sortings = {}
     for row in rows:
         bounds = (row["block_start"], row["block_end"])
-        ident = _ident(row)
+        sorting_key = _sorting_key(row)
         block_key = {k: row[k] for k in (*insertion, "block_start", "block_end")}
         chunks = (ephys.EphysBlockInfo.Chunk * ephys.EphysChunk & block_key).to_dicts()
         group_key = {k: row[k] for k in ("probe_type", "electrode_config_name", "electrode_group")}
-        sortings[ident] = {
+        sortings[sorting_key] = {
             "bounds": bounds,
             # EphysBlockInfo links the chunk containing each bound whole, but the
             # sorting only ran inside the block, so credit only the overlap.
@@ -219,8 +197,8 @@ def _fetch_spikes(insertion: dict, window: tuple, bounds: set) -> tuple[dict, di
         unit = int(row["global_unit"])
         by_unit.setdefault(unit, []).append(kept)
         counts.setdefault(unit, {})
-        ident = _ident(row)  # same key as _covering_sortings, so winners line up
-        counts[unit][ident] = counts[unit].get(ident, 0) + len(kept)
+        sorting_key = _sorting_key(row)  # same key as _covering_sortings, so winners line up
+        counts[unit][sorting_key] = counts[unit].get(sorting_key, 0) + len(kept)
     return {u: np.sort(np.concatenate(v)) for u, v in by_unit.items()}, counts
 
 
@@ -257,7 +235,7 @@ def _unit_metadata(
         # Enter every block that sorted it with zero and the usual tie-break applies.
         # The roster is built from these same rosters, so there is always a candidate.
         counts = counts_by_unit_block.get(unit) or {
-            ident: 0 for ident, units in block_units.items() if unit in units
+            key: 0 for key, units in block_units.items() if unit in units
         }
         winner = _most_spikes_wins(counts)
         rows = (

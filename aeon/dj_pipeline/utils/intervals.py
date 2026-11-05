@@ -1,7 +1,16 @@
-"""Half-open interval arithmetic over ``(start, end)`` datetime pairs.
+"""When each unit was actually observed, as half-open ``(start, end)`` datetimes.
 
-No DataJoint, no pynapple, no I/O, so the boundary cases can be tested directly.
-Every interval is ``[start, end)``: touching is not overlapping.
+Blocks start and end mid-hour and the rig stops recording, so a unit is observed only
+where a block that found it was running. Those seconds are what a firing rate has to
+divide by, and working them out is all this module does.
+
+Datetimes, not the float seconds pynapple wants, and the merging happens here rather
+than inside ``IntervalSet``. Two ephys chunks that meet exactly — one ends where the
+next starts — are one unbroken stretch of recording, but pynapple pulls the earlier
+end back by 1e-6 to keep its intervals disjoint, so they never join and a solid hour
+reports gaps it does not have. Merging first keeps that out of the way: ``IntervalSet``
+only ever sees intervals already separated by real gaps, and "these meet" stays an
+exact datetime comparison rather than a tolerance someone has to choose.
 """
 
 from collections import defaultdict

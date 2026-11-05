@@ -91,8 +91,8 @@ class TestGoldenSpikeTrains:
 
         Which sortings overlap is recomputed here from ``EphysBlock * UnitMatching``
         rather than reusing ``_covering_sortings``, so one silently dropped shows as
-        a set difference. Identity and rendering are shared (``_ident``,
-        ``_block_tag``) — field order is formatting, not a claim about the data.
+        a set difference. The key is built with ``_sorting_key`` so field order is
+        formatting here, not a claim about the data; the rendering is spelled out.
         The record substitutes for the foreign key this table does without, so it
         must be exact rather than non-empty.
         """
@@ -107,7 +107,7 @@ class TestGoldenSpikeTrains:
                 & insertion
                 & f'block_start < "{end}" AND block_end > "{start}"'
             ).to_dicts()
-            expected = {module._block_tag(module._ident(b)) for b in matched}
+            expected = {"/".join(map(str, module._sorting_key(b))) for b in matched}
 
             assert set(row["source_blocks"]) == expected, (
                 f"chunk {start}: source_blocks {sorted(row['source_blocks'])} "
