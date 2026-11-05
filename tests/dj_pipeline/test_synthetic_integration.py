@@ -877,7 +877,7 @@ class TestSpikeSortingLupin:
 
         assert spike_sorting.SortingMethod & {"sorting_method": "lupin"}
 
-        recording, _ = si.generate_recording(durations=[10.0], num_channels=32, seed=0)
+        recording = si.generate_recording(durations=[10.0], num_channels=32, seed=0)
 
         output_dir = tmp_path / "lupin_test"
         recording_dir = output_dir.parent / "recording"
