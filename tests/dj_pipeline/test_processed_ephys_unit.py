@@ -39,19 +39,24 @@ class TestMostSpikesWins:
         assert _most_spikes_wins({t(9): 5, t(8): 5}) == t(8)
 
 
-class TestBlockChunkClipping:
-    """A block is only sorted within its own bounds, whatever chunks it links."""
+class TestCoverageFollowsSortedChunks:
+    """Coverage is the ephys chunks that were sorted, not the block someone typed."""
 
-    def test_chunks_are_clipped_to_the_block_window(self):
-        """EphysBlockInfo links the chunk holding each bound whole.
+    def test_a_block_ending_mid_chunk_still_credits_the_whole_chunk(self):
+        """The sorter reads each linked chunk file entire, so all of it was observed.
 
-        A block covering 20 minutes of an hourly chunk would otherwise be credited
-        the whole hour and report every firing rate at a third of its value.
+        Clipping to the block instead would shrink the denominator while leaving every
+        spike from those chunks in the row, inflating each firing rate by the ratio
+        below — and stranding the spikes outside the block, which pynapple then drops.
         """
         from aeon.dj_pipeline.utils import intervals
 
-        block = (t(8, 39), t(8, 59))
-        clipped = intervals.clip([(t(8), t(9))], block)
+        hour = (t(8), t(9))
+        sorted_chunks = [(t(8, 30), t(8, 40)), (t(8, 40), t(8, 50)), (t(8, 50), t(9))]
+        block = (t(8, 35), t(8, 55))  # starts and ends mid-chunk, as a manual block may
 
-        assert clipped == [block]
-        assert intervals.covered_seconds(clipped) == 20 * 60
+        covered = intervals.coverage(hour, sorted_chunks)
+
+        assert covered == [(t(8, 30), t(9))]  # touching chunks are one stretch
+        assert intervals.covered_seconds(covered) == 30 * 60
+        assert intervals.covered_seconds(intervals.clip(sorted_chunks, block)) == 20 * 60

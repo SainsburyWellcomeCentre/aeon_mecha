@@ -1,8 +1,9 @@
 """When each unit was actually observed, as half-open ``(start, end)`` datetimes.
 
-Blocks start and end mid-hour and the rig stops recording, so a unit is observed only
-where a block that found it was running. Those seconds are what a firing rate has to
-divide by, and working them out is all this module does.
+Behaviour and ephys are cut on different grids and the rig stops between recordings,
+so a unit is observed only where an ephys chunk that was sorted for it overlaps the
+hour. Those seconds are what a firing rate has to divide by, and working them out is
+all this module does.
 
 Datetimes, not the float seconds pynapple wants, and the merging happens here rather
 than inside ``IntervalSet``. Two ephys chunks that meet exactly — one ends where the
@@ -72,10 +73,10 @@ def coverage_by_unit(
 ) -> dict[int, list[Interval]]:
     """``coverage``, asked per unit.
 
-    A unit was observed wherever a block that found it was recording. Spike rows
-    cannot answer this: ``UnitMatching.Spikes`` writes nothing for a unit silent in
-    a chunk, so a missing row means silent *or* never sorted there, and only the
-    block roster tells them apart.
+    A unit was observed over the ephys chunks that a sorting which found it ran on.
+    Spike rows cannot answer this: ``UnitMatching.Spikes`` writes nothing for a unit
+    silent in a chunk, so a missing row means silent *or* never sorted there, and only
+    the block roster tells them apart.
     """
     per_unit: dict[int, list[Interval]] = defaultdict(list)
     for block, units in block_units.items():

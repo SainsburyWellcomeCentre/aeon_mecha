@@ -167,9 +167,12 @@ def _covering_sortings(insertion: dict, window: tuple) -> dict:
         chunks = (ephys.EphysBlockInfo.Chunk * ephys.EphysChunk & block_key).to_dicts()
         sortings[sorting_key] = {
             "bounds": bounds,
-            # EphysBlockInfo links the chunk containing each bound whole, but the
-            # sorting only ran inside the block, so credit only the overlap.
-            "chunks": intervals.clip([(c["chunk_start"], c["chunk_end"]) for c in chunks], bounds),
+            # Whole chunks, not the block window. The sorter concatenates each linked
+            # chunk file entire, so the unit was observed for all of it; clipping to
+            # the block would shrink the rate denominator and leave every spike from
+            # the chunk in place. The block says which files to sort, not when the
+            # rig was recording.
+            "chunks": [(c["chunk_start"], c["chunk_end"]) for c in chunks],
             "units": {
                 int(u)
                 for u in np.atleast_1d((spike_sorting.UnitMatching.Unit & row).to_arrays("global_unit"))
