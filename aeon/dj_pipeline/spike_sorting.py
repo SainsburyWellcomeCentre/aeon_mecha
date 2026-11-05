@@ -914,7 +914,9 @@ class SortedSpikes(dj.Imported):
         for unit_id, main_channel_id, num_spikes, unit_quality, unit_location in zip(
             unit_ids, main_channel_ids, num_spikes_per_unit, unit_qualities, unit_locations, strict=True
         ):
-            spike_indices = sorting_analyzer.get_unit_spike_train(unit_id=unit_id, return_times=False)
+            spike_indices = sorting_analyzer.sorting.get_unit_spike_train(
+                unit_id=unit_id, return_times=False
+            )
 
             self.Unit.insert1(
                 {
