@@ -11,6 +11,8 @@ changes. ``source_blocks`` records what went in, so a row that has fallen behind
 can be found again.
 """
 
+from datetime import datetime
+
 import datajoint as dj
 import numpy as np
 import pandas as pd
@@ -52,7 +54,8 @@ class SpikeTrains(dj.Computed):
     n_spikes: int64                      # total spikes across all units
     coverage_frac: float32               # covered seconds / (chunk_end - chunk_start)
     n_partial_units: int32               # units sorted for less than the full chunk; 0 normally
-    source_blocks: json                  # contributing EphysBlock starts + matching paramset
+    source_blocks: json                  # one string per sorting that fed this row
+    execution_time: datetime             # when make() started; later matching leaves this row stale
     spikes: <pynapple@dj_store>          # TsGroup; HARP seconds since 1904-01-01
     """
 
@@ -72,6 +75,10 @@ class SpikeTrains(dj.Computed):
     def make(self, key: dict) -> None:
         """Build one behavioural hour's TsGroup from the blocks covering it."""
         import pynapple as nap  # optional extra; kept lazy so importing this module is cheap
+
+        # Taken before the first read, so anything matched later is provably newer
+        # than what went into this row.
+        started = datetime.now()
 
         window = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
         insertion = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
@@ -120,6 +127,7 @@ class SpikeTrains(dj.Computed):
         self.insert1(
             {
                 **key,
+                "execution_time": started,
                 "n_units": len(roster),
                 "n_spikes": n_spikes,
                 "coverage_frac": covered_total / chunk_seconds,
@@ -151,7 +159,6 @@ def _covering_sortings(insertion: dict, window: tuple) -> dict:
         sorting_key = _sorting_key(row)
         block_key = {k: row[k] for k in (*insertion, "block_start", "block_end")}
         chunks = (ephys.EphysBlockInfo.Chunk * ephys.EphysChunk & block_key).to_dicts()
-        group_key = {k: row[k] for k in ("probe_type", "electrode_config_name", "electrode_group")}
         sortings[sorting_key] = {
             "bounds": bounds,
             # EphysBlockInfo links the chunk containing each bound whole, but the
@@ -161,15 +168,6 @@ def _covering_sortings(insertion: dict, window: tuple) -> dict:
                 int(u)
                 for u in np.atleast_1d((spike_sorting.UnitMatching.Unit & row).to_arrays("global_unit"))
             },
-            "config": row["electrode_config_name"],
-            "group": row["electrode_group"],
-            "matching": row["matching_paramset_id"],
-            "electrodes": frozenset(
-                int(e)
-                for e in np.atleast_1d(
-                    (spike_sorting.ElectrodeGroup.Electrode & group_key).to_arrays("electrode")
-                )
-            ),
         }
 
     return sortings

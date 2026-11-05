@@ -113,7 +113,7 @@ class TestMake:
         The single assertion that catches almost any boundary bug.
         """
         total = sum(_mine(populated).to_arrays("n_spikes"))
-        assert total == populated["expected_spike_counts"]["total"]
+        assert total == populated["expected_spike_total"]
 
     def test_boundary_spike_lands_in_the_later_chunk(self, populated):
         """The half-open rule end to end, on a spike at exactly 09:00:00."""

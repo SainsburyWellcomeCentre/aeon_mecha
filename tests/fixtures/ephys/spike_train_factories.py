@@ -49,7 +49,7 @@ EPHYS_CHUNKS = [
     (_at(10), _at(10, 30)),  # UNMATCHED_BLOCK's; no block in BLOCKS covers it
 ]
 # Sorted but never matched. _blocks_covering() does not see it, so _owner() and
-# _expected_counts() skip it and only key_source has an opinion about it.
+# _expected_spike_total() skip it and only key_source has an opinion about it.
 UNMATCHED_BLOCK = (_at(10), _at(10, 30))
 BLOCKS = {
     # Unit 1 lives in both blocks and they label it differently on purpose: in the
@@ -228,19 +228,17 @@ def build_scenario(experiment_name):
         "uncovered_chunk_start": CHUNKS[2][0],
         "unmatched_ephys_start": UNMATCHED_BLOCK[0],
         "boundary_chunk_start": CHUNKS[1][0],
-        "span_end": CHUNKS[2][1],
-        "units_by_block": {n: set(b["units"]) for n, b in BLOCKS.items()},
         "partial_unit": 2,  # block A only, so it stops at 09:20
         "full_units": {1, 3},
         "cross_block_unit": 1,
         "owning_block_quality": BLOCKS["A"]["quality"][101],  # A holds most of unit 1
         "losing_block_quality": BLOCKS["B"]["quality"][201],
-        "expected_spike_counts": _expected_counts(),
+        "expected_spike_total": _expected_spike_total(),
     }
 
 
-def _expected_counts():
-    """Total spikes the scenario inserts, per unit and overall."""
+def _expected_spike_total():
+    """Total spikes the scenario inserts."""
     per_unit = {}
     for name, block in BLOCKS.items():
         for global_unit in block["units"]:
@@ -249,7 +247,7 @@ def _expected_counts():
                     continue
                 n = 8 + (1 if chunk[0] == BOUNDARY_SPIKE and global_unit == 1 else 0)
                 per_unit[global_unit] = per_unit.get(global_unit, 0) + n
-    return {"per_unit": per_unit, "total": sum(per_unit.values())}
+    return sum(per_unit.values())
 
 
 def _owner(ephys_chunk, global_unit):
