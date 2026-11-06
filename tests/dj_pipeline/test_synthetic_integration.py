@@ -746,7 +746,6 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             {
                 **sorting_task_key,
                 "unit": 1,
-                "electrode": 0,
                 "unit_quality": "good",
                 "spike_count": len(spike_indices),
                 "spike_indices": spike_indices,
