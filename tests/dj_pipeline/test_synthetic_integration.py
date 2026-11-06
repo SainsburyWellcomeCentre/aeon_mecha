@@ -715,9 +715,10 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             np.zeros((sorted_samples or sum(amp_samples), 1), dtype=np.float32), sampling_frequency=30e3
         )
         sorting_output_dir = experiment_name
+        recording.set_probe(probe)
         si.create_sorting_analyzer(
             si.NumpySorting.from_unit_dict({1: np.array([0])}, sampling_frequency=30e3),
-            recording.set_probe(probe),
+            recording,
             format="binary_folder",
             folder=spike_sorting.get_sorting_root_dir() / sorting_output_dir / "sorting_analyzer",
             sparse=False,
@@ -882,9 +883,7 @@ class TestSpikeSortingLupin:
 
         assert spike_sorting.SortingMethod & {"sorting_method": "lupin"}
 
-        recording, _ = si.generate_ground_truth_recording(
-            durations=[10.0], num_channels=32, num_units=5, seed=0
-        )
+        recording = si.generate_recording(durations=[10.0], num_channels=32, seed=0)
 
         output_dir = tmp_path / "lupin_test"
         recording_dir = output_dir.parent / "recording"
