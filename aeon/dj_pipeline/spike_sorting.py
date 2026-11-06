@@ -805,13 +805,12 @@ class SortedSpikes(dj.Imported):
         -> master
         unit: int32
         ---
-        -> ephys.ElectrodeConfig.Electrode  # electrode with highest waveform amplitude for this unit
         -> UnitQuality  # Kilosort's KSLabel for raw sorting; replaced by the curator's manual quality
                         # label once an official curation is applied (single field, per the spec)
         spike_count: int32       # how many spikes in this recording for this unit
         spike_indices: <blob@dj_store>  # array of spike indices into the concatenated binary data (from preprocessing)
-        spike_sites : <blob@dj_store>   # array of electrode associated with each spike
-        spike_depths=null : <blob@dj_store>  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe
+        spike_sites : <blob@dj_store>   # array of electrode associated with each unit
+        spike_depths=null : <blob@dj_store>  # (um) array of depths associated with each unit, relative to the (0, 0) of the probe
         """  # noqa:E501
 
     class UnitTag(dj.Part):
@@ -834,15 +833,6 @@ class SortedSpikes(dj.Imported):
 
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
-
-        # Get channel and electrode-site mapping
-        electrode_query = (
-            ephys.EphysBlockInfo.Channel.proj(..., "-channel_name")
-            * ephys.ElectrodeConfig.Electrode
-            * ElectrodeGroup.Electrode
-            * ephys.ProbeType.Electrode.proj("electrode_name")
-            & key
-        )
 
         # Check if there's an official curation for this block
         # If so, use the curated analyzer; otherwise use the raw analyzer
@@ -901,86 +891,59 @@ class SortedSpikes(dj.Imported):
             logger.info(f"No units found in {sorting_file}. Skipping Unit ingestion...")
             return
 
-        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
-        si_sorting = sorting_analyzer.sorting
+        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir, load_extensions=False)
 
-        # Find representative channel for each unit
-        unit_channel_indices: dict[int, np.ndarray] = si.ChannelSparsity.from_best_channels(
-            sorting_analyzer,
-            1,
-        ).unit_id_to_channel_indices
-        unit_peak_channel: dict[int, int] = {u: chn[0] for u, chn in unit_channel_indices.items()}
-
-        spike_count_dict: dict[int, int] = si_sorting.count_num_spikes_per_unit()
-        # {unit: spike_count}
-
-        # create channel2electrode_map
-        electrode_map: dict[int, dict] = {elec["electrode"]: elec for elec in electrode_query.to_dicts()}
-        channel2electrode_map = {
-            chn_idx: electrode_map[int(elec_id)]
-            for chn_idx, elec_id in zip(
-                sorting_analyzer.get_probe().device_channel_indices,
-                sorting_analyzer.get_probe().contact_ids,
-                strict=False,
-            )
-        }
+        property_keys = set(sorting_analyzer.sorting.get_property_keys())
 
         # unit_quality is a single field: the curator's manual label once an official curation has
         # been applied (curation_id != -1, so we've loaded the curated analyzer), otherwise Kilosort's
         # own KSLabel. The manual call lives in the curated sorting's "quality" property; the
         # make_curation_official gate guarantees every curated unit has one, so a curated block's units
         # all carry the human's call, with KSLabel only as a defensive fallback.
-        prop_keys = set(si_sorting.get_property_keys())
-        use_manual_quality = curation_id != -1 and "quality" in prop_keys
+        use_manual_quality = curation_id != -1 and "quality" in property_keys
+
+        # get data from analyzer
+        main_channel_ids = sorting_analyzer.channel_ids[sorting_analyzer.main_channel_indices]
+        num_spikes_per_unit = sorting_analyzer.sorting.count_num_spikes_per_unit()
+        quality_label = "quality" if use_manual_quality else "KSLabel"
+        unit_qualities = sorting_analyzer.sorting.get_property(quality_label)
+        unit_locations = sorting_analyzer.get_extension("unit_locations").get_data()
+        unit_ids = sorting_analyzer.unit_ids
+
+        for unit_id, main_channel_id, num_spikes, unit_quality, unit_location in zip(
+            unit_ids, main_channel_ids, num_spikes_per_unit, unit_qualities, unit_locations, strict=True
+        ):
+            spike_indices = sorting_analyzer.sorting.get_unit_spike_train(
+                unit_id=unit_id, return_times=False
+            )
+
+            self.Unit.insert1(
+                {
+                    **key,
+                    "unit": unit_id,
+                    "unit_quality": unit_quality,
+                    "spike_indices": spike_indices,
+                    "spike_count": num_spikes,
+                    "spike_sites": main_channel_id,
+                    "spike_depths": unit_location,
+                },
+                ignore_extra_fields=True,
+            )
+
         unit_quality_map = {}
-        for unit_id in si_sorting.unit_ids:
+        for unit_id in sorting_analyzer.unit_ids:
             quality = (
-                (si_sorting.get_unit_property(unit_id, "quality") or "").strip().lower()
+                (sorting_analyzer.sorting.get_property(unit_id, "quality") or "").strip().lower()
                 if use_manual_quality
                 else ""
             )
             if not quality:
                 quality = (
-                    si_sorting.get_unit_property(unit_id, "KSLabel") if "KSLabel" in prop_keys else "n.a."
+                    sorting_analyzer.sorting.get_property(unit_id, "KSLabel")
+                    if "KSLabel" in property_keys
+                    else "n.a."
                 )
             unit_quality_map[int(unit_id)] = quality
-
-        spike_locations = sorting_analyzer.get_extension("spike_locations")
-        extremum_channel_inds = si.template_tools.get_template_extremum_channel(
-            sorting_analyzer, outputs="index"
-        )
-        spikes_df = pd.DataFrame(
-            sorting_analyzer.sorting.to_spike_vector(extremum_channel_inds=extremum_channel_inds)
-        )
-        for unit_idx, raw_unit_id in enumerate(si_sorting.unit_ids):
-            unit_id = int(raw_unit_id)
-            unit_spikes_df = spikes_df[spikes_df.unit_index == unit_idx]
-            spike_sites = np.array(
-                [channel2electrode_map[chn_idx]["electrode"] for chn_idx in unit_spikes_df.channel_index]
-            )
-            unit_spikes_loc = spike_locations.get_data()[unit_spikes_df.index]
-            _, spike_depths = zip(*unit_spikes_loc, strict=True)  # x-coordinates, y-coordinates
-            spike_indices = si_sorting.get_unit_spike_train(unit_id)
-
-            if not (len(spike_indices) == len(spike_sites) == len(spike_depths)):
-                raise ValueError(
-                    f"Unit {unit_id}: mismatched spike data lengths "
-                    f"(indices={len(spike_indices)}, sites={len(spike_sites)}, depths={len(spike_depths)})"
-                )
-
-            self.Unit.insert1(
-                {
-                    **key,
-                    **channel2electrode_map[unit_peak_channel[unit_id]],
-                    "unit": unit_id,
-                    "unit_quality": unit_quality_map[unit_id],
-                    "spike_indices": spike_indices,
-                    "spike_count": spike_count_dict[unit_id],
-                    "spike_sites": spike_sites,
-                    "spike_depths": spike_depths,
-                },
-                ignore_extra_fields=True,
-            )
 
         # Manual curation tags (curated blocks only): one UnitTag row per (unit, tag) the curator
         # applied, read from the curated analyzer's per-tag boolean properties (see CurationTag).
@@ -988,9 +951,9 @@ class SortedSpikes(dj.Imported):
             curation_tags = CurationTag.to_arrays("tag")
             tag_rows = [
                 {**key, "unit": int(unit_id), "tag": tag}
-                for unit_id in si_sorting.unit_ids
+                for unit_id in sorting_analyzer.unit_ids
                 for tag in curation_tags
-                if tag in prop_keys and bool(si_sorting.get_unit_property(unit_id, tag))
+                if tag in property_keys and bool(sorting_analyzer.sorting.get_property(unit_id, tag))
             ]
             if tag_rows:
                 self.UnitTag.insert(tag_rows, ignore_extra_fields=True)
