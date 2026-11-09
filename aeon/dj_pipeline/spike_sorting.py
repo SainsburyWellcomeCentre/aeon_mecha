@@ -1003,15 +1003,6 @@ class Waveform(dj.Imported):
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
-        # Get channel and electrode-site mapping
-        electrode_query = (
-            ephys.EphysBlockInfo.Channel.proj(..., "-channel_name")
-            * ephys.ElectrodeConfig.Electrode
-            * ElectrodeGroup.Electrode
-            * ephys.ProbeType.Electrode.proj("electrode_name")
-            & key
-        )
-
         # Get curation_id from SortedSpikes to determine which analyzer to use
         curation_id = (SortedSpikes & key).fetch1("curation_id")
         if curation_id != -1:
@@ -1035,7 +1026,7 @@ class Waveform(dj.Imported):
             analyzer_output_dir = resolve_analyzer_dir(output_dir)
             logger.info("Using raw analyzer (curation_id=-1)")
 
-        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
+        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir, load_extensions=False)
 
         self.insert1(key)
 
@@ -1045,34 +1036,28 @@ class Waveform(dj.Imported):
         ).unit_id_to_channel_indices  # {unit: peak_channel_index}
         unit_peak_channel = {u: chn[0] for u, chn in unit_peak_channel.items()}
 
-        # create channel2electrode_map
-        electrode_map: dict[int, dict] = {elec["electrode"]: elec for elec in electrode_query.to_dicts()}
-        channel2electrode_map = {
-            chn_idx: electrode_map[int(elec_id)]
-            for chn_idx, elec_id in zip(
-                sorting_analyzer.get_probe().device_channel_indices,
-                sorting_analyzer.get_probe().contact_ids,
-                strict=True,
-            )
-        }
+        electrode_ids = sorting_analyzer.get_probe().contact_ids
+        device_channel_indices = sorting_analyzer.get_probe().device_channel_indices
+        main_channel_indices = sorting_analyzer.main_channel_indices
 
         templates = sorting_analyzer.get_extension("templates")
 
         for unit in (SortedSpikes.Unit & key).keys(order_by="unit"):
             # Get mean waveform for this unit from all channels - (sample x channel)
             unit_waveforms = templates.get_unit_template(unit_id=unit["unit"], operator="average")
+            unit_index = sorting_analyzer.sorting.id_to_index(unit["unit"])
             unit_peak_waveform = {
                 **unit,
-                "unit_waveform": unit_waveforms[:, unit_peak_channel[unit["unit"]]],
+                "unit_waveform": unit_waveforms[:, main_channel_indices[unit_index]],
             }
 
             unit_electrode_waveforms = [
                 {
-                    **unit,
-                    **channel2electrode_map[chn_idx],
+                    **{key: value for key, value in unit.items() if key != "electrode"},
+                    "electrode": elec_id,
                     "channel_waveform": unit_waveforms[:, chn_idx],
                 }
-                for chn_idx in channel2electrode_map
+                for elec_id, chn_idx in zip(electrode_ids, device_channel_indices, strict=True)
             ]
 
             self.UnitWaveform.insert1(unit_peak_waveform, ignore_extra_fields=True)
