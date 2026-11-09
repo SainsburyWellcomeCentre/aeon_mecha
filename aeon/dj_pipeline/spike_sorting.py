@@ -918,14 +918,15 @@ class SortedSpikes(dj.Imported):
             unit_quality_map[int(unit_id)] = quality
 
         # get data from analyzer
-        main_channel_ids = sorting_analyzer.channel_ids[sorting_analyzer.main_channel_indices]
+        main_channel_indices = sorting_analyzer.main_channel_indices
+        main_channel_ids = sorting_analyzer.channel_ids[main_channel_indices]
         num_spikes_per_unit = sorting_analyzer.sorting.count_num_spikes_per_unit().values()
         unit_locations = sorting_analyzer.get_extension("unit_locations").get_data()
 
         # PreProcessing names the probe's contacts after their electrode
         # ids and the analyzer lists contacts in channel order.
         # probe_type and electrode_config_name are already in key.
-        main_electrode_ids = sorting_analyzer.get_probe().contact_ids[main_channel_ids].astype(int)
+        main_electrode_ids = sorting_analyzer.get_probe().contact_ids[main_channel_indices].astype(int)
 
         for unit_id, main_channel_id, main_electrode_id, num_spikes, unit_quality, unit_location in zip(
             unit_ids,
