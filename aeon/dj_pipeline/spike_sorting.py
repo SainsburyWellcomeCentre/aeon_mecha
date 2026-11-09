@@ -905,13 +905,13 @@ class SortedSpikes(dj.Imported):
         unit_quality_map = {}
         for unit_id in unit_ids:
             quality = (
-                (sorting_analyzer.sorting.get_property(unit_id, "quality") or "").strip().lower()
+                (sorting_analyzer.sorting.get_unit_property(unit_id, "quality") or "").strip().lower()
                 if use_manual_quality
                 else ""
             )
             if not quality:
                 quality = (
-                    sorting_analyzer.sorting.get_property(unit_id, "KSLabel")
+                    sorting_analyzer.sorting.get_unit_property(unit_id, "KSLabel")
                     if "KSLabel" in property_keys
                     else "n.a."
                 )
