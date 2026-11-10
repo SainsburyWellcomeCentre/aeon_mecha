@@ -1247,7 +1247,7 @@ class SyncedSpikes(dj.Imported):
                 amp_len = len(onix_ts)
             else:
                 amp_len = read_amplifier_recording(
-                    clock_file.replace("Clock", "AmplifierData"), num_channels, NP2_FS_HZ
+                    ephys_dir / f.replace("Clock", "AmplifierData"), num_channels, NP2_FS_HZ
                 ).get_num_samples()
             onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=f))
             amp_lengths.append(amp_len)
