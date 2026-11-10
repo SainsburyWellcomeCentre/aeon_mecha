@@ -1,4 +1,4 @@
-""" Simple periodic system resource logger: CPU, memory, network, GPU.
+"""Simple periodic system resource logger: CPU, memory, network, GPU.
 
 This script logs system resource usage at regular intervals to a CSV file.
 
@@ -10,32 +10,32 @@ Usage:
 Adrian 2025-09-29
 """
 
-
-import time
-import psutil
 import argparse
 import subprocess
+import time
 from datetime import datetime
+
+import psutil
 
 #!/usr/bin/env python3
 
 
 def get_usage_sample(prev_net=None):
     """Get a sample of system usage statistics.
-    
+
     Args:
         prev_net: Previous net_io_counters object or None.
         interval: Time in seconds since last sample.
+
     Returns:
         A tuple (row_str, net) where row_str is a comma-separated string of stats,
         and net is the current net_io_counters object to be used in the next call.
-     """
-    
+    """
     # CPU
     cpu_pct = psutil.cpu_percent(interval=None)
     cpu_times = psutil.cpu_times_percent(interval=None)
     vm = psutil.virtual_memory()
-    
+
     # Network
     net = psutil.net_io_counters()
     if prev_net is None:
@@ -43,20 +43,24 @@ def get_usage_sample(prev_net=None):
     else:
         delta_sent = net.bytes_sent - prev_net.bytes_sent
         delta_recv = net.bytes_recv - prev_net.bytes_recv
-    
+
     # GPU - handle gracefully if nvidia-smi not available
     try:
-        gpu_stats = subprocess.check_output(
-                    [
-                        "nvidia-smi",
-                        "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw",
-                        "--format=csv,noheader,nounits",
-                    ],
-                    text=True,
-                ).strip().split(', ')   # returns e.g. ['0', '0', '40536', '25', '48.29']
+        gpu_stats = (
+            subprocess.check_output(
+                [  # noqa: S607 -- nvidia-smi resolved from PATH by design
+                    "nvidia-smi",
+                    "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw",
+                    "--format=csv,noheader,nounits",
+                ],
+                text=True,
+            )
+            .strip()
+            .split(", ")
+        )  # returns e.g. ['0', '0', '40536', '25', '48.29']
     except (subprocess.CalledProcessError, FileNotFoundError):
         # No GPU or nvidia-smi not available - set all GPU stats to 0
-        gpu_stats = ['0', '0', '0', '0', '0']
+        gpu_stats = ["0", "0", "0", "0", "0"]
 
     # Create comma-separated row
     row = [
@@ -72,13 +76,14 @@ def get_usage_sample(prev_net=None):
         f"{(delta_sent * 1e-6):.1f}",
         f"{(delta_recv * 1e-6):.1f}",
         f"{gpu_stats[0]}",
-        f"{(int(gpu_stats[1])*1e-3):.1f}",
-        f"{(int(gpu_stats[2])*1e-3):.1f}",
+        f"{(int(gpu_stats[1]) * 1e-3):.1f}",
+        f"{(int(gpu_stats[2]) * 1e-3):.1f}",
         f"{gpu_stats[3]}",
-        f"{(float(gpu_stats[4])):.1f}"
+        f"{(float(gpu_stats[4])):.1f}",
     ]
     row_str = ",".join(row)
     return row_str, net
+
 
 def get_usage_header():
     """Get the CSV header for the usage statistics."""
@@ -105,11 +110,12 @@ def get_usage_header():
 
 
 def main():
+    """Run a profiler to check resources used during task."""
     parser = argparse.ArgumentParser(description="Periodic system resource logger.")
     parser.add_argument("-o", "--output", default="resource_log.csv", help="Output log file")
     parser.add_argument("-i", "--interval", type=float, default=1.0, help="Sampling interval seconds")
-    parser.add_argument("--once", action='store_true', help="Take a single sample and exit")
-    parser.add_argument("--print", action='store_true', help="Print output also to console")
+    parser.add_argument("--once", action="store_true", help="Take a single sample and exit")
+    parser.add_argument("--print", action="store_true", help="Print output also to console")
     args = parser.parse_args()
 
     header = get_usage_header()
@@ -119,7 +125,7 @@ def main():
             f.write(header + "\n")
             if args.print:
                 print(header)
-                
+
             prev_net = None
             while True:
                 loop_start = time.time()
@@ -129,16 +135,15 @@ def main():
                     print(new_row)
                 if args.once:
                     break
-                    
+
                 elapsed = time.time() - loop_start
                 sleep_for = args.interval - elapsed
                 if sleep_for > 0:
                     time.sleep(sleep_for)
-                    
+
     except KeyboardInterrupt:
         print("\nScript stopped manually.")
 
 
 if __name__ == "__main__":
     main()
-    

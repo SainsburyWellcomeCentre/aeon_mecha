@@ -22,9 +22,11 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
-from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, resolve_ephys_file
+from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
+from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording, read_onix_ts
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
+    extend_clock,
     fork_safe_job_kwargs,
     resolve_analyzer_dir,
     strip_non_numeric_properties,
@@ -35,6 +37,9 @@ ephys = importlib.import_module("aeon.dj_pipeline.ephys")
 
 schema = dj.Schema(get_schema_name("spike_sorting"))
 logger = dj.logger
+
+# Neuropixels 2.0 sampling rate - TODO: read this from the metadata
+NP2_FS_HZ = 30e3
 
 
 @schema
@@ -67,11 +72,14 @@ class UnitQuality(dj.Lookup):
     unit_quality_description='':  varchar(4000)
     """
     contents = [
-        ("good", "single unit"),
-        ("ok", "probably a single unit, but could be contaminated"),
-        ("mua", "multi-unit activity"),
-        ("noise", "bad unit"),
-        ("n.a.", "not available"),
+        {"unit_quality": "good", "unit_quality_description": "single unit"},
+        {
+            "unit_quality": "ok",
+            "unit_quality_description": "probably a single unit, but could be contaminated",
+        },
+        {"unit_quality": "mua", "unit_quality_description": "multi-unit activity"},
+        {"unit_quality": "noise", "unit_quality_description": "bad unit"},
+        {"unit_quality": "n.a.", "unit_quality_description": "not available"},
     ]
 
 
@@ -84,12 +92,12 @@ class CurationTag(dj.Lookup):
     tag: varchar(64)
     """
     contents = [
-        ("irregular waveform",),
-        ("amplitude drift",),
-        ("bimodal amplitude",),
-        ("intermittent",),
-        ("refractory violations",),
-        ("flag",),
+        {"tag": "irregular waveform"},
+        {"tag": "amplitude drift"},
+        {"tag": "bimodal amplitude"},
+        {"tag": "intermittent"},
+        {"tag": "refractory violations"},
+        {"tag": "flag"},
     ]
 
 
@@ -102,10 +110,14 @@ class SortingMethod(dj.Lookup):
     """
 
     contents = [
-        ("kilosort2", "kilosort2 sorting method"),
-        ("kilosort2.5", "kilosort2.5 sorting method"),
-        ("kilosort3", "kilosort3 sorting method"),
-        ("kilosort4", "kilosort4 sorting method"),
+        {"sorting_method": "kilosort2", "sorting_method_desc": "kilosort2 sorting method"},
+        {"sorting_method": "kilosort2.5", "sorting_method_desc": "kilosort2.5 sorting method"},
+        {"sorting_method": "kilosort3", "sorting_method_desc": "kilosort3 sorting method"},
+        {"sorting_method": "kilosort4", "sorting_method_desc": "kilosort4 sorting method"},
+        {
+            "sorting_method": "lupin",
+            "sorting_method_desc": "lupin sorting method (SpikeInterface internal)",
+        },
     ]
 
 
@@ -192,6 +204,11 @@ class PreProcessing(dj.Computed):
 
     def make_fetch(self, key):
         """Fetch ephys data and metadata, prepare output directory, and define preprocessing parameters."""
+        # Resolve the preprocessing pipeline first, so a malformed paramset fails before
+        # anything is created on disk.
+        params = (SortingParamSet & key).fetch1("params")
+        si_pipeline = resolve_preprocessing_pipeline(params.get("SI_PREPROCESSING_PARAMS") or {})
+
         # Safety check: refuse to overwrite existing data on ceph
         output_dir = self.infer_output_dir(key)
         if output_dir.exists() and any(output_dir.iterdir()):
@@ -209,7 +226,7 @@ class PreProcessing(dj.Computed):
         ephys_files, dir_types = (
             ephys.EphysChunk.File
             & (ephys.EphysBlockInfo.Chunk & key)
-            & "file_name LIKE '%AmplifierData%.bin'"
+            & ["file_name LIKE '%AmplifierData%.bin'", "file_name LIKE '%Probe%.arrow'"]
         ).to_arrays("file_path", "directory_type", order_by="chunk_start")
 
         # Channels
@@ -227,8 +244,8 @@ class PreProcessing(dj.Computed):
         electrodes_df.drop(columns=list(key), inplace=True, errors="ignore")
 
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
-        # Neuropixels 2.0 constants - TODO: read this from the metadata
-        fs_hz = 30e3
+        fs_hz = NP2_FS_HZ
+        # Neuropixels 2.0 gain - TODO: read this from the metadata
         gain_to_uV = 3.05176
         offset_to_uV = -2048 * gain_to_uV
 
@@ -243,6 +260,8 @@ class PreProcessing(dj.Computed):
             output_dir,
             recording_file,
             recording_dir,
+            params,
+            si_pipeline,
         )
 
     def make_compute(
@@ -258,6 +277,8 @@ class PreProcessing(dj.Computed):
         output_dir: Path,
         recording_file: Path,
         recording_dir: Path,
+        params: dict[str, Any],
+        si_pipeline: dict[str, dict[str, Any]],
     ) -> tuple[Path, datetime, Path]:
         """Preprocess ephys data for spike sorting.
 
@@ -275,41 +296,32 @@ class PreProcessing(dj.Computed):
             output_dir: Output directory path
             recording_file: Path to save recording object
             recording_dir: Directory for recording files
+            params: SortingParamSet params
+            si_pipeline: SpikeInterface preprocessing pipeline dict to apply
 
         Returns:
             Tuple of (output_dir, execution_time, recording_dir)
         """
         import probeinterface as pi
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
-        import spikeinterface.extractors as se
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
         from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
 
-        # Concatenate recordings. Each chunk file is resolved on disk: prefer the
-        # compressed .zarr twin under the processed store, else the raw .bin.
-        si_recs = []
-        for f, d in zip(ephys_files, dir_types, strict=False):
-            ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
-            resolved = resolve_ephys_file(ephys_dir / f)
-            if resolved.suffix == ".zarr":
-                # The compression library writes zarr from a plain read_binary
-                # (no gains), so re-attach the gain/offset metadata the .bin
-                # branch sets, to keep the two branches equivalent.
-                si_rec = si.load(resolved)
-                si_rec.set_channel_gains(gain_to_uV)
-                si_rec.set_channel_offsets(offset_to_uV)
-            else:
-                si_rec = se.read_binary(
-                    resolved,
-                    sampling_frequency=fs_hz,
-                    dtype=np.uint16,
-                    num_channels=num_channels,
-                    gain_to_uV=gain_to_uV,
-                    offset_to_uV=offset_to_uV,
-                )
-            si_recs.append(si_rec)
+        # Concatenate the block's AmplifierData chunks (compressed .zarr twin if present).
+        si_recs = [
+            read_amplifier_recording(
+                acquisition.Experiment.get_data_directory(key, directory_type=d) / f,
+                num_channels,
+                fs_hz,
+                gain_to_uV,
+                offset_to_uV,
+            )
+            for f, d in zip(ephys_files, dir_types, strict=True)
+        ]
         si_recording = si.concatenate_recordings(si_recs)
 
         # Select channels based on the electrode group
@@ -339,10 +351,9 @@ class PreProcessing(dj.Computed):
 
         # Run preprocessing and save results to output folder
         si_recording = si.preprocessing.unsigned_to_signed(si_recording)
-        si_recording = ephys_preproc(si_recording)
+        si_recording = si.preprocessing.apply_preprocessing_pipeline(si_recording, si_pipeline)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
-        params = (SortingParamSet & key).fetch1("params")
         save_format = params.get("save_format", "zarr")
 
         # 30s chunk_duration matches the raw standalone-compression default; it sets the
@@ -470,8 +481,10 @@ class SpikeSorting(dj.Computed):
                 "expandable_segments:True,garbage_collection_threshold:0.6"
             )
 
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
         execution_time = datetime.now(UTC)
         sorter_name = sorting_method.replace(".", "_")
@@ -491,16 +504,14 @@ class SpikeSorting(dj.Computed):
             sorting_params["clear_cache"] = True
 
         if sorting_method == "kilosort4":
-            # Kilosort4 reads a flat binary, so SpikeInterface first exports recording.zarr
-            # to recording.dat. With its default job kwargs (1 worker, 1s chunks) every 1s
-            # written decompresses a whole 30s zarr chunk: ~42 MB/s, 3-4.5 h per 30 h block.
-            # Default to the job kwargs PreProcessing wrote the zarr with; n_jobs,
-            # chunk_duration etc. in the paramset's SI_SORTING_PARAMS take precedence.
-            sorting_params = {**fork_safe_job_kwargs("30s"), **sorting_params}
-
-        # Prevent SpikeInterface from re-running write_binary_recording internally:
-        # https://github.com/SpikeInterface/spikeinterface/blob/705c932/src/spikeinterface/sorters/external/kilosortbase.py#L124
-        sorting_params["skip_kilosort_preprocessing"] = False
+            # Kilosort4 needs a flat binary file, so SpikeInterface first converts
+            # recording.zarr to recording.dat. Its default settings (1 worker, 1 s chunks)
+            # make this slow: each 1 s written re-reads a whole 30 s zarr chunk, and a 30 h
+            # block took 3-4.5 h. So use the settings PreProcessing wrote the zarr with.
+            # Values in the paramset still win, except n_jobs: it follows the job's CPU
+            # allocation, and a paramset n_jobs can only lower it.
+            job_kwargs = fork_safe_job_kwargs("30s", max_jobs=sorting_params.get("n_jobs"))
+            sorting_params = {**job_kwargs, **sorting_params, "n_jobs": job_kwargs["n_jobs"]}
 
         intermediate_dir = scratch_recording_dir(Path(recording_file).parent)
         if save_format == "zarr":
@@ -629,8 +640,10 @@ class PostProcessing(dj.Computed):
         Returns:
             Tuple of (analyzer_output_dir, execution_time, execution_duration)
         """
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
         execution_time = datetime.now(UTC)
 
@@ -639,16 +652,12 @@ class PostProcessing(dj.Computed):
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
 
-        # n_jobs always follows the job's CPU allocation; the paramset's job_kwargs set the
-        # rest (chunk size, pool engine). A fixed n_jobs in the paramset either idles cores
-        # or oversubscribes them, and changing it in the paramset to match an allocation
-        # breaks every running job of that paramset: make_fetch reads the params, and
-        # DataJoint refuses the insert when they changed during the run.
-        job_kwargs = {
-            **fork_safe_job_kwargs("1s"),
-            **postprocessing_params.get("job_kwargs", {}),
-            "n_jobs": fork_safe_job_kwargs("1s")["n_jobs"],
-        }
+        # n_jobs follows the job's CPU allocation, and a paramset n_jobs can only lower it.
+        # A fixed value doesn't work: one paramset is shared by jobs with different
+        # allocations, and editing it breaks the jobs already running with it.
+        paramset_job_kwargs = postprocessing_params.get("job_kwargs", {})
+        default_job_kwargs = fork_safe_job_kwargs("1s", max_jobs=paramset_job_kwargs.get("n_jobs"))
+        job_kwargs = {**default_job_kwargs, **paramset_job_kwargs, "n_jobs": default_job_kwargs["n_jobs"]}
 
         save_format = params.get("save_format", "zarr")
         analyzer_format = "zarr" if save_format == "zarr" else "binary_folder"
@@ -730,8 +739,10 @@ class SIExport(dj.Computed):
 
     def make(self, key):
         """Export spike sorting results to standardised formats for downstream analysis and sharing."""
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
         execution_time = datetime.now(UTC)
 
@@ -814,8 +825,10 @@ class SortedSpikes(dj.Imported):
 
     def make(self, key):
         """Extract units, spike times, and electrodes from sorting output; sync to HARP clock."""
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
         execution_time = datetime.now(UTC)
 
@@ -927,7 +940,9 @@ class SortedSpikes(dj.Imported):
                 else ""
             )
             if not quality:
-                quality = si_sorting.get_unit_property(unit_id, "KSLabel") if "KSLabel" in prop_keys else "n.a."
+                quality = (
+                    si_sorting.get_unit_property(unit_id, "KSLabel") if "KSLabel" in prop_keys else "n.a."
+                )
             unit_quality_map[int(unit_id)] = quality
 
         spike_locations = sorting_analyzer.get_extension("spike_locations")
@@ -1009,8 +1024,10 @@ class Waveform(dj.Imported):
 
     def make(self, key):
         """Extract spike waveforms for each unit and electrode from sorting analyzer templates."""
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
@@ -1107,8 +1124,10 @@ class SortingQuality(dj.Imported):
 
     def make(self, key):
         """Extract quality metrics for each unit from sorting analyzer extensions."""
-        import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface as si
+
+        # registers sorters/preprocessing/exporters submodules on the package
+        import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
         sorting_root_dir = get_sorting_root_dir()
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
@@ -1144,7 +1163,7 @@ class SortingQuality(dj.Imported):
         template_metrics = sorting_analyzer.get_extension("template_metrics").get_data()
         metrics_df = pd.concat([qc_metrics, template_metrics], axis=1)
 
-        for unit_key in (SortedSpikes.Unit & key).keys():  # noqa: SIM118
+        for unit_key in (SortedSpikes.Unit & key).keys():
             unit_qc = metrics_df.loc[unit_key["unit"]].to_dict()
             self.Metric.insert1({**unit_key, "qc_metrics": json.dumps(unit_qc, default=str)})
 
@@ -1189,7 +1208,6 @@ class SyncedSpikes(dj.Imported):
                 or if the AmplifierData files no longer add up to the recording that was sorted.
         """
         import spikeinterface as si
-        import spikeinterface.extractors as se
 
         # Load ephys sync models
         chunk_windows = defaultdict(list)  # chunk_start -> its linked (onix_ts_start, onix_ts_end, model)
@@ -1204,7 +1222,9 @@ class SyncedSpikes(dj.Imported):
 
         # Load ephys onix times
         _clock_query = (
-            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & "file_name LIKE '%Clock%.bin'"
+            ephys.EphysChunk.File
+            & (ephys.EphysBlockInfo.Chunk & key)
+            & ["file_name LIKE '%Clock%.bin'", "file_name LIKE '%Probe%.arrow'"]
         )
         _clock_rows = _clock_query.to_dicts(order_by="chunk_start")
         _pk = _clock_query.primary_key
@@ -1218,40 +1238,15 @@ class SyncedSpikes(dj.Imported):
         # Its samples still start at Clock[0], so sample k of a chunk sits at Clock[k]. A Clock file
         # that lost its tail instead is extrapolated at its own tick rate, by at most 1.5 s
         # (abcEphysPilot04-aeon3 ProbeB_Clock_163 lost 1.301 s).
-        fs_hz = 30e3  # Neuropixels 2.0, as in PreProcessing
-        max_clock_extrapolation = int(1.5 * fs_hz)  # samples
-        num_channels = len(ephys.ElectrodeConfig.Electrode & key)  # as in PreProcessing
+        num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         onix_times, amp_lengths = [], []
         for f, d in zip(ephys_files, dir_types, strict=True):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
-            onix_ts = np.memmap(ephys_dir / f, mode="r", dtype=np.uint64)
-            amp_file = ephys_dir / f.replace("Clock", "AmplifierData")
-            amp_len = se.read_binary(
-                amp_file, sampling_frequency=fs_hz, dtype=np.uint16, num_channels=num_channels
+            amp_len = read_amplifier_recording(
+                ephys_dir / f.replace("Clock", "AmplifierData"), num_channels, NP2_FS_HZ
             ).get_num_samples()
-            n_missing = amp_len - len(onix_ts)  # > 0: Clock file short, < 0: AmplifierData file short
-            if n_missing < 0:
-                logger.warning(
-                    f"{amp_file.name} has {-n_missing} fewer samples ({-n_missing / fs_hz:.3f} s) than "
-                    f"its Clock file: amplifier data were lost at the end of the file."
-                )
-            elif n_missing > 0:
-                if n_missing > max_clock_extrapolation:
-                    raise ValueError(
-                        f"Clock file {f} has {n_missing} fewer samples ({n_missing / fs_hz:.3f} s) "
-                        f"than its AmplifierData file, more than the {max_clock_extrapolation / fs_hz:g} s "
-                        f"the clock may be extrapolated over."
-                    )
-                logger.warning(
-                    f"Clock file {f} is too short: it has {n_missing} fewer samples "
-                    f"({n_missing / fs_hz:.3f} s) than its AmplifierData file (clock data lost at the "
-                    f"end of the file). Extrapolating the clock linearly over the missing samples."
-                )
-                tail = onix_ts[-max_clock_extrapolation:]  # the last 1.5 s set the tick rate
-                ticks_per_sample = (float(tail[-1]) - float(tail[0])) / (len(tail) - 1)
-                extra = np.round(ticks_per_sample * np.arange(1, n_missing + 1)).astype(np.uint64)
-                onix_ts = np.concatenate([onix_ts, tail[-1] + extra])
-            onix_times.append(onix_ts)
+            onix_ts = read_onix_ts(ephys_dir / f)
+            onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(1.5 * NP2_FS_HZ), name=f))
             amp_lengths.append(amp_len)
         chunk_bounds = np.cumsum(amp_lengths)  # end of each chunk in the concatenated recording
 
@@ -1339,10 +1334,13 @@ class UnitMatchingMethod(dj.Lookup):
     matching_method_description: varchar(1000)
     """
     contents = [
-        (
-            "spike_time_overlap",
-            "Matches units by comparing spike times during overlapping time windows between ephys blocks",
-        ),
+        {
+            "matching_method": "spike_time_overlap",
+            "matching_method_description": (
+                "Matches units by comparing spike times during overlapping time windows "
+                "between ephys blocks"
+            ),
+        },
     ]
 
 
@@ -1424,10 +1422,11 @@ def _load_block_unit_spike_trains(block_key: dict, exclude_noise: bool = True) -
         # .proj(): both tables declare a secondary `spike_count` with no common lineage, which
         # DataJoint 2.x rejects (same bug class as #609).
         units &= (SortedSpikes.Unit - {"unit_quality": "noise"}).proj()
-    trains: dict[int, list] = {}
+    chunks_by_unit: dict[int, list] = {}
     for unit_entry in units.to_dicts():
-        trains.setdefault(unit_entry["unit"], []).append(unit_entry["spike_times"])
-    for unit_id, chunks in trains.items():
+        chunks_by_unit.setdefault(unit_entry["unit"], []).append(unit_entry["spike_times"])
+    trains: dict[int, np.ndarray] = {}
+    for unit_id, chunks in chunks_by_unit.items():
         concatenated = np.sort(np.concatenate(chunks))
         if concatenated.dtype.kind == "M":  # datetime64
             concatenated = concatenated.astype("datetime64[ns]").astype(np.int64) / 1e9
@@ -1440,7 +1439,7 @@ def _compare_spike_trains_in_overlap(
     prev_block_units: dict[int, np.ndarray],
     this_block_bounds: tuple,
     prev_block_bounds: tuple,
-    sampling_frequency: float = 30000,
+    sampling_frequency: float = NP2_FS_HZ,
     delta_time: float = 0.4,
     match_score: float = 0.5,
     min_score: float = 0.1,
@@ -1629,8 +1628,9 @@ class UnitMatching(dj.Computed):
         exclude_noise = params["exclude_noise"]
 
         logger.info(
-            f"Matching block {key['block_start']} ({key['electrode_group']}, insertion {key['insertion_number']}) "
-            f"[{_matching_method}]: delta_time={delta_time}ms  match_score={match_score}  min_score={min_score}  "
+            f"Matching block {key['block_start']} ({key['electrode_group']}, insertion "
+            f"{key['insertion_number']}) [{_matching_method}]: delta_time={delta_time}ms  "
+            f"match_score={match_score}  min_score={min_score}  "
             f"exclude_noise={exclude_noise}"
         )
 
@@ -1934,29 +1934,6 @@ class GlobalUnitQuality(dj.Computed):
             logger.info(f"Deleting {len(stale)} stale GlobalUnitQuality row(s) for recomputation.")
             (cls & stale).delete(prompt=False)
         cls.populate(*restrictions, **populate_kwargs)
-
-
-# ---- Ephys preprocessing with spike interface ----
-
-
-def ephys_preproc(recording) -> Any:
-    """Apply standard ephys preprocessing pipeline.
-
-    Performs unsigned-to-signed conversion, bandpass filtering (300-6000 Hz),
-    and common average referencing using median.
-
-    Args:
-        recording: SpikeInterface recording object
-
-    Returns:
-        Preprocessed recording object
-    """
-    import spikeinterface.full  # noqa: F401 -- registers sorters/preprocessing/exporters submodules on the package
-    import spikeinterface as si
-
-    recording = si.preprocessing.bandpass_filter(recording=recording, freq_min=300, freq_max=6000)
-    recording = si.preprocessing.common_reference(recording=recording, operator="median")
-    return recording
 
 
 def load_and_verify_binary_file(binary_file_path: Path, se_recording_obj: Any) -> Any:

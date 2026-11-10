@@ -16,6 +16,44 @@ import pytest
 logger = logging.getLogger(__name__)
 
 
+@pytest.fixture
+def assert_nap_equal():
+    """Return a checker that two pynapple objects are indistinguishable.
+
+    pynapple has no structural equality — ``==`` is identity on Ts, elementwise on
+    Tsd and IntervalSet, and a metadata filter on TsGroup — so this compares field
+    by field. Exact, never a tolerance: the float64 ULP at Harp magnitude is 477 ns,
+    so a quantising round trip would shift spikes within a sample and pass any
+    tolerance.
+    """
+    import numpy as np
+
+    def check(a, b):
+        assert type(a) is type(b)
+        kind = type(a).__name__
+        if kind == "IntervalSet":
+            np.testing.assert_array_equal(a.start, b.start)
+            np.testing.assert_array_equal(a.end, b.end)
+        else:
+            np.testing.assert_array_equal(a.time_support.values, b.time_support.values)
+        if kind == "TsGroup":
+            assert list(a.index) == list(b.index)
+            for unit in a.index:
+                check(a[unit], b[unit])
+        elif kind != "IntervalSet":
+            np.testing.assert_array_equal(a.t, b.t)
+            if kind != "Ts":
+                np.testing.assert_array_equal(a.values, b.values)
+        if kind == "TsdFrame":
+            assert list(a.columns) == list(b.columns)
+        if (meta := getattr(a, "metadata", None)) is not None:
+            assert sorted(meta.columns) == sorted(b.metadata.columns)
+            for col in meta.columns:
+                np.testing.assert_array_equal(np.asarray(a.get_info(col)), np.asarray(b.get_info(col)))
+
+    return check
+
+
 @pytest.fixture(autouse=True)
 def dj_download_to_tmp(request):
     """Redirect DataJoint attach downloads to a per-test tmpdir.
@@ -108,16 +146,16 @@ GOLDEN_DATASETS = {
         "probe_type": "neuropixels2.0-multishank",
         "electrode_config_name": "M81_ProbeB_4Shanks_1000_to_1700_um",
         "probe_serial": "23299108854",
-        "n_channels": 96,                      # sorting subset: all active contacts on shank3
-        "n_recording_channels": 384,           # full recording width (active subset of probe)
-        "shank_id": "3",                       # electrodes are read from the probe JSON
+        "n_channels": 96,  # sorting subset: all active contacts on shank3
+        "n_recording_channels": 384,  # full recording width (active subset of probe)
+        "shank_id": "3",  # electrodes are read from the probe JSON
         "required_files": [
             "Metadata.yml",
             "NeuropixelsV2/NeuropixelsV2_ProbeB_AmplifierData_0.bin",
             "NeuropixelsV2/NeuropixelsV2_ProbeB_Clock_0.bin",
         ],
-        "expected_probe_count": 1,            # registered ProbeInsertion: ProbeB only (A disabled)
-        "expected_discovered_probes": 2,      # raw discovery from epoch dir: ProbeA + ProbeB
+        "expected_probe_count": 1,  # registered ProbeInsertion: ProbeB only (A disabled)
+        "expected_discovered_probes": 2,  # raw discovery from epoch dir: ProbeA + ProbeB
         "golden_sorting_dir": "golden_test_sorting",
         # Unit/spike counts are derived from the artifacts at fixture time, not hardcoded:
         # they are properties of the sorting on disk and would silently rot if it is re-pulled.
@@ -128,8 +166,14 @@ GOLDEN_DATASETS = {
     },
 }
 
-# Default golden data root (can be overridden via DJ_REPOSITORY_CONFIG env var)
-DEFAULT_GOLDEN_DATA_ROOT = Path.home() / "sciops-data/project_aeon/aeon/data"
+# Default golden data root - matches prod's ``ceph_aeon`` (/ceph/aeon).
+# Data lives under ``<root>/aeon/data/raw/...``.
+# Override via DJ_REPOSITORY_CONFIG env var.
+DEFAULT_GOLDEN_DATA_ROOT = Path.home() / "sciops-data/project_aeon"
+
+# Locations under the data root (``ceph_aeon``) as in prod.
+GOLDEN_RAW_SUBPATH = Path("aeon/data/raw")
+GOLDEN_DJ_STORE_SUBPATH = Path("aeon/dj_store")
 
 # NOTE: datajoint is imported lazily inside fixtures to allow unit tests
 # (which mock datajoint) to run without triggering DB connections
@@ -160,7 +204,9 @@ def _check_golden_data(dataset_config: dict) -> Path:
     from aeon.dj_pipeline.utils.paths import get_repository_path
 
     repo_path = get_repository_path("ceph_aeon")
-    epoch_path = repo_path / "raw" / dataset_config["experiment_path"] / dataset_config["epoch_dir"]
+    epoch_path = (
+        repo_path / GOLDEN_RAW_SUBPATH / dataset_config["experiment_path"] / dataset_config["epoch_dir"]
+    )
 
     if not epoch_path.exists():
         pytest.skip(f"Golden dataset not found: {epoch_path}")
@@ -170,6 +216,17 @@ def _check_golden_data(dataset_config: dict) -> Path:
             pytest.skip(f"Missing required file: {f}")
 
     return epoch_path
+
+
+def _processed_sorting_root(cfg: dict) -> Path:
+    """Where Ceph keeps processed sorting outputs under the ``ceph_aeon`` repository root.
+
+    e.g. /ceph/aeon -> /ceph/aeon/aeon/dj_store/ephys-processed/<experiment>/<subject>
+    """
+    from aeon.dj_pipeline.utils.paths import get_repository_path
+
+    repo_path = get_repository_path("ceph_aeon")
+    return repo_path / GOLDEN_DJ_STORE_SUBPATH / "ephys-processed" / cfg["experiment_name"] / cfg["subject"]
 
 
 def _drop_test_schemas() -> None:
@@ -281,13 +338,15 @@ def streams_schema(dj_config_integration):
     #   over multiple goldens, so dropping here (rather than in full_pipeline's
     #   per-iteration teardown) avoids wiping schemas a later iteration needs.
     # - restore original streams.py file
-    if os.environ.get("TEST_DB_PREFIX"):
-        _drop_test_schemas()
-
-    if original is not None:
-        f.write_bytes(original)
-    else:
-        f.unlink(missing_ok=True)
+    try:
+        if os.environ.get("TEST_DB_PREFIX"):
+            _drop_test_schemas()
+    finally:
+        # Always restore, even if the schema drop raises.
+        if original is not None:
+            f.write_bytes(original)
+        else:
+            f.unlink(missing_ok=True)
 
 
 @pytest.fixture(scope="session")
@@ -390,19 +449,18 @@ def full_pipeline(dj_config_integration, streams_schema, golden_dataset_config):
     # Step 2: Create ExperimentDevice and DeviceDataStream tables
     streams_module = streams_maker.main(create_tables=True)
 
-    yield {
-        "lab": lab,
-        "subject": subject,
-        "acquisition": acquisition,
-        "streams": streams_module,
-    }
-
     # No per-iteration teardown — golden_dataset_config is parametrized, so
     # this fixture runs once per dataset, and dropping schemas between
     # iterations would invalidate the cached streams_schema fixture. The single
     # session-end cleanup (dropping this run's test-prefixed schemas, and only
     # on an external DB) lives in the streams_schema teardown, which runs
     # exactly once after all params.
+    return {
+        "lab": lab,
+        "subject": subject,
+        "acquisition": acquisition,
+        "streams": streams_module,
+    }
 
 
 @pytest.fixture(scope="session")
@@ -464,7 +522,7 @@ def test_experiment(full_pipeline, require_golden_data, golden_dataset_config):
             "experiment_name": cfg["experiment_name"],
             "directory_type": "raw",
             "repository_name": "ceph_aeon",
-            "directory_path": f"raw/{cfg['experiment_path']}",
+            "directory_path": f"{GOLDEN_RAW_SUBPATH.as_posix()}/{cfg['experiment_path']}",
         },
         skip_duplicates=True,
     )
@@ -492,9 +550,27 @@ def test_epochs(test_experiment, full_pipeline, golden_dataset_config):
 
 
 @pytest.fixture(scope="session")
+def ephys_processed_sorting_root(require_ephys_golden_data, ephys_golden_dataset_config):
+    """Ceph ``dj_store`` directory holding processed sorting outputs (may not exist)."""
+    return _processed_sorting_root(ephys_golden_dataset_config)
+
+
+@pytest.fixture(scope="session")
 def ephys_golden_dataset_config():
     """Get the ephys golden dataset configuration. No DB needed."""
     return GOLDEN_DATASETS["foraging_abc_ephys_2026_05_11"]
+
+
+@pytest.fixture(scope="session")
+def golden_raw_subpath():
+    """Raw-data path relative to the repository root. No DB needed."""
+    return GOLDEN_RAW_SUBPATH
+
+
+@pytest.fixture(scope="session")
+def default_golden_data_root():
+    """Get the default golden data root. No DB needed."""
+    return DEFAULT_GOLDEN_DATA_ROOT
 
 
 @pytest.fixture(scope="session")
@@ -624,13 +700,13 @@ def ephys_test_experiment(ephys_full_pipeline, require_ephys_golden_data, ephys_
                 "experiment_name": cfg["experiment_name"],
                 "directory_type": "raw",
                 "repository_name": "ceph_aeon",
-                "directory_path": f"raw/{cfg['behavior_experiment_path']}",
+                "directory_path": f"{GOLDEN_RAW_SUBPATH.as_posix()}/{cfg['behavior_experiment_path']}",
             },
             {
                 "experiment_name": cfg["experiment_name"],
                 "directory_type": "raw-ephys",
                 "repository_name": "ceph_aeon",
-                "directory_path": f"raw/{cfg['experiment_path']}",
+                "directory_path": f"{GOLDEN_RAW_SUBPATH.as_posix()}/{cfg['experiment_path']}",
             },
         ],
         skip_duplicates=True,
@@ -679,7 +755,7 @@ def ephys_test_epochs(
     # Step 2: probe discovery + per-probe ElectrodeConfig registration
     ephys.EphysEpochConfig.probe_assignments_override_dir = override_dir
     try:
-        ephys.EphysEpochConfig.populate(suppress_errors=False)
+        ephys.EphysEpochConfig.populate({"experiment_name": exp_name}, suppress_errors=False)
     finally:
         ephys.EphysEpochConfig.probe_assignments_override_dir = None
 
@@ -737,9 +813,7 @@ def ephys_test_blocks(ephys_chunks_ingested, ephys_full_pipeline, ephys_golden_d
 def ephys_chunks_ingested(ephys_test_epochs, ctx):
     """Run EphysChunk.ingest_chunks once for the golden dataset."""
     ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
-    return (
-        ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}
-    ).to_dicts()
+    return (ctx.ephys.EphysChunk & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
 
 
 @pytest.fixture(scope="session")
@@ -762,9 +836,7 @@ def ephys_block_info_populated(ephys_chunks_ingested, ephys_test_blocks, ctx):
         order_by="block_start"
     )
     for block, expected_slice in zip(blocks, expected_slices, strict=True):
-        linked = sorted(
-            c["chunk_start"] for c in (ctx.ephys.EphysBlockInfo.Chunk & block).to_dicts()
-        )
+        linked = sorted(c["chunk_start"] for c in (ctx.ephys.EphysBlockInfo.Chunk & block).to_dicts())
         expected = epoch_starts[expected_slice]
         assert linked == expected, (
             f"Block {block['block_start']} links {len(linked)} chunks starting at {linked[:2]}..., "
@@ -772,9 +844,21 @@ def ephys_block_info_populated(ephys_chunks_ingested, ephys_test_blocks, ctx):
             "sorting's chunk set have diverged; spike indices would overrun the recording."
         )
 
-    return (
-        ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}
-    ).to_dicts()
+    return (ctx.ephys.EphysBlockInfo & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts()
+
+
+def _shank_electrodes(probe_json, shank_id):
+    """Active contact ids on one shank, read from the epoch's ProbeInterface JSON."""
+    import json
+
+    probe = json.loads(Path(probe_json).read_text())["probes"][0]
+    return sorted(
+        int(cid)
+        for cid, sid, dci in zip(
+            probe["contact_ids"], probe["shank_ids"], probe["device_channel_indices"], strict=True
+        )
+        if sid == shank_id and dci >= 0
+    )
 
 
 def _shank_electrodes(probe_json, shank_id):
@@ -807,9 +891,7 @@ def ephys_sorting_setup(
     from aeon.dj_pipeline import acquisition
     from aeon.dj_pipeline.utils.ephys_utils import resolve_epoch_probe_json
 
-    raw_dir = Path(
-        acquisition.Experiment.get_data_directory({"experiment_name": exp_name}, "raw-ephys")
-    )
+    raw_dir = Path(acquisition.Experiment.get_data_directory({"experiment_name": exp_name}, "raw-ephys"))
     try:
         probe_json = resolve_epoch_probe_json(
             raw_dir, require_ephys_golden_data, f"{cfg['electrode_config_name']}.json"
@@ -837,10 +919,7 @@ def ephys_sorting_setup(
     )
     # All active contacts on one shank (96 of the probe's 384), read from the probe JSON.
     spike_sorting.ElectrodeGroup.Electrode.insert(
-        (
-            {**electrode_config_key, "electrode_group": "shank3", "electrode": e}
-            for e in electrodes
-        ),
+        ({**electrode_config_key, "electrode_group": "shank3", "electrode": e} for e in electrodes),
         skip_duplicates=True,
     )
 
@@ -869,7 +948,7 @@ def ephys_sorting_setup(
                         "quality_metrics": {},
                     },
                     "job_kwargs": {
-                        "n_jobs": 4,
+                        "n_jobs": 2,
                         "pool_engine": "thread",
                         "max_threads_per_worker": 1,
                         "chunk_duration": "1s",
@@ -965,8 +1044,9 @@ def ephys_sorting_injected(
 
     epoch_path = require_ephys_golden_data
     golden_root = epoch_path.parent / cfg["golden_sorting_dir"]
-    if not golden_root.exists():
-        pytest.skip(f"Golden sorting output not found: {golden_root}")
+    processed_root = _processed_sorting_root(cfg)
+    if not golden_root.exists() and not processed_root.exists():
+        pytest.skip(f"Golden sorting output not found: {golden_root} or {processed_root}")
 
     electrode_config_key = {
         "probe_type": cfg["probe_type"],
@@ -985,6 +1065,16 @@ def ephys_sorting_injected(
     output_dirs = {}
     for block, block_dir_name in zip(blocks, cfg["golden_blocks"], strict=True):
         src = golden_root / block_dir_name / "shank3" / "kilosort4_400" / "spike_sorting"
+        if not src.exists():
+            src = (
+                processed_root
+                / f"insertion_{block['insertion_number']}"
+                / "ephys_blocks"
+                / block_dir_name
+                / "shank3"
+                / "kilosort4_400"
+                / "spike_sorting"
+            )
         for required in ("si_sorting.pkl", "in_container_sorting"):
             if not (src / required).exists():
                 pytest.skip(f"Golden sorting incomplete, missing {required}: {src}")
@@ -1036,6 +1126,7 @@ def ephys_sorting_injected(
         "output_dirs": output_dirs,
     }
 
+
 @pytest.fixture(scope="session")
 def ephys_curation_applied(ephys_sorting_injected, ephys_full_pipeline):
     """Auto-approve the raw sorting, satisfying UnitMatching.key_source.
@@ -1048,11 +1139,12 @@ def ephys_curation_applied(ephys_sorting_injected, ephys_full_pipeline):
 
     spike_sorting = ephys_full_pipeline["spike_sorting"]
     curation = ephys_full_pipeline["spike_sorting_curation"]
+    exp_restriction = {"experiment_name": ephys_sorting_injected["blocks"][0]["experiment_name"]}
 
     # SortedSpikes/SyncedSpikes must exist before a curation can be made official.
-    spike_sorting.PostProcessing.populate(display_progress=True, suppress_errors=False)
-    spike_sorting.SortedSpikes.populate(display_progress=True, suppress_errors=False)
-    spike_sorting.SyncedSpikes.populate(display_progress=True, suppress_errors=False)
+    spike_sorting.PostProcessing.populate(exp_restriction, display_progress=True, suppress_errors=False)
+    spike_sorting.SortedSpikes.populate(exp_restriction, display_progress=True, suppress_errors=False)
+    spike_sorting.SyncedSpikes.populate(exp_restriction, display_progress=True, suppress_errors=False)
 
     for block in ephys_sorting_injected["blocks"]:
         key = {
@@ -1082,7 +1174,7 @@ def ephys_curation_applied(ephys_sorting_injected, ephys_full_pipeline):
         # ApplyOfficialCuration take its auto-approve branch.
         curation.OfficialCuration.insert1({**post_key, "curation_id": 1}, skip_duplicates=True)
 
-    curation.ApplyOfficialCuration.populate(display_progress=True, suppress_errors=False)
+    curation.ApplyOfficialCuration.populate(exp_restriction, display_progress=True, suppress_errors=False)
     return ephys_sorting_injected
 
 
@@ -1111,9 +1203,7 @@ def ephys_noise_units_marked(ephys_curation_applied, ephys_full_pipeline):
 
 
 @pytest.fixture(scope="session")
-def ephys_unit_matching_populated(
-    ephys_noise_units_marked, ephys_curation_applied, ephys_full_pipeline
-):
+def ephys_unit_matching_populated(ephys_noise_units_marked, ephys_curation_applied, ephys_full_pipeline):
     """Register a matching paramset seeded on block 1 and populate UnitMatching."""
     spike_sorting = ephys_full_pipeline["spike_sorting"]
     blocks = ephys_curation_applied["blocks"]
@@ -1130,5 +1220,7 @@ def ephys_unit_matching_populated(
     )
     # key_source yields the seed first, then the forward frontier, so populate twice.
     for _ in range(2):
-        spike_sorting.UnitMatching.populate(display_progress=True, suppress_errors=False)
+        spike_sorting.UnitMatching.populate(
+            {"experiment_name": blocks[0]["experiment_name"]}, display_progress=True, suppress_errors=False
+        )
     return {"blocks": blocks, "noise_units": ephys_noise_units_marked}

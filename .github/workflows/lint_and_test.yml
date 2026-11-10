@@ -33,8 +33,10 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: uv sync --group dev
-      - name: ruff
+      - name: ruff check
         run: uv run ruff check .
+      - name: ruff format
+        run: uv run ruff format --check .
       - name: pyright
         run: uv run pyright --level error --project ./pyproject.toml .
 

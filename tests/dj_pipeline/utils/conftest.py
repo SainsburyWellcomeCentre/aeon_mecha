@@ -137,3 +137,40 @@ def foraging_abc_rig(foraging_abc_metadata):
     experiment_class = get_experiment_pydantic("swc.aeon_exp.foragingABC.experiment:Experiment")
     experiment = experiment_class.model_validate(foraging_abc_metadata)
     return experiment.rig
+
+
+@pytest.fixture
+def mock_tsgroup():
+    """A pynapple TsGroup with non-contiguous keys, an empty unit, and metadata.
+
+    Deliberately awkward: unit 6 never fires, keys are not 0..N-1, the support has
+    a gap, and timestamps sit at Harp-absolute magnitude (~3.87e9 s since 1904)
+    where float64 spacing is 477 ns.
+    """
+    import pynapple as nap
+
+    t0 = 3.87e9
+    rng = np.random.default_rng(0)
+    return nap.TsGroup(
+        {
+            0: nap.Ts(t=np.sort(rng.uniform(t0, t0 + 10, 40))),
+            6: nap.Ts(t=np.array([], dtype=float)),
+            9: nap.Ts(t=np.sort(rng.uniform(t0 + 20, t0 + 30, 25))),
+        },
+        time_support=nap.IntervalSet(start=[t0, t0 + 20], end=[t0 + 10, t0 + 30]),
+        metadata={
+            "covered_seconds": np.array([10.0, 20.0, 10.0]),
+            "unit_quality": np.array(["good", "mua", "good"]),
+            "snr": np.array([12.5, 3.1, 8.0]),
+        },
+    )
+
+
+@pytest.fixture
+def mock_intervalset():
+    """A pynapple IntervalSet with per-interval metadata."""
+    import pynapple as nap
+
+    return nap.IntervalSet(
+        start=[0.0, 20.0], end=[10.0, 30.0], metadata={"tag": np.array(["wake", "sleep"])}
+    )

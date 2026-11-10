@@ -456,7 +456,7 @@ def get_stream_reader_for_epoch(
     stream_type: str,
     epoch_start,
     default=_MISSING,
-):
+) -> Any:
     """Get stream reader for a specific epoch.
 
     Reconstructs the Rig from metadata stored in EpochConfig.Meta (avoiding file I/O)

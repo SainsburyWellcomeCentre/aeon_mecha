@@ -76,11 +76,12 @@ def mock_dj_for_unit(request):
         importlib.import_module(name)  # cache under its real dotted name before eviction
 
     # Save the current codec registry so that we can restore it after this fixture
-    # run, then evict "xarray" so this run's forced reimport can (re-)register it
-    # cleanly. Whatever left "xarray" registered before would otherwise collide
-    # with the fresh class object.
+    # run, then evict the codecs below so this run's forced reimport can
+    # (re-)register them cleanly. Whatever left them registered before would
+    # otherwise collide with the fresh class objects.
     codec_registry_snapshot = dict(_dj_codecs._codec_registry)
-    _dj_codecs._codec_registry.pop("xarray", None)
+    for _codec_name in ("xarray", "pynapple"):
+        _dj_codecs._codec_registry.pop(_codec_name, None)
 
     # Save and evict all datajoint + pipeline modules (except _REAL_DJ_SUBMODULES)
     # so the test gets a fresh import with the mock; not a cached real-DJ module from a prior
@@ -139,9 +140,7 @@ def mysql_container():
     Otherwise, auto-provisions a MySQL 8.0 container via testcontainers.
     """
     if os.environ.get("TEST_DB_PREFIX"):
-        logger.info(
-            f"Using external DB with prefix {os.environ['TEST_DB_PREFIX']}"
-        )
+        logger.info(f"Using external DB with prefix {os.environ['TEST_DB_PREFIX']}")
         yield None
         return
 

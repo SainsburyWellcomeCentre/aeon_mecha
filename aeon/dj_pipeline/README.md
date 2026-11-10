@@ -111,3 +111,25 @@ Data ingestion/populate with DataJoint is idempotent, so it is safe to run the s
     aeon_ingest streams_worker
 
     aeon_ingest analysis_worker
+
+## Contributing
+
+CI runs [ruff](https://docs.astral.sh/ruff/) (lint + format) and
+[pyright](https://microsoft.github.io/pyright/) (types). Run all three before opening a PR:
+
+```
+uv run ruff check .
+uv run ruff format --check .
+uv run pyright --level error --project ./pyproject.toml .
+```
+
+Or run the whole pre-commit suite in one go:
+
+```
+uv tool install pre-commit
+uv run pre-commit run --all-files
+```
+
+`pre-commit install` additionally wires these into every `git commit`. That's optional — if
+you make lots of small commits you may prefer running the check manually when you're ready.
+To skip the hook for a single commit, use `git commit --no-verify`.

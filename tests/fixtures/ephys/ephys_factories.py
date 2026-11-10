@@ -4,6 +4,8 @@ Imported by test_onix_imu_pipeline_integration.py and utils/test_codec_integrati
 """
 
 import csv
+import os
+import time
 import uuid
 from pathlib import Path
 
@@ -212,7 +214,7 @@ def make_synthetic_amplifier_data(
 
     # Each AmplifierData file has 10 samples (minimal valid binary).
     n_samples = 10
-    n_channels = 4  # minimal channel count (uint16 per sample)
+    n_channels = 1  # matches the one electrode register_synthetic_probe_insertion configures
 
     for n in range(n_chunks):
         if ts_ranges is not None:
@@ -234,6 +236,12 @@ def make_synthetic_amplifier_data(
         amp_path = device_dir / f"{device_name}_{probe_label}_AmplifierData_{n}.bin"
         amp_data = np.zeros((n_samples, n_channels), dtype=np.uint16)
         amp_data.tofile(amp_path)
+
+        # we only ingest data that is at least 3 hours old, so we pretend the
+        # synthetic data was created more than three hours ago
+        four_hours_ago = time.time() - (4 * 60 * 60 + 10)
+        os.utime(clock_path, (four_hours_ago, four_hours_ago))
+        os.utime(amp_path, (four_hours_ago, four_hours_ago))
 
 
 def register_synthetic_probe_insertion(

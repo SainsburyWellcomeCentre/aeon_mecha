@@ -1,5 +1,5 @@
-"""06 -- Analysis Examples
-=======================
+"""06 -- Analysis Examples.
+
 Starter examples showing how to query spike sorting output and create
 common visualizations. These patterns are building blocks for custom
 analysis -- not a complete analysis toolkit.

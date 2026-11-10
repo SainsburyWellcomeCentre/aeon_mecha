@@ -64,6 +64,7 @@ class _FakeView:
 
 
 def test_tagging_a_labeled_unit_keeps_its_quality_label():
+    """Adding tags to a unit with a quality label keeps the label."""
     mtv = _load_multitag_view()
     # a unit the curator already labeled "good" (nested, as the >=0.13 controller does)
     view = _FakeView([{"unit_id": 5, "labels": {"quality": ["good"]}}])
@@ -80,6 +81,7 @@ def test_tagging_a_labeled_unit_keeps_its_quality_label():
 
 
 def test_tagging_then_labeling_also_keeps_quality():
+    """Applying a quality label to an already-tagged unit keeps its tags."""
     # the other ordering: tag a unit first (new entry via the append path), then apply a quality
     # label the way the >=0.13 controller does (into the existing entry's "labels" dict).
     mtv = _load_multitag_view()

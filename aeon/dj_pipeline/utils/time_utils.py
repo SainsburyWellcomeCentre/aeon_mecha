@@ -12,6 +12,4 @@ def parse_epoch_timestamp(name: str) -> datetime.datetime:
     - New (compact ISO 8601): ``2026-04-15T090301Z``
     """
     date_str, time_str = name.split("T")
-    return datetime.datetime.fromisoformat(
-        date_str + "T" + time_str.replace("-", ":")
-    ).replace(tzinfo=None)
+    return datetime.datetime.fromisoformat(date_str + "T" + time_str.replace("-", ":")).replace(tzinfo=None)

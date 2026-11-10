@@ -1,5 +1,5 @@
-"""01 -- Register Experiment
-========================
+"""01 -- Register Experiment.
+
 Register the experiment, subject, probe type, electrode configuration,
 and probe assignments needed before any ephys data can be ingested.
 
@@ -272,7 +272,7 @@ def create_electrode_config(raw_ephys_dir, channel_map_file, probe_type):
     n_channels = len(active_electrodes)
 
     # Config name uses channel range (0-383), not site range (114-4049).
-    electrode_config_name = channel_map_file.replace(".json", "")
+    electrode_config_name = Path(channel_map_file).name.replace(".json", "")
 
     electrode_config_key = {
         "probe_type": probe_type,
@@ -480,10 +480,7 @@ def verify_registration(experiment_name):
     behavior_count = len(acquisition.Epoch & {"experiment_name": experiment_name})
     ephys_epoch_count = len(EphysEpoch & {"experiment_name": experiment_name})
     ephys_populated = len(EphysEpochConfig & {"experiment_name": experiment_name})
-    print(
-        f"Epochs: {behavior_count} behavior, {ephys_epoch_count} ephys "
-        f"({ephys_populated} configured)"
-    )
+    print(f"Epochs: {behavior_count} behavior, {ephys_epoch_count} ephys ({ephys_populated} configured)")
 
     # Probe insertions
     insertions = (ProbeInsertion & {"experiment_name": experiment_name}).to_dicts()

@@ -262,7 +262,7 @@ class TestGetStreamReaderForEpochDefault:
 
     def test_returns_default_when_device_not_in_rig(self, monkeypatch):
         """Device lookup raises ValueError -> return default sentinel."""
-        import aeon.dj_pipeline.utils.load_metadata as load_metadata  # noqa: PLR0402
+        from aeon.dj_pipeline.utils import load_metadata
 
         sentinel = object()
         monkeypatch.setattr(load_metadata, "_find_device_in_rig", self._fake_find_raises)
@@ -275,7 +275,7 @@ class TestGetStreamReaderForEpochDefault:
 
     def test_returns_default_when_method_missing_on_device(self, monkeypatch):
         """Device exists but lacks the @data_reader -> return default sentinel."""
-        import aeon.dj_pipeline.utils.load_metadata as load_metadata  # noqa: PLR0402
+        from aeon.dj_pipeline.utils import load_metadata
 
         device_factory = self._DeviceWithoutMethod
         monkeypatch.setattr(load_metadata, "_find_device_in_rig", lambda rig, name: device_factory())
@@ -288,7 +288,7 @@ class TestGetStreamReaderForEpochDefault:
 
     def test_raises_when_no_default_provided_and_device_missing(self, monkeypatch):
         """Backward-compatible behavior: no default -> propagate the original error."""
-        import aeon.dj_pipeline.utils.load_metadata as load_metadata  # noqa: PLR0402
+        from aeon.dj_pipeline.utils import load_metadata
 
         monkeypatch.setattr(load_metadata, "_find_device_in_rig", self._fake_find_raises)
         monkeypatch.setattr(load_metadata, "_load_rig_for_epoch", lambda *a, **kw: object())
@@ -300,7 +300,7 @@ class TestGetStreamReaderForEpochDefault:
 
     def test_raises_when_no_default_provided_and_method_missing(self, monkeypatch):
         """Backward-compatible behavior: no default -> propagate AttributeError."""
-        import aeon.dj_pipeline.utils.load_metadata as load_metadata  # noqa: PLR0402
+        from aeon.dj_pipeline.utils import load_metadata
 
         device_factory = self._DeviceWithoutMethod
         monkeypatch.setattr(load_metadata, "_find_device_in_rig", lambda rig, name: device_factory())

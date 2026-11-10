@@ -9,6 +9,8 @@ pytestmark = pytest.mark.unit
 
 
 class TestResolveMatchingParams:
+    """Tests for merging unit-matching params over their defaults."""
+
     def test_merges_over_defaults(self):
         from aeon.dj_pipeline.spike_sorting import _resolve_matching_params
 
@@ -25,6 +27,8 @@ class TestResolveMatchingParams:
 
 
 class TestRestrictToOverlap:
+    """Tests for restricting spike times to a block-overlap window."""
+
     def test_restricts_inclusively_and_rebases(self):
         """Spikes outside [start, end] drop; the rest are rebased to the window start."""
         from aeon.dj_pipeline.spike_sorting import _restrict_to_overlap
@@ -87,9 +91,7 @@ class TestCompareSpikeTrainsInOverlap:
 
         this_train = self._train(self.B2, 60, step=0.01)
         prev_train = self._train(self.B2, 60.005, step=0.01)  # 5 ms offset, beyond delta_time
-        comparison = _compare_spike_trains_in_overlap(
-            {7: this_train}, {3: prev_train}, self.B1, self.B2
-        )
+        comparison = _compare_spike_trains_in_overlap({7: this_train}, {3: prev_train}, self.B1, self.B2)
         assert comparison is not None
         # 5 ms apart at delta_time=0.4 ms: no coincidences. `< 0.5` would accept 0.49.
         assert comparison.agreement_scores.loc[3, 7] == pytest.approx(0.0, abs=0.01)

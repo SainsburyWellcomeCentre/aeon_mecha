@@ -9,7 +9,11 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 from swc.aeon.io import reader as io_reader
 
-from aeon.dj_pipeline import get_schema_name, lab, subject  # pyright: ignore[reportUnusedImport]
+from aeon.dj_pipeline import (
+    get_schema_name,
+    lab,  # noqa: F401  # pyright: ignore[reportUnusedImport]
+    subject,  # noqa: F401  # pyright: ignore[reportUnusedImport]
+)
 from aeon.dj_pipeline.utils import paths
 from aeon.dj_pipeline.utils.time_utils import parse_epoch_timestamp
 
@@ -251,20 +255,6 @@ class Epoch(dj.Manual):
                 raw_data_dirs,
             )
 
-            # find previous epoch end-time
-            previous_epoch_key = None
-            if i > 0:
-                previous_chunk = all_chunks.iloc[i - 1]
-                previous_chunk_path = pathlib.Path(previous_chunk.path)
-                previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
-                previous_epoch_start = parse_epoch_timestamp(previous_epoch_dir.name)
-                previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=io_api.CHUNK_DURATION)
-                previous_epoch_end = min(previous_chunk_end, epoch_start)
-                previous_epoch_key = {
-                    "experiment_name": experiment_name,
-                    "epoch_start": previous_epoch_start,
-                }
-
             with cls.connection.transaction:
                 # insert new epoch
                 cls.insert1(
@@ -276,12 +266,23 @@ class Epoch(dj.Manual):
                 )
                 epoch_list.append(epoch_key)
 
+                if i == 0:
+                    continue
+
+                # find previous epoch end-time
+                previous_chunk = all_chunks.iloc[i - 1]
+                previous_chunk_path = pathlib.Path(previous_chunk.path)
+                previous_epoch_dir = pathlib.Path(previous_chunk_path.as_posix().split(device_name)[0])
+                previous_epoch_start = parse_epoch_timestamp(previous_epoch_dir.name)
+                previous_chunk_end = previous_chunk.name + datetime.timedelta(hours=io_api.CHUNK_DURATION)
+                previous_epoch_end = min(previous_chunk_end, epoch_start)
+                previous_epoch_key = {
+                    "experiment_name": experiment_name,
+                    "epoch_start": previous_epoch_start,
+                }
+
                 # update previous epoch
-                if (
-                    previous_epoch_key
-                    and (cls & previous_epoch_key)
-                    and not (EpochEnd & previous_epoch_key)
-                ):
+                if (cls & previous_epoch_key) and not (EpochEnd & previous_epoch_key):
                     # insert end-time for previous epoch
                     EpochEnd.insert1(
                         {
@@ -510,8 +511,8 @@ class Chunk(dj.Manual):
             if enforce_hour_completed:
                 # chunk_start is naive but represents UTC (see tz_localize(None) above);
                 # attach UTC explicitly for a correct comparison against `now(UTC)`.
-                chunk_start_utc = chunk_start.replace(tzinfo=datetime.timezone.utc)
-                time_now_utc = datetime.datetime.now(datetime.timezone.utc)
+                chunk_start_utc = chunk_start.replace(tzinfo=datetime.UTC)
+                time_now_utc = datetime.datetime.now(datetime.UTC)
                 if (time_now_utc - chunk_start_utc) < datetime.timedelta(hours=1, minutes=10):
                     # Skip recently started chunks: the data may not yet be fully written/copied.
                     continue

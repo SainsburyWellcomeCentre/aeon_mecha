@@ -39,17 +39,28 @@ def _write_bno_chunk(tmp_path, device_name, n, n_samples, seed=0):
 
 
 def test_imu_columns_canonical_order():
+    """IMU_COLUMNS lists the BNO055 channels in canonical order."""
     from aeon.dj_pipeline.utils.onix_imu import IMU_COLUMNS
 
     assert IMU_COLUMNS == (
-        "euler_x", "euler_y", "euler_z",
-        "gravity_vector_x", "gravity_vector_y", "gravity_vector_z",
-        "linear_acceleration_x", "linear_acceleration_y", "linear_acceleration_z",
-        "quaternion_w", "quaternion_x", "quaternion_y", "quaternion_z",
+        "euler_x",
+        "euler_y",
+        "euler_z",
+        "gravity_vector_x",
+        "gravity_vector_y",
+        "gravity_vector_z",
+        "linear_acceleration_x",
+        "linear_acceleration_y",
+        "linear_acceleration_z",
+        "quaternion_w",
+        "quaternion_x",
+        "quaternion_y",
+        "quaternion_z",
     )
 
 
 def test_load_and_merge_bno055_returns_canonical_columns(tmp_path):
+    """Merged BNO055 data has the canonical columns, indexed by ONIX clock."""
     from aeon.dj_pipeline.utils.onix_imu import IMU_COLUMNS, load_and_merge_bno055
 
     device_name = "NeuropixelsV2Beta"
@@ -73,6 +84,7 @@ def test_load_and_merge_bno055_returns_canonical_columns(tmp_path):
 
 
 def test_load_and_merge_bno055_raises_on_missing_stream_file(tmp_path):
+    """A missing BNO055 stream file raises FileNotFoundError."""
     from aeon.dj_pipeline.utils.onix_imu import load_and_merge_bno055
 
     device_name = "NeuropixelsV2Beta"
@@ -106,7 +118,8 @@ def test_find_overlapping_bno055_chunks_window_inside_one_chunk(tmp_path):
     # Window entirely inside chunk 5's range
     first, last = int(clock_n5[0]), int(clock_n5[-1])
     result = find_overlapping_bno055_chunks(
-        device_dir, device_name,
+        device_dir,
+        device_name,
         onix_ts_start=first + 100,
         onix_ts_end=last - 100,
     )
@@ -125,9 +138,10 @@ def test_find_overlapping_bno055_chunks_window_spans_multiple_chunks(tmp_path):
     device_dir = tmp_path / device_name
 
     result = find_overlapping_bno055_chunks(
-        device_dir, device_name,
-        onix_ts_start=int(clock_n2[5]),   # inside chunk 2
-        onix_ts_end=int(clock_n4[-5]),    # inside chunk 4
+        device_dir,
+        device_name,
+        onix_ts_start=int(clock_n2[5]),  # inside chunk 2
+        onix_ts_end=int(clock_n4[-5]),  # inside chunk 4
     )
     assert result == [2, 3, 4]
 
@@ -142,7 +156,8 @@ def test_find_overlapping_bno055_chunks_no_overlap_returns_empty(tmp_path):
 
     # Window entirely after the chunk
     result = find_overlapping_bno055_chunks(
-        device_dir, device_name,
+        device_dir,
+        device_name,
         onix_ts_start=int(clock_n0[-1]) + 1_000_000,
         onix_ts_end=int(clock_n0[-1]) + 2_000_000,
     )
@@ -170,7 +185,8 @@ def test_find_overlapping_bno055_chunks_window_edge_inclusive(tmp_path):
 
     # Window's end exactly equals chunk's first sample
     assert find_overlapping_bno055_chunks(
-        device_dir, device_name,
+        device_dir,
+        device_name,
         onix_ts_start=int(clock_n0[0]) - 100,
         onix_ts_end=int(clock_n0[0]),
     ) == [0]
@@ -192,9 +208,7 @@ def _write_staggered_bno_chunk(device_dir, device_name, n, clock_arr, seed=0):
     """Write Clock + 4 stream binaries for a Bno055 chunk with explicit timestamps."""
     rng = np.random.default_rng(seed)
     n_samples = len(clock_arr)
-    (device_dir / f"{device_name}_Bno055_Clock_{n}.bin").write_bytes(
-        clock_arr.astype(np.uint64).tobytes()
-    )
+    (device_dir / f"{device_name}_Bno055_Clock_{n}.bin").write_bytes(clock_arr.astype(np.uint64).tobytes())
     payloads = {}
     for stream, cols in _STREAMS.items():
         data = rng.standard_normal((n_samples, len(cols))).astype(np.float32)
@@ -229,21 +243,17 @@ def test_overlap_concat_filter_pattern_against_staggered_chunks(tmp_path):
     device_dir = tmp_path / device_name
     device_dir.mkdir(parents=True)
 
-    chunk_0_clocks = np.arange(1000, 5001, 80, dtype=np.uint64)   # 51 samples
-    chunk_1_clocks = np.arange(5100, 9101, 80, dtype=np.uint64)   # 51 samples
+    chunk_0_clocks = np.arange(1000, 5001, 80, dtype=np.uint64)  # 51 samples
+    chunk_1_clocks = np.arange(5100, 9101, 80, dtype=np.uint64)  # 51 samples
     _write_staggered_bno_chunk(device_dir, device_name, 0, chunk_0_clocks, seed=0)
     _write_staggered_bno_chunk(device_dir, device_name, 1, chunk_1_clocks, seed=1)
 
     def _materialize(onix_ts_start, onix_ts_end):
         """Repro of OnixImuChunk.make's data-loading flow."""
-        idxs = find_overlapping_bno055_chunks(
-            device_dir, device_name, onix_ts_start, onix_ts_end
-        )
+        idxs = find_overlapping_bno055_chunks(device_dir, device_name, onix_ts_start, onix_ts_end)
         if not idxs:
             return pd.DataFrame()
-        df = pd.concat(
-            [load_and_merge_bno055(device_dir, device_name, n) for n in idxs]
-        )
+        df = pd.concat([load_and_merge_bno055(device_dir, device_name, n) for n in idxs])
         return df[(df.index >= onix_ts_start) & (df.index <= onix_ts_end)]
 
     # Window that touches only the left chunk
@@ -260,13 +270,11 @@ def test_overlap_concat_filter_pattern_against_staggered_chunks(tmp_path):
     df_mid = _materialize(4000, 7000)
     assert df_mid.index.min() >= 4000
     assert df_mid.index.max() <= 7000
-    expected_mid = (
-        int(np.sum((chunk_0_clocks >= 4000) & (chunk_0_clocks <= 7000)))
-        + int(np.sum((chunk_1_clocks >= 4000) & (chunk_1_clocks <= 7000)))
+    expected_mid = int(np.sum((chunk_0_clocks >= 4000) & (chunk_0_clocks <= 7000))) + int(
+        np.sum((chunk_1_clocks >= 4000) & (chunk_1_clocks <= 7000))
     )
     assert len(df_mid) == expected_mid, (
-        f"straddle window: expected {expected_mid} samples (sum across chunks), "
-        f"got {len(df_mid)}"
+        f"straddle window: expected {expected_mid} samples (sum across chunks), got {len(df_mid)}"
     )
     # Sanity: indices are monotonically increasing (chunks concat'd in order)
     assert df_mid.index.is_monotonic_increasing
