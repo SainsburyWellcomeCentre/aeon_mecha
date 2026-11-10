@@ -1241,10 +1241,14 @@ class SyncedSpikes(dj.Imported):
         onix_times, amp_lengths = [], []
         for f, d in zip(ephys_files, dir_types, strict=True):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
-            amp_len = read_amplifier_recording(
-                ephys_dir / f.replace("Clock", "AmplifierData"), num_channels, NP2_FS_HZ
-            ).get_num_samples()
-            onix_ts = read_onix_ts(ephys_dir / f)
+            clock_file = ephys_dir / f
+            onix_ts = read_onix_ts(clock_file)
+            if clock_file.suffix == ".arrow":
+                amp_len = len(onix_ts)
+            else:
+                amp_len = read_amplifier_recording(
+                    clock_file.replace("Clock", "AmplifierData"), num_channels, NP2_FS_HZ
+                ).get_num_samples()
             onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=f))
             amp_lengths.append(amp_len)
         chunk_bounds = np.cumsum(amp_lengths)  # end of each chunk in the concatenated recording
