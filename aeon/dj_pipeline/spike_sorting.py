@@ -1030,38 +1030,27 @@ class Waveform(dj.Imported):
 
         self.insert1(key)
 
-        # Find representative channel for each unit
-        unit_peak_channel: dict[int, np.ndarray] = si.ChannelSparsity.from_best_channels(
-            sorting_analyzer, 1
-        ).unit_id_to_channel_indices  # {unit: peak_channel_index}
-        unit_peak_channel = {u: chn[0] for u, chn in unit_peak_channel.items()}
-
-        electrode_ids = sorting_analyzer.get_probe().contact_ids
-        device_channel_indices = sorting_analyzer.get_probe().device_channel_indices
-        main_channel_indices = sorting_analyzer.main_channel_indices
-
+        probe = sorting_analyzer.get_probe()
+        electrode_ids = probe.contact_ids.astype(int)
         templates = sorting_analyzer.get_extension("templates")
 
-        for unit in (SortedSpikes.Unit & key).keys(order_by="unit"):
+        for unit in (SortedSpikes.Unit & key).proj("electrode").to_dicts(order_by="unit"):
+            main_electrode = unit.pop("electrode")
             # Get mean waveform for this unit from all channels - (sample x channel)
             unit_waveforms = templates.get_unit_template(unit_id=unit["unit"], operator="average")
-            unit_index = sorting_analyzer.sorting.id_to_index(unit["unit"])
-            unit_peak_waveform = {
-                **unit,
-                "unit_waveform": unit_waveforms[:, main_channel_indices[unit_index]],
+
+            channel_waveforms = {
+                elec_id: unit_waveforms[:, chn_idx]
+                for elec_id, chn_idx in zip(electrode_ids, probe.device_channel_indices, strict=True)
             }
 
-            unit_electrode_waveforms = [
-                {
-                    **{key: value for key, value in unit.items() if key != "electrode"},
-                    "electrode": elec_id,
-                    "channel_waveform": unit_waveforms[:, chn_idx],
-                }
-                for elec_id, chn_idx in zip(electrode_ids, device_channel_indices, strict=True)
-            ]
-
-            self.UnitWaveform.insert1(unit_peak_waveform, ignore_extra_fields=True)
-            self.ChannelWaveform.insert(unit_electrode_waveforms, ignore_extra_fields=True)
+            self.UnitWaveform.insert1({**unit, "unit_waveform": channel_waveforms[main_electrode]})
+            self.ChannelWaveform.insert(
+                [
+                    {**unit, "electrode": elec_id, "channel_waveform": waveform}
+                    for elec_id, waveform in channel_waveforms.items()
+                ]
+            )
 
 
 @schema
