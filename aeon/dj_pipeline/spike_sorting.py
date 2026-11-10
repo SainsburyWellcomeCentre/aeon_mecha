@@ -832,52 +832,27 @@ class SortedSpikes(dj.Imported):
 
         execution_time = datetime.now(UTC)
 
-        sorting_root_dir = get_sorting_root_dir()
-        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
-
-        # Check if there's an official curation for this block
-        # If so, use the curated analyzer; otherwise use the raw analyzer
-        # Use lazy import to avoid circular dependency
+        # Use the official curation's analyzer if one has been applied, otherwise the raw analyzer.
+        # Only record the curation_id once its curated analyzer exists. An official curation that
+        # hasn't been applied yet (or an auto-approved one, which has no curated analyzer) stays
+        # at -1 with the raw analyzer; ApplyOfficialCuration reads curation_id to tell whether
+        # the curation has already been applied.
         curation_id = -1
-        analyzer_output_dir = resolve_analyzer_dir(output_dir)
         try:
-            # Lazy import to avoid circular dependency
-            import importlib
-
-            spike_sorting_curation_module = importlib.import_module(
-                "aeon.dj_pipeline.spike_sorting_curation"
-            )
-            official_curation = spike_sorting_curation_module.OfficialCuration & key
+            curation_module = importlib.import_module("aeon.dj_pipeline.spike_sorting_curation")
+            official_curation = curation_module.OfficialCuration & key
             if official_curation:
                 official_curation_id = official_curation.fetch1("curation_id")
-                applied_analyzer = (
-                    spike_sorting_curation_module.ManualCuration.File
-                    & key
-                    & {"curation_id": official_curation_id, "file_name": "curation_applied_analyzer"}
-                )
-                # Only record the curation_id once its curated analyzer exists. An official curation that
-                # hasn't been applied yet (or an auto-approved one, which has no curated analyzer) stays
-                # at -1 with the raw analyzer; ApplyOfficialCuration reads curation_id to tell whether
-                # the curation has already been applied.
-                if applied_analyzer:
+                if _find_applied_curation_analyzer(key, official_curation_id) is not None:
                     curation_id = official_curation_id
-                    analyzer_output_dir = Path(applied_analyzer.fetch1("file").full_path)
-                    logger.info(
-                        f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
-                    )
                 else:
-                    logger.info(
-                        f"Using raw analyzer (official curation_id={official_curation_id} has no "
-                        "curated analyzer)"
-                    )
-            else:
-                logger.info("Using raw analyzer (no official curation found)")
+                    logger.info(f"Official curation_id={official_curation_id} has no curated analyzer")
         except (dj.errors.DataJointError, ImportError, AttributeError) as e:
             # Curation module not available, table mis-named, or no official curation — use raw analyzer.
             # Narrow scope: other exceptions (network, permission, etc.) should propagate.
-            logger.info(f"Using raw analyzer (curation check failed: {e})")
+            logger.info(f"Curation check failed, using raw analyzer: {e}")
 
-        sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
+        analyzer_output_dir = _get_sorted_spikes_analyzer(key, curation_id)
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir, load_extensions=False)
         unit_ids = sorting_analyzer.unit_ids
 
@@ -890,7 +865,7 @@ class SortedSpikes(dj.Imported):
             }
         )
         if unit_ids.size == 0:
-            logger.info(f"No units found in {sorting_file}. Skipping Unit ingestion...")
+            logger.info(f"No units found in {analyzer_output_dir}. Skipping Unit ingestion...")
             return
 
         property_keys = set(sorting_analyzer.sorting.get_property_keys())
@@ -1000,32 +975,7 @@ class Waveform(dj.Imported):
         # registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
-        sorting_root_dir = get_sorting_root_dir()
-        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
-
-        # Get curation_id from SortedSpikes to determine which analyzer to use
-        curation_id = (SortedSpikes & key).fetch1("curation_id")
-        if curation_id != -1:
-            # Fetch applied analyzer path from database
-            import importlib
-
-            spike_sorting_curation_module = importlib.import_module(
-                "aeon.dj_pipeline.spike_sorting_curation"
-            )
-            analyzer_output_dir = Path(
-                (
-                    spike_sorting_curation_module.ManualCuration.File
-                    & key
-                    & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                )
-                .fetch1("file")
-                .full_path
-            )
-            logger.info(f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}")
-        else:
-            analyzer_output_dir = resolve_analyzer_dir(output_dir)
-            logger.info("Using raw analyzer (curation_id=-1)")
-
+        analyzer_output_dir = _get_sorted_spikes_analyzer(key, (SortedSpikes & key).fetch1("curation_id"))
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir, load_extensions=False)
 
         self.insert1(key)
@@ -1074,32 +1024,7 @@ class SortingQuality(dj.Imported):
         # registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
-        sorting_root_dir = get_sorting_root_dir()
-        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
-
-        # Get curation_id from SortedSpikes to determine which analyzer to use
-        curation_id = (SortedSpikes & key).fetch1("curation_id")
-        if curation_id != -1:
-            # Fetch applied analyzer path from database
-            import importlib
-
-            spike_sorting_curation_module = importlib.import_module(
-                "aeon.dj_pipeline.spike_sorting_curation"
-            )
-            analyzer_output_dir = Path(
-                (
-                    spike_sorting_curation_module.ManualCuration.File
-                    & key
-                    & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                )
-                .fetch1("file")
-                .full_path
-            )
-            logger.info(f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}")
-        else:
-            analyzer_output_dir = resolve_analyzer_dir(output_dir)
-            logger.info("Using raw analyzer (curation_id=-1)")
-
+        analyzer_output_dir = _get_sorted_spikes_analyzer(key, (SortedSpikes & key).fetch1("curation_id"))
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
 
         self.insert1(key)
@@ -1311,6 +1236,34 @@ class GlobalUnit(dj.Manual):
     -> ephys.ProbeType.Electrode  # peak electrode (denormalized, updated each block)
     global_unit_comment='': varchar(1000)
     """
+
+
+def _find_applied_curation_analyzer(key: dict, curation_id: int) -> Path | None:
+    """Return the curated analyzer folder for ``curation_id``, or None if it hasn't been applied yet."""
+    # lazy import to avoid circular imports: spike_sorting_curation imports this module
+    curation_module = importlib.import_module("aeon.dj_pipeline.spike_sorting_curation")
+    applied_analyzer = (
+        curation_module.ManualCuration.File
+        & key
+        & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
+    )
+    return Path(applied_analyzer.fetch1("file").full_path) if applied_analyzer else None
+
+
+def _get_sorted_spikes_analyzer(key: dict, curation_id: int) -> Path:
+    """Return the analyzer folder a SortedSpikes entry was built from (curated if ``curation_id`` != -1).
+
+    Tables downstream of SortedSpikes should pass its stored ``curation_id`` so they load the same analyzer.
+    """
+    if curation_id != -1:
+        analyzer_dir = _find_applied_curation_analyzer(key, curation_id)
+        if analyzer_dir is None:
+            raise FileNotFoundError(f"No curated analyzer for curation_id={curation_id} of {key}")
+        logger.info(f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_dir}")
+        return analyzer_dir
+    output_dir = get_sorting_root_dir() / (PreProcessing & key).fetch1("sorting_output_dir")
+    logger.info("Using raw analyzer (curation_id=-1)")
+    return resolve_analyzer_dir(output_dir)
 
 
 # Defaults for UnitMatchingParamSet.params - used for any key missing from a given paramset's
