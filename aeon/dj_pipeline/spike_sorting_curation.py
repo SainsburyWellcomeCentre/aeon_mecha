@@ -191,7 +191,10 @@ class ApplyOfficialCuration(dj.Imported):
             curated_analyzer.save_as(format="zarr", folder=curated_analyzer_dir)
         else:
             logger.info(f"Saving curated analyzer to: {curated_analyzer_dir}")
-            curated_analyzer.save(folder=curated_analyzer_dir, overwrite=True)
+            # SortingAnalyzer has no save(); save_as cannot overwrite, so remove an old folder first (as for zarr).
+            if curated_analyzer_dir.exists():
+                shutil.rmtree(curated_analyzer_dir)
+            curated_analyzer.save_as(format="binary_folder", folder=curated_analyzer_dir)
 
         # Store the applied analyzer directory path in ManualCuration.File
         analyzer_file_entry = {

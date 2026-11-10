@@ -1185,7 +1185,7 @@ class SyncedSpikes(dj.Imported):
             key: Dictionary containing sorting task identifiers
 
         Raises:
-            ValueError: If a Clock file is more than 1 s shorter than its AmplifierData file,
+            ValueError: If a Clock file is more than 1.5 s shorter than its AmplifierData file,
                 or if the AmplifierData files no longer add up to the recording that was sorted.
         """
         import spikeinterface as si
@@ -1216,9 +1216,10 @@ class SyncedSpikes(dj.Imported):
         # the chunk boundaries come from those files, not from the Clock files. They differ when an
         # amplifier file lost its tail e.g. due to a copying error.
         # Its samples still start at Clock[0], so sample k of a chunk sits at Clock[k]. A Clock file
-        # that lost its tail instead is extrapolated at its own tick rate, by at most 1 s.
+        # that lost its tail instead is extrapolated at its own tick rate, by at most 1.5 s
+        # (abcEphysPilot04-aeon3 ProbeB_Clock_163 lost 1.301 s).
         fs_hz = 30e3  # Neuropixels 2.0, as in PreProcessing
-        max_clock_extrapolation = int(1.0 * fs_hz)  # samples
+        max_clock_extrapolation = int(1.5 * fs_hz)  # samples
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)  # as in PreProcessing
         onix_times, amp_lengths = [], []
         for f, d in zip(ephys_files, dir_types, strict=True):
@@ -1246,7 +1247,7 @@ class SyncedSpikes(dj.Imported):
                     f"({n_missing / fs_hz:.3f} s) than its AmplifierData file (clock data lost at the "
                     f"end of the file). Extrapolating the clock linearly over the missing samples."
                 )
-                tail = onix_ts[-max_clock_extrapolation:]  # the last second sets the tick rate
+                tail = onix_ts[-max_clock_extrapolation:]  # the last 1.5 s set the tick rate
                 ticks_per_sample = (float(tail[-1]) - float(tail[0])) / (len(tail) - 1)
                 extra = np.round(ticks_per_sample * np.arange(1, n_missing + 1)).astype(np.uint64)
                 onix_ts = np.concatenate([onix_ts, tail[-1] + extra])
