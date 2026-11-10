@@ -1932,7 +1932,9 @@ class GlobalUnitQuality(dj.Computed):
             stale &= restriction
         if stale:
             logger.info(f"Deleting {len(stale)} stale GlobalUnitQuality row(s) for recomputation.")
-            (cls & stale).delete(prompt=False)
+            # Restrict by the fetched keys: the cascade cannot apply a restriction on GlobalUnit
+            # columns (e.g. matching_paramset_id) to this table ("Attribute ... is not found").
+            (cls & stale.keys()).delete(prompt=False)
         cls.populate(*restrictions, **populate_kwargs)
 
 
