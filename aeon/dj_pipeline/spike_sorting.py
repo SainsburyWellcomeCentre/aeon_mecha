@@ -895,7 +895,8 @@ class SortedSpikes(dj.Imported):
         # get data from analyzer
         main_channel_indices = sorting_analyzer.main_channel_indices
         num_spikes_per_unit = sorting_analyzer.sorting.count_num_spikes_per_unit().values()
-        all_spike_locations = sorting_analyzer.get_extension("locations").get_data(outputs="by_unit")[0]
+        spike_locations_ext = sorting_analyzer.get_extension("spike_locations")
+        all_spike_locations = spike_locations_ext.get_data(outputs="by_unit")[0]
 
         # PreProcessing names the probe's contacts after their electrode
         # ids and the analyzer lists contacts in channel order.
