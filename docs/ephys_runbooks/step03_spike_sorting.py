@@ -49,16 +49,17 @@ TODO: request #SBATCH --cpus-per-task=16 on the .sh to make the binary writing f
 # Configuration -- edit these for your experiment
 # --------------------------------------------------------------------------
 
-EXPERIMENT_NAME = "ProjectAeonOVC-2026-06-07_001"
-SUBJECT = "CAA-1124420"
-PARAMSET_ID = 403
-SORTING_METHOD = "kilosort4" #currently pinned to kilosort 4.1.7
+EXPERIMENT_NAME = "ProjectAeonOVC-2026-08-31_001"
+SUBJECT = "BAA-1107080"
+PARAMSET_ID = 250
+SORTING_METHOD = "kilosort2.5" #kilosort 4 pinned to kilosort 4.1.7
 
 # How to group channels for spike sorting. Options:
 #   "per_shank"  — one group per shank (recommended for multi-shank probes)
 #   "all"        — all channels in one group
 # For fully manual grouping, see "Advanced Configuration" at the bottom.
 SORTING_GROUPS = "per_shank"
+CLUMPING = "/ceph/branco/Rokas/Ephys/Channel_maps/310826/ProbeA_clumps.csv"
 
 # Probe insertion to set up sorting for, or None for every insertion.
 INSERTION_NUMBER = None
@@ -146,7 +147,7 @@ def setup_sorting_prerequisites(
             "SI_SORTING_PARAMS": {
                 "n_pcs": 3,
                 "do_CAR": False,
-                "keep_good_only": True,
+                "keep_good_only": False,
                 "use_binary_file": True,
             },
             # Post-sorting analysis: which SpikeInterface extensions to compute
@@ -245,7 +246,42 @@ def setup_sorting_prerequisites(
             pi_data = _json.load(f)
 
         # Build {electrode_site: shank_id} for active contacts.
+    #     shank_map = {}
+    #     for probe in pi_data.get("probes", []):
+    #         contact_ids = probe.get("contact_ids", [])
+    #         dci = probe.get("device_channel_indices", [])
+    #         shank_ids = probe.get("shank_ids", [])
+    #         for cid, ch_idx, shank in zip(contact_ids, dci, shank_ids, strict=True):
+    #             if int(ch_idx) >= 0:
+    #                 shank_map[int(cid)] = str(shank)
+
+    #     # Group electrodes by shank (only those in the ElectrodeConfig).
+    #     active_set = {int(e) for e in all_electrodes}
+    #     shanks = {}
+    #     for site, shank in sorted(shank_map.items()):
+    #         if site in active_set:
+    #             shanks.setdefault(shank, []).append(site)
+
+    #     groups = []
+    #     for shank_id in sorted(shanks):
+    #         group_name = f"shank{shank_id}"
+    #         sites = shanks[shank_id]
+    #         groups.append((group_name, sites))
+
+    # elif sorting_groups == "all":
+    #     groups = [("all", list(all_electrodes))]
+
+    # else:
+    #     raise ValueError(f"Unknown sorting_groups: {sorting_groups!r}. Use 'per_shank' or 'all'.")
+
+        # Build {electrode_site: shank_id} for active contacts.
+        import pandas as pd
+        import numpy as np
+
+        clumping = pd.read_csv(CLUMPING)
+
         shank_map = {}
+        clump_map = {}
         for probe in pi_data.get("probes", []):
             contact_ids = probe.get("contact_ids", [])
             dci = probe.get("device_channel_indices", [])
@@ -253,18 +289,23 @@ def setup_sorting_prerequisites(
             for cid, ch_idx, shank in zip(contact_ids, dci, shank_ids, strict=True):
                 if int(ch_idx) >= 0:
                     shank_map[int(cid)] = str(shank)
+                    print(cid, flush=True)
+                    clump_index = clumping.query(f"contact_id == {int(cid)}")["clump"].values[0]
+                    if not np.isnan(clump_index):
+                        clump_map[int(cid)] = clump_index
+        print(f"{shank_map.keys()=}")
 
         # Group electrodes by shank (only those in the ElectrodeConfig).
         active_set = {int(e) for e in all_electrodes}
-        shanks = {}
-        for site, shank in sorted(shank_map.items()):
+        clumps = {}
+        for site, clump in sorted(clump_map.items()):
             if site in active_set:
-                shanks.setdefault(shank, []).append(site)
+                clumps.setdefault(clump, []).append(site)
 
         groups = []
-        for shank_id in sorted(shanks):
-            group_name = f"shank{shank_id}"
-            sites = shanks[shank_id]
+        for shank_id in sorted(clumps):
+            group_name = f"clump{int(shank_id)}"
+            sites = clumps[shank_id]
             groups.append((group_name, sites))
 
     elif sorting_groups == "all":
@@ -520,15 +561,16 @@ keys = [
 # "error" entries. To clear "reserved" entries, run manually:
 #   from aeon.dj_pipeline import spike_sorting
 #   (spike_sorting.schema.jobs & {{"status": "reserved"}}).delete()
-CLEAR_JOB = False
+CLEAR_JOB = True
 
 
 def clear_job(key):
     """Clear errored jobs for SpikeSorting to allow re-running."""
     try:
-        (spike_sorting.schema.jobs & {{"table_name": spike_sorting.SpikeSorting.table_name, "status": "error"}} & key).delete()
+        for job in spike_sorting.schema.jobs:
+            (job & {"table_name": spike_sorting.SpikeSorting.table_name, "status": "error"} & key).delete()
     except Exception as e:
-        print(f"[WARNING] Could not clear error jobs: {{e}}")
+        print(f"[WARNING] Could not clear error jobs: {e}")
 
 
 def main():

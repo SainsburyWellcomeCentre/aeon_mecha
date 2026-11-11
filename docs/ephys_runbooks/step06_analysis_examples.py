@@ -40,7 +40,7 @@ Run from the repo root on an HPC compute node (Ceph must be visible):
 # Configuration -- edit these for your experiment
 # --------------------------------------------------------------------------
 
-EXPERIMENT_NAME = "abcGolden01-aeonx1"
+EXPERIMENT_NAME = "ProjectAeonOVC-2026-09-28_001"
 
 
 # --------------------------------------------------------------------------
