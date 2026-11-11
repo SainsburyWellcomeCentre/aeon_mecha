@@ -24,9 +24,8 @@ from aeon.dj_pipeline.utils import intervals
 logger = dj.logger
 
 
-# ``UnitMatching``'s own key for one sorting. Named once so the tuple below and the
-# restriction that resolves a winner stay the same six fields; two of them identify a
-# block, and a block can hold more than one sorting.
+# ``UnitMatching``'s own key for one sorting, less the insertion. Two of the fields
+# identify a block, and a block can hold more than one sorting.
 _SORTING_FIELDS = (
     "block_start",
     "block_end",
@@ -38,11 +37,7 @@ _SORTING_FIELDS = (
 
 
 def _sorting_key(row: dict) -> tuple:
-    """One sorting's key, in one fixed order.
-
-    Built here for every caller. Built twice, the two drift and the metadata winner
-    silently resolves against the wrong sorting.
-    """
+    """One sorting's key, in one fixed order."""
     return tuple(row[f] for f in _SORTING_FIELDS)
 
 
@@ -104,7 +99,7 @@ class SpikeTrains(dj.Computed):
             return
 
         bounds = {v["bounds"] for v in sortings.values()}
-        spikes_by_unit, counts_by_unit_block = _fetch_spikes(insertion, window, bounds)
+        spikes_by_unit = _fetch_spikes(insertion, window, bounds)
 
         roster = sorted(per_unit)
         data, covered = {}, []
@@ -118,7 +113,7 @@ class SpikeTrains(dj.Computed):
             start=[io_api.to_seconds(s) for s, _ in coverage],
             end=[io_api.to_seconds(e) for _, e in coverage],
         )
-        metadata = _unit_metadata(insertion, roster, counts_by_unit_block, covered, block_units)
+        metadata = _unit_metadata(insertion, roster, covered)
         tsgroup = nap.TsGroup(data, time_support=support, metadata=metadata)
 
         n_spikes = int(sum(len(tsgroup[u]) for u in tsgroup.index))
@@ -182,11 +177,8 @@ def _covering_sortings(insertion: dict, window: tuple) -> dict:
     return sortings
 
 
-def _fetch_spikes(insertion: dict, window: tuple, bounds: set) -> tuple[dict, dict]:
-    """Spike times per unit inside ``window``, and how many came from each block.
-
-    The counts feed ``_most_spikes_wins`` when a unit spans two blocks.
-    """
+def _fetch_spikes(insertion: dict, window: tuple, bounds: set) -> dict:
+    """Spike times per unit inside ``window``, from the given blocks."""
     lo, hi = np.datetime64(window[0]), np.datetime64(window[1])
     rows = (
         spike_sorting.UnitMatching.Spikes
@@ -195,66 +187,27 @@ def _fetch_spikes(insertion: dict, window: tuple, bounds: set) -> tuple[dict, di
     ).to_dicts()
 
     by_unit: dict[int, list] = {}
-    counts: dict[int, dict] = {}
     for row in rows:
         times = np.asarray(row["spike_times"], dtype="datetime64[ns]")
         kept = times[(times >= lo) & (times < hi)]  # half-open
-        if not len(kept):
-            continue
-        unit = int(row["global_unit"])
-        by_unit.setdefault(unit, []).append(kept)
-        counts.setdefault(unit, {})
-        sorting_key = _sorting_key(row)  # same key as _covering_sortings, so winners line up
-        counts[unit][sorting_key] = counts[unit].get(sorting_key, 0) + len(kept)
-    return {u: np.sort(np.concatenate(v)) for u, v in by_unit.items()}, counts
+        if len(kept):
+            by_unit.setdefault(int(row["global_unit"]), []).append(kept)
+    return {u: np.sort(np.concatenate(v)) for u, v in by_unit.items()}
 
 
-def _most_spikes_wins(counts: dict):
-    """Pick the source that speaks for a unit appearing in more than one.
-
-    Most spikes wins; ties go to the lowest key, and the key starts with a time, so
-    that is the earliest. One rule, so that picking between the sortings covering a
-    chunk and picking between chunks covering a longer window cannot disagree.
-    """
-    return min(counts, key=lambda k: (-counts[k], k))
-
-
-def _unit_metadata(
-    insertion: dict, roster: list, counts_by_unit_block: dict, covered: list, block_units: dict
-) -> dict:
+def _unit_metadata(insertion: dict, roster: list, covered: list) -> dict:
     """Per-unit metadata columns for the TsGroup, in roster order.
 
     ``covered_seconds`` is each unit's rate denominator — seconds, not a fraction,
     because fractions stop adding up once chunks are concatenated over a window.
-
-    ``unit_quality`` is block-scoped, so a unit spanning two blocks has two
-    candidates and ``_most_spikes_wins`` picks one. A merge can map a global unit to
-    several local ones in that block; the lowest ``unit`` wins, so the answer does
-    not depend on row order. ``qc_metrics`` stay on ``SortingQuality.Metric``.
+    Quality labels and ``qc_metrics`` are block-scoped and stay upstream.
     """
     electrodes = {
         int(r["global_unit"]): r
         for r in (spike_sorting.GlobalUnit * ephys.ProbeType.Electrode & insertion).to_dicts()
     }
-    quality = {}
-    for unit in roster:
-        # A unit silent all chunk has no spike rows, so no block can win on count.
-        # Enter every block that sorted it with zero and the usual tie-break applies.
-        # The roster is built from these same rosters, so there is always a candidate.
-        counts = counts_by_unit_block.get(unit) or {
-            key: 0 for key, units in block_units.items() if unit in units
-        }
-        winner = _most_spikes_wins(counts)
-        rows = (
-            spike_sorting.UnitMatching.Unit * spike_sorting.SortedSpikes.Unit
-            & insertion
-            & {"global_unit": unit, **dict(zip(_SORTING_FIELDS, winner, strict=True))}
-        ).to_dicts(order_by="unit")
-        quality[unit] = rows[0]["unit_quality"] if rows else "n.a."
-
     return {
         "covered_seconds": np.array(covered, dtype=float),
         "electrode": np.array([electrodes.get(u, {}).get("electrode", -1) for u in roster]),
         "shank": np.array([electrodes.get(u, {}).get("shank", -1) for u in roster]),
-        "unit_quality": np.array([quality[u] for u in roster]),
     }

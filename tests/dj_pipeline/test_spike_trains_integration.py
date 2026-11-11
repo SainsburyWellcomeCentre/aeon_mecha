@@ -156,16 +156,3 @@ class TestMake:
         )
         assert first == {1, 2}
         assert second == {1, 2, 3}
-
-    def test_cross_block_unit_takes_the_owning_block_s_quality(self, populated):
-        """A cross-block unit takes its owning block's quality label.
-
-        The blocks disagree about unit 1 on purpose; block A owns 9 of its spikes to
-        B's 8. Wire the rule in backwards and someone filtering ``unit_quality ==
-        "good"`` silently analyses the wrong neurons.
-        """
-        tsgroup = (_mine(populated) & {"chunk_start": populated["boundary_chunk_start"]}).fetch1("spikes")
-        quality = tsgroup.get_info("unit_quality")
-
-        assert quality[populated["cross_block_unit"]] == populated["owning_block_quality"]
-        assert populated["owning_block_quality"] != populated["losing_block_quality"]

@@ -12,33 +12,6 @@ def t(hour, minute=0):
     return dt(2026, 5, 11, hour, minute)
 
 
-class TestMostSpikesWins:
-    """One rule settles a unit's block-scoped metadata on both axes.
-
-    Across the sortings covering a chunk, and across the chunks covering a longer
-    window, so the two readings cannot drift apart.
-    """
-
-    @staticmethod
-    def _key(hour, group="shank0"):
-        return (t(hour), t(hour + 1), "cfg", group, "ks4", 1)
-
-    def test_sorting_with_more_spikes_wins(self):
-        """Metadata follows the bulk of the data."""
-        from aeon.dj_pipeline.processed_ephys import _most_spikes_wins
-
-        early, late = self._key(7), self._key(8)
-        assert _most_spikes_wins({early: 10, late: 900}) == late
-
-    def test_ties_break_to_the_earliest_key(self):
-        """An exact tie resolves by key order, not dict order — on both key kinds."""
-        from aeon.dj_pipeline.processed_ephys import _most_spikes_wins
-
-        early, late = self._key(7), self._key(8)
-        assert _most_spikes_wins({late: 50, early: 50}) == early
-        assert _most_spikes_wins({t(9): 5, t(8): 5}) == t(8)
-
-
 class TestCoverageFollowsSortedChunks:
     """Coverage is the ephys chunks that were sorted, not the block someone typed."""
 

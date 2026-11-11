@@ -52,10 +52,8 @@ EPHYS_CHUNKS = [
 # _expected_spike_total() skip it and only key_source has an opinion about it.
 UNMATCHED_BLOCK = (_at(10), _at(10, 30))
 BLOCKS = {
-    # Unit 1 lives in both blocks and they label it differently on purpose: in the
-    # 09:00 chunk A owns 9 of its spikes to B's 8, so A's label must win.
-    "A": {"window": (_at(8), _at(9, 30)), "units": {1: 101, 2: 102}, "quality": {101: "good", 102: "good"}},
-    "B": {"window": (_at(9), _at(10)), "units": {1: 201, 3: 203}, "quality": {201: "mua", 203: "good"}},
+    "A": {"window": (_at(8), _at(9, 30)), "units": {1: 101, 2: 102}},
+    "B": {"window": (_at(9), _at(10)), "units": {1: 201, 3: 203}},
 }
 BOUNDARY_SPIKE = _at(9)
 
@@ -230,9 +228,6 @@ def build_scenario(experiment_name):
         "boundary_chunk_start": CHUNKS[1][0],
         "partial_unit": 2,  # block A only, so it stops at 09:20
         "full_units": {1, 3},
-        "cross_block_unit": 1,
-        "owning_block_quality": BLOCKS["A"]["quality"][101],  # A holds most of unit 1
-        "losing_block_quality": BLOCKS["B"]["quality"][201],
         "expected_spike_total": _expected_spike_total(),
     }
 
@@ -321,7 +316,7 @@ def _build_sorting_chain(experiment_name, insertion):
                     "probe_type": PROBE_TYPE,
                     "electrode_config_name": CONFIG_NAME,
                     "electrode": 0,
-                    "unit_quality": block["quality"][local],
+                    "unit_quality": "good",
                     "spike_count": 0,
                     "spike_indices": np.array([], dtype=np.int64),
                     "spike_sites": np.array([], dtype=np.int64),
