@@ -63,10 +63,53 @@ SORTING_GROUPS = "per_shank"
 # Probe insertion to set up sorting for, or None for every insertion.
 INSERTION_NUMBER = None
 
+# Restrict all three steps to a single block (time chunk), or None for every block.
+# Give the block's folder name as it appears under ephys_blocks/ (the full path
+# also works), e.g. "2026-08-31T16-06-55_2026-09-02T19-17-43".
+BLOCK = None
+
 
 # --------------------------------------------------------------------------
 # Functions
 # --------------------------------------------------------------------------
+
+
+def block_restriction(block):
+    """SQL restriction selecting the EphysBlock whose folder name is ``block``.
+
+    Block folders are named ``{block_start}_{block_end}`` with ``%Y-%m-%dT%H-%M-%S``,
+    which drops the microseconds that block_start/block_end carry in the DB, so
+    each bound is matched within a 1-second window.
+
+    Args:
+        block: Folder name (or full path ending in it), e.g.
+            "2026-08-31T16-06-55_2026-09-02T19-17-43".
+
+    Returns:
+        A restriction string for any table with block_start/block_end.
+    """
+    from datetime import datetime, timedelta
+    from pathlib import PurePath
+
+    name = PurePath(str(block).rstrip("/")).name
+    try:
+        start_s, end_s = name.split("_")
+        fmt = "%Y-%m-%dT%H-%M-%S"
+        start, end = datetime.strptime(start_s, fmt), datetime.strptime(end_s, fmt)
+    except ValueError as e:
+        raise ValueError(
+            f"BLOCK must look like 'YYYY-MM-DDTHH-MM-SS_YYYY-MM-DDTHH-MM-SS', got {name!r}"
+        ) from e
+    one_s = timedelta(seconds=1)
+    return (
+        f"block_start >= '{start}' AND block_start < '{start + one_s}' AND "
+        f"block_end >= '{end}' AND block_end < '{end + one_s}'"
+    )
+
+
+def _restrict_block(query, block):
+    """Restrict ``query`` to one block if ``block`` is given, else return it unchanged."""
+    return query if block is None else query & block_restriction(block)
 
 
 def setup_sorting_prerequisites(
@@ -75,6 +118,7 @@ def setup_sorting_prerequisites(
     sorting_method,
     insertion_number=None,
     sorting_groups="per_shank",
+    block=None,
 ):
     """Populate the three manual/lookup tables that must exist before sorting.
 
@@ -110,6 +154,9 @@ def setup_sorting_prerequisites(
             insertion. If None (default), set up every insertion found for the
             experiment.
         sorting_groups: "per_shank" or "all".
+        block: If given, only create SortingTask entries for this block (its
+            folder name, see ``block_restriction``). If None (default), create
+            them for every block.
     """
     import json as _json
     from pathlib import Path
@@ -123,7 +170,7 @@ def setup_sorting_prerequisites(
         for n in sorted(set(exp_blocks.to_arrays("insertion_number"))):
             print(f"\n=== Insertion {n} ===")
             setup_sorting_prerequisites(
-                experiment_name, paramset_id, sorting_method, int(n), sorting_groups
+                experiment_name, paramset_id, sorting_method, int(n), sorting_groups, block
             )
         return
 
@@ -304,10 +351,16 @@ def setup_sorting_prerequisites(
     # ------------------------------------------------------------------
     # c) SortingTask -- one per (block, group)
     # ------------------------------------------------------------------
-    blocks = (ephys.EphysBlock & block_rest).to_dicts()
+    blocks = _restrict_block(ephys.EphysBlock & block_rest, block).to_dicts()
 
     if not blocks:
-        print(f"No EphysBlock entries found for experiment={experiment_name}. Run step 2 first.")
+        if block is not None:
+            print(
+                f"No EphysBlock matching block={block!r} for experiment={experiment_name}, "
+                f"insertion={insertion_number}. Check the folder name."
+            )
+        else:
+            print(f"No EphysBlock entries found for experiment={experiment_name}. Run step 2 first.")
         return
 
     insert_count = 0
@@ -331,7 +384,7 @@ def setup_sorting_prerequisites(
     print(f"SortingTask: inserted {insert_count} entries ({total} total)")
 
 
-def run_preprocessing(experiment_name):
+def run_preprocessing(experiment_name, block=None):
     """Run PreProcessing.populate() for all pending SortingTask entries.
 
     PreProcessing is a Computed table that:
@@ -366,14 +419,18 @@ def run_preprocessing(experiment_name):
 
     Args:
         experiment_name: The experiment to preprocess.
+        block: If given, only preprocess SortingTask entries of this block in
+            this experiment (its folder name, see ``block_restriction``). If None
+            (default), populate runs unrestricted as before.
     """
     # Deferred imports -- no DB side effects at module level.
     from aeon.dj_pipeline import spike_sorting
 
-    pending = len(spike_sorting.SortingTask & {"experiment_name": experiment_name}) - len(
-        spike_sorting.PreProcessing & {"experiment_name": experiment_name}
+    exp = {"experiment_name": experiment_name}
+    pending = len(_restrict_block(spike_sorting.SortingTask & exp, block)) - len(
+        _restrict_block(spike_sorting.PreProcessing & exp, block)
     )
-    print(f"Pending PreProcessing entries: {pending}")
+    print(f"Pending PreProcessing entries: {pending}" + (f" (block {block})" if block else ""))
 
     if pending == 0:
         print("Nothing to preprocess.")
@@ -381,11 +438,16 @@ def run_preprocessing(experiment_name):
 
     print("Running PreProcessing.populate()...")
     print("  (This writes preprocessed binary data to Ceph. It may take a while for large blocks.)")
-    spike_sorting.PreProcessing.populate(display_progress=True, suppress_errors=False)
+    if block is None:
+        spike_sorting.PreProcessing.populate(display_progress=True, suppress_errors=False)
+    else:
+        spike_sorting.PreProcessing.populate(
+            exp, block_restriction(block), display_progress=True, suppress_errors=False
+        )
     print("PreProcessing complete.")
 
 
-def write_spike_sorting_scripts(experiment_name, subject, outdir=None, paramset_id=None):
+def write_spike_sorting_scripts(experiment_name, subject, outdir=None, paramset_id=None, block=None):
     """Generate run_aeon_spike_sorting.py and .sh scripts from DB state.
 
     SpikeSorting requires a GPU and is submitted as a SLURM batch job.
@@ -403,6 +465,9 @@ def write_spike_sorting_scripts(experiment_name, subject, outdir=None, paramset_
             Created if it doesn't exist.
         paramset_id: If given, only include SortingTask entries for this
             parameter set (otherwise tasks from other paramsets are mixed in).
+        block: If given, only include SortingTask entries of this block (its
+            folder name, see ``block_restriction``). If None (default), include
+            every block.
 
     Returns:
         Tuple of (py_path, sh_path) for the written files,
@@ -420,7 +485,7 @@ def write_spike_sorting_scripts(experiment_name, subject, outdir=None, paramset_
     if paramset_id is not None:
         restriction["paramset_id"] = str(paramset_id)
 
-    all_tasks = spike_sorting.SortingTask & restriction
+    all_tasks = _restrict_block(spike_sorting.SortingTask & restriction, block)
     pending = (all_tasks - spike_sorting.SpikeSorting).to_dicts()
     n_total = len(all_tasks)
     n_done = n_total - len(pending)
@@ -777,13 +842,14 @@ if __name__ == "__main__":
         SORTING_METHOD,
         insertion_number=INSERTION_NUMBER,
         sorting_groups=SORTING_GROUPS,
+        block=BLOCK,
     )
 
     print("\n--- 2/3: Run preprocessing ---")
-    run_preprocessing(EXPERIMENT_NAME)
+    run_preprocessing(EXPERIMENT_NAME, block=BLOCK)
 
     print("\n--- 3/3: Generate SLURM scripts ---")
-    write_spike_sorting_scripts(EXPERIMENT_NAME, SUBJECT, paramset_id=PARAMSET_ID)
+    write_spike_sorting_scripts(EXPERIMENT_NAME, SUBJECT, paramset_id=PARAMSET_ID, block=BLOCK)
 
     print("=" * 60)
     print("  Step 3 complete.")
