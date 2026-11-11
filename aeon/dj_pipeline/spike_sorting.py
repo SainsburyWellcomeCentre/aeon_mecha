@@ -23,7 +23,13 @@ from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
-from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording, read_onix_ts
+from aeon.dj_pipeline.utils.ephys_utils import (
+    find_nearest_window,
+    read_amplifier_recording,
+    read_full_neuropixels_probe,
+    read_onix_ts,
+    resolve_epoch_probe_json,
+)
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
     extend_clock,
@@ -243,6 +249,14 @@ class PreProcessing(dj.Computed):
         electrodes_df = electrodes_query.to_pandas(order_by="electrode").reset_index()
         electrodes_df.drop(columns=list(key), inplace=True, errors="ignore")
 
+        electrode_config_name = (ephys.ElectrodeConfig & key).to_dicts()[0]["electrode_config_name"]
+
+        raw_ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type="raw-ephys")
+        epoch_dir = (ephys.EphysEpoch & key).fetch1("epoch_dir")
+
+        epoch_path = raw_ephys_dir / epoch_dir
+        probe_filepath = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, electrode_config_name)
+
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         fs_hz = NP2_FS_HZ
         # Neuropixels 2.0 gain - TODO: read this from the metadata
@@ -260,6 +274,7 @@ class PreProcessing(dj.Computed):
             output_dir,
             recording_file,
             recording_dir,
+            probe_filepath,
             params,
             si_pipeline,
         )
@@ -277,6 +292,7 @@ class PreProcessing(dj.Computed):
         output_dir: Path,
         recording_file: Path,
         recording_dir: Path,
+        probe_filepath: str,
         params: dict[str, Any],
         si_pipeline: dict[str, dict[str, Any]],
     ) -> tuple[Path, datetime, Path]:
@@ -296,13 +312,13 @@ class PreProcessing(dj.Computed):
             output_dir: Output directory path
             recording_file: Path to save recording object
             recording_dir: Directory for recording files
+            probe_filepath: Filepath to json file of probe
             params: SortingParamSet params
             si_pipeline: SpikeInterface preprocessing pipeline dict to apply
 
         Returns:
             Tuple of (output_dir, execution_time, recording_dir)
         """
-        import probeinterface as pi
         import spikeinterface as si
 
         # registers sorters/preprocessing/exporters submodules on the package
@@ -324,30 +340,10 @@ class PreProcessing(dj.Computed):
         ]
         si_recording = si.concatenate_recordings(si_recs)
 
-        # Select channels based on the electrode group
-        in_use_chn_ids = si_recording.channel_ids[electrodes_df.channel_idx.values]
-        chn2remove = set(si_recording.channel_ids) - set(in_use_chn_ids)
-        si_recording = si_recording.remove_channels(list(chn2remove))
-        in_use_chn_ind = [si_recording.channel_ids.tolist().index(chn_id) for chn_id in in_use_chn_ids]
-        electrodes_df["channel_idx"] = in_use_chn_ind
-
-        # Create SI probe object
-        probe_df = electrodes_df.copy()
-        probe_df.rename(
-            columns={
-                "electrode": "contact_ids",
-                "shank": "shank_ids",
-                "x_coord": "x",
-                "y_coord": "y",
-            },
-            inplace=True,
-        )
-        probe_df["contact_shapes"] = "square"
-        probe_df["width"] = 12
-        si_probe = pi.Probe.from_dataframe(probe_df)
-
-        si_probe.set_device_channel_indices(electrodes_df["channel_idx"].values)
-        si_recording.set_probe(probe=si_probe, in_place=True)
+        probe_part_number = "NP2013"  # for testing. Need to add to database.
+        probe = read_full_neuropixels_probe(probe_filepath, probe_part_number)
+        si_probe = probe.get_slice(electrodes_df.channel_idx.values)
+        si_recording.set_probe(probe=si_probe)
 
         # Run preprocessing and save results to output folder
         si_recording = si.preprocessing.unsigned_to_signed(si_recording)
