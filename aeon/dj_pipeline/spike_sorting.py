@@ -1884,7 +1884,9 @@ class GlobalUnitQuality(dj.Computed):
             raise ValueError("No labels to take the majority of.")
         unknown = set(counts) - set(cls.quality_rank)
         if unknown:
-            raise ValueError(f"Unexpected unit_quality label(s) {unknown}; expected {set(cls.quality_rank)}.")
+            raise ValueError(
+                f"Unexpected unit_quality label(s) {unknown}; expected {set(cls.quality_rank)}."
+            )
         top = max(counts.values())
         return max((label for label, n in counts.items() if n == top), key=cls.quality_rank.__getitem__)
 
@@ -1911,7 +1913,8 @@ class GlobalUnitQuality(dj.Computed):
         """Bring labels up to date after more blocks were matched, then populate.
 
         A label is not true once its global unit has been matched in more blocks than it
-        was computed on before. Only those GlobalUnitQuality rows are deleted, but nothing depends on this table so its safe :)
+        was computed on before. Only those GlobalUnitQuality rows are deleted, but nothing
+        depends on this table so its safe :)
         """
         n_matched = GlobalUnit.aggr(UnitMatching.Unit, n_matched="COUNT(*)")
         stale = (cls.proj("n_blocks") * n_matched & "n_blocks != n_matched").proj()
