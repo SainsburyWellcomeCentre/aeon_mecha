@@ -68,7 +68,7 @@ class TestCoverage:
 
         Block A covers the first half of the hour and found unit 7; block B covers
         the second half and found 7 and 99. Unit 99 was not silent over the first
-        half, it was never looked for, so its denominator is half the hour.
+        half, it was never looked for, so it was observed for half the hour.
         """
         from aeon.dj_pipeline.utils.intervals import coverage_by_unit
 

@@ -54,9 +54,9 @@ class SpikeTrains(dj.Computed):
     n_units: int32                       # units in the roster, including silent ones
     n_spikes: int64                      # total spikes across all units
     coverage_frac: float32               # covered seconds / (chunk_end - chunk_start)
-    n_partial_units: int32               # units sorted for less than the full chunk; 0 normally
     source_blocks: json                  # one string per sorting that fed this row
     execution_time: datetime             # when make() started; later matching leaves this row stale
+    units_observed_intervals=null: json  # unit: [[start, end], ...], for units narrower than the support
     spikes: <pynapple@dj_store>          # TsGroup; HARP seconds since 1904-01-01
     """
 
@@ -102,18 +102,21 @@ class SpikeTrains(dj.Computed):
         spikes_by_unit = _fetch_spikes(insertion, window, bounds)
 
         roster = sorted(per_unit)
-        data, covered = {}, []
+        data = {}
         for unit in roster:
             times = spikes_by_unit.get(unit, np.array([], dtype="datetime64[ns]"))
             seconds = io_api.to_seconds(pd.DatetimeIndex(times)).to_numpy()
             data[int(unit)] = nap.Ts(t=np.sort(seconds))
-            covered.append(intervals.covered_seconds(per_unit[unit]))
 
-        support = nap.IntervalSet(
-            start=[io_api.to_seconds(s) for s, _ in coverage],
-            end=[io_api.to_seconds(e) for _, e in coverage],
-        )
-        metadata = _unit_metadata(insertion, roster, covered)
+        electrodes = {
+            int(r["global_unit"]): r
+            for r in (spike_sorting.GlobalUnit * ephys.ProbeType.Electrode & insertion).to_dicts()
+        }
+        metadata = {
+            c: np.array([electrodes.get(u, {}).get(c, -1) for u in roster]) for c in ("electrode", "shank")
+        }
+        start, end = np.array(_to_seconds(coverage)).T
+        support = nap.IntervalSet(start=start, end=end)
         tsgroup = nap.TsGroup(data, time_support=support, metadata=metadata)
 
         n_spikes = int(sum(len(tsgroup[u]) for u in tsgroup.index))
@@ -123,17 +126,20 @@ class SpikeTrains(dj.Computed):
         if tsgroup.time_support.start[0] <= 3.0e9:
             raise ValueError(f"times are not on the HARP epoch for {key}")
 
+        # A TsGroup has one time support, so pynapple counts a unit as silent wherever
+        # any block sorted. Units whose finding blocks sorted less are kept here, so the
+        # matching-based reading stays recoverable; NULL means none.
+        narrower = {str(u): _to_seconds(ivs) for u, ivs in per_unit.items() if ivs != coverage}
         chunk_seconds = (window[1] - window[0]).total_seconds()
-        covered_total = intervals.covered_seconds(coverage)
         self.insert1(
             {
                 **key,
                 "execution_time": started,
                 "n_units": len(roster),
                 "n_spikes": n_spikes,
-                "coverage_frac": covered_total / chunk_seconds,
-                "n_partial_units": int(sum(c < covered_total for c in covered)),
+                "coverage_frac": intervals.covered_seconds(coverage) / chunk_seconds,
                 "source_blocks": sorted("/".join(map(str, k)) for k in sortings),
+                "units_observed_intervals": narrower or None,
                 "spikes": tsgroup,
             }
         )
@@ -195,19 +201,6 @@ def _fetch_spikes(insertion: dict, window: tuple, bounds: set) -> dict:
     return {u: np.sort(np.concatenate(v)) for u, v in by_unit.items()}
 
 
-def _unit_metadata(insertion: dict, roster: list, covered: list) -> dict:
-    """Per-unit metadata columns for the TsGroup, in roster order.
-
-    ``covered_seconds`` is each unit's rate denominator — seconds, not a fraction,
-    because fractions stop adding up once chunks are concatenated over a window.
-    Quality labels and ``qc_metrics`` are block-scoped and stay upstream.
-    """
-    electrodes = {
-        int(r["global_unit"]): r
-        for r in (spike_sorting.GlobalUnit * ephys.ProbeType.Electrode & insertion).to_dicts()
-    }
-    return {
-        "covered_seconds": np.array(covered, dtype=float),
-        "electrode": np.array([electrodes.get(u, {}).get("electrode", -1) for u in roster]),
-        "shank": np.array([electrodes.get(u, {}).get("shank", -1) for u in roster]),
-    }
+def _to_seconds(spans: list) -> list:
+    """``[(start, end), ...]`` datetimes as ``[[start, end], ...]`` HARP seconds."""
+    return [[io_api.to_seconds(s), io_api.to_seconds(e)] for s, e in spans]

@@ -13,9 +13,9 @@ So:
 
 - **08:00 chunk** — one block, full coverage, roster {1, 2}. The ordinary case.
 - **09:00 chunk** — *both* blocks, and an ephys gap 09:20-09:40. Coverage is two
-  intervals. Unit 2 was only ever sorted by block A, which stops at 09:20, so its
-  denominator is 1200 s against 2400 s for units 1 and 3. That is the cross-block
-  case, and it is the one that silently halves a firing rate if got wrong.
+  intervals. Unit 2 was only ever found by block A, which stops at 09:20, so it was
+  observed for 1200 s of the 2400 s that units 1 and 3 were. That is the cross-block
+  case.
 - **10:00 chunk** — ephys 10:00-10:30 exists but was never matched, so it must not
   be computable. Unmatched rather than absent: absence passes a ``key_source`` that
   only checks for ephys, and the restrict-then-rename order is what makes the
@@ -227,7 +227,6 @@ def build_scenario(experiment_name):
         "unmatched_ephys_start": UNMATCHED_BLOCK[0],
         "boundary_chunk_start": CHUNKS[1][0],
         "partial_unit": 2,  # block A only, so it stops at 09:20
-        "full_units": {1, 3},
         "expected_spike_total": _expected_spike_total(),
     }
 

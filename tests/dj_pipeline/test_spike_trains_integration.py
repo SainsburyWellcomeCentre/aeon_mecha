@@ -129,19 +129,21 @@ class TestMake:
         assert edge in later[1].t
         assert edge not in earlier[1].t
 
-    def test_cross_block_unit_gets_a_shorter_denominator(self, populated):
-        """A unit only one block found reports honest coverage.
+    def test_only_units_found_for_part_of_the_support_are_kept_apart(self, populated):
+        """Unit 2 is in block A alone, which stops at 09:20; units 1 and 3 span the support.
 
-        Unit 2 is in block A alone, which stops at 09:20: 1200 s against 2400 s for
-        units 1 and 3. The chunk's own coverage would halve its apparent rate.
+        So the 09:00 row stores unit 2's interval alone, and the one-block 08:00 row NULL.
         """
-        row = (_mine(populated) & {"chunk_start": populated["boundary_chunk_start"]}).fetch1()
-        covered = row["spikes"].get_info("covered_seconds")
+        from swc.aeon.io import api as io_api
 
-        assert covered[populated["partial_unit"]] == 1200.0
-        for unit in populated["full_units"]:
-            assert covered[unit] == 2400.0
-        assert row["n_partial_units"] == 1
+        row = (_mine(populated) & {"chunk_start": populated["boundary_chunk_start"]}).fetch1()
+        start = io_api.to_seconds(populated["boundary_chunk_start"])
+
+        assert row["units_observed_intervals"] == {
+            str(populated["partial_unit"]): [[start, start + 1200.0]]
+        }
+        first = _mine(populated) & {"chunk_start": populated["covered_chunk_starts"][0]}
+        assert first.fetch1("units_observed_intervals") is None
         # The 09:20-09:40 ephys gap, which the chunk's own coverage would paper over.
         assert row["coverage_frac"] == pytest.approx(2400 / 3600, rel=1e-4)
 
