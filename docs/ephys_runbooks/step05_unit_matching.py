@@ -36,8 +36,8 @@ Run from the repo root on an HPC compute node (Ceph must be visible):
 # Configuration -- edit these for your experiment
 # --------------------------------------------------------------------------
 
-EXPERIMENT_NAME = "ProjectAeonOVC-2026-09-28_001"
-SUBJECT = "BAA-1107306"
+EXPERIMENT_NAME = "ProjectAeonOVC-2026-08-31_001"
+SUBJECT = "BAA-1107080"
 # None: reuse the paramset seeded at this experiment's first block, or create
 # one with the next free ID. The seed is per paramset, so each experiment
 # needs its own; set an ID here only to pin it explicitly.
