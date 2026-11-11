@@ -810,8 +810,8 @@ class SortedSpikes(dj.Imported):
                         # label once an official curation is applied (single field, per the spec)
         spike_count: int32       # how many spikes in this recording for this unit
         spike_indices: <blob@dj_store>  # array of spike indices into the concatenated binary data (from preprocessing)
-        spike_sites : <blob@dj_store>   # array of electrode associated with each unit
-        spike_depths=null : <blob@dj_store>  # (um) unit location (x, y[, z]), relative to the (0, 0) of the probe
+        spike_sites : <blob@dj_store>   # electrode associated with each unit. Same for all spikes.
+        spike_depths=null : <blob@dj_store>  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe
         """  # noqa:E501
 
     class UnitTag(dj.Part):
@@ -894,22 +894,26 @@ class SortedSpikes(dj.Imported):
 
         # get data from analyzer
         main_channel_indices = sorting_analyzer.main_channel_indices
-        main_channel_ids = sorting_analyzer.channel_ids[main_channel_indices]
         num_spikes_per_unit = sorting_analyzer.sorting.count_num_spikes_per_unit().values()
-        unit_locations = sorting_analyzer.get_extension("unit_locations").get_data()
+        all_spike_locations = sorting_analyzer.get_extension("locations").get_data(outputs="by_unit")[0]
 
         # PreProcessing names the probe's contacts after their electrode
         # ids and the analyzer lists contacts in channel order.
         # probe_type and electrode_config_name are already in key.
         main_electrode_ids = sorting_analyzer.get_probe().contact_ids[main_channel_indices].astype(int)
 
-        for unit_id, main_channel_id, main_electrode_id, num_spikes, unit_quality, unit_location in zip(
+        for (
+            unit_id,
+            main_electrode_id,
+            num_spikes,
+            unit_quality,
+            spike_locations,
+        ) in zip(
             unit_ids,
-            main_channel_ids,
             main_electrode_ids,
             num_spikes_per_unit,
             unit_quality_map.values(),
-            unit_locations,
+            all_spike_locations,
             strict=True,
         ):
             spike_indices = sorting_analyzer.sorting.get_unit_spike_train(unit_id=unit_id)
@@ -922,8 +926,8 @@ class SortedSpikes(dj.Imported):
                     "unit_quality": unit_quality,
                     "spike_indices": spike_indices,
                     "spike_count": num_spikes,
-                    "spike_sites": main_channel_id,
-                    "spike_depths": unit_location,
+                    "spike_sites": int(main_electrode_id),
+                    "spike_depths": spike_locations["y"],
                 },
                 ignore_extra_fields=True,
             )
