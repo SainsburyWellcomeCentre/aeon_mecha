@@ -632,10 +632,9 @@ CLEAR_JOB = True
 def clear_job(key):
     """Clear errored jobs for SpikeSorting to allow re-running."""
     try:
-        for job in spike_sorting.schema.jobs:
-            (job & {"table_name": spike_sorting.SpikeSorting.table_name, "status": "error"} & key).delete()
+        (spike_sorting.SpikeSorting.jobs & {{"status": "error"}} & key).delete()
     except Exception as e:
-        print(f"[WARNING] Could not clear error jobs: {e}")
+        print(f"[WARNING] Could not clear error jobs: {{e}}")
 
 
 def main():
