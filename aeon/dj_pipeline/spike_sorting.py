@@ -914,7 +914,7 @@ class SortedSpikes(dj.Imported):
             main_electrode_ids,
             num_spikes_per_unit,
             unit_quality_map.values(),
-            all_spike_locations,
+            all_spike_locations.values(),
             strict=True,
         ):
             spike_indices = sorting_analyzer.sorting.get_unit_spike_train(unit_id=unit_id)
