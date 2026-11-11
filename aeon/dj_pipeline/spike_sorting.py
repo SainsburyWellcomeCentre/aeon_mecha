@@ -938,10 +938,13 @@ class SortedSpikes(dj.Imported):
             curation_tags = CurationTag.to_arrays("tag")
             valid_tags = [tag for tag in curation_tags if tag in property_keys]
             tag_rows = []
-            for unit_id in unit_ids:
-                for tag in valid_tags:
-                    if sorting_analyzer.sorting.get_unit_property(unit_id, tag):
-                        tag_rows.append({**key, "unit": int(unit_id), "tag": tag})
+            for tag in valid_tags:
+                has_tag = sorting_analyzer.sorting.get_property(tag)
+                tag_rows.append(
+                    {**key, "unit": int(unit_id), "tag": tag}
+                    for unit_id, tagged in zip(unit_ids, has_tag, strict=True)
+                    if tagged
+                )
             if tag_rows:
                 self.UnitTag.insert(tag_rows, ignore_extra_fields=True)
 
