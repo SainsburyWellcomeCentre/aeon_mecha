@@ -353,14 +353,20 @@ class PreProcessing(dj.Computed):
         intermediate_dir.mkdir(parents=True, exist_ok=True)
 
         rec_path = intermediate_dir / "recording"
-        if rec_path.exists() or rec_path.with_suffix(".zarr").exists():
+
+        saved_rec = None
+        if rec_path.exists():
             saved_rec = si.load(rec_path)
+        elif rec_path.with_suffix(".zarr").exists():
+            saved_rec = si.load(rec_path.with_suffix(".zarr"))
 
-            if saved_rec.get_num_samples() == si_recording.get_num_samples():
-                logger.info(f"{rec_path} already exists and has the right size. Skipping write.")
-                return output_dir, execution_time
+        if saved_rec and saved_rec.get_num_samples() == si_recording.get_num_samples():
+            logger.info(f"{rec_path} already exists and has the right size. Skipping write.")
+            return output_dir, execution_time
 
-        strip_non_numeric_properties(si_recording)
+        if save_format == "zarr":
+            strip_non_numeric_properties(si_recording)
+
         logger.info(f"Writing recording to {rec_path}...")
         si_recording.save(
             format=save_format,
