@@ -44,7 +44,7 @@ Run from the repo root on an HPC compute node (Ceph must be visible):
 # Configuration -- edit these for your experiment
 # --------------------------------------------------------------------------
 
-EXPERIMENT_NAME = "abcGolden01-aeonx1"
+EXPERIMENT_NAME = "abcGolden01-aeon3"
 SUBJECT = "IAA-1147881"
 PARAMSET_ID = 400
 SORTING_METHOD = "kilosort4"
