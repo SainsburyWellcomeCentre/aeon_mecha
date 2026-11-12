@@ -342,8 +342,12 @@ class PreProcessing(dj.Computed):
 
         probe_part_number = "NP2013"  # for testing. Need to add to database.
         probe = read_full_neuropixels_probe(probe_filepath, probe_part_number)
-        si_probe = probe.get_slice(electrodes_df.channel_idx.values)
-        si_recording.set_probe(probe=si_probe)
+
+        # `si_recording` is the full 384 channel recording
+        si_recording.set_probe(probe=probe)
+
+        # select just the channels in the ElectrodeGroup
+        si_recording = si_recording.select_channels(si_recording.channel_ids[electrodes_df.channel_idx])
 
         # Run preprocessing and save results to output folder
         si_recording = si.preprocessing.unsigned_to_signed(si_recording)
