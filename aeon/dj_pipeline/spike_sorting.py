@@ -941,7 +941,7 @@ class SortedSpikes(dj.Imported):
             tag_rows = []
             for tag in valid_tags:
                 has_tag = sorting_analyzer.sorting.get_property(tag)
-                tag_rows.append(
+                tag_rows.extend(
                     {**key, "unit": int(unit_id), "tag": tag}
                     for unit_id, tagged in zip(unit_ids, has_tag, strict=True)
                     if tagged
