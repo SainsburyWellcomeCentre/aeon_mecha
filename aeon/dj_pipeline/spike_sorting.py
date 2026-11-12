@@ -19,6 +19,7 @@ import datajoint as dj
 import joblib
 import numpy as np
 import pandas as pd
+from spikeinterface.extractors.neuropixels_utils import get_neuropixels_sample_shifts_from_probe
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
@@ -345,6 +346,8 @@ class PreProcessing(dj.Computed):
 
         # `si_recording` is the full 384 channel recording
         si_recording.set_probe(probe=probe)
+        sample_shifts = get_neuropixels_sample_shifts_from_probe(probe)
+        si_recording.set_property("inter_sample_shift", sample_shifts)
 
         # select just the channels in the ElectrodeGroup
         si_recording = si_recording.select_channels(si_recording.channel_ids[electrodes_df.channel_idx])
