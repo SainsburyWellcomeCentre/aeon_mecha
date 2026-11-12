@@ -354,15 +354,15 @@ class PreProcessing(dj.Computed):
 
         rec_path = intermediate_dir / "recording"
 
-        saved_rec = None
-        if rec_path.exists():
-            saved_rec = si.load(rec_path)
-        elif rec_path.with_suffix(".zarr").exists():
-            saved_rec = si.load(rec_path.with_suffix(".zarr"))
-
-        if saved_rec and saved_rec.get_num_samples() == si_recording.get_num_samples():
-            logger.info(f"{rec_path} already exists and has the right size. Skipping write.")
-            return output_dir, execution_time
+        # path could be `.zarr` a binary folder
+        rec_path = list(intermediate_dir.glob("recording*"))
+        if len(rec_path) == 1:
+            saved_rec = si.load(list(rec_path)[0])
+            if saved_rec and saved_rec.get_num_samples() == si_recording.get_num_samples():
+                logger.info(f"{rec_path} already exists and has the right size. Skipping write.")
+                return output_dir, execution_time
+        elif len(rec_path) > 1:
+            raise ValueError(f"Found several recording files in {intermediate_dir}. Expecting zero or one.")
 
         if save_format == "zarr":
             strip_non_numeric_properties(si_recording)
@@ -460,11 +460,12 @@ class SpikeSorting(dj.Computed):
         execution_time = datetime.now(UTC)
         sorter_name = sorting_method.replace(".", "_")
         sorting_output_dir = output_dir / "spike_sorting"
+        sorting_pickle_path = sorting_output_dir / "si_sorting.pkl"
         # Safety check: refuse to overwrite existing data on ceph
-        if sorting_output_dir.exists() and any(sorting_output_dir.iterdir()):
+        if sorting_output_dir.exists() and sorting_pickle_path.exists():
             raise FileExistsError(
-                f"Sorting output directory already contains data: {sorting_output_dir}. "
-                "Refusing to overwrite existing sorting data."
+                f"Sorting output directory\n{sorting_output_dir}\nContains a completed spike sorting."
+                "Refusing to overwrite existing data."
             )
 
         sorting_params = params["SI_SORTING_PARAMS"].copy()
@@ -500,8 +501,7 @@ class SpikeSorting(dj.Computed):
         )
 
         # Save sorting object
-        sorting_save_path = sorting_output_dir / "si_sorting.pkl"
-        si_sorting.dump_to_pickle(sorting_save_path, relative_to=output_dir)
+        si_sorting.dump_to_pickle(sorting_pickle_path, relative_to=output_dir)
 
         execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
 
