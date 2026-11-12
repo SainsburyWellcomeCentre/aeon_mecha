@@ -13,6 +13,11 @@ from pathlib import Path, PureWindowsPath
 import datajoint as dj
 import numpy as np
 import pyarrow.dataset as ds
+from probeinterface import read_probeinterface
+from probeinterface.neuropixels_tools import (
+    _annotate_probe_with_adc_sampling_info,
+    build_neuropixels_probe,
+)
 
 logger = dj.logger
 
@@ -23,6 +28,34 @@ DEVICE_PROBE_TYPE_MAP = {
 }
 
 DEVICE_NAMES = list(DEVICE_PROBE_TYPE_MAP.keys())
+
+
+def read_full_neuropixels_probe(probe_filepath, probe_part_number):
+    """Creates and slices a Neuropixels probe."""
+    # First, load in our probe and find the active channels
+    probegroup = read_probeinterface(probe_filepath)
+    probe = probegroup.probes[0]
+
+    contact_indices = np.arange(len(probe.contact_ids))
+    selected_contact_indices = contact_indices[probe.device_channel_indices != -1]
+    sliced_probe = probe.get_slice(selected_contact_indices)
+
+    # Build a mock from from the probe catalog, which contains the groupings for
+    # multiplexing. This is the full 50?? channel probe
+    mock_probe = build_neuropixels_probe(probe_part_number=probe_part_number)
+
+    # then slice it to the 384 channels that were selected for the recording
+    sliced_mock_probe = mock_probe.get_slice(selected_contact_indices)
+    adc_sampling_table = sliced_mock_probe.annotations.get("adc_sampling_table")
+    ap_sample_frequency_hz = sliced_mock_probe.annotations["ap_sample_frequency_hz"]
+    lf_sample_frequency_hz = sliced_mock_probe.annotations["lf_sample_frequency_hz"]
+
+    # and attach the metadata related to multiplexing to our probe
+    _annotate_probe_with_adc_sampling_info(sliced_probe, adc_sampling_table)
+    sliced_probe.annotations["ap_sample_frequency_hz"] = ap_sample_frequency_hz
+    sliced_probe.annotations["lf_sample_frequency_hz"] = lf_sample_frequency_hz
+
+    return sliced_probe
 
 
 def read_onix_ts(clock_file):
