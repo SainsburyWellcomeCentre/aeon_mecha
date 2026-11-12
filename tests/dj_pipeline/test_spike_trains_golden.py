@@ -1,0 +1,132 @@
+"""SpikeTrains on the golden dataset: real spikes re-chunked onto behavioural hours.
+
+The synthetic suite pins the arithmetic; this pins that it survives real data.
+
+What this dataset cannot reach: the behavioural arm records ~07:51:34-08:00 while the
+two sorted blocks overlap at 08:39:47-08:59:47, so no row here draws on more than one
+block. Cross-block ownership, partial coverage and the stale-after-a-late-block path
+stay with the synthetic suite, which constructs the geometry this recording lacks.
+
+Specialized tier: the fixture chain populates UnitMatching over ~2M spikes, twice.
+"""
+
+import numpy as np
+import pytest
+
+pytestmark = pytest.mark.specialized
+
+
+@pytest.fixture(scope="session")
+def golden_spike_trains(ephys_unit_matching_populated, ephys_full_pipeline, ctx):
+    """Ingest the behavioural arm's chunks, then populate SpikeTrains over them.
+
+    The ephys chain leaves no ``acquisition.Epoch`` rows, so both behavioural steps
+    are taken here. The arms share one ``experiment_name``, which is what
+    ``key_source`` joins on.
+    """
+    from aeon.dj_pipeline import processed_ephys
+
+    acquisition = ephys_full_pipeline["acquisition"]
+    exp_name = ctx.cfg["experiment_name"]
+
+    acquisition.Epoch.ingest_epochs(exp_name)
+    acquisition.Chunk.ingest_chunks(exp_name)
+    assert acquisition.Chunk & {"experiment_name": exp_name}, (
+        f"no behavioural chunks ingested for {exp_name}. Both arms must share one "
+        "experiment row, and the behaviour tree must be registered as its 'raw' directory."
+    )
+
+    # Scoped: the synthetic suite populates this table too, and relying on which
+    # module pytest reaches first is how they contaminate each other.
+    processed_ephys.SpikeTrains.populate({"experiment_name": exp_name}, suppress_errors=False)
+    rows = (processed_ephys.SpikeTrains & {"experiment_name": exp_name}).to_dicts()
+    assert rows, "SpikeTrains populated nothing - key_source found no overlap"
+    return {
+        "module": processed_ephys,
+        "acquisition": acquisition,
+        "rows": rows,
+        "exp_name": exp_name,
+    }
+
+
+def _fetch_tsgroup(module, row):
+    """Fetch the stored TsGroup for one SpikeTrains row."""
+    return (module.SpikeTrains & {k: row[k] for k in module.SpikeTrains.primary_key}).fetch1("spikes")
+
+
+class TestGoldenSpikeTrains:
+    """What must hold when real spikes are re-chunked onto behavioural hours."""
+
+    def test_conserves_spikes_against_unit_matching(self, golden_spike_trains, ctx):
+        """Every matched spike inside a chunk is kept, exactly once.
+
+        Counted off ``UnitMatching.Spikes`` with no block restriction: its unique
+        index spans all blocks, so a plain sum cannot double-count. That makes this
+        independent of ``make()``'s block selection — drop a covering block and the
+        counts diverge here.
+        """
+        exp_name = golden_spike_trains["exp_name"]
+        acquisition = golden_spike_trains["acquisition"]
+
+        source_rows = (ctx.spike_sorting.UnitMatching.Spikes & {"experiment_name": exp_name}).to_dicts()
+        assert source_rows, "UnitMatching.Spikes is empty - nothing to conserve"
+        all_times = [np.asarray(r["spike_times"], dtype="datetime64[ns]") for r in source_rows]
+
+        for row in golden_spike_trains["rows"]:
+            start, end = (acquisition.Chunk & row).fetch1("chunk_start", "chunk_end")
+            lo, hi = np.datetime64(start), np.datetime64(end)
+            expected = sum(int(((t >= lo) & (t < hi)).sum()) for t in all_times)
+
+            assert row["n_spikes"] == expected, (
+                f"chunk {start}: stored {row['n_spikes']} spikes, "
+                f"UnitMatching.Spikes has {expected} in [{start}, {end})"
+            )
+
+        assert sum(r["n_spikes"] for r in golden_spike_trains["rows"]) > 0, (
+            "re-chunked to zero spikes on real data"
+        )
+
+    def test_source_blocks_are_exactly_the_matched_overlapping_blocks(self, golden_spike_trains, ctx):
+        """source_blocks records every matched sorting covering the chunk.
+
+        Which sortings overlap is recomputed here from ``EphysBlock * UnitMatching``
+        rather than reusing ``_covering_sortings``, so one silently dropped shows as
+        a set difference. The key is built with ``_sorting_key`` so field order is
+        formatting here, not a claim about the data; the rendering is spelled out.
+        The record substitutes for the foreign key this table does without, so it
+        must be exact rather than non-empty.
+        """
+        acquisition = golden_spike_trains["acquisition"]
+        module = golden_spike_trains["module"]
+
+        for row in golden_spike_trains["rows"]:
+            start, end = (acquisition.Chunk & row).fetch1("chunk_start", "chunk_end")
+            insertion = {k: row[k] for k in ("experiment_name", "subject", "insertion_number")}
+            matched = (
+                ctx.ephys.EphysBlock * ctx.spike_sorting.UnitMatching
+                & insertion
+                & f'block_start < "{end}" AND block_end > "{start}"'
+            ).to_dicts()
+            expected = {"/".join(map(str, module._sorting_key(b))) for b in matched}
+
+            assert set(row["source_blocks"]) == expected, (
+                f"chunk {start}: source_blocks {sorted(row['source_blocks'])} "
+                f"!= matched blocks overlapping the window {sorted(expected)}"
+            )
+            assert expected, f"chunk {start} has a row but no matched covering sorting"
+
+    def test_times_lie_inside_the_support(self, golden_spike_trains):
+        """Every spike falls within time_support.
+
+        A spike landing in a coverage gap is kept but unsupported, which no other
+        test sees. ``make`` already refuses a non-Harp epoch, so that is not retested
+        here.
+        """
+        module = golden_spike_trains["module"]
+        tsgroup = _fetch_tsgroup(module, golden_spike_trains["rows"][0])
+
+        for unit in tsgroup.index:
+            times = np.asarray(tsgroup[unit].t)
+            if times.size:
+                assert times.min() >= tsgroup.time_support.start[0]
+                assert times.max() <= tsgroup.time_support.end[-1]
