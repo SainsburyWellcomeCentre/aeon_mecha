@@ -908,8 +908,8 @@ class TestSpikeSortingLupin:
 class TestSortedSpikesCuratedAnalyzer:
     """SortedSpikes ingests units from the official curation's analyzer once it has been applied.
 
-    The curated analyzer has three units. Unit 1 is tagged "flag" and "intermittent",
-    unit 2 "intermittent" only, and unit 3 has no tags.
+    The curated analyzer has three units with a curator "quality" label each. Unit 1 is tagged
+    "flag" and "intermittent", unit 2 "intermittent" only, and unit 3 has no tags.
     """
 
     @pytest.fixture(scope="class")
@@ -1010,6 +1010,9 @@ class TestSortedSpikesCuratedAnalyzer:
             {1: np.array([100, 900]), 2: np.array([1200]), 3: np.array([2000, 2500])},
             sampling_frequency=recording.sampling_frequency,
         )
+        # Deliberately disagree with KSLabel to test the curated analyzer's "quality" label is used.
+        sorting.set_property("KSLabel", np.array(["mua", "good", "mua"]))
+        sorting.set_property("quality", np.array(["good", "mua", "good"]))
         sorting.set_property("flag", np.array([True, False, False]))
         sorting.set_property("intermittent", np.array([True, True, False]))
 
@@ -1038,6 +1041,18 @@ class TestSortedSpikesCuratedAnalyzer:
             {"experiment_name": experiment_name}, display_progress=False, suppress_errors=False
         )
         return block_key
+
+    def test_curation_id_is_recorded(self, curated_block):
+        from aeon.dj_pipeline import spike_sorting
+
+        assert (spike_sorting.SortedSpikes & curated_block).fetch1("curation_id") == 1
+
+    def test_unit_quality_comes_from_curated_quality(self, curated_block):
+        """unit_quality is the curator's "quality" label, not Kilosort's KSLabel."""
+        from aeon.dj_pipeline import spike_sorting
+
+        units = (spike_sorting.SortedSpikes.Unit & curated_block).to_dicts()
+        assert {u["unit"]: u["unit_quality"] for u in units} == {1: "good", 2: "mua", 3: "good"}
 
     def test_unit_tags_are_one_row_per_tagged_unit(self, curated_block):
         """Each (unit, tag) the curator applied becomes exactly one UnitTag row.
