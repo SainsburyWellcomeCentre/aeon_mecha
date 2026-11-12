@@ -7,6 +7,8 @@ own minimal DB state to exercise a specific behavior.
 import csv
 import json
 import logging
+import os
+import time
 import uuid
 from pathlib import Path
 
@@ -599,6 +601,10 @@ class TestSyncedSpikesIndexingAndExtrapolation:
             ):
                 path = device_dir / f"{device_name}_{probe_label}_{stream}_{n}.bin"
                 np.fromfile(path, dtype=dtype)[:n_keep].tofile(path)
+                # we only ingest data that is at least 3 hours old, so we pretend the
+                # synthetic data was created more than three hours ago
+                four_hours_ago = time.time() - (4 * 60 * 60)
+                os.utime(path, (four_hours_ago, four_hours_ago))
 
         epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
 
@@ -708,10 +714,12 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         recording = si.NumpyRecording(
             np.zeros((sorted_samples or sum(amp_samples), 1), dtype=np.float32), sampling_frequency=30e3
         )
+        recording.set_probe(probe, in_place=True)
         sorting_output_dir = experiment_name
+        recording.set_probe(probe)
         si.create_sorting_analyzer(
             si.NumpySorting.from_unit_dict({1: np.array([0])}, sampling_frequency=30e3),
-            recording.set_probe(probe),
+            recording,
             format="binary_folder",
             folder=spike_sorting.get_sorting_root_dir() / sorting_output_dir / "sorting_analyzer",
             sparse=False,
@@ -876,9 +884,7 @@ class TestSpikeSortingLupin:
 
         assert spike_sorting.SortingMethod & {"sorting_method": "lupin"}
 
-        recording, _ = si.generate_ground_truth_recording(
-            durations=[10.0], num_channels=32, num_units=5, seed=0
-        )
+        recording = si.generate_recording(durations=[10.0], num_channels=32, seed=0)
 
         output_dir = tmp_path / "lupin_test"
         recording_dir = output_dir.parent / "recording"
@@ -897,3 +903,152 @@ class TestSpikeSortingLupin:
 
         sorting = si.load(sorting_output_dir / "si_sorting.pkl", base_folder=output_dir)
         assert len(sorting.unit_ids) > 0
+
+
+class TestSortedSpikesCuratedAnalyzer:
+    """SortedSpikes ingests units from the official curation's analyzer once it has been applied.
+
+    The curated analyzer has three units. Unit 1 is tagged "flag" and "intermittent",
+    unit 2 "intermittent" only, and unit 3 has no tags.
+    """
+
+    @pytest.fixture(scope="class")
+    def curated_block(self, ephys_full_pipeline, tmp_path_factory):
+        """Populate SortedSpikes for one block whose official curation has an applied analyzer."""
+        from datetime import UTC, datetime, timedelta
+
+        import datajoint as dj
+        import numpy as np
+        import spikeinterface as si
+        from ephys_factories import register_synthetic_experiment, register_synthetic_probe_insertion
+
+        from aeon.dj_pipeline import acquisition, ephys, spike_sorting, spike_sorting_curation
+        from aeon.dj_pipeline import subject as subj_mod
+
+        experiment_name = "test_sorted_spikes_curated"
+        subject_name = "test-mouse-curated"
+        tmp_path = tmp_path_factory.mktemp("curated_block")
+        raw_dir = tmp_path / "raw"
+        raw_dir.mkdir()
+        epoch_start = register_synthetic_experiment(
+            tmp_path, raw_dir, experiment_name, epoch_dir_name="2024-06-13T10-24-07"
+        )
+        subj_mod.Subject.insert1(
+            {"subject": subject_name, "sex": "U", "subject_birth_date": "2024-01-01"},
+            skip_duplicates=True,
+        )
+        acquisition.Experiment.Subject.insert1(
+            {"experiment_name": experiment_name, "subject": subject_name},
+            skip_duplicates=True,
+        )
+        register_synthetic_probe_insertion(
+            experiment_name, subject_name, epoch_start, "ProbeA", "NeuropixelsV2Beta"
+        )
+        block_key = {
+            "experiment_name": experiment_name,
+            "subject": subject_name,
+            "insertion_number": 1,
+            "block_start": epoch_start,
+            "block_end": epoch_start + timedelta(minutes=1),
+        }
+        ephys.EphysBlock.insert1(block_key)
+        probe_type, electrode_config_name = (
+            ephys.EphysEpochConfig.Insertion & {"experiment_name": experiment_name, "subject": subject_name}
+        ).fetch1("probe_type", "electrode_config_name")
+        econfig_key = {"probe_type": probe_type, "electrode_config_name": electrode_config_name}
+        ephys.EphysBlockInfo.insert1(
+            {**block_key, **econfig_key, "block_duration": 1 / 60}, allow_direct_insert=True
+        )
+        spike_sorting.ElectrodeGroup.insert1(
+            {
+                **econfig_key,
+                "electrode_group": "all",
+                "electrode_group_description": "synthetic",
+                "electrode_count": 1,
+            },
+            skip_duplicates=True,
+        )
+        spike_sorting.ElectrodeGroup.Electrode.insert1(
+            {**econfig_key, "electrode_group": "all", "electrode": 0}, skip_duplicates=True
+        )
+        spike_sorting.SortingParamSet.insert1(
+            {
+                "paramset_id": "test-paramset",
+                "sorting_method": "kilosort4",
+                "paramset_description": "synthetic",
+                "params": {},
+            },
+            skip_duplicates=True,
+        )
+        sorting_task_key = {
+            **block_key,
+            **econfig_key,
+            "electrode_group": "all",
+            "paramset_id": "test-paramset",
+        }
+        spike_sorting.SortingTask.insert1(sorting_task_key)
+        now = datetime.now(UTC)
+        spike_sorting.PreProcessing.insert1(
+            {
+                **sorting_task_key,
+                "execution_time": now,
+                "execution_duration": 0.0,
+                "sorting_output_dir": experiment_name,
+            },
+            allow_direct_insert=True,
+        )
+        for table in (spike_sorting.SpikeSorting, spike_sorting.PostProcessing):
+            table.insert1(
+                {**sorting_task_key, "execution_time": now, "execution_duration": 0.0},
+                allow_direct_insert=True,
+            )
+
+        # Curated analyzer: one channel (contact "0" = electrode 0), three units with a quality
+        # label and per-tag booleans each.
+        recording = si.generate_recording(durations=[0.1], num_channels=1, seed=0)
+        sorting = si.NumpySorting.from_unit_dict(
+            {1: np.array([100, 900]), 2: np.array([1200]), 3: np.array([2000, 2500])},
+            sampling_frequency=recording.sampling_frequency,
+        )
+        sorting.set_property("flag", np.array([True, False, False]))
+        sorting.set_property("intermittent", np.array([True, True, False]))
+
+        store_dir = Path(dj.config.stores["dj_store"]["location"])
+        curated_analyzer_dir = store_dir / experiment_name / "curated_analyzer.zarr"
+        analyzer = si.create_sorting_analyzer(
+            sorting, recording, format="zarr", folder=curated_analyzer_dir, sparse=False
+        )
+        analyzer.compute(["random_spikes", "templates", "spike_locations"])
+
+        curation_key = {**sorting_task_key, "curation_id": 1}
+        spike_sorting_curation.ManualCuration.insert1(
+            {
+                **curation_key,
+                "curation_datetime": datetime.now(UTC),
+                "parent_curation_id": -1,
+                "curation_method": "SpikeInterface",
+            }
+        )
+        spike_sorting_curation.ManualCuration.File.insert1(
+            {**curation_key, "file_name": "curation_applied_analyzer", "file": curated_analyzer_dir}
+        )
+        spike_sorting_curation.OfficialCuration.insert1(curation_key)
+
+        spike_sorting.SortedSpikes.populate(
+            {"experiment_name": experiment_name}, display_progress=False, suppress_errors=False
+        )
+        return block_key
+
+    def test_unit_tags_are_one_row_per_tagged_unit(self, curated_block):
+        """Each (unit, tag) the curator applied becomes exactly one UnitTag row.
+
+        Units carrying several tags will have multiple UnitTag rows; untagged units have none.
+        """
+        from aeon.dj_pipeline import spike_sorting
+
+        tag_rows = (spike_sorting.SortedSpikes.UnitTag & curated_block).to_dicts()
+        assert sorted((r["unit"], r["tag"]) for r in tag_rows) == [
+            (1, "flag"),
+            (1, "intermittent"),
+            (2, "intermittent"),
+        ]

@@ -23,7 +23,7 @@ from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
-from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording
+from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording, read_onix_ts
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
     extend_clock,
@@ -226,7 +226,7 @@ class PreProcessing(dj.Computed):
         ephys_files, dir_types = (
             ephys.EphysChunk.File
             & (ephys.EphysBlockInfo.Chunk & key)
-            & "file_name LIKE '%AmplifierData%.bin'"
+            & ["file_name LIKE '%AmplifierData%.bin'", "file_name LIKE '%Probe%.arrow'"]
         ).to_arrays("file_path", "directory_type", order_by="chunk_start")
 
         # Channels
@@ -810,7 +810,7 @@ class SortedSpikes(dj.Imported):
                         # label once an official curation is applied (single field, per the spec)
         spike_count: int32       # how many spikes in this recording for this unit
         spike_indices: <blob@dj_store>  # array of spike indices into the concatenated binary data (from preprocessing)
-        spike_sites : <blob@dj_store>   # array of electrode associated with each spike
+        spike_sites : <blob@dj_store>   # electrode associated with each unit. Same for all spikes.
         spike_depths=null : <blob@dj_store>  # (um) array of depths associated with each spike, relative to the (0, 0) of the probe
         """  # noqa:E501
 
@@ -832,62 +832,29 @@ class SortedSpikes(dj.Imported):
 
         execution_time = datetime.now(UTC)
 
-        sorting_root_dir = get_sorting_root_dir()
-        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
-
-        # Get channel and electrode-site mapping
-        electrode_query = (
-            ephys.EphysBlockInfo.Channel.proj(..., "-channel_name")
-            * ephys.ElectrodeConfig.Electrode
-            * ElectrodeGroup.Electrode
-            * ephys.ProbeType.Electrode.proj("electrode_name")
-            & key
-        )
-
-        # Check if there's an official curation for this block
-        # If so, use the curated analyzer; otherwise use the raw analyzer
-        # Use lazy import to avoid circular dependency
+        # Use the official curation's analyzer if one has been applied, otherwise the raw analyzer.
+        # Only record the curation_id once its curated analyzer exists. An official curation that
+        # hasn't been applied yet (or an auto-approved one, which has no curated analyzer) stays
+        # at -1 with the raw analyzer; ApplyOfficialCuration reads curation_id to tell whether
+        # the curation has already been applied.
         curation_id = -1
-        analyzer_output_dir = resolve_analyzer_dir(output_dir)
         try:
-            # Lazy import to avoid circular dependency
-            import importlib
-
-            spike_sorting_curation_module = importlib.import_module(
-                "aeon.dj_pipeline.spike_sorting_curation"
-            )
-            official_curation = spike_sorting_curation_module.OfficialCuration & key
+            curation_module = importlib.import_module("aeon.dj_pipeline.spike_sorting_curation")
+            official_curation = curation_module.OfficialCuration & key
             if official_curation:
                 official_curation_id = official_curation.fetch1("curation_id")
-                applied_analyzer = (
-                    spike_sorting_curation_module.ManualCuration.File
-                    & key
-                    & {"curation_id": official_curation_id, "file_name": "curation_applied_analyzer"}
-                )
-                # Only record the curation_id once its curated analyzer exists. An official curation that
-                # hasn't been applied yet (or an auto-approved one, which has no curated analyzer) stays
-                # at -1 with the raw analyzer; ApplyOfficialCuration reads curation_id to tell whether
-                # the curation has already been applied.
-                if applied_analyzer:
+                if _find_applied_curation_analyzer(key, official_curation_id) is not None:
                     curation_id = official_curation_id
-                    analyzer_output_dir = Path(applied_analyzer.fetch1("file").full_path)
-                    logger.info(
-                        f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}"
-                    )
                 else:
-                    logger.info(
-                        f"Using raw analyzer (official curation_id={official_curation_id} has no "
-                        "curated analyzer)"
-                    )
-            else:
-                logger.info("Using raw analyzer (no official curation found)")
+                    logger.info(f"Official curation_id={official_curation_id} has no curated analyzer")
         except (dj.errors.DataJointError, ImportError, AttributeError) as e:
             # Curation module not available, table mis-named, or no official curation — use raw analyzer.
             # Narrow scope: other exceptions (network, permission, etc.) should propagate.
-            logger.info(f"Using raw analyzer (curation check failed: {e})")
+            logger.info(f"Curation check failed, using raw analyzer: {e}")
 
-        sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
-        si_sorting_: si.sorters.BaseSorter = si.load(sorting_file, base_folder=output_dir)
+        analyzer_output_dir = _get_sorted_spikes_analyzer(key, curation_id)
+        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir, load_extensions=False)
+        unit_ids = sorting_analyzer.unit_ids
 
         self.insert1(
             {
@@ -897,87 +864,71 @@ class SortedSpikes(dj.Imported):
                 "curation_id": curation_id,
             }
         )
-        if si_sorting_.unit_ids.size == 0:
-            logger.info(f"No units found in {sorting_file}. Skipping Unit ingestion...")
+        if unit_ids.size == 0:
+            logger.info(f"No units found in {analyzer_output_dir}. Skipping Unit ingestion...")
             return
 
-        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
-        si_sorting = sorting_analyzer.sorting
-
-        # Find representative channel for each unit
-        unit_channel_indices: dict[int, np.ndarray] = si.ChannelSparsity.from_best_channels(
-            sorting_analyzer,
-            1,
-        ).unit_id_to_channel_indices
-        unit_peak_channel: dict[int, int] = {u: chn[0] for u, chn in unit_channel_indices.items()}
-
-        spike_count_dict: dict[int, int] = si_sorting.count_num_spikes_per_unit()
-        # {unit: spike_count}
-
-        # create channel2electrode_map
-        electrode_map: dict[int, dict] = {elec["electrode"]: elec for elec in electrode_query.to_dicts()}
-        channel2electrode_map = {
-            chn_idx: electrode_map[int(elec_id)]
-            for chn_idx, elec_id in zip(
-                sorting_analyzer.get_probe().device_channel_indices,
-                sorting_analyzer.get_probe().contact_ids,
-                strict=False,
-            )
-        }
+        property_keys = set(sorting_analyzer.sorting.get_property_keys())
 
         # unit_quality is a single field: the curator's manual label once an official curation has
         # been applied (curation_id != -1, so we've loaded the curated analyzer), otherwise Kilosort's
         # own KSLabel. The manual call lives in the curated sorting's "quality" property; the
         # make_curation_official gate guarantees every curated unit has one, so a curated block's units
         # all carry the human's call, with KSLabel only as a defensive fallback.
-        prop_keys = set(si_sorting.get_property_keys())
-        use_manual_quality = curation_id != -1 and "quality" in prop_keys
+        use_manual_quality = curation_id != -1 and "quality" in property_keys
+
         unit_quality_map = {}
-        for unit_id in si_sorting.unit_ids:
+        for unit_id in unit_ids:
             quality = (
-                (si_sorting.get_unit_property(unit_id, "quality") or "").strip().lower()
+                (sorting_analyzer.sorting.get_unit_property(unit_id, "quality") or "").strip().lower()
                 if use_manual_quality
                 else ""
             )
             if not quality:
                 quality = (
-                    si_sorting.get_unit_property(unit_id, "KSLabel") if "KSLabel" in prop_keys else "n.a."
+                    sorting_analyzer.sorting.get_unit_property(unit_id, "KSLabel")
+                    if "KSLabel" in property_keys
+                    else "n.a."
                 )
             unit_quality_map[int(unit_id)] = quality
 
-        spike_locations = sorting_analyzer.get_extension("spike_locations")
-        extremum_channel_inds = si.template_tools.get_template_extremum_channel(
-            sorting_analyzer, outputs="index"
-        )
-        spikes_df = pd.DataFrame(
-            sorting_analyzer.sorting.to_spike_vector(extremum_channel_inds=extremum_channel_inds)
-        )
-        for unit_idx, raw_unit_id in enumerate(si_sorting.unit_ids):
-            unit_id = int(raw_unit_id)
-            unit_spikes_df = spikes_df[spikes_df.unit_index == unit_idx]
-            spike_sites = np.array(
-                [channel2electrode_map[chn_idx]["electrode"] for chn_idx in unit_spikes_df.channel_index]
-            )
-            unit_spikes_loc = spike_locations.get_data()[unit_spikes_df.index]
-            _, spike_depths = zip(*unit_spikes_loc, strict=True)  # x-coordinates, y-coordinates
-            spike_indices = si_sorting.get_unit_spike_train(unit_id)
+        # get data from analyzer
+        main_channel_indices = sorting_analyzer.main_channel_indices
+        num_spikes_per_unit = sorting_analyzer.sorting.count_num_spikes_per_unit().values()
+        spike_locations_ext = sorting_analyzer.get_extension("spike_locations")
+        all_spike_locations = spike_locations_ext.get_data(outputs="by_unit")[0]
 
-            if not (len(spike_indices) == len(spike_sites) == len(spike_depths)):
-                raise ValueError(
-                    f"Unit {unit_id}: mismatched spike data lengths "
-                    f"(indices={len(spike_indices)}, sites={len(spike_sites)}, depths={len(spike_depths)})"
-                )
+        # PreProcessing names the probe's contacts after their electrode
+        # ids and the analyzer lists contacts in channel order.
+        # probe_type and electrode_config_name are already in key.
+        main_electrode_ids = sorting_analyzer.get_probe().contact_ids[main_channel_indices].astype(int)
+
+        for (
+            unit_id,
+            main_electrode_id,
+            num_spikes,
+            unit_quality,
+            spike_locations,
+        ) in zip(
+            unit_ids,
+            main_electrode_ids,
+            num_spikes_per_unit,
+            unit_quality_map.values(),
+            all_spike_locations.values(),
+            strict=True,
+        ):
+            spike_indices = sorting_analyzer.sorting.get_unit_spike_train(unit_id=unit_id)
 
             self.Unit.insert1(
                 {
                     **key,
-                    **channel2electrode_map[unit_peak_channel[unit_id]],
-                    "unit": unit_id,
-                    "unit_quality": unit_quality_map[unit_id],
+                    "unit": int(unit_id),
+                    "electrode": int(main_electrode_id),
+                    "unit_quality": unit_quality,
                     "spike_indices": spike_indices,
-                    "spike_count": spike_count_dict[unit_id],
-                    "spike_sites": spike_sites,
-                    "spike_depths": spike_depths,
+                    "spike_count": num_spikes,
+                    "spike_sites": int(main_electrode_id),
+                    "spike_depths": spike_locations["y"],
                 },
                 ignore_extra_fields=True,
             )
@@ -986,12 +937,15 @@ class SortedSpikes(dj.Imported):
         # applied, read from the curated analyzer's per-tag boolean properties (see CurationTag).
         if curation_id != -1:
             curation_tags = CurationTag.to_arrays("tag")
-            tag_rows = [
-                {**key, "unit": int(unit_id), "tag": tag}
-                for unit_id in si_sorting.unit_ids
-                for tag in curation_tags
-                if tag in prop_keys and bool(si_sorting.get_unit_property(unit_id, tag))
-            ]
+            valid_tags = [tag for tag in curation_tags if tag in property_keys]
+            tag_rows = []
+            for tag in valid_tags:
+                has_tag = sorting_analyzer.sorting.get_property(tag)
+                tag_rows.extend(
+                    {**key, "unit": int(unit_id), "tag": tag}
+                    for unit_id, tagged in zip(unit_ids, has_tag, strict=True)
+                    if tagged
+                )
             if tag_rows:
                 self.UnitTag.insert(tag_rows, ignore_extra_fields=True)
 
@@ -1029,83 +983,32 @@ class Waveform(dj.Imported):
         # registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
-        sorting_root_dir = get_sorting_root_dir()
-        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
-
-        # Get channel and electrode-site mapping
-        electrode_query = (
-            ephys.EphysBlockInfo.Channel.proj(..., "-channel_name")
-            * ephys.ElectrodeConfig.Electrode
-            * ElectrodeGroup.Electrode
-            * ephys.ProbeType.Electrode.proj("electrode_name")
-            & key
-        )
-
-        # Get curation_id from SortedSpikes to determine which analyzer to use
-        curation_id = (SortedSpikes & key).fetch1("curation_id")
-        if curation_id != -1:
-            # Fetch applied analyzer path from database
-            import importlib
-
-            spike_sorting_curation_module = importlib.import_module(
-                "aeon.dj_pipeline.spike_sorting_curation"
-            )
-            analyzer_output_dir = Path(
-                (
-                    spike_sorting_curation_module.ManualCuration.File
-                    & key
-                    & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                )
-                .fetch1("file")
-                .full_path
-            )
-            logger.info(f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}")
-        else:
-            analyzer_output_dir = resolve_analyzer_dir(output_dir)
-            logger.info("Using raw analyzer (curation_id=-1)")
-
-        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
+        analyzer_output_dir = _get_sorted_spikes_analyzer(key, (SortedSpikes & key).fetch1("curation_id"))
+        sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir, load_extensions=False)
 
         self.insert1(key)
 
-        # Find representative channel for each unit
-        unit_peak_channel: dict[int, np.ndarray] = si.ChannelSparsity.from_best_channels(
-            sorting_analyzer, 1
-        ).unit_id_to_channel_indices  # {unit: peak_channel_index}
-        unit_peak_channel = {u: chn[0] for u, chn in unit_peak_channel.items()}
-
-        # create channel2electrode_map
-        electrode_map: dict[int, dict] = {elec["electrode"]: elec for elec in electrode_query.to_dicts()}
-        channel2electrode_map = {
-            chn_idx: electrode_map[int(elec_id)]
-            for chn_idx, elec_id in zip(
-                sorting_analyzer.get_probe().device_channel_indices,
-                sorting_analyzer.get_probe().contact_ids,
-                strict=True,
-            )
-        }
-
+        probe = sorting_analyzer.get_probe()
+        electrode_ids = probe.contact_ids.astype(int)
         templates = sorting_analyzer.get_extension("templates")
 
-        for unit in (SortedSpikes.Unit & key).keys(order_by="unit"):
+        for unit in (SortedSpikes.Unit & key).proj("electrode").to_dicts(order_by="unit"):
+            main_electrode = unit.pop("electrode")
             # Get mean waveform for this unit from all channels - (sample x channel)
             unit_waveforms = templates.get_unit_template(unit_id=unit["unit"], operator="average")
-            unit_peak_waveform = {
-                **unit,
-                "unit_waveform": unit_waveforms[:, unit_peak_channel[unit["unit"]]],
+
+            channel_waveforms = {
+                elec_id: unit_waveforms[:, chn_idx]
+                for elec_id, chn_idx in zip(electrode_ids, probe.device_channel_indices, strict=True)
             }
 
-            unit_electrode_waveforms = [
-                {
-                    **unit,
-                    **channel2electrode_map[chn_idx],
-                    "channel_waveform": unit_waveforms[:, chn_idx],
-                }
-                for chn_idx in channel2electrode_map
-            ]
-
-            self.UnitWaveform.insert1(unit_peak_waveform, ignore_extra_fields=True)
-            self.ChannelWaveform.insert(unit_electrode_waveforms, ignore_extra_fields=True)
+            self.UnitWaveform.insert1({**unit, "unit_waveform": channel_waveforms[main_electrode]})
+            self.ChannelWaveform.insert(
+                [
+                    {**unit, "electrode": elec_id, "channel_waveform": waveform}
+                    for elec_id, waveform in channel_waveforms.items()
+                ]
+            )
 
 
 @schema
@@ -1129,32 +1032,7 @@ class SortingQuality(dj.Imported):
         # registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
 
-        sorting_root_dir = get_sorting_root_dir()
-        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
-
-        # Get curation_id from SortedSpikes to determine which analyzer to use
-        curation_id = (SortedSpikes & key).fetch1("curation_id")
-        if curation_id != -1:
-            # Fetch applied analyzer path from database
-            import importlib
-
-            spike_sorting_curation_module = importlib.import_module(
-                "aeon.dj_pipeline.spike_sorting_curation"
-            )
-            analyzer_output_dir = Path(
-                (
-                    spike_sorting_curation_module.ManualCuration.File
-                    & key
-                    & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
-                )
-                .fetch1("file")
-                .full_path
-            )
-            logger.info(f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_output_dir}")
-        else:
-            analyzer_output_dir = resolve_analyzer_dir(output_dir)
-            logger.info("Using raw analyzer (curation_id=-1)")
-
+        analyzer_output_dir = _get_sorted_spikes_analyzer(key, (SortedSpikes & key).fetch1("curation_id"))
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
 
         self.insert1(key)
@@ -1222,7 +1100,9 @@ class SyncedSpikes(dj.Imported):
 
         # Load ephys onix times
         _clock_query = (
-            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & "file_name LIKE '%Clock%.bin'"
+            ephys.EphysChunk.File
+            & (ephys.EphysBlockInfo.Chunk & key)
+            & ["file_name LIKE '%Clock%.bin'", "file_name LIKE '%Probe%.arrow'"]
         )
         _clock_rows = _clock_query.to_dicts(order_by="chunk_start")
         _pk = _clock_query.primary_key
@@ -1242,7 +1122,7 @@ class SyncedSpikes(dj.Imported):
             amp_len = read_amplifier_recording(
                 ephys_dir / f.replace("Clock", "AmplifierData"), num_channels, NP2_FS_HZ
             ).get_num_samples()
-            onix_ts = np.memmap(ephys_dir / f, mode="r", dtype=np.uint64)
+            onix_ts = read_onix_ts(ephys_dir / f)
             onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=f))
             amp_lengths.append(amp_len)
         chunk_bounds = np.cumsum(amp_lengths)  # end of each chunk in the concatenated recording
@@ -1364,6 +1244,34 @@ class GlobalUnit(dj.Manual):
     -> ephys.ProbeType.Electrode  # peak electrode (denormalized, updated each block)
     global_unit_comment='': varchar(1000)
     """
+
+
+def _find_applied_curation_analyzer(key: dict, curation_id: int) -> Path | None:
+    """Return the curated analyzer folder for ``curation_id``, or None if it hasn't been applied yet."""
+    # lazy import to avoid circular imports: spike_sorting_curation imports this module
+    curation_module = importlib.import_module("aeon.dj_pipeline.spike_sorting_curation")
+    applied_analyzer = (
+        curation_module.ManualCuration.File
+        & key
+        & {"curation_id": curation_id, "file_name": "curation_applied_analyzer"}
+    )
+    return Path(applied_analyzer.fetch1("file").full_path) if applied_analyzer else None
+
+
+def _get_sorted_spikes_analyzer(key: dict, curation_id: int) -> Path:
+    """Return the analyzer folder a SortedSpikes entry was built from (curated if ``curation_id`` != -1).
+
+    Tables downstream of SortedSpikes should pass its stored ``curation_id`` so they load the same analyzer.
+    """
+    if curation_id != -1:
+        analyzer_dir = _find_applied_curation_analyzer(key, curation_id)
+        if analyzer_dir is None:
+            raise FileNotFoundError(f"No curated analyzer for curation_id={curation_id} of {key}")
+        logger.info(f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_dir}")
+        return analyzer_dir
+    output_dir = get_sorting_root_dir() / (PreProcessing & key).fetch1("sorting_output_dir")
+    logger.info("Using raw analyzer (curation_id=-1)")
+    return resolve_analyzer_dir(output_dir)
 
 
 # Defaults for UnitMatchingParamSet.params - used for any key missing from a given paramset's
