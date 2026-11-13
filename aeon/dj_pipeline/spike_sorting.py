@@ -355,13 +355,13 @@ class PreProcessing(dj.Computed):
         rec_path = intermediate_dir / "recording"
 
         # path could be `.zarr` a binary folder
-        rec_path = list(intermediate_dir.glob("recording*"))
-        if len(rec_path) == 1:
-            saved_rec = si.load(list(rec_path)[0])
+        existing_rec_paths = list(intermediate_dir.glob("recording*"))
+        if len(existing_rec_paths) == 1:
+            saved_rec = si.load(list(existing_rec_paths)[0])
             if saved_rec and saved_rec.get_num_samples() == si_recording.get_num_samples():
-                logger.info(f"{rec_path} already exists and has the right size. Skipping write.")
+                logger.info(f"{existing_rec_paths} already exists and has the right size. Skipping write.")
                 return output_dir, execution_time
-        elif len(rec_path) > 1:
+        elif len(existing_rec_paths) > 1:
             raise ValueError(f"Found several recording files in {intermediate_dir}. Expecting zero or one.")
 
         if save_format == "zarr":
