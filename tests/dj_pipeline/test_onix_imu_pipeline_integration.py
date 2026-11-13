@@ -8,7 +8,7 @@ from ephys_factories import (
     make_synthetic_bno055_data,
     make_synthetic_ephys_epoch,
     register_synthetic_experiment,
-    register_synthetic_probe_insertion,
+    register_synthetic_subject_and_probe,
 )
 
 logger = logging.getLogger(__name__)
@@ -128,8 +128,7 @@ def test_ephys_chunk_sync_model_part_is_link_only(dj_config_integration):
 
 def test_ephys_chunk_ingest_uses_sync_model_from_db(dj_config_integration, tmp_path):
     """EphysChunk.ingest_chunks creates link Part rows referencing EphysSyncModel rows."""
-    from aeon.dj_pipeline import acquisition, ephys
-    from aeon.dj_pipeline import subject as subj_mod
+    from aeon.dj_pipeline import ephys
 
     experiment_name = "test_ephys_chunk_db_lookup"
     epoch_dir_name = "2024-06-06T10-24-07"
@@ -145,19 +144,9 @@ def test_ephys_chunk_ingest_uses_sync_model_from_db(dj_config_integration, tmp_p
     make_synthetic_amplifier_data(raw_dir, epoch_dir_name, device_name, probe_label, n_chunks=3)
 
     # Register experiment (inserts Lab, Arena, DevicesSchema, Experiment, Epoch, EphysEpoch)
-    epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
-
-    # Register subject and link to experiment
-    subj_mod.Subject.insert1(
-        {"subject": subject, "sex": "U", "subject_birth_date": "2024-01-01"},
-        skip_duplicates=True,
+    register_synthetic_subject_and_probe(
+        tmp_path, raw_dir, experiment_name, subject, epoch_dir_name, device_name, probe_label
     )
-    acquisition.Experiment.Subject.insert1(
-        {"experiment_name": experiment_name, "subject": subject},
-        skip_duplicates=True,
-    )
-
-    register_synthetic_probe_insertion(experiment_name, subject, epoch_start, probe_label, device_name)
 
     # Ingest SyncModel rows first, then chunks
     ephys.EphysSyncModel.ingest(experiment_name)
@@ -356,8 +345,7 @@ def test_sync_model_fetches_leave_no_joblib(dj_config_integration, tmp_path):
     """
     import datajoint as dj
 
-    from aeon.dj_pipeline import acquisition, ephys
-    from aeon.dj_pipeline import subject as subj_mod
+    from aeon.dj_pipeline import ephys
 
     experiment_name = "test_sync_model_no_leak"
     epoch_dir_name = "2024-06-11T10-24-07"
@@ -370,17 +358,9 @@ def test_sync_model_fetches_leave_no_joblib(dj_config_integration, tmp_path):
     make_synthetic_ephys_epoch(raw_dir, epoch_dir_name, device_name, n_chunks=2)
     make_synthetic_amplifier_data(raw_dir, epoch_dir_name, device_name, probe_label, n_chunks=2)
     make_synthetic_bno055_data(raw_dir, epoch_dir_name, device_name, n_chunks=2)
-    epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
-
-    subj_mod.Subject.insert1(
-        {"subject": subject, "sex": "U", "subject_birth_date": "2024-01-01"},
-        skip_duplicates=True,
+    register_synthetic_subject_and_probe(
+        tmp_path, raw_dir, experiment_name, subject, epoch_dir_name, device_name, probe_label
     )
-    acquisition.Experiment.Subject.insert1(
-        {"experiment_name": experiment_name, "subject": subject},
-        skip_duplicates=True,
-    )
-    register_synthetic_probe_insertion(experiment_name, subject, epoch_start, probe_label, device_name)
 
     ephys.EphysSyncModel.ingest(experiment_name)
 

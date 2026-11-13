@@ -1,6 +1,7 @@
 """Synthetic data factory helpers for ONIX ephys pipeline integration tests.
 
-Imported by test_onix_imu_pipeline_integration.py and utils/test_codec_integration.py.
+Imported by test_onix_imu_pipeline_integration.py, test_synthetic_integration.py and
+utils/test_codec_integration.py.
 """
 
 import csv
@@ -331,6 +332,38 @@ def register_synthetic_probe_insertion(
         skip_duplicates=True,
         allow_direct_insert=True,
     )
+
+
+def register_synthetic_subject_and_probe(
+    tmp_path: Path,
+    raw_dir: Path,
+    experiment_name: str,
+    subject: str,
+    epoch_dir_name: str,
+    device_name: str = "NeuropixelsV2Beta",
+    probe_label: str = "ProbeA",
+):
+    """Register an experiment with a subject and a one-electrode probe insertion.
+
+    Combines register_synthetic_experiment and register_synthetic_probe_insertion with the
+    Subject and Experiment.Subject rows in between.
+
+    Returns the epoch_start datetime.
+    """
+    from aeon.dj_pipeline import acquisition
+    from aeon.dj_pipeline import subject as subj_mod
+
+    epoch_start = register_synthetic_experiment(tmp_path, raw_dir, experiment_name, epoch_dir_name)
+    subj_mod.Subject.insert1(
+        {"subject": subject, "sex": "U", "subject_birth_date": "2024-01-01"},
+        skip_duplicates=True,
+    )
+    acquisition.Experiment.Subject.insert1(
+        {"experiment_name": experiment_name, "subject": subject},
+        skip_duplicates=True,
+    )
+    register_synthetic_probe_insertion(experiment_name, subject, epoch_start, probe_label, device_name)
+    return epoch_start
 
 
 def make_synthetic_bno055_data(
