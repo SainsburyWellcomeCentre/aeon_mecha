@@ -44,13 +44,6 @@ class TestIntervalArithmetic:
         ]
         assert merge([]) == []
 
-    def test_covered_seconds_sums_a_gapped_coverage(self):
-        """The denominator every firing rate divides by: a sum, not a span."""
-        from aeon.dj_pipeline.utils.intervals import covered_seconds
-
-        assert covered_seconds([(t(8), t(8, 20)), (t(8, 40), t(9))]) == 40 * 60
-        assert covered_seconds([]) == 0.0
-
 
 class TestCoverage:
     """When the rig was recording, for the chunk and for each unit."""

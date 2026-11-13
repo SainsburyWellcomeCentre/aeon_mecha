@@ -53,10 +53,9 @@ class SpikeTrains(dj.Computed):
     ---
     n_units: int32                       # units in the roster, including silent ones
     n_spikes: int64                      # total spikes across all units
-    coverage_frac: float32               # covered seconds / (chunk_end - chunk_start)
-    source_blocks: json                  # one string per sorting that fed this row
+    source_blocks: json                  # the sortings this row was built from
     execution_time: datetime             # when make() started; later matching leaves this row stale
-    units_observed_intervals=null: json  # unit: [[start, end], ...], for units narrower than the support
+    units_observed_intervals=null: json  # units seen for only part of the recorded time; NULL if none
     spikes: <pynapple@dj_store>          # TsGroup; HARP seconds since 1904-01-01
     """
 
@@ -130,14 +129,12 @@ class SpikeTrains(dj.Computed):
         # any block sorted. Units whose finding blocks sorted less are kept here, so the
         # matching-based reading stays recoverable; NULL means none.
         narrower = {str(u): _to_seconds(ivs) for u, ivs in per_unit.items() if ivs != coverage}
-        chunk_seconds = (window[1] - window[0]).total_seconds()
         self.insert1(
             {
                 **key,
                 "execution_time": started,
                 "n_units": len(roster),
                 "n_spikes": n_spikes,
-                "coverage_frac": intervals.covered_seconds(coverage) / chunk_seconds,
                 "source_blocks": sorted("/".join(map(str, k)) for k in sortings),
                 "units_observed_intervals": narrower or None,
                 "spikes": tsgroup,

@@ -145,7 +145,7 @@ class TestMake:
         first = _mine(populated) & {"chunk_start": populated["covered_chunk_starts"][0]}
         assert first.fetch1("units_observed_intervals") is None
         # The 09:20-09:40 ephys gap, which the chunk's own coverage would paper over.
-        assert row["coverage_frac"] == pytest.approx(2400 / 3600, rel=1e-4)
+        assert row["spikes"].time_support.tot_length() == pytest.approx(2400, rel=1e-4)
 
     def test_roster_grows_as_blocks_discover_units(self, populated):
         """The roster is stable, and a later block's units appear.

@@ -51,11 +51,6 @@ def merge(intervals: list[Interval]) -> list[Interval]:
     return out
 
 
-def covered_seconds(intervals: list[Interval]) -> float:
-    """Total seconds covered: the denominator a firing rate should use."""
-    return float(sum((end - start).total_seconds() for start, end in intervals))
-
-
 def coverage(window: Interval, ephys_chunks: list[Interval]) -> list[Interval]:
     """When the ephys rig was recording during a behavioural window.
 
