@@ -5,7 +5,7 @@ processes one key from the list. The SLURM script passes
 $SLURM_ARRAY_TASK_ID as --task automatically.
 
 Example output of write_spike_sorting_scripts() — golden dataset values.
-Generated for experiment "abcGolden01-aeonx1", subject "IAA-1147881".
+Generated for experiment "abcGolden01-aeon3", subject "IAA-1147881".
 
 To run a single task interactively (e.g. for debugging):
     uv run python run_aeon_spike_sorting.py --task 1
@@ -20,7 +20,7 @@ from aeon.dj_pipeline import spike_sorting
 # =============================================================================
 
 _base = {
-    "experiment_name": "abcGolden01-aeonx1",
+    "experiment_name": "abcGolden01-aeon3",
     "subject": "IAA-1147881",
     "insertion_number": 1,
     "probe_type": "neuropixels2.0",
