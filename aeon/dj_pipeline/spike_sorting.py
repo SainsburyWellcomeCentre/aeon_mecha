@@ -584,6 +584,9 @@ class PostProcessing(dj.Computed):
         recording_path = list(intermediate_dir.glob("recording*"))[0]
 
         si_recording = si.load(recording_path)
+
+        # todo: possibly replace this with
+        # si_sorting = si.read_sorter_folder(sorting_file.parent, register_recording=False)
         si_sorting: si.sorters.BaseSorter = si.load(sorting_file, base_folder=output_dir)
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
