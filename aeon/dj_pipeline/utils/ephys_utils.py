@@ -31,21 +31,46 @@ DEVICE_NAMES = list(DEVICE_PROBE_TYPE_MAP.keys())
 
 
 def read_full_neuropixels_probe(probe_filepath, probe_part_number):
-    """Creates and slices a Neuropixels probe."""
+    """Get a Neuropixels probe.
+
+    Creates a NeuroPixels probe by first building a NeuroPixels probe from the Probe library,
+    ultimately from data in ProbeTable (https://github.com/billkarsh/ProbeTable/), then
+    slicing to match our configuration.
+    """
     # First, load in our probe and find the active channels
     probegroup = read_probeinterface(probe_filepath)
     probe = probegroup.probes[0]
+
+    probe_base_points = [np.min(probe.contact_positions[:, 0]), np.min(probe.contact_positions[:, 1])]
 
     contact_indices = np.arange(len(probe.contact_ids))
     selected_contact_indices = contact_indices[probe.device_channel_indices != -1]
     sliced_probe = probe.get_slice(selected_contact_indices)
 
     # Build a mock from from the probe catalog, which contains the groupings for
-    # multiplexing. This is the full 50?? channel probe
+    # multiplexing. This is the full 5120 channel probe
     mock_probe = build_neuropixels_probe(probe_part_number=probe_part_number)
 
+    # use contact locations to build the map between contact indices in the mock
+    # and our probe
+    mock_probe_to_our_probe = {}
+    for contact_index, contact_position in enumerate(sliced_probe.contact_positions):
+        contact_mask = np.all(contact_position - probe_base_points == mock_probe.contact_positions, axis=1)
+        index = np.where(contact_mask)[0][0]
+        mock_probe_to_our_probe[index] = contact_index
+
     # then slice it to the 384 channels that were selected for the recording
-    sliced_mock_probe = mock_probe.get_slice(selected_contact_indices)
+    sliced_mock_probe = mock_probe.get_slice(list(mock_probe_to_our_probe.keys()))
+
+    if not np.all(
+        sliced_probe.contact_positions - probe_base_points == sliced_mock_probe.contact_positions
+    ):
+        logger.warnings(
+            "Read probe cannot be matched with one from NeuroPixels probe library. Cannot attach "
+            "multiplexing info and suggests something might be wrong with your probe config."
+        )
+        return sliced_probe
+
     adc_sampling_table = sliced_mock_probe.annotations.get("adc_sampling_table")
     ap_sample_frequency_hz = sliced_mock_probe.annotations["ap_sample_frequency_hz"]
     lf_sample_frequency_hz = sliced_mock_probe.annotations["lf_sample_frequency_hz"]
