@@ -936,13 +936,14 @@ def _populate_curated_block(tmp_path_factory, experiment_name, subject_name, sor
 
 _CURATED_ANALYZER_CASES = [
     # Units 1-3 carry a curator "quality" label that deliberately disagrees with KSLabel, so the
-    # test shows the curator's label wins. Unit 4's label is empty, so it falls back to KSLabel.
+    # test shows the curator's label wins. Unit 3's label has an uppercase letter and surrounding
+    # whitespace to also test normalisation. Unit 4's label is empty, so it falls back to KSLabel.
     # Unit 1 is tagged "flag" and "intermittent", unit 2 "intermittent" only.
     {
         "name": "labelled",
         "properties": {
             "KSLabel": ["mua", "good", "mua", "noise"],
-            "quality": ["good", "mua", "good", ""],
+            "quality": ["good", "mua", " Good ", ""],
             "flag": [True, False, False, False],
             "intermittent": [True, True, False, False],
         },
@@ -957,6 +958,17 @@ _CURATED_ANALYZER_CASES = [
         "properties": {},
         "expected": {
             "unit_quality": {1: "n.a.", 2: "n.a.", 3: "n.a.", 4: "n.a."},
+            "unit_tags": [],
+        },
+    },
+    # KSLabel only: every unit falls back to its KSLabel, and with no tag properties no UnitTag rows.
+    {
+        "name": "kslabel_only",
+        "properties": {
+            "KSLabel": ["mua", "good", "mua", "noise"],
+        },
+        "expected": {
+            "unit_quality": {1: "mua", 2: "good", 3: "mua", 4: "noise"},
             "unit_tags": [],
         },
     },
