@@ -625,7 +625,7 @@ class EphysChunk(dj.Manual):
                         ephys_processed_path
                         / experiment_name
                         / insertion_key["subject"]
-                        / str(insertion_key["insertion_number"])
+                        / ("insertion_" + str(insertion_key["insertion_number"]))
                         / "recovered_ephys_chunks"
                         / Path(*ephys_file.parts[-3:])
                     )
