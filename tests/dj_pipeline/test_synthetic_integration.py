@@ -5,14 +5,26 @@ own minimal DB state to exercise a specific behavior.
 """
 
 import csv
+import gc
 import json
 import logging
 import os
 import time
 import uuid
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import datajoint as dj
+import numpy as np
+import probeinterface as pi
 import pytest
+import spikeinterface as si
+import spikeinterface.extractors as se
+from ephys_factories import (
+    make_synthetic_amplifier_data,
+    make_synthetic_ephys_epoch,
+    register_synthetic_subject_and_probe,
+)
 
 logger = logging.getLogger(__name__)
 pytestmark = pytest.mark.integration
@@ -130,8 +142,6 @@ def _insert_synthetic_sorting_task(block_key: dict, chunk_starts=()) -> dict:
 
     Returns the sorting task key.
     """
-    from datetime import UTC, datetime
-
     from aeon.dj_pipeline import ephys, spike_sorting
 
     ephys.EphysBlock.insert1(block_key)
@@ -214,8 +224,6 @@ class TestEpochEndLookback:
     """
 
     def test_look_back_inserts_end_for_previous_epochs(self, dj_config_integration, tmp_path):
-        import datetime
-
         from aeon.dj_pipeline import acquisition
 
         experiment_name = "test_epoch_end_lookback"
@@ -254,14 +262,14 @@ class TestEpochEndLookback:
             row["epoch_start"]: row
             for row in (acquisition.EpochEnd & exp_key).to_dicts(order_by="epoch_start")
         }
-        a, b = (datetime.datetime.fromisoformat(s) for s in ("2024-06-04T10:00", "2024-06-04T11:30"))
+        a, b = (datetime.fromisoformat(s) for s in ("2024-06-04T10:00", "2024-06-04T11:30"))
         assert set(ends) == {a, b}, "Only epochs with a successor get an EpochEnd (not C)"
 
         # A: next epoch starts (11:30) before A's last chunk ends (12:00).
         assert ends[a]["epoch_end"] == b
         assert ends[a]["epoch_duration"] == pytest.approx(1.5)
         # B: B's last chunk ends (12:00 - chunk start + 1 h) before the next epoch starts (14:20).
-        assert ends[b]["epoch_end"] == datetime.datetime.fromisoformat("2024-06-04T12:00")
+        assert ends[b]["epoch_end"] == datetime.fromisoformat("2024-06-04T12:00")
         assert ends[b]["epoch_duration"] == pytest.approx(0.5)
 
 
@@ -435,7 +443,6 @@ class TestEphysBlockInfoMultiConfigValidation:
         )
 
         # Two epochs, same ProbeInsertion, different ElectrodeConfigs
-        from datetime import datetime
 
         epoch_a_start = datetime(2024, 6, 4, 10, 0, 0)
         epoch_b_start = datetime(2024, 6, 4, 11, 0, 0)
@@ -544,12 +551,6 @@ class TestEphysChunkOutsideAllWindows:
     def test_ephys_chunk_outside_window_is_still_ingested(
         self, dj_config_integration, tmp_path, case, ts_range
     ):
-        from ephys_factories import (
-            make_synthetic_amplifier_data,
-            make_synthetic_ephys_epoch,
-            register_synthetic_subject_and_probe,
-        )
-
         from aeon.dj_pipeline import ephys
 
         # experiment_name is varchar(32) — keep the case suffix short.
@@ -634,15 +635,6 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         - ``amp_as_zarr``: replace each AmplifierData .bin with its compressed .zarr twin
           under the processed root, as raw ephys compression leaves them.
         """
-        from datetime import UTC, datetime
-
-        import numpy as np
-        from ephys_factories import (
-            make_synthetic_amplifier_data,
-            make_synthetic_ephys_epoch,
-            register_synthetic_subject_and_probe,
-        )
-
         from aeon.dj_pipeline import ephys, spike_sorting
 
         epoch_dir_name = "2024-06-13T10-24-07"
@@ -685,10 +677,6 @@ class TestSyncedSpikesIndexingAndExtrapolation:
         ephys.EphysSyncModel.ingest(experiment_name)
         ephys.EphysChunk.ingest_chunks(experiment_name)
         if amp_as_zarr:  # after ingestion, which reads the raw files
-            import gc
-
-            import spikeinterface.extractors as se
-
             zarr_dir = tmp_path / "processed" / epoch_dir_name / device_name
             for amp_bin in sorted(device_dir.glob("*AmplifierData_*.bin")):
                 se.read_binary(amp_bin, sampling_frequency=30e3, dtype=np.uint16, num_channels=1).save(
@@ -714,8 +702,6 @@ class TestSyncedSpikesIndexingAndExtrapolation:
 
         # SyncedSpikes checks the AmplifierData sample counts against the sorted recording,
         # so write a minimal analyzer with the sorted recording's sample count.
-        import probeinterface as pi
-        import spikeinterface as si
 
         probe = pi.generate_linear_probe(num_elec=1)
         probe.set_device_channel_indices([0])
@@ -901,12 +887,6 @@ def _populate_curated_block(tmp_path_factory, experiment_name, subject_name, sor
 
     Returns the block key.
     """
-    from datetime import UTC, datetime, timedelta
-
-    import datajoint as dj
-    import spikeinterface as si
-    from ephys_factories import register_synthetic_subject_and_probe
-
     from aeon.dj_pipeline import spike_sorting, spike_sorting_curation
 
     tmp_path = tmp_path_factory.mktemp(experiment_name)
@@ -993,9 +973,6 @@ class TestSortedSpikesCuratedAnalyzer:
         Each case sets the curated analyzer's unit properties. Returns the block key and the
         expected values (unit_quality, unit_tags) for that case.
         """
-        import numpy as np
-        import spikeinterface as si
-
         case = request.param
         sorting = si.NumpySorting.from_unit_dict(
             {
