@@ -702,13 +702,21 @@ class EphysChunk(dj.Manual):
                 with cls.connection.transaction:
                     cls.insert1(chunk_entry)
                     file_list = set((ephys_file, clock_file))
+                    if ephys_file.is_relative_to(raw_dir):
+                        directory_type = "raw-ephys"
+                        relative_directory = raw_dir
+                    elif ephys_file.is_relative_to(ephys_processed_path):
+                        directory_type = "processed"
+                        relative_directory = ephys_processed_path.parent
+                    else:
+                        continue
                     cls.File.insert(
                         [
                             {
                                 **chunk_entry,
-                                "directory_type": "raw-ephys",
+                                "directory_type": directory_type,
                                 "file_name": f.name,
-                                "file_path": f.relative_to(raw_dir, walk_up=True).as_posix(),
+                                "file_path": f.relative_to(relative_directory).as_posix(),
                             }
                             for f in file_list
                         ],
