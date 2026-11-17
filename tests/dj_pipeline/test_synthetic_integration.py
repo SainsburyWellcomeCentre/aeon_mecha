@@ -893,92 +893,143 @@ class TestSpikeSortingLupin:
         assert len(sorting.unit_ids) > 0
 
 
-class TestSortedSpikesCuratedAnalyzer:
-    """SortedSpikes ingests units from the official curation's analyzer once it has been applied.
+def _populate_curated_block(tmp_path_factory, experiment_name, subject_name, sorting) -> dict:
+    """Populate SortedSpikes for one block whose official curation has an applied analyzer.
 
-    The curated analyzer has three units with a curator "quality" label each. Unit 1 is tagged
-    "flag" and "intermittent", unit 2 "intermittent" only, and unit 3 has no tags.
+    ``sorting`` is the curated analyzer (one channel: contact "0" = electrode 0), with
+    properties set by each test case.
+
+    Returns the block key.
     """
+    from datetime import UTC, datetime, timedelta
 
-    @pytest.fixture(scope="class")
-    def curated_block(self, ephys_full_pipeline, tmp_path_factory):
-        """Populate SortedSpikes for one block whose official curation has an applied analyzer."""
-        from datetime import UTC, datetime, timedelta
+    import datajoint as dj
+    import spikeinterface as si
+    from ephys_factories import register_synthetic_subject_and_probe
 
-        import datajoint as dj
+    from aeon.dj_pipeline import spike_sorting, spike_sorting_curation
+
+    tmp_path = tmp_path_factory.mktemp(experiment_name)
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    epoch_start = register_synthetic_subject_and_probe(
+        tmp_path, raw_dir, experiment_name, subject_name, epoch_dir_name="2024-06-13T10-24-07"
+    )
+    block_key = {
+        "experiment_name": experiment_name,
+        "subject": subject_name,
+        "insertion_number": 1,
+        "block_start": epoch_start,
+        "block_end": epoch_start + timedelta(minutes=1),
+    }
+    sorting_task_key = _insert_synthetic_sorting_task(block_key)
+
+    recording = si.generate_recording(
+        durations=[0.1], num_channels=1, sampling_frequency=sorting.sampling_frequency, seed=0
+    )
+    store_dir = Path(dj.config.stores["dj_store"]["location"])
+    curated_analyzer_dir = store_dir / experiment_name / "curated_analyzer.zarr"
+    analyzer = si.create_sorting_analyzer(
+        sorting, recording, format="zarr", folder=curated_analyzer_dir, sparse=False
+    )
+    analyzer.compute(["random_spikes", "templates", "spike_locations"])
+
+    curation_key = {**sorting_task_key, "curation_id": 1}
+    spike_sorting_curation.ManualCuration.insert1(
+        {
+            **curation_key,
+            "curation_datetime": datetime.now(UTC),
+            "parent_curation_id": -1,
+            "curation_method": "SpikeInterface",
+        }
+    )
+    spike_sorting_curation.ManualCuration.File.insert1(
+        {**curation_key, "file_name": "curation_applied_analyzer", "file": curated_analyzer_dir}
+    )
+    spike_sorting_curation.OfficialCuration.insert1(curation_key)
+
+    spike_sorting.SortedSpikes.populate(
+        {"experiment_name": experiment_name}, display_progress=False, suppress_errors=False
+    )
+    return block_key
+
+
+_CURATED_ANALYZER_CASES = [
+    # Units 1-3 carry a curator "quality" label that deliberately disagrees with KSLabel, so the
+    # test shows the curator's label wins. Unit 4's label is empty, so it falls back to KSLabel.
+    # Unit 1 is tagged "flag" and "intermittent", unit 2 "intermittent" only.
+    {
+        "name": "labelled",
+        "properties": {
+            "KSLabel": ["mua", "good", "mua", "noise"],
+            "quality": ["good", "mua", "good", ""],
+            "flag": [True, False, False, False],
+            "intermittent": [True, True, False, False],
+        },
+        "expected": {
+            "unit_quality": {1: "good", 2: "mua", 3: "good", 4: "noise"},
+            "unit_tags": [(1, "flag"), (1, "intermittent"), (2, "intermittent")],
+        },
+    },
+    # Neither "quality" nor KSLabel: every unit is "n.a.", and with no tag properties no UnitTag rows.
+    {
+        "name": "unlabelled",
+        "properties": {},
+        "expected": {
+            "unit_quality": {1: "n.a.", 2: "n.a.", 3: "n.a.", 4: "n.a."},
+            "unit_tags": [],
+        },
+    },
+]
+
+
+class TestSortedSpikesCuratedAnalyzer:
+    """SortedSpikes ingests units from the official curation's analyzer once it has been applied."""
+
+    @pytest.fixture(scope="class", params=_CURATED_ANALYZER_CASES, ids=lambda case: case["name"])
+    def curated_block(self, request, ephys_full_pipeline, tmp_path_factory):
+        """Populate a curated block for each case in _CURATED_ANALYZER_CASES.
+
+        Each case sets the curated analyzer's unit properties. Returns the block key and the
+        expected values (unit_quality, unit_tags) for that case.
+        """
         import numpy as np
         import spikeinterface as si
-        from ephys_factories import register_synthetic_subject_and_probe
 
-        from aeon.dj_pipeline import spike_sorting, spike_sorting_curation
-
-        experiment_name = "test_sorted_spikes_curated"
-        subject_name = "test-mouse-curated"
-        tmp_path = tmp_path_factory.mktemp("curated_block")
-        raw_dir = tmp_path / "raw"
-        raw_dir.mkdir()
-        epoch_start = register_synthetic_subject_and_probe(
-            tmp_path, raw_dir, experiment_name, subject_name, epoch_dir_name="2024-06-13T10-24-07"
-        )
-        block_key = {
-            "experiment_name": experiment_name,
-            "subject": subject_name,
-            "insertion_number": 1,
-            "block_start": epoch_start,
-            "block_end": epoch_start + timedelta(minutes=1),
-        }
-        sorting_task_key = _insert_synthetic_sorting_task(block_key)
-
-        # Curated analyzer: one channel (contact "0" = electrode 0), three units with a quality
-        # label and per-tag booleans each.
-        recording = si.generate_recording(durations=[0.1], num_channels=1, seed=0)
+        case = request.param
         sorting = si.NumpySorting.from_unit_dict(
-            {1: np.array([100, 900]), 2: np.array([1200]), 3: np.array([2000, 2500])},
-            sampling_frequency=recording.sampling_frequency,
-        )
-        # Deliberately disagree with KSLabel to test the curated analyzer's "quality" label is used.
-        sorting.set_property("KSLabel", np.array(["mua", "good", "mua"]))
-        sorting.set_property("quality", np.array(["good", "mua", "good"]))
-        sorting.set_property("flag", np.array([True, False, False]))
-        sorting.set_property("intermittent", np.array([True, True, False]))
-
-        store_dir = Path(dj.config.stores["dj_store"]["location"])
-        curated_analyzer_dir = store_dir / experiment_name / "curated_analyzer.zarr"
-        analyzer = si.create_sorting_analyzer(
-            sorting, recording, format="zarr", folder=curated_analyzer_dir, sparse=False
-        )
-        analyzer.compute(["random_spikes", "templates", "spike_locations"])
-
-        curation_key = {**sorting_task_key, "curation_id": 1}
-        spike_sorting_curation.ManualCuration.insert1(
             {
-                **curation_key,
-                "curation_datetime": datetime.now(UTC),
-                "parent_curation_id": -1,
-                "curation_method": "SpikeInterface",
-            }
+                1: np.array([100, 900]),
+                2: np.array([1200]),
+                3: np.array([2000, 2500]),
+                4: np.array([2800]),
+            },
+            sampling_frequency=30000.0,
         )
-        spike_sorting_curation.ManualCuration.File.insert1(
-            {**curation_key, "file_name": "curation_applied_analyzer", "file": curated_analyzer_dir}
+        for name, values in case["properties"].items():
+            sorting.set_property(name, np.array(values))
+        block_key = _populate_curated_block(
+            tmp_path_factory,
+            f"test_curated_{case['name']}",
+            f"test-mouse-curated-{case['name']}",
+            sorting,
         )
-        spike_sorting_curation.OfficialCuration.insert1(curation_key)
-
-        spike_sorting.SortedSpikes.populate(
-            {"experiment_name": experiment_name}, display_progress=False, suppress_errors=False
-        )
-        return block_key
+        return block_key, case["expected"]
 
     def test_curation_id_is_recorded(self, curated_block):
+        """SortedSpikes records the official curation_id, not -1 (raw sorting)."""
         from aeon.dj_pipeline import spike_sorting
 
-        assert (spike_sorting.SortedSpikes & curated_block).fetch1("curation_id") == 1
+        block_key, _ = curated_block
+        assert (spike_sorting.SortedSpikes & block_key).fetch1("curation_id") == 1
 
-    def test_unit_quality_comes_from_curated_quality(self, curated_block):
-        """unit_quality is the curator's "quality" label, not Kilosort's KSLabel."""
+    def test_unit_quality_precedence(self, curated_block):
+        """unit_quality is the curator's "quality" label, else KSLabel, else "n.a."."""
         from aeon.dj_pipeline import spike_sorting
 
-        units = (spike_sorting.SortedSpikes.Unit & curated_block).to_dicts()
-        assert {u["unit"]: u["unit_quality"] for u in units} == {1: "good", 2: "mua", 3: "good"}
+        block_key, expected = curated_block
+        units = (spike_sorting.SortedSpikes.Unit & block_key).proj("unit_quality").to_dicts()
+        assert {u["unit"]: u["unit_quality"] for u in units} == expected["unit_quality"]
 
     def test_unit_tags_are_one_row_per_tagged_unit(self, curated_block):
         """Each (unit, tag) the curator applied becomes exactly one UnitTag row.
@@ -987,9 +1038,6 @@ class TestSortedSpikesCuratedAnalyzer:
         """
         from aeon.dj_pipeline import spike_sorting
 
-        tag_rows = (spike_sorting.SortedSpikes.UnitTag & curated_block).to_dicts()
-        assert sorted((r["unit"], r["tag"]) for r in tag_rows) == [
-            (1, "flag"),
-            (1, "intermittent"),
-            (2, "intermittent"),
-        ]
+        block_key, expected = curated_block
+        tag_rows = (spike_sorting.SortedSpikes.UnitTag & block_key).to_dicts()
+        assert sorted((r["unit"], r["tag"]) for r in tag_rows) == expected["unit_tags"]
