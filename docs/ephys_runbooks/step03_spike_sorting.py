@@ -64,9 +64,11 @@ CLUMPING = "/ceph/branco/Rokas/Ephys/Channel_maps/310826/ProbeA_clumps.csv"
 # Probe insertion to set up sorting for, or None for every insertion.
 INSERTION_NUMBER = None
 
-# Restrict all three steps to a single block (time chunk), or None for every block.
+# Restrict all three steps to specific blocks (time chunks), or None for every block.
 # Give the block's folder name as it appears under ephys_blocks/ (the full path
-# also works), e.g. "2026-08-31T16-06-55_2026-09-02T19-17-43".
+# also works), e.g. "2026-08-31T16-06-55_2026-09-02T19-17-43", or a list of them
+# to select several blocks, e.g.
+#   ["2026-08-31T16-06-55_2026-09-02T19-17-43", "2026-09-01T01-06-55_2026-09-01T13-06-55"]
 BLOCK = None
 
 
@@ -76,7 +78,7 @@ BLOCK = None
 
 
 def block_restriction(block):
-    """SQL restriction selecting the EphysBlock whose folder name is ``block``.
+    """Restriction selecting the EphysBlock(s) whose folder name is ``block``.
 
     Block folders are named ``{block_start}_{block_end}`` with ``%Y-%m-%dT%H-%M-%S``,
     which drops the microseconds that block_start/block_end carry in the DB, so
@@ -84,11 +86,18 @@ def block_restriction(block):
 
     Args:
         block: Folder name (or full path ending in it), e.g.
-            "2026-08-31T16-06-55_2026-09-02T19-17-43".
+            "2026-08-31T16-06-55_2026-09-02T19-17-43", or a list/tuple of them.
 
     Returns:
-        A restriction string for any table with block_start/block_end.
+        For a single block, a restriction string for any table with
+        block_start/block_end. For a list, a list of such strings, which
+        DataJoint combines with OR (an entry matching any of the blocks).
     """
+    if isinstance(block, (list, tuple)):
+        if not block:
+            raise ValueError("BLOCK is an empty list; use None to select every block.")
+        return [block_restriction(b) for b in block]
+
     from datetime import datetime, timedelta
     from pathlib import PurePath
 
@@ -109,7 +118,7 @@ def block_restriction(block):
 
 
 def _restrict_block(query, block):
-    """Restrict ``query`` to one block if ``block`` is given, else return it unchanged."""
+    """Restrict ``query`` to the given block(s) if ``block`` is given, else return it unchanged."""
     return query if block is None else query & block_restriction(block)
 
 
