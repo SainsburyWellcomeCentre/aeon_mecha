@@ -635,6 +635,12 @@ def _get_all_chunks(experiment_name, device_name):
         root=list(raw_data_dirs.values()),
         reader=io_reader.Chunk(pattern=device_name + "*", extension="csv"),
     )
+    if chunkdata.empty:
+        logger.warning(
+            f"No {device_name} chunks found for {experiment_name} in "
+            f"{', '.join(map(str, raw_data_dirs.values()))}. "
+            f"If this rig has no {device_name}, add the experiment to _ref_device_mapping."
+        )
 
     return chunkdata, raw_data_dirs
 

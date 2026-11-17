@@ -8,7 +8,7 @@
 # script's keys list to process.
 #
 # Example output of write_spike_sorting_scripts() — golden dataset values.
-# Generated for experiment "abcGolden01-aeonx1", subject "IAA-1147881".
+# Generated for experiment "abcGolden01-aeon3", subject "IAA-1147881".
 #
 # Usage:  sbatch run_aeon_spike_sorting.sh
 # Status: squeue --start -j <job_id>
