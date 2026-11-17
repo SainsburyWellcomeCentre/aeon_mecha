@@ -26,12 +26,12 @@ from pathlib import Path
 # --------------------------------------------------------------------------
 
 # Name that identifies this experiment in the database.
-# Convention: <experiment_tag>-<arena>, e.g. "abcGolden01-aeonx1".
-EXPERIMENT_NAME = "abcGolden01-aeonx1"
+# Convention: <experiment_tag>-<arena>, e.g. "abcGolden01-aeon3".
+EXPERIMENT_NAME = "abcGolden01-aeon3"
 
 # Absolute paths to raw data on Ceph.
 # abc experiments record behavior and ephys on separate acquisition machines:
-#   - AEON3 captures behavior (CameraTop, etc.)
+#   - AEON3 captures behavior (CameraNest, etc.)
 #   - AEONX1 captures ephys (NeuropixelsV2)
 # Each is registered as a separate directory type so the pipeline knows where
 # to look for each kind of data.
@@ -70,7 +70,7 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
 
     For abc experiments, behavior and ephys data live on separate machines
     (AEON3 and AEONX1 respectively). We register both directories:
-    - "raw"       -> behavior data (CameraTop, etc.)
+    - "raw"       -> behavior data (CameraNest, etc.)
     - "raw-ephys" -> ephys data (NeuropixelsV2)
     """
     # Deferred imports so there are no DB side effects at module load time.
@@ -93,12 +93,12 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
     lab.Location.insert1(
         {
             "lab": "SWC",
-            "location": "AEONX1",
-            "location_description": "acquisition machine AEONX1",
+            "location": "AEON3",
+            "location_description": "acquisition machine AEON3",
         },
         skip_duplicates=True,
     )
-    print("Location: AEONX1")
+    print("Location: AEON3")
 
     # --- Derive experiment_start_time from the first epoch directory ---
     # Use the ephys directory to find the experiment start time, since that
@@ -129,7 +129,7 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
             "experiment_description": "Golden baseline dataset - abc ephys (AEON3 + AEONX1)",
             "arena_name": "circle-2m",
             "lab": "SWC",
-            "location": "AEONX1",
+            "location": "AEON3",
             "experiment_type": "foraging",
         },
         skip_duplicates=True,
@@ -137,7 +137,7 @@ def register_experiment(experiment_name, raw_behavior_dir, raw_ephys_dir, subjec
     print(f"Experiment: {experiment_name} (start: {experiment_start_time})")
 
     # --- Experiment.Directory ---
-    # Register both directories. "raw" is for behavior data (CameraTop on
+    # Register both directories. "raw" is for behavior data (CameraNest on
     # AEON3), "raw-ephys" is for ephys data (NeuropixelsV2 on AEONX1).
     # Epoch.ingest_epochs() automatically discovers epochs from each.
     acquisition.Experiment.Directory.insert(
@@ -389,11 +389,10 @@ def register_epochs(experiment_name, probe_assignments_dir=None):
     ephys_epochs = len(EphysEpoch & {"experiment_name": experiment_name})
     print(f"EphysEpoch: {ephys_epochs} ephys epoch(s)")
 
-    if behavior_epochs == 0 and ephys_epochs == 0:
+    if behavior_epochs == 0:
         raise RuntimeError(
-            f"No epochs found for '{experiment_name}'. Check that:\n"
-            f"  - The 'raw' directory has CameraTop data (behavior)\n"
-            f"  - The 'raw-ephys' directory has NeuropixelsV2 subdirs (ephys)\n"
+            f"No behavior epochs found for '{experiment_name}'. Check that:\n"
+            f"  - The 'raw' directory has CameraNest data (behavior)\n"
             f"Registered directories:\n"
             + "\n".join(
                 f"  {d['directory_type']}: {d['directory_path']}"

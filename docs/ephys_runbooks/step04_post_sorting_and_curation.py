@@ -31,7 +31,7 @@ Run from the repo root on an HPC compute node:
 
 from datetime import UTC
 
-EXPERIMENT_NAME = "abcGolden01-aeonx1"
+EXPERIMENT_NAME = "abcGolden01-aeon3"
 
 
 # --------------------------------------------------------------------------

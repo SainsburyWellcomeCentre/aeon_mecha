@@ -932,6 +932,7 @@ def ephys_sorting_setup(
                         "spike_amplitudes": {},
                         "spike_locations": {},
                         "quality_metrics": {},
+                        "unit_locations": {},
                     },
                     "job_kwargs": {
                         "n_jobs": 2,
