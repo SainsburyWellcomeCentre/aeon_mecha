@@ -59,6 +59,10 @@ SORTING_METHOD = "kilosort2.5" #kilosort 4 pinned to kilosort 4.1.7
 #   "all"        — all channels in one group
 # For fully manual grouping, see "Advanced Configuration" at the bottom.
 SORTING_GROUPS = "per_shank"
+
+# Only used with "per_shank". None: one group per shank (shank0, shank1, ...).
+# A CSV path: split channels into clumps instead (clump0, clump1, ...). The CSV
+# needs columns contact_id and clump; contacts with an empty clump are left out.
 CLUMPING = "/ceph/branco/Rokas/Ephys/Channel_maps/310826/ProbeA_clumps.csv"
 
 # Probe insertion to set up sorting for, or None for every insertion.
@@ -129,6 +133,7 @@ def setup_sorting_prerequisites(
     insertion_number=None,
     sorting_groups="per_shank",
     block=None,
+    clumping=None,
 ):
     """Populate the three manual/lookup tables that must exist before sorting.
 
@@ -148,7 +153,8 @@ def setup_sorting_prerequisites(
        The grouping strategy is set by ``sorting_groups``:
          - "per_shank": one group per shank (e.g. shank0, shank1, ...), read
            from the probeinterface JSON ({electrode_config_name}.json) in the
-           raw-ephys epoch directories.
+           raw-ephys epoch directories. If ``clumping`` is given, one group per
+           clump (clump0, clump1, ...) instead.
          - "all": all active channels in one group.
 
     c) SortingTask (Manual) -- one entry per (block, electrode_group),
@@ -167,6 +173,10 @@ def setup_sorting_prerequisites(
         block: If given, only create SortingTask entries for this block (its
             folder name, see ``block_restriction``). If None (default), create
             them for every block.
+        clumping: Path to a CSV with columns contact_id and clump. Only used
+            with "per_shank": groups channels by clump instead of by shank.
+            Contacts whose clump is empty are left out. None (default) groups
+            by shank.
     """
     import json as _json
     from pathlib import Path
@@ -180,7 +190,7 @@ def setup_sorting_prerequisites(
         for n in sorted(set(exp_blocks.to_arrays("insertion_number"))):
             print(f"\n=== Insertion {n} ===")
             setup_sorting_prerequisites(
-                experiment_name, paramset_id, sorting_method, int(n), sorting_groups, block
+                experiment_name, paramset_id, sorting_method, int(n), sorting_groups, block, clumping
             )
         return
 
@@ -301,43 +311,8 @@ def setup_sorting_prerequisites(
         with open(json_path) as f:
             pi_data = _json.load(f)
 
-        # Build {electrode_site: shank_id} for active contacts.
-    #     shank_map = {}
-    #     for probe in pi_data.get("probes", []):
-    #         contact_ids = probe.get("contact_ids", [])
-    #         dci = probe.get("device_channel_indices", [])
-    #         shank_ids = probe.get("shank_ids", [])
-    #         for cid, ch_idx, shank in zip(contact_ids, dci, shank_ids, strict=True):
-    #             if int(ch_idx) >= 0:
-    #                 shank_map[int(cid)] = str(shank)
-
-    #     # Group electrodes by shank (only those in the ElectrodeConfig).
-    #     active_set = {int(e) for e in all_electrodes}
-    #     shanks = {}
-    #     for site, shank in sorted(shank_map.items()):
-    #         if site in active_set:
-    #             shanks.setdefault(shank, []).append(site)
-
-    #     groups = []
-    #     for shank_id in sorted(shanks):
-    #         group_name = f"shank{shank_id}"
-    #         sites = shanks[shank_id]
-    #         groups.append((group_name, sites))
-
-    # elif sorting_groups == "all":
-    #     groups = [("all", list(all_electrodes))]
-
-    # else:
-    #     raise ValueError(f"Unknown sorting_groups: {sorting_groups!r}. Use 'per_shank' or 'all'.")
-
-        # Build {electrode_site: shank_id} for active contacts.
-        import pandas as pd
-        import numpy as np
-
-        clumping = pd.read_csv(CLUMPING)
-
+        # Build {electrode_site: shank_id} for active (connected) contacts.
         shank_map = {}
-        clump_map = {}
         for probe in pi_data.get("probes", []):
             contact_ids = probe.get("contact_ids", [])
             dci = probe.get("device_channel_indices", [])
@@ -345,24 +320,37 @@ def setup_sorting_prerequisites(
             for cid, ch_idx, shank in zip(contact_ids, dci, shank_ids, strict=True):
                 if int(ch_idx) >= 0:
                     shank_map[int(cid)] = str(shank)
-                    print(cid, flush=True)
-                    clump_index = clumping.query(f"contact_id == {int(cid)}")["clump"].values[0]
-                    if not np.isnan(clump_index):
-                        clump_map[int(cid)] = clump_index
-        print(f"{shank_map.keys()=}")
 
-        # Group electrodes by shank (only those in the ElectrodeConfig).
+        if clumping is None:
+            # One group per shank.
+            site_group = {site: f"shank{shank}" for site, shank in shank_map.items()}
+        else:
+            # One group per clump, from the clumping CSV (contact_id -> clump).
+            import pandas as pd
+
+            clump_df = pd.read_csv(clumping)
+            clump_of = dict(zip(clump_df["contact_id"].astype(int), clump_df["clump"], strict=True))
+            missing = sorted(set(shank_map) - set(clump_of))
+            if missing:
+                raise ValueError(
+                    f"{len(missing)} active contacts are not in {clumping}, e.g. {missing[:5]}"
+                )
+            site_group = {
+                site: f"clump{int(clump_of[site])}" for site in shank_map if pd.notna(clump_of[site])
+            }
+
+        # Group electrodes (only those in the ElectrodeConfig), ordered by number.
         active_set = {int(e) for e in all_electrodes}
-        clumps = {}
-        for site, clump in sorted(clump_map.items()):
+        grouped = {}
+        for site, group_name in sorted(site_group.items()):
             if site in active_set:
-                clumps.setdefault(clump, []).append(site)
+                grouped.setdefault(group_name, []).append(site)
+        # Sort shank2 before shank10 (numeric suffix), falling back to the name.
+        def _order(name):
+            suffix = name.removeprefix("shank").removeprefix("clump")
+            return (0, int(suffix), name) if suffix.isdigit() else (1, 0, name)
 
-        groups = []
-        for shank_id in sorted(clumps):
-            group_name = f"clump{int(shank_id)}"
-            sites = clumps[shank_id]
-            groups.append((group_name, sites))
+        groups = sorted(grouped.items(), key=lambda g: _order(g[0]))
 
     elif sorting_groups == "all":
         groups = [("all", list(all_electrodes))]
@@ -377,9 +365,10 @@ def setup_sorting_prerequisites(
                 **electrode_config_key,
                 "electrode_group": group_name,
                 "electrode_group_description": (
-                    f"Shank {group_name.replace('shank', '')}: {len(sites)} channels"
-                    if sorting_groups == "per_shank"
-                    else f"All {len(sites)} active channels"
+                    f"All {len(sites)} active channels"
+                    if group_name == "all"
+                    else f"{'Clump' if group_name.startswith('clump') else 'Shank'} "
+                    f"{group_name.removeprefix('clump').removeprefix('shank')}: {len(sites)} channels"
                 ),
                 "electrode_count": len(sites),
             },
@@ -893,6 +882,7 @@ if __name__ == "__main__":
         insertion_number=INSERTION_NUMBER,
         sorting_groups=SORTING_GROUPS,
         block=BLOCK,
+        clumping=CLUMPING,
     )
 
     print("\n--- 2/3: Run preprocessing ---")
