@@ -525,7 +525,6 @@ class EphysChunk(dj.Manual):
         if resolved is None:
             return
         raw_dir, epoch_dir_to_start = resolved
-        ephys_processed_path = get_sorting_root_dir()
 
         exp_key = {"experiment_name": experiment_name}
 
@@ -619,6 +618,8 @@ class EphysChunk(dj.Manual):
                 except ArrowInvalid:
                     from aeon.dj_pipeline.utils.spike_sorting_utils import create_uncorrupted_arrow_file
 
+                    ephys_processed_path = get_sorting_root_dir()
+
                     logger.warning("Cannot read arrow file. Attempting reconstruction.")
 
                     fixed_filepath = (
@@ -705,11 +706,14 @@ class EphysChunk(dj.Manual):
                     if ephys_file.is_relative_to(raw_dir):
                         directory_type = "raw-ephys"
                         relative_directory = raw_dir
-                    elif ephys_file.is_relative_to(ephys_processed_path):
-                        directory_type = "processed"
-                        relative_directory = ephys_processed_path.parent
                     else:
-                        continue
+                        # ephys file could be in processed dir, if a fixed corrupted file
+                        ephys_processed_path = get_sorting_root_dir()
+                        if ephys_file.is_relative_to(ephys_processed_path):
+                            directory_type = "processed"
+                            relative_directory = ephys_processed_path.parent
+                        else:
+                            continue
                     cls.File.insert(
                         [
                             {
