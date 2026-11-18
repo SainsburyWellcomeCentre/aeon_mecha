@@ -84,7 +84,7 @@ def register_probes(probes, exp_key, subject_key):
             {
                 "probe": probe_metadata["serial_number"],
                 "probe_type": PROBE_TYPE,
-                "probe_part_number": probe_metadata["ProbePartNumber"]
+                "probe_part_number": probe_metadata["ProbePartNumber"],
             },
             skip_duplicates=True,
         )
