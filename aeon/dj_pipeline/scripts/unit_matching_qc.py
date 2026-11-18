@@ -25,8 +25,6 @@ import spikeinterface as si
 from spikeinterface.core.template_tools import get_template_extremum_channel
 
 from aeon.dj_pipeline import ephys, spike_sorting, spike_sorting_curation
-from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
-from aeon.dj_pipeline.utils.spike_sorting_utils import resolve_analyzer_dir
 
 # Fields (besides block_start/block_end) needed to resolve a curated analyzer / SortedSpikes
 # row for a block.
@@ -104,10 +102,7 @@ def load_analyzer(block_key_: dict):
         if applied_analyzer:
             path = applied_analyzer.fetch1("file").full_path
         else:
-            output_dir = get_sorting_root_dir() / (spike_sorting.PreProcessing & block_key_).fetch1(
-                "sorting_output_dir"
-            )
-            path = resolve_analyzer_dir(output_dir)
+            path = spike_sorting.PreProcessing.paths(block_key_).find_analyzer()
         analyzer = si.load_sorting_analyzer(folder=path, load_extensions=False)
         _analyzer_cache[cache_key] = analyzer
     return _analyzer_cache[cache_key]
