@@ -120,7 +120,9 @@ def get_num_samples(ephys_file: Path) -> int:
         # every binary recording we saved has 384 channels. Currently each chunk is unaware of its
         # corresponding probe, so we cannot read the number of channels easily
         num_channels = 384
-        num_samples = read_amplifier_recording(ephys_file, NP2_FS_HZ, num_channels).get_num_samples()
+        num_samples = read_amplifier_recording(
+            ephys_file, fs_hz=NP2_FS_HZ, num_channels=num_channels
+        ).get_num_samples()
 
     return num_samples
 

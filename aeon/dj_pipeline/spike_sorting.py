@@ -1131,8 +1131,8 @@ class SyncedSpikes(dj.Imported):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
             amp_len = read_amplifier_recording(
                 ephys_dir / f.replace("Clock", "AmplifierData"),
-                NP2_FS_HZ,
-                num_channels,
+                fs_hz=NP2_FS_HZ,
+                num_channels=num_channels,
             ).get_num_samples()
             onix_ts = read_onix_ts(ephys_dir / f)
             onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=f))
