@@ -161,12 +161,7 @@ class TestEphysBlockInfo:
 
 
 class TestPreProcessing:
-    """Verify PreProcessing.populate() output.
-
-    PreProcessing reads raw ephys binary, selects electrode group channels,
-    applies bandpass filter + common average reference, and writes
-    recording.zarr + si_recording.pkl.
-    """
+    """Verify PreProcessing.populate() output."""
 
     def _ensure_prerequisites(self, ctx):
         ctx.ephys.EphysChunk.ingest_chunks(ctx.cfg["experiment_name"])
@@ -195,8 +190,8 @@ class TestPreProcessing:
     def test_preprocessed_recording_is_usable(self, ephys_sorting_setup, require_ephys_golden_data, ctx):
         """si_recording.pkl is PreProcessing's DB-tracked deliverable and must load.
 
-        The golden fixture does not materialise recording.zarr (~24 GB, only read by the
-        injected SpikeSorting), so zarr writing is not covered here.
+        The golden fixture saves a recording.pkl stand-in instead of the ~24 GB
+        recording.zarr, so zarr writing is not covered here.
         """
         self._ensure_prerequisites(ctx)
         key = (ctx.spike_sorting.SortingTask & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
