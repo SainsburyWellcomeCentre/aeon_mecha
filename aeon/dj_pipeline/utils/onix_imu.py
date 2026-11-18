@@ -81,9 +81,8 @@ def _load_bno055_arrow(path: Path) -> pd.DataFrame:
         )
         present = set(table.column_names)
         unknown = present - set(_ARROW_TO_CANONICAL) - {"Clock", "HubClock"}
-        # Clock is required, not merely tolerated: everything downstream is aligned on
-        # it, and leaving it out of this check trades the diagnostic below for a bare
-        # KeyError four lines later.
+        # Clock is required, not merely tolerated: leaving it out of this check
+        # trades the diagnostic below for a bare KeyError four lines later.
         missing = (set(_ARROW_TO_CANONICAL) | {"Clock"}) - present
         if unknown or missing:
             raise ValueError(
@@ -192,8 +191,8 @@ def concat_bno055_chunks(device_dir: Path, device_name: str, chunk_indices: Iter
 def _bno055_chunk_files(device_dir: Path, device_name: str) -> tuple[dict[int, Path], dict[int, Path]]:
     """One pass over the device directory: ({index: arrow file}, {index: clock binary}).
 
-    A clock binary with no whole uint64 sample is ignored: an interrupted acquisition
-    leaves those behind and neither caller would read one.
+    A clock binary with no whole uint64 sample is ignored: an interrupted
+    acquisition leaves those behind and no caller would read one.
     """
     arrow = {
         int(m.group(1)): f
@@ -237,9 +236,8 @@ def find_overlapping_bno055_chunks(
     device_dir = Path(device_dir)
     arrow_files, binary_files = _bno055_chunk_files(device_dir, device_name)
 
-    # Decided on which files exist, before any overlap test: loading picks arrow on
-    # existence, so a window matched on the binary clock would be loaded from the arrow
-    # chunk and filtered away -- an empty window recorded as a real one.
+    # On which files exist, before any overlap test: loading picks arrow on existence,
+    # so a window matched on the binary clock would load from arrow and filter away.
     if both := sorted(arrow_files.keys() & binary_files.keys()):
         raise ValueError(
             f"Bno055 chunk(s) {both} exist in both arrow and binary form in {device_dir}; "
@@ -247,18 +245,17 @@ def find_overlapping_bno055_chunks(
         )
 
     overlapping = set()
-    for index, arrow_file in arrow_files.items():
-        # A chunk with no rows contributes to no window, as an empty clock binary does.
-        # A chunk whose clock cannot be read at all is malformed and must raise, or the
-        # caller computes its stats over part of the window and inserts a healthy row.
+    for index, path, read_bounds in [
+        *((i, f, read_arrow_clock_bounds) for i, f in arrow_files.items()),
+        *((i, f, _binary_clock_bounds) for i, f in binary_files.items()),
+    ]:
         try:
-            first, last = read_arrow_clock_bounds(arrow_file)
+            first, last = read_bounds(path)
         except EmptyArrowChunk:
+            # No rows overlaps no window, as an empty clock binary does. A clock that
+            # cannot be read at all is malformed and must raise, or the caller would
+            # compute stats over part of the window and insert a healthy-looking row.
             continue
-        if first <= onix_ts_end and last >= onix_ts_start:
-            overlapping.add(index)
-    for index, clock_file in binary_files.items():
-        first, last = _binary_clock_bounds(clock_file)
         if first <= onix_ts_end and last >= onix_ts_start:
             overlapping.add(index)
 

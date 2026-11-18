@@ -86,8 +86,7 @@ def resolve_preprocessing_pipeline(preprocessing_params: dict[str, Any]) -> Pipe
                 f"Registered: {sorted(_PREPROCESSING_PIPELINES)}"
             )
         # Copy: the registry is process-wide, so handing out the stored dict lets one
-        # caller's edit change what every later caller gets -- a second block in the
-        # same worker would be preprocessed with the first block's settings.
+        # caller's edit reach every later one -- a second block in the same worker.
         pipeline = {step: dict(kwargs) for step, kwargs in _PREPROCESSING_PIPELINES[si_pipeline].items()}
     elif isinstance(si_pipeline, dict):
         pipeline = {step: dict(kwargs) for step, kwargs in si_pipeline.items()}

@@ -39,9 +39,8 @@ ephys = importlib.import_module("aeon.dj_pipeline.ephys")
 schema = dj.Schema(get_schema_name("spike_sorting"))
 logger = dj.logger
 
-# A block's amplifier files, in either format. Shared so PreProcessing and SyncedSpikes
-# cannot disagree. Matches the probe stream rather than the extension, since the Bno055
-# arrow file sits in the same directory.
+# Shared so PreProcessing and SyncedSpikes cannot disagree. Matches the probe stream
+# rather than the extension: the Bno055 arrow file sits in the same directory.
 AMPLIFIER_FILE_RESTRICTION = "(file_name LIKE '%AmplifierData%.bin' OR file_name LIKE '%Probe%.arrow')"
 
 # Neuropixels 2.0 sampling rate - TODO: read this from the metadata
@@ -134,17 +133,16 @@ class SortingParamSet(dj.Lookup):
     def insert(self, rows, *args, **kwargs):
         """Insert paramsets, rejecting an invalid preprocessing selection up front.
 
-        Checks the SI_PREPROCESSING_PARAMS section the same way PreProcessing will, so
-        a bad pipeline name or key fails at insert rather than mid-populate.
+        Checks SI_PREPROCESSING_PARAMS the way PreProcessing will, so a bad pipeline
+        name fails at insert rather than mid-populate.
         """
         # Only plain sequences of dicts are checked; DataFrames, query expressions and
         # generators pass through untouched (PreProcessing still fails on them).
         if isinstance(rows, list | tuple):
             for row in rows:
                 if isinstance(row, dict):
-                    # Test the raw value: `or {}` would turn a falsy non-dict ("", 0,
-                    # []) into an empty dict and accept the row with the default
-                    # pipeline, which is the case this check exists to reject.
+                    # Test the raw value: `or {}` turns a falsy non-dict into {} and
+                    # accepts the row by default -- the case this check exists to reject.
                     params = row.get("params")
                     if params is None:
                         params = {}
@@ -1255,8 +1253,6 @@ class SyncedSpikes(dj.Imported):
             for c, s, e, m in zip(*sync_, strict=True):
                 chunk_windows[c].append((s, e, joblib.load(m)))
 
-        # The amplifier files define the chunk boundaries the spike indices count
-        # against; a binary chunk's clock is derived from the filename further down.
         amplifier_query = (
             ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & AMPLIFIER_FILE_RESTRICTION
         )
@@ -1285,10 +1281,9 @@ class SyncedSpikes(dj.Imported):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
             amp_path = ephys_dir / f
             if amp_path.suffix == ".arrow":
-                # The clock is a column of the same table as the samples, so the two cannot
-                # disagree about length. Reading it decompresses the column into RAM though,
-                # and onix_times holds every chunk until the last unit is mapped (~17 GB on a
-                # 20 h block), so spill it back out and map it like the binary branch below.
+                # Clock is a column of the same table, so it cannot disagree on length.
+                # Reading it decompresses into RAM, and onix_times holds every chunk until
+                # the last unit is mapped (~17 GB on a 20 h block), so spill and map it.
                 onix_ts = read_arrow_column(amp_path, "Clock")
                 amp_len = len(onix_ts)
                 if onix_ts.dtype != np.uint64:

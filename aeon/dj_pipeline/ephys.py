@@ -203,15 +203,13 @@ class EphysEpochEnd(dj.Manual):
 def _insert_target_area(target_area: str | None, insertion_key: dict) -> None:
     """Link a ProbeInsertion to its target area, creating the lookup row if new.
 
-    TargetArea is open rather than closed -- a new brain area must not block
-    ingestion -- so new values are created with a warning, which is where spelling
-    drift ("mPFC" vs "mpfc") shows up.
+    TargetArea is open, not closed -- a new brain area must not block ingestion --
+    so new values are created with a warning, where spelling drift shows up.
     """
     if not target_area:
         return
     # The link table allows "one or more" areas -- a long shank can span two -- so a
-    # different existing area is reported, not refused. Refusing would also block every
-    # later ingestion of an epoch a curator had added an area to.
+    # different area is reported, not refused. Refusing would block re-ingestion.
     linked_areas = (InsertionTargetArea & insertion_key).to_arrays("target_area")
     other_areas = [area for area in linked_areas if area != target_area]
     if other_areas:
@@ -315,14 +313,12 @@ class EphysEpochConfig(dj.Imported):
                 continue
             probe_info[label] = probe_id
 
-        # The metadata is authoritative about which probes should be here, so a probe
-        # it declares enabled whose files are absent is a transfer problem, not a
-        # single-probe epoch. Without this, a half-copied epoch ingests as clean.
+        # A probe the metadata declares enabled whose files are absent is a transfer
+        # problem, not a single-probe epoch: a half-copied epoch would ingest as clean.
         probes_declared_enabled = enabled_probe_labels(metadata)
         if probes_declared_enabled is not None:
-            # Compare against what discovery found on disk, not probe_info: the latter
-            # also drops probes get_probe_id could not identify, which would report a
-            # correctly-disabled probe as a missing file.
+            # Against what discovery found on disk, not probe_info: that also drops
+            # unidentifiable probes, reporting a disabled probe as a missing file.
             probes_without_files = sorted(probes_declared_enabled - set(probe_labels))
             if probes_without_files:
                 raise FileNotFoundError(
@@ -352,9 +348,8 @@ class EphysEpochConfig(dj.Imported):
             if basename is None:
                 continue  # disabled/spoofed probe (older layouts null the filename)
             if label not in probe_info:
-                # Enabled-flag layouts keep the filename populated on a disabled probe,
-                # so resolving it would either block the epoch on a stale path or
-                # register an ElectrodeConfig for hardware that recorded nothing.
+                # Enabled-flag layouts leave the filename populated on a disabled
+                # probe, so resolving it blocks the epoch or registers dead hardware.
                 logger.info(f"Skipping ElectrodeConfig for {label}: not an active probe")
                 continue
             json_path = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, basename)
@@ -379,8 +374,6 @@ class EphysEpochConfig(dj.Imported):
                 )
                 logger.info(f"Auto-created Probe entry: {label}={probe_id} (type={probe_type})")
 
-        # Subject-probe mapping: the acquisition metadata is authoritative when it
-        # carries subject.Implants[]; older epochs fall back to probe_assignments.json.
         active_labels = list(probe_info.keys())
         implants = parse_metadata_implants(metadata)
         if implants is not None:
@@ -543,9 +536,8 @@ class EphysSyncModel(dj.Manual):
 def _reject_duplicate_chunk_formats(ephys_files: list[Path], raw_dir: Path) -> None:
     """Refuse an epoch where one probe chunk exists as both a binary and an arrow file.
 
-    Discovery globs both patterns in one pass and the paths differ, so the pair would
-    register as two chunks and PreProcessing would concatenate it twice. Mixing formats
-    across different chunk indices stays supported.
+    The paths differ, so the pair registers as two chunks and PreProcessing
+    concatenates it twice. Mixing formats across chunk indices stays supported.
     """
     # Keyed on the containing directory as well: two epochs each have their own chunk 0.
     files_by_chunk: dict[tuple[str, ...], dict[str, Path]] = {}
@@ -694,7 +686,6 @@ class EphysChunk(dj.Manual):
                 )
                 continue
 
-            # ONIX timestamp bounds: a column of the arrow file, or the companion binary.
             if ephys_file.suffix == ".arrow":
                 try:
                     first_ts, last_ts = read_arrow_clock_bounds(ephys_file)
@@ -1044,8 +1035,7 @@ class OnixImuChunk(dj.Imported):
             """The format of the chunks this row covers.
 
             From the chunks, not the epoch: one written across a format change holds
-            some of each. concat_bno055_chunks refuses to mix sets within a row, so
-            the first chunk settles it.
+            some of each, and concat refuses to mix sets, so chunk 0 settles it.
             """
             if device_name is None:
                 return "binary"
@@ -1055,14 +1045,13 @@ class OnixImuChunk(dj.Imported):
                 return (
                     "arrow" if (device_dir / f"{device_name}_Bno055_{first}.arrow").exists() else "binary"
                 )
-            # No chunks to go on. Fall back to the epoch, so an empty row still matches
+            # Nothing to go on: fall back to the epoch, so an empty row matches
             # the siblings it would have had.
             return "arrow" if any(device_dir.glob(f"{device_name}_Bno055_*.arrow")) else "binary"
 
         def _empty_row(chunk_indices: list[int]) -> dict:
-            # The arrow extras get {} like every other column: leaving them NULL makes
-            # an empty arrow row fail the "are the extra columns present" test the
-            # populated branch below uses to decide the same thing.
+            # The extras get {} like every other column: NULL would make an empty arrow
+            # row fail the "extra columns present" test the populated branch uses.
             row_format = _row_format(chunk_indices)
             arrow_extra_stats = {col: {} for col in ARROW_EXTRA_COLUMNS} if row_format == "arrow" else {}
             return {
@@ -1124,8 +1113,6 @@ class OnixImuChunk(dj.Imported):
                     "sync_start": str(key["sync_start"]),
                     "device_name": device_name,
                     "stream_group": "Bno055",
-                    # Recorded so a fetch reproduces the shape that was ingested, whatever
-                    # the raw tree looks like later. Same derivation as the empty rows.
                     "stream_format": _row_format(chunk_indices),
                     "chunk_indices": chunk_indices,
                     "onix_ts_start": onix_ts_start,

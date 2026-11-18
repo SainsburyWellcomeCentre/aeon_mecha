@@ -144,15 +144,13 @@ class OnixStreamCodec(dj.Codec):
         missing = self._REQUIRED_KEYS - value.keys()
         if missing:
             raise ValueError(f"OnixStreamCodec missing required keys: {missing}")
-        # Record the format with the row. Re-deriving it from disk at fetch time would
-        # let an archived or converted raw tree change a stored row's columns. Rows
-        # written before this key existed are binary. Copy rather than mutate: the
-        # caller may reuse the dict.
+        # Recorded with the row: re-deriving it from disk at fetch time would let an
+        # archived or converted raw tree change a stored row's columns. Rows predating
+        # the key are binary. Copy rather than mutate -- the caller may reuse the dict.
         stored = {"stream_format": "binary", **value}
         if stored["stream_format"] not in ("binary", "arrow"):
-            # decode tests `== "arrow"`, so a typo silently takes the binary branch
-            # and the row later fails with "the raw tree changed format" about a tree
-            # nobody touched. This is the only writer, so reject it here.
+            # decode tests `== "arrow"`, so a typo takes the binary branch and later
+            # fails with "the raw tree changed format" about a tree nobody touched.
             raise ValueError(f"stream_format must be 'binary' or 'arrow', got {stored['stream_format']!r}")
         return stored
 

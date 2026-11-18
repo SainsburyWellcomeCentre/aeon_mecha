@@ -1,8 +1,7 @@
 """Column-oriented access to Bonsai ONIX Arrow IPC files.
 
-``read_bonsai_onix_arrow`` (spike_sorting_utils) is optimised for time-slicing a
-384-channel recording. These helpers do the opposite: a whole-column read and a
-cheap bounds lookup, for the clock streams that share the probe's file.
+``read_bonsai_onix_arrow`` time-slices a 384-channel recording; these do the
+opposite -- whole-column reads and cheap bounds, for the clock sharing its file.
 """
 
 from pathlib import Path
@@ -13,8 +12,8 @@ import numpy as np
 class EmptyArrowChunk(ValueError):
     """An arrow file that is well formed but holds no rows.
 
-    Distinct from a malformed file: callers that can legitimately skip an empty
-    chunk match on this type rather than on the wording of a message.
+    Distinct from a malformed file: callers that may skip an empty chunk match
+    on this type rather than on the wording of a message.
     """
 
 
@@ -22,8 +21,8 @@ def _open(path: Path, column: str | None = None):
     """Return (memory_mapped_source, RecordBatchFileReader). Caller closes the source.
 
     With ``column``, the reader decompresses only that field. ``get_batch`` otherwise
-    decompresses the whole batch, so pulling one clock out of a 386-column probe file
-    costs all 384 amplifier channels too -- ~24x the time, measured.
+    decompresses the whole batch: one clock out of a 386-column probe file costs all
+    384 amplifier channels too -- ~24x the time, measured.
     """
     import pyarrow as pa
     from pyarrow.ipc import IpcReadOptions, RecordBatchFileReader
@@ -44,9 +43,8 @@ def _open(path: Path, column: str | None = None):
             )
         return source, reader
     except Exception:
-        # The caller's try/finally only starts once this returns, so a truncated or
-        # non-arrow file would leak the map on every one of the hundreds of files
-        # an epoch walk opens.
+        # The caller's try/finally starts only once this returns, so a truncated file
+        # would leak the map on every one of the hundreds an epoch walk opens.
         source.close()
         raise
 
@@ -112,9 +110,8 @@ def read_arrow_clock_bounds(path: Path, column: str = "Clock") -> tuple[int, int
         n_batches = reader.num_record_batches
         if n_batches == 0:
             raise EmptyArrowChunk(f"{path} has no record batches")
-        # A writer that flushes at stop can leave an empty batch at either end, so
-        # walk past those rather than reporting a file with data as having none.
-        # In the common case this touches exactly the first and last batch.
+        # A writer that flushes at stop leaves an empty batch at either end: walk
+        # past those rather than reporting a file with data as having none.
         first = _first_nonempty(reader, column, range(n_batches))
         last = _first_nonempty(reader, column, range(n_batches - 1, -1, -1))
         if first is None or last is None:
