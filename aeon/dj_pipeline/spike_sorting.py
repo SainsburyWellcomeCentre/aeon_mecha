@@ -258,6 +258,9 @@ class PreProcessing(dj.Computed):
         epoch_path = raw_ephys_dir / epoch_dir
         probe_filepath = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, electrode_config_name)
 
+        # get probe part number
+        probe_part_number = ((SortingTask & key) * ephys.Probe).to_dicts()[0]["probe_part_number"]
+
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         fs_hz = NP2_FS_HZ
         # Neuropixels 2.0 gain - TODO: read this from the metadata
@@ -276,6 +279,7 @@ class PreProcessing(dj.Computed):
             recording_file,
             recording_dir,
             probe_filepath,
+            probe_part_number,
             params,
             si_pipeline,
         )
@@ -294,6 +298,7 @@ class PreProcessing(dj.Computed):
         recording_file: Path,
         recording_dir: Path,
         probe_filepath: str,
+        probe_part_number: str,
         params: dict[str, Any],
         si_pipeline: dict[str, dict[str, Any]],
     ) -> tuple[Path, datetime, Path]:
@@ -314,6 +319,7 @@ class PreProcessing(dj.Computed):
             recording_file: Path to save recording object
             recording_dir: Directory for recording files
             probe_filepath: Filepath to json file of probe
+            probe_part_number: NeuroPixels probe part number (e.g. "NP2013")
             params: SortingParamSet params
             si_pipeline: SpikeInterface preprocessing pipeline dict to apply
 
@@ -341,7 +347,6 @@ class PreProcessing(dj.Computed):
         ]
         si_recording = si.concatenate_recordings(si_recs)
 
-        probe_part_number = "NP2013"  # for testing. Need to add to database.
         probe = read_full_neuropixels_probe(probe_filepath, probe_part_number)
 
         # `si_recording` is the full 384 channel recording

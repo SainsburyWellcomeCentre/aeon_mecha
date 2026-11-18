@@ -44,7 +44,14 @@ def read_full_neuropixels_probe(probe_filepath, probe_part_number):
 
     # Build a mock from from the probe catalog, which contains the groupings for
     # multiplexing. This is the full 5120 channel probe
-    mock_probe = build_neuropixels_probe(probe_part_number=probe_part_number)
+    try:
+        mock_probe = build_neuropixels_probe(probe_part_number=probe_part_number)
+    except KeyError:
+        logger.warning(
+            f"No NeuroPixels probe with probe_part_number = {probe_part_number}. "
+            "Cannot attach multiplexing info to recording."
+        )
+        return sliced_probe
 
     # use contact locations to build the map between contact indices in the mock and our probe
     mock_probe_to_our_probe = {}
