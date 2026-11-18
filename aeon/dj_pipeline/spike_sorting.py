@@ -7,7 +7,6 @@ sorting, postprocessing, exports, and ingestion of sorted units/waveforms.
 import importlib
 import json
 import os
-import shutil
 import tempfile
 from collections import defaultdict
 from collections.abc import Iterator
@@ -24,11 +23,11 @@ from swc.aeon.io import api as io_api
 from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
 from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording, read_onix_ts
-from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
+from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
+    SortingPaths,
     extend_clock,
     fork_safe_job_kwargs,
-    resolve_analyzer_dir,
     strip_non_numeric_properties,
 )
 
@@ -202,6 +201,18 @@ class PreProcessing(dj.Computed):
 
         return output_dir.relative_to(sorting_root_dir) if relative else output_dir
 
+    @classmethod
+    def paths(cls, key: dict[str, Any]) -> SortingPaths:
+        """Return the file layout of a populated sorting task.
+
+        Args:
+            key: Key restricting PreProcessing to a single sorting task.
+
+        Returns:
+            The task's ``SortingPaths``, rooted at the stored ``sorting_output_dir``.
+        """
+        return SortingPaths(get_sorting_root_dir() / (cls & key).fetch1("sorting_output_dir"))
+
     def make_fetch(self, key):
         """Fetch ephys data and metadata, prepare output directory, and define preprocessing parameters."""
         # Resolve the preprocessing pipeline first, so a malformed paramset fails before
@@ -210,8 +221,7 @@ class PreProcessing(dj.Computed):
         si_pipeline = resolve_preprocessing_pipeline(params.get("SI_PREPROCESSING_PARAMS") or {})
 
         # Create output directory
-        output_dir = self.infer_output_dir(key, mkdir=True)
-        recording_file = output_dir / "si_recording.pkl"
+        paths = SortingPaths(self.infer_output_dir(key, mkdir=True))
 
         # Load ephys data
         ephys_files, dir_types = (
@@ -248,8 +258,7 @@ class PreProcessing(dj.Computed):
             fs_hz,
             gain_to_uV,
             offset_to_uV,
-            output_dir,
-            recording_file,
+            paths,
             params,
             si_pipeline,
         )
@@ -264,11 +273,10 @@ class PreProcessing(dj.Computed):
         fs_hz: float,
         gain_to_uV: float,
         offset_to_uV: float,
-        output_dir: Path,
-        recording_file: Path,
+        paths: SortingPaths,
         params: dict[str, Any],
         si_pipeline: dict[str, dict[str, Any]],
-    ) -> tuple[Path, datetime]:
+    ) -> tuple[SortingPaths, datetime]:
         """Preprocess ephys data for spike sorting.
 
         Performs data concatenation, channel selection, filtering, and probe setup.
@@ -282,13 +290,12 @@ class PreProcessing(dj.Computed):
             fs_hz: Sampling frequency
             gain_to_uV: Gain conversion factor
             offset_to_uV: Offset conversion factor
-            output_dir: Output directory path
-            recording_file: Path to save recording object
+            paths: File layout of this sorting task
             params: SortingParamSet params
             si_pipeline: SpikeInterface preprocessing pipeline dict to apply
 
         Returns:
-            Tuple of (output_dir, execution_time)
+            Tuple of (paths, execution_time)
         """
         import probeinterface as pi
         import spikeinterface as si
@@ -339,7 +346,7 @@ class PreProcessing(dj.Computed):
         # Run preprocessing and save results to output folder
         si_recording = si.preprocessing.unsigned_to_signed(si_recording)
         si_recording = si.preprocessing.apply_preprocessing_pipeline(si_recording, si_pipeline)
-        si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
+        si_recording.dump_to_pickle(file_path=paths.recording_pkl, relative_to=paths.task_dir)
 
         save_format = params.get("save_format", "zarr")
 
@@ -349,15 +356,12 @@ class PreProcessing(dj.Computed):
 
         # The large, regenerable intermediate lives on scratch (non-backed-up), mirroring
         # the ceph sub-path; si_recording.pkl above stays on ceph with the DB-tracked outputs.
-        intermediate_dir = scratch_recording_dir(recording_file.parent)
-        intermediate_dir.mkdir(parents=True, exist_ok=True)
-
-        rec_path = intermediate_dir / "recording"
+        paths.scratch_dir.mkdir(parents=True, exist_ok=True)
 
         # path could be a `.zarr` or a binary folder
-        existing_rec_paths = list(intermediate_dir.glob("recording*"))
+        existing_rec_paths = paths.existing_recordings()
         if len(existing_rec_paths) > 1:
-            raise ValueError(f"Found several recording files in {intermediate_dir}. Expecting zero or one.")
+            raise ValueError(f"Found several recordings in {paths.scratch_dir}. Expecting zero or one.")
         if existing_rec_paths:
             existing_rec_path = existing_rec_paths[0]
             try:
@@ -367,35 +371,35 @@ class PreProcessing(dj.Computed):
                 saved_num_samples = None
             if saved_num_samples == si_recording.get_num_samples():
                 logger.info(f"{existing_rec_path} already exists and has the right size. Skipping write.")
-                return output_dir, execution_time
+                return paths, execution_time
 
         if save_format == "zarr":
             strip_non_numeric_properties(si_recording)
 
-        logger.info(f"Writing recording to {rec_path}...")
+        logger.info(f"Writing recording to {paths.recording_save_path}...")
         si_recording.save(
             format=save_format,
-            folder=rec_path,
+            folder=paths.recording_save_path,
             overwrite=True,
             **job_kwargs,
         )
 
-        return output_dir, execution_time
+        return paths, execution_time
 
-    def make_insert(self, key, output_dir, execution_time):
+    def make_insert(self, key, paths, execution_time):
         """Insert preprocessing results into the database, including file references."""
         self.insert1(
             {
                 **key,
-                "sorting_output_dir": output_dir.relative_to(get_sorting_root_dir()).as_posix(),
+                "sorting_output_dir": paths.task_dir.relative_to(get_sorting_root_dir()).as_posix(),
                 "execution_time": execution_time,
                 "execution_duration": (datetime.now(UTC) - execution_time).total_seconds() / 3600,
             }
         )
         self.File.insert(
             [
-                {**key, "file_name": f.relative_to(output_dir).as_posix(), "file": f}
-                for f in output_dir.glob("si_recording*")
+                {**key, "file_name": f.relative_to(paths.task_dir).as_posix(), "file": f}
+                for f in paths.task_dir.glob("si_recording*")
                 if f.is_file()
             ]
         )
@@ -419,18 +423,14 @@ class SpikeSorting(dj.Computed):
         """
 
     def make_fetch(self, key):
-        """Fetch recording and parameters for spike sorting."""
-        sorting_root_dir = get_sorting_root_dir()
-        # Load recording object.
+        """Fetch the task's file layout and the sorting parameters."""
         sorting_method, params = (SortingTask * SortingParamSet & key).fetch1("sorting_method", "params")
-        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
-
-        return output_dir, params, sorting_method
+        return PreProcessing.paths(key), params, sorting_method
 
     def make_compute(
         self,
         key: dict[str, Any],
-        output_dir: Path,
+        paths: SortingPaths,
         params: dict[str, Any],
         sorting_method: str,
     ) -> tuple[Path, datetime, float]:
@@ -438,12 +438,12 @@ class SpikeSorting(dj.Computed):
 
         Args:
             key: Sorting task key
-            output_dir: Base output directory
+            paths: File layout of this sorting task
             params: Sorting parameters dictionary
             sorting_method: Name of sorting algorithm (e.g., kilosort2)
 
         Returns:
-            Tuple of (sorting_output_dir, execution_time, execution_duration)
+            Tuple of (sorting_dir, execution_time, execution_duration)
         """
         # Set PyTorch CUDA memory allocator configuration BEFORE importing PyTorch
         # Note: PYTORCH_CUDA_ALLOC_CONF must be set BEFORE PyTorch is imported to take effect.
@@ -464,12 +464,10 @@ class SpikeSorting(dj.Computed):
 
         execution_time = datetime.now(UTC)
         sorter_name = sorting_method.replace(".", "_")
-        sorting_output_dir = output_dir / "spike_sorting"
-        sorting_pickle_path = sorting_output_dir / "si_sorting.pkl"
-        # Safety check: refuse to overwrite existing data on ceph
-        if sorting_output_dir.exists() and sorting_pickle_path.exists():
+        # Safety check: refuse to overwrite a completed sorting on ceph
+        if paths.sorting_pkl.exists():
             raise FileExistsError(
-                f"Sorting output directory\n{sorting_output_dir}\nContains a completed spike sorting."
+                f"{paths.sorting_dir} contains a completed spike sorting. "
                 "Refusing to overwrite existing data."
             )
 
@@ -488,17 +486,12 @@ class SpikeSorting(dj.Computed):
             job_kwargs = fork_safe_job_kwargs("30s", max_jobs=sorting_params.get("n_jobs"))
             sorting_params = {**job_kwargs, **sorting_params, "n_jobs": job_kwargs["n_jobs"]}
 
-        intermediate_dir = scratch_recording_dir(output_dir)
-
-        # path could be a `.zarr` or a binary folder
-        recording_path = list(intermediate_dir.glob("recording*"))[0]
-
-        recording_for_sorting = si.load(recording_path)
+        recording_for_sorting = si.load(paths.find_recording())
 
         si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
             sorter_name=sorter_name,
             recording=recording_for_sorting,
-            folder=sorting_output_dir,
+            folder=paths.sorting_dir,
             remove_existing_folder=True,
             verbose=True,
             singularity_image=sorter_name not in si.sorters.installed_sorters(),
@@ -506,19 +499,19 @@ class SpikeSorting(dj.Computed):
         )
 
         # Save sorting object
-        si_sorting.dump_to_pickle(sorting_pickle_path, relative_to=output_dir)
+        si_sorting.dump_to_pickle(paths.sorting_pkl, relative_to=paths.task_dir)
 
         execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
 
-        return sorting_output_dir, execution_time, execution_duration
+        return paths.sorting_dir, execution_time, execution_duration
 
-    def make_insert(self, key, sorting_output_dir, execution_time, execution_duration):
+    def make_insert(self, key, sorting_dir, execution_time, execution_duration):
         """Insert spike sorting results into the database, including file references."""
         self.insert1({**key, "execution_time": execution_time, "execution_duration": execution_duration})
         self.File.insert(
             [
-                {**key, "file_name": f.relative_to(sorting_output_dir).as_posix(), "file": f}
-                for f in sorting_output_dir.rglob("*")
+                {**key, "file_name": f.relative_to(sorting_dir).as_posix(), "file": f}
+                for f in sorting_dir.rglob("*")
                 if f.is_file()
             ]
         )
@@ -542,41 +535,27 @@ class PostProcessing(dj.Computed):
         """
 
     def make_fetch(self, key):
-        """Fetch recording and sorting results for post-processing."""
-        sorting_root_dir = get_sorting_root_dir()
-        # Load recording object.
-        _sorting_method, params = (SortingTask * SortingParamSet & key).fetch1("sorting_method", "params")
-        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
-
-        try:
-            sorting_file = Path(
-                (SpikeSorting.File & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file").full_path
-            )
-        except dj.errors.DataJointError:
-            sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
-
-        return sorting_file, output_dir, params
+        """Fetch the task's file layout and the post-processing parameters."""
+        params = (SortingParamSet & key).fetch1("params")
+        return PreProcessing.paths(key), params
 
     def make_compute(
         self,
         key: dict[str, Any],
-        sorting_file: Path,
-        output_dir: Path,
+        paths: SortingPaths,
         params: dict[str, Any],
-    ) -> tuple[Path, Path, datetime, float]:
+    ) -> tuple[Path, SortingPaths, datetime, float]:
         """Post-process spike sorting results with quality assessment.
 
         Runs SpikeInterface sorting analyzer to compute quality metrics and extensions.
 
         Args:
             key: Sorting task key
-            recording_file: Path to recording object
-            sorting_file: Path to sorting results
-            output_dir: Base output directory
-            params: Post-processing parameters
+            paths: File layout of this sorting task
+            params: SortingParamSet params
 
         Returns:
-            Tuple of (analyzer_output_dir, execution_time, execution_duration)
+            Tuple of (analyzer_output_dir, paths, execution_time, execution_duration)
         """
         import spikeinterface as si
 
@@ -585,16 +564,13 @@ class PostProcessing(dj.Computed):
 
         execution_time = datetime.now(UTC)
 
-        intermediate_dir = scratch_recording_dir(output_dir)
-        recording_path = list(intermediate_dir.glob("recording*"))[0]
-
         # The recording pickle contains all provenance, and we want this attached to the analyzer.
         # But this loads and applies the preprocessing lazily => is slow
-        si_recording = si.load(output_dir / "si_recording.pkl", base_folder=output_dir)
+        si_recording = si.load(paths.recording_pkl, base_folder=paths.task_dir)
         # The cached recording is already preprocessed => much faster for postprocessing
-        cached_recording = si.load(recording_path)
+        cached_recording = si.load(paths.find_recording())
 
-        si_sorting: si.sorters.BaseSorter = si.load(sorting_file, base_folder=output_dir)
+        si_sorting: si.sorters.BaseSorter = si.load(paths.sorting_pkl, base_folder=paths.task_dir)
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
 
@@ -607,8 +583,7 @@ class PostProcessing(dj.Computed):
 
         save_format = params.get("save_format", "zarr")
         analyzer_format = "zarr" if save_format == "zarr" else "binary_folder"
-        analyzer_name = "sorting_analyzer.zarr" if save_format == "zarr" else "sorting_analyzer"
-        analyzer_output_dir = output_dir / analyzer_name
+        analyzer_output_dir = paths.analyzer_dir(save_format)
 
         if analyzer_output_dir.exists() and any(analyzer_output_dir.iterdir()):
             raise FileExistsError(
@@ -620,7 +595,7 @@ class PostProcessing(dj.Computed):
             logger.info("No units found in sorting object. Skipping sorting analyzer.")
             analyzer_output_dir.mkdir(parents=True, exist_ok=True)
             execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
-            return analyzer_output_dir, output_dir, execution_time, execution_duration
+            return analyzer_output_dir, paths, execution_time, execution_duration
 
         sorting_analyzer = si.create_sorting_analyzer(
             sorting=si_sorting,
@@ -649,9 +624,9 @@ class PostProcessing(dj.Computed):
 
         execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
 
-        return analyzer_output_dir, output_dir, execution_time, execution_duration
+        return analyzer_output_dir, paths, execution_time, execution_duration
 
-    def make_insert(self, key, analyzer_output_dir, output_dir, execution_time, execution_duration):
+    def make_insert(self, key, analyzer_output_dir, paths, execution_time, execution_duration):
         """Insert post-processing results into the database, including file references."""
         self.insert1(
             {
@@ -668,11 +643,10 @@ class PostProcessing(dj.Computed):
             ]
         )
 
-        # The preprocessed recording is a large, regenerable intermediate that only the
-        # sorting reads, so reclaim it now.
-        for recording_dir in scratch_recording_dir(output_dir).glob("recording*"):
-            shutil.rmtree(recording_dir, ignore_errors=True)
-            logger.info(f"Deleted {recording_dir} after post-processing.")
+        # The preprocessed recording is a large, regenerable intermediate that only
+        # SpikeSorting and PostProcessing read, so reclaim it now.
+        for removed in paths.remove_recording():
+            logger.info(f"Deleted {removed} after post-processing.")
 
 
 @schema
@@ -701,10 +675,7 @@ class SIExport(dj.Computed):
 
         execution_time = datetime.now(UTC)
 
-        sorting_root_dir = get_sorting_root_dir()
-        output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
-
-        analyzer_output_dir = resolve_analyzer_dir(output_dir)
+        analyzer_output_dir = PreProcessing.paths(key).find_analyzer()
         sorting_analyzer = si.load_sorting_analyzer(folder=analyzer_output_dir)
 
         execution_duration_hours = (datetime.now(UTC) - execution_time).total_seconds() / 3600
@@ -1086,8 +1057,8 @@ class SyncedSpikes(dj.Imported):
         # full): the chunk boundaries must add up to the recording the sorter saw.
         units = (SortedSpikes.Unit.proj("spike_indices") & key).to_dicts()
         if units:
-            output_dir = get_sorting_root_dir() / (PreProcessing & key).fetch1("sorting_output_dir")
-            analyzer = si.load_sorting_analyzer(resolve_analyzer_dir(output_dir), load_extensions=False)
+            analyzer_dir = PreProcessing.paths(key).find_analyzer()
+            analyzer = si.load_sorting_analyzer(analyzer_dir, load_extensions=False)
             if chunk_bounds[-1] != analyzer.get_num_samples():
                 raise ValueError(
                     f"The AmplifierData files of this block add up to {chunk_bounds[-1]} samples, but "
@@ -1224,9 +1195,8 @@ def _get_sorted_spikes_analyzer(key: dict, curation_id: int) -> Path:
             raise FileNotFoundError(f"No curated analyzer for curation_id={curation_id} of {key}")
         logger.info(f"Using curated analyzer (curation_id={curation_id}) from: {analyzer_dir}")
         return analyzer_dir
-    output_dir = get_sorting_root_dir() / (PreProcessing & key).fetch1("sorting_output_dir")
     logger.info("Using raw analyzer (curation_id=-1)")
-    return resolve_analyzer_dir(output_dir)
+    return PreProcessing.paths(key).find_analyzer()
 
 
 # Defaults for UnitMatchingParamSet.params - used for any key missing from a given paramset's

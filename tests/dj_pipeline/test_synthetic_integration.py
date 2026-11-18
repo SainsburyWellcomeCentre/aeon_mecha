@@ -855,25 +855,23 @@ class TestSpikeSortingLupin:
         import spikeinterface.full as si
 
         from aeon.dj_pipeline import spike_sorting
+        from aeon.dj_pipeline.utils.spike_sorting_utils import SortingPaths
 
         assert spike_sorting.SortingMethod & {"sorting_method": "lupin"}
 
         recording = si.generate_recording(durations=[10.0], num_channels=32, seed=0)
 
-        output_dir = tmp_path / "lupin_test"
-        recording_file = output_dir / "si_recording.pkl"
-        recording.dump_to_pickle(file_path=recording_file)
-        recording.save(format="zarr", folder=output_dir / "recording.zarr")
+        paths = SortingPaths(tmp_path / "lupin_test")
+        recording.dump_to_pickle(file_path=paths.recording_pkl)
+        recording.save(format="zarr", folder=paths.recording_save_path)
 
         params = {
             # n_jobs=1: SI 0.104's threaded template matching can deadlock in lupin.
             "SI_SORTING_PARAMS": {"job_kwargs": {"n_jobs": 1, "chunk_duration": "1s"}},
         }
-        sorting_output_dir, _, _ = spike_sorting.SpikeSorting().make_compute(
-            {}, output_dir, params, "lupin"
-        )
+        sorting_dir, _, _ = spike_sorting.SpikeSorting().make_compute({}, paths, params, "lupin")
 
-        sorting = si.load(sorting_output_dir / "si_sorting.pkl", base_folder=output_dir)
+        sorting = si.load(sorting_dir / "si_sorting.pkl", base_folder=paths.task_dir)
         assert len(sorting.unit_ids) > 0
 
 

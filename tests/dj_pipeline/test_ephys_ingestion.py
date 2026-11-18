@@ -197,14 +197,14 @@ class TestPreProcessing:
         key = (ctx.spike_sorting.SortingTask & {"experiment_name": ctx.cfg["experiment_name"]}).to_dicts(
             order_by="block_start"
         )[0]
-        output_dir = ctx.spike_sorting.PreProcessing.infer_output_dir(key)
-        recording_file = output_dir / "si_recording.pkl"
+        paths = ctx.spike_sorting.PreProcessing.paths(key)
+        recording_file = paths.recording_pkl
         assert recording_file.exists(), f"Expected si_recording.pkl at {recording_file}"
 
         import numpy as np
         import spikeinterface as si
 
-        rec = si.load(recording_file, base_folder=output_dir)
+        rec = si.load(recording_file, base_folder=paths.task_dir)
         assert rec.get_num_channels() == ctx.cfg["n_channels"]
 
         # Summed span of the linked chunks: a loose range would accept 1 to 11 chunks.
