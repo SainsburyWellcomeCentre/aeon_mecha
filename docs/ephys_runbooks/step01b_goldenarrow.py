@@ -63,7 +63,7 @@ def get_probes_metadata_from_epoch_metadata(epoch_metadata):
 
     for implant_metadata in implants_metadata:
         probe_name = implant_metadata["Probe"]
-        for property in ["InsertionNumber", "TargetArea", "ImplantationDate"]:
+        for property in ["InsertionNumber", "TargetArea", "ImplantationDate", "ProbePartNumber"]:
             probes[probe_name][property] = implant_metadata[property]
 
     return probes
@@ -84,6 +84,7 @@ def register_probes(probes, exp_key, subject_key):
             {
                 "probe": probe_metadata["serial_number"],
                 "probe_type": PROBE_TYPE,
+                "probe_part_number": probe_metadata["ProbePartNumber"]
             },
             skip_duplicates=True,
         )
