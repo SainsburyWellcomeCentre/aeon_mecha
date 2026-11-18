@@ -161,3 +161,102 @@ class TestExtendClock:
                 max_extrapolation=5,
                 name="Clock_0.bin",
             )
+
+
+@pytest.fixture
+def sorting_paths(tmp_path, monkeypatch):
+    """SortingPaths for a task under a fake ceph root, with a scratch root mirroring it."""
+    import aeon.dj_pipeline as pipeline
+    from aeon.dj_pipeline.utils.spike_sorting_utils import SortingPaths
+
+    ceph_root = tmp_path / "ceph"
+    scratch_root = tmp_path / "scratch"
+    scratch_root.mkdir()
+    monkeypatch.setattr(
+        pipeline,
+        "repository_config",
+        {"ceph_aeon": str(ceph_root), "ceph_aeon_scratch": str(scratch_root)},
+    )
+    rel = "exp/subject/insertion_1/ephys_blocks/block/shank3/kilosort4_400"
+    paths = SortingPaths(ceph_root / rel)
+    assert paths.scratch_dir == scratch_root / rel
+    return paths
+
+
+class TestSortingPaths:
+    """Tests for the sorting task file layout."""
+
+    def test_layout(self, sorting_paths):
+        """Outputs live under task_dir on ceph; the saved recording goes to scratch."""
+        task_dir = sorting_paths.task_dir
+        assert sorting_paths.recording_pkl == task_dir / "si_recording.pkl"
+        assert sorting_paths.recording_save_path == sorting_paths.scratch_dir / "recording"
+        assert sorting_paths.sorting_dir == task_dir / "spike_sorting"
+        assert sorting_paths.sorting_pkl == task_dir / "spike_sorting" / "si_sorting.pkl"
+        assert sorting_paths.analyzer_dir("zarr") == task_dir / "sorting_analyzer.zarr"
+        assert sorting_paths.analyzer_dir("binary") == task_dir / "sorting_analyzer"
+
+    def test_scratch_falls_back_to_task_dir(self, tmp_path, monkeypatch):
+        """Without a scratch root (local/CI), the recording is kept in task_dir itself."""
+        import aeon.dj_pipeline as pipeline
+        from aeon.dj_pipeline.utils.spike_sorting_utils import SortingPaths
+
+        monkeypatch.setattr(pipeline, "repository_config", {"ceph_aeon": str(tmp_path)})
+        paths = SortingPaths(tmp_path / "task")
+        assert paths.scratch_dir == paths.task_dir
+
+    @pytest.mark.parametrize("name", ["recording.zarr", "recording"])
+    def test_find_recording(self, sorting_paths, name):
+        """Either save format's folder is found on scratch."""
+        recording_path = sorting_paths.scratch_dir / name
+        recording_path.mkdir(parents=True)
+        assert sorting_paths.find_recording() == recording_path
+
+    def test_find_recording_missing_raises(self, sorting_paths):
+        """A missing recording (e.g. deleted after PostProcessing) raises FileNotFoundError."""
+        assert sorting_paths.existing_recordings() == []
+        with pytest.raises(FileNotFoundError, match="re-populate"):
+            sorting_paths.find_recording()
+
+    def test_find_recording_several_raise(self, sorting_paths):
+        """A zarr and a binary folder side by side is ambiguous and raises."""
+        (sorting_paths.scratch_dir / "recording.zarr").mkdir(parents=True)
+        (sorting_paths.scratch_dir / "recording").mkdir()
+        with pytest.raises(ValueError, match="several recordings"):
+            sorting_paths.find_recording()
+
+    def test_remove_recording(self, sorting_paths):
+        """Saved recordings are deleted from scratch; the recipe on ceph is kept."""
+        (sorting_paths.scratch_dir / "recording.zarr" / "traces").mkdir(parents=True)
+        sorting_paths.recording_pkl.parent.mkdir(parents=True)
+        sorting_paths.recording_pkl.touch()
+
+        removed = sorting_paths.remove_recording()
+
+        assert removed == [sorting_paths.scratch_dir / "recording.zarr"]
+        assert sorting_paths.existing_recordings() == []
+        assert sorting_paths.recording_pkl.exists()
+        assert sorting_paths.remove_recording() == []
+
+    def test_find_analyzer(self, sorting_paths):
+        """find_analyzer finds the analyzer that analyzer_dir names."""
+        sorting_paths.analyzer_dir("zarr").mkdir(parents=True)
+        assert sorting_paths.find_analyzer() == sorting_paths.analyzer_dir("zarr")
+
+    @pytest.mark.parametrize("save_format", ["zarr", "binary"])
+    def test_recording_saved_like_preprocessing_is_found_and_loads(self, sorting_paths, save_format):
+        """A recording saved the way PreProcessing saves it is found and loads intact.
+
+        Guards the naming convention: PreProcessing saves to ``recording_save_path`` and
+        SpikeInterface appends ``.zarr`` for the zarr format.
+        """
+        import spikeinterface as si
+
+        recording = si.generate_recording(durations=[1.0], num_channels=4, seed=0)
+        sorting_paths.scratch_dir.mkdir(parents=True)
+        recording.save(format=save_format, folder=sorting_paths.recording_save_path, overwrite=True)
+
+        loaded = si.load(sorting_paths.find_recording())
+        assert loaded.get_num_samples() == recording.get_num_samples()
+        np.testing.assert_array_equal(loaded.get_channel_ids(), recording.get_channel_ids())
+        np.testing.assert_allclose(loaded.get_traces(), recording.get_traces())
