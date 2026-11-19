@@ -156,7 +156,7 @@ Without it, the test module skips at import time via `pytest.importorskip`.
 
 ## Ephys golden dataset
 
-**Active dataset:** `foraging_abc_ephys_2026_05_11` — `abcGolden01-aeonx1`, NeuropixelsV2 ProbeB, all 96 active contacts on shank 3. Two overlapping ephys blocks (chunks 0-6 and 4-11, sharing 4-6), each with a real Kilosort4 sorting under `golden_test_sorting/<block>/shank3/kilosort4_400/`.
+**Active dataset:** `foraging_abc_ephys_2026_05_11` — `abcGolden01-aeon3`, NeuropixelsV2 ProbeB, all 96 active contacts on shank 3. Two overlapping ephys blocks (chunks 0-6 and 4-11, sharing 4-6), each with a real Kilosort4 sorting under `golden_test_sorting/<block>/shank3/kilosort4_400/`.
 
 **Location:** `~/sciops-data/project_aeon/aeon/data/raw/AEONX1/abcGolden01/2026-05-11T07-50-11/`
 
