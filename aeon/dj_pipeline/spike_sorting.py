@@ -354,15 +354,20 @@ class PreProcessing(dj.Computed):
 
         rec_path = intermediate_dir / "recording"
 
-        # path could be `.zarr` a binary folder
+        # path could be a `.zarr` or a binary folder
         existing_rec_paths = list(intermediate_dir.glob("recording*"))
-        if len(existing_rec_paths) == 1:
-            saved_rec = si.load(list(existing_rec_paths)[0])
-            if saved_rec and saved_rec.get_num_samples() == si_recording.get_num_samples():
-                logger.info(f"{existing_rec_paths} already exists and has the right size. Skipping write.")
-                return output_dir, execution_time
-        elif len(existing_rec_paths) > 1:
+        if len(existing_rec_paths) > 1:
             raise ValueError(f"Found several recording files in {intermediate_dir}. Expecting zero or one.")
+        if existing_rec_paths:
+            existing_rec_path = existing_rec_paths[0]
+            try:
+                saved_num_samples = si.load(existing_rec_path).get_num_samples()
+            except Exception as e:
+                logger.warning(f"Could not load {existing_rec_path} ({e}). Rewriting it.")
+                saved_num_samples = None
+            if saved_num_samples == si_recording.get_num_samples():
+                logger.info(f"{existing_rec_path} already exists and has the right size. Skipping write.")
+                return output_dir, execution_time
 
         if save_format == "zarr":
             strip_non_numeric_properties(si_recording)
@@ -485,7 +490,7 @@ class SpikeSorting(dj.Computed):
 
         intermediate_dir = scratch_recording_dir(output_dir)
 
-        # path could be `.zarr` a binary folder
+        # path could be a `.zarr` or a binary folder
         recording_path = list(intermediate_dir.glob("recording*"))[0]
 
         recording_for_sorting = si.load(recording_path)
