@@ -1414,12 +1414,8 @@ def _restrict_to_overlap(spike_times_s: np.ndarray, start_s: float, end_s: float
 def _load_block_unit_spike_trains(block_key: dict, exclude_noise: bool = True) -> dict[int, np.ndarray]:
     """Return {unit_id: sorted spike times in epoch seconds} for the units of a block.
 
-    With exclude_noise=True (the default), units the curator labeled "noise"
-    (SortedSpikes.Unit.unit_quality == "noise") are left out: they are kept in
-    SortedSpikes/SyncedSpikes but never matched across blocks or handed a global unit id. Matching
-    only runs on curated blocks, so unit_quality there is the curator's own call; the antijoin
-    excludes only that exact "noise" label, leaving every other label (including Kilosort's own on
-    any raw unit) loaded. With exclude_noise=False every unit is loaded, noise included.
+    With exclude_noise=True, units with unit_quality "noise" are left out: they stay in
+    SortedSpikes/SyncedSpikes but get no global unit id. With exclude_noise=False, all units load.
     """
     units = SyncedSpikes.Unit & block_key
     if exclude_noise:
@@ -1561,10 +1557,8 @@ class UnitMatching(dj.Computed):
                   and the backward frontier (MAX unprocessed < processed min)
         Only blocks with ApplyOfficialCuration are eligible.
 
-        The frontier is found per shank (electrode_group) and sorting paramset, not just per
-        matching paramset: otherwise an eligible block of another shank or sorting paramset that
-        starts between two of this run's blocks (e.g. a short paramset-401 block) becomes the
-        frontier, gets filtered out by populate()'s restriction, and matching stops early.
+        The frontier is per shank and sorting paramset. Otherwise a block of another shank or
+        sorting paramset can become the frontier, populate() filters it out, and matching stops early.
         """
         from aeon.dj_pipeline import spike_sorting_curation
 
@@ -1883,14 +1877,14 @@ class GlobalUnitQuality(dj.Computed):
     # Majority quality label of a global unit across every block it was matched in
     -> GlobalUnit
     ---
-    -> UnitQuality      # majority unit_quality; on a tie, the worse label one wins.
+    -> UnitQuality      # majority unit_quality; on a tie, the worse label
     n_blocks: int32     # blocks the label was computed over
     n_good: int32
     n_mua: int32
     n_noise: int32
     """
 
-    # Rank of each unit_quality if there a tie for the majority
+    # On a tie, the label with the higher rank wins
     quality_rank = {"good": 0, "mua": 1, "noise": 2}
 
     @classmethod
@@ -1925,10 +1919,9 @@ class GlobalUnitQuality(dj.Computed):
 
     @classmethod
     def refresh(cls, *restrictions, **populate_kwargs) -> None:
-        """Bring labels up to date after more blocks were matched, then populate.
+        """Delete the labels of global units matched in more blocks since, then populate.
 
-        A label is not true once its global unit has been matched in more blocks than it
-        was computed on before. Only those GlobalUnitQuality rows are deleted, but nothing depends on this table so its safe :)
+        No table depends on GlobalUnitQuality, so the delete cascades nowhere.
         """
         n_matched = GlobalUnit.aggr(UnitMatching.Unit, n_matched="COUNT(*)")
         stale = (cls.proj("n_blocks") * n_matched & "n_blocks != n_matched").proj()
@@ -1936,8 +1929,7 @@ class GlobalUnitQuality(dj.Computed):
             stale &= restriction
         if stale:
             logger.info(f"Deleting {len(stale)} stale GlobalUnitQuality row(s) for recomputation.")
-            # Restrict by the fetched keys: the cascade cannot apply a restriction on GlobalUnit
-            # columns (e.g. matching_paramset_id) to this table ("Attribute ... is not found").
+            # Delete by keys: a restriction on GlobalUnit columns fails here ("Attribute ... is not found").
             (cls & stale.keys()).delete(prompt=False)
         cls.populate(*restrictions, **populate_kwargs)
 

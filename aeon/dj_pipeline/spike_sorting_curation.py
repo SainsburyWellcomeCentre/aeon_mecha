@@ -144,12 +144,8 @@ class ApplyOfficialCuration(dj.Imported):
         with open(curation_file_path) as f:
             curation_dict = json.load(f)
 
-        # Units manually labeled "noise" are kept, not deleted: apply_curation() runs on the
-        # curation exactly as saved, so noise units survive into the curated analyzer carrying
-        # their "quality"="noise" property, which SortedSpikes.make() writes into
-        # SortedSpikes.Unit.unit_quality on repopulation. Whether they take part in unit matching is
-        # set per UnitMatchingParamSet ("exclude_noise", default True - see
-        # _load_block_unit_spike_trains in spike_sorting.py); they are never deleted here.
+        # Noise units are kept: they reach SortedSpikes.Unit.unit_quality as "noise".
+        # The "exclude_noise" matching parameter sets if they are matched (see spike_sorting.py).
 
         # Load original sorting analyzer
         analyzer_output_dir = _get_analyzer_dir_from_key(key)
@@ -191,7 +187,7 @@ class ApplyOfficialCuration(dj.Imported):
             curated_analyzer.save_as(format="zarr", folder=curated_analyzer_dir)
         else:
             logger.info(f"Saving curated analyzer to: {curated_analyzer_dir}")
-            # SortingAnalyzer has no save(); save_as cannot overwrite, so remove an old folder first (as for zarr).
+            # SortingAnalyzer has no save(), and save_as() cannot overwrite: remove the old folder first.
             if curated_analyzer_dir.exists():
                 shutil.rmtree(curated_analyzer_dir)
             curated_analyzer.save_as(format="binary_folder", folder=curated_analyzer_dir)
@@ -521,6 +517,47 @@ def launch_spikeinterface_gui(
     )
 
 
+def insert_curation(key: dict, curation_data: dict, description: str = "", parent_curation_id: int = -1) -> int:
+    """Save a curation dict as a new ManualCuration of a block. Return its curation_id.
+
+    Writes <analyzer>/spikeinterface_gui/curation_data_id<N>.json, then inserts ManualCuration
+    and its File row in one transaction. Used by save_manual_curation() and the bombcell curation.
+    """
+    # The insert needs the complete primary key (subject, probe_type, ...), not only the sorting-task fields.
+    full_key = (spike_sorting.SpikeSorting & key).fetch1("KEY")
+    existing_ids = (ManualCuration & full_key).to_arrays("curation_id")
+    curation_id = int(max(existing_ids)) + 1 if len(existing_ids) else 1
+
+    # A versioned snapshot file: ManualCuration.File tracks a file on disk (filepath@dj_store).
+    gui_dir = _get_analyzer_dir_from_key(full_key) / "spikeinterface_gui"
+    gui_dir.mkdir(exist_ok=True)
+    file_name = f"curation_data_id{curation_id}.json"
+    file_path = gui_dir / file_name
+    with open(file_path, "w") as f:
+        json.dump(curation_data, f, indent=4)
+    try:
+        with open(file_path) as f:
+            json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        raise RuntimeError(f"Curation snapshot was not written correctly: {file_path}") from e
+
+    # A standalone function gets no automatic make() transaction: without this, a failure between
+    # the two inserts would leave a ManualCuration row with no File row.
+    with ManualCuration.connection.transaction:
+        ManualCuration.insert1(
+            {
+                **full_key,
+                "curation_id": curation_id,
+                "curation_datetime": datetime.now(UTC),
+                "parent_curation_id": parent_curation_id,
+                "curation_method": "SpikeInterface",
+                "description": description,
+            }
+        )
+        ManualCuration.File.insert1({**full_key, "curation_id": curation_id, "file_name": file_name, "file": file_path})
+    return curation_id
+
+
 def save_manual_curation(key: dict, description: str = "") -> int:
     """Save manual curation results from SpikeInterface GUI to the database.
 
@@ -540,13 +577,6 @@ def save_manual_curation(key: dict, description: str = "") -> int:
     gui_dir = analyzer_dir / "spikeinterface_gui"
     curation_data_file = gui_dir / "curation_data.json"
     is_zarr = analyzer_dir.name.endswith(".zarr")
-
-    # ManualCuration's insert needs the *complete* primary key (adds subject, probe_type,
-    # electrode_config_name, etc. via -> SpikeSorting), not just the sorting-task fields
-    # documented as the `key` argument above - resolve it here rather than assuming the
-    # caller already has it (a partial key works fine for restrictions/filters below, just
-    # not for insert1).
-    full_key = (spike_sorting.SpikeSorting & key).fetch1("KEY")
 
     # Load the curation_data dict saved by the SI GUI's "Save in analyzer" button. For
     # binary_folder analyzers this is a plain curation_data.json file; for zarr analyzers
@@ -576,26 +606,6 @@ def save_manual_curation(key: dict, description: str = "") -> int:
         with open(curation_data_file) as f:
             curation_data = json.load(f)
 
-    # Find the next available curation_id
-    existing_ids = (ManualCuration & key).to_arrays("curation_id")
-    next_curation_id = max(existing_ids) + 1 if len(existing_ids) > 0 else 1
-
-    # Write a versioned snapshot as its own JSON file - needed regardless of source format,
-    # since ManualCuration.File tracks an actual file on disk (filepath@dj_store).
-    curated_file_name = f"curation_data_id{next_curation_id}.json"
-    curated_file_path = gui_dir / curated_file_name
-    with open(curated_file_path, "w") as f:
-        json.dump(curation_data, f, indent=4)
-
-    # Verify the write was successful and valid before clearing the original
-    if not curated_file_path.exists():
-        raise RuntimeError(f"Failed to write curation snapshot to {curated_file_path}")
-    try:
-        with open(curated_file_path) as f:
-            json.load(f)  # Verify it's valid JSON
-    except json.JSONDecodeError as e:
-        raise RuntimeError(f"Written curation snapshot is not valid JSON: {curated_file_path}") from e
-
     # Read parent_curation_id from metadata file if it exists (plain file, same location
     # for both formats - it lives in the spikeinterface_gui directory either way)
     metadata_file = gui_dir / "curation_metadata.json"
@@ -613,33 +623,11 @@ def save_manual_curation(key: dict, description: str = "") -> int:
             )
             parent_curation_id = -1
 
-    # Insert into ManualCuration/ManualCuration.File *before* clearing the live copy below:
-    # if this fails (e.g. a schema/connection issue), the live curation_data is still intact
-    # and save_manual_curation() can just be retried, rather than leaving an orphaned
-    # snapshot file on disk with no way to reconstruct it from the (already-cleared) source.
-    #
-    # Wrap both inserts in one transaction so the master and its File part land together or
-    # not at all. This is a standalone function, not a table make(), so it gets none of the
-    # autopopulate framework's automatic per-make() transaction - without this, a failure
-    # between the two inserts would leave a ManualCuration row with no File row behind.
-    curation_datetime = datetime.now(UTC)
-    curation_entry = {
-        **full_key,
-        "curation_id": next_curation_id,
-        "curation_datetime": curation_datetime,
-        "parent_curation_id": parent_curation_id,
-        "curation_method": "SpikeInterface",
-        "description": description,
-    }
-    file_entry = {
-        **full_key,
-        "curation_id": next_curation_id,
-        "file_name": curated_file_name,
-        "file": curated_file_path,
-    }
-    with ManualCuration.connection.transaction:
-        ManualCuration.insert1(curation_entry)
-        ManualCuration.File.insert1(file_entry)
+    # Save before clearing the live copy below: if the save fails, the live curation_data
+    # is still intact and save_manual_curation() can be retried.
+    next_curation_id = insert_curation(key, curation_data, description, parent_curation_id)
+    curated_file_name = f"curation_data_id{next_curation_id}.json"
+    curated_file_path = analyzer_dir / "spikeinterface_gui" / curated_file_name
 
     # Now safe to clear the original, live-editable copy
     if is_zarr:

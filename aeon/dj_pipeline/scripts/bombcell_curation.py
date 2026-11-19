@@ -1,34 +1,20 @@
-"""Curate spike-sorted ephys blocks with bombcell, then match units across blocks.
+"""Curate spike-sorted blocks with bombcell, then match units across blocks.
 
-This module does these steps:
-1. Bombcell labels each unit of a block as good, mua or noise.
-2. The labels become the ManualCuration of the block.
-3. The curation becomes official, and the pipeline applies it.
-4. Unit matching links the units across the blocks of one shank.
-
-Per block:
-    labels = label_units(load_analyzer(key))          # bombcell labels
-    curation_id = save_curation(key, labels)          # ManualCuration and curation JSON
-    curate_block(key)                                 # steps 1-3, then SortedSpikes and SyncedSpikes
-
-Per shank and sorting paramset, after all its blocks are curated and synced:
-    blocks = matching_blocks(experiment_name, insertion_number, electrode_group, paramset_id)
-    matching_paramset_id = get_or_create_matching_paramset(experiment_name, insertion_number,
-                                                           electrode_group, paramset_id)
-    run_unit_matching(blocks, matching_paramset_id)
-    spike_sorting.GlobalUnitQuality.refresh(...)      # majority label of each global unit
+foragingABC_analysis runs this module on SLURM, one item per array task:
+- slurm/curations/bombcell_curation.sh calls slurm_curate(): one block per task.
+- slurm/curations/unit_matching.sh calls slurm_match(): one shank per task (bombcell or manual).
+scripts/manual_curation.py uses the block and SLURM helpers of this module.
 
 Rules:
-- Bombcell gives only three labels: good, mua and noise.
-- `label_non_somatic=False` turns off the non-somatic labels of bombcell.
-- The description of a bombcell ManualCuration starts with BOMBCELL_DESCRIPTION_PREFIX.
-- The pipeline keeps noise units. It does not delete them.
-- The `exclude_noise` matching parameter controls if noise units take part in matching.
+- Bombcell gives only three labels: good, mua and noise (label_non_somatic=False).
+- A bombcell ManualCuration has a description that starts with BOMBCELL_DESCRIPTION_PREFIX.
+  Each other ManualCuration is a human (manual) curation.
+- The pipeline keeps noise units. The `exclude_noise` matching parameter sets if they are matched.
 """
 
-import json
-from datetime import UTC, datetime
+import os
 
+import numpy as np
 import pandas as pd
 import spikeinterface as si
 import spikeinterface.curation as sc
@@ -44,31 +30,23 @@ BOMBCELL_DESCRIPTION = (
     f"{BOMBCELL_DESCRIPTION_PREFIX} (default thresholds, label_non_somatic=False, "
     f"spikeinterface {si.__version__})"
 )
+IS_BOMBCELL = f"description LIKE '{BOMBCELL_DESCRIPTION_PREFIX}%'"
+POPULATE_KWARGS = dict(reserve_jobs=True, suppress_errors=False, display_progress=True)
+BLOCK_FIELDS = ("block_start", "experiment_name", "insertion_number", "electrode_group", "paramset_id")
 
 
 # ---- Labelling ----
 
 
-def load_analyzer(key: dict) -> si.SortingAnalyzer:
-    """Load the raw sorting analyzer of a block.
-
-    This function does not load the extensions. Bombcell loads the metric extensions that it needs.
-    """
-    analyzer_dir = spike_sorting_curation._get_analyzer_dir_from_key(key)
-    return si.load_sorting_analyzer(folder=analyzer_dir, load_extensions=False)
-
-
 def label_units(sorting_analyzer: si.SortingAnalyzer) -> pd.DataFrame:
-    """Label each unit as good, mua or noise. Bombcell uses its default thresholds.
+    """Label each unit good, mua or noise with the default bombcell thresholds.
 
-    Returns a DataFrame with one column, `bombcell_label`.
-    The index is unit_id, in the order of `sorting_analyzer.unit_ids`.
-    Raises ValueError if bombcell returns a different label.
+    Returns a DataFrame with the column `bombcell_label`, indexed by unit_id in analyzer order.
     """
     labels = sc.bombcell_label_units(
         sorting_analyzer,
         thresholds=sc.bombcell_get_default_thresholds(),
-        label_non_somatic=False,  # only good, mua and noise
+        label_non_somatic=False,
     )
     labels = labels.loc[list(sorting_analyzer.unit_ids), ["bombcell_label"]]
     labels["bombcell_label"] = labels["bombcell_label"].str.lower()
@@ -76,9 +54,7 @@ def label_units(sorting_analyzer: si.SortingAnalyzer) -> pd.DataFrame:
 
     unexpected = set(labels["bombcell_label"]) - set(BOMBCELL_LABELS)
     if unexpected:
-        raise ValueError(
-            f"bombcell returned unexpected label(s) {unexpected}; expected only {BOMBCELL_LABELS}"
-        )
+        raise ValueError(f"bombcell returned unexpected label(s) {unexpected}; expected only {BOMBCELL_LABELS}")
     return labels
 
 
@@ -86,11 +62,7 @@ def label_units(sorting_analyzer: si.SortingAnalyzer) -> pd.DataFrame:
 
 
 def build_curation_dict(labels: pd.DataFrame) -> dict:
-    """Make a SpikeInterface curation dict (format_version 2) from the output of label_units.
-
-    Each unit gets one exclusive "quality" label.
-    The curation does not remove, merge or split units.
-    """
+    """Make a SpikeInterface curation dict (format_version 2): one "quality" label per unit, no edits."""
     unit_ids = [int(u) for u in labels.index]
     curation_dict = {
         "format_version": "2",
@@ -109,121 +81,72 @@ def build_curation_dict(labels: pd.DataFrame) -> dict:
 
 
 def get_bombcell_curation_id(key: dict) -> int | None:
-    """Return the curation_id of the bombcell curation of the block, or None.
-
-    The search uses the description prefix.
-    Thus it also finds curations from other spikeinterface versions.
-    """
-    bombcell_curations = spike_sorting_curation.ManualCuration & key
-    bombcell_curations &= f"description LIKE '{BOMBCELL_DESCRIPTION_PREFIX}%'"
-    existing = bombcell_curations.to_arrays("curation_id")
+    """Return the curation_id of the bombcell curation of a block (any spikeinterface version), or None."""
+    existing = (spike_sorting_curation.ManualCuration & key & IS_BOMBCELL).to_arrays("curation_id")
     return int(max(existing)) if len(existing) else None
 
 
 def save_curation(key: dict, labels: pd.DataFrame) -> int:
     """Save the bombcell labels as a new ManualCuration of the block. Return its curation_id.
 
-    The function writes:
-    - the curation JSON at <analyzer>/spikeinterface_gui/curation_data_id<N>.json
-    - one ManualCuration row
-    - one ManualCuration.File row
-
-    This is the same layout as `spike_sorting_curation.save_manual_curation()`.
-    The function does not change a GUI curation that is in progress.
-    If the block already has a bombcell curation, the function writes nothing.
-    Then it returns the existing curation_id.
+    If the block already has a bombcell curation, nothing is written and its id is returned.
     """
     existing_id = get_bombcell_curation_id(key)
     if existing_id is not None:
         logger.info(f"Bombcell curation already saved (curation_id={existing_id}), skipping.")
         return existing_id
-
-    curation_dict = build_curation_dict(labels)
-
-    # The ManualCuration insert needs the full primary key (subject, probe_type, ...).
-    full_key = (spike_sorting.SpikeSorting & key).fetch1("KEY")
-
-    existing_ids = (spike_sorting_curation.ManualCuration & full_key).to_arrays("curation_id")
-    curation_id = int(max(existing_ids)) + 1 if len(existing_ids) else 1
-
-    gui_dir = spike_sorting_curation._get_analyzer_dir_from_key(full_key) / "spikeinterface_gui"
-    gui_dir.mkdir(exist_ok=True)
-    file_name = f"curation_data_id{curation_id}.json"
-    file_path = gui_dir / file_name
-    with open(file_path, "w") as f:
-        json.dump(curation_dict, f, indent=4)
-
-    # One transaction saves the master row and its File part together, or saves neither.
-    with spike_sorting_curation.ManualCuration.connection.transaction:
-        spike_sorting_curation.ManualCuration.insert1(
-            {
-                **full_key,
-                "curation_id": curation_id,
-                "curation_datetime": datetime.now(UTC),
-                "parent_curation_id": -1,  # the labels come from the raw sorting
-                "curation_method": "SpikeInterface",
-                "description": BOMBCELL_DESCRIPTION,
-            }
-        )
-        spike_sorting_curation.ManualCuration.File.insert1(
-            {**full_key, "curation_id": curation_id, "file_name": file_name, "file": file_path}
-        )
-
-    logger.info(f"Saved bombcell curation_id={curation_id} ({len(labels)} units) to {file_path}")
+    curation_id = spike_sorting_curation.insert_curation(key, build_curation_dict(labels), BOMBCELL_DESCRIPTION)
+    logger.info(f"Saved bombcell curation_id={curation_id} ({len(labels)} units)")
     return curation_id
 
 
 # ---- Whole-block pipeline ----
 
 
-def bombcell_blocks(*restrictions):
-    """Return the PostProcessing blocks to curate with bombcell.
-
-    The blocks match all the restrictions.
-    The function removes the blocks that have a human curation.
-    A human curation is a ManualCuration that does not come from bombcell.
-    """
-    human_curated = spike_sorting_curation.ManualCuration - (
-        f"description LIKE '{BOMBCELL_DESCRIPTION_PREFIX}%'"
-    )
-    blocks = spike_sorting.PostProcessing.proj()
+def restrict(table, restrictions):
     for restriction in restrictions:
-        blocks &= restriction
-    return blocks - human_curated.proj()
+        table &= restriction
+    return table
+
+
+def bombcell_blocks(*restrictions):
+    """Return the PostProcessing blocks to curate with bombcell: those without a human curation."""
+    human_curated = spike_sorting_curation.ManualCuration - IS_BOMBCELL
+    return restrict(spike_sorting.PostProcessing.proj(), restrictions) - human_curated.proj()
+
+
+def apply_curation(key: dict) -> None:
+    """Apply the official curation of a block, make SortedSpikes again, and sync the spikes."""
+    spike_sorting_curation.ApplyOfficialCuration.populate(key, **POPULATE_KWARGS)
+    spike_sorting.SortedSpikes.populate(key, **POPULATE_KWARGS)
+    spike_sorting.SyncedSpikes.populate(key, **POPULATE_KWARGS)
 
 
 def curate_block(key: dict) -> int:
-    """Curate one block with bombcell from start to end. Return its curation_id.
+    """Label a block with bombcell, make the curation official and apply it. Return its curation_id.
 
-    The function does these steps:
-    1. Label the units and save the curation.
-    2. Make the curation official.
-    3. Apply the curation.
-    4. Make SortedSpikes again from the curated analyzer.
-    5. Sync the spikes.
-
-    The function skips each step that is already done.
+    Each step skips the work that is already done.
     """
     curation_id = get_bombcell_curation_id(key)
     if curation_id is None:
-        curation_id = save_curation(key, label_units(load_analyzer(key)))
+        # No extensions: bombcell loads the ones it needs.
+        analyzer = si.load_sorting_analyzer(
+            spike_sorting_curation._get_analyzer_dir_from_key(key), load_extensions=False
+        )
+        curation_id = save_curation(key, label_units(analyzer))
+    if not spike_sorting.SortedSpikes & key:
+        # make_curation_official needs the raw SortedSpikes (curation_id=-1).
+        spike_sorting.SortedSpikes.populate(key, **POPULATE_KWARGS)
     spike_sorting_curation.make_curation_official(key, curation_id)
-
-    populate_kwargs = dict(reserve_jobs=True, suppress_errors=False, display_progress=True)
-    spike_sorting_curation.ApplyOfficialCuration.populate(key, **populate_kwargs)
-    spike_sorting.SortedSpikes.populate(key, **populate_kwargs)
-    spike_sorting.SyncedSpikes.populate(key, **populate_kwargs)
+    apply_curation(key)
     return curation_id
 
 
 # ---- Unit matching ----
 
 
-def matching_blocks(experiment_name: str, insertion_number: int, electrode_group: str, paramset_id: int):
-    """Return the blocks of one shank and sorting paramset that are ready to match.
-
-    A block is ready when its curation is applied and its spikes are synced.
-    """
+def matching_blocks(experiment_name: str, insertion_number: int, electrode_group: str, paramset_id: str):
+    """Return the blocks of one shank and sorting paramset with an applied curation and synced spikes."""
     return (
         spike_sorting.SyncedSpikes.proj()
         & spike_sorting_curation.ApplyOfficialCuration.proj()
@@ -240,13 +163,13 @@ def matching_paramset_description(
     experiment_name: str,
     insertion_number: int,
     electrode_group: str,
-    paramset_id: int,
+    paramset_id: str,
     curation: str = "bombcell",
     exclude_noise: bool = False,
 ) -> str:
     """Return the description that identifies the matching paramset of one shank.
 
-    get_or_create_matching_paramset uses this description to find the paramset again.
+    Do not change the format: get_or_create_matching_paramset finds existing paramsets by it.
     """
     return (
         f"{curation} | {experiment_name} insertion {insertion_number} | {electrode_group} | "
@@ -258,22 +181,16 @@ def get_or_create_matching_paramset(
     experiment_name: str,
     insertion_number: int,
     electrode_group: str,
-    paramset_id: int,
+    paramset_id: str,
     curation: str = "bombcell",
     exclude_noise: bool = False,
 ) -> int:
     """Return the matching_paramset_id of the shank. Make the paramset if it does not exist.
 
-    A new paramset uses:
-    - the first block in time as the seed block
-    - the standard matching parameters
-    - the `exclude_noise` value from the arguments
-
-    `curation` ("bombcell" or "manual") goes only into the description.
-
-    Each shank and sorting paramset needs its own matching paramset.
-    UnitMatching.make() compares a block with all overlapping blocks of the same paramset.
-    It does not check the shank.
+    A new paramset seeds on the first block in time and uses the default matching parameters,
+    except `exclude_noise`. `curation` ("bombcell" or "manual") goes only into the description.
+    Each shank needs its own paramset: UnitMatching.make() compares all overlapping blocks of a
+    paramset and does not check the shank.
     """
     description = matching_paramset_description(
         experiment_name, insertion_number, electrode_group, paramset_id, curation, exclude_noise
@@ -286,7 +203,7 @@ def get_or_create_matching_paramset(
     blocks = matching_blocks(experiment_name, insertion_number, electrode_group, paramset_id)
     if not blocks:
         raise ValueError(f"No curated + synced blocks to seed matching on: {description}")
-    seed_block_start = blocks.keys(order_by="block_start", limit=1)[0]["block_start"]  # first block in time
+    seed_block_start = blocks.keys(order_by="block_start", limit=1)[0]["block_start"]
 
     existing_ids = spike_sorting.UnitMatchingParamSet.to_arrays("matching_paramset_id")
     matching_paramset_id = int(max(existing_ids)) + 1 if len(existing_ids) else 1
@@ -296,7 +213,6 @@ def get_or_create_matching_paramset(
             "matching_method": "spike_time_overlap",
             "seed_block_start": seed_block_start,
             "matching_paramset_description": description,
-            # The other parameters use spike_sorting._DEFAULT_MATCHING_PARAMS.
             "params": {"exclude_noise": exclude_noise},
         }
     )
@@ -306,13 +222,10 @@ def get_or_create_matching_paramset(
 def run_unit_matching(block_restriction, matching_paramset_id: int) -> tuple[int, list]:
     """Populate UnitMatching until a round matches no block. Return the matched block count and the errors.
 
-    Each populate() call matches only one block: the seed block or the next block.
-    Thus the function calls populate() in a loop.
-
-    Do not run two of these on the same insertion at the same time.
-    Both runs try to use the same next GlobalUnit id, and one run fails.
+    Each populate() matches one block (the seed or the next frontier block), so it runs in a loop.
+    Do not run two of these on one insertion at the same time: both take the same next GlobalUnit id.
     """
-    n_matched, errors = 0, []
+    n_matched = 0
     while True:
         result = spike_sorting.UnitMatching.populate(
             block_restriction,
@@ -321,6 +234,152 @@ def run_unit_matching(block_restriction, matching_paramset_id: int) -> tuple[int
             suppress_errors=True,
         )
         n_matched += result["success_count"]
-        errors = result["error_list"]  # the errors of the last round stopped the matching
         if result["success_count"] == 0:
-            return n_matched, errors
+            return n_matched, result["error_list"]  # the errors of the last round stopped the matching
+
+
+def match_shank(
+    experiment_name: str,
+    insertion_number: int,
+    electrode_group: str,
+    paramset_id: str,
+    curation: str = "bombcell",
+    exclude_noise: bool = False,
+) -> list[str]:
+    """Match the units of one shank across its blocks, then update GlobalUnitQuality. Return the problems."""
+    shank = (experiment_name, insertion_number, electrode_group, paramset_id)
+    ready = matching_blocks(*shank)
+    ready_starts = ready.to_arrays("block_start")
+    oldest = min(
+        (spike_sorting.PostProcessing & {"experiment_name": experiment_name, "paramset_id": paramset_id}).to_arrays(
+            "block_start"
+        )
+    )
+    n_blocks = len(spike_sorting.PostProcessing & dict(zip(BLOCK_FIELDS[1:], shank, strict=True)))
+    print(f"{len(ready)}/{n_blocks} block(s) are curated and synced. Matching stops at the first gap.")
+    # Check before get_or_create_matching_paramset: a paramset made now would seed on a later block.
+    if not len(ready_starts) or min(ready_starts) != oldest:
+        return [f"The oldest block of {experiment_name} ({oldest}) is not curated and synced on this shank."]
+
+    matching_paramset_id = get_or_create_matching_paramset(
+        *shank, curation=curation, exclude_noise=exclude_noise
+    )
+    paramset_key = {"matching_paramset_id": matching_paramset_id}
+    print(f"matching_paramset_id={matching_paramset_id}", flush=True)
+    n_new, errors = run_unit_matching(ready, matching_paramset_id)
+    n_done = len(spike_sorting.UnitMatching & ready & paramset_key)
+    print(f"Matched {n_new} new block(s); {n_done}/{len(ready)} ready block(s) are matched.")
+
+    # .proj(): GlobalUnit has a free-text column without lineage, and DataJoint 2.x will not join on it.
+    global_units = (
+        spike_sorting.GlobalUnit
+        & {"experiment_name": experiment_name, "insertion_number": insertion_number}
+        & paramset_key
+    ).proj()
+    spike_sorting.GlobalUnitQuality.refresh(global_units, display_progress=True)
+    qualities = (spike_sorting.GlobalUnitQuality & global_units).to_arrays("unit_quality")
+    print(f"{len(global_units)} global unit(s), majority labels: {_counts(qualities)}")
+
+    problems = [f"{key['block_start']}: {error}" for key, error in errors]
+    if n_done < len(ready):
+        problems.append(f"Only {n_done}/{len(ready)} ready block(s) are matched.")
+    return problems
+
+
+# ---- SLURM entry points ----
+# The SLURM scripts call these with `python -c`. They read the settings from environment variables.
+# Without SLURM_ARRAY_TASK_ID (list mode), they print the task list and change no data.
+
+
+def env_restrictions(*names: str) -> list:
+    """Return DB restrictions from the environment. EXPERIMENT is an SQL LIKE pattern and is required."""
+    restrictions = [f"experiment_name LIKE '{os.environ['EXPERIMENT']}'"]
+    for name in names:
+        value = os.environ.get(name, "")
+        if not value:
+            continue
+        if name == "BLOCK_START_FROM":
+            restrictions.append(f"block_start >= '{value}'")
+        elif name == "BLOCK_START_TO":
+            restrictions.append(f"block_start <= '{value}'")
+        else:  # paramset_id is varchar (403, cjh_405), so the value stays a string
+            restrictions.append({name.lower(): value})
+    return restrictions
+
+
+def _describe(item: dict) -> str:
+    return "  ".join(str(item[f]) for f in BLOCK_FIELDS if f in item)
+
+
+def _counts(values) -> dict:
+    return {str(v): int(n) for v, n in zip(*np.unique(values, return_counts=True), strict=True)}
+
+
+def pick_task(items: list[dict]) -> dict | None:
+    """Return the item of this array task (task N gets item N), or None in list mode or past the end."""
+    task = os.environ.get("SLURM_ARRAY_TASK_ID")
+    if task is None:
+        print(f"{len(items)} task(s). Submit with --array=1-{len(items)}")
+        for i, item in enumerate(items, start=1):
+            print(f"  [{i:>3}] {_describe(item)}")
+        return None
+    if int(task) > len(items):
+        print(f"Task {task}: there are only {len(items)} task(s). Nothing to do.")
+        return None
+    item = items[int(task) - 1]
+    print(f"Task {task}/{len(items)}: {_describe(item)}", flush=True)
+    return item
+
+
+BLOCK_SETTINGS = ("ELECTRODE_GROUP", "PARAMSET_ID", "BLOCK_START_FROM", "BLOCK_START_TO")
+
+
+def slurm_curate() -> None:
+    """Curate one block per array task with bombcell. Task N curates block N, in block_start order.
+
+    Label, save the curation, make it official, apply it, make SortedSpikes again, and sync the spikes.
+    Environment variables (empty means no restriction): EXPERIMENT (required, SQL LIKE),
+    ELECTRODE_GROUP, PARAMSET_ID, BLOCK_START_FROM, BLOCK_START_TO (both inclusive).
+    """
+    key = pick_task(bombcell_blocks(*env_restrictions(*BLOCK_SETTINGS)).keys(order_by=list(BLOCK_FIELDS)))
+    if key is not None:
+        check_curated_block(key, curate_block(key))
+
+
+def check_curated_block(key: dict, curation_id: int) -> None:
+    """Print the unit labels. Raise if SortedSpikes is not the curated one or the spikes are not synced."""
+    sorted_ids = list((spike_sorting.SortedSpikes & key).to_arrays("curation_id"))
+    qualities = (spike_sorting.SortedSpikes.Unit & key).to_arrays("unit_quality")
+    print(f"curation_id={curation_id}, unit labels: {_counts(qualities)}")
+    if sorted_ids != [curation_id]:
+        raise RuntimeError(f"SortedSpikes has curation_id {sorted_ids}, expected [{curation_id}].")
+    if not spike_sorting.SyncedSpikes & key:
+        raise RuntimeError("SyncedSpikes is missing.")
+
+
+def slurm_match() -> None:
+    """Match the units of one shank and sorting paramset per array task.
+
+    Run one task at a time (--array=...%1): GlobalUnit ids are counted per insertion,
+    so two runs on one insertion take the same id.
+
+    Environment variables (empty means no restriction):
+    - EXPERIMENT (required, SQL LIKE), PARAMSET_ID, INSERTION_NUMBER, ELECTRODE_GROUP.
+    - CURATION: "bombcell" (default) or "manual". It goes into the matching paramset description.
+    - EXCLUDE_NOISE: "True" or "False". Default: False for bombcell, True for manual.
+    """
+    curation = os.environ.get("CURATION", "bombcell")
+    exclude_noise = {"True": True, "False": False}[os.environ.get("EXCLUDE_NOISE") or str(curation == "manual")]
+    blocks = restrict(
+        spike_sorting.PostProcessing.proj(), env_restrictions("PARAMSET_ID", "INSERTION_NUMBER", "ELECTRODE_GROUP")
+    )
+    shank_fields = BLOCK_FIELDS[1:]
+    shanks = sorted({tuple(key[f] for f in shank_fields) for key in blocks.keys()})
+    shank = pick_task([dict(zip(shank_fields, s, strict=True)) for s in shanks])
+    if shank is None:
+        return
+
+    print(f"curation={curation}, exclude_noise={exclude_noise}")
+    problems = match_shank(**shank, curation=curation, exclude_noise=exclude_noise)
+    if problems:
+        raise RuntimeError("\n".join(problems))
