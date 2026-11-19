@@ -1117,26 +1117,25 @@ class SyncedSpikes(dj.Imported):
         _clock_rows = _clock_query.to_dicts(order_by="chunk_start")
         _pk = _clock_query.primary_key
         ephys_file_keys = [{k: r[k] for k in _pk} for r in _clock_rows]
-        ephys_files = [r["file_path"] for r in _clock_rows]
-        dir_types = [r["directory_type"] for r in _clock_rows]
 
         # Spike indices count samples of the AmplifierData files concatenated in PreProcessing, so
         # the chunk boundaries come from those files, not from the Clock files. They differ when an
         # amplifier file lost its tail e.g. due to a copying error.
         # Its samples still start at Clock[0], so sample k of a chunk sits at Clock[k]. A Clock file
         # that lost its tail instead is extrapolated at its own tick rate, by at most 1 s.
-        num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         onix_times, amp_lengths = [], []
-        for f, d in zip(ephys_files, dir_types, strict=True):
-            ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
-            amp_len = read_amplifier_recording(
-                ephys_dir / f.replace("Clock", "AmplifierData"),
-                fs_hz=NP2_FS_HZ,
-                num_channels=num_channels,
-            ).get_num_samples()
-            onix_ts = read_onix_ts(ephys_dir / f)
-            onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=f))
+        for clock_row in _clock_rows:
+            amp_len = clock_row["ephys_num_samples"]
+            ephys_file = clock_row["file_path"]
+            dir_type = clock_row["directory_type"]
+
+            ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            onix_ts = read_onix_ts(ephys_dir / ephys_file)
+            onix_times.append(
+                extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=ephys_file)
+            )
             amp_lengths.append(amp_len)
+
         chunk_bounds = np.cumsum(amp_lengths)  # end of each chunk in the concatenated recording
 
         # Guard against raw files that changed since sorting (e.g. a truncated file re-copied in
