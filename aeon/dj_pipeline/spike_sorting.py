@@ -1126,13 +1126,13 @@ class SyncedSpikes(dj.Imported):
         onix_times, amp_lengths = [], []
         for clock_row in _clock_rows:
             amp_len = clock_row["ephys_num_samples"]
-            ephys_file = clock_row["file_path"]
+            clock_file = clock_row["file_path"]
             dir_type = clock_row["directory_type"]
 
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
-            onix_ts = read_onix_ts(ephys_dir / ephys_file)
+            onix_ts = read_onix_ts(ephys_dir / clock_file)
             onix_times.append(
-                extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=ephys_file)
+                extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=clock_file)
             )
             amp_lengths.append(amp_len)
 
