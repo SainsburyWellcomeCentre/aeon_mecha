@@ -13,14 +13,15 @@ from aeon.dj_pipeline import acquisition, get_schema_name
 from aeon.dj_pipeline.utils.ephys_utils import (
     DEVICE_NAMES,
     DEVICE_PROBE_TYPE_MAP,
+    NP2_FS_HZ,
     discover_epoch_probes,
     find_nearest_window,
     find_or_create_probe_insertion,
-    get_num_samples,
     get_probe_id,
     harp_to_naive,
     load_device_channel_map,
     parse_epoch_metadata,
+    read_amplifier_recording,
     read_onix_ts,
     read_probe_assignments,
     resolve_harp,
@@ -659,7 +660,15 @@ class EphysChunk(dj.Manual):
                     logger.error(f"Failed to resolve HARP times for {ephys_file}: {e}")
                     continue
 
-            num_samples = get_num_samples(ephys_file)
+            if ephys_file.suffix == ".arrow":
+                num_samples = len(onix_ts)
+            else:
+                # every binary recording we have saved has 384 channels. Currently each chunk is unaware of
+                # its corresponding probe, so we cannot currently read the number of channels easily
+                num_channels = 384
+                num_samples = read_amplifier_recording(
+                    ephys_file, fs_hz=NP2_FS_HZ, num_channels=num_channels
+                ).get_num_samples()
 
             # ElectrodeConfig already resolved on the Insertion row — read it
             # directly from insertion_key (built above from EphysEpochConfig.Insertion).

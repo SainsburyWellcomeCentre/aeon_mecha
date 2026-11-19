@@ -109,24 +109,6 @@ def resolve_ephys_file(raw_bin_path: Path) -> Path:
     raise FileNotFoundError(f"No ephys file found (checked {checked}).")
 
 
-def get_num_samples(ephys_file: Path) -> int:
-    """Returns the number of samples from an ephys file path."""
-    if ephys_file.suffix == ".arrow":
-        # for an arrow file, the fastest way to find the number of samples is to load a single column and
-        # compute its length. In any non-corrupt arrow file, all columns have the same length
-        clock_array = read_onix_ts(ephys_file)
-        num_samples = len(clock_array)
-    else:
-        # every binary recording we saved has 384 channels. Currently each chunk is unaware of its
-        # corresponding probe, so we cannot read the number of channels easily
-        num_channels = 384
-        num_samples = read_amplifier_recording(
-            ephys_file, fs_hz=NP2_FS_HZ, num_channels=num_channels
-        ).get_num_samples()
-
-    return num_samples
-
-
 def read_amplifier_recording(
     raw_bin_path: Path,
     fs_hz: float,
