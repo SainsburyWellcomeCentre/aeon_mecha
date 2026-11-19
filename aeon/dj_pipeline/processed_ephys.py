@@ -76,14 +76,13 @@ class SpikeTrains(dj.Computed):
         """Build one behavioural hour's TsGroup from the blocks covering it."""
         import pynapple as nap  # optional extra; kept lazy so importing this module is cheap
 
-        # Taken before the first read, so anything matched later is provably newer
-        # than what went into this row.
+        # Set before reading anything, so a UnitMatching with a later execution_time isn't in this row.
         started = datetime.now(UTC)
 
-        window = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
+        chunk_interval = (acquisition.Chunk & key).fetch1("chunk_start", "chunk_end")
         insertion = {k: key[k] for k in ("experiment_name", "subject", "insertion_number")}
 
-        sortings = _covering_sortings(insertion, window)
+        sortings = _covering_sortings(insertion, chunk_interval)
         block_chunks = {i: v["chunks"] for i, v in sortings.items()}
         block_units = {i: v["units"] for i, v in sortings.items()}
         if not block_units:
@@ -91,21 +90,23 @@ class SpikeTrains(dj.Computed):
             logger.warning(f"SpikeTrains: no matched block covers {key}, skipping")
             return
 
-        coverage = intervals.coverage(window, [iv for chunks in block_chunks.values() for iv in chunks])
-        per_unit = intervals.coverage_by_unit(window, block_chunks, block_units)
+        coverage = intervals.coverage(
+            chunk_interval, [iv for chunks in block_chunks.values() for iv in chunks]
+        )
+        per_unit = intervals.coverage_by_unit(chunk_interval, block_chunks, block_units)
         if not per_unit:
             logger.warning(f"SpikeTrains: covering blocks found no units for {key}, skipping")
             return
 
         bounds = {v["bounds"] for v in sortings.values()}
-        spikes_by_unit = _fetch_spikes(insertion, window, bounds)
+        spikes_by_unit = _fetch_spikes(insertion, chunk_interval, bounds)
 
         roster = sorted(per_unit)
         data = {}
         for unit in roster:
             times = spikes_by_unit.get(unit, np.array([], dtype="datetime64[ns]"))
             seconds = io_api.to_seconds(pd.DatetimeIndex(times)).to_numpy()
-            data[int(unit)] = nap.Ts(t=np.sort(seconds))
+            data[int(unit)] = nap.Ts(t=seconds)
 
         electrodes = {
             int(r["global_unit"]): r
@@ -116,13 +117,13 @@ class SpikeTrains(dj.Computed):
         }
         start, end = np.array(_to_seconds(coverage)).T
         support = nap.IntervalSet(start=start, end=end)
-        tsgroup = nap.TsGroup(data, time_support=support, metadata=metadata)
+        spikes = nap.TsGroup(data, time_support=support, metadata=metadata)
 
-        n_spikes = int(sum(len(tsgroup[u]) for u in tsgroup.index))
+        n_spikes = int(sum(len(spikes[u]) for u in spikes.index))
         expected = int(sum(len(v) for v in spikes_by_unit.values()))
         if n_spikes != expected:
             raise ValueError(f"lost spikes assembling {key}: {n_spikes} kept of {expected}")
-        if tsgroup.time_support.start[0] <= 3.0e9:
+        if spikes.time_support.start[0] <= 3.0e9:
             raise ValueError(f"times are not on the HARP epoch for {key}")
 
         # A TsGroup has one time support, so pynapple counts a unit as silent wherever
@@ -137,7 +138,7 @@ class SpikeTrains(dj.Computed):
                 "n_spikes": n_spikes,
                 "source_blocks": sorted("/".join(map(str, k)) for k in sortings),
                 "units_observed_intervals": narrower or None,
-                "spikes": tsgroup,
+                "spikes": spikes,
             }
         )
 
