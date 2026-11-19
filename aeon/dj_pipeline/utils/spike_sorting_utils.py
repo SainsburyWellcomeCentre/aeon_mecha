@@ -217,12 +217,10 @@ try:
             The offset to apply to the traces
         is_filtered : bool or None, default: None
             If True, the recording is assumed to be filtered. If None, is_filtered is not set.
-        storage_options : dict or None: None
-            Storage options passed to the `zarr.open` function
 
         Returns:
         --------
-        recording : ZarrArrayRecording
+        recording : BonsaiOnixArrowRecording
             The recording Extractor
         """
 
