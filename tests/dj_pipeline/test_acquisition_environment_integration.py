@@ -65,7 +65,7 @@ class TestEnvironmentStreamPopulate:
         acquisition.Chunk.ingest_chunks(cfg_name)
         acquisition.EpochConfig.populate({"experiment_name": cfg_name})
 
-        chunks = (acquisition.Chunk & {"experiment_name": cfg_name}).fetch("KEY")
+        chunks = (acquisition.Chunk & {"experiment_name": cfg_name}).keys()
         if not chunks:
             pytest.skip("No chunks ingested from golden dataset")
         return chunks

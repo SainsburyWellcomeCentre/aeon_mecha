@@ -4,6 +4,8 @@ Imported by test_onix_imu_pipeline_integration.py and utils/test_codec_integrati
 """
 
 import csv
+import os
+import time
 import uuid
 from pathlib import Path
 
@@ -250,7 +252,9 @@ def make_synthetic_amplifier_data(
         amp_data = sample_ids * 10 + np.arange(n_channels, dtype=np.uint16)[None, :]
 
         if fmt == "arrow":
-            _write_arrow_chunk(device_dir, device_name, probe_label, n, onix_ts, amp_data)
+            _age_for_ingestion(
+                _write_arrow_chunk(device_dir, device_name, probe_label, n, onix_ts, amp_data)
+            )
             continue
 
         # Write Clock binary (uint64 ONIX timestamps)
@@ -261,6 +265,20 @@ def make_synthetic_amplifier_data(
         amp_path = device_dir / f"{device_name}_{probe_label}_AmplifierData_{n}.bin"
         amp_data.tofile(amp_path)
 
+        _age_for_ingestion(clock_path, amp_path)
+
+
+def _age_for_ingestion(*paths) -> None:
+    """Backdate files past ``ingest_chunks``' 3h15 staleness filter.
+
+    That filter skips anything written recently, so a half-copied file off a live
+    acquisition machine is never ingested. Synthetic fixtures are always new, so
+    every format's writer must age its files or discovery finds nothing.
+    """
+    four_hours_ago = time.time() - (4 * 60 * 60 + 10)
+    for path in paths:
+        os.utime(path, (four_hours_ago, four_hours_ago))
+
 
 # Subtracted from Clock to form HubClock in synthetic arrow files. The subtraction is
 # checked rather than assumed safe: uint64 wraps to ~1.8e19, which reads as a plausible
@@ -269,7 +287,7 @@ HUB_CLOCK_OFFSET = 97
 
 
 def _write_arrow_chunk(device_dir, device_name, probe_label, n, onix_ts, amp_data):
-    """One arrow file per chunk: AmplifierData<i> columns plus Clock and HubClock."""
+    """Write one arrow file per chunk (AmplifierData<i>, Clock, HubClock); return its path."""
     import pyarrow as pa
     import pyarrow.ipc as ipc
 
@@ -286,6 +304,7 @@ def _write_arrow_chunk(device_dir, device_name, probe_label, n, onix_ts, amp_dat
     path = device_dir / f"{device_name}_{probe_label}_{n}.arrow"
     with ipc.new_file(path, schema) as w:
         w.write_batch(pa.RecordBatch.from_arrays([pa.array(v) for v in cols.values()], schema=schema))
+    return path
 
 
 def register_synthetic_probe_insertion(

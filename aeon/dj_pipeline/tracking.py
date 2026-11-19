@@ -28,8 +28,14 @@ class TrackingMethod(dj.Lookup):
     """
 
     contents = [
-        ("DLC", "Online DeepLabCut as part of Bonsai workflow"),
-        ("SLEAP", "Online SLEAP as part of Bonsai workflow"),
+        {
+            "tracking_method": "DLC",
+            "tracking_method_description": "Online DeepLabCut as part of Bonsai workflow",
+        },
+        {
+            "tracking_method": "SLEAP",
+            "tracking_method_description": "Online SLEAP as part of Bonsai workflow",
+        },
     ]
 
 
@@ -46,20 +52,24 @@ class TrackingParamSet(dj.Lookup):
     """
 
     contents = [
-        (
-            0,
-            "DLC",
-            "Default DLC method from online Bonsai - with params as empty dictionary",
-            dict_to_uuid({"tracking_method": "DLC"}),
-            {},
-        ),
-        (
-            1,
-            "SLEAP",
-            "Default SLEAP method from online Bonsai - with params as empty dictionary",
-            dict_to_uuid({"tracking_method": "SLEAP"}),
-            {},
-        ),
+        {
+            "tracking_paramset_id": 0,
+            "tracking_method": "DLC",
+            "paramset_description": (
+                "Default DLC method from online Bonsai - with params as empty dictionary"
+            ),
+            "param_set_hash": dict_to_uuid({"tracking_method": "DLC"}),
+            "params": {},
+        },
+        {
+            "tracking_paramset_id": 1,
+            "tracking_method": "SLEAP",
+            "paramset_description": (
+                "Default SLEAP method from online Bonsai - with params as empty dictionary"
+            ),
+            "param_set_hash": dict_to_uuid({"tracking_method": "SLEAP"}),
+            "params": {},
+        },
     ]
 
     @classmethod

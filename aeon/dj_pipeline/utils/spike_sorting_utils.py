@@ -127,7 +127,7 @@ try:
             self._num_samples = None
 
             self._filepath = filepath
-            self._source = memory_map(str(filepath), "r")
+            self._source = memory_map(filepath, "r")
             self._reader = RecordBatchFileReader(self._source)
             self.batch_len = batch_len
 
@@ -145,7 +145,8 @@ try:
 
                 # Row counts live in the file footer. get_batch would decompress every
                 # batch to read them -- 11s vs 1.6s on a 386-column probe chunk, measured.
-                self._num_samples = ds.dataset(self._filepath, format="ipc").count_rows()
+                dataset = ds.dataset(self._filepath, format="arrow")
+                self._num_samples = dataset.count_rows()
 
             return self._num_samples
 
@@ -242,7 +243,9 @@ try:
                 from pyarrow.ipc import RecordBatchFileReader
 
             # memory_map rejects a Path, which the signature above allows.
-            source = memory_map(str(file_path), "r")
+            file_path = str(file_path)
+
+            source = memory_map(file_path, "r")
             reader = RecordBatchFileReader(source)
 
             stream_names = reader.schema.names

@@ -12,6 +12,7 @@ from pathlib import Path, PureWindowsPath
 
 import datajoint as dj
 import numpy as np
+import pyarrow.dataset as ds
 
 logger = dj.logger
 
@@ -20,6 +21,20 @@ DEVICE_PROBE_TYPE_MAP = {
     "NeuropixelsV2Beta": "neuropixels2.0_beta",
     "NeuropixelsV2": "neuropixels2.0-multishank",
 }
+
+DEVICE_NAMES = list(DEVICE_PROBE_TYPE_MAP.keys())
+
+
+def read_onix_ts(clock_file):
+    """Returns the ephys clock data as a numpy array, from either a .arrow file or a .bin file."""
+    if clock_file.suffix == ".arrow":
+        dataset = ds.dataset(clock_file, format="ipc")
+        table = dataset.to_table(columns=["Clock"])
+        onix_ts = table["Clock"].to_numpy()
+    else:
+        onix_ts = np.memmap(clock_file, mode="r", dtype=np.uint64)
+
+    return onix_ts
 
 
 def _serial_from_gain_cal(gain_cal: str | None) -> str | None:
@@ -166,27 +181,14 @@ def read_amplifier_recording(
 ):
     """Read an amplifier file as a SpikeInterface recording.
 
-    ``.arrow`` reads the AmplifierData columns directly. Otherwise reads the
-    compressed ``.zarr`` twin if present, else the raw ``.bin``
-    (see ``resolve_ephys_file``).
+    ``resolve_ephys_file`` picks the file: the compressed ``.zarr`` twin if one
+    exists, else the path as given. ``.arrow`` reads the AmplifierData columns
+    directly and has no ``.zarr`` twin, so it resolves to itself.
     """
     import spikeinterface as si
     import spikeinterface.extractors as se
 
-    # Arrow is compressed at acquisition and carries its own dtype and channel
-    # count, so it never consults resolve_ephys_file and never has a .zarr twin.
-    if Path(raw_bin_path).suffix == ".arrow":
-        from aeon.dj_pipeline.utils.spike_sorting_utils import read_bonsai_onix_arrow
-
-        rec = read_bonsai_onix_arrow(
-            str(raw_bin_path),
-            sampling_frequency=fs_hz,
-            stream_name="AmplifierData",
-            gain_to_uV=gain_to_uV,
-            offset_to_uV=offset_to_uV,
-        )
-        _check_arrow_channels(rec, num_channels, raw_bin_path)
-        return rec
+    from aeon.dj_pipeline.utils.spike_sorting_utils import read_bonsai_onix_arrow
 
     resolved = resolve_ephys_file(raw_bin_path)
     if resolved.suffix == ".zarr":
@@ -196,6 +198,15 @@ def read_amplifier_recording(
         rec = si.load(resolved)
         rec.set_channel_gains(gain_to_uV)
         rec.set_channel_offsets(offset_to_uV)
+        return rec
+    elif resolved.suffix == ".arrow":
+        rec = read_bonsai_onix_arrow(
+            resolved,
+            sampling_frequency=fs_hz,
+            gain_to_uV=gain_to_uV,
+            offset_to_uV=offset_to_uV,
+        )
+        _check_arrow_channels(rec, num_channels, resolved)
         return rec
     return se.read_binary(
         resolved,
@@ -580,7 +591,7 @@ def discover_epoch_probes(epoch_path: Path) -> tuple[str | None, Path | None, li
     """
     device_name = None
     device_dir = None
-    for subdir_name in ("NeuropixelsV2Beta", "NeuropixelsV2"):
+    for subdir_name in DEVICE_NAMES:
         candidate = epoch_path / subdir_name
         if candidate.exists() and candidate.is_dir():
             device_name = subdir_name
@@ -715,20 +726,22 @@ def resolve_epoch_probe_json(
 ) -> Path:
     """Resolve a probeinterface JSON path by basename.
 
-    Searches ``<raw_ephys_dir>/recording_configurations/`` (production layout),
-    then ``<epoch_path>/``, then each known device subdirectory of the epoch
-    (where the Arrow-era acquisition writes it).
+    Searches ``<raw_ephys_dir>/recording_configurations/`` (production layout)
+    first, then ``<epoch_path>/`` (local-copy fallback for test/golden data),
+    then ``<epoch_path>/<device_name>/`` for each known device.
+    Raises FileNotFoundError if none has the file.
     """
-    candidates = [
+    candidate_paths = [
         Path(raw_ephys_dir) / "recording_configurations" / config_file_name,
         Path(epoch_path) / config_file_name,
-        *(Path(epoch_path) / device / config_file_name for device in DEVICE_PROBE_TYPE_MAP),
+        *(Path(epoch_path) / device_name / config_file_name for device_name in DEVICE_NAMES),
     ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    searched = "\n  ".join(str(c) for c in candidates)
-    raise FileNotFoundError(f"Probe config JSON {config_file_name!r} not found in:\n  {searched}")
+    for candidate_path in candidate_paths:
+        if candidate_path.exists():
+            return candidate_path
+    raise FileNotFoundError(
+        f"Probe config JSON not found at any of: {', '.join(map(str, candidate_paths))}"
+    )
 
 
 def load_device_channel_map(json_path: Path) -> dict[int, int]:

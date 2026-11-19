@@ -14,22 +14,25 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.feather as feather
 
-IMU_COLUMNS: tuple[str, ...] = (
-    "euler_x",
-    "euler_y",
-    "euler_z",
-    "gravity_vector_x",
-    "gravity_vector_y",
-    "gravity_vector_z",
-    "linear_acceleration_x",
-    "linear_acceleration_y",
-    "linear_acceleration_z",
-    "quaternion_w",
-    "quaternion_x",
-    "quaternion_y",
-    "quaternion_z",
-)
+IMU_arrow_to_DJ = {
+    "EulerAngle_Yaw": "euler_x",
+    "EulerAngle_Pitch": "euler_y",
+    "EulerAngle_Roll": "euler_z",
+    "Gravity_X": "gravity_vector_x",
+    "Gravity_Y": "gravity_vector_y",
+    "Gravity_Z": "gravity_vector_z",
+    "Acceleration_X": "linear_acceleration_x",
+    "Acceleration_Y": "linear_acceleration_y",
+    "Acceleration_Z": "linear_acceleration_z",
+    "Quaternion_W": "quaternion_w",
+    "Quaternion_X": "quaternion_x",
+    "Quaternion_Y": "quaternion_y",
+    "Quaternion_Z": "quaternion_z",
+}
+
+IMU_COLUMNS: tuple[str, ...] = tuple(IMU_arrow_to_DJ.values())
 
 # Arrow column -> canonical name. Verified against real data: the arrow
 # EulerAngle_{Yaw,Pitch,Roll} ranges match the binary euler_{x,y,z} exactly
@@ -135,8 +138,19 @@ def load_and_merge_bno055(
         return _load_bno055_arrow(arrow_file)
 
     clock_file = device_dir / f"{device_name}_Bno055_Clock_{chunk_index}.bin"
+
+    if not clock_file.exists():
+        clock_file = device_dir / f"{device_name}_Bno055_{chunk_index}.arrow"
+
     if not clock_file.exists():
         raise FileNotFoundError(clock_file)
+
+    if clock_file.suffix == ".arrow":
+        table = feather.read_table(clock_file, columns=["Clock", *IMU_arrow_to_DJ])
+        df = table.select(list(IMU_arrow_to_DJ)).to_pandas().rename(columns=IMU_arrow_to_DJ)
+        df.index = table["Clock"].to_numpy()
+        return df
+
     onix_clock = np.fromfile(clock_file, dtype=np.uint64)
 
     streams = social_ephys[device_name]
@@ -256,6 +270,8 @@ def find_overlapping_bno055_chunks(
             # cannot be read at all is malformed and must raise, or the caller would
             # compute stats over part of the window and insert a healthy-looking row.
             continue
+
+        # Inclusive interval overlap test on both ends.
         if first <= onix_ts_end and last >= onix_ts_start:
             overlapping.add(index)
 
