@@ -670,11 +670,9 @@ class PostProcessing(dj.Computed):
 
         # The preprocessed recording is a large, regenerable intermediate that only the
         # sorting reads, so reclaim it now.
-        possible_recording_dir = scratch_recording_dir(output_dir) / "recording"
-        for recording_dir in [possible_recording_dir, possible_recording_dir.with_suffix(".zarr")]:
-            if recording_dir.exists():
-                shutil.rmtree(recording_dir, ignore_errors=True)
-                logger.info(f"Deleted {recording_dir} after sorting.")
+        for recording_dir in scratch_recording_dir(output_dir).glob("recording*"):
+            shutil.rmtree(recording_dir, ignore_errors=True)
+            logger.info(f"Deleted {recording_dir} after post-processing.")
 
 
 @schema
