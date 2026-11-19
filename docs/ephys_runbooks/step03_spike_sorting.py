@@ -136,7 +136,8 @@ def setup_sorting_prerequisites(
             # PreProcessing step. "si_pipeline" is a registered pipeline name or a
             # SpikeInterface pipeline dict written inline. "aeon_default" (bandpass
             # 300-6000 Hz + median common average referencing) is used if omitted;
-            # "none" passes the recording through. See
+            # "none" applies no filtering or referencing, though the fixed
+            # unsigned-to-signed conversion still runs. See
             # aeon/dj_pipeline/utils/ephys_preprocessing.py.
             "SI_PREPROCESSING_PARAMS": {"si_pipeline": "aeon_default"},
             #

@@ -119,4 +119,6 @@ except ImportError:
     except Exception as e:
         logger.warning(f"Could not build virtual streams module: {e}")
 except Exception as e:
+    # A non-ImportError from streams.py (e.g. DataJointError with no database
+    # configured) must not break `import aeon.dj_pipeline`.
     logger.warning(f"Could not import streams module: {e}")

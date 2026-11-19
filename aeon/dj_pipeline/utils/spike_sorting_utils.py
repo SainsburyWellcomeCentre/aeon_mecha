@@ -143,9 +143,10 @@ try:
             if self._num_samples is None:
                 import pyarrow.dataset as ds
 
+                # Row counts live in the file footer. get_batch would decompress every
+                # batch to read them -- 11s vs 1.6s on a 386-column probe chunk, measured.
                 dataset = ds.dataset(self._filepath, format="arrow")
-                num_samples = dataset.count_rows()
-                self._num_samples = num_samples
+                self._num_samples = dataset.count_rows()
 
             return self._num_samples
 
@@ -241,6 +242,7 @@ try:
                 from pyarrow import memory_map
                 from pyarrow.ipc import RecordBatchFileReader
 
+            # memory_map rejects a Path, which the signature above allows.
             file_path = str(file_path)
 
             source = memory_map(file_path, "r")
@@ -291,6 +293,8 @@ try:
             self._kwargs = {
                 "file_path": str(Path(file_path).absolute()),
                 "sampling_frequency": sampling_frequency,
+                # Without this, to_dict()/load() and parallel workers rebuild the
+                # recording with the default stream and silently read a different one.
                 "stream_name": stream_name,
                 "gain_to_uV": gain_to_uV,
                 "offset_to_uV": offset_to_uV,

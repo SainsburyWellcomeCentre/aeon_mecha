@@ -1,0 +1,91 @@
+{
+  "Workflow": "Ephys-AEONX1.bonsai",
+  "Commit": "a6efff368440f7c8674176cbd23aab1786bba99f",
+  "Devices": {
+    "HarpInput": {
+      "DeviceName": "BreakoutBoard/HarpSyncInput",
+      "DeviceAddress": "12",
+      "Enable": "true",
+      "Source": "ClockAdapter"
+    },
+    "Port": "PortA",
+    "NeuropixelsV2e": {
+      "DeviceName": "HeadstageNeuropixelsV2e/NeuropixelsV2e",
+      "DeviceAddress": "256",
+      "Enable": "true",
+      "ConfigurationA": {
+        "InvertPolarity": "true",
+        "GainCalibrationFileName": "Z:\\aeon\\code\\probecalibrations\\SpoofProbe\\23299123163\\23299123163_gainCalValues.csv",
+        "Reference": "External",
+        "ProbeInterfaceFileName": null
+      },
+      "ConfigurationB": {
+        "InvertPolarity": "true",
+        "GainCalibrationFileName": "Z:\\aeon\\code\\probecalibrations\\ABC_Project\\23299108854\\23299108854_gainCalValues.csv",
+        "Reference": "External",
+        "ProbeInterfaceFileName": "Z:\\aeon\\data\\raw\\AEONX1\\recording_configurations\\M81_ProbeB_4Shanks_1000_to_1700_um.json"
+      }
+    },
+    "PortVoltage": {
+      "Requested": "8"
+    },
+    "ProbeA": "false",
+    "BufferSize": "300",
+    "ProbeB": "true",
+    "Type": "OepsCommutatorController",
+    "Builder": {
+      "HarpInput": {
+        "DeviceName": "BreakoutBoard/HarpSyncInput",
+        "DeviceAddress": "12",
+        "Enable": "true",
+        "Source": "ClockAdapter"
+      },
+      "NeuropixelsV2eBeta": {
+        "DeviceName": "HeadstageNeuropixelsV2eBeta/NeuropixelsV2eBeta",
+        "DeviceAddress": "256",
+        "Enable": "true",
+        "EnableLed": "true",
+        "ConfigurationA": {
+          "InvertPolarity": "true",
+          "GainCalibrationFileName": "Z:\\aeon\\code\\probecalibrations\\SpoofProbe\\23409404231\\23409404231_gainCalValues.csv",
+          "Reference": "External"
+        },
+        "ConfigurationB": {
+          "InvertPolarity": "true",
+          "GainCalibrationFileName": null,
+          "Reference": "External"
+        }
+      },
+      "Port": "PortA",
+      "PortVoltage": {
+        "Requested": "6"
+      },
+      "ProbeA": "false",
+      "BufferSize": "30",
+      "ProbeB": "false",
+      "ImuSamplingPeriod": "PT0.05S"
+    },
+    "CommutatorCommands": "CommutatorTurns",
+    "AntiClockwiseKey": "RButton ShiftKey Menu Space Next PageDown D0 D2 B P R NumPad0 NumPad2 F1 F3 Shift",
+    "ClockwiseKey": "LButton RButton Cancel ShiftKey ControlKey Menu Pause Space Prior PageUp Next PageDown End D0 D1 D2 D3 A B C P Q R S NumPad0 NumPad1 NumPad2 NumPad3 F1 F2 F3 F4 Shift",
+    "PortName": "COM3",
+    "Enable": "true",
+    "EnableLed": "true"
+  },
+  "AdcScale": "-500",
+  "SampleRate": "30000",
+  "Cutoff1": "300",
+  "Cutoff2": "5000",
+  "FilterOrder": "3",
+  "FilterType": "HighPass",
+  "ProbeHighPass": "ProbeBHighPass",
+  "Delay": "30",
+  "Length": "60",
+  "Threshold": {
+    "double": "-60778.575860918492"
+  },
+  "WaveformRefinement": "AlignPeaks",
+  "ProbeSpikeWaveforms": "ProbeBSpikeWaveforms",
+  "Probe": "EphysProbeB",
+  "Type": "SpikeDetection"
+}

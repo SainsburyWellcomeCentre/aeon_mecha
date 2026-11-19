@@ -10,16 +10,19 @@ from typing import Any
 import datajoint as dj
 
 from aeon.dj_pipeline import acquisition, get_schema_name
+from aeon.dj_pipeline.utils.arrow_io import read_arrow_clock_bounds
 from aeon.dj_pipeline.utils.ephys_utils import (
     DEVICE_NAMES,
     DEVICE_PROBE_TYPE_MAP,
     discover_epoch_probes,
+    enabled_probe_labels,
     find_nearest_window,
     find_or_create_probe_insertion,
     get_probe_id,
     harp_to_naive,
     load_device_channel_map,
     parse_epoch_metadata,
+    parse_metadata_implants,
     read_onix_ts,
     read_probe_assignments,
     resolve_harp,
@@ -200,6 +203,35 @@ class EphysEpochEnd(dj.Manual):
     """
 
 
+def _insert_target_area(target_area: str | None, insertion_key: dict) -> None:
+    """Link a ProbeInsertion to its target area, creating the lookup row if new.
+
+    TargetArea is open, not closed -- a new brain area must not block ingestion --
+    so new values are created with a warning, where spelling drift shows up.
+    """
+    if not target_area:
+        return
+    # The link table allows "one or more" areas -- a long shank can span two -- so a
+    # different area is reported, not refused. Refusing would block re-ingestion.
+    linked_areas = (InsertionTargetArea & insertion_key).to_arrays("target_area")
+    other_areas = [area for area in linked_areas if area != target_area]
+    if other_areas:
+        logger.warning(
+            f"Insertion {insertion_key} is already linked to target area(s) {other_areas}; "
+            f"metadata says {target_area!r}, which will be added alongside them. If that is "
+            f"spelling drift rather than a second area, fix it -- joins fan out per area."
+        )
+
+    area_is_new = not (TargetArea & {"target_area": target_area})
+    TargetArea.insert1({"target_area": target_area}, skip_duplicates=True)
+    if area_is_new:
+        logger.warning(
+            f"Created new TargetArea {target_area!r} from acquisition metadata. "
+            f"Check it against existing areas for spelling drift."
+        )
+    InsertionTargetArea.insert1({**insertion_key, "target_area": target_area}, skip_duplicates=True)
+
+
 @schema
 class EphysEpochConfig(dj.Imported):
     definition = """
@@ -227,7 +259,8 @@ class EphysEpochConfig(dj.Imported):
     def make(self, key: dict[str, Any]) -> None:
         """Discover probes for an epoch; register ProbeInsertion + ElectrodeConfig.
 
-        Subject-probe mapping resolved (in priority order): per-epoch
+        Subject-probe mapping resolved (in priority order): the acquisition's own
+        ``subject.Implants[]`` metadata block, then per-epoch
         probe_assignments.json, then carry-forward from the most recent
         populated epoch, then existing ProbeInsertion matched by serial.
 
@@ -283,6 +316,19 @@ class EphysEpochConfig(dj.Imported):
                 continue
             probe_info[label] = probe_id
 
+        # A probe the metadata declares enabled whose files are absent is a transfer
+        # problem, not a single-probe epoch: a half-copied epoch would ingest as clean.
+        probes_declared_enabled = enabled_probe_labels(metadata)
+        if probes_declared_enabled is not None:
+            # Against what discovery found on disk, not probe_info: that also drops
+            # unidentifiable probes, reporting a disabled probe as a missing file.
+            probes_without_files = sorted(probes_declared_enabled - set(probe_labels))
+            if probes_without_files:
+                raise FileNotFoundError(
+                    f"Metadata declares {probes_without_files} enabled for epoch {epoch_dir}, "
+                    f"but only {sorted(probe_labels)} have data files."
+                )
+
         if not probe_info:
             raise ValueError(
                 f"All probes in {epoch_path} are disabled/dummy (no probe configuration "
@@ -303,7 +349,12 @@ class EphysEpochConfig(dj.Imported):
         probe_to_econfig: dict[str, dict[str, str]] = {}
         for label, basename in probe_configs.items():
             if basename is None:
-                continue  # disabled/spoofed probe
+                continue  # disabled/spoofed probe (older layouts null the filename)
+            if label not in probe_info:
+                # Enabled-flag layouts leave the filename populated on a disabled
+                # probe, so resolving it blocks the epoch or registers dead hardware.
+                logger.info(f"Skipping ElectrodeConfig for {label}: not an active probe")
+                continue
             json_path = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, basename)
             ec_probe_type, ec_config_name = create_electrode_config(
                 json_path=json_path,
@@ -326,16 +377,25 @@ class EphysEpochConfig(dj.Imported):
                 )
                 logger.info(f"Auto-created Probe entry: {label}={probe_id} (type={probe_type})")
 
-        # Read subject-probe mapping
         active_labels = list(probe_info.keys())
-        probe_assignments = read_probe_assignments(
-            key,
-            epoch_path,
-            active_labels,
-            self.Insertion,
-            probe_info,
-            override_dir=self.probe_assignments_override_dir,
-        )
+        implants = parse_metadata_implants(metadata)
+        if implants is not None:
+            missing = [lbl for lbl in active_labels if lbl not in implants]
+            if missing:
+                raise KeyError(
+                    f"Metadata declares Implants but has no entry for {missing} "
+                    f"(present: {sorted(implants)}). Fix the acquisition metadata."
+                )
+            probe_assignments = {lbl: {"subject": implants[lbl]["subject"]} for lbl in active_labels}
+        else:
+            probe_assignments = read_probe_assignments(
+                key,
+                epoch_path,
+                active_labels,
+                self.Insertion,
+                probe_info,
+                override_dir=self.probe_assignments_override_dir,
+            )
 
         # Create/validate ProbeInsertion entries and build Insertion Part rows
         insertion_entries = []
@@ -355,13 +415,17 @@ class EphysEpochConfig(dj.Imported):
                 )
             subject = probe_assignments[label]["subject"]
 
+            implant = (implants or {}).get(label, {})
             pi_key = find_or_create_probe_insertion(
                 key["experiment_name"],
                 subject,
                 probe_id,
                 ProbeInsertion,
                 Probe,
+                insertion_number=implant.get("insertion_number"),
+                implantation_date=implant.get("implantation_date"),
             )
+            _insert_target_area(implant.get("target_area"), pi_key)
             insertion_entries.append({**key, **pi_key, "probe_label": label, **probe_to_econfig[label]})
 
         # Insert master + Part rows
@@ -472,6 +536,32 @@ class EphysSyncModel(dj.Manual):
                 )
 
 
+def _reject_duplicate_chunk_formats(ephys_files: list[Path], raw_dir: Path) -> None:
+    """Refuse an epoch where one probe chunk exists as both a binary and an arrow file.
+
+    The paths differ, so the pair registers as two chunks and PreProcessing
+    concatenates it twice. Mixing formats across chunk indices stays supported.
+    """
+    # Keyed on the containing directory as well: two epochs each have their own chunk 0.
+    files_by_chunk: dict[tuple[str, ...], dict[str, Path]] = {}
+    for ephys_file in ephys_files:
+        name_match = re.search(r"_(Probe[A-Z])_(?:AmplifierData_)?(\d+)\.(bin|arrow)$", ephys_file.name)
+        if not name_match:
+            continue
+        probe_label, chunk_index, suffix = name_match.groups()
+        chunk_key = (*ephys_file.relative_to(raw_dir).parts[:-1], probe_label, chunk_index)
+        this_format = "binary" if suffix == "bin" else "arrow"
+        other_format = "arrow" if this_format == "binary" else "binary"
+        formats_seen = files_by_chunk.setdefault(chunk_key, {})
+        if formats_seen.get(other_format):
+            raise ValueError(
+                f"Chunk {chunk_index} of {probe_label} exists in both binary and arrow form: "
+                f"{formats_seen.get('binary', ephys_file)} and "
+                f"{formats_seen.get('arrow', ephys_file)}. Remove one."
+            )
+        formats_seen[this_format] = ephys_file
+
+
 @schema
 class EphysChunk(dj.Manual):
     definition = """  # One ~hour-long ephys recording period
@@ -544,8 +634,11 @@ class EphysChunk(dj.Manual):
             return
 
         probe_labels = {label for _, label in insertion_lookup}
+        # Binary acquisition writes AmplifierData_N.bin beside Clock_N.bin; the arrow
+        # acquisition writes one <device>_<probe>_N.arrow holding both as columns.
+        # Sort on the trailing chunk number, or chunk 10 lands before chunk 2.
         all_ephys_files = sorted(
-            [*raw_dir.rglob("*_AmplifierData*.bin"), *raw_dir.rglob("*_Probe?_*.arrow")],
+            [*raw_dir.rglob("*_AmplifierData*.bin"), *raw_dir.rglob("*_Probe[A-Z]_*.arrow")],
             key=lambda x: (x.parent.as_posix(), int(x.stem.split("_")[-1])),
         )
 
@@ -560,6 +653,8 @@ class EphysChunk(dj.Manual):
         if not all_ephys_files:
             logger.info(f"No ephys amplifier files found in {raw_dir}")
             return
+
+        _reject_duplicate_chunk_formats(all_ephys_files, raw_dir)
 
         for ephys_file in all_ephys_files:
             rel_path = ephys_file.relative_to(raw_dir).as_posix()
@@ -606,18 +701,27 @@ class EphysChunk(dj.Manual):
                 )
                 continue
 
-            # Read ONIX timestamps from the companion Clock binary
+            # Arrow carries amplifier and clock as columns of one file, so the
+            # replace is a no-op there and clock_file is ephys_file itself.
             clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
             if not clock_file.exists():
                 logger.warning(f"Clock file not found for {ephys_file.name}. Skipping.")
                 continue
-            # Guard before memmap — np.memmap raises ValueError on 0-byte files.
-            if clock_file.stat().st_size < 8:
-                logger.warning(f"Empty/short Clock file for {ephys_file.name}. Skipping.")
-                continue
-            onix_ts = read_onix_ts(clock_file)
-
-            first_ts, last_ts = int(onix_ts[0]), int(onix_ts[-1])
+            if clock_file.suffix == ".arrow":
+                try:
+                    # Only the first and last tick are needed; read_onix_ts would
+                    # materialise the whole Clock column to reach them.
+                    first_ts, last_ts = read_arrow_clock_bounds(clock_file)
+                except (KeyError, ValueError) as e:
+                    logger.warning(f"Cannot read Clock from {clock_file.name}: {e}. Skipping.")
+                    continue
+            else:
+                # Guard before memmap — np.memmap raises ValueError on 0-byte files.
+                if clock_file.stat().st_size < 8:
+                    logger.warning(f"Empty/short Clock file for {ephys_file.name}. Skipping.")
+                    continue
+                onix_ts = read_onix_ts(clock_file)
+                first_ts, last_ts = int(onix_ts[0]), int(onix_ts[-1])
 
             # Fetch + resolve inside a temp download dir so the <attach> sync_model
             # files DataJoint extracts on fetch are cleaned up (issue #598). Any
@@ -848,9 +952,9 @@ class OnixImuChunk(dj.Imported):
     ---
     sample_count: int32
     timestamps: json
-    euler_x: json
-    euler_y: json
-    euler_z: json
+    euler_x: json              # yaw / heading, 0-360
+    euler_y: json              # pitch, +/-90
+    euler_z: json              # roll, +/-180
     gravity_vector_x: json
     gravity_vector_y: json
     gravity_vector_z: json
@@ -861,6 +965,8 @@ class OnixImuChunk(dj.Imported):
     quaternion_x: json
     quaternion_y: json
     quaternion_z: json
+    calibration=null: json     # BNO055 status byte; arrow chunks only
+    temperature=null: json     # arrow chunks only
     stream_df: <aeon_onix_stream>
     """
 
@@ -904,9 +1010,10 @@ class OnixImuChunk(dj.Imported):
         import pandas as pd
 
         from aeon.dj_pipeline.utils.onix_imu import (
+            ARROW_EXTRA_COLUMNS,
             IMU_COLUMNS,
+            concat_bno055_chunks,
             find_overlapping_bno055_chunks,
-            load_and_merge_bno055,
         )
         from aeon.dj_pipeline.utils.stats import column_stats, timestamp_stats
 
@@ -941,13 +1048,37 @@ class OnixImuChunk(dj.Imported):
                 device_name = candidate
                 break
 
+        def _row_format(chunk_indices: list[int]) -> str:
+            """The format of the chunks this row covers.
+
+            From the chunks, not the epoch: one written across a format change holds
+            some of each, and concat refuses to mix sets, so chunk 0 settles it.
+            """
+            if device_name is None:
+                return "binary"
+            device_dir = epoch_path / device_name
+            if chunk_indices:
+                first = chunk_indices[0]
+                return (
+                    "arrow" if (device_dir / f"{device_name}_Bno055_{first}.arrow").exists() else "binary"
+                )
+            # Nothing to go on: fall back to the epoch, so an empty row matches
+            # the siblings it would have had.
+            return "arrow" if any(device_dir.glob(f"{device_name}_Bno055_*.arrow")) else "binary"
+
         def _empty_row(chunk_indices: list[int]) -> dict:
+            # The extras get {} like every other column: NULL would make an empty arrow
+            # row fail the "extra columns present" test the populated branch uses.
+            row_format = _row_format(chunk_indices)
+            arrow_extra_stats = {col: {} for col in ARROW_EXTRA_COLUMNS} if row_format == "arrow" else {}
             return {
                 **key,
                 "sample_count": 0,
                 "timestamps": {},
                 **{col: {} for col in IMU_COLUMNS},
+                **arrow_extra_stats,
                 "stream_df": {
+                    "stream_format": row_format,
                     "experiment_name": key["experiment_name"],
                     "epoch_start": str(key["epoch_start"]),
                     "sync_start": str(key["sync_start"]),
@@ -969,7 +1100,7 @@ class OnixImuChunk(dj.Imported):
             self.insert1(_empty_row([]))
             return
 
-        df = pd.concat([load_and_merge_bno055(device_dir, device_name, n) for n in chunk_indices])
+        df = concat_bno055_chunks(device_dir, device_name, chunk_indices)
         df = df[(df.index >= onix_ts_start) & (df.index <= onix_ts_end)]
 
         if df.empty:
@@ -991,12 +1122,15 @@ class OnixImuChunk(dj.Imported):
                 "sample_count": len(df),
                 "timestamps": timestamp_stats(harp_index),
                 **{col: column_stats(df[col].values) for col in IMU_COLUMNS},
+                # arrow chunks carry two extra fields; binary chunks leave them null
+                **{col: column_stats(df[col].values) for col in ARROW_EXTRA_COLUMNS if col in df.columns},
                 "stream_df": {
                     "experiment_name": key["experiment_name"],
                     "epoch_start": str(key["epoch_start"]),
                     "sync_start": str(key["sync_start"]),
                     "device_name": device_name,
                     "stream_group": "Bno055",
+                    "stream_format": _row_format(chunk_indices),
                     "chunk_indices": chunk_indices,
                     "onix_ts_start": onix_ts_start,
                     "onix_ts_end": onix_ts_end,

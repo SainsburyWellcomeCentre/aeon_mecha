@@ -163,11 +163,11 @@ class TestChunkIngestion:
 
         acquisition.Chunk.ingest_chunks(cfg["experiment_name"])
 
-        chunk_starts = (acquisition.Chunk & {"experiment_name": cfg["experiment_name"]}).to_arrays(
-            "chunk_start"
-        )
-        assert len(chunk_starts) >= 1
-        assert all(cs is not None for cs in chunk_starts)
+        chunks = (acquisition.Chunk & {"experiment_name": cfg["experiment_name"]}).to_dicts()
+        assert chunks, "no chunks ingested"
+        # a multi-hour epoch yields several chunks; every one must carry a start time
+        assert all(c["chunk_start"] is not None for c in chunks)
+        assert all(c["chunk_start"] < c["chunk_end"] for c in chunks)
 
 
 class TestStreamDataIngestion:

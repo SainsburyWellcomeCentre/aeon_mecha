@@ -22,8 +22,9 @@ import pandas as pd
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
+from aeon.dj_pipeline.utils.arrow_io import read_arrow_column
 from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
-from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording, read_onix_ts
+from aeon.dj_pipeline.utils.ephys_utils import find_nearest_window, read_amplifier_recording
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
     extend_clock,
@@ -37,6 +38,10 @@ ephys = importlib.import_module("aeon.dj_pipeline.ephys")
 
 schema = dj.Schema(get_schema_name("spike_sorting"))
 logger = dj.logger
+
+# Shared so PreProcessing and SyncedSpikes cannot disagree. Matches the probe stream
+# rather than the extension: the Bno055 arrow file sits in the same directory.
+AMPLIFIER_FILE_RESTRICTION = "(file_name LIKE '%AmplifierData%.bin' OR file_name LIKE '%Probe%.arrow')"
 
 # Neuropixels 2.0 sampling rate - TODO: read this from the metadata
 NP2_FS_HZ = 30e3
@@ -131,6 +136,36 @@ class SortingParamSet(dj.Lookup):
     params: <blob>  # dictionary of all applicable parameters
     """
 
+    def insert(self, rows, *args, **kwargs):
+        """Insert paramsets, rejecting an invalid preprocessing selection up front.
+
+        Checks SI_PREPROCESSING_PARAMS the way PreProcessing will, so a bad pipeline
+        name fails at insert rather than mid-populate.
+        """
+        # Only plain sequences of dicts are checked; DataFrames, query expressions and
+        # generators pass through untouched (PreProcessing still fails on them).
+        if isinstance(rows, list | tuple):
+            for row in rows:
+                if isinstance(row, dict):
+                    # Test the raw value: `or {}` turns a falsy non-dict into {} and
+                    # accepts the row by default -- the case this check exists to reject.
+                    params = row.get("params")
+                    if params is None:
+                        params = {}
+                    if not isinstance(params, dict):
+                        # `"KEY" in params` on a str or list is a substring/element
+                        # test, so a non-dict would skip every check below silently.
+                        raise TypeError(
+                            f"SortingParamSet.params must be a dict, got {type(params).__name__}"
+                        )
+                    section = params.get("SI_PREPROCESSING_PARAMS") or {}
+                    if not isinstance(section, dict):
+                        raise TypeError(
+                            f"SI_PREPROCESSING_PARAMS must be a dict, got {type(section).__name__}"
+                        )
+                    resolve_preprocessing_pipeline(section)
+        super().insert(rows, *args, **kwargs)
+
 
 @schema
 class SortingTask(dj.Manual):
@@ -224,10 +259,14 @@ class PreProcessing(dj.Computed):
 
         # Load ephys data
         ephys_files, dir_types = (
-            ephys.EphysChunk.File
-            & (ephys.EphysBlockInfo.Chunk & key)
-            & ["file_name LIKE '%AmplifierData%.bin'", "file_name LIKE '%Probe%.arrow'"]
+            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & AMPLIFIER_FILE_RESTRICTION
         ).to_arrays("file_path", "directory_type", order_by="chunk_start")
+
+        if len(ephys_files) == 0:
+            raise ValueError(
+                f"No amplifier files registered for block {key.get('block_start')}: "
+                f"EphysChunk.File has no row matching {AMPLIFIER_FILE_RESTRICTION!r}."
+            )
 
         # Channels
         electrodes_query = (
@@ -1098,17 +1137,14 @@ class SyncedSpikes(dj.Imported):
             for c, s, e, m in zip(*sync_, strict=True):
                 chunk_windows[c].append((s, e, joblib.load(m)))
 
-        # Load ephys onix times
-        _clock_query = (
-            ephys.EphysChunk.File
-            & (ephys.EphysBlockInfo.Chunk & key)
-            & ["file_name LIKE '%Clock%.bin'", "file_name LIKE '%Probe%.arrow'"]
+        amplifier_query = (
+            ephys.EphysChunk.File & (ephys.EphysBlockInfo.Chunk & key) & AMPLIFIER_FILE_RESTRICTION
         )
-        _clock_rows = _clock_query.to_dicts(order_by="chunk_start")
-        _pk = _clock_query.primary_key
-        ephys_file_keys = [{k: r[k] for k in _pk} for r in _clock_rows]
-        ephys_files = [r["file_path"] for r in _clock_rows]
-        dir_types = [r["directory_type"] for r in _clock_rows]
+        amplifier_rows = amplifier_query.to_dicts(order_by="chunk_start")
+        file_primary_key = amplifier_query.primary_key
+        ephys_file_keys = [{k: row[k] for k in file_primary_key} for row in amplifier_rows]
+        ephys_files = [row["file_path"] for row in amplifier_rows]
+        dir_types = [row["directory_type"] for row in amplifier_rows]
 
         # Spike indices count samples of the AmplifierData files concatenated in PreProcessing, so
         # the chunk boundaries come from those files, not from the Clock files. They differ when an
@@ -1117,12 +1153,35 @@ class SyncedSpikes(dj.Imported):
         # that lost its tail instead is extrapolated at its own tick rate, by at most 1 s.
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         onix_times, amp_lengths = [], []
+        # Not a `with`: the spilled clocks must outlive this loop, and the finalizer
+        # cleans them up when make() returns.
+        clock_spill_dir = tempfile.TemporaryDirectory(prefix="aeon-onix-clock-")
+        if not ephys_files:
+            raise ValueError(
+                f"No amplifier files registered for the chunks of block {key.get('block_start')}. "
+                f"EphysChunk.File has no row matching {AMPLIFIER_FILE_RESTRICTION!r} for them."
+            )
         for f, d in zip(ephys_files, dir_types, strict=True):
             ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
-            amp_len = read_amplifier_recording(
-                ephys_dir / f.replace("Clock", "AmplifierData"), num_channels, NP2_FS_HZ
-            ).get_num_samples()
-            onix_ts = read_onix_ts(ephys_dir / f)
+            amp_path = ephys_dir / f
+            if amp_path.suffix == ".arrow":
+                # Clock is a column of the same table, so it cannot disagree on length.
+                # Reading it decompresses into RAM, and onix_times holds every chunk until
+                # the last unit is mapped (~17 GB on a 20 h block), so spill and map it.
+                onix_ts = read_arrow_column(amp_path, "Clock")
+                amp_len = len(onix_ts)
+                if onix_ts.dtype != np.uint64:
+                    # tofile writes whatever dtype the column declared, so a non-uint64
+                    # Clock would be reinterpreted on the way back in.
+                    raise ValueError(f"{amp_path} declares Clock as {onix_ts.dtype}, expected uint64.")
+                spill_path = Path(clock_spill_dir.name) / f"{len(amp_lengths)}.u64"
+                onix_ts.tofile(spill_path)
+                onix_ts = np.memmap(spill_path, mode="r", dtype=np.uint64)
+            else:
+                amp_len = read_amplifier_recording(amp_path, num_channels, NP2_FS_HZ).get_num_samples()
+                onix_ts = np.memmap(
+                    ephys_dir / f.replace("AmplifierData", "Clock"), mode="r", dtype=np.uint64
+                )
             onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=f))
             amp_lengths.append(amp_len)
         chunk_bounds = np.cumsum(amp_lengths)  # end of each chunk in the concatenated recording

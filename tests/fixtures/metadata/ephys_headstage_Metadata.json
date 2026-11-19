@@ -1,0 +1,59 @@
+{
+  "workflow": "Ephys.bonsai",
+  "commit": "b7f1a3c1b9f507b209eef42e862c30c38fa3e76e",
+  "repositoryUrl": "https://github.com/SainsburyWellcomeCentre/aeon_exp_foragingABC.git",
+  "ephys": {
+    "Subject": "AAA-1140901",
+    "HarpInput": {
+      "Enable": true,
+      "Source": 1,
+      "DeviceName": "BreakoutBoard/HarpSyncInput",
+      "DeviceAddress": 12,
+      "DeviceType": "OpenEphys.Onix1.HarpSyncInput, OpenEphys.Onix1, Version=0.8.0.0, Culture=neutral, PublicKeyToken=null"
+    },
+    "Headstage": {
+      "DiscriminatorType": "NeuropixelsV2eHeadstage",
+      "ProbeA": {
+        "Enable": true,
+        "ProbeConfiguration": {
+          "ReferenceSerialized": "External",
+          "InvertPolarity": true,
+          "GainCalibrationFileName": "D:/probe_settings/ABC_Project/23107805942/23107805942_gainCalValues.csv",
+          "ProbeInterfaceFileName": "D:/probe_settings/ABC_Project/M01_ProbeA_4Shanks_1500_to_2200um.json"
+        }
+      },
+      "Port": 1,
+      "ProbeB": {
+        "Enable": true,
+        "ProbeConfiguration": {
+          "ReferenceSerialized": "External",
+          "InvertPolarity": true,
+          "GainCalibrationFileName": "D:/probe_settings/ABC_Project/23409404271/23409404271_gainCalValues.csv",
+          "ProbeInterfaceFileName": "D:/probe_settings/ABC_Project/M01_ProbeB_4Shanks_2000_to_2700um_LFP.json"
+        }
+      },
+      "BufferSize": 3000,
+      "PortVoltage": {
+        "Requested": 8.0,
+        "Applied": 8.0
+      }
+    }
+  },
+  "subject": {
+    "Subject": "AAA-1140901",
+    "Implants": [
+      {
+        "Probe": "ProbeA",
+        "TargetArea": "mPFC",
+        "InsertionNumber": 1,
+        "ImplantationDate": "2026-05-20"
+      },
+      {
+        "Probe": "ProbeB",
+        "TargetArea": "HPC",
+        "InsertionNumber": 2,
+        "ImplantationDate": "2026-05-20"
+      }
+    ]
+  }
+}
