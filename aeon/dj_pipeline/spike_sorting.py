@@ -486,7 +486,7 @@ class SpikeSorting(dj.Computed):
             # Values in the paramset still win, except n_jobs: it follows the job's CPU
             # allocation, and a paramset n_jobs can only lower it.
             job_kwargs = fork_safe_job_kwargs("30s", max_jobs=sorting_params.get("n_jobs"))
-            sorting_params = {**job_kwargs, **sorting_params}
+            sorting_params = {**job_kwargs, **sorting_params, "n_jobs": job_kwargs["n_jobs"]}
 
         intermediate_dir = scratch_recording_dir(output_dir)
 
