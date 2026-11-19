@@ -254,7 +254,7 @@ class PreProcessing(dj.Computed):
 
         raw_ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type="raw-ephys")
         # get any `epoch_dir`, which will have the probe metadata in it
-        epoch_dir = (ephys.EphysEpoch & key).to_dicts()[0]("epoch_dir")
+        epoch_dir = (ephys.EphysEpoch & key).to_dicts()[0]["epoch_dir"]
 
         epoch_path = raw_ephys_dir / epoch_dir
         probe_filepath = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, electrode_config_name)
