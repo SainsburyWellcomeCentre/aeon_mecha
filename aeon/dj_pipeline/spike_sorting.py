@@ -583,10 +583,12 @@ class PostProcessing(dj.Computed):
         intermediate_dir = scratch_recording_dir(output_dir)
         recording_path = list(intermediate_dir.glob("recording*"))[0]
 
-        si_recording = si.load(recording_path)
+        # The recording pickle contains all provenance, and we want this attached to the analyzer.
+        # But this loads and applies the preprocessing lazily => is slow
+        si_recording = si.load(output_dir / "si_recording.pkl", base_folder=output_dir)
+        # The cached recording is already preprocessed => much faster for postprocessing
+        cached_recording = si.load(recording_path)
 
-        # todo: possibly replace this with
-        # si_sorting = si.read_sorter_folder(sorting_file.parent, register_recording=False)
         si_sorting: si.sorters.BaseSorter = si.load(sorting_file, base_folder=output_dir)
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
@@ -624,6 +626,9 @@ class PostProcessing(dj.Computed):
             overwrite=True,
             **job_kwargs,
         )
+
+        # Use the cached_recording for actual computation
+        sorting_analyzer.set_temporary_recording(cached_recording)
 
         # The order of extension computation is drawn from sorting_analyzer.get_computable_extensions()
         # each extension is parameterized by params specified in extensions_params dictionary
