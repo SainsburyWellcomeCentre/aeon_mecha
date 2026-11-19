@@ -46,12 +46,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gpu = ["cupy", "dask"]
+gpu = ["cupy; sys_platform != 'darwin'", "dask"]
 pynapple = ["pynapple>=0.11.4,<0.12"]
 spike_sorting = [
   "spikeinterface[full]>=0.106.0",
   "spython", 
-  "cuda-python", 
+  "cuda-python; sys_platform != 'darwin'",
   "spikeinterface-gui>=0.13.1",
   "PySide6<6.8", 
   "pyqtgraph"
