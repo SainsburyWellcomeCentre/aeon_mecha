@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import datajoint as dj
+from spikeinterface.core.zarrextractors import super_zarr_open
 
 from aeon.dj_pipeline import get_schema_name, spike_sorting
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
@@ -349,12 +350,12 @@ def launch_spikeinterface_gui(
     # Pending curation: GUI work saved to the analyzer ("Save in analyzer") but not yet recorded via
     # save_manual_curation, which clears it. Stored in curation_data.json (binary) or zarr attrs (zarr).
     if analyzer_dir.name.endswith(".zarr"):
-        import zarr
-
-        zarr_root = zarr.open(str(analyzer_dir), mode="r")
+        zarr_root = super_zarr_open(analyzer_dir, mode="r")
         has_pending_curation = (
-            "spikeinterface_gui" in zarr_root and "curation_data" in zarr_root["spikeinterface_gui"].attrs
+            "spikeinterface_gui" in zarr_root.keys()
+            and "curation_data" in zarr_root["spikeinterface_gui"].attrs.keys()
         )
+
     else:
         has_pending_curation = curation_data_file.exists()
 
@@ -549,13 +550,14 @@ def save_manual_curation(key: dict, description: str = "") -> int:
     # (Controller.save_curation_in_analyzer's zarr branch) it's stored in the zarr group's
     # .zattrs under a "curation_data" key instead - there is no curation_data.json at all.
     if is_zarr:
-        import zarr
-
         curation_data = None
         if gui_dir.exists():
-            zarr_root = zarr.open(str(analyzer_dir), mode="r")
-            if "spikeinterface_gui" in zarr_root:
-                curation_data = zarr_root["spikeinterface_gui"].attrs.get("curation_data")
+            zarr_root = super_zarr_open(analyzer_dir, mode="r")
+            if (
+                "spikeinterface_gui" in zarr_root.keys()
+                and "curation_data" in zarr_root["spikeinterface_gui"].attrs.keys()
+            ):
+                curation_data = zarr_root["spikeinterface_gui"].attrs["curation_data"]
         if curation_data is None:
             raise FileNotFoundError(
                 f"No curation_data found in zarr attrs at {gui_dir}/.zattrs\n"
@@ -639,10 +641,8 @@ def save_manual_curation(key: dict, description: str = "") -> int:
 
     # Now safe to clear the original, live-editable copy
     if is_zarr:
-        import zarr
-
-        zarr_root_rw = zarr.open(str(analyzer_dir), mode="r+")
-        del zarr_root_rw["spikeinterface_gui"].attrs["curation_data"]
+        zarr_root = super_zarr_open(analyzer_dir, mode="r")
+        del zarr_root["spikeinterface_gui"].attrs["curation_data"]
         logger.info(f"Cleared curation_data from zarr attrs (saved as {curated_file_name})")
     else:
         curation_data_file.unlink()
