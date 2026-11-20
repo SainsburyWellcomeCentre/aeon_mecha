@@ -620,7 +620,7 @@ class EphysChunk(dj.Manual):
 
                     ephys_processed_path = get_sorting_root_dir()
 
-                    logger.warning("Cannot read arrow file. Attempting reconstruction.")
+                    logger.warning(f"Cannot read arrow file {ephys_file}. Attempting reconstruction.")
 
                     fixed_filepath = (
                         ephys_processed_path
