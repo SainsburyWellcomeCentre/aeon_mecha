@@ -711,7 +711,7 @@ class EphysChunk(dj.Manual):
                         ephys_processed_path = get_sorting_root_dir()
                         if ephys_file.is_relative_to(ephys_processed_path):
                             directory_type = "processed"
-                            relative_directory = ephys_processed_path.parent
+                            relative_directory = ephys_processed_path / experiment_name
                         else:
                             continue
                     cls.File.insert(
