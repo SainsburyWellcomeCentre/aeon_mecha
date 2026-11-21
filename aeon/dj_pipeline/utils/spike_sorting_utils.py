@@ -303,3 +303,45 @@ try:
 
 except ModuleNotFoundError:
     warnings.warn("SpikeInterface is not installed", stacklevel=2)
+
+
+def create_uncorrupted_arrow_file(corrupted_filepath: Path, fixed_filepath: Path) -> bool:
+    """Creates a valid arrow file from a corrupted one.
+
+    When the acquisition system fails suddenly, the arrow files generated do not produce a footer and cannot
+    be read using standard tools. This PR reads a corrupted arrow file batch by batch while they are valid.
+    Then it recovers this partial data and saves it in a new, uncorrupted arrow file
+    """
+    import pyarrow as pa
+
+    recovered_batches = []
+
+    with pa.OSFile(str(corrupted_filepath), "rb") as f:
+        # Arrow Files begin with a 6-byte magic word + 2 bytes padding, which we skip
+        f.seek(8)
+
+        # Read the arrow file batch by batch, rather than all at once
+        reader = pa.ipc.RecordBatchStreamReader(f)
+
+        # Get it's header/metadata
+        schema = reader.schema
+
+        while True:
+            try:
+                batch = reader.read_next_batch()
+                recovered_batches.append(batch)
+            except (OSError, StopIteration):
+                # This is the corrupted chunk where the system crashed
+                break
+
+    if recovered_batches:
+        fixed_filepath.parent.mkdir(parents=True, exist_ok=True)
+        with pa.OSFile(str(fixed_filepath), "wb") as sink:
+            with pa.ipc.new_file(sink, schema) as writer:
+                for batch in recovered_batches:
+                    writer.write_batch(batch)
+        return True
+
+    else:
+        logger.warning(f"Found no uncorrupted batches in corrupted file {corrupted_filepath}.")
+        return False
