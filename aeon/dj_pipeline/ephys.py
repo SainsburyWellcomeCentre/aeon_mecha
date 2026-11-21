@@ -563,22 +563,6 @@ class EphysChunk(dj.Manual):
             return
 
         for ephys_file in all_ephys_files:
-            rel_path = ephys_file.relative_to(raw_dir).as_posix()
-
-            if cls.File & exp_key & {"file_path": rel_path}:
-                continue  # already ingested
-
-            # Parse probe_label from filename
-            name_match = re.search(r"_(Probe[A-Z])_", ephys_file.name)
-
-            if not name_match:
-                logger.warning(f"Cannot parse probe label from {ephys_file.name}. Skipping.")
-                continue
-            probe_label = name_match.group(1)
-
-            if probe_label not in probe_labels:
-                continue  # no EphysEpochConfig.Insertion for this probe in any epoch
-
             # Determine epoch from directory path
             # File path structure: raw_dir / epoch_dir / device_name / files
             rel_parts = ephys_file.relative_to(raw_dir).parts
@@ -596,6 +580,22 @@ class EphysChunk(dj.Manual):
                     f"EphysEpochConfig not yet populated). Skipping."
                 )
                 continue
+
+            rel_path = ephys_file.relative_to(raw_dir).as_posix()
+
+            if cls & exp_key & {"epoch_start": epoch_start} & (cls.File & {"file_name": ephys_file.name}):
+                continue  # already ingested
+
+            # Parse probe_label from filename
+            name_match = re.search(r"_(Probe[A-Z])_", ephys_file.name)
+
+            if not name_match:
+                logger.warning(f"Cannot parse probe label from {ephys_file.name}. Skipping.")
+                continue
+            probe_label = name_match.group(1)
+
+            if probe_label not in probe_labels:
+                continue  # no EphysEpochConfig.Insertion for this probe in any epoch
 
             # Look up ProbeInsertion via EphysEpochConfig.Insertion
             insertion_key = insertion_lookup.get((epoch_start, probe_label))
