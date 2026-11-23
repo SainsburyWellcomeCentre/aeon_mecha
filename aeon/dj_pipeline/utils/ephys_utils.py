@@ -40,9 +40,12 @@ def read_full_neuropixels_probe(probe_filepath, probe_part_number):
     # First, load in our probe and find the active channels
     probegroup = read_probeinterface(probe_filepath)
     probe = probegroup.probes[0]
-    sliced_probe = probe.get_slice(probe.device_channel_indices != -1)
 
-    # Build a mock from from the probe catalog, which contains the groupings for
+    active_contacts = np.flatnonzero(probe.device_channel_indices != -1)
+    readout_order = np.argsort(probe.device_channel_indices[active_contacts])
+    sliced_probe = probe.get_slice(active_contacts[readout_order])
+
+    # Build a mock probe from the probe catalog, which contains the groupings for
     # multiplexing. This is the full 5120 channel probe
     try:
         mock_probe = build_neuropixels_probe(probe_part_number=probe_part_number)
@@ -53,27 +56,21 @@ def read_full_neuropixels_probe(probe_filepath, probe_part_number):
         )
         return sliced_probe
 
-    # use contact locations to build the map between contact indices in the mock and our probe
-    mock_probe_to_our_probe = {}
-    probe_base_point = [np.min(probe.contact_positions[:, 0]), np.min(probe.contact_positions[:, 1])]
-    for contact_index, contact_position in enumerate(sliced_probe.contact_positions):
-        contact_mask = np.all(contact_position - probe_base_point == mock_probe.contact_positions, axis=1)
-        mock_contact_index = np.where(contact_mask)[0][0]
-        mock_probe_to_our_probe[mock_contact_index] = contact_index
-
-    # then slice it to the 384 channels that were selected for the recording
-    sliced_mock_probe = mock_probe.get_slice(list(mock_probe_to_our_probe.keys()))
-
-    if not np.all(sliced_probe.contact_positions - probe_base_point == sliced_mock_probe.contact_positions):
-        logger.warnings(
+    # check our contacts match the mock by position
+    probe_base_point = probe.contact_positions.min(axis=0)
+    shifted_positions = sliced_probe.contact_positions - probe_base_point
+    mock_positions = {tuple(pos) for pos in mock_probe.contact_positions}
+    if not all(tuple(pos) in mock_positions for pos in shifted_positions):
+        logger.warning(
             "Read probe cannot be matched with one from NeuroPixels probe library. Cannot attach "
             "multiplexing info and suggests something might be wrong with your probe config."
         )
         return sliced_probe
 
-    adc_sampling_table = sliced_mock_probe.annotations.get("adc_sampling_table")
-    ap_sample_frequency_hz = sliced_mock_probe.annotations["ap_sample_frequency_hz"]
-    lf_sample_frequency_hz = sliced_mock_probe.annotations["lf_sample_frequency_hz"]
+    # Get the multiplexing info from the mock_probe
+    adc_sampling_table = mock_probe.annotations.get("adc_sampling_table")
+    ap_sample_frequency_hz = mock_probe.annotations["ap_sample_frequency_hz"]
+    lf_sample_frequency_hz = mock_probe.annotations["lf_sample_frequency_hz"]
 
     # and attach the metadata related to multiplexing to our probe
     _annotate_probe_with_adc_sampling_info(sliced_probe, adc_sampling_table)
