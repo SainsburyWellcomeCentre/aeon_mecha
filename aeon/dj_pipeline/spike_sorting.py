@@ -250,14 +250,16 @@ class PreProcessing(dj.Computed):
         electrodes_df = electrodes_query.to_pandas(order_by="electrode").reset_index()
         electrodes_df.drop(columns=list(key), inplace=True, errors="ignore")
 
-        electrode_config_name = (ephys.ElectrodeConfig & key).to_dicts()[0]["electrode_config_name"]
-
         raw_ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type="raw-ephys")
-        # get any `epoch_dir`, which will have the probe metadata in it
-        epoch_dir = (ephys.EphysEpoch & key).to_dicts()[0]["epoch_dir"]
+
+        # get any epoch with this probe insertion and electrode config
+        epoch_insertion = (ephys.EphysEpochConfig.Insertion & key).to_dicts()[0]
+
+        config_file_name = epoch_insertion["config_file_name"]
+        epoch_dir = (ephys.EphysEpoch & epoch_insertion).fetch1("epoch_dir")
 
         epoch_path = raw_ephys_dir / epoch_dir
-        probe_filepath = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, electrode_config_name)
+        probe_filepath = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, config_file_name)
 
         # get probe part number
         probe_part_number = ((SortingTask & key) * ephys.Probe).to_dicts()[0]["probe_part_number"]
