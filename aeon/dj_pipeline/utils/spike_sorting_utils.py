@@ -144,8 +144,8 @@ try:
                 import pyarrow.dataset as ds
 
                 dataset = ds.dataset(self._filepath, format="arrow")
-                num_samples = dataset.count_rows()
-                self._num_samples = num_samples
+                col = dataset.schema.names[0]
+                self._num_samples = dataset.to_table(columns=[col]).num_rows
 
             return self._num_samples
 
