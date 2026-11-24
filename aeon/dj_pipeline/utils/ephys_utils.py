@@ -142,10 +142,8 @@ def read_amplifier_recording(
             sampling_frequency=fs_hz,
             gain_to_uV=gain_to_uV,
             offset_to_uV=offset_to_uV,
+            num_samples=num_samples,
         )
-        # If we've precomputed the num samples, attach to the recording
-        if num_samples:
-            rec._segments[0]._num_samples = num_samples
         return rec
     return se.read_binary(
         resolved,
