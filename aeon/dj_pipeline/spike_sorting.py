@@ -253,7 +253,7 @@ class PreProcessing(dj.Computed):
         probe_filepath = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, config_file_name)
 
         # get probe part number
-        probe_part_number = (ephys.Probe & (ephys.ProbeInsertion & key)).to_dicts()[0]["probe_part_number"]
+        probe_part_number = (ephys.Probe & (ephys.ProbeInsertion & key)).fetch1("probe_part_number")
 
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         fs_hz = NP2_FS_HZ
