@@ -231,7 +231,7 @@ class PreProcessing(dj.Computed):
                 & (ephys.EphysBlockInfo.Chunk & key)
                 & ["file_name LIKE '%AmplifierData%.bin'", "file_name LIKE '%Probe%.arrow'"]
             )
-            .proj("num_samples")
+            .proj("ephys_num_samples")
             .to_arrays("file_path", "directory_type", "ephys_num_samples", order_by="chunk_start")
         )
 
