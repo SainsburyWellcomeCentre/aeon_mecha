@@ -642,8 +642,9 @@ class TestLoadDeviceChannelMap:
     """Tests for load_device_channel_map — takes JSON path directly.
 
     The fixture is a synthetic 4-shank NP2.0 probeinterface JSON: 16 contacts,
-    odd contact_ids active, mapped sequentially to channels 0..7. So contact
-    1 → channel 0, contact 3 → channel 1, ..., contact 15 → channel 7.
+    odd contact_ids active, mapped in reverse to channels 7..0 (so readout order
+    differs from position order, as on real probes). So contact 1-channel 7,
+    contact 3-channel 6, ..., contact 15-channel 0.
     """
 
     FIXTURE_JSON = (
@@ -655,8 +656,8 @@ class TestLoadDeviceChannelMap:
 
         channel_map = load_device_channel_map(self.FIXTURE_JSON)
         assert len(channel_map) == 8
-        assert channel_map[1] == 0
-        assert channel_map[15] == 7
+        assert channel_map[1] == 7
+        assert channel_map[15] == 0
 
     def test_raises_on_missing_file(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import load_device_channel_map
