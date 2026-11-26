@@ -349,13 +349,13 @@ class PreProcessing(dj.Computed):
         sample_shifts = get_neuropixels_sample_shifts_from_probe(probe)
         si_recording.set_property("inter_sample_shift", sample_shifts)
 
+        si_recording = si.preprocessing.unsigned_to_signed(si_recording)
         si_recording = si.preprocessing.apply_preprocessing_pipeline(si_recording, pipeline_before)
 
         # select just the channels in the ElectrodeGroup
         si_recording = si_recording.select_channels(si_recording.channel_ids[electrodes_df.channel_idx])
 
         # Run preprocessing and save results to output folder
-        si_recording = si.preprocessing.unsigned_to_signed(si_recording)
         si_recording = si.preprocessing.apply_preprocessing_pipeline(si_recording, pipeline_after)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
