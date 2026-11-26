@@ -19,6 +19,10 @@ from probeinterface.neuropixels_tools import (
     build_neuropixels_probe,
 )
 
+# Neuropixels 2.0 sampling rate - TODO: read this from the metadata
+NP2_FS_HZ = 30e3
+
+
 logger = dj.logger
 
 # Mapping from device directory name to probe_type
@@ -162,10 +166,11 @@ def resolve_ephys_file(raw_bin_path: Path) -> Path:
 
 def read_amplifier_recording(
     raw_bin_path: Path,
-    num_channels: int,
     fs_hz: float,
+    num_channels: int | None = None,
     gain_to_uV: float = 1.0,
     offset_to_uV: float = 0.0,
+    num_samples: int | None = None,
 ):
     """Read an AmplifierData file as a SpikeInterface recording.
 
@@ -192,6 +197,7 @@ def read_amplifier_recording(
             sampling_frequency=fs_hz,
             gain_to_uV=gain_to_uV,
             offset_to_uV=offset_to_uV,
+            num_samples=num_samples,
         )
         return rec
     return se.read_binary(

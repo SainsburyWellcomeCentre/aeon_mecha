@@ -25,11 +25,11 @@ from swc.aeon.io import api as io_api
 from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
 from aeon.dj_pipeline.utils.ephys_utils import (
-    find_nearest_window,
+    NP2_FS_HZ,
     read_amplifier_recording,
+    find_nearest_window,
     read_full_neuropixels_probe,
     read_onix_ts,
-    resolve_epoch_probe_json,
 )
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
 from aeon.dj_pipeline.utils.spike_sorting_utils import (
@@ -44,9 +44,6 @@ ephys = importlib.import_module("aeon.dj_pipeline.ephys")
 
 schema = dj.Schema(get_schema_name("spike_sorting"))
 logger = dj.logger
-
-# Neuropixels 2.0 sampling rate - TODO: read this from the metadata
-NP2_FS_HZ = 30e3
 
 
 @schema
@@ -221,11 +218,15 @@ class PreProcessing(dj.Computed):
         recording_file = output_dir / "si_recording.pkl"
 
         # Load ephys data
-        ephys_files, dir_types = (
-            ephys.EphysChunk.File
-            & (ephys.EphysBlockInfo.Chunk & key)
-            & ["file_name LIKE '%AmplifierData%.bin'", "file_name LIKE '%Probe%.arrow'"]
-        ).to_arrays("file_path", "directory_type", order_by="chunk_start")
+        ephys_files, dir_types, num_samples_per_chunk = (
+            (
+                ephys.EphysChunk.File
+                & (ephys.EphysBlockInfo.Chunk & key)
+                & ["file_name LIKE '%AmplifierData%.bin'", "file_name LIKE '%Probe%.arrow'"]
+            )
+            .proj("ephys_num_samples")
+            .to_arrays("file_path", "directory_type", "ephys_num_samples", order_by="chunk_start")
+        )
 
         # Channels
         electrodes_query = (
@@ -269,6 +270,7 @@ class PreProcessing(dj.Computed):
             fs_hz,
             gain_to_uV,
             offset_to_uV,
+            num_samples_per_chunk,
             output_dir,
             recording_file,
             probe_filepath,
@@ -287,6 +289,7 @@ class PreProcessing(dj.Computed):
         fs_hz: float,
         gain_to_uV: float,
         offset_to_uV: float,
+        num_samples_per_chunk: list[int | None],
         output_dir: Path,
         recording_file: Path,
         probe_filepath: str,
@@ -307,6 +310,7 @@ class PreProcessing(dj.Computed):
             fs_hz: Sampling frequency
             gain_to_uV: Gain conversion factor
             offset_to_uV: Offset conversion factor
+            num_samples_per_chunk: number of samples in each chunk in ephys_files
             output_dir: Output directory path
             recording_file: Path to save recording object
             probe_filepath: Filepath to json file of probe
@@ -328,12 +332,13 @@ class PreProcessing(dj.Computed):
         si_recs = [
             read_amplifier_recording(
                 acquisition.Experiment.get_data_directory(key, directory_type=d) / f,
-                num_channels,
-                fs_hz,
-                gain_to_uV,
-                offset_to_uV,
+                fs_hz=fs_hz,
+                num_channels=num_channels,
+                gain_to_uV=gain_to_uV,
+                offset_to_uV=offset_to_uV,
+                num_samples=num_samples,
             )
-            for f, d in zip(ephys_files, dir_types, strict=True)
+            for f, d, num_samples in zip(ephys_files, dir_types, num_samples_per_chunk, strict=True)
         ]
         si_recording = si.concatenate_recordings(si_recs)
 
@@ -1073,24 +1078,25 @@ class SyncedSpikes(dj.Imported):
         _clock_rows = _clock_query.to_dicts(order_by="chunk_start")
         _pk = _clock_query.primary_key
         ephys_file_keys = [{k: r[k] for k in _pk} for r in _clock_rows]
-        ephys_files = [r["file_path"] for r in _clock_rows]
-        dir_types = [r["directory_type"] for r in _clock_rows]
 
         # Spike indices count samples of the AmplifierData files concatenated in PreProcessing, so
         # the chunk boundaries come from those files, not from the Clock files. They differ when an
         # amplifier file lost its tail e.g. due to a copying error.
         # Its samples still start at Clock[0], so sample k of a chunk sits at Clock[k]. A Clock file
         # that lost its tail instead is extrapolated at its own tick rate, by at most 1 s.
-        num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         onix_times, amp_lengths = [], []
-        for f, d in zip(ephys_files, dir_types, strict=True):
-            ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=d)
-            amp_len = read_amplifier_recording(
-                ephys_dir / f.replace("Clock", "AmplifierData"), num_channels, NP2_FS_HZ
-            ).get_num_samples()
-            onix_ts = read_onix_ts(ephys_dir / f)
-            onix_times.append(extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=f))
+        for clock_row in _clock_rows:
+            amp_len = clock_row["ephys_num_samples"]
+            clock_file = clock_row["file_path"]
+            dir_type = clock_row["directory_type"]
+
+            ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type=dir_type)
+            onix_ts = read_onix_ts(ephys_dir / clock_file)
+            onix_times.append(
+                extend_clock(onix_ts, amp_len, max_extrapolation=int(NP2_FS_HZ), name=clock_file)
+            )
             amp_lengths.append(amp_len)
+
         chunk_bounds = np.cumsum(amp_lengths)  # end of each chunk in the concatenated recording
 
         # Guard against raw files that changed since sorting (e.g. a truncated file re-copied in

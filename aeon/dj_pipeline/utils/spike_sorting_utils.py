@@ -118,13 +118,13 @@ try:
     from spikeinterface.core.core_tools import define_function_from_class
 
     class BonsaiOnixArrowRecordingSegment(BaseRecordingSegment):
-        def __init__(self, filepath, channel_ids, batch_len, **time_kwargs):
+        def __init__(self, filepath, channel_ids, batch_len, num_samples, **time_kwargs):
             BaseRecordingSegment.__init__(self, **time_kwargs)
 
             from pyarrow import memory_map
             from pyarrow.ipc import RecordBatchFileReader
 
-            self._num_samples = None
+            self._num_samples = num_samples
 
             self._filepath = filepath
             self._source = memory_map(filepath, "r")
@@ -144,8 +144,8 @@ try:
                 import pyarrow.dataset as ds
 
                 dataset = ds.dataset(self._filepath, format="arrow")
-                num_samples = dataset.count_rows()
-                self._num_samples = num_samples
+                col = dataset.schema.names[0]
+                self._num_samples = dataset.to_table(columns=[col]).num_rows
 
             return self._num_samples
 
@@ -215,14 +215,14 @@ try:
             The gain to apply to the traces
         offset_to_uV : float or array-like, default: None
             The offset to apply to the traces
+        num_samples : int or None, default None
+            The number of samples in the recording. Useful for lazy loading.
         is_filtered : bool or None, default: None
             If True, the recording is assumed to be filtered. If None, is_filtered is not set.
-        storage_options : dict or None: None
-            Storage options passed to the `zarr.open` function
 
         Returns:
         --------
-        recording : ZarrArrayRecording
+        recording : BonsaiOnixArrowRecording
             The recording Extractor
         """
 
@@ -233,6 +233,7 @@ try:
             stream_name="AmplifierData",
             gain_to_uV: float | np.ndarray | None = None,
             offset_to_uV: float | np.ndarray | None = None,
+            num_samples: int | None = None,
             is_filtered: bool | None = None,
         ):
             if importlib.util.find_spec("pyarrow") is None:
@@ -275,6 +276,7 @@ try:
                 batch_len=batch_len,
                 sampling_frequency=sampling_frequency,
                 channel_ids=np.array(channel_ids),
+                num_samples=num_samples,
             )
 
             self.add_recording_segment(rec_segment)
@@ -294,6 +296,7 @@ try:
                 "stream_name": stream_name,
                 "gain_to_uV": gain_to_uV,
                 "offset_to_uV": offset_to_uV,
+                "num_samples": num_samples,
                 "is_filtered": is_filtered,
             }
 
