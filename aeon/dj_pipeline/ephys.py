@@ -28,6 +28,7 @@ from aeon.dj_pipeline.utils.ephys_utils import (
 from aeon.dj_pipeline.utils.ephys_utils import (
     create_probe_type as _create_probe_type,
 )
+from aeon.dj_pipeline.utils.paths import get_sorting_root_dir
 
 schema = dj.Schema(get_schema_name("ephys"))
 logger = dj.logger
@@ -564,22 +565,6 @@ class EphysChunk(dj.Manual):
             return
 
         for ephys_file in all_ephys_files:
-            rel_path = ephys_file.relative_to(raw_dir).as_posix()
-
-            if cls.File & exp_key & {"file_path": rel_path}:
-                continue  # already ingested
-
-            # Parse probe_label from filename
-            name_match = re.search(r"_(Probe[A-Z])_", ephys_file.name)
-
-            if not name_match:
-                logger.warning(f"Cannot parse probe label from {ephys_file.name}. Skipping.")
-                continue
-            probe_label = name_match.group(1)
-
-            if probe_label not in probe_labels:
-                continue  # no EphysEpochConfig.Insertion for this probe in any epoch
-
             # Determine epoch from directory path
             # File path structure: raw_dir / epoch_dir / device_name / files
             rel_parts = ephys_file.relative_to(raw_dir).parts
@@ -598,6 +583,22 @@ class EphysChunk(dj.Manual):
                 )
                 continue
 
+            rel_path = ephys_file.relative_to(raw_dir).as_posix()
+
+            if cls & exp_key & {"epoch_start": epoch_start} & (cls.File & {"file_name": ephys_file.name}):
+                continue  # already ingested
+
+            # Parse probe_label from filename
+            name_match = re.search(r"_(Probe[A-Z])_", ephys_file.name)
+
+            if not name_match:
+                logger.warning(f"Cannot parse probe label from {ephys_file.name}. Skipping.")
+                continue
+            probe_label = name_match.group(1)
+
+            if probe_label not in probe_labels:
+                continue  # no EphysEpochConfig.Insertion for this probe in any epoch
+
             # Look up ProbeInsertion via EphysEpochConfig.Insertion
             insertion_key = insertion_lookup.get((epoch_start, probe_label))
             if insertion_key is None:
@@ -607,6 +608,39 @@ class EphysChunk(dj.Manual):
                     f"manual ProbeInsertion insert, then run EphysEpochConfig.populate()."
                 )
                 continue
+
+            if ephys_file.suffix == ".arrow":
+                from pyarrow import ArrowInvalid
+
+                from aeon.dj_pipeline.utils.ephys_utils import read_amplifier_recording
+
+                try:
+                    # todo: remove `num_channels` if it becomes optional
+                    _ = read_amplifier_recording(ephys_file, fs_hz=30_000, num_channels=384)
+                except ArrowInvalid:
+                    from aeon.dj_pipeline.utils.spike_sorting_utils import create_uncorrupted_arrow_file
+
+                    ephys_processed_path = get_sorting_root_dir()
+
+                    logger.warning(f"Cannot read arrow file {ephys_file}. Attempting reconstruction.")
+
+                    fixed_filepath = (
+                        ephys_processed_path
+                        / experiment_name
+                        / insertion_key["subject"]
+                        / ("insertion_" + str(insertion_key["insertion_number"]))
+                        / "recovered_ephys_chunks"
+                        / Path(*ephys_file.parts[-3:])
+                    )
+                    successful_creation = create_uncorrupted_arrow_file(
+                        corrupted_filepath=ephys_file, fixed_filepath=fixed_filepath
+                    )
+
+                    if successful_creation:
+                        ephys_file = fixed_filepath
+                    else:
+                        # Unsuccessful log already saved to logger, so just continue
+                        continue
 
             # Read ONIX timestamps from the companion Clock binary
             clock_file = ephys_file.with_name(ephys_file.name.replace("AmplifierData", "Clock"))
@@ -671,18 +705,30 @@ class EphysChunk(dj.Manual):
                 with cls.connection.transaction:
                     cls.insert1(chunk_entry)
                     file_list = set((ephys_file, clock_file))
+                    if ephys_file.is_relative_to(raw_dir):
+                        directory_type = "raw-ephys"
+                        relative_directory = raw_dir
+                    else:
+                        # ephys file could be in processed dir, if a fixed corrupted file
+                        ephys_processed_path = get_sorting_root_dir()
+                        if ephys_file.is_relative_to(ephys_processed_path):
+                            directory_type = "processed"
+                            relative_directory = ephys_processed_path / experiment_name
+                        else:
+                            continue
                     cls.File.insert(
                         [
                             {
                                 **chunk_entry,
-                                "directory_type": "raw-ephys",
+                                "directory_type": directory_type,
                                 "file_name": f.name,
-                                "file_path": f.relative_to(raw_dir).as_posix(),
+                                "file_path": f.relative_to(relative_directory).as_posix(),
                             }
                             for f in file_list
                         ],
                         ignore_extra_fields=True,
                     )
+
                     cls.SyncModel.insert(
                         [{**chunk_entry, "sync_start": m["sync_start"]} for m in matched],
                         ignore_extra_fields=True,
