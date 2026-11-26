@@ -54,7 +54,7 @@ from typing import Any
 
 PipelineDict = dict[str, dict[str, Any]]
 
-_PREPROCESSING_PIPELINES: dict[str, PipelineDict] = {}
+_PREPROCESSING_PIPELINES: dict[str, dict[str, PipelineDict]] = {}
 
 DEFAULT_PREPROCESSING_PIPELINE = "aeon_default"
 
@@ -98,7 +98,7 @@ def resolve_preprocessing_pipeline(
         pipeline_before = _PREPROCESSING_PIPELINES[si_pipeline].get("before_splitting", {})
         pipeline_after = _PREPROCESSING_PIPELINES[si_pipeline].get("after_splitting", {})
     elif isinstance(si_pipeline, dict):
-        if set(si_pipeline.keys()) == set(["before_splitting", "after_splitting"]):
+        if si_pipeline.keys() <= {"before_splitting", "after_splitting"}:
             pipeline_before = si_pipeline.get("before_splitting", {})
             pipeline_after = si_pipeline.get("after_splitting", {})
         else:
