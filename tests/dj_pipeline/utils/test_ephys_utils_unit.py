@@ -10,12 +10,15 @@ activates the streams schema and attempts a DB connection.
 """
 
 import json
+import os
 from datetime import datetime
-from pathlib import Path
 from unittest.mock import MagicMock
 
+import joblib
 import numpy as np
+import probeinterface as pi
 import pytest
+from spikeinterface.extractors.neuropixels_utils import get_neuropixels_sample_shifts_from_probe
 
 pytestmark = pytest.mark.unit
 
@@ -160,8 +163,6 @@ class TestResolveHarp:
         ids=["with_cache", "without_cache"],
     )
     def test_slow_path_cache_behavior(self, monkeypatch, use_cache, expected_loads):
-        import joblib
-
         from aeon.dj_pipeline.utils.ephys_utils import resolve_harp
 
         sync_row = {**self._SYNC_ROW, "sync_model": "/fake/model.joblib"}
@@ -380,8 +381,6 @@ class TestParseEpochMetadata:
     """Tests for parse_epoch_metadata(epoch_path)."""
 
     def test_valid_metadata(self, tmp_path):
-        import json
-
         from aeon.dj_pipeline.utils.ephys_utils import parse_epoch_metadata
 
         metadata = {"Devices": {"NeuropixelsV2e": {"ConfigurationA": {}}}}
@@ -423,13 +422,10 @@ class TestCreateElectrodeConfig:
     against a real probe lives in the ephys golden-dataset integration suite.
     """
 
-    FIXTURE_JSON = (
-        Path(__file__).parent.parent.parent / "fixtures" / "ephys" / "synthetic_np2_multishank.json"
-    )
     N_TOTAL_CONTACTS = 16
     N_ACTIVE_CONTACTS = 8
 
-    def test_returns_canonical_keys(self):
+    def test_returns_canonical_keys(self, synthetic_probe_json):
         from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
 
         probe_type_table = _mock_table_with_transaction()
@@ -438,14 +434,14 @@ class TestCreateElectrodeConfig:
         electrode_config_table.Electrode = MagicMock()
 
         probe_type, config_name = create_electrode_config(
-            json_path=self.FIXTURE_JSON,
+            json_path=synthetic_probe_json,
             probe_type_table=probe_type_table,
             electrode_config_table=electrode_config_table,
         )
         assert probe_type == "neuropixels2.0-multishank"
         assert config_name == "synthetic_np2_multishank"
 
-    def test_inserts_full_geometry_and_active_subset(self):
+    def test_inserts_full_geometry_and_active_subset(self, synthetic_probe_json):
         from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
 
         probe_type_table = _mock_table_with_transaction()
@@ -454,7 +450,7 @@ class TestCreateElectrodeConfig:
         electrode_config_table.Electrode = MagicMock()
 
         create_electrode_config(
-            json_path=self.FIXTURE_JSON,
+            json_path=synthetic_probe_json,
             probe_type_table=probe_type_table,
             electrode_config_table=electrode_config_table,
         )
@@ -467,7 +463,7 @@ class TestCreateElectrodeConfig:
         assert len(ec_rows) == self.N_ACTIVE_CONTACTS
         assert all({"probe_type", "electrode_config_name", "electrode"} <= set(r.keys()) for r in ec_rows)
 
-    def test_config_name_override(self):
+    def test_config_name_override(self, synthetic_probe_json):
         from aeon.dj_pipeline.utils.ephys_utils import create_electrode_config
 
         probe_type_table = _mock_table_with_transaction()
@@ -476,14 +472,14 @@ class TestCreateElectrodeConfig:
         electrode_config_table.Electrode = MagicMock()
 
         _, config_name = create_electrode_config(
-            json_path=self.FIXTURE_JSON,
+            json_path=synthetic_probe_json,
             probe_type_table=probe_type_table,
             electrode_config_table=electrode_config_table,
             config_name="custom-name",
         )
         assert config_name == "custom-name"
 
-    def test_does_not_set_config_file_name_on_electrode_config(self):
+    def test_does_not_set_config_file_name_on_electrode_config(self, synthetic_probe_json):
         """ElectrodeConfig has no JSON-provenance column.
 
         The JSON basename belongs on EphysEpochConfig.Insertion (per-(epoch,
@@ -498,7 +494,7 @@ class TestCreateElectrodeConfig:
         electrode_config_table.Electrode = MagicMock()
 
         create_electrode_config(
-            json_path=self.FIXTURE_JSON,
+            json_path=synthetic_probe_json,
             probe_type_table=probe_type_table,
             electrode_config_table=electrode_config_table,
         )
@@ -560,8 +556,6 @@ class TestParseMetadataProbeConfigs:
         self, ephys_golden_dataset_config, default_golden_data_root, golden_raw_subpath
     ):
         """Verify against the actual golden epoch's Metadata.yml if available."""
-        import os
-
         import aeon.dj_pipeline as pipeline
         from aeon.dj_pipeline.utils.ephys_utils import parse_metadata_probe_configs
         from aeon.dj_pipeline.utils.paths import get_repository_path
@@ -642,21 +636,18 @@ class TestLoadDeviceChannelMap:
     """Tests for load_device_channel_map — takes JSON path directly.
 
     The fixture is a synthetic 4-shank NP2.0 probeinterface JSON: 16 contacts,
-    odd contact_ids active, mapped sequentially to channels 0..7. So contact
-    1 → channel 0, contact 3 → channel 1, ..., contact 15 → channel 7.
+    odd contact_ids active, mapped in reverse to channels 7..0 (so readout order
+    differs from position order, as on real probes). So contact 1-channel 7,
+    contact 3-channel 6, ..., contact 15-channel 0.
     """
 
-    FIXTURE_JSON = (
-        Path(__file__).parent.parent.parent / "fixtures" / "ephys" / "synthetic_np2_multishank.json"
-    )
-
-    def test_returns_active_contacts_mapping(self):
+    def test_returns_active_contacts_mapping(self, synthetic_probe_json):
         from aeon.dj_pipeline.utils.ephys_utils import load_device_channel_map
 
-        channel_map = load_device_channel_map(self.FIXTURE_JSON)
+        channel_map = load_device_channel_map(synthetic_probe_json)
         assert len(channel_map) == 8
-        assert channel_map[1] == 0
-        assert channel_map[15] == 7
+        assert channel_map[1] == 7
+        assert channel_map[15] == 0
 
     def test_raises_on_missing_file(self, tmp_path):
         from aeon.dj_pipeline.utils.ephys_utils import load_device_channel_map
@@ -757,3 +748,60 @@ class TestResolveEphysFile:
         bin_path.parent.mkdir(parents=True)
         bin_path.write_bytes(b"\x00")
         assert resolve_ephys_file(bin_path) == bin_path
+
+
+class TestReadFullNeuropixelsProbe:
+    """Test reading a probe JSON and attaching multiplexing info from the NeuroPixels probe library."""
+
+    PART_NUMBER = "NP2014"
+    N_ACTIVE_CONTACTS = 8
+
+    def test_valid_part_number_attaches_multiplexing_info(self, synthetic_probe_json):
+        from aeon.dj_pipeline.utils.ephys_utils import read_full_neuropixels_probe
+
+        probe = read_full_neuropixels_probe(synthetic_probe_json, self.PART_NUMBER)
+
+        assert probe.get_contact_count() == self.N_ACTIVE_CONTACTS
+        # None if any of the ADC/sample-rate annotations is missing
+        sample_shifts = get_neuropixels_sample_shifts_from_probe(probe)
+        assert len(sample_shifts) == self.N_ACTIVE_CONTACTS
+
+    def test_contacts_returned_in_readout_order(self, synthetic_probe_json):
+        """Ensure contacts are reordered from position order to readout order.
+
+        The JSON lists contacts in position order, but the multiplexing table is indexed by readout channel.
+        """
+        from aeon.dj_pipeline.utils.ephys_utils import read_full_neuropixels_probe
+
+        probe = read_full_neuropixels_probe(synthetic_probe_json, self.PART_NUMBER)
+        np.testing.assert_array_equal(probe.device_channel_indices, np.arange(self.N_ACTIVE_CONTACTS))
+        assert list(probe.contact_ids) == ["15", "13", "11", "9", "7", "5", "3", "1"]
+
+    @pytest.mark.parametrize(
+        ("part_number", "position_scale"),
+        [("", 1), ("NOT_A_PROBE", 1), (PART_NUMBER, 2)],
+        ids=["empty-part-number", "unknown-part-number", "mismatched-layout"],
+    )
+    def test_fallback_without_multiplexing_info(
+        self, synthetic_probe_json, tmp_path, part_number, position_scale
+    ):
+        """Test fallback when there is no library match, e.g. unknown part number or mismatched layout."""
+        from aeon.dj_pipeline.utils.ephys_utils import read_full_neuropixels_probe
+
+        path = synthetic_probe_json
+        if position_scale != 1:
+            # stretch contact positions so they no longer match the library probe
+            probe = pi.read_probeinterface(path).probes[0]
+            probe.set_contacts(
+                positions=probe.contact_positions * position_scale,
+                shapes=probe.contact_shapes,
+                shape_params=probe.contact_shape_params,
+            )
+            path = tmp_path / "stretched_probe.json"
+            pi.write_probeinterface(path, probe)
+
+        probe = read_full_neuropixels_probe(path, part_number)
+
+        assert probe.get_contact_count() == self.N_ACTIVE_CONTACTS
+        with pytest.warns(UserWarning, match="inter-sample shifts"):
+            assert get_neuropixels_sample_shifts_from_probe(probe) is None
