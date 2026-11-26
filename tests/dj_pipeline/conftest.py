@@ -869,7 +869,7 @@ def ephys_sorting_setup(
     ephys_golden_dataset_config,
     require_ephys_golden_data,
 ):
-    """Set up sorting prerequisites: ElectrodeGroup, SortingParamSet, SortingTask."""
+    """Set up ElectrodeGroup, SortingParamSet and SortingTask, then populate PreProcessing."""
     spike_sorting = ephys_full_pipeline["spike_sorting"]
     ephys = ephys_full_pipeline["ephys"]
     cfg = ephys_golden_dataset_config
@@ -962,45 +962,29 @@ def ephys_sorting_setup(
             skip_duplicates=True,
         )
 
-    # Pre-create recording.zarr so PreProcessing's skip-if-exists branch fires: the ~24 GB
-    # intermediate is only read by SpikeSorting, which the fixture injects. Must live here -
-    # TestPreProcessing populates PreProcessing directly off this fixture.
-    from aeon.dj_pipeline.utils.paths import scratch_recording_dir
+    # Populate PreProcessing without writing the full recording per block. SpikeSorting is
+    # injected from golden output, so save a ``recording.pkl`` in place of the real
+    # ``recording/`` or ``recording.zarr/``. PostProcessing finds and loads it like the saved
+    # recording, but computes the preprocessed traces from the raw data on demand.
+    from spikeinterface.core import BaseRecording
 
-    zarr_placeholders = {}
-    for block in blocks:
-        task_key = {
-            **{
-                k: block[k]
-                for k in ("experiment_name", "subject", "insertion_number", "block_start", "block_end")
-            },
-            **electrode_config_key,
-            "electrode_group": "shank3",
-            "paramset_id": "400",
-        }
-        output_dir = spike_sorting.PreProcessing.infer_output_dir(task_key, mkdir=True)
-        zarr_path = scratch_recording_dir(output_dir.parent / "recording") / "recording.zarr"
-        zarr_path.mkdir(parents=True, exist_ok=True)
-        zarr_placeholders[block["block_start"]] = zarr_path
+    def save_to_pkl(self, folder, **kwargs):
+        # Raw-data paths are stored absolute (unlike si_recording.pkl), so
+        # PostProcessing ``si.load`` can open it without a base_folder.
+        self.dump_to_pickle(Path(folder).with_suffix(".pkl"))
 
-    def assert_zarr_untouched():
-        """Catch a removed skip-if-exists branch.
-
-        Not in ephys_sorting_injected: that fixture skips when the artifacts are absent.
-        """
-        for block_start, path in zarr_placeholders.items():
-            assert not any(path.iterdir()), (
-                f"{path} is not empty - PreProcessing materialised the recording for block "
-                f"{block_start}. The skip-if-exists branch in PreProcessing.make_compute may "
-                "have been removed; without it this writes ~24 GB per block."
-            )
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(BaseRecording, "save", save_to_pkl)
+        spike_sorting.PreProcessing.populate(
+            {"experiment_name": exp_name},
+            display_progress=True,
+            suppress_errors=False,
+        )
 
     return {
         "electrode_config_key": electrode_config_key,
         "electrode_group": "shank3",
         "paramset_id": "400",
-        "zarr_placeholders": zarr_placeholders,
-        "assert_zarr_untouched": assert_zarr_untouched,
     }
 
 
@@ -1011,10 +995,9 @@ def ephys_sorting_injected(
     ephys_golden_dataset_config,
     require_ephys_golden_data,
 ):
-    """Run PreProcessing.populate() and force-inject SpikeSorting from golden data.
+    """Force-inject SpikeSorting from golden data on top of the populated PreProcessing.
 
-    Runs the full cascade up through PreProcessing, then copies
-    pre-computed KS4 sorting output into the test's output directory and
+    Copies pre-computed KS4 sorting output into the test's output directory and
     inserts SpikeSorting + SpikeSorting.File entries. Downstream tables
     (PostProcessing, SortedSpikes, SyncedSpikes) can then populate normally.
     """
@@ -1024,10 +1007,6 @@ def ephys_sorting_injected(
     spike_sorting = ephys_full_pipeline["spike_sorting"]
     ephys = ephys_full_pipeline["ephys"]
     cfg = ephys_golden_dataset_config
-
-    # Run prerequisite populates. PreProcessing is NOT populated here: it runs per block
-    # inside the loop below, after that block's recording.zarr placeholder exists. A blanket
-    # populate would materialise the ~24 GB intermediate for every block before the guard.
 
     epoch_path = require_ephys_golden_data
     golden_root = epoch_path.parent / cfg["golden_sorting_dir"]
@@ -1076,10 +1055,6 @@ def ephys_sorting_injected(
             "paramset_id": "400",
         }
         output_dir = spike_sorting.PreProcessing.infer_output_dir(task_key, mkdir=True)
-
-        spike_sorting.PreProcessing.populate(task_key, display_progress=True, suppress_errors=False)
-
-        ephys_sorting_setup["assert_zarr_untouched"]()
 
         test_sorting_dir = output_dir / "spike_sorting"
         if not test_sorting_dir.exists():

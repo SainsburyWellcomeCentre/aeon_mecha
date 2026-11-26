@@ -19,14 +19,16 @@ import datajoint as dj
 import joblib
 import numpy as np
 import pandas as pd
+from spikeinterface.extractors.neuropixels_utils import get_neuropixels_sample_shifts_from_probe
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
 from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
 from aeon.dj_pipeline.utils.ephys_utils import (
     NP2_FS_HZ,
-    find_nearest_window,
     read_amplifier_recording,
+    find_nearest_window,
+    read_full_neuropixels_probe,
     read_onix_ts,
 )
 from aeon.dj_pipeline.utils.paths import get_sorting_root_dir, scratch_recording_dir
@@ -211,18 +213,9 @@ class PreProcessing(dj.Computed):
         params = (SortingParamSet & key).fetch1("params")
         si_pipeline = resolve_preprocessing_pipeline(params.get("SI_PREPROCESSING_PARAMS") or {})
 
-        # Safety check: refuse to overwrite existing data on ceph
-        output_dir = self.infer_output_dir(key)
-        if output_dir.exists() and any(output_dir.iterdir()):
-            raise FileExistsError(
-                f"Output directory already contains data: {output_dir}. "
-                "Refusing to overwrite existing sorting data."
-            )
         # Create output directory
         output_dir = self.infer_output_dir(key, mkdir=True)
-        recording_dir = output_dir.parent / "recording"
-        recording_dir.mkdir(parents=True, exist_ok=True)
-        recording_file = recording_dir / "si_recording.pkl"
+        recording_file = output_dir / "si_recording.pkl"
 
         # Load ephys data
         ephys_files, dir_types, num_samples_per_chunk = (
@@ -249,6 +242,20 @@ class PreProcessing(dj.Computed):
         electrodes_df = electrodes_query.to_pandas(order_by="electrode").reset_index()
         electrodes_df.drop(columns=list(key), inplace=True, errors="ignore")
 
+        raw_ephys_dir = acquisition.Experiment.get_data_directory(key, directory_type="raw-ephys")
+
+        # get any epoch with this probe insertion and electrode config
+        epoch_insertion = (ephys.EphysEpochConfig.Insertion & key).to_dicts()[0]
+
+        config_file_name = epoch_insertion["config_file_name"]
+        epoch_dir = (ephys.EphysEpoch & epoch_insertion).fetch1("epoch_dir")
+
+        epoch_path = raw_ephys_dir / epoch_dir
+        probe_filepath = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, config_file_name)
+
+        # get probe part number
+        probe_part_number = (ephys.Probe & (ephys.ProbeInsertion & key)).fetch1("probe_part_number")
+
         num_channels = len(ephys.ElectrodeConfig.Electrode & key)
         fs_hz = NP2_FS_HZ
         # Neuropixels 2.0 gain - TODO: read this from the metadata
@@ -266,7 +273,8 @@ class PreProcessing(dj.Computed):
             num_samples_per_chunk,
             output_dir,
             recording_file,
-            recording_dir,
+            probe_filepath,
+            probe_part_number,
             params,
             si_pipeline,
         )
@@ -284,10 +292,11 @@ class PreProcessing(dj.Computed):
         num_samples_per_chunk: list[int | None],
         output_dir: Path,
         recording_file: Path,
-        recording_dir: Path,
+        probe_filepath: str,
+        probe_part_number: str,
         params: dict[str, Any],
         si_pipeline: dict[str, dict[str, Any]],
-    ) -> tuple[Path, datetime, Path]:
+    ) -> tuple[Path, datetime]:
         """Preprocess ephys data for spike sorting.
 
         Performs data concatenation, channel selection, filtering, and probe setup.
@@ -304,19 +313,18 @@ class PreProcessing(dj.Computed):
             num_samples_per_chunk: number of samples in each chunk in ephys_files
             output_dir: Output directory path
             recording_file: Path to save recording object
-            recording_dir: Directory for recording files
+            probe_filepath: Filepath to json file of probe
+            probe_part_number: NeuroPixels probe part number (e.g. "NP2013")
             params: SortingParamSet params
             si_pipeline: SpikeInterface preprocessing pipeline dict to apply
 
         Returns:
-            Tuple of (output_dir, execution_time, recording_dir)
+            Tuple of (output_dir, execution_time)
         """
-        import probeinterface as pi
         import spikeinterface as si
 
         # registers sorters/preprocessing/exporters submodules on the package
         import spikeinterface.full  # noqa: F401  # pyright: ignore[reportUnusedImport]
-        from spikeinterface import sorters
 
         execution_time = datetime.now(UTC)
 
@@ -334,30 +342,15 @@ class PreProcessing(dj.Computed):
         ]
         si_recording = si.concatenate_recordings(si_recs)
 
-        # Select channels based on the electrode group
-        in_use_chn_ids = si_recording.channel_ids[electrodes_df.channel_idx.values]
-        chn2remove = set(si_recording.channel_ids) - set(in_use_chn_ids)
-        si_recording = si_recording.remove_channels(list(chn2remove))
-        in_use_chn_ind = [si_recording.channel_ids.tolist().index(chn_id) for chn_id in in_use_chn_ids]
-        electrodes_df["channel_idx"] = in_use_chn_ind
+        probe = read_full_neuropixels_probe(probe_filepath, probe_part_number)
 
-        # Create SI probe object
-        probe_df = electrodes_df.copy()
-        probe_df.rename(
-            columns={
-                "electrode": "contact_ids",
-                "shank": "shank_ids",
-                "x_coord": "x",
-                "y_coord": "y",
-            },
-            inplace=True,
-        )
-        probe_df["contact_shapes"] = "square"
-        probe_df["width"] = 12
-        si_probe = pi.Probe.from_dataframe(probe_df)
+        # `si_recording` is the full 384 channel recording
+        si_recording.set_probe(probe=probe)
+        sample_shifts = get_neuropixels_sample_shifts_from_probe(probe)
+        si_recording.set_property("inter_sample_shift", sample_shifts)
 
-        si_probe.set_device_channel_indices(electrodes_df["channel_idx"].values)
-        si_recording.set_probe(probe=si_probe, in_place=True)
+        # select just the channels in the ElectrodeGroup
+        si_recording = si_recording.select_channels(si_recording.channel_ids[electrodes_df.channel_idx])
 
         # Run preprocessing and save results to output folder
         si_recording = si.preprocessing.unsigned_to_signed(si_recording)
@@ -375,37 +368,37 @@ class PreProcessing(dj.Computed):
         intermediate_dir = scratch_recording_dir(recording_file.parent)
         intermediate_dir.mkdir(parents=True, exist_ok=True)
 
+        rec_path = intermediate_dir / "recording"
+
+        # path could be a `.zarr` or a binary folder
+        existing_rec_paths = list(intermediate_dir.glob("recording*"))
+        if len(existing_rec_paths) > 1:
+            raise ValueError(f"Found several recording files in {intermediate_dir}. Expecting zero or one.")
+        if existing_rec_paths:
+            existing_rec_path = existing_rec_paths[0]
+            try:
+                saved_num_samples = si.load(existing_rec_path).get_num_samples()
+            except Exception as e:
+                logger.warning(f"Could not load {existing_rec_path} ({e}). Rewriting it.")
+                saved_num_samples = None
+            if saved_num_samples == si_recording.get_num_samples():
+                logger.info(f"{existing_rec_path} already exists and has the right size. Skipping write.")
+                return output_dir, execution_time
+
         if save_format == "zarr":
-            zarr_path = intermediate_dir / "recording.zarr"
-            if zarr_path.exists():
-                logger.info(f"{zarr_path} already exists. Skipping zarr write.")
-            else:
-                strip_non_numeric_properties(si_recording)
-                logger.info(f"Writing zarr recording to {zarr_path}...")
-                si_recording.save(
-                    format="zarr",
-                    folder=zarr_path,
-                    **sorters.basesorter.get_job_kwargs(job_kwargs, True),
-                )
-        else:
-            binary_file_path = intermediate_dir / "recording.dat"
-            if binary_file_path.exists():
-                load_and_verify_binary_file(
-                    binary_file_path=binary_file_path, se_recording_obj=si_recording
-                )
-                logger.info(f"{binary_file_path} already exists. Skipping writing binary file.")
-            else:
-                logger.info(f"Writing binary recording to {binary_file_path}...")
-                si.core.write_binary_recording(
-                    recording=si_recording,
-                    file_paths=[binary_file_path],
-                    dtype="int16",
-                    **sorters.basesorter.get_job_kwargs(job_kwargs, True),
-                )
+            strip_non_numeric_properties(si_recording)
 
-        return output_dir, execution_time, recording_dir
+        logger.info(f"Writing recording to {rec_path}...")
+        si_recording.save(
+            format=save_format,
+            folder=rec_path,
+            overwrite=True,
+            **job_kwargs,
+        )
 
-    def make_insert(self, key, output_dir, execution_time, recording_dir):
+        return output_dir, execution_time
+
+    def make_insert(self, key, output_dir, execution_time):
         """Insert preprocessing results into the database, including file references."""
         self.insert1(
             {
@@ -417,11 +410,9 @@ class PreProcessing(dj.Computed):
         )
         self.File.insert(
             [
-                {**key, "file_name": f.relative_to(output_dir.parent).as_posix(), "file": f}
-                for f in recording_dir.rglob("*")
+                {**key, "file_name": f.relative_to(output_dir).as_posix(), "file": f}
+                for f in output_dir.glob("si_recording*")
                 if f.is_file()
-                and f.name != "recording.dat"
-                and not f.is_relative_to(recording_dir / "recording.zarr")
             ]
         )
 
@@ -450,19 +441,11 @@ class SpikeSorting(dj.Computed):
         sorting_method, params = (SortingTask * SortingParamSet & key).fetch1("sorting_method", "params")
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
-        try:
-            recording_file = Path(
-                (PreProcessing.File & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path
-            )
-        except dj.errors.DataJointError:
-            recording_file = output_dir.parent / "recording" / "si_recording.pkl"
-
-        return recording_file, output_dir, params, sorting_method
+        return output_dir, params, sorting_method
 
     def make_compute(
         self,
         key: dict[str, Any],
-        recording_file: Path,
         output_dir: Path,
         params: dict[str, Any],
         sorting_method: str,
@@ -471,7 +454,6 @@ class SpikeSorting(dj.Computed):
 
         Args:
             key: Sorting task key
-            recording_file: Path to preprocessed recording
             output_dir: Base output directory
             params: Sorting parameters dictionary
             sorting_method: Name of sorting algorithm (e.g., kilosort2)
@@ -499,15 +481,14 @@ class SpikeSorting(dj.Computed):
         execution_time = datetime.now(UTC)
         sorter_name = sorting_method.replace(".", "_")
         sorting_output_dir = output_dir / "spike_sorting"
+        sorting_pickle_path = sorting_output_dir / "si_sorting.pkl"
         # Safety check: refuse to overwrite existing data on ceph
-        if sorting_output_dir.exists() and any(sorting_output_dir.iterdir()):
+        if sorting_output_dir.exists() and sorting_pickle_path.exists():
             raise FileExistsError(
-                f"Sorting output directory already contains data: {sorting_output_dir}. "
-                "Refusing to overwrite existing sorting data."
+                f"Sorting output directory\n{sorting_output_dir}\nContains a completed spike sorting."
+                "Refusing to overwrite existing data."
             )
-        si_recording: si.BaseRecording = si.load(recording_file, base_folder=output_dir)
 
-        save_format = params.get("save_format", "zarr")
         sorting_params = params["SI_SORTING_PARAMS"].copy()
 
         if sorting_method == "kilosort4" and "clear_cache" not in sorting_params:
@@ -523,25 +504,12 @@ class SpikeSorting(dj.Computed):
             job_kwargs = fork_safe_job_kwargs("30s", max_jobs=sorting_params.get("n_jobs"))
             sorting_params = {**job_kwargs, **sorting_params, "n_jobs": job_kwargs["n_jobs"]}
 
-        intermediate_dir = scratch_recording_dir(Path(recording_file).parent)
-        if save_format == "zarr":
-            zarr_path = intermediate_dir / "recording.zarr"
-            if not zarr_path.exists():
-                raise FileNotFoundError(
-                    f"Preprocessed recording missing at {zarr_path}. It is deleted after a "
-                    "successful sort; to re-sort, delete this block's PreProcessing entry "
-                    "(cascades to SpikeSorting) and re-populate it."
-                )
-            recording_for_sorting = si.load(zarr_path)
-        else:
-            binary_file_path = intermediate_dir / "recording.dat"
-            recording_for_sorting = load_and_verify_binary_file(
-                binary_file_path=binary_file_path, se_recording_obj=si_recording
-            )
-            if not recording_for_sorting.binary_compatible_with(
-                dtype="int16", time_axis=0, file_paths_length=1
-            ):
-                raise ValueError(f"Incompatible binary file for spike sorting: {binary_file_path}")
+        intermediate_dir = scratch_recording_dir(output_dir)
+
+        # path could be a `.zarr` or a binary folder
+        recording_path = list(intermediate_dir.glob("recording*"))[0]
+
+        recording_for_sorting = si.load(recording_path)
 
         si_sorting: si.sorters.BaseSorter = si.sorters.run_sorter(
             sorter_name=sorter_name,
@@ -554,8 +522,7 @@ class SpikeSorting(dj.Computed):
         )
 
         # Save sorting object
-        sorting_save_path = sorting_output_dir / "si_sorting.pkl"
-        si_sorting.dump_to_pickle(sorting_save_path, relative_to=output_dir)
+        si_sorting.dump_to_pickle(sorting_pickle_path, relative_to=output_dir)
 
         execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
 
@@ -571,22 +538,6 @@ class SpikeSorting(dj.Computed):
                 if f.is_file()
             ]
         )
-
-        # recording.zarr is a large, regenerable intermediate that only sorting reads, so
-        # reclaim it now. It is shared by all paramsets of this block + electrode group, so
-        # skip the delete while a sibling paramset is preprocessed but not yet sorted.
-        # Both sides are projected to their primary keys: PreProcessing and SpikeSorting
-        # share the secondary attributes `execution_time` / `execution_duration`, and
-        # DataJoint 2.x rejects a join on attributes that carry no common lineage.
-        shared_key = {k: v for k, v in key.items() if k != "paramset_id"}
-        if not ((PreProcessing & shared_key).proj() - SpikeSorting.proj()):
-            recording_dir = (
-                get_sorting_root_dir() / (PreProcessing & key).fetch1("sorting_output_dir")
-            ).parent / "recording"
-            recording_zarr = scratch_recording_dir(recording_dir) / "recording.zarr"
-            if recording_zarr.exists():
-                shutil.rmtree(recording_zarr, ignore_errors=True)
-                logger.info(f"Deleted {recording_zarr} after sorting.")
 
 
 @schema
@@ -614,28 +565,21 @@ class PostProcessing(dj.Computed):
         output_dir = sorting_root_dir / (PreProcessing & key).fetch1("sorting_output_dir")
 
         try:
-            recording_file = Path(
-                (PreProcessing.File & key & "file_name LIKE '%si_recording.pkl'").fetch1("file").full_path
-            )
-        except dj.errors.DataJointError:
-            recording_file = output_dir.parent / "recording" / "si_recording.pkl"
-        try:
             sorting_file = Path(
                 (SpikeSorting.File & key & "file_name LIKE '%si_sorting.pkl'").fetch1("file").full_path
             )
         except dj.errors.DataJointError:
             sorting_file = output_dir / "spike_sorting" / "si_sorting.pkl"
 
-        return recording_file, sorting_file, output_dir, params
+        return sorting_file, output_dir, params
 
     def make_compute(
         self,
         key: dict[str, Any],
-        recording_file: Path,
         sorting_file: Path,
         output_dir: Path,
         params: dict[str, Any],
-    ) -> tuple[Path, datetime, float]:
+    ) -> tuple[Path, Path, datetime, float]:
         """Post-process spike sorting results with quality assessment.
 
         Runs SpikeInterface sorting analyzer to compute quality metrics and extensions.
@@ -657,7 +601,15 @@ class PostProcessing(dj.Computed):
 
         execution_time = datetime.now(UTC)
 
-        si_recording: si.BaseRecording = si.load(recording_file, base_folder=output_dir)
+        intermediate_dir = scratch_recording_dir(output_dir)
+        recording_path = list(intermediate_dir.glob("recording*"))[0]
+
+        # The recording pickle contains all provenance, and we want this attached to the analyzer.
+        # But this loads and applies the preprocessing lazily => is slow
+        si_recording = si.load(output_dir / "si_recording.pkl", base_folder=output_dir)
+        # The cached recording is already preprocessed => much faster for postprocessing
+        cached_recording = si.load(recording_path)
+
         si_sorting: si.sorters.BaseSorter = si.load(sorting_file, base_folder=output_dir)
 
         postprocessing_params = params["SI_POSTPROCESSING_PARAMS"]
@@ -684,7 +636,7 @@ class PostProcessing(dj.Computed):
             logger.info("No units found in sorting object. Skipping sorting analyzer.")
             analyzer_output_dir.mkdir(parents=True, exist_ok=True)
             execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
-            return analyzer_output_dir, execution_time, execution_duration
+            return analyzer_output_dir, output_dir, execution_time, execution_duration
 
         sorting_analyzer = si.create_sorting_analyzer(
             sorting=si_sorting,
@@ -695,6 +647,9 @@ class PostProcessing(dj.Computed):
             overwrite=True,
             **job_kwargs,
         )
+
+        # Use the cached_recording for actual computation
+        sorting_analyzer.set_temporary_recording(cached_recording)
 
         # The order of extension computation is drawn from sorting_analyzer.get_computable_extensions()
         # each extension is parameterized by params specified in extensions_params dictionary
@@ -710,9 +665,9 @@ class PostProcessing(dj.Computed):
 
         execution_duration = (datetime.now(UTC) - execution_time).total_seconds() / 3600
 
-        return analyzer_output_dir, execution_time, execution_duration
+        return analyzer_output_dir, output_dir, execution_time, execution_duration
 
-    def make_insert(self, key, analyzer_output_dir, execution_time, execution_duration):
+    def make_insert(self, key, analyzer_output_dir, output_dir, execution_time, execution_duration):
         """Insert post-processing results into the database, including file references."""
         self.insert1(
             {
@@ -728,6 +683,12 @@ class PostProcessing(dj.Computed):
                 if f.is_file()
             ]
         )
+
+        # The preprocessed recording is a large, regenerable intermediate that only the
+        # sorting reads, so reclaim it now.
+        for recording_dir in scratch_recording_dir(output_dir).glob("recording*"):
+            shutil.rmtree(recording_dir, ignore_errors=True)
+            logger.info(f"Deleted {recording_dir} after post-processing.")
 
 
 @schema
@@ -1769,37 +1730,3 @@ class UnitMatching(dj.Computed):
             f"  {n_matched} matched to existing global units\n"
             f"  {n_new} new global units created"
         )
-
-
-def load_and_verify_binary_file(binary_file_path: Path, se_recording_obj: Any) -> Any:
-    """Load and verify binary recording file matches original recording.
-
-    Args:
-        binary_file_path: Path to binary recording file
-        se_recording_obj: Original SpikeInterface recording object
-
-    Returns:
-        Binary recording object with probe geometry
-
-    Raises:
-        ValueError: If sample counts don't match between files
-    """
-    import spikeinterface.extractors as se
-
-    binary_rec = se.read_binary(
-        binary_file_path,
-        sampling_frequency=se_recording_obj.get_sampling_frequency(),
-        dtype=se_recording_obj.dtype,
-        num_channels=se_recording_obj.get_num_channels(),
-        gain_to_uV=se_recording_obj.get_channel_gains()[0],
-    )
-    if binary_rec.get_num_samples() != se_recording_obj.get_num_samples():
-        raise ValueError(
-            f"Number of samples in binary file ({binary_rec.get_num_samples()})"
-            f" does not match the original recording ({se_recording_obj.get_num_samples()})."
-        )
-
-    binary_rec.set_probe(probe=se_recording_obj.get_probe(), in_place=True)
-    # force rename channel_ids?
-    # binary_rec._main_ids = se_recording_obj.get_channel_ids()
-    return binary_rec

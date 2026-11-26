@@ -25,6 +25,7 @@ from swc.aeon.schema.video import SpinnakerCamera
 # Path to test fixtures
 FIXTURES_DIR = Path(__file__).parent.parent.parent / "fixtures"
 METADATA_FIXTURES_DIR = FIXTURES_DIR / "metadata"
+EPHYS_FIXTURES_DIR = FIXTURES_DIR / "ephys"
 
 
 class TestCamera(SpinnakerCamera):
@@ -98,6 +99,17 @@ def foraging_abc_metadata_path():
 def foraging_abc_metadata(foraging_abc_metadata_path):
     """Load sample ForagingABC metadata as a dict."""
     return json.loads(foraging_abc_metadata_path.read_text())
+
+
+@pytest.fixture
+def synthetic_probe_json():
+    """Path to the synthetic 4-shank NP2.0 probeinterface JSON fixture.
+
+    16 contacts, odd contact_ids active (8 in total), with readout channels in
+    reverse of position order (contact 1 -> channel 7, ..., contact 15 -> channel 0)
+    and positions starting at (219, 170) as in a real rig probe JSON.
+    """
+    return EPHYS_FIXTURES_DIR / "synthetic_np2_multishank.json"
 
 
 @pytest.fixture
