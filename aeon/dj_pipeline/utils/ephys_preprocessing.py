@@ -5,10 +5,14 @@ mapped to that step's keyword arguments (omitted arguments take SpikeInterface's
 defaults). See
 https://spikeinterface.readthedocs.io/en/stable/how_to/build_pipeline_with_dicts.html
 
-``spike_sorting.PreProcessing`` applies the pipeline to the recording, after the fixed
-unsigned-to-signed conversion and before the result is saved for sorting. A paramset
-selects it with ``si_pipeline`` in its ``SI_PREPROCESSING_PARAMS`` section, either as
-the name of a registered pipeline or as a pipeline dict written inline::
+``spike_sorting.PreProcessing`` has two stages. You can apply preprocessing based on
+the whole probe (e.g. you might want to do common referencing using the median reference
+from all channels) then do preprocessing applied to just the ElectrodeGroup you are
+working on (e.g. you might want to apply motion correction based on just the group).
+Before any preprocessing the recording is converted from unsigned to signed integers.
+A paramset selects which pipeline to use with ``si_pipeline`` in its
+``SI_PREPROCESSING_PARAMS`` section, either as the name of a registered pipeline or as
+a pipeline dict written inline::
 
     "SI_PREPROCESSING_PARAMS": {"si_pipeline": "aeon_default"}
 
@@ -62,7 +66,7 @@ DEFAULT_PREPROCESSING_PIPELINE = "aeon_default"
 _PREPROCESSING_PARAMS_KEYS = {"si_pipeline"}
 
 
-def register_preprocessing(name: str, pipeline: PipelineDict) -> None:
+def register_preprocessing(name: str, pipeline: dict[str, PipelineDict]) -> None:
     """Register a SpikeInterface preprocessing pipeline dict under ``name``."""
     if name in _PREPROCESSING_PIPELINES:
         raise ValueError(f"Preprocessing pipeline '{name}' is already registered.")
