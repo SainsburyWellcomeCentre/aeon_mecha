@@ -59,6 +59,8 @@ class Probe(dj.Lookup):
     ---
     -> ProbeType
     probe_comment='' :  varchar(1000)  # comment about this probe (e.g. defective, etc.)
+    probe_part_number='' : varchar(16) # NeuroPixels part number (e.g. 'NP2013') following conventions
+                                       # from ProbeTable https://github.com/billkarsh/ProbeTable/
     """
 
 
