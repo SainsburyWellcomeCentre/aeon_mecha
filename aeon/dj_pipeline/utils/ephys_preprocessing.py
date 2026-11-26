@@ -5,17 +5,25 @@ mapped to that step's keyword arguments (omitted arguments take SpikeInterface's
 defaults). See
 https://spikeinterface.readthedocs.io/en/stable/how_to/build_pipeline_with_dicts.html
 
-``spike_sorting.PreProcessing`` applies the pipeline to the recording, after the fixed
-unsigned-to-signed conversion and before the result is saved for sorting. A paramset
-selects it with ``si_pipeline`` in its ``SI_PREPROCESSING_PARAMS`` section, either as
-the name of a registered pipeline or as a pipeline dict written inline::
+``spike_sorting.PreProcessing`` has two stages. You can apply preprocessing based on
+the whole probe (e.g. you might want to do common referencing using the median reference
+from all channels) then do preprocessing applied to just the ElectrodeGroup you are
+working on (e.g. you might want to apply motion correction based on just the group).
+Before any preprocessing the recording is converted from unsigned to signed integers.
+A paramset selects which pipeline to use with ``si_pipeline`` in its
+``SI_PREPROCESSING_PARAMS`` section, either as the name of a registered pipeline or as
+a pipeline dict written inline::
 
     "SI_PREPROCESSING_PARAMS": {"si_pipeline": "aeon_default"}
 
     "SI_PREPROCESSING_PARAMS": {
         "si_pipeline": {
-            "bandpass_filter": {"freq_min": 250, "freq_max": 6000},
-            "common_reference": {"operator": "median"},
+            "before_splitting": {
+                "common_reference": {"operator": "median"},
+            },
+            "after_splitting": {
+                "bandpass_filter": {"freq_min": 250, "freq_max": 6000},
+            },
         }
     }
 
@@ -30,8 +38,12 @@ Register a pipeline under a name, from this module or any other::
     register_preprocessing(
         "my_pipeline",
         {
-            "highpass_filter": {"freq_min": 400},
-            "common_reference": {"operator": "median"},
+            "before_splitting": {
+                "common_reference": {"operator": "median"},
+            },
+            "after_splitting": {
+                "bandpass_filter": {"freq_min": 250, "freq_max": 6000},
+            },
         },
     )
 
@@ -46,7 +58,7 @@ from typing import Any
 
 PipelineDict = dict[str, dict[str, Any]]
 
-_PREPROCESSING_PIPELINES: dict[str, PipelineDict] = {}
+_PREPROCESSING_PIPELINES: dict[str, dict[str, PipelineDict]] = {}
 
 DEFAULT_PREPROCESSING_PIPELINE = "aeon_default"
 
@@ -54,14 +66,16 @@ DEFAULT_PREPROCESSING_PIPELINE = "aeon_default"
 _PREPROCESSING_PARAMS_KEYS = {"si_pipeline"}
 
 
-def register_preprocessing(name: str, pipeline: PipelineDict) -> None:
+def register_preprocessing(name: str, pipeline: dict[str, PipelineDict]) -> None:
     """Register a SpikeInterface preprocessing pipeline dict under ``name``."""
     if name in _PREPROCESSING_PIPELINES:
         raise ValueError(f"Preprocessing pipeline '{name}' is already registered.")
     _PREPROCESSING_PIPELINES[name] = pipeline
 
 
-def resolve_preprocessing_pipeline(preprocessing_params: dict[str, Any]) -> PipelineDict:
+def resolve_preprocessing_pipeline(
+    preprocessing_params: dict[str, Any],
+) -> tuple[PipelineDict, PipelineDict]:
     """Return the pipeline dict a paramset's ``SI_PREPROCESSING_PARAMS`` section selects.
 
     Raises:
@@ -85,16 +99,25 @@ def resolve_preprocessing_pipeline(preprocessing_params: dict[str, Any]) -> Pipe
                 f"Unknown preprocessing pipeline '{si_pipeline}'. "
                 f"Registered: {sorted(_PREPROCESSING_PIPELINES)}"
             )
-        pipeline = _PREPROCESSING_PIPELINES[si_pipeline]
+        pipeline_before = _PREPROCESSING_PIPELINES[si_pipeline].get("before_splitting", {})
+        pipeline_after = _PREPROCESSING_PIPELINES[si_pipeline].get("after_splitting", {})
     elif isinstance(si_pipeline, dict):
-        pipeline = si_pipeline
+        if si_pipeline.keys() <= {"before_splitting", "after_splitting"}:
+            pipeline_before = si_pipeline.get("before_splitting", {})
+            pipeline_after = si_pipeline.get("after_splitting", {})
+        else:
+            # backwards compatibility for existing paramsets
+            # TODO: check existing paramsets and remove if we can
+            pipeline_before = {}
+            pipeline_after = si_pipeline
     else:
         raise TypeError(
             f"si_pipeline must be a registered name or a pipeline dict, got {type(si_pipeline).__name__}."
         )
 
-    PreprocessingPipeline(pipeline)  # raises TypeError on an unsupported step name
-    return pipeline
+    PreprocessingPipeline(pipeline_before)  # raises TypeError on an unsupported step name
+    PreprocessingPipeline(pipeline_after)  # raises TypeError on an unsupported step name
+    return pipeline_before, pipeline_after
 
 
 # ---- Registered pipelines ----
@@ -102,8 +125,11 @@ def resolve_preprocessing_pipeline(preprocessing_params: dict[str, Any]) -> Pipe
 register_preprocessing(
     "aeon_default",
     {
-        "bandpass_filter": {"freq_min": 300, "freq_max": 6000},
-        "common_reference": {"operator": "median"},
+        "before_splitting": {},
+        "after_splitting": {
+            "bandpass_filter": {"freq_min": 300, "freq_max": 6000},
+            "common_reference": {"operator": "median"},
+        },
     },
 )
 # No preprocessing in PreProcessing, e.g. to leave it to the sorter.

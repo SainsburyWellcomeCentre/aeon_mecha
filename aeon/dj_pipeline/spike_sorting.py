@@ -214,7 +214,9 @@ class PreProcessing(dj.Computed):
         # Resolve the preprocessing pipeline first, so a malformed paramset fails before
         # anything is created on disk.
         params = (SortingParamSet & key).fetch1("params")
-        si_pipeline = resolve_preprocessing_pipeline(params.get("SI_PREPROCESSING_PARAMS") or {})
+        pipeline_before, pipeline_after = resolve_preprocessing_pipeline(
+            params.get("SI_PREPROCESSING_PARAMS") or {}
+        )
 
         # Create output directory
         output_dir = self.infer_output_dir(key, mkdir=True)
@@ -274,7 +276,8 @@ class PreProcessing(dj.Computed):
             probe_filepath,
             probe_part_number,
             params,
-            si_pipeline,
+            pipeline_before,
+            pipeline_after,
         )
 
     def make_compute(
@@ -292,7 +295,8 @@ class PreProcessing(dj.Computed):
         probe_filepath: str,
         probe_part_number: str,
         params: dict[str, Any],
-        si_pipeline: dict[str, dict[str, Any]],
+        pipeline_before: dict[str, dict[str, Any]],
+        pipeline_after: dict[str, dict[str, Any]],
     ) -> tuple[Path, datetime]:
         """Preprocess ephys data for spike sorting.
 
@@ -312,7 +316,8 @@ class PreProcessing(dj.Computed):
             probe_filepath: Filepath to json file of probe
             probe_part_number: NeuroPixels probe part number (e.g. "NP2013")
             params: SortingParamSet params
-            si_pipeline: SpikeInterface preprocessing pipeline dict to apply
+            pipeline_before: SpikeInterface preprocessing pipeline to apply before splitting into groups
+            pipeline_after: SpikeInterface preprocessing pipeline to apply after splitting into groups
 
         Returns:
             Tuple of (output_dir, execution_time)
@@ -344,12 +349,14 @@ class PreProcessing(dj.Computed):
         sample_shifts = get_neuropixels_sample_shifts_from_probe(probe)
         si_recording.set_property("inter_sample_shift", sample_shifts)
 
+        si_recording = si.preprocessing.unsigned_to_signed(si_recording)
+        si_recording = si.preprocessing.apply_preprocessing_pipeline(si_recording, pipeline_before)
+
         # select just the channels in the ElectrodeGroup
         si_recording = si_recording.select_channels(si_recording.channel_ids[electrodes_df.channel_idx])
 
         # Run preprocessing and save results to output folder
-        si_recording = si.preprocessing.unsigned_to_signed(si_recording)
-        si_recording = si.preprocessing.apply_preprocessing_pipeline(si_recording, si_pipeline)
+        si_recording = si.preprocessing.apply_preprocessing_pipeline(si_recording, pipeline_after)
         si_recording.dump_to_pickle(file_path=recording_file, relative_to=output_dir)
 
         save_format = params.get("save_format", "zarr")
