@@ -95,15 +95,15 @@ def resolve_preprocessing_pipeline(
                 f"Unknown preprocessing pipeline '{si_pipeline}'. "
                 f"Registered: {sorted(_PREPROCESSING_PIPELINES)}"
             )
-        pipeline_before = _PREPROCESSING_PIPELINES[si_pipeline].get("pipeline_before", {})
-        pipeline_after = _PREPROCESSING_PIPELINES[si_pipeline].get("pipeline_after", {})
+        pipeline_before = _PREPROCESSING_PIPELINES[si_pipeline].get("before_splitting", {})
+        pipeline_after = _PREPROCESSING_PIPELINES[si_pipeline].get("after_splitting", {})
     elif isinstance(si_pipeline, dict):
-        if set(si_pipeline.keys()) == set(["pipeline_before", "pipeline_after"]):
-            pipeline_before = si_pipeline.get("pipeline_before", {})
-            pipeline_after = si_pipeline.get("pipeline_before", {})
+        if set(si_pipeline.keys()) == set(["before_splitting", "after_splitting"]):
+            pipeline_before = si_pipeline.get("before_splitting", {})
+            pipeline_after = si_pipeline.get("after_splitting", {})
         else:
             # backwards compatibility for existing paramsets
-            # Todo: check existing paramsets and remove if we can
+            # TODO: check existing paramsets and remove if we can
             pipeline_before = {}
             pipeline_after = si_pipeline
     else:
