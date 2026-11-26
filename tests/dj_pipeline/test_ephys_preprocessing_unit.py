@@ -11,8 +11,6 @@ pytestmark = pytest.mark.unit
 
 def _split_and_preprocess(rec, pipeline_before, pipeline_after, group_channel_ids):
     """Mirror PreProcessing.make_compute: before-stage, select group channels, after-stage."""
-    import spikeinterface.full as si
-
     rec = si.apply_preprocessing_pipeline(rec, pipeline_before)
     rec = rec.select_channels(group_channel_ids)
     return si.apply_preprocessing_pipeline(rec, pipeline_after)
@@ -20,8 +18,6 @@ def _split_and_preprocess(rec, pipeline_before, pipeline_after, group_channel_id
 
 def test_default_pipeline_matches_original_recipe():
     """Without si_pipeline, aeon_default is used: same traces as the old hard-coded recipe."""
-    import spikeinterface.full as si
-
     pipeline_before, pipeline_after = resolve_preprocessing_pipeline({})
     default = resolve_preprocessing_pipeline({"si_pipeline": "aeon_default"})
     assert (pipeline_before, pipeline_after) == default
@@ -81,8 +77,6 @@ def test_staged_pipeline_applies_before_and_after_splitting():
 )
 def test_partial_and_legacy_pipelines(si_pipeline, expected_before, expected_after):
     """Tests that user input gets resolved as expected for partial and legacy pipelines."""
-    from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
-
     assert resolve_preprocessing_pipeline({"si_pipeline": si_pipeline}) == (expected_before, expected_after)
 
 
@@ -97,7 +91,5 @@ def test_partial_and_legacy_pipelines(si_pipeline, expected_before, expected_aft
 )
 def test_invalid_preprocessing_params_raise(preprocessing_params, error, match):
     """Typos in the section or the name, and a value that's neither name nor dict, raise."""
-    from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
-
     with pytest.raises(error, match=match):
         resolve_preprocessing_pipeline(preprocessing_params)
