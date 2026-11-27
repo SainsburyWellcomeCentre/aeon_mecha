@@ -210,7 +210,7 @@ class EphysEpochConfig(dj.Imported):
     -> EphysEpoch
     ---
     n_probes: int32  # number of probes discovered + registered in this epoch
-    device_name: varchar(32) # e.g. "NeuropixelsV2e"
+    device_name='': varchar(32) # e.g. "NeuropixelsV2e"
     """
 
     # Override probe_assignments.json source dir (used when Ceph is read-only).

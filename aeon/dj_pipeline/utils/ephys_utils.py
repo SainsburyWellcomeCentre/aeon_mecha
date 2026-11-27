@@ -249,8 +249,8 @@ def get_probe_id_and_part_number(
         implant_metadatas = metadata["subject"]["Implants"]
         for implant_metadata in implant_metadatas:
             if implant_metadata["Probe"] == f"Probe{suffix}":
-                probe_part_number = implant_metadata["ProbePartNumber"]
-    elif isinstance(new_block, dict):
+                probe_part_number = implant_metadata.get("ProbePartNumber", "")
+    elif new_block:
         # New metadata format: each probe is its own top-level device block
         # "NeuropixelsV2A"/"NeuropixelsV2B" holding a single "ProbeConfiguration";
         # the enable flag lives inside the block.
@@ -264,7 +264,7 @@ def get_probe_id_and_part_number(
         enable = devices.get(probe_label, "true")
         probe_config = devices.get("NeuropixelsV2e", {}).get(f"Configuration{suffix}", {})
 
-    if isinstance(enable, str) and enable.lower() == "false":
+    if isinstance(enable, str) and str(enable).lower() == "false":
         return None, ""
     probe_id = _serial_from_gain_cal(probe_config.get("GainCalibrationFileName")) or default_id
     return probe_id, probe_part_number
@@ -498,7 +498,7 @@ def discover_epoch_probes(epoch_path: Path) -> tuple[str | None, Path | None, li
 
 
 def parse_epoch_metadata(epoch_path: Path) -> dict | None:
-    """Parse Metadata.yml (JSON format) or or Metadata.json from an epoch directory.
+    """Parse Metadata.yml (JSON format) or Metadata.json from an epoch directory.
 
     Args:
         epoch_path: Path to the epoch directory
@@ -564,8 +564,8 @@ def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
         # then we're using version 3
         headstage_metadata = metadata_ephys.get("Headstage")
         for key, probe_data in headstage_metadata.items():
-            if "Probe" in key:
-                probeinterface_filename = probe_data[key]["ProbeConfiguration"]["ProbeInterfaceFileName"]
+            if re.fullmatch(r"Probe[A-Z]", key):
+                probeinterface_filename = probe_data["ProbeConfiguration"]["ProbeInterfaceFileName"]
                 result[key] = _probe_json_basename(probeinterface_filename)
         return result
 
