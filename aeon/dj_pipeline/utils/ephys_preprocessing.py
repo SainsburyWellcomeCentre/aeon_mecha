@@ -42,6 +42,7 @@ Names are unique; registering an existing name raises. Once a paramset reference
 name, don't change its pipeline - register the modified pipeline under a new name.
 """
 
+from copy import deepcopy
 from typing import Any
 
 PipelineDict = dict[str, dict[str, Any]]
@@ -107,13 +108,15 @@ def insert_bad_channels_into_pipeline(si_pipeline, electrodes_df, recording):
     `ephys.ElectrodeConfig.Electrode.label`. In this function, we intercept
     the SpikeInterface bad channels steps to supply them with this information.
     """
-    for pp_name, pp_kwargs in si_pipeline:
+    new_pipeline = deepcopy(si_pipeline)
+
+    for pp_name in si_pipeline:
         if pp_name in ["detect_and_interpolate_bad_channels", "detect_and_remove_bad_channels"]:
             bad_channel_indices = electrodes_df.query('label == "bad"')["channel_idx"]
             bad_channel_ids = recording.channel_ids[bad_channel_indices]
-            pp_kwargs["bad_channel_ids"] = bad_channel_ids
+            new_pipeline[pp_name]["bad_channel_ids"] = bad_channel_ids
 
-    return si_pipeline
+    return new_pipeline
 
 
 # ---- Registered pipelines ----
