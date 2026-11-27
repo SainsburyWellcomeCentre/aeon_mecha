@@ -16,7 +16,7 @@ from aeon.dj_pipeline.utils.ephys_utils import (
     discover_epoch_probes,
     find_nearest_window,
     find_or_create_probe_insertion,
-    get_probe_id,
+    get_probe_id_and_part_number,
     harp_to_naive,
     load_device_channel_map,
     parse_epoch_metadata,
@@ -210,6 +210,7 @@ class EphysEpochConfig(dj.Imported):
     -> EphysEpoch
     ---
     n_probes: int32  # number of probes discovered + registered in this epoch
+    device_name: varchar(32) # e.g. "NeuropixelsV2e"
     """
 
     # Override probe_assignments.json source dir (used when Ceph is read-only).
@@ -279,11 +280,11 @@ class EphysEpochConfig(dj.Imported):
         # Build probe info, filtering out unconfigured (dummy) probes
         probe_info = {}
         for label in probe_labels:
-            probe_id = get_probe_id(metadata, device_name, label)
+            probe_id, probe_part_number = get_probe_id_and_part_number(metadata, device_name, label)
             if probe_id is None:
                 logger.info(f"Skipping {label}: no probe configuration found (disabled/dummy)")
                 continue
-            probe_info[label] = probe_id
+            probe_info[label] = {"probe": probe_id, "probe_part_number": probe_part_number}
 
         if not probe_info:
             raise ValueError(
@@ -323,7 +324,7 @@ class EphysEpochConfig(dj.Imported):
                 if not (ProbeType & {"probe_type": probe_type}):
                     raise ValueError(f"ProbeType '{probe_type}' not found. Create it first.")
                 Probe.insert1(
-                    {"probe": probe_id, "probe_type": probe_type},
+                    {**probe_info, "probe_type": probe_type},
                     skip_duplicates=True,
                 )
                 logger.info(f"Auto-created Probe entry: {label}={probe_id} (type={probe_type})")
@@ -367,7 +368,7 @@ class EphysEpochConfig(dj.Imported):
             insertion_entries.append({**key, **pi_key, "probe_label": label, **probe_to_econfig[label]})
 
         # Insert master + Part rows
-        self.insert1({**key, "n_probes": len(active_labels)})
+        self.insert1({**key, "n_probes": len(active_labels), "device_name": device_name})
         self.Insertion.insert(insertion_entries)
 
 
