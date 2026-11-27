@@ -77,6 +77,8 @@ class ElectrodeConfig(dj.Lookup):
         definition = """  # Electrodes used for recording
         -> master
         -> ProbeType.Electrode
+        ---
+        label='': varchar(16) # remove this electrode from analysis if label = "bad"
         """
 
 

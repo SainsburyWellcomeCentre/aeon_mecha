@@ -42,6 +42,7 @@ Names are unique; registering an existing name raises. Once a paramset reference
 name, don't change its pipeline - register the modified pipeline under a new name.
 """
 
+from copy import deepcopy
 from typing import Any
 
 PipelineDict = dict[str, dict[str, Any]]
@@ -95,6 +96,27 @@ def resolve_preprocessing_pipeline(preprocessing_params: dict[str, Any]) -> Pipe
 
     PreprocessingPipeline(pipeline)  # raises TypeError on an unsupported step name
     return pipeline
+
+
+def insert_bad_channels_into_pipeline(si_pipeline, electrodes_df, recording):
+    """Gives a PreProcessingPipeline with bad channels from electrodes_df.
+
+    Usually, one would use algorithms to figure out which channels are bad.
+    We generally do not want to do this block-by-block because it might
+    give different results for different blocks, leading to complications
+    down the line. Instead, we say which channels are bad "globally" using
+    `ephys.ElectrodeConfig.Electrode.label`. In this function, we intercept
+    the SpikeInterface bad channels steps to supply them with this information.
+    """
+    new_pipeline = deepcopy(si_pipeline)
+
+    for pp_name in si_pipeline:
+        if pp_name in ["detect_and_interpolate_bad_channels", "detect_and_remove_bad_channels"]:
+            bad_channel_indices = electrodes_df.query('label == "bad"')["channel_idx"]
+            bad_channel_ids = recording.channel_ids[bad_channel_indices]
+            new_pipeline[pp_name]["bad_channel_ids"] = bad_channel_ids
+
+    return new_pipeline
 
 
 # ---- Registered pipelines ----
