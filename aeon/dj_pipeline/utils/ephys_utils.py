@@ -204,7 +204,9 @@ def read_amplifier_recording(
     )
 
 
-def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> str | None:
+def get_probe_id_and_part_number(
+    metadata: dict | None, device_name: str, probe_label: str
+) -> tuple[str | None, str]:
     """Extract probe identifier from metadata.
 
     For V2Beta hardware (no serial numbers): probe ID = "{device_name}_{label}"
@@ -229,17 +231,32 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
 
     # Only V2 hardware carries an enable flag and a serial in its metadata
     if metadata is None or device_name != "NeuropixelsV2":
-        return default_id
+        return default_id, ""
 
     suffix = probe_label[len("Probe") :]  # "A", "B", ...
 
-    new_block = metadata.get(f"NeuropixelsV2{suffix}")
-    if isinstance(new_block, dict):
+    metadata_ephys = metadata.get("ephys", {})
+    new_block = metadata.get(f"NeuropixelsV2{suffix}", {})
+
+    probe_part_number = ""
+
+    if metadata_ephys:
+        # then we're using the newest (golden_arrow) metadata
+        metadata_headstage = metadata_ephys.get("Headstage")
+        metadata_probe = metadata_headstage.get(f"Probe{suffix}")
+        enable = metadata_probe.get("Enable")
+        probe_config = metadata_probe.get("ProbeConfiguration", {})
+        implant_metadatas = metadata["subject"]["Implants"]
+        for implant_metadata in implant_metadatas:
+            if implant_metadata["Probe"] == f"Probe{suffix}":
+                probe_part_number = implant_metadata.get("ProbePartNumber", "")
+    elif new_block:
         # New metadata format: each probe is its own top-level device block
         # "NeuropixelsV2A"/"NeuropixelsV2B" holding a single "ProbeConfiguration";
         # the enable flag lives inside the block.
         enable = new_block.get("Enable", "true")
         probe_config = new_block.get("ProbeConfiguration", {})
+
     else:
         # Old metadata format: Devices.NeuropixelsV2e.ConfigurationA/B, with the
         # enable flag at Devices.ProbeA/B = "true"/"false".
@@ -247,9 +264,10 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
         enable = devices.get(probe_label, "true")
         probe_config = devices.get("NeuropixelsV2e", {}).get(f"Configuration{suffix}", {})
 
-    if isinstance(enable, str) and enable.lower() == "false":
-        return None
-    return _serial_from_gain_cal(probe_config.get("GainCalibrationFileName")) or default_id
+    if str(enable).lower() == "false":
+        return None, ""
+    probe_id = _serial_from_gain_cal(probe_config.get("GainCalibrationFileName")) or default_id
+    return probe_id, probe_part_number
 
 
 def find_or_create_probe_insertion(
@@ -335,8 +353,8 @@ def read_probe_assignments(
         probe_labels: Sorted list of probe labels discovered in this epoch
         insertion_table: The EphysEpochConfig.Insertion Part table class
         probe_info: Dict mapping probe_label -> probe_serial (built by caller
-            from get_probe_id()). Used to translate serial-keyed JSON to
-            label-keyed dict.
+            from get_probe_id_and_part_number()). Used to translate serial-keyed
+            JSON to label-keyed dict.
         override_dir: Optional local directory to check first. Useful when
             the epoch directory is read-only (e.g. Ceph without write perms).
 
@@ -480,7 +498,7 @@ def discover_epoch_probes(epoch_path: Path) -> tuple[str | None, Path | None, li
 
 
 def parse_epoch_metadata(epoch_path: Path) -> dict | None:
-    """Parse Metadata.yml (JSON format) from an epoch directory.
+    """Parse Metadata.yml (JSON format) or Metadata.json from an epoch directory.
 
     Args:
         epoch_path: Path to the epoch directory
@@ -488,14 +506,21 @@ def parse_epoch_metadata(epoch_path: Path) -> dict | None:
     Returns:
         Parsed metadata dict, or None if not found or unparseable.
     """
-    metadata_path = epoch_path / "Metadata.yml"
-    if not metadata_path.exists():
+    metadata_path = None
+    candidate_metadata_paths = [epoch_path / "Metadata.yml", epoch_path / "Metadata.json"]
+    for candidate_metadata_path in candidate_metadata_paths:
+        if candidate_metadata_path.exists():
+            metadata_path = candidate_metadata_path
+            break
+    if metadata_path is None:
+        logger.warning(f"Could not find Epoch Metadata file in {epoch_path}.")
         return None
+
     try:
         with open(metadata_path) as f:
             return json.load(f)  # JSON despite .yml extension
     except (json.JSONDecodeError, OSError) as e:
-        logger.warning(f"Failed to parse Metadata.yml at {metadata_path}: {e}")
+        logger.warning(f"Failed to parse {metadata_path}: {e}")
         return None
 
 
@@ -527,11 +552,22 @@ def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
     Raises:
         FileNotFoundError: If Metadata.yml doesn't exist.
     """
-    metadata_path = Path(epoch_path) / "Metadata.yml"
-    with open(metadata_path) as f:
-        data = json.load(f)  # JSON despite .yml extension
+    data = parse_epoch_metadata(epoch_path)
+    if data is None:
+        raise FileNotFoundError("Could not find Epoch Metadata file in {epoch_path}.")
 
     result: dict[str, str | None] = {}
+
+    metadata_ephys = data.get("ephys", {})
+
+    if metadata_ephys:
+        # then we're using version 3
+        headstage_metadata = metadata_ephys.get("Headstage")
+        for key, probe_data in headstage_metadata.items():
+            if re.fullmatch(r"Probe[A-Z]", key):
+                probeinterface_filename = probe_data["ProbeConfiguration"]["ProbeInterfaceFileName"]
+                result[key] = _probe_json_basename(probeinterface_filename)
+        return result
 
     # New metadata format: probe configs are top-level device blocks
     # "NeuropixelsV2A"/"NeuropixelsV2B", each with a single "ProbeConfiguration".
