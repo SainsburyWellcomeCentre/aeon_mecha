@@ -278,15 +278,17 @@ class EphysEpochConfig(dj.Imported):
         metadata = parse_epoch_metadata(epoch_path)
 
         # Build probe info, filtering out unconfigured (dummy) probes
-        probe_info = {}
+        probe_label_to_id = {}
+        probe_label_to_part_number = {}
         for label in probe_labels:
             probe_id, probe_part_number = get_probe_id_and_part_number(metadata, device_name, label)
             if probe_id is None:
                 logger.info(f"Skipping {label}: no probe configuration found (disabled/dummy)")
                 continue
-            probe_info[label] = {"probe": probe_id, "probe_part_number": probe_part_number}
+            probe_label_to_id[label] = probe_id
+            probe_label_to_part_number[label] = probe_part_number
 
-        if not probe_info:
+        if not probe_label_to_id:
             raise ValueError(
                 f"All probes in {epoch_path} are disabled/dummy (no probe configuration "
                 f"in Metadata.yml). Either enable probes in the rig metadata or remove "
@@ -319,31 +321,35 @@ class EphysEpochConfig(dj.Imported):
                 "config_file_name": basename,
             }
 
-        for label, probe_id in probe_info.items():
+        for label, probe_id in probe_label_to_id.items():
             if not (Probe & {"probe": probe_id}):
                 if not (ProbeType & {"probe_type": probe_type}):
                     raise ValueError(f"ProbeType '{probe_type}' not found. Create it first.")
                 Probe.insert1(
-                    {**probe_info, "probe_type": probe_type},
+                    {
+                        "probe_id": probe_label_to_id[label],
+                        "probe_part_number": probe_label_to_part_number[label],
+                        "probe_type": probe_type,
+                    },
                     skip_duplicates=True,
                 )
                 logger.info(f"Auto-created Probe entry: {label}={probe_id} (type={probe_type})")
 
         # Read subject-probe mapping
-        active_labels = list(probe_info.keys())
+        active_labels = list(probe_label_to_id.keys())
         probe_assignments = read_probe_assignments(
             key,
             epoch_path,
             active_labels,
             self.Insertion,
-            probe_info,
+            probe_label_to_id,
             override_dir=self.probe_assignments_override_dir,
         )
 
         # Create/validate ProbeInsertion entries and build Insertion Part rows
         insertion_entries = []
         for label in active_labels:
-            probe_id = probe_info[label]
+            probe_id = probe_label_to_id[label]
             if label not in probe_assignments:
                 raise KeyError(
                     f"Probe '{label}' (serial={probe_id}) is active in this epoch but "
