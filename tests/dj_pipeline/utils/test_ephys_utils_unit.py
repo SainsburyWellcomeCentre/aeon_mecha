@@ -239,6 +239,14 @@ def _new_layout(block):
     return {"NeuropixelsV2B": block}
 
 
+def _golden_arrow_layout(implant):
+    """Golden-arrow metadata: probe config under ephys.Headstage, part number under subject.Implants."""
+    return {
+        "ephys": {"Headstage": {"ProbeA": {"Enable": True, "ProbeConfiguration": _gain_cal("44444444")}}},
+        "subject": {"Implants": [{"Probe": "ProbeA", **implant}]},
+    }
+
+
 class TestGetProbeId:
     """Regression tests for get_probe_id_and_part_number — covers bugs 1, 2, 3 from bugs_found.md."""
 
@@ -288,6 +296,18 @@ class TestGetProbeId:
                 "ProbeB",
                 ("33333333", ""),
                 id="new layout takes precedence over Devices",
+            ),
+            pytest.param(
+                _golden_arrow_layout({"ProbePartNumber": "NP2014"}),
+                "ProbeA",
+                ("44444444", "NP2014"),
+                id="golden arrow layout, with part number",
+            ),
+            pytest.param(
+                _golden_arrow_layout({}),
+                "ProbeA",
+                ("44444444", ""),
+                id="golden arrow layout, no part number",
             ),
         ],
     )
