@@ -245,38 +245,40 @@ class TestGetProbeId:
     @pytest.mark.parametrize(
         ("metadata", "probe_label", "expected"),
         [
-            pytest.param(None, "ProbeA", "NeuropixelsV2_ProbeA", id="no metadata"),
+            pytest.param(None, "ProbeA", ("NeuropixelsV2_ProbeA", ""), id="no metadata"),
             # Bug 1: serial comes from Devices.NeuropixelsV2e.ConfigurationA/B.
             # Bug 3: PureWindowsPath parses the backslash separators on Linux.
-            pytest.param(_old_layout(), "ProbeA", "11111111", id="old layout, serial"),
-            pytest.param(_old_layout(), "ProbeB", "22222222", id="old layout, ProbeB reads ConfigurationB"),
-            # Bug 2: a disabled/dummy probe returns None, which EphysEpoch.make filters out.
-            pytest.param(_old_layout(probe_a="false"), "ProbeA", None, id="old layout, disabled"),
+            pytest.param(_old_layout(), "ProbeA", ("11111111", ""), id="old layout, serial"),
             pytest.param(
-                _old_layout(config_a={}), "ProbeA", "NeuropixelsV2_ProbeA", id="old layout, no serial"
+                _old_layout(), "ProbeB", ("22222222", ""), id="old layout, ProbeB reads ConfigurationB"
+            ),
+            # Bug 2: a disabled/dummy probe returns None, which EphysEpoch.make filters out.
+            pytest.param(_old_layout(probe_a="false"), "ProbeA", (None, ""), id="old layout, disabled"),
+            pytest.param(
+                _old_layout(config_a={}), "ProbeA", ("NeuropixelsV2_ProbeA", ""), id="old layout, no serial"
             ),
             pytest.param(
                 _new_layout({"Enable": "true", "ProbeConfiguration": _gain_cal("33333333")}),
                 "ProbeB",
-                "33333333",
+                ("33333333", ""),
                 id="new layout, serial",
             ),
             pytest.param(
                 _new_layout({"ProbeConfiguration": _gain_cal("33333333")}),
                 "ProbeB",
-                "33333333",
+                ("33333333", ""),
                 id="new layout, enable flag absent defaults to enabled",
             ),
             pytest.param(
                 _new_layout({"Enable": "False", "ProbeConfiguration": _gain_cal("33333333")}),
                 "ProbeB",
-                None,
+                (None, ""),
                 id="new layout, disabled",
             ),
             pytest.param(
                 _new_layout({"Enable": "true", "ProbeConfiguration": {}}),
                 "ProbeB",
-                "NeuropixelsV2_ProbeB",
+                ("NeuropixelsV2_ProbeB", ""),
                 id="new layout, no serial",
             ),
             # Devices.NeuropixelsV2e.ConfigurationB holds a different serial (22222222),
@@ -284,7 +286,7 @@ class TestGetProbeId:
             pytest.param(
                 {**_old_layout(), **_new_layout({"ProbeConfiguration": _gain_cal("33333333")})},
                 "ProbeB",
-                "33333333",
+                ("33333333", ""),
                 id="new layout takes precedence over Devices",
             ),
         ],
@@ -300,9 +302,9 @@ class TestGetProbeId:
         from aeon.dj_pipeline.utils.ephys_utils import get_probe_id_and_part_number
 
         # Even with V2 metadata present, the V2 path is not taken — default returned.
-        assert (
-            get_probe_id_and_part_number(_old_layout(), "NeuropixelsV2Beta", "ProbeA")
-            == "NeuropixelsV2Beta_ProbeA"
+        assert get_probe_id_and_part_number(_old_layout(), "NeuropixelsV2Beta", "ProbeA") == (
+            "NeuropixelsV2Beta_ProbeA",
+            "",
         )
 
 
