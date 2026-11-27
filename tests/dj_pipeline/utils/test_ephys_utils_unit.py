@@ -240,7 +240,7 @@ def _new_layout(block):
 
 
 class TestGetProbeId:
-    """Regression tests for get_probe_id — covers bugs 1, 2, 3 from bugs_found.md."""
+    """Regression tests for get_probe_id_and_part_number — covers bugs 1, 2, 3 from bugs_found.md."""
 
     @pytest.mark.parametrize(
         ("metadata", "probe_label", "expected"),
@@ -291,16 +291,19 @@ class TestGetProbeId:
     )
     def test_v2(self, metadata, probe_label, expected):
         """V2 hardware: probe ID is the serial from GainCalibrationFileName, or None if disabled."""
-        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
+        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id_and_part_number
 
-        assert get_probe_id(metadata, "NeuropixelsV2", probe_label) == expected
+        assert get_probe_id_and_part_number(metadata, "NeuropixelsV2", probe_label) == expected
 
     def test_v2beta_uses_default_id(self):
         """V2Beta hardware has no per-probe serial; always returns the default ID."""
-        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id
+        from aeon.dj_pipeline.utils.ephys_utils import get_probe_id_and_part_number
 
         # Even with V2 metadata present, the V2 path is not taken — default returned.
-        assert get_probe_id(_old_layout(), "NeuropixelsV2Beta", "ProbeA") == "NeuropixelsV2Beta_ProbeA"
+        assert (
+            get_probe_id_and_part_number(_old_layout(), "NeuropixelsV2Beta", "ProbeA")
+            == "NeuropixelsV2Beta_ProbeA"
+        )
 
 
 class TestDiscoverEpochProbes:

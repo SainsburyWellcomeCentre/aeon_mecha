@@ -327,7 +327,7 @@ class EphysEpochConfig(dj.Imported):
                     raise ValueError(f"ProbeType '{probe_type}' not found. Create it first.")
                 Probe.insert1(
                     {
-                        "probe_id": probe_label_to_id[label],
+                        "probe": probe_label_to_id[label],
                         "probe_part_number": probe_label_to_part_number[label],
                         "probe_type": probe_type,
                     },

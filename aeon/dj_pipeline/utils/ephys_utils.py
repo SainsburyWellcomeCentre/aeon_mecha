@@ -264,7 +264,7 @@ def get_probe_id_and_part_number(
         enable = devices.get(probe_label, "true")
         probe_config = devices.get("NeuropixelsV2e", {}).get(f"Configuration{suffix}", {})
 
-    if isinstance(enable, str) and str(enable).lower() == "false":
+    if str(enable).lower() == "false":
         return None, ""
     probe_id = _serial_from_gain_cal(probe_config.get("GainCalibrationFileName")) or default_id
     return probe_id, probe_part_number
@@ -353,8 +353,8 @@ def read_probe_assignments(
         probe_labels: Sorted list of probe labels discovered in this epoch
         insertion_table: The EphysEpochConfig.Insertion Part table class
         probe_info: Dict mapping probe_label -> probe_serial (built by caller
-            from get_probe_id()). Used to translate serial-keyed JSON to
-            label-keyed dict.
+            from get_probe_id_and_part_number()). Used to translate serial-keyed
+            JSON to label-keyed dict.
         override_dir: Optional local directory to check first. Useful when
             the epoch directory is read-only (e.g. Ceph without write perms).
 
@@ -554,7 +554,7 @@ def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
     """
     data = parse_epoch_metadata(epoch_path)
     if data is None:
-        return {}
+        raise FileNotFoundError("Could not find Epoch Metadata file in {epoch_path}.")
 
     result: dict[str, str | None] = {}
 
