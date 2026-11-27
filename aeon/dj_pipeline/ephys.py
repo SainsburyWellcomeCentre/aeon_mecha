@@ -210,6 +210,7 @@ class EphysEpochConfig(dj.Imported):
     -> EphysEpoch
     ---
     n_probes: int32  # number of probes discovered + registered in this epoch
+    device_name: varchar(32) # e.g. "NeuropixelsV2e"
     """
 
     # Override probe_assignments.json source dir (used when Ceph is read-only).
@@ -303,8 +304,11 @@ class EphysEpochConfig(dj.Imported):
         # (silently skipping leaves a downstream gap that's hard to diagnose).
         probe_configs = parse_metadata_probe_configs(epoch_path)
         probe_to_econfig: dict[str, dict[str, str]] = {}
-        for label, basename in probe_configs.items():
-            if basename is None:
+        for label, probe_metadata in probe_configs.items():
+            basename = probe_metadata["probeinterface_filepath"]
+            probe_part_number = probe_metadata.get("probe_part_number") or ""
+
+            if not basename:
                 continue  # disabled/spoofed probe
             json_path = resolve_epoch_probe_json(raw_ephys_dir, epoch_path, basename)
             ec_probe_type, ec_config_name = create_electrode_config(
@@ -316,6 +320,7 @@ class EphysEpochConfig(dj.Imported):
                 "probe_type": ec_probe_type,
                 "electrode_config_name": ec_config_name,
                 "config_file_name": basename,
+                "probe_part_number": probe_part_number,
             }
 
         for label, probe_id in probe_info.items():
@@ -367,7 +372,7 @@ class EphysEpochConfig(dj.Imported):
             insertion_entries.append({**key, **pi_key, "probe_label": label, **probe_to_econfig[label]})
 
         # Insert master + Part rows
-        self.insert1({**key, "n_probes": len(active_labels)})
+        self.insert1({**key, "n_probes": len(active_labels), "device_name": device_name})
         self.Insertion.insert(insertion_entries)
 
 

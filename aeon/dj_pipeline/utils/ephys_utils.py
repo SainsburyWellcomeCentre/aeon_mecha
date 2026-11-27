@@ -233,8 +233,16 @@ def get_probe_id(metadata: dict | None, device_name: str, probe_label: str) -> s
 
     suffix = probe_label[len("Probe") :]  # "A", "B", ...
 
-    new_block = metadata.get(f"NeuropixelsV2{suffix}")
-    if isinstance(new_block, dict):
+    metadata_ephys = metadata.get("ephys", {})
+    new_block = metadata.get(f"NeuropixelsV2{suffix}", {})
+
+    if metadata_ephys:
+        # then we're using the newest (golden_arrow) metadata
+        metadata_headstage = metadata_ephys.get("Headstage")
+        metadata_probe = metadata_headstage.get(f"Probe{suffix}")
+        enable = metadata_probe.get("Enable")
+        probe_config = metadata_probe.get("ProbeConfiguration", {})
+    elif new_block:
         # New metadata format: each probe is its own top-level device block
         # "NeuropixelsV2A"/"NeuropixelsV2B" holding a single "ProbeConfiguration";
         # the enable flag lives inside the block.
@@ -480,7 +488,7 @@ def discover_epoch_probes(epoch_path: Path) -> tuple[str | None, Path | None, li
 
 
 def parse_epoch_metadata(epoch_path: Path) -> dict | None:
-    """Parse Metadata.yml (JSON format) from an epoch directory.
+    """Parse Metadata.yml or Metadata.json (JSON format) from an epoch directory.
 
     Args:
         epoch_path: Path to the epoch directory
@@ -488,14 +496,20 @@ def parse_epoch_metadata(epoch_path: Path) -> dict | None:
     Returns:
         Parsed metadata dict, or None if not found or unparseable.
     """
-    metadata_path = epoch_path / "Metadata.yml"
-    if not metadata_path.exists():
+    metadata_path = None
+    candidate_metadata_paths = [epoch_path / "Metadata.yml", epoch_path / "Metadata.json"]
+    for candidate_metadata_path in candidate_metadata_paths:
+        if candidate_metadata_path.exists():
+            metadata_path = candidate_metadata_path
+            break
+    if metadata_path is None:
+        logger.warning(f"Could not find Epoch Metadata file in {epoch_path}.")
         return None
     try:
         with open(metadata_path) as f:
             return json.load(f)  # JSON despite .yml extension
     except (json.JSONDecodeError, OSError) as e:
-        logger.warning(f"Failed to parse Metadata.yml at {metadata_path}: {e}")
+        logger.warning(f"Failed to parse {metadata_path}: {e}")
         return None
 
 
@@ -509,7 +523,7 @@ def _probe_json_basename(pifn: str | None) -> str | None:
     return PureWindowsPath(pifn).name or Path(pifn).name
 
 
-def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
+def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, dict[str, str | None]]:
     """Extract per-probe config-file basenames from an epoch's Metadata.yml.
 
     Reads ``ProbeInterfaceFileName`` for each probe, supporting two layouts:
@@ -520,24 +534,47 @@ def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
         epoch_path: Path to the epoch directory containing Metadata.yml.
 
     Returns:
-        Dict mapping ``"ProbeA" | "ProbeB" | ...`` to JSON basename or None.
+        Dict mapping ``"ProbeA" | "ProbeB" | ...`` to dict of its essential metadata, or None.
         None indicates a disabled/spoofed probe (ProbeInterfaceFileName is
         null in the metadata).
 
     Raises:
         FileNotFoundError: If Metadata.yml doesn't exist.
     """
-    metadata_path = Path(epoch_path) / "Metadata.yml"
-    with open(metadata_path) as f:
-        data = json.load(f)  # JSON despite .yml extension
+    metadata = parse_epoch_metadata(epoch_path)
+    if metadata is None:
+        return {}
 
-    result: dict[str, str | None] = {}
+    metadata_ephys = metadata.get("ephys", {})
+
+    probe_metadata: dict[str, dict[str, str | None]] = {}
+
+    if metadata_ephys:
+        # then we're using version 3
+        headstage_metadata = metadata_ephys.get("Headstage")
+        for probe_index, (key, probe_data) in enumerate(headstage_metadata.items()):
+            if "Probe" in key:
+                if not probe_data.get("Enable", "true") == "true":
+                    continue
+
+                probe_info = {}
+                probe_config = probe_data.get("ProbeConfiguration")
+
+                probeinterface_filename = probe_config.get("ProbeInterfaceFileName")
+                probe_info["probeinterface_filename"] = _probe_json_basename(probeinterface_filename)
+
+                subject_probe_info = metadata["subject"]["Implants"][probe_index]
+                probe_part_number = subject_probe_info.get("ProbePartNumber")
+                if probe_part_number:
+                    probe_info["probe_part_number"] = probe_part_number
+
+                probe_metadata[key] = probe_info
 
     # New metadata format: probe configs are top-level device blocks
     # "NeuropixelsV2A"/"NeuropixelsV2B", each with a single "ProbeConfiguration".
     new_blocks = {
         k: v
-        for k, v in data.items()
+        for k, v in metadata.items()
         if re.fullmatch(r"NeuropixelsV2[A-Z]", k) and isinstance(v, dict) and "ProbeConfiguration" in v
     }
     if new_blocks:
@@ -545,21 +582,26 @@ def parse_metadata_probe_configs(epoch_path: Path) -> dict[str, str | None]:
             suffix = dev_key[len("NeuropixelsV2") :]  # "A", "B", ...
             probe_config = block.get("ProbeConfiguration") or {}
             pifn = probe_config.get("ProbeInterfaceFileName")
-            result[f"Probe{suffix}"] = _probe_json_basename(pifn)
-        return result
+            probe_metadata[f"Probe{suffix}"] = {
+                "probeinterface_filename": _probe_json_basename(pifn),
+            }
+        return probe_metadata
 
     # Old metadata format: Devices.NeuropixelsV2e.ConfigurationA/B.
-    npx = data.get("Devices", {}).get("NeuropixelsV2e", {})
+    npx = metadata.get("Devices", {}).get("NeuropixelsV2e", {})
     for cfg_key, cfg_value in npx.items():
         if not cfg_key.startswith("Configuration"):
             continue
         suffix = cfg_key[len("Configuration") :]  # "A", "B", ...
         probe_label = f"Probe{suffix}"
         if not isinstance(cfg_value, dict):
-            result[probe_label] = None
+            probe_metadata[probe_label] = {}
             continue
-        result[probe_label] = _probe_json_basename(cfg_value.get("ProbeInterfaceFileName"))
-    return result
+        pifn = cfg_value.get("ProbeInterfaceFileName")
+        probe_metadata[probe_label] = {
+            "probeinterface_filename": _probe_json_basename(pifn),
+        }
+    return probe_metadata
 
 
 def resolve_epoch_probe_json(
