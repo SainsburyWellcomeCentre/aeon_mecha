@@ -23,7 +23,10 @@ from spikeinterface.extractors.neuropixels_utils import get_neuropixels_sample_s
 from swc.aeon.io import api as io_api
 
 from aeon.dj_pipeline import get_schema_name
-from aeon.dj_pipeline.utils.ephys_preprocessing import resolve_preprocessing_pipeline
+from aeon.dj_pipeline.utils.ephys_preprocessing import (
+    insert_bad_channels_into_pipeline,
+    resolve_preprocessing_pipeline,
+)
 from aeon.dj_pipeline.utils.ephys_utils import (
     find_nearest_window,
     read_amplifier_recording,
@@ -343,6 +346,8 @@ class PreProcessing(dj.Computed):
         si_recording.set_probe(probe=probe)
         sample_shifts = get_neuropixels_sample_shifts_from_probe(probe)
         si_recording.set_property("inter_sample_shift", sample_shifts)
+
+        si_pipeline = insert_bad_channels_into_pipeline(si_pipeline, electrodes_df, si_recording)
 
         # select just the channels in the ElectrodeGroup
         si_recording = si_recording.select_channels(si_recording.channel_ids[electrodes_df.channel_idx])
